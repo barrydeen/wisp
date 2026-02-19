@@ -11,6 +11,7 @@ import com.wisp.app.nostr.Keys
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip18
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.BlossomRepository
 import com.wisp.app.repo.KeyRepository
@@ -54,7 +55,8 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
         replyTo: NostrEvent? = null,
         quoteTo: NostrEvent? = null,
         contentResolver: ContentResolver? = null,
-        onSuccess: () -> Unit = {}
+        onSuccess: () -> Unit = {},
+        outboxRouter: OutboxRouter? = null
     ) {
         val text = _content.value.trim()
         val imageUri = _attachedImageUri.value
@@ -79,7 +81,7 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
                     val url = blossomRepo.uploadMedia(bytes, mime, ext)
                     _uploadProgress.value = "Publishing..."
                     val finalContent = if (text.isBlank()) url else "$text\n$url"
-                    publishNote(finalContent, keypair, relayPool, replyTo, quoteTo)
+                    publishNote(finalContent, keypair, relayPool, replyTo, quoteTo, outboxRouter)
                     _attachedImageUri.value = null
                     _uploadProgress.value = null
                     onSuccess()
@@ -92,7 +94,7 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             try {
                 _publishing.value = true
-                publishNote(text, keypair, relayPool, replyTo, quoteTo)
+                publishNote(text, keypair, relayPool, replyTo, quoteTo, outboxRouter)
                 onSuccess()
             } catch (e: Exception) {
                 _error.value = "Failed to publish: ${e.message}"
@@ -106,7 +108,8 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
         keypair: Keys.Keypair,
         relayPool: RelayPool,
         replyTo: NostrEvent?,
-        quoteTo: NostrEvent? = null
+        quoteTo: NostrEvent? = null,
+        outboxRouter: OutboxRouter? = null
     ) {
         val tags = mutableListOf<List<String>>()
         if (replyTo != null) tags.addAll(Nip10.buildReplyTags(replyTo))
@@ -124,7 +127,12 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
             tags = tags
         )
         val msg = ClientMessage.event(event)
-        relayPool.sendToWriteRelays(msg)
+        // Replies go to target's inbox relays; root posts go to own write relays
+        if (replyTo != null && outboxRouter != null) {
+            outboxRouter.publishToInbox(msg, replyTo.pubkey)
+        } else {
+            relayPool.sendToWriteRelays(msg)
+        }
         _content.value = ""
         _error.value = null
         _publishing.value = false

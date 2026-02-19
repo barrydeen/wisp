@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: MuteRepository? = null) {
+    var metadataFetcher: MetadataFetcher? = null
     private val eventCache = LruCache<String, NostrEvent>(5000)
     private val seenEventIds = ConcurrentHashMap.newKeySet<String>()  // thread-safe dedup that doesn't evict
     private val feedList = mutableListOf<NostrEvent>()
@@ -213,6 +214,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         _quotedEventVersion.value++
     }
 
+    fun requestQuotedEvent(eventId: String, relayHints: List<String> = emptyList()) {
+        metadataFetcher?.requestQuotedEvent(eventId, relayHints)
+    }
+
     fun getEvent(id: String): NostrEvent? = eventCache.get(id)
 
     fun getProfileData(pubkey: String): ProfileData? = profileRepo?.get(pubkey)
@@ -279,7 +284,23 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             feedList.removeAll { it.pubkey == pubkey }
             removed.forEach { feedIds.remove(it.id) }
         }
+        // Evict from eventCache so blocked content doesn't appear in threads/quotes
+        val snapshot = eventCache.snapshot()
+        for ((id, event) in snapshot) {
+            if (event.pubkey == pubkey) {
+                eventCache.remove(id)
+                seenEventIds.remove(id)  // allow re-entry if later unblocked
+            }
+        }
         feedDirty.trySend(Unit)
+    }
+
+    fun trimSeenEvents(maxSize: Int = 50_000) {
+        if (seenEventIds.size > maxSize) {
+            seenEventIds.clear()
+            // Re-add current feed IDs so they stay deduped
+            synchronized(feedList) { feedIds.forEach { seenEventIds.add(it) } }
+        }
     }
 
     fun clearFeed() {

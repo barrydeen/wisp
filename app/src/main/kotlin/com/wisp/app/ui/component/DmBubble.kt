@@ -5,16 +5,21 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.wisp.app.repo.EventRepository
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -24,6 +29,8 @@ fun DmBubble(
     content: String,
     timestamp: Long,
     isSent: Boolean,
+    eventRepo: EventRepository? = null,
+    relayIcons: List<Pair<String, String?>> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -52,14 +59,32 @@ fun DmBubble(
                     content = content,
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (isSent) MaterialTheme.colorScheme.onPrimary
-                    else MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurface,
+                    eventRepo = eventRepo
                 )
-                Text(
-                    text = formatTime(timestamp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isSent) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
-                    else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = formatTime(timestamp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isSent) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (relayIcons.isNotEmpty()) {
+                        Spacer(Modifier.height(14.dp))
+                        Box(modifier = Modifier.padding(start = 6.dp)) {
+                            relayIcons.forEachIndexed { index, (relayUrl, iconUrl) ->
+                                RelayIcon(
+                                    iconUrl = iconUrl,
+                                    relayUrl = relayUrl,
+                                    size = 14.dp,
+                                    modifier = Modifier.offset(x = (index * 10).dp)
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }

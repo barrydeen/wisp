@@ -5,7 +5,8 @@ data class DmMessage(
     val senderPubkey: String,
     val content: String,
     val createdAt: Long,
-    val giftWrapId: String
+    val giftWrapId: String,
+    val relayUrls: Set<String> = emptySet()
 )
 
 data class DmConversation(

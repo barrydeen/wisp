@@ -12,6 +12,7 @@ import com.wisp.app.nostr.ProfileData
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.KeyRepository
+import com.wisp.app.repo.MuteRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,7 +48,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         _query.value = newQuery
     }
 
-    fun search(query: String, relayPool: RelayPool, eventRepo: EventRepository) {
+    fun search(query: String, relayPool: RelayPool, eventRepo: EventRepository, muteRepo: MuteRepository? = null) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) {
             clear()
@@ -74,18 +75,12 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         val noteReq = ClientMessage.req(noteSubId, noteFilter)
         val listReq = ClientMessage.req(listSubId, listFilter)
 
-        val searchRelays = keyRepo.getSearchRelays()
+        val searchRelays = keyRepo.getSearchRelays().ifEmpty { DEFAULT_SEARCH_RELAYS }
 
-        if (searchRelays.isNotEmpty()) {
-            for (url in searchRelays) {
-                relayPool.sendToRelayOrEphemeral(url, userReq)
-                relayPool.sendToRelayOrEphemeral(url, noteReq)
-                relayPool.sendToRelayOrEphemeral(url, listReq)
-            }
-        } else {
-            relayPool.sendToAll(userReq)
-            relayPool.sendToAll(noteReq)
-            relayPool.sendToAll(listReq)
+        for (url in searchRelays) {
+            relayPool.sendToRelayOrEphemeral(url, userReq)
+            relayPool.sendToRelayOrEphemeral(url, noteReq)
+            relayPool.sendToRelayOrEphemeral(url, listReq)
         }
 
         val seenUserPubkeys = mutableSetOf<String>()
@@ -103,6 +98,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                         userSubId -> {
                             val event = relayEvent.event
                             if (event.kind == 0 && event.pubkey !in seenUserPubkeys) {
+                                if (muteRepo?.isBlocked(event.pubkey) == true) return@collect
                                 seenUserPubkeys.add(event.pubkey)
                                 eventRepo.cacheEvent(event)
                                 val profile = ProfileData.fromEvent(event)
@@ -114,6 +110,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                         noteSubId -> {
                             val event = relayEvent.event
                             if (event.kind == 1 && event.id !in seenNoteIds) {
+                                if (muteRepo?.isBlocked(event.pubkey) == true) return@collect
                                 seenNoteIds.add(event.id)
                                 _notes.value = _notes.value + event
                                 eventRepo.cacheEvent(event)
@@ -165,6 +162,13 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         _notes.value = emptyList()
         _lists.value = emptyList()
         _isSearching.value = false
+    }
+
+    companion object {
+        val DEFAULT_SEARCH_RELAYS = listOf(
+            "wss://relay.nostr.band",
+            "wss://search.nos.today"
+        )
     }
 
     private fun closeSubscriptions(relayPool: RelayPool) {

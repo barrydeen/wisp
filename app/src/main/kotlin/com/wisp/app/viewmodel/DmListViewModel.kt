@@ -37,7 +37,7 @@ class DmListViewModel(app: Application) : AndroidViewModel(app) {
         dmRepo?.markDmsRead()
     }
 
-    fun processGiftWrap(event: NostrEvent) {
+    fun processGiftWrap(event: NostrEvent, relayUrl: String = "") {
         if (event.kind != 1059) return
         val repo = dmRepo ?: return
         val keypair = keyRepo.getKeypair() ?: return
@@ -59,7 +59,8 @@ class DmListViewModel(app: Application) : AndroidViewModel(app) {
                 senderPubkey = rumor.pubkey,
                 content = rumor.content,
                 createdAt = rumor.createdAt,
-                giftWrapId = event.id
+                giftWrapId = event.id,
+                relayUrls = if (relayUrl.isNotEmpty()) setOf(relayUrl) else emptySet()
             )
             repo.addMessage(msg, peerPubkey)
         }

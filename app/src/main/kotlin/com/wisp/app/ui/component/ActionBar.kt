@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Reply
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Repeat
@@ -43,6 +45,8 @@ fun ActionBar(
     onRepost: () -> Unit = {},
     onQuote: () -> Unit = {},
     onZap: () -> Unit = {},
+    onBookmark: () -> Unit = {},
+    isBookmarked: Boolean = false,
     likeCount: Int = 0,
     replyCount: Int = 0,
     zapSats: Long = 0,
@@ -149,6 +153,15 @@ fun ActionBar(
                 text = formatSats(zapSats),
                 style = MaterialTheme.typography.labelSmall,
                 color = Color(0xFFFF9800)
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        IconButton(onClick = onBookmark) {
+            Icon(
+                if (isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                contentDescription = if (isBookmarked) "Remove Bookmark" else "Bookmark",
+                tint = if (isBookmarked) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
             )
         }
     }

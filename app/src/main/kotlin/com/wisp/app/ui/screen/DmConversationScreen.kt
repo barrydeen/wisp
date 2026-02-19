@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.RelayPool
+import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.ui.component.DmBubble
 import com.wisp.app.viewmodel.DmConversationViewModel
 
@@ -43,6 +45,8 @@ fun DmConversationScreen(
     relayPool: RelayPool,
     peerProfile: ProfileData?,
     userPubkey: String?,
+    eventRepo: EventRepository? = null,
+    relayInfoRepo: RelayInfoRepository? = null,
     onBack: () -> Unit
 ) {
     val messages by viewModel.messages.collectAsState()
@@ -90,10 +94,15 @@ fun DmConversationScreen(
                 reverseLayout = false
             ) {
                 items(items = messages, key = { it.id }) { msg ->
+                    val icons = msg.relayUrls.map { url ->
+                        url to relayInfoRepo?.getIconUrl(url)
+                    }
                     DmBubble(
                         content = msg.content,
                         timestamp = msg.createdAt,
-                        isSent = msg.senderPubkey == userPubkey
+                        isSent = msg.senderPubkey == userPubkey,
+                        eventRepo = eventRepo,
+                        relayIcons = icons
                     )
                 }
             }

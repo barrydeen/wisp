@@ -49,6 +49,10 @@ class NotificationRepository {
         _hasUnread.value = false
     }
 
+    fun purgeUser(pubkey: String) {
+        _notifications.value = _notifications.value.filter { it.senderPubkey != pubkey }
+    }
+
     private fun buildReaction(event: NostrEvent): NotificationItem.Reaction {
         val emoji = event.content.ifBlank { "+" }
         val referencedId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)

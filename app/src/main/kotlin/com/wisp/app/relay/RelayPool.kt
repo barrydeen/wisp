@@ -27,6 +27,11 @@ class RelayPool {
     private val relayCooldowns = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val COOLDOWN_MS = 5 * 60 * 1000L  // 5 minutes
     private var blockedUrls = emptySet<String>()
+
+    companion object {
+        const val MAX_PERSISTENT = 50
+        const val MAX_EPHEMERAL = 30
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val seenEvents = LruCache<String, Boolean>(5000)
     private val seenLock = Any()
@@ -58,10 +63,19 @@ class RelayPool {
 
     fun updateBlockedUrls(urls: List<String>) {
         blockedUrls = urls.toSet()
+        // Disconnect any currently-connected relays that are now blocked
+        relays.filter { it.config.url in blockedUrls }.forEach { it.disconnect() }
+        relays.removeAll { it.config.url in blockedUrls }
+        dmRelays.filter { it.config.url in blockedUrls }.forEach { it.disconnect() }
+        dmRelays.removeAll { it.config.url in blockedUrls }
+        ephemeralRelays.keys.filter { it in blockedUrls }.forEach { url ->
+            ephemeralRelays.remove(url)?.disconnect()
+            ephemeralLastUsed.remove(url)
+        }
     }
 
     fun updateRelays(configs: List<RelayConfig>) {
-        val filtered = configs.filter { it.url !in blockedUrls }
+        val filtered = configs.filter { it.url !in blockedUrls }.take(MAX_PERSISTENT)
 
         // Disconnect removed relays
         val currentUrls = filtered.map { it.url }.toSet()
@@ -111,8 +125,7 @@ class RelayPool {
                         // Thread, user-profile, and notification subscriptions bypass dedup
                         // since events may already have been seen during feed loading
                         val bypassDedup = msg.subscriptionId.startsWith("thread-") ||
-                            msg.subscriptionId.startsWith("user") ||
-                            msg.subscriptionId == "notif"
+                            msg.subscriptionId.startsWith("user")
                         val shouldEmit = if (bypassDedup) {
                             true
                         } else {
@@ -183,6 +196,12 @@ class RelayPool {
         }
     }
 
+    fun sendToReadRelays(message: String) {
+        for (relay in relays) {
+            if (relay.config.read) relay.send(message)
+        }
+    }
+
     fun sendToAll(message: String) {
         for (relay in relays) relay.send(message)
     }
@@ -212,7 +231,8 @@ class RelayPool {
             return true
         }
 
-        // Check or create ephemeral relay
+        // Check or create ephemeral relay (cap at MAX_EPHEMERAL)
+        if (!ephemeralRelays.containsKey(url) && ephemeralRelays.size >= MAX_EPHEMERAL) return false
         val ephemeral = ephemeralRelays.getOrPut(url) {
             val relay = Relay(RelayConfig(url, read = true, write = false), client)
             relay.autoReconnect = false
@@ -260,6 +280,12 @@ class RelayPool {
     }
 
     fun getRelayUrls(): List<String> = relays.map { it.config.url }
+
+    fun getDmRelayUrls(): List<String> = dmRelays.map { it.config.url }
+
+    fun getWriteRelayUrls(): List<String> = relays.filter { it.config.write }.map { it.config.url }
+
+    fun getEphemeralCount(): Int = ephemeralRelays.size
 
     fun clearSeenEvents() {
         synchronized(seenLock) {

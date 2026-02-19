@@ -9,7 +9,9 @@ import kotlinx.coroutines.flow.StateFlow
 class DmRepository {
     private val conversations = LruCache<String, MutableList<DmMessage>>(100)
     private val conversationKeyCache = LruCache<String, ByteArray>(50)
-    private val seenGiftWraps = LruCache<String, Boolean>(2000)
+    // Maps giftWrapId → messageId so we can merge relay URLs on duplicate receipt
+    private val seenGiftWraps = LruCache<String, String>(2000)
+    private val dmRelayCache = LruCache<String, List<String>>(200)
 
     private val _conversationList = MutableStateFlow<List<DmConversation>>(emptyList())
     val conversationList: StateFlow<List<DmConversation>> = _conversationList
@@ -18,8 +20,15 @@ class DmRepository {
     val hasUnreadDms: StateFlow<Boolean> = _hasUnreadDms
 
     fun addMessage(msg: DmMessage, peerPubkey: String) {
-        if (seenGiftWraps.get(msg.giftWrapId) != null) return
-        seenGiftWraps.put(msg.giftWrapId, true)
+        val existingMsgId = seenGiftWraps.get(msg.giftWrapId)
+        if (existingMsgId != null) {
+            // Already seen — merge relay URLs into existing message
+            if (msg.relayUrls.isNotEmpty()) {
+                mergeRelayUrls(peerPubkey, existingMsgId, msg.relayUrls)
+            }
+            return
+        }
+        seenGiftWraps.put(msg.giftWrapId, msg.id)
         _hasUnreadDms.value = true
 
         val messages = conversations.get(peerPubkey) ?: mutableListOf<DmMessage>().also {
@@ -28,6 +37,16 @@ class DmRepository {
         messages.add(msg)
         messages.sortBy { it.createdAt }
         updateConversationList()
+    }
+
+    private fun mergeRelayUrls(peerPubkey: String, messageId: String, newUrls: Set<String>) {
+        val messages = conversations.get(peerPubkey) ?: return
+        val idx = messages.indexOfFirst { it.id == messageId }
+        if (idx >= 0) {
+            val existing = messages[idx]
+            messages[idx] = existing.copy(relayUrls = existing.relayUrls + newUrls)
+            updateConversationList()
+        }
     }
 
     fun getConversation(peerPubkey: String): List<DmMessage> {
@@ -44,6 +63,18 @@ class DmRepository {
 
     fun markDmsRead() {
         _hasUnreadDms.value = false
+    }
+
+    fun cacheDmRelays(pubkey: String, urls: List<String>) {
+        if (urls.isNotEmpty()) dmRelayCache.put(pubkey, urls)
+    }
+
+    fun getCachedDmRelays(pubkey: String): List<String>? = dmRelayCache.get(pubkey)
+
+    fun purgeUser(pubkey: String) {
+        conversations.remove(pubkey)
+        conversationKeyCache.remove(pubkey)
+        updateConversationList()
     }
 
     private fun updateConversationList() {

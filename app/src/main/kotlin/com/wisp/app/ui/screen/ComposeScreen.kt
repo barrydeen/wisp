@@ -51,7 +51,8 @@ fun ComposeScreen(
     relayPool: RelayPool,
     replyTo: NostrEvent?,
     quoteTo: NostrEvent? = null,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    outboxRouter: com.wisp.app.relay.OutboxRouter? = null
 ) {
     val content by viewModel.content.collectAsState()
     val publishing by viewModel.publishing.collectAsState()
@@ -217,7 +218,8 @@ fun ComposeScreen(
                         replyTo = replyTo,
                         quoteTo = quoteTo,
                         contentResolver = context.contentResolver,
-                        onSuccess = { onBack() }
+                        onSuccess = { onBack() },
+                        outboxRouter = outboxRouter
                     )
                 },
                 enabled = !publishing,

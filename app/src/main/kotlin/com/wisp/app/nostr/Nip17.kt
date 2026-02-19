@@ -29,14 +29,15 @@ object Nip17 {
         senderPubkey: ByteArray,
         recipientPubkey: ByteArray,
         message: String,
-        replyTags: List<List<String>> = emptyList()
+        replyTags: List<List<String>> = emptyList(),
+        rumorPTag: String? = null
     ): NostrEvent {
         val senderPubkeyHex = senderPubkey.toHex()
         val recipientPubkeyHex = recipientPubkey.toHex()
 
         // Layer 1: Build unsigned kind 14 rumor (no id, no sig)
         val rumorTags = mutableListOf<List<String>>()
-        rumorTags.add(listOf("p", recipientPubkeyHex))
+        rumorTags.add(listOf("p", rumorPTag ?: recipientPubkeyHex))
         rumorTags.addAll(replyTags)
 
         val now = System.currentTimeMillis() / 1000

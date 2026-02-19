@@ -8,7 +8,9 @@ import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
+import com.wisp.app.relay.SubscriptionManager
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.MuteRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -26,14 +28,17 @@ class ThreadViewModel : ViewModel() {
 
     private val threadEvents = mutableMapOf<String, NostrEvent>()
     private var rootId: String = ""
+    private var muteRepo: MuteRepository? = null
 
     fun loadThread(
         eventId: String,
         eventRepo: EventRepository,
         relayPool: RelayPool,
         queueProfileFetch: (String) -> Unit,
-        outboxRouter: OutboxRouter? = null
+        outboxRouter: OutboxRouter? = null,
+        muteRepo: MuteRepository? = null
     ) {
+        this.muteRepo = muteRepo
         rootId = eventId
 
         // Load root from cache immediately
@@ -123,6 +128,7 @@ class ThreadViewModel : ViewModel() {
 
         for (event in threadEvents.values) {
             if (event.id == rootId) continue
+            if (muteRepo?.isBlocked(event.pubkey) == true) continue
             val parentId = Nip10.getReplyTarget(event) ?: rootId
             parentToChildren.getOrPut(parentId) { mutableListOf() }.add(event)
         }

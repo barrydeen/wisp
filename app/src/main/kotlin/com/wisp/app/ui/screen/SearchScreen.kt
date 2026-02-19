@@ -43,6 +43,7 @@ import com.wisp.app.nostr.ProfileData
 import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.MuteRepository
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.viewmodel.SearchViewModel
@@ -53,11 +54,17 @@ fun SearchScreen(
     viewModel: SearchViewModel,
     relayPool: RelayPool,
     eventRepo: EventRepository,
+    muteRepo: MuteRepository? = null,
     onProfileClick: (String) -> Unit,
     onNoteClick: (NostrEvent) -> Unit,
     onReply: (NostrEvent) -> Unit = {},
     onReact: (NostrEvent, String) -> Unit = { _, _ -> },
-    onListClick: (FollowSet) -> Unit = {}
+    onListClick: (FollowSet) -> Unit = {},
+    onToggleFollow: (String) -> Unit = {},
+    onBlockUser: (String) -> Unit = {},
+    userPubkey: String? = null,
+    bookmarkedIds: Set<String> = emptySet(),
+    onToggleBookmark: (String) -> Unit = {}
 ) {
     val query by viewModel.query.collectAsState()
     val users by viewModel.users.collectAsState()
@@ -96,7 +103,7 @@ fun SearchScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(
                     onSearch = {
-                        viewModel.search(query, relayPool, eventRepo)
+                        viewModel.search(query, relayPool, eventRepo, muteRepo)
                     }
                 ),
                 modifier = Modifier
@@ -202,7 +209,12 @@ fun SearchScreen(
                                     onNavigateToProfile = onProfileClick,
                                     onNoteClick = { onNoteClick(event) },
                                     onReact = { emoji -> onReact(event, emoji) },
-                                    eventRepo = eventRepo
+                                    eventRepo = eventRepo,
+                                    onFollowAuthor = { onToggleFollow(event.pubkey) },
+                                    onBlockAuthor = { onBlockUser(event.pubkey) },
+                                    isOwnEvent = event.pubkey == userPubkey,
+                                    onBookmark = { onToggleBookmark(event.id) },
+                                    isBookmarked = event.id in bookmarkedIds
                                 )
                             }
                         }
