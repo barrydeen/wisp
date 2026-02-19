@@ -102,6 +102,7 @@ fun UserProfileScreen(
     onWallet: () -> Unit = {},
     zapSuccess: SharedFlow<String>? = null,
     zapError: SharedFlow<String>? = null,
+    zapInProgressIds: Set<String> = emptySet(),
     ownLists: List<FollowSet> = emptyList(),
     onAddToList: ((String, String) -> Unit)? = null,
     onRemoveFromList: ((String, String) -> Unit)? = null,
@@ -348,6 +349,8 @@ fun UserProfileScreen(
                                 eventRepo?.getProfileData(pk)?.displayString
                                     ?: pk.take(8) + "..."
                             }
+                            val hasUserReposted = eventRepo?.hasUserReposted(event.id) == true
+                            val hasUserZapped = zapVersion.let { eventRepo?.hasUserZapped(event.id) == true }
                             PostCard(
                                 event = event,
                                 profile = if (repostPubkey != null) eventRepo?.getProfileData(event.pubkey) else profile,
@@ -357,11 +360,14 @@ fun UserProfileScreen(
                                 onQuotedNoteClick = onQuotedNoteClick,
                                 onReact = { emoji -> onReact(event, emoji) },
                                 userReactionEmoji = userEmoji,
+                                hasUserReposted = hasUserReposted,
                                 onZap = { zapTargetEvent = event },
+                                hasUserZapped = hasUserZapped,
                                 likeCount = likeCount,
                                 replyCount = replyCount,
                                 zapSats = zapSats,
                                 isZapAnimating = event.id in zapAnimatingIds,
+                                isZapInProgress = event.id in zapInProgressIds,
                                 eventRepo = eventRepo,
                                 repostedBy = repostedByName,
                                 reactionDetails = reactionDetails,
@@ -401,6 +407,8 @@ fun UserProfileScreen(
                                     url to relayInfoRepo?.getIconUrl(url)
                                 } ?: emptyList()
                             }
+                            val hasUserReposted2 = eventRepo?.hasUserReposted(event.id) == true
+                            val hasUserZapped2 = zapVersion.let { eventRepo?.hasUserZapped(event.id) == true }
                             PostCard(
                                 event = event,
                                 profile = profile,
@@ -410,11 +418,14 @@ fun UserProfileScreen(
                                 onQuotedNoteClick = onQuotedNoteClick,
                                 onReact = { emoji -> onReact(event, emoji) },
                                 userReactionEmoji = userEmoji,
+                                hasUserReposted = hasUserReposted2,
                                 onZap = { zapTargetEvent = event },
+                                hasUserZapped = hasUserZapped2,
                                 likeCount = likeCount,
                                 replyCount = replyCount,
                                 zapSats = zapSats,
                                 isZapAnimating = event.id in zapAnimatingIds,
+                                isZapInProgress = event.id in zapInProgressIds,
                                 eventRepo = eventRepo,
                                 reactionDetails = reactionDetails,
                                 zapDetails = zapDetails,

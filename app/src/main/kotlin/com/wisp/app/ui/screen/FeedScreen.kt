@@ -98,6 +98,7 @@ fun FeedScreen(
     val replyCountVersion by viewModel.eventRepo.replyCountVersion.collectAsState()
     val zapVersion by viewModel.eventRepo.zapVersion.collectAsState()
     val reactionVersion by viewModel.eventRepo.reactionVersion.collectAsState()
+    val repostVersion by viewModel.eventRepo.repostVersion.collectAsState()
     val relaySourceVersion by viewModel.eventRepo.relaySourceVersion.collectAsState()
     val profileVersion by viewModel.eventRepo.profileVersion.collectAsState()
     val nip05Version by viewModel.nip05Repo.version.collectAsState()
@@ -123,7 +124,7 @@ fun FeedScreen(
     var zapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
     var zapErrorMessage by remember { mutableStateOf<String?>(null) }
 
-    val isWalletConnected by viewModel.nwcRepo.isConnected.collectAsState()
+    val isWalletConnected = viewModel.nwcRepo.hasConnection()
 
     // Re-establish subscriptions (including outbox relays) when app returns from background
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -515,9 +516,11 @@ fun FeedScreen(
                                     reactionVersion = reactionVersion,
                                     replyCountVersion = replyCountVersion,
                                     zapVersion = zapVersion,
+                                    repostVersion = repostVersion,
                                     relaySourceVersion = relaySourceVersion,
                                     nip05Version = nip05Version,
                                     isZapAnimating = event.id in zapAnimatingIds,
+                                    isZapInProgress = event.id in zapInProgress,
                                     isBookmarked = event.id in bookmarkedIds,
                                     isPinned = event.id in pinnedIds,
                                     onReply = { onReply(event) },
@@ -584,9 +587,11 @@ private fun FeedItem(
     reactionVersion: Int,
     replyCountVersion: Int,
     zapVersion: Int,
+    repostVersion: Int = 0,
     relaySourceVersion: Int,
     nip05Version: Int = 0,
     isZapAnimating: Boolean,
+    isZapInProgress: Boolean = false,
     isBookmarked: Boolean = false,
     isPinned: Boolean = false,
     onReply: () -> Unit,
@@ -637,6 +642,15 @@ private fun FeedItem(
     val zapDetails = remember(zapVersion, event.id) {
         viewModel.eventRepo.getZapDetails(event.id)
     }
+    val repostCount = remember(repostVersion, event.id) {
+        viewModel.eventRepo.getRepostCount(event.id)
+    }
+    val hasUserReposted = remember(repostVersion, event.id) {
+        viewModel.eventRepo.hasUserReposted(event.id)
+    }
+    val hasUserZapped = remember(zapVersion, event.id) {
+        viewModel.eventRepo.hasUserZapped(event.id)
+    }
     val isFollowing = remember(event.pubkey) {
         viewModel.contactRepo.isFollowing(event.pubkey)
     }
@@ -651,11 +665,15 @@ private fun FeedItem(
         userReactionEmoji = userEmoji,
         onRepost = onRepost,
         onQuote = onQuote,
+        hasUserReposted = hasUserReposted,
+        repostCount = repostCount,
         onZap = onZap,
+        hasUserZapped = hasUserZapped,
         likeCount = likeCount,
         replyCount = replyCount,
         zapSats = zapSats,
         isZapAnimating = isZapAnimating,
+        isZapInProgress = isZapInProgress,
         eventRepo = viewModel.eventRepo,
         relayIcons = relayIcons,
         repostedBy = repostedByName,

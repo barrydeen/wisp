@@ -48,10 +48,13 @@ fun ThreadScreen(
     onNoteClick: (NostrEvent) -> Unit = {},
     onQuotedNoteClick: ((String) -> Unit)? = null,
     onReact: (NostrEvent, String) -> Unit = { _, _ -> },
+    onRepost: (NostrEvent) -> Unit = {},
+    onQuote: (NostrEvent) -> Unit = {},
     onToggleFollow: (String) -> Unit = {},
     onBlockUser: (String) -> Unit = {},
     onZap: (NostrEvent) -> Unit = {},
     zapAnimatingIds: Set<String> = emptySet(),
+    zapInProgressIds: Set<String> = emptySet(),
     bookmarkedIds: Set<String> = emptySet(),
     pinnedIds: Set<String> = emptySet(),
     onToggleBookmark: (String) -> Unit = {},
@@ -72,6 +75,7 @@ fun ThreadScreen(
     val reactionVersion by eventRepo.reactionVersion.collectAsState()
     val zapVersion by eventRepo.zapVersion.collectAsState()
     val replyCountVersion by eventRepo.replyCountVersion.collectAsState()
+    val repostVersion by eventRepo.repostVersion.collectAsState()
     val nip05Version by nip05Repo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
 
     Scaffold(
@@ -105,10 +109,13 @@ fun ThreadScreen(
                     val profileData = eventRepo.getProfileData(event.pubkey)
                     val likeCount = reactionVersion.let { eventRepo.getReactionCount(event.id) }
                     val replyCount = replyCountVersion.let { eventRepo.getReplyCount(event.id) }
-                    val zapSats = eventRepo.getZapSats(event.id)
+                    val zapSats = zapVersion.let { eventRepo.getZapSats(event.id) }
                     val userEmoji = reactionVersion.let { userPubkey?.let { eventRepo.getUserReactionEmoji(event.id, it) } }
                     val reactionDetails = reactionVersion.let { eventRepo.getReactionDetails(event.id) }
                     val zapDetailsList = zapVersion.let { eventRepo.getZapDetails(event.id) }
+                    val repostCount = repostVersion.let { eventRepo.getRepostCount(event.id) }
+                    val hasUserReposted = repostVersion.let { eventRepo.hasUserReposted(event.id) }
+                    val hasUserZapped = zapVersion.let { eventRepo.hasUserZapped(event.id) }
                     PostCard(
                         event = event,
                         profile = profileData,
@@ -118,11 +125,17 @@ fun ThreadScreen(
                         onNoteClick = { onNoteClick(event) },
                         onReact = { emoji -> onReact(event, emoji) },
                         userReactionEmoji = userEmoji,
+                        onRepost = { onRepost(event) },
+                        onQuote = { onQuote(event) },
+                        hasUserReposted = hasUserReposted,
+                        repostCount = repostCount,
                         onZap = { onZap(event) },
+                        hasUserZapped = hasUserZapped,
                         likeCount = likeCount,
                         replyCount = replyCount,
                         zapSats = zapSats,
                         isZapAnimating = event.id in zapAnimatingIds,
+                        isZapInProgress = event.id in zapInProgressIds,
                         eventRepo = eventRepo,
                         reactionDetails = reactionDetails,
                         zapDetails = zapDetailsList,

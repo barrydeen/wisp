@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.wisp.app.nostr.Keys
 import com.wisp.app.nostr.Nip19
+import com.wisp.app.nostr.toHex
 import com.wisp.app.repo.KeyRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +32,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         return try {
             val keypair = Keys.generate()
             keyRepo.saveKeypair(keypair)
+            keyRepo.reloadPrefs(keypair.pubkey.toHex())
             _npub.value = Nip19.npubEncode(keypair.pubkey)
             _error.value = null
             true
@@ -50,6 +52,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             val privkey = Nip19.nsecDecode(nsec)
             val keypair = Keys.fromPrivkey(privkey)
             keyRepo.saveKeypair(keypair)
+            keyRepo.reloadPrefs(keypair.pubkey.toHex())
             _npub.value = Nip19.npubEncode(keypair.pubkey)
             _nsecInput.value = ""
             _error.value = null

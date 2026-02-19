@@ -1,7 +1,6 @@
 package com.wisp.app.viewmodel
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.Nip47
 import com.wisp.app.repo.NwcRepository
@@ -16,8 +15,7 @@ sealed class WalletState {
     data class Error(val message: String) : WalletState()
 }
 
-class WalletViewModel(app: Application) : AndroidViewModel(app) {
-    val nwcRepo = NwcRepository(app)
+class WalletViewModel(val nwcRepo: NwcRepository) : ViewModel() {
 
     private val _walletState = MutableStateFlow<WalletState>(
         if (nwcRepo.hasConnection()) WalletState.Connecting else WalletState.NotConnected
@@ -101,8 +99,18 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         _generatedInvoice.value = null
     }
 
-    override fun onCleared() {
-        super.onCleared()
-        nwcRepo.disconnect()
+    fun refreshState() {
+        _generatedInvoice.value = null
+        if (nwcRepo.hasConnection()) {
+            if (nwcRepo.isConnected.value) {
+                refreshBalance()
+            } else {
+                _walletState.value = WalletState.Connecting
+                connectWallet(nwcRepo.getConnectionString() ?: "")
+            }
+        } else {
+            _walletState.value = WalletState.NotConnected
+            _connectionString.value = ""
+        }
     }
 }

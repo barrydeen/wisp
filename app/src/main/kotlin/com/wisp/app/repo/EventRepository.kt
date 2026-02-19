@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: MuteRepository? = null) {
     var metadataFetcher: MetadataFetcher? = null
+    var currentUserPubkey: String? = null
     private val eventCache = LruCache<String, NostrEvent>(5000)
     private val seenEventIds = ConcurrentHashMap.newKeySet<String>()  // thread-safe dedup that doesn't evict
     private val feedList = mutableListOf<NostrEvent>()
@@ -52,6 +53,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     // Repost tracking: inner event id -> reposter pubkey
     private val repostAuthors = LruCache<String, String>(2000)
+    // Repost count tracking: inner event id -> count
+    private val repostCounts = LruCache<String, Int>(5000)
+    // Track which events the current user has reposted: eventId -> true
+    private val userReposts = LruCache<String, Boolean>(5000)
+    private val _repostVersion = MutableStateFlow(0)
+    val repostVersion: StateFlow<Int> = _repostVersion
 
     // Reaction tracking: eventId -> map of emoji -> count
     private val reactionCounts = LruCache<String, MutableMap<String, Int>>(2000)
@@ -65,6 +72,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     // Detailed zap tracking: eventId -> list of (zapper pubkey, sats)
     private val zapDetails = LruCache<String, MutableList<Pair<String, Long>>>(5000)
+    // Track which events the current user has zapped: eventId -> true
+    private val userZaps = LruCache<String, Boolean>(5000)
+    // Events where we optimistically added the user's own zap (to avoid double-counting receipts)
+    private val optimisticZaps = HashSet<String>()
 
     // Debouncing: coalesce rapid-fire feed list and version updates
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -85,6 +96,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             var pendingReaction = false
             var pendingReplyCount = false
             var pendingZap = false
+            var pendingRepost = false
             var pendingRelaySource = false
             for (signal in versionDirty) {
                 // Drain all pending flags and wait for a quiet period
@@ -93,11 +105,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 if (pendingReaction || reactionDirty) { _reactionVersion.value++; reactionDirty = false }
                 if (pendingReplyCount || replyCountDirtyFlag) { _replyCountVersion.value++; replyCountDirtyFlag = false }
                 if (pendingZap || zapDirty) { _zapVersion.value++; zapDirty = false }
+                if (pendingRepost || repostDirty) { _repostVersion.value++; repostDirty = false }
                 if (pendingRelaySource || relaySourceDirtyFlag) { _relaySourceVersion.value++; relaySourceDirtyFlag = false }
                 pendingProfile = false
                 pendingReaction = false
                 pendingReplyCount = false
                 pendingZap = false
+                pendingRepost = false
                 pendingRelaySource = false
             }
         }
@@ -107,6 +121,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     @Volatile private var reactionDirty = false
     @Volatile private var replyCountDirtyFlag = false
     @Volatile private var zapDirty = false
+    @Volatile private var repostDirty = false
     @Volatile private var relaySourceDirtyFlag = false
 
     private fun markVersionDirty() {
@@ -138,6 +153,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                     try {
                         val inner = fromJson(event.content)
                         repostAuthors.put(inner.id, event.pubkey)
+                        val count = repostCounts.get(inner.id) ?: 0
+                        repostCounts.put(inner.id, count + 1)
+                        // Auto-mark if this is the current user's repost
+                        if (event.pubkey == currentUserPubkey) {
+                            userReposts.put(inner.id, true)
+                        }
+                        repostDirty = true
+                        markVersionDirty()
                         if (seenEventIds.add(inner.id)) {
                             eventCache.put(inner.id, inner)
                             val isReply = inner.tags.any { it.size >= 2 && it[0] == "e" }
@@ -151,14 +174,21 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 val targetId = Nip57.getZappedEventId(event) ?: return
                 val sats = Nip57.getZapAmountSats(event)
                 if (sats > 0) {
-                    addZapSats(targetId, sats)
-                    // Extract zapper pubkey from the description tag (serialized kind 9734 zap request)
                     val zapperPubkey = Nip57.getZapperPubkey(event)
-                    if (zapperPubkey != null) {
-                        val zaps = zapDetails.get(targetId) ?: mutableListOf<Pair<String, Long>>().also {
-                            zapDetails.put(targetId, it)
+                    // Skip if this is our own zap and we already added it optimistically
+                    val isOwnOptimistic = zapperPubkey == currentUserPubkey && optimisticZaps.remove(targetId)
+                    if (!isOwnOptimistic) {
+                        addZapSats(targetId, sats)
+                        if (zapperPubkey != null) {
+                            val zaps = zapDetails.get(targetId) ?: mutableListOf<Pair<String, Long>>().also {
+                                zapDetails.put(targetId, it)
+                            }
+                            zaps.add(zapperPubkey to sats)
                         }
-                        zaps.add(zapperPubkey to sats)
+                    }
+                    // Always mark user zap flag from receipts
+                    if (zapperPubkey == currentUserPubkey) {
+                        userZaps.put(targetId, true)
                     }
                 }
             }
@@ -273,6 +303,34 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun getRepostAuthor(eventId: String): String? = repostAuthors.get(eventId)
 
+    fun getRepostCount(eventId: String): Int = repostCounts.get(eventId) ?: 0
+
+    fun markUserRepost(eventId: String) {
+        userReposts.put(eventId, true)
+        val count = repostCounts.get(eventId) ?: 0
+        repostCounts.put(eventId, count + 1)
+        repostDirty = true
+        markVersionDirty()
+    }
+
+    fun hasUserReposted(eventId: String): Boolean = userReposts.get(eventId) == true
+
+    /**
+     * Optimistically record the current user's zap so the UI updates immediately
+     * without waiting for the 9735 receipt from relays.
+     */
+    fun addOptimisticZap(eventId: String, zapperPubkey: String, sats: Long) {
+        userZaps.put(eventId, true)
+        optimisticZaps.add(eventId)
+        addZapSats(eventId, sats)
+        val zaps = zapDetails.get(eventId) ?: mutableListOf<Pair<String, Long>>().also {
+            zapDetails.put(eventId, it)
+        }
+        zaps.add(zapperPubkey to sats)
+    }
+
+    fun hasUserZapped(eventId: String): Boolean = userZaps.get(eventId) == true
+
     fun getOldestTimestamp(): Long? = synchronized(feedList) { feedList.lastOrNull()?.created_at }
 
     fun resetNewNoteCount() {
@@ -326,6 +384,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         userReactions.evictAll()
         reactionDetails.evictAll()
         zapDetails.evictAll()
+        repostCounts.evictAll()
+        userReposts.evictAll()
+        userZaps.evictAll()
         _profileVersion.value = 0
         _quotedEventVersion.value = 0
         _replyCountVersion.value = 0

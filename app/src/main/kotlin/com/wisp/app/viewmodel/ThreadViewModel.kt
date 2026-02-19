@@ -6,7 +6,6 @@ import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.NostrEvent
-import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.relay.SubscriptionManager
 import com.wisp.app.repo.EventRepository
@@ -43,8 +42,8 @@ class ThreadViewModel : ViewModel() {
         eventId: String,
         eventRepo: EventRepository,
         relayPool: RelayPool,
+        subManager: SubscriptionManager,
         queueProfileFetch: (String) -> Unit,
-        outboxRouter: OutboxRouter? = null,
         muteRepo: MuteRepository? = null
     ) {
         this.muteRepo = muteRepo
@@ -110,15 +109,10 @@ class ThreadViewModel : ViewModel() {
             }
 
             // Fetch ALL replies that reference the root event
+            // Use sendToAll because replies from different participants may be on different relays
             val repliesFilter = Filter(kinds = listOf(1), eTags = listOf(rootId))
-            val rootAuthor = _rootEvent.value?.pubkey ?: cached?.pubkey
-            val repliesRelays = if (rootAuthor != null && outboxRouter != null) {
-                outboxRouter.subscribeToUserReadRelays("thread-replies", rootAuthor, repliesFilter)
-            } else {
-                relayPool.sendToAll(ClientMessage.req("thread-replies", repliesFilter))
-                relayPool.getRelayUrls().toSet()
-            }
-            val repliesRelayCount = repliesRelays.size.coerceAtLeast(1)
+            relayPool.sendToAll(ClientMessage.req("thread-replies", repliesFilter))
+            val repliesRelayCount = relayPool.getRelayUrls().size.coerceAtLeast(1)
 
             // Wait for EOSE from ALL relays before closing each subscription (with timeout)
             launch {
@@ -150,6 +144,9 @@ class ThreadViewModel : ViewModel() {
                 relayPool.closeOnAllRelays("thread-replies")
                 _isLoading.value = false
                 collectJob.cancel()
+
+                // Subscribe for reactions, zaps for thread events and compute reply counts
+                subscribeThreadMetadata(relayPool, subManager, eventRepo)
             }
         }
     }
@@ -194,13 +191,51 @@ class ThreadViewModel : ViewModel() {
         }
     }
 
+    private fun subscribeThreadMetadata(relayPool: RelayPool, subManager: SubscriptionManager, eventRepo: EventRepository) {
+        val eventIds = threadEvents.keys.toList()
+        if (eventIds.isEmpty()) return
+
+        // Compute reply counts from loaded thread events
+        for (event in threadEvents.values) {
+            if (event.id == rootId) continue
+            val parentId = Nip10.getReplyTarget(event) ?: rootId
+            eventRepo.addReplyCount(parentId)
+        }
+
+        // Reactions (kind 7) and reposts (kind 6)
+        eventIds.chunked(50).forEachIndexed { index, batch ->
+            val subId = if (index == 0) "thread-reactions" else "thread-reactions-$index"
+            val filter = Filter(kinds = listOf(7, 6), eTags = batch)
+            relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
+            viewModelScope.launch {
+                subManager.awaitEoseWithTimeout(subId)
+                subManager.closeSubscription(subId)
+            }
+        }
+
+        // Zaps (kind 9735)
+        eventIds.chunked(50).forEachIndexed { index, batch ->
+            val subId = if (index == 0) "thread-zaps" else "thread-zaps-$index"
+            val filter = Filter(kinds = listOf(9735), eTags = batch)
+            relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
+            viewModelScope.launch {
+                subManager.awaitEoseWithTimeout(subId)
+                subManager.closeSubscription(subId)
+            }
+        }
+    }
+
     private fun rebuildTree() {
         val parentToChildren = mutableMapOf<String, MutableList<NostrEvent>>()
 
         for (event in threadEvents.values) {
             if (event.id == rootId) continue
             if (muteRepo?.isBlocked(event.pubkey) == true) continue
-            val parentId = Nip10.getReplyTarget(event) ?: rootId
+            var parentId = Nip10.getReplyTarget(event) ?: rootId
+            // If the parent isn't in threadEvents, attach to root so the reply isn't orphaned
+            if (parentId != rootId && parentId !in threadEvents) {
+                parentId = rootId
+            }
             parentToChildren.getOrPut(parentId) { mutableListOf() }.add(event)
         }
 
