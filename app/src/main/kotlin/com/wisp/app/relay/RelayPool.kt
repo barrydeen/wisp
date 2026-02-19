@@ -31,8 +31,9 @@ class RelayPool {
     companion object {
         const val MAX_PERSISTENT = 50
         const val MAX_EPHEMERAL = 30
-        const val COOLDOWN_DOWN_MS = 10 * 60 * 1000L    // 10 min — 5xx, connection failures, DNS errors
+        const val COOLDOWN_DOWN_MS = 10 * 60 * 1000L    // 10 min — 5xx, connection failures (ephemeral only)
         const val COOLDOWN_REJECTED_MS = 1 * 60 * 1000L // 1 min — 4xx like 401/403/429
+        const val COOLDOWN_NETWORK_MS = 5_000L           // 5s — DNS/network failures on persistent relays
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -258,13 +259,20 @@ class RelayPool {
     private fun collectRelayFailures(relay: Relay) {
         scope.launch {
             relay.failures.collect { failure ->
-                val cooldownMs = cooldownForFailure(failure.httpCode)
+                val isEphemeral = ephemeralRelays.containsKey(relay.config.url)
+                // Network failures (no HTTP code = DNS/connectivity) on persistent relays
+                // use a short cooldown — these are typically caused by the phone sleeping,
+                // not actual relay issues. Long cooldowns cause "0 relays" on resume.
+                val cooldownMs = if (!isEphemeral && failure.httpCode == null) {
+                    COOLDOWN_NETWORK_MS
+                } else {
+                    cooldownForFailure(failure.httpCode)
+                }
                 val until = System.currentTimeMillis() + cooldownMs
                 // Set cooldownUntil on the relay itself (throttles auto-reconnect delay)
                 relay.cooldownUntil = until
                 // Only set relayCooldowns map entry for ephemeral relays
                 // (this map gates sendToRelayOrEphemeral — persistent/DM relays shouldn't be gated)
-                val isEphemeral = ephemeralRelays.containsKey(relay.config.url)
                 if (isEphemeral) {
                     relayCooldowns[relay.config.url] = until
                     ephemeralRelays.remove(relay.config.url)

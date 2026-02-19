@@ -212,7 +212,7 @@ private fun MutedUsersTab(
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = profile?.displayName ?: profile?.name ?: pubkey.take(16) + "...",
+                            text = profile?.displayString ?: (pubkey.take(16) + "..."),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,

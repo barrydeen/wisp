@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.wisp.app.nostr.NotificationGroup
 import com.wisp.app.nostr.ProfileData
+import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.NotificationRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,10 +23,16 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
 
     private var notifRepo: NotificationRepository? = null
     private var eventRepo: EventRepository? = null
+    private var contactRepo: ContactRepository? = null
 
-    fun init(notificationRepository: NotificationRepository, eventRepository: EventRepository) {
+    fun init(notificationRepository: NotificationRepository, eventRepository: EventRepository, contactRepository: ContactRepository) {
         notifRepo = notificationRepository
         eventRepo = eventRepository
+        contactRepo = contactRepository
+    }
+
+    fun isFollowing(pubkey: String): Boolean {
+        return contactRepo?.isFollowing(pubkey) ?: false
     }
 
     fun markRead() {

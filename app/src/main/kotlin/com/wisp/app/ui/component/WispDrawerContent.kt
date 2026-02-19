@@ -63,7 +63,7 @@ fun WispDrawerContent(
             ProfilePicture(url = profile?.picture, size = 64)
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = profile?.displayName ?: profile?.name ?: "Anonymous",
+                text = profile?.displayString ?: "Anonymous",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
