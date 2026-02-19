@@ -457,7 +457,11 @@ fun FeedScreen(
                                     onReact = { emoji -> onReact(event, emoji) },
                                     onRepost = { onRepost(event) },
                                     onQuote = { onQuote(event) },
-                                    onZap = { zapTargetEvent = event }
+                                    onZap = { zapTargetEvent = event },
+                                    onRelayClick = { url ->
+                                        viewModel.setSelectedRelay(url)
+                                        viewModel.setFeedType(FeedType.RELAY)
+                                    }
                                 )
                             }
                         }
@@ -504,7 +508,8 @@ private fun FeedItem(
     onReact: (String) -> Unit,
     onRepost: () -> Unit,
     onQuote: () -> Unit,
-    onZap: () -> Unit
+    onZap: () -> Unit,
+    onRelayClick: (String) -> Unit = {}
 ) {
     val profileData = remember(profileVersion, event.pubkey) {
         viewModel.eventRepo.getProfileData(event.pubkey)
@@ -522,8 +527,8 @@ private fun FeedItem(
         userPubkey?.let { viewModel.eventRepo.getUserReactionEmoji(event.id, it) }
     }
     val relayIcons = remember(relaySourceVersion, event.id) {
-        viewModel.eventRepo.getEventRelays(event.id).mapNotNull { url ->
-            viewModel.relayInfoRepo.getIconUrl(url)
+        viewModel.eventRepo.getEventRelays(event.id).map { url ->
+            url to viewModel.relayInfoRepo.getIconUrl(url)
         }
     }
     val repostAuthorPubkey = remember(event.id) {
@@ -562,7 +567,8 @@ private fun FeedItem(
         repostedBy = repostedByName,
         reactionDetails = reactionDetails,
         zapDetails = zapDetails,
-        onNavigateToProfileFromDetails = onNavigateToProfile
+        onNavigateToProfileFromDetails = onNavigateToProfile,
+        onRelayClick = onRelayClick
     )
 }
 
