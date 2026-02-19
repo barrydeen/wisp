@@ -44,11 +44,11 @@ class MetadataFetcher(
 
     // Quoted event fetching
     private val scannedQuoteEvents = mutableSetOf<String>()
-    private val pendingQuoteFetches = mutableSetOf<String>()
+    private val failedQuoteFetches = mutableSetOf<String>()
     private val nostrNoteUriRegex = Regex("""nostr:(note1|nevent1)[a-z0-9]+""")
     private val validHexId = Regex("""^[0-9a-f]{64}$""")
 
-    // On-demand quoted event fetching (triggered by QuotedNote composable)
+    // Batched quote fetching (unified queue for inline + on-demand)
     private val pendingOnDemandQuotes = mutableSetOf<String>()
     private val pendingRelayHints = mutableMapOf<String, List<String>>()
     private var onDemandQuoteBatchJob: Job? = null
@@ -72,7 +72,7 @@ class MetadataFetcher(
         }
         profileAttempts.clear()
         scannedQuoteEvents.clear()
-        pendingQuoteFetches.clear()
+        failedQuoteFetches.clear()
         metaBatchCounter = 0
         replyCountBatchCounter = 0
         zapCountBatchCounter = 0
@@ -136,15 +136,19 @@ class MetadataFetcher(
     fun requestQuotedEvent(eventId: String, relayHints: List<String> = emptyList()) {
         synchronized(pendingOnDemandQuotes) {
             if (eventRepo.getEvent(eventId) != null) return
-            if (eventId in pendingQuoteFetches && relayHints.isEmpty()) return
+            if (eventId in failedQuoteFetches) return
             if (eventId in pendingOnDemandQuotes) return
             pendingOnDemandQuotes.add(eventId)
             if (relayHints.isNotEmpty()) {
                 pendingRelayHints[eventId] = relayHints
             }
-            if (onDemandQuoteBatchJob == null || onDemandQuoteBatchJob?.isActive != true) {
+            val shouldFlushNow = pendingOnDemandQuotes.size >= 20
+            if (shouldFlushNow) {
+                onDemandQuoteBatchJob?.cancel()
+                flushOnDemandQuoteBatch()
+            } else if (onDemandQuoteBatchJob == null || onDemandQuoteBatchJob?.isActive != true) {
                 onDemandQuoteBatchJob = scope.launch(processingContext) {
-                    delay(150)
+                    delay(300)
                     synchronized(pendingOnDemandQuotes) { flushOnDemandQuoteBatch() }
                 }
             }
@@ -152,40 +156,20 @@ class MetadataFetcher(
     }
 
     fun fetchQuotedEvents(event: com.wisp.app.nostr.NostrEvent) {
-        val idHints = mutableMapOf<String, MutableList<String>>()  // eventId -> relay hints
         event.tags.filter { it.size >= 2 && it[0] == "q" }
             .forEach { tag ->
                 val id = tag[1].lowercase()
                 if (validHexId.matches(id)) {
-                    val hints = idHints.getOrPut(id) { mutableListOf() }
+                    val hints = mutableListOf<String>()
                     if (tag.size >= 3 && tag[2].startsWith("wss://")) hints.add(tag[2])
+                    requestQuotedEvent(id, hints)
                 }
             }
         for (match in nostrNoteUriRegex.findAll(event.content)) {
             val decoded = Nip19.decodeNostrUri(match.value)
             if (decoded is NostrUriData.NoteRef) {
-                val hints = idHints.getOrPut(decoded.eventId) { mutableListOf() }
-                hints.addAll(decoded.relays)
+                requestQuotedEvent(decoded.eventId, decoded.relays)
             }
-        }
-        val toFetch = idHints.keys.filter { id -> eventRepo.getEvent(id) == null && id !in pendingQuoteFetches }
-        if (toFetch.isEmpty()) return
-        pendingQuoteFetches.addAll(toFetch)
-        val subId = "quote-${toFetch.hashCode()}"
-        relayPool.sendToReadRelays(ClientMessage.req(subId, Filter(ids = toFetch)))
-
-        // Also send to hinted relays
-        for (id in toFetch) {
-            val relays = idHints[id] ?: continue
-            for (url in relays) {
-                relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(subId, Filter(ids = listOf(id))))
-            }
-        }
-
-        scope.launch {
-            subManager.awaitEoseWithTimeout(subId)
-            subManager.closeSubscription(subId)
-            toFetch.forEach { pendingQuoteFetches.remove(it) }
         }
     }
 
@@ -273,8 +257,7 @@ class MetadataFetcher(
         pendingOnDemandQuotes.clear()
         pendingRelayHints.clear()
 
-        pendingQuoteFetches.addAll(batch)
-        val subId = "quote-od-${onDemandQuoteBatchCounter++}"
+        val subId = "quote-${onDemandQuoteBatchCounter++}"
         relayPool.sendToReadRelays(ClientMessage.req(subId, Filter(ids = batch)))
 
         // Also query hinted relays for IDs that have hints
@@ -288,7 +271,14 @@ class MetadataFetcher(
         scope.launch {
             subManager.awaitEoseWithTimeout(subId)
             subManager.closeSubscription(subId)
-            batch.forEach { pendingQuoteFetches.remove(it) }
+            // Mark unfound events as failed to prevent infinite retries
+            for (id in batch) {
+                if (eventRepo.getEvent(id) == null) {
+                    failedQuoteFetches.add(id)
+                }
+            }
+            // Prevent unbounded growth
+            if (failedQuoteFetches.size > 2000) failedQuoteFetches.clear()
         }
     }
 
