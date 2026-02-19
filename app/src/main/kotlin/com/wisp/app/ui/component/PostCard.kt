@@ -1,5 +1,10 @@
 package com.wisp.app.ui.component
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,20 +15,25 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Repeat
-import androidx.compose.material3.Icon
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.repo.EventRepository
@@ -51,6 +61,9 @@ fun PostCard(
     eventRepo: EventRepository? = null,
     relayIcons: List<String> = emptyList(),
     repostedBy: String? = null,
+    reactionDetails: Map<String, List<String>> = emptyMap(),
+    zapDetails: List<Pair<String, Long>> = emptyList(),
+    onNavigateToProfileFromDetails: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val displayName = remember(event.pubkey, profile?.displayString) {
@@ -66,6 +79,9 @@ fun PostCard(
     val displayIcons = remember(relayIcons) {
         if (relayIcons.size <= 5) relayIcons else relayIcons.take(5)
     }
+
+    val hasDetails = reactionDetails.isNotEmpty() || zapDetails.isNotEmpty()
+    var expandedDetails by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -142,6 +158,38 @@ fun PostCard(
             zapSats = zapSats,
             isZapAnimating = isZapAnimating
         )
+        if (hasDetails) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expandedDetails = !expandedDetails },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (expandedDetails) Icons.Filled.KeyboardArrowUp
+                        else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = if (expandedDetails) "Collapse details" else "Expand details",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            AnimatedVisibility(
+                visible = expandedDetails,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                val profileResolver: (String) -> ProfileData? = { pubkey ->
+                    eventRepo?.getProfileData(pubkey)
+                }
+                val navToProfile = onNavigateToProfileFromDetails ?: onNavigateToProfile ?: {}
+                ReactionDetailsSection(
+                    reactionDetails = reactionDetails,
+                    zapDetails = zapDetails,
+                    resolveProfile = profileResolver,
+                    onProfileClick = navToProfile
+                )
+            }
+        }
         if (displayIcons.isNotEmpty()) {
             Box(
                 modifier = Modifier.fillMaxWidth(),
