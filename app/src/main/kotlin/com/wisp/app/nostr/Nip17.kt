@@ -56,6 +56,7 @@ object Nip17 {
         // Layer 2: Seal (kind 13) — encrypt rumor with sender→recipient conversation key
         val senderRecipientKey = Nip44.getConversationKey(senderPrivkey, recipientPubkey)
         val encryptedRumor = Nip44.encrypt(rumorJson, senderRecipientKey)
+        senderRecipientKey.wipe()
         val sealTimestamp = randomizeTimestamp(now)
         val seal = NostrEvent.create(
             privkey = senderPrivkey,
@@ -79,6 +80,10 @@ object Nip17 {
             tags = listOf(listOf("p", recipientPubkeyHex)),
             createdAt = wrapTimestamp
         )
+
+        // Wipe throwaway private key — no reason for it to persist
+        throwaway.wipe()
+        throwawayRecipientKey.wipe()
 
         return giftWrap
     }

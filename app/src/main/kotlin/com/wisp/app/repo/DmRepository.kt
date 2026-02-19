@@ -3,12 +3,17 @@ package com.wisp.app.repo
 import android.util.LruCache
 import com.wisp.app.nostr.DmConversation
 import com.wisp.app.nostr.DmMessage
+import com.wisp.app.nostr.wipe
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 class DmRepository {
     private val conversations = LruCache<String, MutableList<DmMessage>>(100)
-    private val conversationKeyCache = LruCache<String, ByteArray>(50)
+    private val conversationKeyCache = object : LruCache<String, ByteArray>(50) {
+        override fun entryRemoved(evicted: Boolean, key: String?, oldValue: ByteArray?, newValue: ByteArray?) {
+            oldValue?.wipe()
+        }
+    }
     // Maps giftWrapId → messageId so we can merge relay URLs on duplicate receipt
     private val seenGiftWraps = LruCache<String, String>(2000)
     private val dmRelayCache = LruCache<String, List<String>>(200)
