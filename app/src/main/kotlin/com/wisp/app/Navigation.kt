@@ -149,9 +149,9 @@ fun WispNavHost() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    val tabRoutes = setOf(Routes.FEED, Routes.SEARCH, Routes.DM_LIST, Routes.NOTIFICATIONS)
+    val hideBottomBarRoutes = setOf(Routes.AUTH, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS)
     val showBottomBar by remember(currentRoute) {
-        derivedStateOf { currentRoute in tabRoutes }
+        derivedStateOf { currentRoute != null && currentRoute !in hideBottomBarRoutes }
     }
 
     val newNoteCount by feedViewModel.newNoteCount.collectAsState()
@@ -371,7 +371,7 @@ fun WispNavHost() {
                 onToggleFollow = { pubkey -> feedViewModel.toggleFollow(pubkey) },
                 isOwnProfile = isOwnProfile,
                 onEditProfile = {
-                    profileViewModel.loadCurrentProfile(feedViewModel.eventRepo)
+                    profileViewModel.loadCurrentProfile(feedViewModel.eventRepo, feedViewModel.relayPool)
                     navController.navigate(Routes.PROFILE_EDIT)
                 },
                 isBlocked = pubkey in isBlockedState,

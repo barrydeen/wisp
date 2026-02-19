@@ -7,11 +7,13 @@ import android.webkit.MimeTypeMap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.ClientMessage
+import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.BlossomRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.KeyRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -56,6 +58,8 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
     private val _uploading = MutableStateFlow<String?>(null)
     val uploading: StateFlow<String?> = _uploading
 
+    private var refreshJob: Job? = null
+
     fun uploadImage(contentResolver: ContentResolver, uri: Uri, target: ImageTarget) {
         viewModelScope.launch {
             try {
@@ -82,16 +86,44 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
 
     enum class ImageTarget { PICTURE, BANNER }
 
-    fun loadCurrentProfile(eventRepo: EventRepository) {
+    fun loadCurrentProfile(eventRepo: EventRepository, relayPool: RelayPool? = null) {
         val keypair = keyRepo.getKeypair() ?: return
         val pubkeyHex = keypair.pubkey.joinToString("") { "%02x".format(it) }
-        val profile = eventRepo.getProfileData(pubkeyHex) ?: return
-        _name.value = profile.name ?: ""
-        _about.value = profile.about ?: ""
-        _picture.value = profile.picture ?: ""
-        _nip05.value = profile.nip05 ?: ""
-        _banner.value = profile.banner ?: ""
-        _lud16.value = profile.lud16 ?: ""
+
+        // Load from cache immediately
+        val profile = eventRepo.getProfileData(pubkeyHex)
+        if (profile != null) {
+            _name.value = profile.name ?: ""
+            _about.value = profile.about ?: ""
+            _picture.value = profile.picture ?: ""
+            _nip05.value = profile.nip05 ?: ""
+            _banner.value = profile.banner ?: ""
+            _lud16.value = profile.lud16 ?: ""
+        }
+
+        // Request fresh profile from relays
+        if (relayPool == null) return
+        val subId = "editprofile"
+        relayPool.closeOnAllRelays(subId)
+        val filter = Filter(kinds = listOf(0), authors = listOf(pubkeyHex), limit = 1)
+        relayPool.sendToAll(ClientMessage.req(subId, filter))
+
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
+            relayPool.relayEvents.collect { (event, _, subscriptionId) ->
+                if (subscriptionId != subId) return@collect
+                if (event.kind == 0 && event.pubkey == pubkeyHex) {
+                    eventRepo.addEvent(event)
+                    val updated = eventRepo.getProfileData(pubkeyHex) ?: return@collect
+                    _name.value = updated.name ?: ""
+                    _about.value = updated.about ?: ""
+                    _picture.value = updated.picture ?: ""
+                    _nip05.value = updated.nip05 ?: ""
+                    _banner.value = updated.banner ?: ""
+                    _lud16.value = updated.lud16 ?: ""
+                }
+            }
+        }
     }
 
     fun publishProfile(relayPool: RelayPool): Boolean {

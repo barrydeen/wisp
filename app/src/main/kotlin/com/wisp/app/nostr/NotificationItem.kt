@@ -1,51 +1,50 @@
 package com.wisp.app.nostr
 
-sealed class NotificationItem {
-    abstract val id: String
-    abstract val senderPubkey: String
-    abstract val createdAt: Long
-    abstract val referencedEventId: String?
+data class ZapEntry(
+    val pubkey: String,
+    val sats: Long,
+    val message: String,
+    val createdAt: Long
+)
 
-    data class Reaction(
-        override val id: String,
-        override val senderPubkey: String,
-        override val createdAt: Long,
-        override val referencedEventId: String?,
-        val emoji: String
-    ) : NotificationItem()
+sealed class NotificationGroup {
+    abstract val groupId: String
+    abstract val latestTimestamp: Long
 
-    data class Reply(
-        override val id: String,
-        override val senderPubkey: String,
-        override val createdAt: Long,
-        override val referencedEventId: String?,
+    data class ReactionGroup(
+        override val groupId: String,
+        val referencedEventId: String,
+        val reactions: Map<String, List<String>>, // emoji -> list of pubkeys
+        override val latestTimestamp: Long
+    ) : NotificationGroup()
+
+    data class ZapGroup(
+        override val groupId: String,
+        val referencedEventId: String,
+        val zaps: List<ZapEntry>,
+        val totalSats: Long,
+        override val latestTimestamp: Long
+    ) : NotificationGroup()
+
+    data class ReplyNotification(
+        override val groupId: String,
+        val senderPubkey: String,
         val replyEventId: String,
-        val contentPreview: String
-    ) : NotificationItem()
+        val referencedEventId: String?,
+        override val latestTimestamp: Long
+    ) : NotificationGroup()
 
-    data class Zap(
-        override val id: String,
-        override val senderPubkey: String,
-        override val createdAt: Long,
-        override val referencedEventId: String?,
-        val amountSats: Long
-    ) : NotificationItem()
+    data class QuoteNotification(
+        override val groupId: String,
+        val senderPubkey: String,
+        val quoteEventId: String,
+        override val latestTimestamp: Long
+    ) : NotificationGroup()
 
-    data class Quote(
-        override val id: String,
-        override val senderPubkey: String,
-        override val createdAt: Long,
-        override val referencedEventId: String?,
-        val contentPreview: String,
-        val quotedEventId: String
-    ) : NotificationItem()
-
-    data class Mention(
-        override val id: String,
-        override val senderPubkey: String,
-        override val createdAt: Long,
-        override val referencedEventId: String?,
-        val contentPreview: String,
-        val eventId: String
-    ) : NotificationItem()
+    data class MentionNotification(
+        override val groupId: String,
+        val senderPubkey: String,
+        val eventId: String,
+        override val latestTimestamp: Long
+    ) : NotificationGroup()
 }
