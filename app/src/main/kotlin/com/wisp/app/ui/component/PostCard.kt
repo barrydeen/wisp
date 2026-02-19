@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Refresh
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
@@ -93,7 +94,8 @@ fun PostCard(
     onPin: () -> Unit = {},
     isPinned: Boolean = false,
     onQuotedNoteClick: ((String) -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showDivider: Boolean = true
 ) {
     val displayName = remember(event.pubkey, profile?.displayString) {
         profile?.displayString
@@ -156,12 +158,12 @@ fun PostCard(
                 profile?.nip05?.let { nip05 ->
                     nip05Repo?.checkOrFetch(event.pubkey, nip05)
                     val status = nip05Repo?.getStatus(event.pubkey)
-                    val isFailed = status == Nip05Status.FAILED
+                    val isImpersonator = status == Nip05Status.IMPERSONATOR
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = if (isFailed) "\u2715 $nip05" else nip05,
+                            text = if (isImpersonator) "\u2715 $nip05" else nip05,
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (isFailed) Color.Red else MaterialTheme.colorScheme.primary,
+                            color = if (isImpersonator) Color.Red else MaterialTheme.colorScheme.primary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
@@ -173,6 +175,17 @@ fun PostCard(
                                 contentDescription = "Verified",
                                 tint = Color(0xFFFF8C00),
                                 modifier = Modifier.size(14.dp)
+                            )
+                        }
+                        if (status == Nip05Status.ERROR) {
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Retry verification",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .clickable { nip05Repo?.retry(event.pubkey) }
                             )
                         }
                     }
@@ -335,7 +348,9 @@ fun PostCard(
                 }
             }
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
+        if (showDivider) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
+        }
     }
 }
 

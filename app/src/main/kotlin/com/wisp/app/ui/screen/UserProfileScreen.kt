@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material3.DropdownMenu
@@ -580,12 +581,12 @@ private fun ProfileHeader(
         profile?.nip05?.let { nip05 ->
             if (pubkey.isNotEmpty()) nip05Repo?.checkOrFetch(pubkey, nip05)
             val status = if (pubkey.isNotEmpty()) nip05Repo?.getStatus(pubkey) else null
-            val isFailed = status == Nip05Status.FAILED
+            val isImpersonator = status == Nip05Status.IMPERSONATOR
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = if (isFailed) "\u2715 $nip05" else nip05,
+                    text = if (isImpersonator) "\u2715 $nip05" else nip05,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (isFailed) Color.Red else MaterialTheme.colorScheme.primary
+                    color = if (isImpersonator) Color.Red else MaterialTheme.colorScheme.primary
                 )
                 if (status == Nip05Status.VERIFIED) {
                     Spacer(Modifier.width(4.dp))
@@ -594,6 +595,17 @@ private fun ProfileHeader(
                         contentDescription = "Verified",
                         tint = Color(0xFFFF8C00),
                         modifier = Modifier.size(14.dp)
+                    )
+                }
+                if (status == Nip05Status.ERROR) {
+                    Spacer(Modifier.width(4.dp))
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "Retry verification",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .size(14.dp)
+                            .clickable { nip05Repo?.retry(pubkey) }
                     )
                 }
             }

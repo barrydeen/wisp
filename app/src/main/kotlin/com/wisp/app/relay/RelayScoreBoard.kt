@@ -32,6 +32,11 @@ class RelayScoreBoard(
 
     init {
         loadFromPrefs()
+        // Rebuild scored relays from cached URLs + persisted RelayListRepository data
+        // so the pool can be restored immediately after process restart
+        if (scoredRelayUrls.isNotEmpty() && scoredRelays.isEmpty()) {
+            recompute()
+        }
     }
 
     /**

@@ -28,10 +28,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.wisp.app.nostr.Nip19
+import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NotificationGroup
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.nostr.ZapEntry
+import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.Nip05Repository
+import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.QuotedNote
 import com.wisp.app.ui.component.RichContent
@@ -46,8 +51,21 @@ import java.util.Locale
 fun NotificationsScreen(
     viewModel: NotificationsViewModel,
     scrollToTopTrigger: Int = 0,
+    userPubkey: String? = null,
     onNoteClick: (String) -> Unit,
-    onProfileClick: (String) -> Unit
+    onProfileClick: (String) -> Unit,
+    onReply: (NostrEvent) -> Unit = {},
+    onReact: (NostrEvent, String) -> Unit = { _, _ -> },
+    onRepost: (NostrEvent) -> Unit = {},
+    onQuote: (NostrEvent) -> Unit = {},
+    onZap: (NostrEvent) -> Unit = {},
+    onFollowToggle: (String) -> Unit = {},
+    onBlockUser: (String) -> Unit = {},
+    onBookmark: (String) -> Unit = {},
+    nip05Repo: Nip05Repository? = null,
+    isZapAnimating: (String) -> Boolean = { false },
+    isZapInProgress: (String) -> Boolean = { false },
+    isBookmarked: (String) -> Boolean = { false }
 ) {
     val notifications by viewModel.notifications.collectAsState()
     val eventRepo = viewModel.eventRepository
@@ -55,6 +73,13 @@ fun NotificationsScreen(
     LaunchedEffect(scrollToTopTrigger) {
         if (scrollToTopTrigger > 0) listState.animateScrollToItem(0)
     }
+
+    // Version flows for cache invalidation on reply PostCards
+    val reactionVersion = eventRepo?.reactionVersion?.collectAsState()?.value ?: 0
+    val zapVersion = eventRepo?.zapVersion?.collectAsState()?.value ?: 0
+    val replyCountVersion = eventRepo?.replyCountVersion?.collectAsState()?.value ?: 0
+    val repostVersion = eventRepo?.repostVersion?.collectAsState()?.value ?: 0
+    val profileVersion = eventRepo?.profileVersion?.collectAsState()?.value ?: 0
 
     Scaffold(
         topBar = {
@@ -106,12 +131,30 @@ fun NotificationsScreen(
                             onNoteClick = onNoteClick,
                             onProfileClick = onProfileClick
                         )
-                        is NotificationGroup.ReplyNotification -> ReplyNotificationRow(
+                        is NotificationGroup.ReplyNotification -> ReplyPostCard(
                             item = group,
                             eventRepo = eventRepo,
-                            isFollowing = viewModel.isFollowing(group.senderPubkey),
+                            userPubkey = userPubkey,
+                            profileVersion = profileVersion,
+                            reactionVersion = reactionVersion,
+                            replyCountVersion = replyCountVersion,
+                            zapVersion = zapVersion,
+                            repostVersion = repostVersion,
+                            isFollowing = { viewModel.isFollowing(it) },
                             onNoteClick = onNoteClick,
-                            onProfileClick = onProfileClick
+                            onProfileClick = onProfileClick,
+                            onReply = onReply,
+                            onReact = onReact,
+                            onRepost = onRepost,
+                            onQuote = onQuote,
+                            onZap = onZap,
+                            onFollowToggle = onFollowToggle,
+                            onBlockUser = onBlockUser,
+                            onBookmark = onBookmark,
+                            nip05Repo = nip05Repo,
+                            isZapAnimating = isZapAnimating,
+                            isZapInProgress = isZapInProgress,
+                            isBookmarked = isBookmarked
                         )
                         is NotificationGroup.QuoteNotification -> QuoteNotificationRow(
                             item = group,
@@ -316,23 +359,38 @@ private fun ZapEntryRow(
 }
 
 // ── Reply ───────────────────────────────────────────────────────────────
-// Render the reply event directly inline (like a feed note) — no QuotedNote container.
+// Full PostCard for reply notifications — same rendering as feed items.
 
 @Composable
-private fun ReplyNotificationRow(
+private fun ReplyPostCard(
     item: NotificationGroup.ReplyNotification,
     eventRepo: EventRepository?,
-    isFollowing: Boolean,
+    userPubkey: String?,
+    profileVersion: Int,
+    reactionVersion: Int,
+    replyCountVersion: Int,
+    zapVersion: Int,
+    repostVersion: Int,
+    isFollowing: (String) -> Boolean,
     onNoteClick: (String) -> Unit,
-    onProfileClick: (String) -> Unit
+    onProfileClick: (String) -> Unit,
+    onReply: (NostrEvent) -> Unit,
+    onReact: (NostrEvent, String) -> Unit,
+    onRepost: (NostrEvent) -> Unit,
+    onQuote: (NostrEvent) -> Unit,
+    onZap: (NostrEvent) -> Unit,
+    onFollowToggle: (String) -> Unit,
+    onBlockUser: (String) -> Unit,
+    onBookmark: (String) -> Unit,
+    nip05Repo: Nip05Repository?,
+    isZapAnimating: (String) -> Boolean,
+    isZapInProgress: (String) -> Boolean,
+    isBookmarked: (String) -> Boolean
 ) {
     if (eventRepo == null) return
 
     val version by eventRepo.quotedEventVersion.collectAsState()
     val event = remember(item.replyEventId, version) { eventRepo.getEvent(item.replyEventId) }
-    val profile = remember(item.senderPubkey, version) { eventRepo.getProfileData(item.senderPubkey) }
-    val displayName = profile?.displayString
-        ?: item.senderPubkey.take(8) + "..." + item.senderPubkey.takeLast(4)
 
     // Request the reply event on-demand if not yet cached
     LaunchedEffect(item.replyEventId) {
@@ -341,58 +399,102 @@ private fun ReplyNotificationRow(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onNoteClick(item.replyEventId) }
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-    ) {
-        // Author row
+    if (event == null) return
+
+    val profile = remember(profileVersion, event.pubkey) {
+        eventRepo.getProfileData(event.pubkey)
+    }
+    val likeCount = remember(reactionVersion, event.id) {
+        eventRepo.getReactionCount(event.id)
+    }
+    val replyCount = remember(replyCountVersion, event.id) {
+        eventRepo.getReplyCount(event.id)
+    }
+    val zapSats = remember(zapVersion, event.id) {
+        eventRepo.getZapSats(event.id)
+    }
+    val userEmoji = remember(reactionVersion, event.id, userPubkey) {
+        userPubkey?.let { eventRepo.getUserReactionEmoji(event.id, it) }
+    }
+    val reactionDetails = remember(reactionVersion, event.id) {
+        eventRepo.getReactionDetails(event.id)
+    }
+    val zapDetails = remember(zapVersion, event.id) {
+        eventRepo.getZapDetails(event.id)
+    }
+    val repostCount = remember(repostVersion, event.id) {
+        eventRepo.getRepostCount(event.id)
+    }
+    val hasUserReposted = remember(repostVersion, event.id) {
+        eventRepo.hasUserReposted(event.id)
+    }
+    val hasUserZapped = remember(zapVersion, event.id) {
+        eventRepo.hasUserZapped(event.id)
+    }
+    val followingAuthor = remember(event.pubkey) {
+        isFollowing(event.pubkey)
+    }
+
+    // "reply to #note1abc..." label
+    if (item.referencedEventId != null) {
+        val truncatedNoteId = remember(item.referencedEventId) {
+            try {
+                val noteId = Nip19.noteEncode(item.referencedEventId.hexToByteArray())
+                "#" + noteId.take(10)
+            } catch (_: Exception) {
+                "#" + item.referencedEventId.take(8)
+            }
+        }
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            ProfilePicture(
-                url = profile?.picture,
-                size = 34,
-                showFollowBadge = isFollowing,
-                modifier = Modifier.clickable { onProfileClick(item.senderPubkey) }
-            )
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.weight(1f))
             Text(
-                text = displayName,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                text = "replied",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = formatNotifTimestamp(item.latestTimestamp),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        // Render reply content directly inline
-        if (event != null) {
-            Spacer(Modifier.height(6.dp))
-            RichContent(
-                content = event.content,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                eventRepo = eventRepo,
-                onProfileClick = onProfileClick,
-                onNoteClick = onNoteClick
+                text = "reply to $truncatedNoteId",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+                color = androidx.compose.ui.graphics.Color(0xFFFF9800),
+                modifier = Modifier.clickable { onNoteClick(item.referencedEventId) }
             )
         }
     }
+
+    PostCard(
+        event = event,
+        profile = profile,
+        onReply = { onReply(event) },
+        onProfileClick = { onProfileClick(event.pubkey) },
+        onNavigateToProfile = onProfileClick,
+        onNoteClick = { onNoteClick(event.id) },
+        onReact = { emoji -> onReact(event, emoji) },
+        userReactionEmoji = userEmoji,
+        onRepost = { onRepost(event) },
+        onQuote = { onQuote(event) },
+        hasUserReposted = hasUserReposted,
+        repostCount = repostCount,
+        onZap = { onZap(event) },
+        hasUserZapped = hasUserZapped,
+        likeCount = likeCount,
+        replyCount = replyCount,
+        zapSats = zapSats,
+        isZapAnimating = isZapAnimating(event.id),
+        isZapInProgress = isZapInProgress(event.id),
+        eventRepo = eventRepo,
+        reactionDetails = reactionDetails,
+        zapDetails = zapDetails,
+        onNavigateToProfileFromDetails = onProfileClick,
+        onFollowAuthor = { onFollowToggle(event.pubkey) },
+        onBlockAuthor = { onBlockUser(event.pubkey) },
+        isFollowingAuthor = followingAuthor,
+        isOwnEvent = event.pubkey == userPubkey,
+        nip05Repo = nip05Repo,
+        onBookmark = { onBookmark(event.id) },
+        isBookmarked = isBookmarked(event.id),
+        onQuotedNoteClick = onNoteClick,
+        showDivider = false
+    )
 }
 
 // ── Quote ───────────────────────────────────────────────────────────────

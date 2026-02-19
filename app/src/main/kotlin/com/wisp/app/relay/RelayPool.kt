@@ -295,25 +295,20 @@ class RelayPool {
         scope.launch {
             relay.failures.collect { failure ->
                 val isEphemeral = ephemeralRelays.containsKey(relay.config.url)
-                // Network failures (no HTTP code = DNS/connectivity) on persistent relays
-                // use a short cooldown — these are typically caused by the phone sleeping,
-                // not actual relay issues. Long cooldowns cause "0 relays" on resume.
-                val cooldownMs = if (!isEphemeral && failure.httpCode == null) {
-                    COOLDOWN_NETWORK_MS
-                } else {
-                    cooldownForFailure(failure.httpCode)
-                }
-                val until = System.currentTimeMillis() + cooldownMs
-                // Set cooldownUntil on the relay itself (throttles auto-reconnect delay)
-                relay.cooldownUntil = until
-                // Only set relayCooldowns map entry for ephemeral relays
-                // (this map gates sendToRelayOrEphemeral — persistent/DM relays shouldn't be gated)
+                // Only apply cooldowns to ephemeral relays.
+                // Persistent/DM relays just use the default 3s retry in Relay.reconnect()
+                // with no additional cooldown — avoids cascading delays on app resume.
                 if (isEphemeral) {
+                    val cooldownMs = cooldownForFailure(failure.httpCode)
+                    val until = System.currentTimeMillis() + cooldownMs
+                    relay.cooldownUntil = until
                     relayCooldowns[relay.config.url] = until
                     ephemeralRelays.remove(relay.config.url)
                     ephemeralLastUsed.remove(relay.config.url)
+                    Log.d("RelayPool", "Cooldown ${cooldownMs / 1000}s for ephemeral ${relay.config.url} (http=${failure.httpCode})")
+                } else {
+                    Log.d("RelayPool", "Failure on persistent relay ${relay.config.url} (http=${failure.httpCode}), will retry in 3s")
                 }
-                Log.d("RelayPool", "Cooldown ${cooldownMs / 1000}s for ${relay.config.url} (http=${failure.httpCode}, ephemeral=$isEphemeral)")
             }
         }
     }
