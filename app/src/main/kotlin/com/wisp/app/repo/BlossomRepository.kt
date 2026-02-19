@@ -16,9 +16,9 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
-class BlossomRepository(context: Context) {
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("wisp_prefs", Context.MODE_PRIVATE)
+class BlossomRepository(private val context: Context, pubkeyHex: String? = null) {
+    private var prefs: SharedPreferences =
+        context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
     private val keyRepo = KeyRepository(context)
 
@@ -41,6 +41,16 @@ class BlossomRepository(context: Context) {
         val list = urls.ifEmpty { listOf(Blossom.DEFAULT_SERVER) }
         prefs.edit().putString("blossom_servers", json.encodeToString(list)).apply()
         _servers.value = list
+    }
+
+    fun clear() {
+        _servers.value = listOf(Blossom.DEFAULT_SERVER)
+    }
+
+    fun reload(pubkeyHex: String?) {
+        clear()
+        prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
+        _servers.value = loadServers()
     }
 
     private fun loadServers(): List<String> {
@@ -100,5 +110,10 @@ class BlossomRepository(context: Context) {
             }
         }
         throw lastException ?: Exception("Upload failed")
+    }
+
+    companion object {
+        private fun prefsName(pubkeyHex: String?): String =
+            if (pubkeyHex != null) "wisp_prefs_$pubkeyHex" else "wisp_prefs"
     }
 }

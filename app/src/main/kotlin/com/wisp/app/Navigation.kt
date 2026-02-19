@@ -170,6 +170,7 @@ fun WispNavHost() {
             AuthScreen(
                 viewModel = authViewModel,
                 onAuthenticated = {
+                    feedViewModel.reloadForNewAccount()
                     feedViewModel.initRelays()
                     feedViewModel.initNwc()
                     navController.navigate(Routes.FEED) {
@@ -224,7 +225,11 @@ fun WispNavHost() {
                 onNoteClick = { event ->
                     navController.navigate("thread/${event.id}")
                 },
+                onQuotedNoteClick = { eventId ->
+                    navController.navigate("thread/$eventId")
+                },
                 onLogout = {
+                    feedViewModel.resetForAccountSwitch()
                     authViewModel.logOut()
                     navController.navigate(Routes.AUTH) {
                         popUpTo(0) { inclusive = true }
@@ -348,6 +353,7 @@ fun WispNavHost() {
                 },
                 onUnblockUser = { feedViewModel.unblockUser(pubkey) },
                 onNoteClick = { event -> navController.navigate("thread/${event.id}") },
+                onQuotedNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                 onReact = { event, emoji -> feedViewModel.sendReaction(event, emoji) },
                 onZap = { event, amountMsats, message -> feedViewModel.sendZap(event, amountMsats, message) },
                 userPubkey = feedViewModel.getUserPubkey(),
@@ -381,6 +387,9 @@ fun WispNavHost() {
                 },
                 onNoteClick = { event ->
                     navController.navigate("thread/${event.id}")
+                },
+                onQuotedNoteClick = { eventId ->
+                    navController.navigate("thread/$eventId")
                 },
                 onReply = { event ->
                     replyTarget = event
@@ -478,6 +487,7 @@ fun WispNavHost() {
                 viewModel = threadViewModel,
                 eventRepo = feedViewModel.eventRepo,
                 contactRepo = feedViewModel.contactRepo,
+                nip05Repo = feedViewModel.nip05Repo,
                 userPubkey = feedViewModel.getUserPubkey(),
                 onBack = { navController.popBackStack() },
                 onReply = { event ->
@@ -490,6 +500,9 @@ fun WispNavHost() {
                 },
                 onNoteClick = { event ->
                     navController.navigate("thread/${event.id}")
+                },
+                onQuotedNoteClick = { eventId ->
+                    navController.navigate("thread/$eventId")
                 },
                 onReact = { event, emoji ->
                     feedViewModel.sendReaction(event, emoji)
@@ -591,6 +604,7 @@ fun WispNavHost() {
                 userPubkey = feedViewModel.getUserPubkey(),
                 onBack = { navController.popBackStack() },
                 onNoteClick = { event -> navController.navigate("thread/${event.id}") },
+                onQuotedNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                 onReply = { event ->
                     replyTarget = event
                     composeViewModel.clear()

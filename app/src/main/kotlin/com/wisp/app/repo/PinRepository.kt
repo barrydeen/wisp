@@ -7,9 +7,9 @@ import com.wisp.app.nostr.NostrEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-class PinRepository(context: Context) {
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("wisp_pins", Context.MODE_PRIVATE)
+class PinRepository(private val context: Context, pubkeyHex: String? = null) {
+    private var prefs: SharedPreferences =
+        context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
 
     private val _pinnedIds = MutableStateFlow<Set<String>>(emptySet())
     val pinnedIds: StateFlow<Set<String>> = _pinnedIds
@@ -46,6 +46,18 @@ class PinRepository(context: Context) {
 
     fun getPinnedIds(): Set<String> = idSet.toSet()
 
+    fun clear() {
+        _pinnedIds.value = emptySet()
+        idSet = HashSet()
+        lastUpdated = 0
+    }
+
+    fun reload(pubkeyHex: String?) {
+        clear()
+        prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
+        loadFromPrefs()
+    }
+
     private fun saveToPrefs() {
         prefs.edit()
             .putStringSet("pinned_ids", idSet.toSet())
@@ -60,5 +72,10 @@ class PinRepository(context: Context) {
             idSet = HashSet(ids)
             _pinnedIds.value = idSet.toSet()
         }
+    }
+
+    companion object {
+        private fun prefsName(pubkeyHex: String?): String =
+            if (pubkeyHex != null) "wisp_pins_$pubkeyHex" else "wisp_pins"
     }
 }

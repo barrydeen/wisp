@@ -11,9 +11,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-class ListRepository(context: Context) {
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("wisp_lists", Context.MODE_PRIVATE)
+class ListRepository(private val context: Context, pubkeyHex: String? = null) {
+    private var prefs: SharedPreferences =
+        context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
 
     private val followSets = mutableMapOf<String, FollowSet>()
@@ -65,6 +65,19 @@ class ListRepository(context: Context) {
         return followSets.values.filter { it.pubkey == pubkey }
     }
 
+    fun clear() {
+        followSets.clear()
+        _ownLists.value = emptyList()
+        _selectedList.value = null
+        ownerPubkey = null
+    }
+
+    fun reload(pubkeyHex: String?) {
+        clear()
+        prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
+        loadFromPrefs()
+    }
+
     private fun refreshOwnLists() {
         val owner = ownerPubkey ?: return
         val own = followSets.values.filter { it.pubkey == owner }.sortedBy { it.name }
@@ -98,4 +111,9 @@ class ListRepository(context: Context) {
         val members: List<String>,
         val createdAt: Long
     )
+
+    companion object {
+        private fun prefsName(pubkeyHex: String?): String =
+            if (pubkeyHex != null) "wisp_lists_$pubkeyHex" else "wisp_lists"
+    }
 }

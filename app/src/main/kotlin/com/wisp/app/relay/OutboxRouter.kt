@@ -161,6 +161,28 @@ class OutboxRouter(
     }
 
     /**
+     * Pick the best relay hint URL for an event authored by [pubkey].
+     * Prefers a relay in both the target's inbox and our outbox,
+     * then falls back to their inbox, then our outbox, then empty.
+     */
+    fun getRelayHint(pubkey: String): String {
+        val theirInbox = relayListRepo.getReadRelays(pubkey)?.toSet() ?: emptySet()
+        val ourOutbox = relayPool.getWriteRelayUrls().toSet()
+
+        // Best: a relay in both sets
+        val overlap = theirInbox.intersect(ourOutbox)
+        if (overlap.isNotEmpty()) return overlap.first()
+
+        // Next: their inbox
+        if (theirInbox.isNotEmpty()) return theirInbox.first()
+
+        // Fallback: our outbox
+        if (ourOutbox.isNotEmpty()) return ourOutbox.first()
+
+        return ""
+    }
+
+    /**
      * Request kind 10002 relay lists for pubkeys we don't have cached yet.
      * Returns the subscription ID if a request was sent, null otherwise.
      */

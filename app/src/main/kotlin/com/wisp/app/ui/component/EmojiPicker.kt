@@ -35,7 +35,7 @@ fun EmojiReactionPopup(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    var emojis by remember { mutableStateOf(ReactionPreferences.getReactionSet(context)) }
+    var emojis by remember { mutableStateOf(ReactionPreferences(context).getReactionSet()) }
     var showCustomDialog by remember { mutableStateOf(false) }
 
     Popup(
@@ -75,7 +75,7 @@ fun EmojiReactionPopup(
     if (showCustomDialog) {
         CustomEmojiDialog(
             onConfirm = { emoji ->
-                emojis = ReactionPreferences.addEmoji(context, emoji)
+                emojis = ReactionPreferences(context).addEmoji(emoji)
                 onSelect(emoji)
                 onDismiss()
             },

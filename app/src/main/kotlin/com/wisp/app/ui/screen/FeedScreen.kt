@@ -82,6 +82,7 @@ fun FeedScreen(
     onRepost: (NostrEvent) -> Unit = {},
     onQuote: (NostrEvent) -> Unit = {},
     onNoteClick: (NostrEvent) -> Unit = {},
+    onQuotedNoteClick: ((String) -> Unit)? = null,
     onSearch: () -> Unit = {},
     onLogout: () -> Unit = {},
     onMediaServers: () -> Unit = {},
@@ -523,6 +524,7 @@ fun FeedScreen(
                                     onProfileClick = { onProfileClick(event.pubkey) },
                                     onNavigateToProfile = onProfileClick,
                                     onNoteClick = { onNoteClick(event) },
+                                    onQuotedNoteClick = onQuotedNoteClick,
                                     onReact = { emoji -> onReact(event, emoji) },
                                     onRepost = { onRepost(event) },
                                     onQuote = { onQuote(event) },
@@ -591,6 +593,7 @@ private fun FeedItem(
     onProfileClick: () -> Unit,
     onNavigateToProfile: (String) -> Unit,
     onNoteClick: () -> Unit,
+    onQuotedNoteClick: ((String) -> Unit)? = null,
     onReact: (String) -> Unit,
     onRepost: () -> Unit,
     onQuote: () -> Unit,
@@ -668,7 +671,8 @@ private fun FeedItem(
         onBookmark = onBookmark,
         isBookmarked = isBookmarked,
         onPin = onPin,
-        isPinned = isPinned
+        isPinned = isPinned,
+        onQuotedNoteClick = onQuotedNoteClick
     )
 }
 

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -105,6 +106,7 @@ fun RichContent(
     color: Color = MaterialTheme.colorScheme.onSurface,
     eventRepo: EventRepository? = null,
     onProfileClick: ((String) -> Unit)? = null,
+    onNoteClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val segments = parseContent(content)
@@ -151,7 +153,12 @@ fun RichContent(
                 }
                 is ContentSegment.NostrNoteSegment -> {
                     if (eventRepo != null) {
-                        QuotedNote(eventId = segment.eventId, eventRepo = eventRepo, relayHints = segment.relayHints)
+                        QuotedNote(
+                            eventId = segment.eventId,
+                            eventRepo = eventRepo,
+                            relayHints = segment.relayHints,
+                            onNoteClick = onNoteClick
+                        )
                     } else {
                         Text(
                             text = "nostr:${segment.eventId.take(8)}...",
@@ -184,7 +191,7 @@ fun RichContent(
 }
 
 @Composable
-private fun QuotedNote(eventId: String, eventRepo: EventRepository, relayHints: List<String> = emptyList()) {
+private fun QuotedNote(eventId: String, eventRepo: EventRepository, relayHints: List<String> = emptyList(), onNoteClick: ((String) -> Unit)? = null) {
     // Observe version so we recompose when quoted events arrive from relays
     val version by eventRepo.quotedEventVersion.collectAsState()
     val event = remember(eventId, version) { eventRepo.getEvent(eventId) }
@@ -200,42 +207,68 @@ private fun QuotedNote(eventId: String, eventRepo: EventRepository, relayHints: 
     Surface(
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        color = MaterialTheme.colorScheme.surface,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
+            .padding(vertical = 6.dp)
+            .then(
+                if (onNoteClick != null) Modifier.clickable { onNoteClick(eventId) }
+                else Modifier
+            )
     ) {
         if (event != null) {
-            Column(modifier = Modifier.padding(12.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    ProfilePicture(url = profile?.picture, size = 20)
-                    Spacer(Modifier.width(6.dp))
+                    ProfilePicture(url = profile?.picture, size = 34)
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = profile?.displayString
+                                ?: event.pubkey.take(8) + "..." + event.pubkey.takeLast(4),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                     Text(
-                        text = profile?.displayString
-                            ?: event.pubkey.take(8) + "..." + event.pubkey.takeLast(4),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        text = formatQuotedTimestamp(event.created_at),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
                 }
-                Text(
-                    text = event.content,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp)
+                Spacer(Modifier.height(6.dp))
+                RichContent(
+                    content = event.content,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    eventRepo = eventRepo
                 )
             }
         } else {
             Text(
                 text = "Referenced note ${eventId.take(8)}...",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(12.dp)
+                modifier = Modifier.padding(14.dp)
             )
         }
+    }
+}
+
+private fun formatQuotedTimestamp(epoch: Long): String {
+    val diff = System.currentTimeMillis() - epoch * 1000
+    if (diff < 0) return ""
+    val seconds = diff / 1000
+    val minutes = seconds / 60
+    val hours = minutes / 60
+    val days = hours / 24
+    return when {
+        seconds < 60 -> "${seconds}s"
+        minutes < 60 -> "${minutes}m"
+        hours < 24 -> "${hours}h"
+        days == 1L -> "yesterday"
+        else -> java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(java.util.Date(epoch * 1000))
     }
 }
 

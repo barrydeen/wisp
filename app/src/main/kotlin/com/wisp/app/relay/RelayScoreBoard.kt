@@ -9,12 +9,13 @@ import com.wisp.app.repo.RelayListRepository
 data class ScoredRelay(val url: String, val coverCount: Int, val authors: Set<String>)
 
 class RelayScoreBoard(
-    context: Context,
+    private val context: Context,
     private val relayListRepo: RelayListRepository,
-    private val contactRepo: ContactRepository
+    private val contactRepo: ContactRepository,
+    pubkeyHex: String? = null
 ) {
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("wisp_relay_scores", Context.MODE_PRIVATE)
+    private var prefs: SharedPreferences =
+        context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
 
     private var scoredRelays: List<ScoredRelay> = emptyList()
     private var scoredRelayUrls: Set<String> = emptySet()
@@ -24,6 +25,9 @@ class RelayScoreBoard(
     companion object {
         private const val TAG = "RelayScoreBoard"
         const val MAX_SCORED_RELAYS = 75
+
+        private fun prefsName(pubkeyHex: String?): String =
+            if (pubkeyHex != null) "wisp_relay_scores_$pubkeyHex" else "wisp_relay_scores"
     }
 
     init {
@@ -128,6 +132,18 @@ class RelayScoreBoard(
         scoredRelays.map { RelayConfig(it.url, read = true, write = false) }
 
     fun hasScoredRelays(): Boolean = scoredRelays.isNotEmpty()
+
+    fun clear() {
+        scoredRelays = emptyList()
+        scoredRelayUrls = emptySet()
+        relayAuthorsMap = emptyMap()
+    }
+
+    fun reload(pubkeyHex: String?) {
+        clear()
+        prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
+        loadFromPrefs()
+    }
 
     private fun saveToPrefs() {
         val urls = scoredRelays.joinToString(",") { it.url }

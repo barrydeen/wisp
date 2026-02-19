@@ -12,7 +12,7 @@ import com.wisp.app.relay.RelayConfig
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 
-class KeyRepository(context: Context) {
+class KeyRepository(private val context: Context) {
     private val masterKey = MasterKey.Builder(context)
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
         .build()
@@ -25,8 +25,8 @@ class KeyRepository(context: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
 
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("wisp_prefs", Context.MODE_PRIVATE)
+    private var prefs: SharedPreferences =
+        context.getSharedPreferences(prefsName(getKeypair()?.pubkey?.toHex()), Context.MODE_PRIVATE)
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -52,6 +52,10 @@ class KeyRepository(context: Context) {
     fun getNpub(): String? {
         val pubHex = encPrefs.getString("pubkey", null) ?: return null
         return Nip19.npubEncode(pubHex.hexToByteArray())
+    }
+
+    fun reloadPrefs(pubkeyHex: String?) {
+        prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
     }
 
     fun saveRelays(relays: List<RelayConfig>) {
@@ -92,5 +96,10 @@ class KeyRepository(context: Context) {
     fun getBlockedRelays(): List<String> {
         val str = prefs.getString("blocked_relays", null) ?: return emptyList()
         return try { json.decodeFromString(str) } catch (_: Exception) { emptyList() }
+    }
+
+    companion object {
+        private fun prefsName(pubkeyHex: String?): String =
+            if (pubkeyHex != null) "wisp_prefs_$pubkeyHex" else "wisp_prefs"
     }
 }

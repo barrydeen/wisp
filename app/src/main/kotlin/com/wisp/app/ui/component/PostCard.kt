@@ -88,6 +88,7 @@ fun PostCard(
     isBookmarked: Boolean = false,
     onPin: () -> Unit = {},
     isPinned: Boolean = false,
+    onQuotedNoteClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val displayName = remember(event.pubkey, profile?.displayString) {
@@ -270,7 +271,8 @@ fun PostCard(
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
             eventRepo = eventRepo,
-            onProfileClick = onNavigateToProfile
+            onProfileClick = onNavigateToProfile,
+            onNoteClick = onQuotedNoteClick
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             ActionBar(
