@@ -8,6 +8,7 @@ import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
+import com.wisp.app.relay.SubscriptionManager
 import com.wisp.app.repo.EventRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

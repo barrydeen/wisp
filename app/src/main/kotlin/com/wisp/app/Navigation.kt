@@ -262,7 +262,8 @@ fun WispNavHost() {
                 relayPool = feedViewModel.relayPool,
                 replyTo = replyTarget,
                 quoteTo = quoteTarget,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                outboxRouter = feedViewModel.outboxRouter
             )
         }
 
