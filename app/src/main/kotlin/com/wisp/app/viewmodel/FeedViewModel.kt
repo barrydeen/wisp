@@ -85,8 +85,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     private var feedSubId = "feed"
     private var isLoadingMore = false
-    private val activeReactionSubIds = mutableListOf<String>()
-    private val activeZapSubIds = mutableListOf<String>()
+    private val activeEngagementSubIds = mutableListOf<String>()
     private val replyCountSeenIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     val nwcRepo = NwcRepository(app, pubkeyHex)
@@ -128,10 +127,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         // Cancel feed subscriptions
         feedEoseJob?.cancel()
         relayPool.closeOnAllRelays(feedSubId)
-        for (subId in activeReactionSubIds) relayPool.closeOnAllRelays(subId)
-        activeReactionSubIds.clear()
-        for (subId in activeZapSubIds) relayPool.closeOnAllRelays(subId)
-        activeZapSubIds.clear()
+        for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
+        activeEngagementSubIds.clear()
 
         // Disconnect relays and NWC
         relayPool.disconnectAll()
@@ -309,12 +306,29 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
                 if (rootId != null) eventRepo.addReplyCount(rootId)
             }
-        } else if (subscriptionId.startsWith("zap-count-") || subscriptionId.startsWith("zaps") || subscriptionId.startsWith("zap-rcpt-")) {
+        } else if (subscriptionId.startsWith("zap-count-") || subscriptionId.startsWith("zap-rcpt-")) {
             if (event.kind == 9735) {
                 eventRepo.addEvent(event)
                 val zapperPubkey = Nip57.getZapperPubkey(event)
                 if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
                     metadataFetcher.addToPendingProfiles(zapperPubkey)
+                }
+            }
+        } else if (subscriptionId.startsWith("engage")) {
+            when (event.kind) {
+                7 -> eventRepo.addEvent(event)
+                9735 -> {
+                    eventRepo.addEvent(event)
+                    val zapperPubkey = Nip57.getZapperPubkey(event)
+                    if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
+                        metadataFetcher.addToPendingProfiles(zapperPubkey)
+                    }
+                }
+                1 -> {
+                    if (replyCountSeenIds.add(event.id)) {
+                        val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
+                        if (rootId != null) eventRepo.addReplyCount(rootId)
+                    }
                 }
             }
         } else {
@@ -373,8 +387,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             when (event.kind) {
                 1 -> {
                     metadataFetcher.fetchQuotedEvents(event)
-                    metadataFetcher.addToPendingReplyCounts(event.id)
-                    metadataFetcher.addToPendingZapCounts(event.id)
                     if (eventRepo.getProfileData(event.pubkey) == null) {
                         metadataFetcher.addToPendingProfiles(event.pubkey)
                     }
@@ -425,7 +437,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         if (!relaysInitialized) return
         val reconnected = relayPool.reconnectAll()
         viewModelScope.launch {
-            if (reconnected > 0) delay(2000) // Give WebSockets time to establish
+            if (reconnected > 0) relayPool.awaitAnyConnected()
             subscribeFeed()
             fetchRelayListsForFollows()
         }
@@ -439,10 +451,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun resubscribeFeed() {
         relayPool.closeOnAllRelays(feedSubId)
-        for (subId in activeReactionSubIds) relayPool.closeOnAllRelays(subId)
-        activeReactionSubIds.clear()
-        for (subId in activeZapSubIds) relayPool.closeOnAllRelays(subId)
-        activeZapSubIds.clear()
+        for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
+        activeEngagementSubIds.clear()
         relayPool.clearSeenEvents()
         eventRepo.countNewNotes = false
         feedEoseJob?.cancel()
@@ -475,8 +485,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             eventRepo.countNewNotes = true
             _initialLoadDone.value = true
 
-            subscribeReactionsForFeed()
-            subscribeZapsForFeed()
+            subscribeEngagementForFeed()
 
             withContext(processingDispatcher) {
                 metadataFetcher.sweepMissingProfiles()
@@ -484,37 +493,22 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun subscribeReactionsForFeed() {
-        for (subId in activeReactionSubIds) relayPool.closeOnAllRelays(subId)
-        activeReactionSubIds.clear()
+    private fun subscribeEngagementForFeed() {
+        for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
+        activeEngagementSubIds.clear()
 
         val feedEvents = eventRepo.feed.value
         if (feedEvents.isEmpty()) return
         val eventIds = feedEvents.map { it.id }
         eventIds.chunked(50).forEachIndexed { index, batch ->
-            val subId = if (index == 0) "reactions" else "reactions-$index"
-            activeReactionSubIds.add(subId)
-            val reactFilter = Filter(kinds = listOf(7), eTags = batch)
-            relayPool.sendToReadRelays(ClientMessage.req(subId, reactFilter))
-            viewModelScope.launch {
-                subManager.awaitEoseWithTimeout(subId)
-                subManager.closeSubscription(subId)
-            }
-        }
-    }
-
-    private fun subscribeZapsForFeed() {
-        for (subId in activeZapSubIds) relayPool.closeOnAllRelays(subId)
-        activeZapSubIds.clear()
-
-        val feedEvents = eventRepo.feed.value
-        if (feedEvents.isEmpty()) return
-        val eventIds = feedEvents.map { it.id }
-        eventIds.chunked(50).forEachIndexed { index, batch ->
-            val subId = if (index == 0) "zaps" else "zaps-$index"
-            activeZapSubIds.add(subId)
-            val zapFilter = Filter(kinds = listOf(9735), eTags = batch)
-            relayPool.sendToReadRelays(ClientMessage.req(subId, zapFilter))
+            val subId = if (index == 0) "engage" else "engage-$index"
+            activeEngagementSubIds.add(subId)
+            val filters = listOf(
+                Filter(kinds = listOf(7), eTags = batch),
+                Filter(kinds = listOf(9735), eTags = batch),
+                Filter(kinds = listOf(1), eTags = batch)
+            )
+            relayPool.sendToReadRelays(ClientMessage.req(subId, filters))
             viewModelScope.launch {
                 subManager.awaitEoseWithTimeout(subId)
                 subManager.closeSubscription(subId)

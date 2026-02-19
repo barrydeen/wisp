@@ -12,8 +12,10 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -37,6 +39,7 @@ class RelayPool {
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val subscriptionTracker = SubscriptionTracker()
     private val seenEvents = LruCache<String, Boolean>(5000)
     private val seenLock = Any()
 
@@ -90,7 +93,7 @@ class RelayPool {
         val existingUrls = relays.map { it.config.url }.toSet()
         for (config in filtered) {
             if (config.url !in existingUrls) {
-                val relay = Relay(config, client)
+                val relay = Relay(config, client, scope)
                 relays.add(relay)
                 collectMessages(relay)
                 relay.connect()
@@ -107,7 +110,7 @@ class RelayPool {
         val existingUrls = dmRelays.map { it.config.url }.toSet()
         for (url in filtered) {
             if (url !in existingUrls) {
-                val relay = Relay(RelayConfig(url, read = true, write = true), client)
+                val relay = Relay(RelayConfig(url, read = true, write = true), client, scope)
                 dmRelays.add(relay)
                 collectMessages(relay)
                 relay.connect()
@@ -204,18 +207,45 @@ class RelayPool {
     }
 
     fun sendToReadRelays(message: String) {
+        val subId = extractSubId(message)
         for (relay in relays) {
-            if (relay.config.read) relay.send(message)
+            if (relay.config.read) {
+                if (subId != null) {
+                    if (!subscriptionTracker.hasCapacity(relay.config.url, subId)) continue
+                    subscriptionTracker.track(relay.config.url, subId)
+                }
+                relay.send(message)
+            }
         }
     }
 
     fun sendToAll(message: String) {
-        for (relay in relays) relay.send(message)
+        val subId = extractSubId(message)
+        for (relay in relays) {
+            if (subId != null) {
+                if (!subscriptionTracker.hasCapacity(relay.config.url, subId)) continue
+                subscriptionTracker.track(relay.config.url, subId)
+            }
+            relay.send(message)
+        }
     }
 
     fun sendToRelay(url: String, message: String) {
+        val subId = extractSubId(message)
+        if (subId != null) {
+            if (!subscriptionTracker.hasCapacity(url, subId)) return
+            subscriptionTracker.track(url, subId)
+        }
         relays.find { it.config.url == url }?.send(message)
             ?: ephemeralRelays[url]?.send(message)
+    }
+
+    /** Extracts subscription ID from a REQ message: ["REQ","subId",...] */
+    private fun extractSubId(message: String): String? {
+        if (!message.startsWith("[\"REQ\",\"")) return null
+        val start = 8 // after ["REQ","
+        val end = message.indexOf('"', start)
+        return if (end > start) message.substring(start, end) else null
     }
 
     fun sendToRelayOrEphemeral(url: String, message: String): Boolean {
@@ -241,11 +271,16 @@ class RelayPool {
         // Check or create ephemeral relay (cap at MAX_EPHEMERAL)
         if (!ephemeralRelays.containsKey(url) && ephemeralRelays.size >= MAX_EPHEMERAL) return false
         val ephemeral = ephemeralRelays.getOrPut(url) {
-            val relay = Relay(RelayConfig(url, read = true, write = false), client)
+            val relay = Relay(RelayConfig(url, read = true, write = false), client, scope)
             relay.autoReconnect = false
             collectMessages(relay)
             relay.connect()
             relay
+        }
+        val subId = extractSubId(message)
+        if (subId != null) {
+            if (!subscriptionTracker.hasCapacity(url, subId)) return false
+            subscriptionTracker.track(url, subId)
         }
         ephemeralLastUsed[url] = System.currentTimeMillis()
         ephemeral.send(message)
@@ -315,7 +350,20 @@ class RelayPool {
         return count
     }
 
+    /**
+     * Suspends until at least [minCount] relays are connected, or [timeoutMs] elapses.
+     * Returns the connected count at the time of resolution.
+     */
+    suspend fun awaitAnyConnected(minCount: Int = 1, timeoutMs: Long = 10_000): Int {
+        if (_connectedCount.value >= minCount) return _connectedCount.value
+        withTimeoutOrNull(timeoutMs) {
+            _connectedCount.first { it >= minCount }
+        }
+        return _connectedCount.value
+    }
+
     fun closeOnAllRelays(subscriptionId: String) {
+        subscriptionTracker.untrackAll(subscriptionId)
         val msg = ClientMessage.close(subscriptionId)
         for (relay in relays) relay.send(msg)
         for (relay in ephemeralRelays.values) relay.send(msg)
@@ -358,5 +406,6 @@ class RelayPool {
         ephemeralRelays.clear()
         ephemeralLastUsed.clear()
         relayCooldowns.clear()
+        subscriptionTracker.clear()
     }
 }

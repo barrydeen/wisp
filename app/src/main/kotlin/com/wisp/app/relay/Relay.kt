@@ -2,26 +2,36 @@ package com.wisp.app.relay
 
 import android.util.Log
 import com.wisp.app.nostr.RelayMessage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.TimeUnit
 
 data class RelayFailure(val relayUrl: String, val httpCode: Int?, val message: String)
 
 class Relay(
     val config: RelayConfig,
-    private val client: OkHttpClient
+    private val client: OkHttpClient,
+    private val scope: CoroutineScope? = null
 ) {
     private var webSocket: WebSocket? = null
     var isConnected = false
         private set
     var autoReconnect = true
     @Volatile var cooldownUntil: Long = 0L
+
+    private val pendingMessages = ConcurrentLinkedQueue<String>()
+    private val maxPendingMessages = 50
 
     private val _messages = MutableSharedFlow<RelayMessage>(extraBufferCapacity = 512)
     val messages: SharedFlow<RelayMessage> = _messages
@@ -48,6 +58,7 @@ class Relay(
                 Log.d("Relay", "Connected to ${config.url}")
                 isConnected = true
                 _connectionState.tryEmit(true)
+                drainPendingMessages(webSocket)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -83,7 +94,35 @@ class Relay(
     }
 
     fun send(message: String): Boolean {
-        return webSocket?.send(message) ?: false
+        val ws = webSocket
+        if (ws != null && isConnected) {
+            return ws.send(message)
+        }
+        // Queue message for delivery when connected
+        if (pendingMessages.size < maxPendingMessages) {
+            pendingMessages.add(message)
+        }
+        return false
+    }
+
+    fun clearPendingMessages() {
+        pendingMessages.clear()
+    }
+
+    suspend fun awaitConnected(timeoutMs: Long = 10_000): Boolean {
+        if (isConnected) return true
+        return withTimeoutOrNull(timeoutMs) {
+            connectionState.first { it }
+            true
+        } ?: false
+    }
+
+    private fun drainPendingMessages(ws: WebSocket) {
+        var msg = pendingMessages.poll()
+        while (msg != null) {
+            ws.send(msg)
+            msg = pendingMessages.poll()
+        }
     }
 
     fun disconnect() {
@@ -95,14 +134,23 @@ class Relay(
     private fun reconnect() {
         webSocket = null
         if (!autoReconnect) return
-        // Reconnect after cooldown delay using OkHttp's thread pool
-        client.dispatcher.executorService.execute {
-            try {
+        if (scope != null) {
+            scope.launch {
                 val now = System.currentTimeMillis()
-                val sleepMs = maxOf(3000L, cooldownUntil - now)
-                Thread.sleep(sleepMs)
+                val delayMs = maxOf(3000L, cooldownUntil - now)
+                delay(delayMs)
                 if (!isConnected) connect()
-            } catch (_: InterruptedException) {}
+            }
+        } else {
+            // Fallback for relays created without a scope
+            client.dispatcher.executorService.execute {
+                try {
+                    val now = System.currentTimeMillis()
+                    val sleepMs = maxOf(3000L, cooldownUntil - now)
+                    Thread.sleep(sleepMs)
+                    if (!isConnected) connect()
+                } catch (_: InterruptedException) {}
+            }
         }
     }
 
