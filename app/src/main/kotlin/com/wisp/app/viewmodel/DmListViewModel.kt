@@ -1,0 +1,67 @@
+package com.wisp.app.viewmodel
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.wisp.app.nostr.DmConversation
+import com.wisp.app.nostr.DmMessage
+import com.wisp.app.nostr.Nip17
+import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.nostr.toHex
+import com.wisp.app.repo.DmRepository
+import com.wisp.app.repo.KeyRepository
+import com.wisp.app.repo.MuteRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+
+class DmListViewModel(app: Application) : AndroidViewModel(app) {
+    private val keyRepo = KeyRepository(app)
+
+    val conversationList: StateFlow<List<DmConversation>>
+        get() = dmRepo?.conversationList ?: MutableStateFlow(emptyList())
+
+    val hasUnreadDms: StateFlow<Boolean>
+        get() = dmRepo?.hasUnreadDms ?: MutableStateFlow(false)
+
+    private var dmRepo: DmRepository? = null
+    private var muteRepo: MuteRepository? = null
+
+    fun init(dmRepository: DmRepository, muteRepository: MuteRepository? = null) {
+        dmRepo = dmRepository
+        muteRepo = muteRepository
+    }
+
+    fun markDmsRead() {
+        dmRepo?.markDmsRead()
+    }
+
+    fun processGiftWrap(event: NostrEvent) {
+        if (event.kind != 1059) return
+        val repo = dmRepo ?: return
+        val keypair = keyRepo.getKeypair() ?: return
+        val myPubkey = keypair.pubkey.toHex()
+
+        viewModelScope.launch(Dispatchers.Default) {
+            val rumor = Nip17.unwrapGiftWrap(keypair.privkey, event) ?: return@launch
+            val peerPubkey = if (rumor.pubkey == myPubkey) {
+                // Sent by me, peer is the recipient
+                rumor.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: return@launch
+            } else {
+                rumor.pubkey
+            }
+
+            if (muteRepo?.isBlocked(peerPubkey) == true) return@launch
+
+            val msg = DmMessage(
+                id = "${event.id}:${rumor.createdAt}",
+                senderPubkey = rumor.pubkey,
+                content = rumor.content,
+                createdAt = rumor.createdAt,
+                giftWrapId = event.id
+            )
+            repo.addMessage(msg, peerPubkey)
+        }
+    }
+}

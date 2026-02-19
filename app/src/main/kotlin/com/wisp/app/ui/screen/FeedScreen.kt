@@ -1,0 +1,715 @@
+package com.wisp.app.ui.screen
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.wisp.app.nostr.FollowSet
+import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.ui.component.PostCard
+import com.wisp.app.ui.component.ProfilePicture
+import com.wisp.app.ui.component.WispDrawerContent
+import com.wisp.app.ui.component.ZapDialog
+import com.wisp.app.viewmodel.FeedType
+import com.wisp.app.viewmodel.FeedViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FeedScreen(
+    viewModel: FeedViewModel,
+    onCompose: () -> Unit,
+    onReply: (NostrEvent) -> Unit,
+    onRelays: () -> Unit,
+    onProfileEdit: () -> Unit = {},
+    onProfileClick: (String) -> Unit = {},
+    onDms: () -> Unit = {},
+    onReact: (NostrEvent, String) -> Unit = { _, _ -> },
+    onRepost: (NostrEvent) -> Unit = {},
+    onQuote: (NostrEvent) -> Unit = {},
+    onNoteClick: (NostrEvent) -> Unit = {},
+    onSearch: () -> Unit = {},
+    onLogout: () -> Unit = {},
+    onMediaServers: () -> Unit = {},
+    onWallet: () -> Unit = {},
+    onSafety: () -> Unit = {},
+    onConsole: () -> Unit = {},
+    onKeys: () -> Unit = {}
+) {
+    val feed by viewModel.feed.collectAsState()
+    val feedType by viewModel.feedType.collectAsState()
+    val selectedRelay by viewModel.selectedRelay.collectAsState()
+    val replyCountVersion by viewModel.eventRepo.replyCountVersion.collectAsState()
+    val zapVersion by viewModel.eventRepo.zapVersion.collectAsState()
+    val reactionVersion by viewModel.eventRepo.reactionVersion.collectAsState()
+    val relaySourceVersion by viewModel.eventRepo.relaySourceVersion.collectAsState()
+    val profileVersion by viewModel.eventRepo.profileVersion.collectAsState()
+    val connectedCount by viewModel.relayPool.connectedCount.collectAsState()
+    val listState = rememberLazyListState()
+    val userPubkey = viewModel.getUserPubkey()
+    val selectedList by viewModel.selectedList.collectAsState()
+    val ownLists by viewModel.listRepo.ownLists.collectAsState()
+    var showRelayPicker by remember { mutableStateOf(false) }
+    var showListPicker by remember { mutableStateOf(false) }
+    var showRelayDropdown by remember { mutableStateOf(false) }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    val userProfile = profileVersion.let { userPubkey?.let { viewModel.eventRepo.getProfileData(it) } }
+
+    val newNoteCount by viewModel.newNoteCount.collectAsState()
+    val zapInProgress by viewModel.zapInProgress.collectAsState()
+
+    var zapTargetEvent by remember { mutableStateOf<NostrEvent?>(null) }
+    var zapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
+    var zapErrorMessage by remember { mutableStateOf<String?>(null) }
+
+    val isWalletConnected by viewModel.nwcRepo.isConnected.collectAsState()
+
+    // Re-establish subscriptions (including outbox relays) when app returns from background
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        var hasPaused = false
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) {
+                hasPaused = true
+            } else if (event == Lifecycle.Event.ON_RESUME && hasPaused) {
+                viewModel.onAppResume()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Collect zap success events for animation
+    LaunchedEffect(Unit) {
+        viewModel.zapSuccess.collect { eventId ->
+            zapAnimatingIds = zapAnimatingIds + eventId
+            delay(1500)
+            zapAnimatingIds = zapAnimatingIds - eventId
+        }
+    }
+
+    // Collect zap errors
+    LaunchedEffect(Unit) {
+        viewModel.zapError.collect { error ->
+            zapErrorMessage = error
+        }
+    }
+
+    val isAtTop by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+        }
+    }
+
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisible >= feed.size - 5 && feed.isNotEmpty()
+        }
+    }
+
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore) viewModel.loadMore()
+    }
+
+    LaunchedEffect(isAtTop) {
+        if (isAtTop) viewModel.resetNewNoteCount()
+    }
+
+    if (showRelayPicker) {
+        RelayPickerDialog(
+            relayUrls = viewModel.getRelayUrls(),
+            onSelect = { url ->
+                viewModel.setSelectedRelay(url)
+                viewModel.setFeedType(FeedType.RELAY)
+                showRelayPicker = false
+            },
+            onDismiss = { showRelayPicker = false }
+        )
+    }
+
+    if (showListPicker) {
+        ListPickerDialog(
+            lists = ownLists,
+            selectedList = selectedList,
+            onSelect = { list ->
+                viewModel.setSelectedList(list)
+                viewModel.setFeedType(FeedType.LIST)
+                showListPicker = false
+            },
+            onCreate = { name ->
+                viewModel.createList(name)
+            },
+            onDismiss = { showListPicker = false }
+        )
+    }
+
+    if (zapTargetEvent != null) {
+        ZapDialog(
+            isWalletConnected = isWalletConnected,
+            onDismiss = { zapTargetEvent = null },
+            onZap = { amountMsats, message ->
+                val event = zapTargetEvent ?: return@ZapDialog
+                zapTargetEvent = null
+                viewModel.sendZap(event, amountMsats, message)
+            },
+            onGoToWallet = onWallet
+        )
+    }
+
+    if (zapErrorMessage != null) {
+        AlertDialog(
+            onDismissRequest = { zapErrorMessage = null },
+            title = { Text("Zap Failed") },
+            text = { Text(zapErrorMessage ?: "") },
+            confirmButton = {
+                TextButton(onClick = { zapErrorMessage = null }) { Text("OK") }
+            }
+        )
+    }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            WispDrawerContent(
+                profile = userProfile,
+                pubkey = userPubkey,
+                onProfile = {
+                    scope.launch { drawerState.close() }
+                    onProfileEdit()
+                },
+                onFeed = {
+                    scope.launch { drawerState.close() }
+                },
+                onSearch = {
+                    scope.launch { drawerState.close() }
+                    onSearch()
+                },
+                onMessages = {
+                    scope.launch { drawerState.close() }
+                    onDms()
+                },
+                onWallet = {
+                    scope.launch { drawerState.close() }
+                    onWallet()
+                },
+                onMediaServers = {
+                    scope.launch { drawerState.close() }
+                    onMediaServers()
+                },
+                onSafety = {
+                    scope.launch { drawerState.close() }
+                    onSafety()
+                },
+                onKeys = {
+                    scope.launch { drawerState.close() }
+                    onKeys()
+                },
+                onConsole = {
+                    scope.launch { drawerState.close() }
+                    onConsole()
+                },
+                onRelaySettings = {
+                    scope.launch { drawerState.close() }
+                    onRelays()
+                },
+                onLogout = {
+                    scope.launch { drawerState.close() }
+                    onLogout()
+                }
+            )
+        }
+    ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    navigationIcon = {
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            ProfilePicture(url = userProfile?.picture, size = 32)
+                        }
+                    },
+                    actions = {
+                        Box {
+                            Surface(
+                                onClick = { showRelayDropdown = true },
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier.size(8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        androidx.compose.foundation.Canvas(
+                                            modifier = Modifier.size(8.dp)
+                                        ) {
+                                            drawCircle(
+                                                color = if (connectedCount > 0)
+                                                    androidx.compose.ui.graphics.Color(0xFF4CAF50)
+                                                else
+                                                    androidx.compose.ui.graphics.Color(0xFFFF5252)
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "$connectedCount",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            DropdownMenu(
+                                expanded = showRelayDropdown,
+                                onDismissRequest = { showRelayDropdown = false }
+                            ) {
+                                val connectedUrls = viewModel.relayPool.getAllConnectedUrls()
+                                if (connectedUrls.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                "No relays connected",
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        },
+                                        onClick = {}
+                                    )
+                                } else {
+                                    connectedUrls.forEach { url ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    url.removePrefix("wss://").removeSuffix("/"),
+                                                    style = MaterialTheme.typography.bodyMedium
+                                                )
+                                            },
+                                            onClick = {
+                                                showRelayDropdown = false
+                                                viewModel.setSelectedRelay(url)
+                                                viewModel.setFeedType(FeedType.RELAY)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                )
+            },
+            floatingActionButton = {
+                FloatingActionButton(
+                    onClick = onCompose,
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "New post")
+                }
+            }
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+                // Feed type segmented buttons
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    val types = FeedType.entries
+                    types.forEachIndexed { index, type ->
+                        SegmentedButton(
+                            selected = feedType == type,
+                            onClick = {
+                                when (type) {
+                                    FeedType.RELAY -> showRelayPicker = true
+                                    FeedType.LIST -> showListPicker = true
+                                    else -> viewModel.setFeedType(type)
+                                }
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index, types.size)
+                        ) {
+                            val label = when (type) {
+                                FeedType.FOLLOWS -> "Follows"
+                                FeedType.RELAY -> if (feedType == FeedType.RELAY && selectedRelay != null) {
+                                    selectedRelay!!.removePrefix("wss://").removeSuffix("/")
+                                } else "Relay"
+                                FeedType.LIST -> if (feedType == FeedType.LIST && selectedList != null) {
+                                    selectedList!!.name
+                                } else "List"
+                            }
+                            Text(label, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+
+                if (feed.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when {
+                            feedType == FeedType.FOLLOWS && viewModel.contactRepo.getFollowList().isEmpty() -> {
+                                Text(
+                                    "Follow some people to see their posts here",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            feedType == FeedType.LIST && selectedList == null -> {
+                                Text(
+                                    "Select a list to see posts",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            feedType == FeedType.LIST && selectedList != null && selectedList!!.members.isEmpty() -> {
+                                Text(
+                                    "This list is empty",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            else -> {
+                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                } else {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(items = feed, key = { it.id }) { event ->
+                                FeedItem(
+                                    event = event,
+                                    viewModel = viewModel,
+                                    userPubkey = userPubkey,
+                                    profileVersion = profileVersion,
+                                    reactionVersion = reactionVersion,
+                                    replyCountVersion = replyCountVersion,
+                                    zapVersion = zapVersion,
+                                    relaySourceVersion = relaySourceVersion,
+                                    isZapAnimating = event.id in zapAnimatingIds,
+                                    onReply = { onReply(event) },
+                                    onProfileClick = { onProfileClick(event.pubkey) },
+                                    onNavigateToProfile = onProfileClick,
+                                    onNoteClick = { onNoteClick(event) },
+                                    onReact = { emoji -> onReact(event, emoji) },
+                                    onRepost = { onRepost(event) },
+                                    onQuote = { onQuote(event) },
+                                    onZap = { zapTargetEvent = event }
+                                )
+                            }
+                        }
+
+                        NewNotesButton(
+                            visible = newNoteCount > 0 && !isAtTop,
+                            count = newNoteCount,
+                            onClick = {
+                                scope.launch {
+                                    listState.animateScrollToItem(0)
+                                    viewModel.resetNewNoteCount()
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 8.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Extracted per-item composable so that version-keyed `remember` blocks
+ * prevent recomputing data for items whose values haven't actually changed.
+ */
+@Composable
+private fun FeedItem(
+    event: NostrEvent,
+    viewModel: FeedViewModel,
+    userPubkey: String?,
+    profileVersion: Int,
+    reactionVersion: Int,
+    replyCountVersion: Int,
+    zapVersion: Int,
+    relaySourceVersion: Int,
+    isZapAnimating: Boolean,
+    onReply: () -> Unit,
+    onProfileClick: () -> Unit,
+    onNavigateToProfile: (String) -> Unit,
+    onNoteClick: () -> Unit,
+    onReact: (String) -> Unit,
+    onRepost: () -> Unit,
+    onQuote: () -> Unit,
+    onZap: () -> Unit
+) {
+    val profileData = remember(profileVersion, event.pubkey) {
+        viewModel.eventRepo.getProfileData(event.pubkey)
+    }
+    val likeCount = remember(reactionVersion, event.id) {
+        viewModel.eventRepo.getReactionCount(event.id)
+    }
+    val replyCount = remember(replyCountVersion, event.id) {
+        viewModel.eventRepo.getReplyCount(event.id)
+    }
+    val zapSats = remember(zapVersion, event.id) {
+        viewModel.eventRepo.getZapSats(event.id)
+    }
+    val userEmoji = remember(reactionVersion, event.id, userPubkey) {
+        userPubkey?.let { viewModel.eventRepo.getUserReactionEmoji(event.id, it) }
+    }
+    val relayIcons = remember(relaySourceVersion, event.id) {
+        viewModel.eventRepo.getEventRelays(event.id).mapNotNull { url ->
+            viewModel.relayInfoRepo.getIconUrl(url)
+        }
+    }
+    val repostAuthorPubkey = remember(event.id) {
+        viewModel.eventRepo.getRepostAuthor(event.id)
+    }
+    val repostedByName = remember(repostAuthorPubkey, profileVersion) {
+        repostAuthorPubkey?.let { pk ->
+            viewModel.eventRepo.getProfileData(pk)?.displayString
+                ?: pk.take(8) + "..."
+        }
+    }
+    PostCard(
+        event = event,
+        profile = profileData,
+        onReply = onReply,
+        onProfileClick = onProfileClick,
+        onNavigateToProfile = onNavigateToProfile,
+        onNoteClick = onNoteClick,
+        onReact = onReact,
+        userReactionEmoji = userEmoji,
+        onRepost = onRepost,
+        onQuote = onQuote,
+        onZap = onZap,
+        likeCount = likeCount,
+        replyCount = replyCount,
+        zapSats = zapSats,
+        isZapAnimating = isZapAnimating,
+        eventRepo = viewModel.eventRepo,
+        relayIcons = relayIcons,
+        repostedBy = repostedByName
+    )
+}
+
+@Composable
+private fun RelayPickerDialog(
+    relayUrls: List<String>,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select Relay") },
+        text = {
+            Column {
+                if (relayUrls.isEmpty()) {
+                    Text("No relays configured")
+                } else {
+                    relayUrls.forEach { url ->
+                        TextButton(
+                            onClick = { onSelect(url) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                url.removePrefix("wss://").removeSuffix("/"),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun ListPickerDialog(
+    lists: List<FollowSet>,
+    selectedList: FollowSet?,
+    onSelect: (FollowSet) -> Unit,
+    onCreate: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var newListName by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select List") },
+        text = {
+            Column {
+                if (lists.isEmpty()) {
+                    Text(
+                        "No lists yet. Create one below.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                } else {
+                    lists.forEach { list ->
+                        Surface(
+                            onClick = { onSelect(list) },
+                            color = if (selectedList?.dTag == list.dTag)
+                                MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    list.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    "${list.members.size}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.size(12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    androidx.compose.material3.OutlinedTextField(
+                        value = newListName,
+                        onValueChange = { newListName = it },
+                        placeholder = { Text("New list name") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(
+                        onClick = {
+                            if (newListName.isNotBlank()) {
+                                onCreate(newListName.trim())
+                                newListName = ""
+                            }
+                        },
+                        enabled = newListName.isNotBlank()
+                    ) {
+                        Text("Create")
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun NewNotesButton(
+    visible: Boolean,
+    count: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically { -it },
+        exit = slideOutVertically { -it },
+        modifier = modifier
+    ) {
+        Surface(
+            onClick = onClick,
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+            shadowElevation = 4.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.KeyboardArrowUp,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "$count new notes",
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
+    }
+}
