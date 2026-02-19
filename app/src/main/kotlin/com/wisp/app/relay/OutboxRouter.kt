@@ -6,8 +6,12 @@ import com.wisp.app.repo.RelayListRepository
 
 class OutboxRouter(
     private val relayPool: RelayPool,
-    private val relayListRepo: RelayListRepository
+    private val relayListRepo: RelayListRepository,
+    private var relayScoreBoard: RelayScoreBoard? = null
 ) {
+    fun setScoreBoard(scoreBoard: RelayScoreBoard) {
+        relayScoreBoard = scoreBoard
+    }
     /**
      * Subscribe to content from [authors] by routing to each author's write relays.
      * Accepts multiple template filters — each gets `.copy(authors=subset)` per relay group.
@@ -19,43 +23,38 @@ class OutboxRouter(
         authors: List<String>,
         vararg templateFilters: Filter
     ): Set<String> {
-        val knownAuthors = mutableListOf<String>()
-        val unknownAuthors = mutableListOf<String>()
-
-        for (pubkey in authors) {
-            if (relayListRepo.hasRelayList(pubkey)) {
-                knownAuthors.add(pubkey)
-            } else {
-                unknownAuthors.add(pubkey)
-            }
-        }
-
         val targetedRelays = mutableSetOf<String>()
 
-        // Group known authors by their write relays
+        // Group authors by relay (scoreboard-aware or fallback)
+        val knownAuthors = authors.filter { relayListRepo.hasRelayList(it) }
+        val unknownAuthors = authors.filter { !relayListRepo.hasRelayList(it) }
+
         if (knownAuthors.isNotEmpty()) {
             val relayToAuthors = groupAuthorsByWriteRelay(knownAuthors)
             for ((relayUrl, relayAuthors) in relayToAuthors) {
-                val filters = templateFilters.map { it.copy(authors = relayAuthors) }
-                val msg = if (filters.size == 1) {
-                    ClientMessage.req(subId, filters[0])
-                } else {
-                    ClientMessage.req(subId, filters)
+                // Empty key = scoreboard fallback authors (no scored relay covers them)
+                if (relayUrl.isEmpty()) {
+                    val filters = templateFilters.map { it.copy(authors = relayAuthors) }
+                    val msg = if (filters.size == 1) ClientMessage.req(subId, filters[0])
+                    else ClientMessage.req(subId, filters)
+                    relayPool.sendToAll(msg)
+                    targetedRelays.addAll(relayPool.getRelayUrls())
+                    continue
                 }
+                val filters = templateFilters.map { it.copy(authors = relayAuthors) }
+                val msg = if (filters.size == 1) ClientMessage.req(subId, filters[0])
+                else ClientMessage.req(subId, filters)
                 if (relayPool.sendToRelayOrEphemeral(relayUrl, msg)) {
                     targetedRelays.add(relayUrl)
                 }
             }
         }
 
-        // Fallback: send unknown authors to all general relays
+        // Authors without any relay list → sendToAll
         if (unknownAuthors.isNotEmpty()) {
             val filters = templateFilters.map { it.copy(authors = unknownAuthors) }
-            val msg = if (filters.size == 1) {
-                ClientMessage.req(subId, filters[0])
-            } else {
-                ClientMessage.req(subId, filters)
-            }
+            val msg = if (filters.size == 1) ClientMessage.req(subId, filters[0])
+            else ClientMessage.req(subId, filters)
             relayPool.sendToAll(msg)
             targetedRelays.addAll(relayPool.getRelayUrls())
         }
@@ -77,7 +76,12 @@ class OutboxRouter(
             val relayToAuthors = groupAuthorsByWriteRelay(knownPubkeys)
             for ((relayUrl, relayAuthors) in relayToAuthors) {
                 val f = Filter(kinds = listOf(0), authors = relayAuthors, limit = relayAuthors.size)
-                relayPool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(subId, f))
+                if (relayUrl.isEmpty()) {
+                    // Scoreboard fallback — broadcast to all
+                    relayPool.sendToAll(ClientMessage.req(subId, f))
+                } else {
+                    relayPool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(subId, f))
+                }
             }
         }
 
@@ -143,6 +147,20 @@ class OutboxRouter(
     }
 
     /**
+     * Publish an event to own write relays AND the target user's read (inbox) relays.
+     * Used for replies, reactions, and reposts so they reach the intended recipient.
+     */
+    fun publishToInbox(eventMsg: String, targetPubkey: String) {
+        relayPool.sendToWriteRelays(eventMsg)
+        val readRelays = relayListRepo.getReadRelays(targetPubkey)
+        if (readRelays != null) {
+            for (url in readRelays) {
+                relayPool.sendToRelayOrEphemeral(url, eventMsg)
+            }
+        }
+    }
+
+    /**
      * Request kind 10002 relay lists for pubkeys we don't have cached yet.
      * Returns the subscription ID if a request was sent, null otherwise.
      */
@@ -158,6 +176,13 @@ class OutboxRouter(
     }
 
     private fun groupAuthorsByWriteRelay(authors: List<String>): Map<String, List<String>> {
+        // Use scoreboard if available — constrains to optimal relay set
+        val scoreBoard = relayScoreBoard
+        if (scoreBoard != null && scoreBoard.hasScoredRelays()) {
+            return scoreBoard.getRelaysForAuthors(authors)
+        }
+
+        // Fallback: unconstrained grouping
         val relayToAuthors = mutableMapOf<String, MutableList<String>>()
         for (pubkey in authors) {
             val writeRelays = relayListRepo.getWriteRelays(pubkey) ?: continue

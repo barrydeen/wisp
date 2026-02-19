@@ -41,8 +41,10 @@ class ContactRepository(context: Context) {
 
     private fun saveToPrefs(entries: List<Nip02.FollowEntry>) {
         val serializable = entries.map { SerializableFollow(it.pubkey, it.relayHint, it.petname) }
-        prefs.edit().putString("follows", json.encodeToString(serializable)).apply()
-        prefs.edit().putLong("follows_updated", lastUpdated).apply()
+        prefs.edit()
+            .putString("follows", json.encodeToString(serializable))
+            .putLong("follows_updated", lastUpdated)
+            .apply()
     }
 
     private fun loadFromPrefs() {

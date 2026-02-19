@@ -282,6 +282,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         feedDirty.trySend(Unit)
     }
 
+    fun trimSeenEvents(maxSize: Int = 50_000) {
+        if (seenEventIds.size > maxSize) {
+            seenEventIds.clear()
+            // Re-add current feed IDs so they stay deduped
+            synchronized(feedList) { feedIds.forEach { seenEventIds.add(it) } }
+        }
+    }
+
     fun clearFeed() {
         synchronized(feedList) {
             feedList.clear()
