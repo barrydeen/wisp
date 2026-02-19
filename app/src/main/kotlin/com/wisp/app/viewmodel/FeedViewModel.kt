@@ -18,14 +18,17 @@ import com.wisp.app.relay.RelayPool
 import com.wisp.app.relay.RelayScoreBoard
 import com.wisp.app.relay.SubscriptionManager
 import com.wisp.app.repo.BlossomRepository
+import com.wisp.app.repo.BookmarkRepository
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.ListRepository
 import com.wisp.app.repo.MetadataFetcher
 import com.wisp.app.repo.MuteRepository
 import com.wisp.app.repo.NotificationRepository
+import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.repo.NwcRepository
 import com.wisp.app.repo.RelayInfoRepository
@@ -38,6 +41,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -48,6 +53,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val relayPool = RelayPool()
     val profileRepo = ProfileRepository(app)
     val muteRepo = MuteRepository(app)
+    val nip05Repo = Nip05Repository()
     val eventRepo = EventRepository(profileRepo, muteRepo)
     val keyRepo = KeyRepository(app)
     val contactRepo = ContactRepository(app)
@@ -55,6 +61,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val dmRepo = DmRepository()
     val notifRepo = NotificationRepository()
     val relayListRepo = RelayListRepository(app)
+    val bookmarkRepo = BookmarkRepository(app)
+    val pinRepo = PinRepository(app)
     val blossomRepo = BlossomRepository(app)
     val relayInfoRepo = RelayInfoRepository()
     val relayScoreBoard = RelayScoreBoard(app, relayListRepo, contactRepo)
@@ -65,7 +73,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val metadataFetcher = MetadataFetcher(
         relayPool, outboxRouter, subManager, profileRepo, eventRepo,
         viewModelScope, processingDispatcher
-    )
+    ).also { eventRepo.metadataFetcher = it }
 
     private var feedSubId = "feed"
     private var isLoadingMore = false
@@ -92,6 +100,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _feedType = MutableStateFlow(FeedType.FOLLOWS)
     val feedType: StateFlow<FeedType> = _feedType
+
 
     private val _selectedRelay = MutableStateFlow<String?>(null)
     val selectedRelay: StateFlow<String?> = _selectedRelay
@@ -164,15 +173,55 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
+        // Re-subscribe feed when follow list changes (e.g. user follows someone from a profile)
+        viewModelScope.launch {
+            contactRepo.followList.drop(1).collectLatest {
+                if (_feedType.value == FeedType.FOLLOWS) {
+                    resubscribeFeed()
+                }
+            }
+        }
+
         getUserPubkey()?.let { listRepo.setOwner(it) }
 
+        subscribeSelfData()
         subscribeFeed()
         fetchRelayListsForFollows()
         metadataFetcher.fetchProfilesForFollows(contactRepo.getFollowList().map { it.pubkey })
     }
 
+    private fun subscribeSelfData() {
+        val myPubkey = getUserPubkey() ?: return
+
+        val selfDataFilters = listOf(
+            Filter(kinds = listOf(0), authors = listOf(myPubkey), limit = 1),
+            Filter(kinds = listOf(3), authors = listOf(myPubkey), limit = 1),
+            Filter(kinds = listOf(Nip51.KIND_MUTE_LIST), authors = listOf(myPubkey), limit = 1),
+            Filter(kinds = listOf(Nip51.KIND_PIN_LIST), authors = listOf(myPubkey), limit = 1),
+            Filter(kinds = listOf(Nip51.KIND_BOOKMARK_LIST), authors = listOf(myPubkey), limit = 1),
+            Filter(kinds = listOf(Blossom.KIND_SERVER_LIST), authors = listOf(myPubkey), limit = 1),
+            Filter(kinds = listOf(Nip51.KIND_FOLLOW_SET), authors = listOf(myPubkey), limit = 50)
+        )
+        relayPool.sendToAll(ClientMessage.req("self-data", selfDataFilters))
+        viewModelScope.launch {
+            subManager.awaitEoseWithTimeout("self-data")
+            subManager.closeSubscription("self-data")
+        }
+
+        val dmFilter = Filter(kinds = listOf(1059), pTags = listOf(myPubkey))
+        relayPool.sendToAll(ClientMessage.req("dms", dmFilter))
+
+        val notifFilter = Filter(
+            kinds = listOf(1, 7, 9735),
+            pTags = listOf(myPubkey),
+            limit = 100
+        )
+        relayPool.sendToReadRelays(ClientMessage.req("notif", notifFilter))
+    }
+
     private fun processRelayEvent(event: NostrEvent, relayUrl: String, subscriptionId: String) {
         if (subscriptionId == "notif") {
+            if (muteRepo.isBlocked(event.pubkey)) return
             val myPubkey = getUserPubkey()
             if (myPubkey != null) {
                 notifRepo.addEvent(event, myPubkey)
@@ -203,6 +252,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             if (event.kind == Nip51.KIND_MUTE_LIST) {
                 val myPubkey = getUserPubkey()
                 if (myPubkey != null && event.pubkey == myPubkey) muteRepo.loadFromEvent(event)
+            }
+            if (event.kind == Nip51.KIND_BOOKMARK_LIST) {
+                val myPubkey = getUserPubkey()
+                if (myPubkey != null && event.pubkey == myPubkey) bookmarkRepo.loadFromEvent(event)
+            }
+            if (event.kind == Nip51.KIND_PIN_LIST) {
+                val myPubkey = getUserPubkey()
+                if (myPubkey != null && event.pubkey == myPubkey) pinRepo.loadFromEvent(event)
             }
             if (event.kind == Blossom.KIND_SERVER_LIST) {
                 val myPubkey = getUserPubkey()
@@ -270,32 +327,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun subscribeFeed() {
         resubscribeFeed()
-
-        val myPubkey = getUserPubkey()
-        if (myPubkey != null) {
-            val selfDataFilters = listOf(
-                Filter(kinds = listOf(0), authors = listOf(myPubkey), limit = 1),
-                Filter(kinds = listOf(3), authors = listOf(myPubkey), limit = 1),
-                Filter(kinds = listOf(Nip51.KIND_MUTE_LIST), authors = listOf(myPubkey), limit = 1),
-                Filter(kinds = listOf(Blossom.KIND_SERVER_LIST), authors = listOf(myPubkey), limit = 1),
-                Filter(kinds = listOf(Nip51.KIND_FOLLOW_SET), authors = listOf(myPubkey), limit = 50)
-            )
-            relayPool.sendToAll(ClientMessage.req("self-data", selfDataFilters))
-            viewModelScope.launch {
-                subManager.awaitEoseWithTimeout("self-data")
-                subManager.closeSubscription("self-data")
-            }
-
-            val dmFilter = Filter(kinds = listOf(1059), pTags = listOf(myPubkey))
-            relayPool.sendToAll(ClientMessage.req("dms", dmFilter))
-
-            val notifFilter = Filter(
-                kinds = listOf(1, 7, 9735),
-                pTags = listOf(myPubkey),
-                limit = 100
-            )
-            relayPool.sendToAll(ClientMessage.req("notif", notifFilter))
-        }
     }
 
     private var feedEoseJob: Job? = null
@@ -358,7 +389,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             val subId = if (index == 0) "reactions" else "reactions-$index"
             activeReactionSubIds.add(subId)
             val reactFilter = Filter(kinds = listOf(7), eTags = batch)
-            relayPool.sendToAll(ClientMessage.req(subId, reactFilter))
+            relayPool.sendToReadRelays(ClientMessage.req(subId, reactFilter))
+            viewModelScope.launch {
+                subManager.awaitEoseWithTimeout(subId)
+                subManager.closeSubscription(subId)
+            }
         }
     }
 
@@ -373,7 +408,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             val subId = if (index == 0) "zaps" else "zaps-$index"
             activeZapSubIds.add(subId)
             val zapFilter = Filter(kinds = listOf(9735), eTags = batch)
-            relayPool.sendToAll(ClientMessage.req(subId, zapFilter))
+            relayPool.sendToReadRelays(ClientMessage.req(subId, zapFilter))
+            viewModelScope.launch {
+                subManager.awaitEoseWithTimeout(subId)
+                subManager.closeSubscription(subId)
+            }
         }
     }
 
@@ -400,6 +439,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun blockUser(pubkey: String) {
         muteRepo.blockUser(pubkey)
         eventRepo.purgeUser(pubkey)
+        notifRepo.purgeUser(pubkey)
+        dmRepo.purgeUser(pubkey)
         publishMuteList()
     }
 
@@ -606,6 +647,74 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         if (sel != null && sel.dTag == dTag) {
             listRepo.selectList(null)
         }
+    }
+
+    fun toggleBookmark(eventId: String) {
+        if (bookmarkRepo.isBookmarked(eventId)) {
+            bookmarkRepo.removeBookmark(eventId)
+        } else {
+            bookmarkRepo.addBookmark(eventId)
+        }
+        publishBookmarkList()
+    }
+
+    private fun publishBookmarkList() {
+        val keypair = keyRepo.getKeypair() ?: return
+        val tags = Nip51.buildBookmarkListTags(
+            bookmarkRepo.getBookmarkedIds(),
+            bookmarkRepo.getCoordinates(),
+            bookmarkRepo.getHashtags()
+        )
+        val event = NostrEvent.create(
+            privkey = keypair.privkey,
+            pubkey = keypair.pubkey,
+            kind = Nip51.KIND_BOOKMARK_LIST,
+            content = "",
+            tags = tags
+        )
+        relayPool.sendToWriteRelays(ClientMessage.event(event))
+    }
+
+    fun togglePin(eventId: String) {
+        if (pinRepo.isPinned(eventId)) {
+            pinRepo.unpinEvent(eventId)
+        } else {
+            pinRepo.pinEvent(eventId)
+        }
+        publishPinList()
+    }
+
+    private fun publishPinList() {
+        val keypair = keyRepo.getKeypair() ?: return
+        val tags = Nip51.buildPinListTags(pinRepo.getPinnedIds())
+        val event = NostrEvent.create(
+            privkey = keypair.privkey,
+            pubkey = keypair.pubkey,
+            kind = Nip51.KIND_PIN_LIST,
+            content = "",
+            tags = tags
+        )
+        relayPool.sendToWriteRelays(ClientMessage.event(event))
+    }
+
+    fun followAll(pubkeys: Set<String>) {
+        val keypair = keyRepo.getKeypair() ?: return
+        var currentList = contactRepo.getFollowList()
+        for (pk in pubkeys) {
+            if (!contactRepo.isFollowing(pk)) {
+                currentList = Nip02.addFollow(currentList, pk)
+            }
+        }
+        val tags = Nip02.buildFollowTags(currentList)
+        val event = NostrEvent.create(
+            privkey = keypair.privkey,
+            pubkey = keypair.pubkey,
+            kind = 3,
+            content = "",
+            tags = tags
+        )
+        relayPool.sendToWriteRelays(ClientMessage.event(event))
+        contactRepo.updateFromEvent(event)
     }
 
     fun fetchUserLists(pubkey: String) {

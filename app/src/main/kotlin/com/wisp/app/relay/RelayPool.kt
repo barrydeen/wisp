@@ -63,6 +63,15 @@ class RelayPool {
 
     fun updateBlockedUrls(urls: List<String>) {
         blockedUrls = urls.toSet()
+        // Disconnect any currently-connected relays that are now blocked
+        relays.filter { it.config.url in blockedUrls }.forEach { it.disconnect() }
+        relays.removeAll { it.config.url in blockedUrls }
+        dmRelays.filter { it.config.url in blockedUrls }.forEach { it.disconnect() }
+        dmRelays.removeAll { it.config.url in blockedUrls }
+        ephemeralRelays.keys.filter { it in blockedUrls }.forEach { url ->
+            ephemeralRelays.remove(url)?.disconnect()
+            ephemeralLastUsed.remove(url)
+        }
     }
 
     fun updateRelays(configs: List<RelayConfig>) {
@@ -187,6 +196,12 @@ class RelayPool {
         }
     }
 
+    fun sendToReadRelays(message: String) {
+        for (relay in relays) {
+            if (relay.config.read) relay.send(message)
+        }
+    }
+
     fun sendToAll(message: String) {
         for (relay in relays) relay.send(message)
     }
@@ -265,6 +280,10 @@ class RelayPool {
     }
 
     fun getRelayUrls(): List<String> = relays.map { it.config.url }
+
+    fun getDmRelayUrls(): List<String> = dmRelays.map { it.config.url }
+
+    fun getWriteRelayUrls(): List<String> = relays.filter { it.config.write }.map { it.config.url }
 
     fun getEphemeralCount(): Int = ephemeralRelays.size
 

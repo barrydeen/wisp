@@ -13,10 +13,19 @@ data class FollowSet(
     val createdAt: Long
 )
 
+data class BookmarkList(
+    val eventIds: Set<String> = emptySet(),
+    val coordinates: Set<String> = emptySet(),
+    val hashtags: Set<String> = emptySet(),
+    val createdAt: Long = 0
+)
+
 object Nip51 {
     const val KIND_BLOCKED_RELAYS = 10006
     const val KIND_SEARCH_RELAYS = 10007
     const val KIND_MUTE_LIST = 10000
+    const val KIND_PIN_LIST = 10001
+    const val KIND_BOOKMARK_LIST = 10003
     const val KIND_DM_RELAYS = 10050
     const val KIND_FOLLOW_SET = 30000
 
@@ -71,5 +80,38 @@ object Nip51 {
         tags.add(listOf("d", dTag))
         for (pubkey in members) tags.add(listOf("p", pubkey))
         return tags
+    }
+
+    fun parseBookmarkList(event: NostrEvent): BookmarkList {
+        val eventIds = mutableSetOf<String>()
+        val coordinates = mutableSetOf<String>()
+        val hashtags = mutableSetOf<String>()
+        for (tag in event.tags) {
+            if (tag.size < 2) continue
+            when (tag[0]) {
+                "e" -> eventIds.add(tag[1])
+                "a" -> coordinates.add(tag[1])
+                "t" -> hashtags.add(tag[1])
+            }
+        }
+        return BookmarkList(eventIds, coordinates, hashtags, event.created_at)
+    }
+
+    fun buildBookmarkListTags(eventIds: Set<String>, coordinates: Set<String> = emptySet(), hashtags: Set<String> = emptySet()): List<List<String>> {
+        val tags = mutableListOf<List<String>>()
+        for (id in eventIds) tags.add(listOf("e", id))
+        for (coord in coordinates) tags.add(listOf("a", coord))
+        for (tag in hashtags) tags.add(listOf("t", tag))
+        return tags
+    }
+
+    fun parsePinList(event: NostrEvent): Set<String> {
+        return event.tags.mapNotNull { tag ->
+            if (tag.size >= 2 && tag[0] == "e") tag[1] else null
+        }.toSet()
+    }
+
+    fun buildPinListTags(eventIds: Set<String>): List<List<String>> {
+        return eventIds.map { listOf("e", it) }
     }
 }

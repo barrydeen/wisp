@@ -28,7 +28,6 @@ import com.wisp.app.ui.screen.ComposeScreen
 import com.wisp.app.ui.screen.DmConversationScreen
 import com.wisp.app.ui.screen.DmListScreen
 import com.wisp.app.ui.screen.FeedScreen
-import com.wisp.app.ui.screen.LoadingScreen
 import com.wisp.app.ui.screen.ProfileEditScreen
 import com.wisp.app.ui.screen.RelayScreen
 import com.wisp.app.ui.screen.ThreadScreen
@@ -37,8 +36,10 @@ import com.wisp.app.ui.screen.SafetyScreen
 import com.wisp.app.ui.screen.UserProfileScreen
 import com.wisp.app.ui.screen.ConsoleScreen
 import com.wisp.app.ui.screen.SearchScreen
+import com.wisp.app.ui.screen.BookmarksScreen
 import com.wisp.app.ui.screen.KeysScreen
 import com.wisp.app.ui.screen.ListScreen
+import com.wisp.app.ui.screen.ListsHubScreen
 import com.wisp.app.ui.screen.WalletScreen
 import com.wisp.app.viewmodel.BlossomServersViewModel
 import com.wisp.app.viewmodel.AuthViewModel
@@ -58,7 +59,6 @@ import com.wisp.app.viewmodel.WalletViewModel
 
 object Routes {
     const val AUTH = "auth"
-    const val LOADING = "loading"
     const val FEED = "feed"
     const val COMPOSE = "compose"
     const val RELAYS = "relays"
@@ -75,6 +75,8 @@ object Routes {
     const val CONSOLE = "console"
     const val KEYS = "keys"
     const val LIST_DETAIL = "list/{pubkey}/{dTag}"
+    const val BOOKMARKS = "bookmarks"
+    const val LISTS_HUB = "lists"
 }
 
 @Composable
@@ -92,10 +94,20 @@ fun WispNavHost() {
     val searchViewModel: SearchViewModel = viewModel()
     val consoleViewModel: ConsoleViewModel = viewModel()
 
+    relayViewModel.relayPool = feedViewModel.relayPool
+
     var replyTarget by remember { mutableStateOf<NostrEvent?>(null) }
     var quoteTarget by remember { mutableStateOf<NostrEvent?>(null) }
 
-    val startDestination = if (authViewModel.isLoggedIn) Routes.LOADING else Routes.AUTH
+    val startDestination = if (authViewModel.isLoggedIn) Routes.FEED else Routes.AUTH
+
+    // Initialize relays and NWC when logged in
+    if (authViewModel.isLoggedIn) {
+        LaunchedEffect(Unit) {
+            feedViewModel.initRelays()
+            feedViewModel.initNwc()
+        }
+    }
 
     // Initialize DM list viewmodel with shared repo
     LaunchedEffect(Unit) {
@@ -109,9 +121,9 @@ fun WispNavHost() {
 
     // Process incoming gift wraps for DMs
     LaunchedEffect(Unit) {
-        feedViewModel.relayPool.events.collect { event ->
-            if (event.kind == 1059) {
-                dmListViewModel.processGiftWrap(event)
+        feedViewModel.relayPool.relayEvents.collect { relayEvent ->
+            if (relayEvent.event.kind == 1059) {
+                dmListViewModel.processGiftWrap(relayEvent.event, relayEvent.relayUrl)
             }
         }
     }
@@ -158,23 +170,10 @@ fun WispNavHost() {
             AuthScreen(
                 viewModel = authViewModel,
                 onAuthenticated = {
-                    navController.navigate(Routes.LOADING) {
-                        popUpTo(Routes.AUTH) { inclusive = true }
-                    }
-                }
-            )
-        }
-
-        composable(Routes.LOADING) {
-            LaunchedEffect(Unit) {
-                feedViewModel.initRelays()
-                feedViewModel.initNwc()
-            }
-            LoadingScreen(
-                viewModel = feedViewModel,
-                onReady = {
+                    feedViewModel.initRelays()
+                    feedViewModel.initNwc()
                     navController.navigate(Routes.FEED) {
-                        popUpTo(Routes.LOADING) { inclusive = true }
+                        popUpTo(Routes.AUTH) { inclusive = true }
                     }
                 }
             )
@@ -236,6 +235,9 @@ fun WispNavHost() {
                 },
                 onWallet = {
                     navController.navigate(Routes.WALLET)
+                },
+                onLists = {
+                    navController.navigate(Routes.LISTS_HUB)
                 },
                 onSafety = {
                     navController.navigate(Routes.SAFETY)
@@ -319,6 +321,8 @@ fun WispNavHost() {
                 )
             }
             val isBlockedState by feedViewModel.muteRepo.blockedPubkeys.collectAsState()
+            val profileBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
+            val profilePinnedIds by feedViewModel.pinRepo.pinnedIds.collectAsState()
             UserProfileScreen(
                 viewModel = userProfileViewModel,
                 contactRepo = feedViewModel.contactRepo,
@@ -355,15 +359,23 @@ fun WispNavHost() {
                 onAddToList = { dTag, pk -> feedViewModel.addToList(dTag, pk) },
                 onRemoveFromList = { dTag, pk -> feedViewModel.removeFromList(dTag, pk) },
                 onCreateList = { name -> feedViewModel.createList(name) },
-                profilePubkey = pubkey
+                profilePubkey = pubkey,
+                relayInfoRepo = feedViewModel.relayInfoRepo,
+                nip05Repo = feedViewModel.nip05Repo,
+                bookmarkedIds = profileBookmarkedIds,
+                pinnedIds = profilePinnedIds,
+                onToggleBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) },
+                onTogglePin = { eventId -> feedViewModel.togglePin(eventId) }
             )
         }
 
         composable(Routes.SEARCH) {
+            val searchBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
             SearchScreen(
                 viewModel = searchViewModel,
                 relayPool = feedViewModel.relayPool,
                 eventRepo = feedViewModel.eventRepo,
+                muteRepo = feedViewModel.muteRepo,
                 onProfileClick = { pubkey ->
                     navController.navigate("profile/$pubkey")
                 },
@@ -380,7 +392,16 @@ fun WispNavHost() {
                 },
                 onListClick = { list ->
                     navController.navigate("list/${list.pubkey}/${list.dTag}")
-                }
+                },
+                onToggleFollow = { pubkey ->
+                    feedViewModel.toggleFollow(pubkey)
+                },
+                onBlockUser = { pubkey ->
+                    feedViewModel.blockUser(pubkey)
+                },
+                userPubkey = feedViewModel.getUserPubkey(),
+                bookmarkedIds = searchBookmarkedIds,
+                onToggleBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) }
             )
         }
 
@@ -405,7 +426,7 @@ fun WispNavHost() {
             val pubkey = backStackEntry.arguments?.getString("pubkey") ?: return@composable
             val dmConvoViewModel: DmConversationViewModel = viewModel()
             LaunchedEffect(pubkey) {
-                dmConvoViewModel.init(pubkey, feedViewModel.dmRepo)
+                dmConvoViewModel.init(pubkey, feedViewModel.dmRepo, feedViewModel.relayListRepo)
             }
             val peerProfile = feedViewModel.eventRepo.getProfileData(pubkey)
             val userPubkey = feedViewModel.getUserPubkey()
@@ -414,6 +435,8 @@ fun WispNavHost() {
                 relayPool = feedViewModel.relayPool,
                 peerProfile = peerProfile,
                 userPubkey = userPubkey,
+                eventRepo = feedViewModel.eventRepo,
+                relayInfoRepo = feedViewModel.relayInfoRepo,
                 onBack = { navController.popBackStack() }
             )
         }
@@ -430,7 +453,8 @@ fun WispNavHost() {
                     eventRepo = feedViewModel.eventRepo,
                     relayPool = feedViewModel.relayPool,
                     queueProfileFetch = { pubkey -> feedViewModel.queueProfileFetch(pubkey) },
-                    outboxRouter = feedViewModel.outboxRouter
+                    outboxRouter = feedViewModel.outboxRouter,
+                    muteRepo = feedViewModel.muteRepo
                 )
             }
             var threadZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
@@ -448,6 +472,8 @@ fun WispNavHost() {
                     onGoToWallet = { navController.navigate(Routes.WALLET) }
                 )
             }
+            val threadBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
+            val threadPinnedIds by feedViewModel.pinRepo.pinnedIds.collectAsState()
             ThreadScreen(
                 viewModel = threadViewModel,
                 eventRepo = feedViewModel.eventRepo,
@@ -471,7 +497,14 @@ fun WispNavHost() {
                 onToggleFollow = { pubkey ->
                     feedViewModel.toggleFollow(pubkey)
                 },
-                onZap = { event -> threadZapTarget = event }
+                onBlockUser = { pubkey ->
+                    feedViewModel.blockUser(pubkey)
+                },
+                onZap = { event -> threadZapTarget = event },
+                bookmarkedIds = threadBookmarkedIds,
+                pinnedIds = threadPinnedIds,
+                onToggleBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) },
+                onTogglePin = { eventId -> feedViewModel.togglePin(eventId) }
             )
         }
 
@@ -539,7 +572,51 @@ fun WispNavHost() {
                             popUpTo(Routes.FEED) { inclusive = true }
                         }
                     }
-                }
+                },
+                onDeleteList = if (isOwnList) {{
+                    feedViewModel.deleteList(dTag)
+                    navController.popBackStack()
+                }} else null,
+                onFollowAll = if (!isOwnList) { members ->
+                    feedViewModel.followAll(members)
+                } else null,
+                contactRepo = feedViewModel.contactRepo
+            )
+        }
+
+        composable(Routes.BOOKMARKS) {
+            BookmarksScreen(
+                bookmarkRepo = feedViewModel.bookmarkRepo,
+                eventRepo = feedViewModel.eventRepo,
+                userPubkey = feedViewModel.getUserPubkey(),
+                onBack = { navController.popBackStack() },
+                onNoteClick = { event -> navController.navigate("thread/${event.id}") },
+                onReply = { event ->
+                    replyTarget = event
+                    composeViewModel.clear()
+                    navController.navigate(Routes.COMPOSE)
+                },
+                onReact = { event, emoji -> feedViewModel.sendReaction(event, emoji) },
+                onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
+                onToggleBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) },
+                onToggleFollow = { pubkey -> feedViewModel.toggleFollow(pubkey) },
+                onBlockUser = { pubkey -> feedViewModel.blockUser(pubkey) }
+            )
+        }
+
+        composable(Routes.LISTS_HUB) {
+            ListsHubScreen(
+                listRepo = feedViewModel.listRepo,
+                bookmarkRepo = feedViewModel.bookmarkRepo,
+                pinRepo = feedViewModel.pinRepo,
+                eventRepo = feedViewModel.eventRepo,
+                onBack = { navController.popBackStack() },
+                onBookmarks = { navController.navigate(Routes.BOOKMARKS) },
+                onListDetail = { list ->
+                    navController.navigate("list/${list.pubkey}/${list.dTag}")
+                },
+                onCreateList = { name -> feedViewModel.createList(name) },
+                onDeleteList = { dTag -> feedViewModel.deleteList(dTag) }
             )
         }
 

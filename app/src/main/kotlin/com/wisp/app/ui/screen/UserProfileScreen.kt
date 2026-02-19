@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -21,7 +22,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -60,9 +64,13 @@ import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.Nip05Repository
+import com.wisp.app.repo.Nip05Status
+import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.ui.component.FollowButton
 import com.wisp.app.ui.component.FullScreenImageViewer
 import com.wisp.app.ui.component.PostCard
+import com.wisp.app.ui.component.QrCodeDialog
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.ZapDialog
 import com.wisp.app.viewmodel.UserProfileViewModel
@@ -97,7 +105,13 @@ fun UserProfileScreen(
     onAddToList: ((String, String) -> Unit)? = null,
     onRemoveFromList: ((String, String) -> Unit)? = null,
     onCreateList: ((String) -> Unit)? = null,
-    profilePubkey: String = ""
+    profilePubkey: String = "",
+    relayInfoRepo: RelayInfoRepository? = null,
+    nip05Repo: Nip05Repository? = null,
+    bookmarkedIds: Set<String> = emptySet(),
+    pinnedIds: Set<String> = emptySet(),
+    onToggleBookmark: (String) -> Unit = {},
+    onTogglePin: (String) -> Unit = {}
 ) {
     val profile by viewModel.profile.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()
@@ -108,9 +122,11 @@ fun UserProfileScreen(
     val followProfileVersion by viewModel.followProfileVersion.collectAsState()
     val myFollowList by contactRepo.followList.collectAsState()
 
+    val nip05Version by nip05Repo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val reactionVersion by eventRepo?.reactionVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val replyCountVersion by eventRepo?.replyCountVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val zapVersion by eventRepo?.zapVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
+    val relaySourceVersion by eventRepo?.relaySourceVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
 
     var zapTargetEvent by remember { mutableStateOf<NostrEvent?>(null) }
     var zapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
@@ -154,7 +170,15 @@ fun UserProfileScreen(
         )
     }
 
+    var showQrDialog by remember { mutableStateOf(false) }
     var showAddToListDialog by remember { mutableStateOf(false) }
+
+    if (showQrDialog) {
+        QrCodeDialog(
+            pubkeyHex = profilePubkey,
+            onDismiss = { showQrDialog = false }
+        )
+    }
 
     if (showAddToListDialog && !isOwnProfile) {
         AddToListDialog(
@@ -186,6 +210,9 @@ fun UserProfileScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showQrDialog = true }) {
+                        Icon(Icons.Default.QrCode2, "QR Code")
+                    }
                     if (!isOwnProfile) {
                         var menuExpanded by remember { mutableStateOf(false) }
                         IconButton(onClick = { menuExpanded = true }) {
@@ -234,12 +261,16 @@ fun UserProfileScreen(
                 .padding(padding)
         ) {
             item {
+                @Suppress("UNUSED_EXPRESSION")
+                nip05Version
                 ProfileHeader(
                     profile = profile,
                     isOwnProfile = isOwnProfile,
                     isFollowing = isFollowing,
                     onEditProfile = onEditProfile,
-                    onToggleFollow = { viewModel.toggleFollow(contactRepo, relayPool) }
+                    onToggleFollow = { viewModel.toggleFollow(contactRepo, relayPool) },
+                    nip05Repo = nip05Repo,
+                    pubkey = profilePubkey
                 )
             }
 
@@ -260,7 +291,38 @@ fun UserProfileScreen(
 
             when (selectedTab) {
                 0 -> {
-                    if (rootNotes.isEmpty()) {
+                    // Pinned notes at the top of the Notes tab
+                    val pinnedEvents = pinnedIds.mapNotNull { id -> eventRepo?.getEvent(id) }
+                        .sortedByDescending { it.created_at }
+                    if (pinnedEvents.isNotEmpty()) {
+                        item {
+                            Text(
+                                "Pinned",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                            )
+                        }
+                        items(items = pinnedEvents, key = { "pinned-${it.id}" }) { event ->
+                            val eventProfile = eventRepo?.getProfileData(event.pubkey)
+                            PostCard(
+                                event = event,
+                                profile = eventProfile,
+                                onReply = { onReply(event) },
+                                onNavigateToProfile = onNavigateToProfile,
+                                onNoteClick = { onNoteClick(event) },
+                                onReact = { emoji -> onReact(event, emoji) },
+                                eventRepo = eventRepo,
+                                onBookmark = { onToggleBookmark(event.id) },
+                                isBookmarked = event.id in bookmarkedIds,
+                                onPin = { onTogglePin(event.id) },
+                                isPinned = true,
+                                isOwnEvent = event.pubkey == userPubkey
+                            )
+                        }
+                    }
+
+                    if (rootNotes.isEmpty() && pinnedEvents.isEmpty()) {
                         item { EmptyTabContent("No notes yet") }
                     } else {
                         items(items = rootNotes, key = { it.id }) { event ->
@@ -268,6 +330,17 @@ fun UserProfileScreen(
                             val replyCount = replyCountVersion.let { eventRepo?.getReplyCount(event.id) ?: 0 }
                             val zapSats = zapVersion.let { eventRepo?.getZapSats(event.id) ?: 0L }
                             val userEmoji = reactionVersion.let { userPubkey?.let { eventRepo?.getUserReactionEmoji(event.id, it) } }
+                            val reactionDetails = remember(reactionVersion, event.id) {
+                                eventRepo?.getReactionDetails(event.id) ?: emptyMap()
+                            }
+                            val zapDetails = remember(zapVersion, event.id) {
+                                eventRepo?.getZapDetails(event.id) ?: emptyList()
+                            }
+                            val relayIcons = remember(relaySourceVersion, event.id) {
+                                eventRepo?.getEventRelays(event.id)?.map { url ->
+                                    url to relayInfoRepo?.getIconUrl(url)
+                                } ?: emptyList()
+                            }
                             val repostPubkey = viewModel.repostAuthors[event.id]
                             val repostedByName = repostPubkey?.let { pk ->
                                 eventRepo?.getProfileData(pk)?.displayString
@@ -287,7 +360,20 @@ fun UserProfileScreen(
                                 zapSats = zapSats,
                                 isZapAnimating = event.id in zapAnimatingIds,
                                 eventRepo = eventRepo,
-                                repostedBy = repostedByName
+                                repostedBy = repostedByName,
+                                reactionDetails = reactionDetails,
+                                zapDetails = zapDetails,
+                                relayIcons = relayIcons,
+                                onNavigateToProfileFromDetails = onNavigateToProfile,
+                                onFollowAuthor = { onToggleFollow?.invoke(event.pubkey) },
+                                onBlockAuthor = { onBlockUser?.invoke() },
+                                isFollowingAuthor = contactRepo.isFollowing(event.pubkey),
+                                isOwnEvent = event.pubkey == userPubkey,
+                                nip05Repo = nip05Repo,
+                                onBookmark = { onToggleBookmark(event.id) },
+                                isBookmarked = event.id in bookmarkedIds,
+                                onPin = { onTogglePin(event.id) },
+                                isPinned = event.id in pinnedIds
                             )
                         }
                     }
@@ -301,6 +387,17 @@ fun UserProfileScreen(
                             val replyCount = replyCountVersion.let { eventRepo?.getReplyCount(event.id) ?: 0 }
                             val zapSats = zapVersion.let { eventRepo?.getZapSats(event.id) ?: 0L }
                             val userEmoji = reactionVersion.let { userPubkey?.let { eventRepo?.getUserReactionEmoji(event.id, it) } }
+                            val reactionDetails = remember(reactionVersion, event.id) {
+                                eventRepo?.getReactionDetails(event.id) ?: emptyMap()
+                            }
+                            val zapDetails = remember(zapVersion, event.id) {
+                                eventRepo?.getZapDetails(event.id) ?: emptyList()
+                            }
+                            val relayIcons = remember(relaySourceVersion, event.id) {
+                                eventRepo?.getEventRelays(event.id)?.map { url ->
+                                    url to relayInfoRepo?.getIconUrl(url)
+                                } ?: emptyList()
+                            }
                             PostCard(
                                 event = event,
                                 profile = profile,
@@ -314,7 +411,20 @@ fun UserProfileScreen(
                                 replyCount = replyCount,
                                 zapSats = zapSats,
                                 isZapAnimating = event.id in zapAnimatingIds,
-                                eventRepo = eventRepo
+                                eventRepo = eventRepo,
+                                reactionDetails = reactionDetails,
+                                zapDetails = zapDetails,
+                                relayIcons = relayIcons,
+                                onNavigateToProfileFromDetails = onNavigateToProfile,
+                                onFollowAuthor = { onToggleFollow?.invoke(event.pubkey) },
+                                onBlockAuthor = { onBlockUser?.invoke() },
+                                isFollowingAuthor = contactRepo.isFollowing(event.pubkey),
+                                isOwnEvent = event.pubkey == userPubkey,
+                                nip05Repo = nip05Repo,
+                                onBookmark = { onToggleBookmark(event.id) },
+                                isBookmarked = event.id in bookmarkedIds,
+                                onPin = { onTogglePin(event.id) },
+                                isPinned = event.id in pinnedIds
                             )
                         }
                     }
@@ -323,7 +433,6 @@ fun UserProfileScreen(
                     if (followList.isEmpty()) {
                         item { EmptyTabContent("Not following anyone") }
                     } else {
-                        // Read followProfileVersion to trigger recomposition on profile loads
                         @Suppress("UNUSED_EXPRESSION")
                         followProfileVersion
                         items(items = followList, key = { it.pubkey }) { entry ->
@@ -359,7 +468,9 @@ private fun ProfileHeader(
     isOwnProfile: Boolean,
     isFollowing: Boolean,
     onEditProfile: () -> Unit,
-    onToggleFollow: () -> Unit
+    onToggleFollow: () -> Unit,
+    nip05Repo: Nip05Repository? = null,
+    pubkey: String = ""
 ) {
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
 
@@ -424,11 +535,25 @@ private fun ProfileHeader(
         )
 
         profile?.nip05?.let { nip05 ->
-            Text(
-                text = nip05,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary
-            )
+            if (pubkey.isNotEmpty()) nip05Repo?.checkOrFetch(pubkey, nip05)
+            val status = if (pubkey.isNotEmpty()) nip05Repo?.getStatus(pubkey) else null
+            val isFailed = status == Nip05Status.FAILED
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = if (isFailed) "\u2715 $nip05" else nip05,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isFailed) Color.Red else MaterialTheme.colorScheme.primary
+                )
+                if (status == Nip05Status.VERIFIED) {
+                    Spacer(Modifier.width(4.dp))
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = "Verified",
+                        tint = Color(0xFFFF8C00),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
         }
 
         profile?.about?.let { about ->

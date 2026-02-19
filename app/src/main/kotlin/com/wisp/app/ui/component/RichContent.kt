@@ -55,7 +55,7 @@ private sealed interface ContentSegment {
     data class ImageSegment(val url: String) : ContentSegment
     data class VideoSegment(val url: String) : ContentSegment
     data class LinkSegment(val url: String) : ContentSegment
-    data class NostrNoteSegment(val eventId: String) : ContentSegment
+    data class NostrNoteSegment(val eventId: String, val relayHints: List<String> = emptyList()) : ContentSegment
     data class NostrProfileSegment(val pubkey: String) : ContentSegment
 }
 
@@ -75,7 +75,7 @@ private fun parseContent(content: String): List<ContentSegment> {
         val token = match.value
         if (token.startsWith("nostr:")) {
             when (val decoded = Nip19.decodeNostrUri(token)) {
-                is NostrUriData.NoteRef -> segments.add(ContentSegment.NostrNoteSegment(decoded.eventId))
+                is NostrUriData.NoteRef -> segments.add(ContentSegment.NostrNoteSegment(decoded.eventId, decoded.relays))
                 is NostrUriData.ProfileRef -> segments.add(ContentSegment.NostrProfileSegment(decoded.pubkey))
                 null -> segments.add(ContentSegment.TextSegment(token))
             }
@@ -151,7 +151,7 @@ fun RichContent(
                 }
                 is ContentSegment.NostrNoteSegment -> {
                     if (eventRepo != null) {
-                        QuotedNote(eventId = segment.eventId, eventRepo = eventRepo)
+                        QuotedNote(eventId = segment.eventId, eventRepo = eventRepo, relayHints = segment.relayHints)
                     } else {
                         Text(
                             text = "nostr:${segment.eventId.take(8)}...",
@@ -184,11 +184,18 @@ fun RichContent(
 }
 
 @Composable
-private fun QuotedNote(eventId: String, eventRepo: EventRepository) {
+private fun QuotedNote(eventId: String, eventRepo: EventRepository, relayHints: List<String> = emptyList()) {
     // Observe version so we recompose when quoted events arrive from relays
     val version by eventRepo.quotedEventVersion.collectAsState()
     val event = remember(eventId, version) { eventRepo.getEvent(eventId) }
     val profile = remember(event, version) { event?.let { eventRepo.getProfileData(it.pubkey) } }
+
+    // Trigger on-demand fetch if the quoted event isn't cached
+    LaunchedEffect(eventId) {
+        if (eventRepo.getEvent(eventId) == null) {
+            eventRepo.requestQuotedEvent(eventId, relayHints)
+        }
+    }
 
     Surface(
         shape = RoundedCornerShape(12.dp),

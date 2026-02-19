@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 
 class RelayViewModel(app: Application) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
+    var relayPool: RelayPool? = null
 
     private val _selectedTab = MutableStateFlow(RelaySetType.GENERAL)
     val selectedTab: StateFlow<RelaySetType> = _selectedTab
@@ -71,6 +72,7 @@ class RelayViewModel(app: Application) : AndroidViewModel(app) {
                 val updated = _blockedRelays.value + url
                 _blockedRelays.value = updated
                 keyRepo.saveBlockedRelays(updated)
+                relayPool?.updateBlockedUrls(updated)
             }
         }
         _newRelayUrl.value = ""
@@ -98,6 +100,7 @@ class RelayViewModel(app: Application) : AndroidViewModel(app) {
                 val updated = _blockedRelays.value.filter { it != url }
                 _blockedRelays.value = updated
                 keyRepo.saveBlockedRelays(updated)
+                relayPool?.updateBlockedUrls(updated)
             }
         }
     }

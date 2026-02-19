@@ -1,6 +1,7 @@
 package com.wisp.app.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
@@ -12,12 +13,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,9 +35,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -85,6 +86,7 @@ fun FeedScreen(
     onLogout: () -> Unit = {},
     onMediaServers: () -> Unit = {},
     onWallet: () -> Unit = {},
+    onLists: () -> Unit = {},
     onSafety: () -> Unit = {},
     onConsole: () -> Unit = {},
     onKeys: () -> Unit = {}
@@ -97,6 +99,7 @@ fun FeedScreen(
     val reactionVersion by viewModel.eventRepo.reactionVersion.collectAsState()
     val relaySourceVersion by viewModel.eventRepo.relaySourceVersion.collectAsState()
     val profileVersion by viewModel.eventRepo.profileVersion.collectAsState()
+    val nip05Version by viewModel.nip05Repo.version.collectAsState()
     val connectedCount by viewModel.relayPool.connectedCount.collectAsState()
     val listState = rememberLazyListState()
     val userPubkey = viewModel.getUserPubkey()
@@ -105,12 +108,15 @@ fun FeedScreen(
     var showRelayPicker by remember { mutableStateOf(false) }
     var showListPicker by remember { mutableStateOf(false) }
     var showRelayDropdown by remember { mutableStateOf(false) }
+    var showFeedTypeDropdown by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val userProfile = profileVersion.let { userPubkey?.let { viewModel.eventRepo.getProfileData(it) } }
 
     val newNoteCount by viewModel.newNoteCount.collectAsState()
     val zapInProgress by viewModel.zapInProgress.collectAsState()
+    val bookmarkedIds by viewModel.bookmarkRepo.bookmarkedIds.collectAsState()
+    val pinnedIds by viewModel.pinRepo.pinnedIds.collectAsState()
 
     var zapTargetEvent by remember { mutableStateOf<NostrEvent?>(null) }
     var zapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
@@ -155,6 +161,18 @@ fun FeedScreen(
         }
     }
 
+    var isScrollingUp by remember { mutableStateOf(false) }
+    LaunchedEffect(listState) {
+        var previousIndex = listState.firstVisibleItemIndex
+        var previousOffset = listState.firstVisibleItemScrollOffset
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collect { (index, offset) ->
+                isScrollingUp = index < previousIndex || (index == previousIndex && offset < previousOffset)
+                previousIndex = index
+                previousOffset = offset
+            }
+    }
+
     val shouldLoadMore by remember {
         derivedStateOf {
             val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -169,6 +187,7 @@ fun FeedScreen(
     LaunchedEffect(isAtTop) {
         if (isAtTop) viewModel.resetNewNoteCount()
     }
+
 
     if (showRelayPicker) {
         RelayPickerDialog(
@@ -247,6 +266,10 @@ fun FeedScreen(
                     scope.launch { drawerState.close() }
                     onWallet()
                 },
+                onLists = {
+                    scope.launch { drawerState.close() }
+                    onLists()
+                },
                 onMediaServers = {
                     scope.launch { drawerState.close() }
                     onMediaServers()
@@ -277,7 +300,83 @@ fun FeedScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { },
+                    title = {
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box {
+                                Surface(
+                                    onClick = { showFeedTypeDropdown = true },
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        val feedLabel = when (feedType) {
+                                            FeedType.FOLLOWS -> "Follows"
+                                            FeedType.RELAY -> if (selectedRelay != null) {
+                                                selectedRelay!!.removePrefix("wss://").removeSuffix("/")
+                                            } else "Relay"
+                                            FeedType.LIST -> if (selectedList != null) {
+                                                selectedList!!.name
+                                            } else "List"
+                                        }
+                                        Text(
+                                            feedLabel,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                            modifier = Modifier.widthIn(max = 160.dp)
+                                        )
+                                        Spacer(Modifier.width(4.dp))
+                                        Icon(
+                                            Icons.Default.ArrowDropDown,
+                                            contentDescription = "Change feed",
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                                DropdownMenu(
+                                    expanded = showFeedTypeDropdown,
+                                    onDismissRequest = { showFeedTypeDropdown = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Follows") },
+                                        onClick = {
+                                            showFeedTypeDropdown = false
+                                            viewModel.setFeedType(FeedType.FOLLOWS)
+                                        },
+                                        trailingIcon = if (feedType == FeedType.FOLLOWS) {{
+                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        }} else null
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Relay") },
+                                        onClick = {
+                                            showFeedTypeDropdown = false
+                                            showRelayPicker = true
+                                        },
+                                        trailingIcon = if (feedType == FeedType.RELAY) {{
+                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        }} else null
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("List") },
+                                        onClick = {
+                                            showFeedTypeDropdown = false
+                                            showListPicker = true
+                                        },
+                                        trailingIcon = if (feedType == FeedType.LIST) {{
+                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        }} else null
+                                    )
+                                }
+                            }
+                        }
+                    },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     ),
@@ -371,39 +470,6 @@ fun FeedScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                // Feed type segmented buttons
-                SingleChoiceSegmentedButtonRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    val types = FeedType.entries
-                    types.forEachIndexed { index, type ->
-                        SegmentedButton(
-                            selected = feedType == type,
-                            onClick = {
-                                when (type) {
-                                    FeedType.RELAY -> showRelayPicker = true
-                                    FeedType.LIST -> showListPicker = true
-                                    else -> viewModel.setFeedType(type)
-                                }
-                            },
-                            shape = SegmentedButtonDefaults.itemShape(index, types.size)
-                        ) {
-                            val label = when (type) {
-                                FeedType.FOLLOWS -> "Follows"
-                                FeedType.RELAY -> if (feedType == FeedType.RELAY && selectedRelay != null) {
-                                    selectedRelay!!.removePrefix("wss://").removeSuffix("/")
-                                } else "Relay"
-                                FeedType.LIST -> if (feedType == FeedType.LIST && selectedList != null) {
-                                    selectedList!!.name
-                                } else "List"
-                            }
-                            Text(label, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                        }
-                    }
-                }
-
                 if (feed.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -449,7 +515,10 @@ fun FeedScreen(
                                     replyCountVersion = replyCountVersion,
                                     zapVersion = zapVersion,
                                     relaySourceVersion = relaySourceVersion,
+                                    nip05Version = nip05Version,
                                     isZapAnimating = event.id in zapAnimatingIds,
+                                    isBookmarked = event.id in bookmarkedIds,
+                                    isPinned = event.id in pinnedIds,
                                     onReply = { onReply(event) },
                                     onProfileClick = { onProfileClick(event.pubkey) },
                                     onNavigateToProfile = onProfileClick,
@@ -458,6 +527,8 @@ fun FeedScreen(
                                     onRepost = { onRepost(event) },
                                     onQuote = { onQuote(event) },
                                     onZap = { zapTargetEvent = event },
+                                    onBookmark = { viewModel.toggleBookmark(event.id) },
+                                    onPin = { viewModel.togglePin(event.id) },
                                     onRelayClick = { url ->
                                         viewModel.setSelectedRelay(url)
                                         viewModel.setFeedType(FeedType.RELAY)
@@ -473,6 +544,18 @@ fun FeedScreen(
                                 scope.launch {
                                     listState.animateScrollToItem(0)
                                     viewModel.resetNewNoteCount()
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 8.dp)
+                        )
+
+                        ScrollToTopButton(
+                            visible = !isAtTop && isScrollingUp && newNoteCount == 0,
+                            onClick = {
+                                scope.launch {
+                                    listState.animateScrollToItem(0)
                                 }
                             },
                             modifier = Modifier
@@ -500,7 +583,10 @@ private fun FeedItem(
     replyCountVersion: Int,
     zapVersion: Int,
     relaySourceVersion: Int,
+    nip05Version: Int = 0,
     isZapAnimating: Boolean,
+    isBookmarked: Boolean = false,
+    isPinned: Boolean = false,
     onReply: () -> Unit,
     onProfileClick: () -> Unit,
     onNavigateToProfile: (String) -> Unit,
@@ -509,6 +595,8 @@ private fun FeedItem(
     onRepost: () -> Unit,
     onQuote: () -> Unit,
     onZap: () -> Unit,
+    onBookmark: () -> Unit = {},
+    onPin: () -> Unit = {},
     onRelayClick: (String) -> Unit = {}
 ) {
     val profileData = remember(profileVersion, event.pubkey) {
@@ -546,6 +634,9 @@ private fun FeedItem(
     val zapDetails = remember(zapVersion, event.id) {
         viewModel.eventRepo.getZapDetails(event.id)
     }
+    val isFollowing = remember(event.pubkey) {
+        viewModel.contactRepo.isFollowing(event.pubkey)
+    }
     PostCard(
         event = event,
         profile = profileData,
@@ -568,7 +659,16 @@ private fun FeedItem(
         reactionDetails = reactionDetails,
         zapDetails = zapDetails,
         onNavigateToProfileFromDetails = onNavigateToProfile,
-        onRelayClick = onRelayClick
+        onRelayClick = onRelayClick,
+        onFollowAuthor = { viewModel.toggleFollow(event.pubkey) },
+        onBlockAuthor = { viewModel.blockUser(event.pubkey) },
+        isFollowingAuthor = isFollowing,
+        isOwnEvent = event.pubkey == userPubkey,
+        nip05Repo = viewModel.nip05Repo,
+        onBookmark = onBookmark,
+        isBookmarked = isBookmarked,
+        onPin = onPin,
+        isPinned = isPinned
     )
 }
 
@@ -688,6 +788,44 @@ private fun ListPickerDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
+}
+
+@Composable
+private fun ScrollToTopButton(
+    visible: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically { -it },
+        exit = slideOutVertically { -it },
+        modifier = modifier
+    ) {
+        Surface(
+            onClick = onClick,
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            shadowElevation = 4.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.KeyboardArrowUp,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "Back to top",
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
+    }
 }
 
 @Composable

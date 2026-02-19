@@ -43,8 +43,16 @@ class MetadataFetcher(
     private var zapCountBatchCounter = 0
 
     // Quoted event fetching
+    private val scannedQuoteEvents = mutableSetOf<String>()
     private val pendingQuoteFetches = mutableSetOf<String>()
     private val nostrNoteUriRegex = Regex("""nostr:(note1|nevent1)[a-z0-9]+""")
+    private val validHexId = Regex("""^[0-9a-f]{64}$""")
+
+    // On-demand quoted event fetching (triggered by QuotedNote composable)
+    private val pendingOnDemandQuotes = mutableSetOf<String>()
+    private val pendingRelayHints = mutableMapOf<String, List<String>>()
+    private var onDemandQuoteBatchJob: Job? = null
+    private var onDemandQuoteBatchCounter = 0
 
     companion object {
         private const val MAX_PROFILE_ATTEMPTS = 3
@@ -104,9 +112,28 @@ class MetadataFetcher(
         }
     }
 
+    fun requestQuotedEvent(eventId: String, relayHints: List<String> = emptyList()) {
+        synchronized(pendingOnDemandQuotes) {
+            if (eventRepo.getEvent(eventId) != null) return
+            if (eventId in pendingQuoteFetches) return
+            if (eventId in pendingOnDemandQuotes) return
+            pendingOnDemandQuotes.add(eventId)
+            if (relayHints.isNotEmpty()) {
+                pendingRelayHints[eventId] = relayHints
+            }
+            if (onDemandQuoteBatchJob == null || onDemandQuoteBatchJob?.isActive != true) {
+                onDemandQuoteBatchJob = scope.launch(processingContext) {
+                    delay(150)
+                    synchronized(pendingOnDemandQuotes) { flushOnDemandQuoteBatch() }
+                }
+            }
+        }
+    }
+
     fun fetchQuotedEvents(event: com.wisp.app.nostr.NostrEvent) {
         val ids = mutableSetOf<String>()
-        event.tags.filter { it.size >= 2 && it[0] == "q" }.forEach { ids.add(it[1]) }
+        event.tags.filter { it.size >= 2 && it[0] == "q" }
+            .forEach { tag -> tag[1].lowercase().let { if (validHexId.matches(it)) ids.add(it) } }
         for (match in nostrNoteUriRegex.findAll(event.content)) {
             val decoded = Nip19.decodeNostrUri(match.value)
             if (decoded is NostrUriData.NoteRef) ids.add(decoded.eventId)
@@ -115,7 +142,7 @@ class MetadataFetcher(
         if (toFetch.isEmpty()) return
         pendingQuoteFetches.addAll(toFetch)
         val subId = "quote-${toFetch.hashCode()}"
-        relayPool.sendToAll(ClientMessage.req(subId, Filter(ids = toFetch)))
+        relayPool.sendToReadRelays(ClientMessage.req(subId, Filter(ids = toFetch)))
         scope.launch {
             subManager.awaitEoseWithTimeout(subId)
             subManager.closeSubscription(subId)
@@ -148,10 +175,13 @@ class MetadataFetcher(
             if (reposter != null && eventRepo.getProfileData(reposter) == null) {
                 addToPendingProfiles(reposter)
             }
-            if (event.kind == 1) {
+            if (event.kind == 1 && event.id !in scannedQuoteEvents) {
+                scannedQuoteEvents.add(event.id)
                 fetchQuotedEvents(event)
             }
         }
+        // Prevent unbounded growth
+        if (scannedQuoteEvents.size > 5000) scannedQuoteEvents.clear()
     }
 
     /** Must be called while holding pendingProfilePubkeys lock */
@@ -174,7 +204,7 @@ class MetadataFetcher(
         scope.launch(processingContext) {
             subManager.awaitEoseWithTimeout(subId)
             subManager.closeSubscription(subId)
-            delay(3_000)
+            delay(15_000)
             for (pk in pubkeys) {
                 if (!profileRepo.has(pk)) {
                     addToPendingProfiles(pk)
@@ -189,10 +219,37 @@ class MetadataFetcher(
         val eventIds = pendingReplyCountIds.toList()
         pendingReplyCountIds.clear()
         val filter = Filter(kinds = listOf(1), eTags = eventIds)
-        relayPool.sendToAll(ClientMessage.req(subId, filter))
+        relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
         scope.launch {
             subManager.awaitEoseWithTimeout(subId)
             subManager.closeSubscription(subId)
+        }
+    }
+
+    /** Must be called while holding pendingOnDemandQuotes lock */
+    private fun flushOnDemandQuoteBatch() {
+        if (pendingOnDemandQuotes.isEmpty()) return
+        val batch = pendingOnDemandQuotes.toList()
+        val hints = pendingRelayHints.toMap()
+        pendingOnDemandQuotes.clear()
+        pendingRelayHints.clear()
+
+        pendingQuoteFetches.addAll(batch)
+        val subId = "quote-od-${onDemandQuoteBatchCounter++}"
+        relayPool.sendToReadRelays(ClientMessage.req(subId, Filter(ids = batch)))
+
+        // Also query hinted relays for IDs that have hints
+        for (id in batch) {
+            val relays = hints[id] ?: continue
+            for (url in relays) {
+                relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(subId, Filter(ids = listOf(id))))
+            }
+        }
+
+        scope.launch {
+            subManager.awaitEoseWithTimeout(subId)
+            subManager.closeSubscription(subId)
+            batch.forEach { pendingQuoteFetches.remove(it) }
         }
     }
 
@@ -202,7 +259,7 @@ class MetadataFetcher(
         val eventIds = pendingZapCountIds.toList()
         pendingZapCountIds.clear()
         val filter = Filter(kinds = listOf(9735), eTags = eventIds)
-        relayPool.sendToAll(ClientMessage.req(subId, filter))
+        relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
         scope.launch {
             subManager.awaitEoseWithTimeout(subId)
             subManager.closeSubscription(subId)

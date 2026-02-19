@@ -15,6 +15,28 @@ object Nip19 {
     fun nsecEncode(privkey: ByteArray): String = bech32Encode("nsec", privkey)
     fun noteEncode(eventId: ByteArray): String = bech32Encode("note", eventId)
 
+    fun neventEncode(eventId: ByteArray, relays: List<String> = emptyList(), author: ByteArray? = null): String {
+        val tlv = buildTlv {
+            addTlv(0x00, eventId)
+            for (relay in relays) addTlv(0x01, relay.toByteArray(Charsets.UTF_8))
+            if (author != null) addTlv(0x02, author)
+        }
+        return bech32Encode("nevent", tlv)
+    }
+
+    private class TlvBuilder {
+        private val bytes = mutableListOf<Byte>()
+        fun addTlv(type: Int, value: ByteArray) {
+            bytes.add(type.toByte())
+            bytes.add(value.size.toByte())
+            for (b in value) bytes.add(b)
+        }
+        fun build(): ByteArray = bytes.toByteArray()
+    }
+
+    private inline fun buildTlv(block: TlvBuilder.() -> Unit): ByteArray =
+        TlvBuilder().apply(block).build()
+
     fun nsecDecode(bech32: String): ByteArray {
         val (hrp, data) = bech32Decode(bech32)
         require(hrp == "nsec") { "Expected nsec, got $hrp" }

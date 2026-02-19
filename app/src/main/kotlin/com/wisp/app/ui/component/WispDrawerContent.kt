@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.outlined.BugReport
@@ -12,6 +14,7 @@ import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Search
@@ -44,6 +47,7 @@ fun WispDrawerContent(
     onSearch: () -> Unit,
     onMessages: () -> Unit,
     onWallet: () -> Unit,
+    onLists: () -> Unit = {},
     onMediaServers: () -> Unit,
     onKeys: () -> Unit = {},
     onSafety: () -> Unit = {},
@@ -54,6 +58,7 @@ fun WispDrawerContent(
     ModalDrawerSheet(
         drawerContainerColor = MaterialTheme.colorScheme.surface
     ) {
+        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
         Column(modifier = Modifier.padding(16.dp)) {
             ProfilePicture(url = profile?.picture, size = 64)
             Spacer(modifier = Modifier.height(12.dp))
@@ -108,6 +113,13 @@ fun WispDrawerContent(
             label = { Text("Wallet") },
             selected = false,
             onClick = onWallet,
+            modifier = Modifier.padding(horizontal = 12.dp)
+        )
+        NavigationDrawerItem(
+            icon = { Icon(Icons.Outlined.FormatListBulleted, contentDescription = null) },
+            label = { Text("Lists") },
+            selected = false,
+            onClick = onLists,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
         var settingsExpanded by remember { mutableStateOf(false) }
@@ -165,7 +177,7 @@ fun WispDrawerContent(
             }
         }
 
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(16.dp))
 
         NavigationDrawerItem(
             icon = {
@@ -184,5 +196,6 @@ fun WispDrawerContent(
         )
 
         Spacer(modifier = Modifier.height(16.dp))
+        }
     }
 }

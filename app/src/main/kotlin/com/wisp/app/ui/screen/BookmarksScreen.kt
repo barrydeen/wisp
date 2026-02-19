@@ -7,7 +7,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -19,49 +18,45 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.NostrEvent
-import com.wisp.app.repo.ContactRepository
+import com.wisp.app.repo.BookmarkRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.ui.component.PostCard
-import com.wisp.app.viewmodel.ThreadViewModel
-import kotlin.math.min
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ThreadScreen(
-    viewModel: ThreadViewModel,
+fun BookmarksScreen(
+    bookmarkRepo: BookmarkRepository,
     eventRepo: EventRepository,
-    contactRepo: ContactRepository,
     userPubkey: String?,
     onBack: () -> Unit,
-    onReply: (NostrEvent) -> Unit = {},
-    onProfileClick: (String) -> Unit = {},
     onNoteClick: (NostrEvent) -> Unit = {},
+    onReply: (NostrEvent) -> Unit = {},
     onReact: (NostrEvent, String) -> Unit = { _, _ -> },
-    onToggleFollow: (String) -> Unit = {},
-    onBlockUser: (String) -> Unit = {},
-    onZap: (NostrEvent) -> Unit = {},
-    zapAnimatingIds: Set<String> = emptySet(),
-    bookmarkedIds: Set<String> = emptySet(),
-    pinnedIds: Set<String> = emptySet(),
+    onProfileClick: (String) -> Unit = {},
     onToggleBookmark: (String) -> Unit = {},
-    onTogglePin: (String) -> Unit = {}
+    onToggleFollow: (String) -> Unit = {},
+    onBlockUser: (String) -> Unit = {}
 ) {
-    val flatThread by viewModel.flatThread.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    val bookmarkedIds by bookmarkRepo.bookmarkedIds.collectAsState()
+    val profileVersion by eventRepo.profileVersion.collectAsState()
     val reactionVersion by eventRepo.reactionVersion.collectAsState()
-    val zapVersion by eventRepo.zapVersion.collectAsState()
+
+    val bookmarkedEvents = remember(bookmarkedIds, profileVersion) {
+        bookmarkedIds.mapNotNull { id -> eventRepo.getEvent(id) }
+            .sortedByDescending { it.created_at }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Thread") },
+                title = { Text("Bookmarks") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -70,50 +65,43 @@ fun ThreadScreen(
             )
         }
     ) { padding ->
-        if (isLoading && flatThread.isEmpty()) {
+        if (bookmarkedEvents.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                Text(
+                    if (bookmarkedIds.isEmpty()) "No bookmarks yet"
+                    else "Bookmarked events not loaded yet",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding)
             ) {
-                items(items = flatThread, key = { it.first.id }) { (event, depth) ->
-                    val profileData = eventRepo.getProfileData(event.pubkey)
+                items(items = bookmarkedEvents, key = { it.id }) { event ->
+                    val profile = eventRepo.getProfileData(event.pubkey)
                     val likeCount = reactionVersion.let { eventRepo.getReactionCount(event.id) }
-                    val zapSats = eventRepo.getZapSats(event.id)
-                    val userEmoji = reactionVersion.let { userPubkey?.let { eventRepo.getUserReactionEmoji(event.id, it) } }
-                    val reactionDetails = reactionVersion.let { eventRepo.getReactionDetails(event.id) }
-                    val zapDetailsList = zapVersion.let { eventRepo.getZapDetails(event.id) }
+                    val userEmoji = reactionVersion.let {
+                        userPubkey?.let { eventRepo.getUserReactionEmoji(event.id, it) }
+                    }
                     PostCard(
                         event = event,
-                        profile = profileData,
+                        profile = profile,
                         onReply = { onReply(event) },
                         onProfileClick = { onProfileClick(event.pubkey) },
                         onNavigateToProfile = onProfileClick,
                         onNoteClick = { onNoteClick(event) },
                         onReact = { emoji -> onReact(event, emoji) },
                         userReactionEmoji = userEmoji,
-                        onZap = { onZap(event) },
                         likeCount = likeCount,
-                        zapSats = zapSats,
-                        isZapAnimating = event.id in zapAnimatingIds,
                         eventRepo = eventRepo,
-                        reactionDetails = reactionDetails,
-                        zapDetails = zapDetailsList,
-                        onNavigateToProfileFromDetails = onProfileClick,
+                        onBookmark = { onToggleBookmark(event.id) },
+                        isBookmarked = true,
                         onFollowAuthor = { onToggleFollow(event.pubkey) },
                         onBlockAuthor = { onBlockUser(event.pubkey) },
-                        isFollowingAuthor = contactRepo.isFollowing(event.pubkey),
-                        isOwnEvent = event.pubkey == userPubkey,
-                        onBookmark = { onToggleBookmark(event.id) },
-                        isBookmarked = event.id in bookmarkedIds,
-                        onPin = { onTogglePin(event.id) },
-                        isPinned = event.id in pinnedIds,
-                        modifier = Modifier.padding(start = (min(depth, 4) * 24).dp)
+                        isOwnEvent = event.pubkey == userPubkey
                     )
                 }
             }
