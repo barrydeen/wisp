@@ -61,19 +61,21 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     val repostVersion: StateFlow<Int> = _repostVersion
 
     // Reaction tracking: eventId -> map of emoji -> count
-    private val reactionCounts = LruCache<String, MutableMap<String, Int>>(2000)
+    private val reactionCounts = LruCache<String, ConcurrentHashMap<String, Int>>(5000)
     // Track which events the current user has reacted to: "eventId:pubkey" -> emoji string
     private val userReactions = LruCache<String, String>(5000)
     private val _reactionVersion = MutableStateFlow(0)
     val reactionVersion: StateFlow<Int> = _reactionVersion
-    // Dedup for counted reactions/zaps — prevents double-counting when seenEventIds is trimmed
-    private val countedReactionIds = ConcurrentHashMap.newKeySet<String>()
-    private val countedZapIds = ConcurrentHashMap.newKeySet<String>()
+    // Per-target-event dedup sets — evict with the same lifecycle as their count caches
+    private val countedReactionIds = LruCache<String, MutableSet<String>>(5000)
+    private val countedZapIds = LruCache<String, MutableSet<String>>(5000)
+    // Reply dedup: track individual reply event IDs to prevent double-counting
+    private val countedReplyIds = ConcurrentHashMap.newKeySet<String>()
 
     // Detailed reaction tracking: eventId -> (emoji -> list of reactor pubkeys)
-    private val reactionDetails = LruCache<String, MutableMap<String, MutableList<String>>>(2000)
+    private val reactionDetails = LruCache<String, ConcurrentHashMap<String, MutableList<String>>>(5000)
 
-    // Detailed zap tracking: eventId -> list of (zapper pubkey, sats)
+    // Detailed zap tracking: eventId -> synchronized list of (zapper pubkey, sats)
     private val zapDetails = LruCache<String, MutableList<Pair<String, Long>>>(5000)
     // Track which events the current user has zapped: eventId -> true
     private val userZaps = LruCache<String, Boolean>(5000)
@@ -174,8 +176,11 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             }
             7 -> addReaction(event)
             9735 -> {
-                if (!countedZapIds.add(event.id)) return  // already counted this zap receipt
                 val targetId = Nip57.getZappedEventId(event) ?: return
+                // Per-target dedup — evicts alongside the zap count cache
+                val dedupSet = countedZapIds.get(targetId)
+                    ?: mutableSetOf<String>().also { countedZapIds.put(targetId, it) }
+                synchronized(dedupSet) { if (!dedupSet.add(event.id)) return }
                 val sats = Nip57.getZapAmountSats(event)
                 if (sats > 0) {
                     val zapperPubkey = Nip57.getZapperPubkey(event)
@@ -184,9 +189,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                     if (!isOwnOptimistic) {
                         addZapSats(targetId, sats)
                         if (zapperPubkey != null) {
-                            val zaps = zapDetails.get(targetId) ?: mutableListOf<Pair<String, Long>>().also {
-                                zapDetails.put(targetId, it)
-                            }
+                            val zaps = zapDetails.get(targetId)
+                                ?: java.util.Collections.synchronizedList(mutableListOf<Pair<String, Long>>()).also {
+                                    zapDetails.put(targetId, it)
+                                }
                             zaps.add(zapperPubkey to sats)
                         }
                     }
@@ -201,20 +207,21 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     private fun addReaction(event: NostrEvent) {
         val targetEventId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1) ?: return
-        if (!countedReactionIds.add(event.id)) return  // already counted this reaction event
+        // Per-target dedup — evicts alongside the count cache so re-fetched data can be re-counted
+        val dedupSet = countedReactionIds.get(targetEventId)
+            ?: mutableSetOf<String>().also { countedReactionIds.put(targetEventId, it) }
+        synchronized(dedupSet) { if (!dedupSet.add(event.id)) return }
         val emoji = event.content.ifBlank { "❤️" }
 
-        val counts = reactionCounts.get(targetEventId) ?: mutableMapOf<String, Int>().also {
-            reactionCounts.put(targetEventId, it)
-        }
+        val counts = reactionCounts.get(targetEventId)
+            ?: ConcurrentHashMap<String, Int>().also { reactionCounts.put(targetEventId, it) }
         counts[emoji] = (counts[emoji] ?: 0) + 1
 
         // Track reactor pubkeys per emoji
-        val details = reactionDetails.get(targetEventId) ?: mutableMapOf<String, MutableList<String>>().also {
-            reactionDetails.put(targetEventId, it)
-        }
-        val pubkeys = details.getOrPut(emoji) { mutableListOf() }
-        if (event.pubkey !in pubkeys) pubkeys.add(event.pubkey)
+        val details = reactionDetails.get(targetEventId)
+            ?: ConcurrentHashMap<String, MutableList<String>>().also { reactionDetails.put(targetEventId, it) }
+        val pubkeys = details.getOrPut(emoji) { java.util.Collections.synchronizedList(mutableListOf()) }
+        synchronized(pubkeys) { if (event.pubkey !in pubkeys) pubkeys.add(event.pubkey) }
 
         userReactions.put("${targetEventId}:${event.pubkey}", emoji)
         reactionDirty = true
@@ -279,17 +286,23 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun getZapSats(eventId: String): Long = zapSats.get(eventId) ?: 0L
 
-    fun getReactionDetails(eventId: String): Map<String, List<String>> =
-        reactionDetails.get(eventId)?.toMap() ?: emptyMap()
+    fun getReactionDetails(eventId: String): Map<String, List<String>> {
+        val details = reactionDetails.get(eventId) ?: return emptyMap()
+        return details.mapValues { (_, pubkeys) -> synchronized(pubkeys) { pubkeys.toList() } }
+    }
 
-    fun getZapDetails(eventId: String): List<Pair<String, Long>> =
-        zapDetails.get(eventId)?.toList() ?: emptyList()
+    fun getZapDetails(eventId: String): List<Pair<String, Long>> {
+        val list = zapDetails.get(eventId) ?: return emptyList()
+        return synchronized(list) { list.toList() }
+    }
 
-    fun addReplyCount(eventId: String) {
-        val current = replyCounts.get(eventId) ?: 0
-        replyCounts.put(eventId, current + 1)
+    fun addReplyCount(parentEventId: String, replyEventId: String): Boolean {
+        if (!countedReplyIds.add(replyEventId)) return false
+        val current = replyCounts.get(parentEventId) ?: 0
+        replyCounts.put(parentEventId, current + 1)
         replyCountDirtyFlag = true
         markVersionDirty()
+        return true
     }
 
     fun getReplyCount(eventId: String): Int = replyCounts.get(eventId) ?: 0
@@ -328,9 +341,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         userZaps.put(eventId, true)
         optimisticZaps.add(eventId)
         addZapSats(eventId, sats)
-        val zaps = zapDetails.get(eventId) ?: mutableListOf<Pair<String, Long>>().also {
-            zapDetails.put(eventId, it)
-        }
+        val zaps = zapDetails.get(eventId)
+            ?: java.util.Collections.synchronizedList(mutableListOf<Pair<String, Long>>()).also {
+                zapDetails.put(eventId, it)
+            }
         zaps.add(zapperPubkey to sats)
     }
 
@@ -392,8 +406,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         repostCounts.evictAll()
         userReposts.evictAll()
         userZaps.evictAll()
-        countedReactionIds.clear()
-        countedZapIds.clear()
+        countedReactionIds.evictAll()
+        countedZapIds.evictAll()
+        countedReplyIds.clear()
         _profileVersion.value = 0
         _quotedEventVersion.value = 0
         _replyCountVersion.value = 0

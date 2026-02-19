@@ -33,6 +33,8 @@ class ThreadViewModel : ViewModel() {
     private var rootId: String = ""
     private var scrollTargetId: String? = null
     private var muteRepo: MuteRepository? = null
+    private val activeMetadataSubs = mutableListOf<String>()
+    private var relayPoolRef: RelayPool? = null
 
     fun clearScrollTarget() {
         _scrollToIndex.value = -1
@@ -47,6 +49,7 @@ class ThreadViewModel : ViewModel() {
         muteRepo: MuteRepository? = null
     ) {
         this.muteRepo = muteRepo
+        this.relayPoolRef = relayPool
 
         // Resolve the true root ID from the clicked event
         val cached = eventRepo.getEvent(eventId)
@@ -114,9 +117,9 @@ class ThreadViewModel : ViewModel() {
             relayPool.sendToAll(ClientMessage.req("thread-replies", repliesFilter))
             val repliesRelayCount = relayPool.getRelayUrls().size.coerceAtLeast(1)
 
-            // Wait for EOSE from ALL relays before closing each subscription (with timeout)
+            // Wait for EOSE — short timeout since relays deliver replies quickly
             launch {
-                withTimeoutOrNull(20_000) {
+                withTimeoutOrNull(1_500) {
                     var rootEoseCount = if (!needsFetchRoot) rootRelayCount else 0
                     var repliesEoseCount = 0
                     relayPool.eoseSignals.collect { subId ->
@@ -145,7 +148,7 @@ class ThreadViewModel : ViewModel() {
                 _isLoading.value = false
                 collectJob.cancel()
 
-                // Subscribe for reactions, zaps for thread events and compute reply counts
+                // Subscribe for reactions, zaps, and reply counts for thread events
                 subscribeThreadMetadata(relayPool, subManager, eventRepo)
             }
         }
@@ -192,6 +195,10 @@ class ThreadViewModel : ViewModel() {
     }
 
     private fun subscribeThreadMetadata(relayPool: RelayPool, subManager: SubscriptionManager, eventRepo: EventRepository) {
+        // Close any prior metadata subs
+        for (subId in activeMetadataSubs) relayPool.closeOnAllRelays(subId)
+        activeMetadataSubs.clear()
+
         val eventIds = threadEvents.keys.toList()
         if (eventIds.isEmpty()) return
 
@@ -199,30 +206,24 @@ class ThreadViewModel : ViewModel() {
         for (event in threadEvents.values) {
             if (event.id == rootId) continue
             val parentId = Nip10.getReplyTarget(event) ?: rootId
-            eventRepo.addReplyCount(parentId)
+            eventRepo.addReplyCount(parentId, event.id)
         }
 
-        // Reactions (kind 7) and reposts (kind 6)
+        // Reactions (kind 7), reposts (kind 6), and zaps (kind 9735) — single sub per batch
         eventIds.chunked(50).forEachIndexed { index, batch ->
             val subId = if (index == 0) "thread-reactions" else "thread-reactions-$index"
-            val filter = Filter(kinds = listOf(7, 6), eTags = batch)
+            activeMetadataSubs.add(subId)
+            val filter = Filter(kinds = listOf(7, 6, 9735), eTags = batch)
             relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
-            viewModelScope.launch {
-                subManager.awaitEoseWithTimeout(subId)
-                subManager.closeSubscription(subId)
-            }
         }
+    }
 
-        // Zaps (kind 9735)
-        eventIds.chunked(50).forEachIndexed { index, batch ->
-            val subId = if (index == 0) "thread-zaps" else "thread-zaps-$index"
-            val filter = Filter(kinds = listOf(9735), eTags = batch)
-            relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
-            viewModelScope.launch {
-                subManager.awaitEoseWithTimeout(subId)
-                subManager.closeSubscription(subId)
-            }
+    override fun onCleared() {
+        super.onCleared()
+        relayPoolRef?.let { pool ->
+            for (subId in activeMetadataSubs) pool.closeOnAllRelays(subId)
         }
+        activeMetadataSubs.clear()
     }
 
     private fun rebuildTree() {

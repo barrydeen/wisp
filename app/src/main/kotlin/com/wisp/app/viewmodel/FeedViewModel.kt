@@ -49,7 +49,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.util.concurrent.ConcurrentHashMap
 
 enum class FeedType { FOLLOWS, RELAY, LIST }
 
@@ -86,7 +85,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private var feedSubId = "feed"
     private var isLoadingMore = false
     private val activeEngagementSubIds = mutableListOf<String>()
-    private val replyCountSeenIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    private var loadMoreCount = 0
 
     val nwcRepo = NwcRepository(app, pubkeyHex)
     val zapSender = ZapSender(keyRepo, nwcRepo, relayPool, Relay.createClient())
@@ -309,9 +308,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 metadataFetcher.addToPendingProfiles(event.pubkey)
             }
         } else if (subscriptionId.startsWith("reply-count-")) {
-            if (event.kind == 1 && replyCountSeenIds.add(event.id)) {
+            if (event.kind == 1) {
                 val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
-                if (rootId != null) eventRepo.addReplyCount(rootId)
+                if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
             }
         } else if (subscriptionId.startsWith("zap-count-") || subscriptionId.startsWith("zap-rcpt-")) {
             if (event.kind == 9735) {
@@ -321,7 +320,18 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                     metadataFetcher.addToPendingProfiles(zapperPubkey)
                 }
             }
-        } else if (subscriptionId.startsWith("engage")) {
+        } else if (subscriptionId.startsWith("thread-reactions")) {
+            when (event.kind) {
+                7, 6 -> eventRepo.addEvent(event)
+                9735 -> {
+                    eventRepo.addEvent(event)
+                    val zapperPubkey = Nip57.getZapperPubkey(event)
+                    if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
+                        metadataFetcher.addToPendingProfiles(zapperPubkey)
+                    }
+                }
+            }
+        } else if (subscriptionId.startsWith("engage") || subscriptionId.startsWith("user-engage")) {
             when (event.kind) {
                 7 -> eventRepo.addEvent(event)
                 9735 -> {
@@ -332,10 +342,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
                 1 -> {
-                    if (replyCountSeenIds.add(event.id)) {
-                        val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
-                        if (rootId != null) eventRepo.addReplyCount(rootId)
-                    }
+                    val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
+                    if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
                 }
             }
         } else {
@@ -464,23 +472,25 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         eventRepo.countNewNotes = false
         feedEoseJob?.cancel()
 
+        val since24h = (System.currentTimeMillis() / 1000) - 86400
+
         val targetedRelays: Set<String> = when (_feedType.value) {
             FeedType.LIST -> {
                 val list = listRepo.selectedList.value ?: return
                 val authors = list.members.toList()
                 if (authors.isEmpty()) return
-                val notesFilter = Filter(kinds = listOf(1, 6), limit = 100)
+                val notesFilter = Filter(kinds = listOf(1, 6), since = since24h, limit = 100)
                 outboxRouter.subscribeByAuthors(feedSubId, authors, notesFilter)
             }
             FeedType.FOLLOWS -> {
                 val authors = contactRepo.getFollowList().map { it.pubkey }
                 if (authors.isEmpty()) return
-                val notesFilter = Filter(kinds = listOf(1, 6), limit = 100)
+                val notesFilter = Filter(kinds = listOf(1, 6), since = since24h, limit = 100)
                 outboxRouter.subscribeByAuthors(feedSubId, authors, notesFilter)
             }
             FeedType.RELAY -> {
                 val url = _selectedRelay.value ?: return
-                val filter = Filter(kinds = listOf(1, 6), limit = 100)
+                val filter = Filter(kinds = listOf(1, 6), since = since24h, limit = 100)
                 val msg = ClientMessage.req(feedSubId, filter)
                 relayPool.sendToRelay(url, msg)
                 setOf(url)
@@ -489,9 +499,40 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
         feedEoseJob = viewModelScope.launch {
             subManager.awaitEoseCount(feedSubId, targetedRelays.size.coerceAtLeast(1))
-            eventRepo.countNewNotes = true
             _initialLoadDone.value = true
 
+            // Backfill if the 24h window yielded very few results
+            if (eventRepo.feed.value.size < 10) {
+                val backfillFilter = when (_feedType.value) {
+                    FeedType.LIST -> {
+                        val list = listRepo.selectedList.value
+                        val authors = list?.members?.toList()
+                        if (!authors.isNullOrEmpty()) {
+                            outboxRouter.subscribeByAuthors("feed-backfill", authors, Filter(kinds = listOf(1, 6), limit = 30))
+                        }
+                        null // subscribed via outbox
+                    }
+                    FeedType.FOLLOWS -> {
+                        val authors = contactRepo.getFollowList().map { it.pubkey }
+                        if (authors.isNotEmpty()) {
+                            outboxRouter.subscribeByAuthors("feed-backfill", authors, Filter(kinds = listOf(1, 6), limit = 30))
+                        }
+                        null
+                    }
+                    FeedType.RELAY -> {
+                        val url = _selectedRelay.value
+                        if (url != null) {
+                            val f = Filter(kinds = listOf(1, 6), limit = 30)
+                            relayPool.sendToRelay(url, ClientMessage.req("feed-backfill", f))
+                        }
+                        null
+                    }
+                }
+                subManager.awaitEoseWithTimeout("feed-backfill")
+                subManager.closeSubscription("feed-backfill")
+            }
+
+            eventRepo.countNewNotes = true
             subscribeEngagementForFeed()
 
             withContext(processingDispatcher) {
@@ -507,8 +548,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         val feedEvents = eventRepo.feed.value
         if (feedEvents.isEmpty()) return
         val eventIds = feedEvents.map { it.id }
+        subscribeEngagementForEvents(eventIds, "engage")
+    }
+
+    private fun subscribeEngagementForEvents(eventIds: List<String>, prefix: String) {
         eventIds.chunked(50).forEachIndexed { index, batch ->
-            val subId = if (index == 0) "engage" else "engage-$index"
+            val subId = if (index == 0) prefix else "$prefix-$index"
             activeEngagementSubIds.add(subId)
             val filters = listOf(
                 Filter(kinds = listOf(7), eTags = batch),
@@ -516,10 +561,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 Filter(kinds = listOf(1), eTags = batch)
             )
             relayPool.sendToReadRelays(ClientMessage.req(subId, filters))
-            viewModelScope.launch {
-                subManager.awaitEoseWithTimeout(subId)
-                subManager.closeSubscription(subId)
-            }
         }
     }
 
@@ -657,8 +698,20 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         viewModelScope.launch {
+            val feedSizeBefore = eventRepo.feed.value.size
             subManager.awaitEoseWithTimeout("loadmore")
             subManager.closeSubscription("loadmore")
+
+            // Subscribe engagement for newly loaded events
+            val currentFeed = eventRepo.feed.value
+            if (currentFeed.size > feedSizeBefore) {
+                val newEventIds = currentFeed.drop(feedSizeBefore).map { it.id }
+                if (newEventIds.isNotEmpty()) {
+                    loadMoreCount++
+                    subscribeEngagementForEvents(newEventIds, "engage-more-$loadMoreCount")
+                }
+            }
+
             isLoadingMore = false
         }
     }
@@ -876,6 +929,23 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             subManager.awaitEoseWithTimeout(subId)
             subManager.closeSubscription(subId)
+        }
+    }
+
+    /**
+     * Pause feed engagement subscriptions to free subscription capacity for thread loading.
+     */
+    fun pauseEngagement() {
+        for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
+        activeEngagementSubIds.clear()
+    }
+
+    /**
+     * Resume engagement subscriptions after returning from a thread.
+     */
+    fun resumeEngagement() {
+        if (activeEngagementSubIds.isEmpty()) {
+            subscribeEngagementForFeed()
         }
     }
 

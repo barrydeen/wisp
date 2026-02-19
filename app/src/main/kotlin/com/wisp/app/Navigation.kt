@@ -351,7 +351,8 @@ fun WispNavHost() {
                     contactRepo = feedViewModel.contactRepo,
                     relayPool = feedViewModel.relayPool,
                     outboxRouter = feedViewModel.outboxRouter,
-                    relayListRepo = feedViewModel.relayListRepo
+                    relayListRepo = feedViewModel.relayListRepo,
+                    subManager = feedViewModel.subManager
                 )
             }
             val isBlockedState by feedViewModel.muteRepo.blockedPubkeys.collectAsState()
@@ -488,6 +489,7 @@ fun WispNavHost() {
             val eventId = backStackEntry.arguments?.getString("eventId") ?: return@composable
             val threadViewModel: ThreadViewModel = viewModel()
             LaunchedEffect(eventId) {
+                feedViewModel.pauseEngagement()
                 threadViewModel.loadThread(
                     eventId = eventId,
                     eventRepo = feedViewModel.eventRepo,
@@ -496,6 +498,9 @@ fun WispNavHost() {
                     queueProfileFetch = { pubkey -> feedViewModel.queueProfileFetch(pubkey) },
                     muteRepo = feedViewModel.muteRepo
                 )
+            }
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                onDispose { feedViewModel.resumeEngagement() }
             }
             var threadZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
             val threadZapInProgress by feedViewModel.zapInProgress.collectAsState()

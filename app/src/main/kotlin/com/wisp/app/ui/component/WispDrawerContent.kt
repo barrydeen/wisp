@@ -1,10 +1,13 @@
 package com.wisp.app.ui.component
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -17,11 +20,13 @@ import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.NavigationDrawerItem
@@ -32,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -59,15 +65,50 @@ fun WispDrawerContent(
         drawerContainerColor = MaterialTheme.colorScheme.surface
     ) {
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+        var showQrDialog by remember { mutableStateOf(false) }
+        var showLightningDialog by remember { mutableStateOf(false) }
+
         Column(modifier = Modifier.padding(16.dp)) {
-            ProfilePicture(url = profile?.picture, size = 64)
-            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.padding(bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                ProfilePicture(url = profile?.picture, size = 64)
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(onClick = { showQrDialog = true }) {
+                    Icon(
+                        Icons.Outlined.QrCode2,
+                        contentDescription = "Show QR code",
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (profile?.lud16 != null) {
+                    IconButton(onClick = { showLightningDialog = true }) {
+                        Icon(
+                            Icons.Outlined.CurrencyBitcoin,
+                            contentDescription = "Lightning address",
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
             Text(
                 text = profile?.displayString ?: "Anonymous",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            if (pubkey != null) {
+            if (!profile?.nip05.isNullOrBlank()) {
+                Text(
+                    text = profile!!.nip05!!,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            } else if (pubkey != null) {
                 Text(
                     text = pubkey.take(16) + "...",
                     style = MaterialTheme.typography.bodySmall,
@@ -76,6 +117,13 @@ fun WispDrawerContent(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
+
+        if (showQrDialog && pubkey != null) {
+            QrCodeDialog(pubkeyHex = pubkey, onDismiss = { showQrDialog = false })
+        }
+        if (showLightningDialog && profile?.lud16 != null) {
+            LightningQrDialog(lud16 = profile.lud16, onDismiss = { showLightningDialog = false })
         }
 
         Spacer(modifier = Modifier.height(8.dp))
