@@ -21,6 +21,9 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
     val eventRepository: EventRepository?
         get() = eventRepo
 
+    val contactRepository: ContactRepository?
+        get() = contactRepo
+
     private var notifRepo: NotificationRepository? = null
     private var eventRepo: EventRepository? = null
     private var contactRepo: ContactRepository? = null

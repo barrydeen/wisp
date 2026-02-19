@@ -44,19 +44,20 @@ class MetadataFetcher(
 
     // Quoted event fetching
     private val scannedQuoteEvents = mutableSetOf<String>()
-    private val failedQuoteFetches = mutableSetOf<String>()
+    private val failedQuoteFetches = mutableMapOf<String, Long>() // eventId -> timestamp of failure
     private val nostrNoteUriRegex = Regex("""nostr:(note1|nevent1)[a-z0-9]+""")
     private val validHexId = Regex("""^[0-9a-f]{64}$""")
+
+    companion object {
+        private const val MAX_PROFILE_ATTEMPTS = 3
+        private const val QUOTE_RETRY_MS = 30_000L // retry failed quotes after 30s
+    }
 
     // Batched quote fetching (unified queue for inline + on-demand)
     private val pendingOnDemandQuotes = mutableSetOf<String>()
     private val pendingRelayHints = mutableMapOf<String, List<String>>()
     private var onDemandQuoteBatchJob: Job? = null
     private var onDemandQuoteBatchCounter = 0
-
-    companion object {
-        private const val MAX_PROFILE_ATTEMPTS = 3
-    }
 
     fun clear() {
         profileBatchJob?.cancel()
@@ -136,8 +137,11 @@ class MetadataFetcher(
     fun requestQuotedEvent(eventId: String, relayHints: List<String> = emptyList()) {
         synchronized(pendingOnDemandQuotes) {
             if (eventRepo.getEvent(eventId) != null) return
-            if (eventId in failedQuoteFetches) return
+            val failedAt = failedQuoteFetches[eventId]
+            if (failedAt != null && System.currentTimeMillis() - failedAt < QUOTE_RETRY_MS) return
             if (eventId in pendingOnDemandQuotes) return
+            // Clear old failure so this attempt is fresh
+            if (failedAt != null) failedQuoteFetches.remove(eventId)
             pendingOnDemandQuotes.add(eventId)
             if (relayHints.isNotEmpty()) {
                 pendingRelayHints[eventId] = relayHints
@@ -258,7 +262,7 @@ class MetadataFetcher(
         pendingRelayHints.clear()
 
         val subId = "quote-${onDemandQuoteBatchCounter++}"
-        relayPool.sendToReadRelays(ClientMessage.req(subId, Filter(ids = batch)))
+        relayPool.sendToAll(ClientMessage.req(subId, Filter(ids = batch)))
 
         // Also query hinted relays for IDs that have hints
         for (id in batch) {
@@ -271,14 +275,18 @@ class MetadataFetcher(
         scope.launch {
             subManager.awaitEoseWithTimeout(subId)
             subManager.closeSubscription(subId)
-            // Mark unfound events as failed to prevent infinite retries
+            // Mark unfound events as temporarily failed (will retry after QUOTE_RETRY_MS)
+            val now = System.currentTimeMillis()
             for (id in batch) {
                 if (eventRepo.getEvent(id) == null) {
-                    failedQuoteFetches.add(id)
+                    failedQuoteFetches[id] = now
                 }
             }
-            // Prevent unbounded growth
-            if (failedQuoteFetches.size > 2000) failedQuoteFetches.clear()
+            // Prevent unbounded growth — evict oldest entries
+            if (failedQuoteFetches.size > 2000) {
+                val cutoff = now - QUOTE_RETRY_MS * 2
+                failedQuoteFetches.entries.removeAll { it.value < cutoff }
+            }
         }
     }
 

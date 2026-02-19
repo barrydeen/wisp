@@ -66,6 +66,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val userReactions = LruCache<String, String>(5000)
     private val _reactionVersion = MutableStateFlow(0)
     val reactionVersion: StateFlow<Int> = _reactionVersion
+    // Dedup for counted reactions/zaps — prevents double-counting when seenEventIds is trimmed
+    private val countedReactionIds = ConcurrentHashMap.newKeySet<String>()
+    private val countedZapIds = ConcurrentHashMap.newKeySet<String>()
 
     // Detailed reaction tracking: eventId -> (emoji -> list of reactor pubkeys)
     private val reactionDetails = LruCache<String, MutableMap<String, MutableList<String>>>(2000)
@@ -171,6 +174,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             }
             7 -> addReaction(event)
             9735 -> {
+                if (!countedZapIds.add(event.id)) return  // already counted this zap receipt
                 val targetId = Nip57.getZappedEventId(event) ?: return
                 val sats = Nip57.getZapAmountSats(event)
                 if (sats > 0) {
@@ -197,6 +201,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     private fun addReaction(event: NostrEvent) {
         val targetEventId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1) ?: return
+        if (!countedReactionIds.add(event.id)) return  // already counted this reaction event
         val emoji = event.content.ifBlank { "❤️" }
 
         val counts = reactionCounts.get(targetEventId) ?: mutableMapOf<String, Int>().also {
@@ -387,6 +392,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         repostCounts.evictAll()
         userReposts.evictAll()
         userZaps.evictAll()
+        countedReactionIds.clear()
+        countedZapIds.clear()
         _profileVersion.value = 0
         _quotedEventVersion.value = 0
         _replyCountVersion.value = 0

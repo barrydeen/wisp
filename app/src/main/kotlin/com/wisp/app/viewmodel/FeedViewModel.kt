@@ -177,11 +177,18 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         if (relaysInitialized) return
         relaysInitialized = true
         relayPool.updateBlockedUrls(keyRepo.getBlockedRelays())
-        val relays = keyRepo.getRelays()
-        relayPool.updateRelays(relays)
+        val pinnedRelays = keyRepo.getRelays()
+        // Merge pinned relays with cached scored relays immediately so the pool
+        // starts with the full relay set (40-50) instead of just pinned (5).
+        // RelayScoreBoard rebuilds from persisted RelayListRepository data on init.
+        val pinnedUrls = pinnedRelays.map { it.url }.toSet()
+        val cachedScored = relayScoreBoard.getScoredRelayConfigs()
+            .filter { it.url !in pinnedUrls }
+        val initialRelays = pinnedRelays + cachedScored
+        relayPool.updateRelays(initialRelays)
         relayPool.updateDmRelays(keyRepo.getDmRelays())
 
-        viewModelScope.launch { relayInfoRepo.prefetchAll(relays.map { it.url }) }
+        viewModelScope.launch { relayInfoRepo.prefetchAll(initialRelays.map { it.url }) }
 
         // Main event processing loop — runs on Default dispatcher to keep UI thread free
         viewModelScope.launch(processingDispatcher) {

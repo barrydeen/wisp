@@ -749,15 +749,68 @@ fun WispNavHost() {
             LaunchedEffect(Unit) {
                 notificationsViewModel.markRead()
             }
+            var notifZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
+            val notifZapInProgress by feedViewModel.zapInProgress.collectAsState()
+            var notifZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
+            val notifBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
+            val isNwcConnected = feedViewModel.nwcRepo.hasConnection()
+
+            LaunchedEffect(Unit) {
+                feedViewModel.zapSuccess.collect { eventId ->
+                    notifZapAnimatingIds = notifZapAnimatingIds + eventId
+                    kotlinx.coroutines.delay(1500)
+                    notifZapAnimatingIds = notifZapAnimatingIds - eventId
+                }
+            }
+
+            if (notifZapTarget != null) {
+                ZapDialog(
+                    isWalletConnected = isNwcConnected,
+                    onDismiss = { notifZapTarget = null },
+                    onZap = { amountMsats, message ->
+                        val event = notifZapTarget ?: return@ZapDialog
+                        notifZapTarget = null
+                        feedViewModel.sendZap(event, amountMsats, message)
+                    },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) }
+                )
+            }
+
             NotificationsScreen(
                 viewModel = notificationsViewModel,
                 scrollToTopTrigger = scrollToTopTrigger,
+                userPubkey = feedViewModel.getUserPubkey(),
                 onNoteClick = { eventId ->
                     navController.navigate("thread/$eventId")
                 },
                 onProfileClick = { pubkey ->
                     navController.navigate("profile/$pubkey")
-                }
+                },
+                onReply = { event ->
+                    replyTarget = event
+                    composeViewModel.clear()
+                    navController.navigate(Routes.COMPOSE)
+                },
+                onReact = { event, emoji ->
+                    feedViewModel.sendReaction(event, emoji)
+                },
+                onRepost = { event ->
+                    feedViewModel.sendRepost(event)
+                },
+                onQuote = { event ->
+                    quoteTarget = event
+                    replyTarget = null
+                    composeViewModel.clear()
+                    navController.navigate(Routes.COMPOSE)
+                },
+                onZap = { event -> notifZapTarget = event },
+                onFollowToggle = { pubkey -> feedViewModel.toggleFollow(pubkey) },
+                onBlockUser = { pubkey -> feedViewModel.blockUser(pubkey) },
+                onBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) },
+                nip05Repo = feedViewModel.nip05Repo,
+                isZapAnimating = { it in notifZapAnimatingIds },
+                isZapInProgress = { it in notifZapInProgress },
+                isBookmarked = { it in notifBookmarkedIds }
             )
         }
     }

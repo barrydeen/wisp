@@ -55,6 +55,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import androidx.activity.ComponentActivity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.FollowSet
@@ -130,9 +132,11 @@ fun FeedScreen(
 
     val isWalletConnected = viewModel.nwcRepo.hasConnection()
 
-    // Re-establish subscriptions (including outbox relays) when app returns from background
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
+    // Re-establish subscriptions when app returns from background.
+    // Use the Activity lifecycle (not NavBackStackEntry) so tab navigation
+    // doesn't trigger unnecessary re-subscriptions that duplicate counts.
+    val activity = LocalContext.current as ComponentActivity
+    DisposableEffect(activity) {
         var hasPaused = false
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE) {
@@ -141,8 +145,8 @@ fun FeedScreen(
                 viewModel.onAppResume()
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        activity.lifecycle.addObserver(observer)
+        onDispose { activity.lifecycle.removeObserver(observer) }
     }
 
     // Collect zap success events for animation
