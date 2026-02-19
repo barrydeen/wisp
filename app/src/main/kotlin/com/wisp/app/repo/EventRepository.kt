@@ -13,9 +13,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 
 class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: MuteRepository? = null) {
     private val eventCache = LruCache<String, NostrEvent>(5000)
+    private val seenEventIds = ConcurrentHashMap.newKeySet<String>()  // thread-safe dedup that doesn't evict
     private val feedList = mutableListOf<NostrEvent>()
     private val feedIds = HashSet<String>()  // O(1) dedup that doesn't evict like LruCache
 
@@ -56,6 +58,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val userReactions = LruCache<String, String>(5000)
     private val _reactionVersion = MutableStateFlow(0)
     val reactionVersion: StateFlow<Int> = _reactionVersion
+
+    // Detailed reaction tracking: eventId -> (emoji -> list of reactor pubkeys)
+    private val reactionDetails = LruCache<String, MutableMap<String, MutableList<String>>>(2000)
+
+    // Detailed zap tracking: eventId -> list of (zapper pubkey, sats)
+    private val zapDetails = LruCache<String, MutableList<Pair<String, Long>>>(5000)
 
     // Debouncing: coalesce rapid-fire feed list and version updates
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -105,7 +113,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun addEvent(event: NostrEvent) {
-        if (eventCache.get(event.id) != null) return
+        if (!seenEventIds.add(event.id)) return  // atomic dedup across all relay threads
         if (muteRepo?.isBlocked(event.pubkey) == true) return
         if (event.kind == 1 && muteRepo?.containsMutedWord(event.content) == true) return
         eventCache.put(event.id, event)
@@ -129,7 +137,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                     try {
                         val inner = fromJson(event.content)
                         repostAuthors.put(inner.id, event.pubkey)
-                        if (eventCache.get(inner.id) == null) {
+                        if (seenEventIds.add(inner.id)) {
                             eventCache.put(inner.id, inner)
                             val isReply = inner.tags.any { it.size >= 2 && it[0] == "e" }
                             if (!isReply) binaryInsert(inner)
@@ -141,19 +149,36 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             9735 -> {
                 val targetId = Nip57.getZappedEventId(event) ?: return
                 val sats = Nip57.getZapAmountSats(event)
-                if (sats > 0) addZapSats(targetId, sats)
+                if (sats > 0) {
+                    addZapSats(targetId, sats)
+                    // Extract zapper pubkey from the description tag (serialized kind 9734 zap request)
+                    val zapperPubkey = Nip57.getZapperPubkey(event)
+                    if (zapperPubkey != null) {
+                        val zaps = zapDetails.get(targetId) ?: mutableListOf<Pair<String, Long>>().also {
+                            zapDetails.put(targetId, it)
+                        }
+                        zaps.add(zapperPubkey to sats)
+                    }
+                }
             }
         }
     }
 
     private fun addReaction(event: NostrEvent) {
         val targetEventId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1) ?: return
-        val emoji = event.content.ifBlank { "+" }
+        val emoji = event.content.ifBlank { "❤️" }
 
         val counts = reactionCounts.get(targetEventId) ?: mutableMapOf<String, Int>().also {
             reactionCounts.put(targetEventId, it)
         }
         counts[emoji] = (counts[emoji] ?: 0) + 1
+
+        // Track reactor pubkeys per emoji
+        val details = reactionDetails.get(targetEventId) ?: mutableMapOf<String, MutableList<String>>().also {
+            reactionDetails.put(targetEventId, it)
+        }
+        val pubkeys = details.getOrPut(emoji) { mutableListOf() }
+        if (event.pubkey !in pubkeys) pubkeys.add(event.pubkey)
 
         userReactions.put("${targetEventId}:${event.pubkey}", emoji)
         reactionDirty = true
@@ -176,7 +201,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun cacheEvent(event: NostrEvent) {
-        if (eventCache.get(event.id) != null) return
+        if (!seenEventIds.add(event.id)) return
         eventCache.put(event.id, event)
         if (event.kind == 0) {
             val updated = profileRepo?.updateFromEvent(event)
@@ -212,6 +237,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun getZapSats(eventId: String): Long = zapSats.get(eventId) ?: 0L
+
+    fun getReactionDetails(eventId: String): Map<String, List<String>> =
+        reactionDetails.get(eventId)?.toMap() ?: emptyMap()
+
+    fun getZapDetails(eventId: String): List<Pair<String, Long>> =
+        zapDetails.get(eventId)?.toList() ?: emptyList()
 
     fun addReplyCount(eventId: String) {
         val current = replyCounts.get(eventId) ?: 0
@@ -257,6 +288,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             feedIds.clear()
         }
         eventCache.evictAll()
+        seenEventIds.clear()
         _feed.value = emptyList()
         _newNoteCount.value = 0
         countNewNotes = false

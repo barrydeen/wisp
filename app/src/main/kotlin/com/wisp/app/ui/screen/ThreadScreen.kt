@@ -48,6 +48,7 @@ fun ThreadScreen(
     val flatThread by viewModel.flatThread.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val reactionVersion by eventRepo.reactionVersion.collectAsState()
+    val zapVersion by eventRepo.zapVersion.collectAsState()
 
     Scaffold(
         topBar = {
@@ -80,6 +81,8 @@ fun ThreadScreen(
                     val likeCount = reactionVersion.let { eventRepo.getReactionCount(event.id) }
                     val zapSats = eventRepo.getZapSats(event.id)
                     val userEmoji = reactionVersion.let { userPubkey?.let { eventRepo.getUserReactionEmoji(event.id, it) } }
+                    val reactionDetails = reactionVersion.let { eventRepo.getReactionDetails(event.id) }
+                    val zapDetailsList = zapVersion.let { eventRepo.getZapDetails(event.id) }
                     PostCard(
                         event = event,
                         profile = profileData,
@@ -94,6 +97,9 @@ fun ThreadScreen(
                         zapSats = zapSats,
                         isZapAnimating = event.id in zapAnimatingIds,
                         eventRepo = eventRepo,
+                        reactionDetails = reactionDetails,
+                        zapDetails = zapDetailsList,
+                        onNavigateToProfileFromDetails = onProfileClick,
                         modifier = Modifier.padding(start = (min(depth, 4) * 24).dp)
                     )
                 }

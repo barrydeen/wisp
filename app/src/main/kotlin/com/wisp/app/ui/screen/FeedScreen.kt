@@ -535,6 +535,12 @@ private fun FeedItem(
                 ?: pk.take(8) + "..."
         }
     }
+    val reactionDetails = remember(reactionVersion, event.id) {
+        viewModel.eventRepo.getReactionDetails(event.id)
+    }
+    val zapDetails = remember(zapVersion, event.id) {
+        viewModel.eventRepo.getZapDetails(event.id)
+    }
     PostCard(
         event = event,
         profile = profileData,
@@ -553,7 +559,10 @@ private fun FeedItem(
         isZapAnimating = isZapAnimating,
         eventRepo = viewModel.eventRepo,
         relayIcons = relayIcons,
-        repostedBy = repostedByName
+        repostedBy = repostedByName,
+        reactionDetails = reactionDetails,
+        zapDetails = zapDetails,
+        onNavigateToProfileFromDetails = onNavigateToProfile
     )
 }
 

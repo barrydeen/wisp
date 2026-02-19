@@ -19,6 +19,21 @@ object Nip57 {
         return event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
     }
 
+    /**
+     * Extract the zapper's pubkey from a kind 9735 zap receipt.
+     * The description tag contains the serialized kind 9734 zap request whose pubkey is the sender.
+     */
+    fun getZapperPubkey(event: NostrEvent): String? {
+        val description = event.tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
+            ?: return null
+        return try {
+            val zapRequest = NostrEvent.fromJson(description)
+            zapRequest.pubkey.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun getZapAmountSats(event: NostrEvent): Long {
         val bolt11 = event.tags.firstOrNull { it.size >= 2 && it[0] == "bolt11" }?.get(1)
             ?: return 0
