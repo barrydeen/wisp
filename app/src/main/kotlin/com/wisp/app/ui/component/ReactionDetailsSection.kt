@@ -32,6 +32,7 @@ fun StackedAvatarRow(
     resolveProfile: (String) -> ProfileData?,
     onProfileClick: (String) -> Unit,
     modifier: Modifier = Modifier,
+    isFollowing: ((String) -> Boolean)? = null,
     maxAvatars: Int = 5
 ) {
     val displayed = if (pubkeys.size <= maxAvatars) pubkeys else pubkeys.take(maxAvatars)
@@ -46,16 +47,17 @@ fun StackedAvatarRow(
                 val profile = resolveProfile(pubkey)
                 ProfilePicture(
                     url = profile?.picture,
-                    size = 24,
+                    size = 36,
+                    showFollowBadge = isFollowing?.invoke(pubkey) ?: false,
                     modifier = Modifier
                         .zIndex((displayed.size - index).toFloat())
-                        .offset(x = (18 * index).dp)
+                        .offset(x = (27 * index).dp)
                         .clickable { onProfileClick(pubkey) }
                 )
             }
         }
         // Account for the stacked width
-        Spacer(Modifier.width((18 * (displayed.size - 1) + 24).dp))
+        Spacer(Modifier.width((27 * (displayed.size - 1) + 36).dp))
         if (overflow > 0) {
             Spacer(Modifier.width(4.dp))
             Text(

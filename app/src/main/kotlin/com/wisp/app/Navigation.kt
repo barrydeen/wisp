@@ -112,6 +112,7 @@ fun WispNavHost() {
 
     var replyTarget by remember { mutableStateOf<NostrEvent?>(null) }
     var quoteTarget by remember { mutableStateOf<NostrEvent?>(null) }
+    var scrollToTopTrigger by remember { mutableStateOf(0) }
 
     val startDestination = when {
         !authViewModel.isLoggedIn -> Routes.AUTH
@@ -134,7 +135,7 @@ fun WispNavHost() {
 
     // Initialize notifications viewmodel with shared repos
     LaunchedEffect(Unit) {
-        notificationsViewModel.init(feedViewModel.notifRepo, feedViewModel.eventRepo)
+        notificationsViewModel.init(feedViewModel.notifRepo, feedViewModel.eventRepo, feedViewModel.contactRepo)
     }
 
     // Process incoming gift wraps for DMs
@@ -168,10 +169,10 @@ fun WispNavHost() {
                     hasUnreadMessages = hasUnreadDms,
                     hasUnreadNotifications = hasUnreadNotifications,
                     onTabSelected = { tab ->
+                        scrollToTopTrigger++
                         navController.navigate(tab.route) {
-                            popUpTo(Routes.FEED) { saveState = true }
+                            popUpTo(Routes.FEED) { inclusive = false }
                             launchSingleTop = true
-                            restoreState = true
                         }
                     }
                 )
@@ -209,6 +210,7 @@ fun WispNavHost() {
         composable(Routes.FEED) {
             FeedScreen(
                 viewModel = feedViewModel,
+                scrollToTopTrigger = scrollToTopTrigger,
                 onCompose = {
                     replyTarget = null
                     quoteTarget = null
@@ -749,6 +751,7 @@ fun WispNavHost() {
             }
             NotificationsScreen(
                 viewModel = notificationsViewModel,
+                scrollToTopTrigger = scrollToTopTrigger,
                 onNoteClick = { eventId ->
                     navController.navigate("thread/$eventId")
                 },

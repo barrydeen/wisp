@@ -309,7 +309,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
                 if (rootId != null) eventRepo.addReplyCount(rootId)
             }
-        } else if (subscriptionId.startsWith("zap-count-") || subscriptionId.startsWith("zaps") || subscriptionId.startsWith("zap-receipt-")) {
+        } else if (subscriptionId.startsWith("zap-count-") || subscriptionId.startsWith("zaps") || subscriptionId.startsWith("zap-rcpt-")) {
             if (event.kind == 9735) {
                 eventRepo.addEvent(event)
                 val zapperPubkey = Nip57.getZapperPubkey(event)
@@ -528,7 +528,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
      * Returns the subscription ID so the caller can close it early on failure.
      */
     private fun subscribeZapReceipt(eventId: String): String {
-        val subId = "zap-receipt-$eventId"
+        val subId = "zap-rcpt-${eventId.take(12)}"
         val filter = Filter(kinds = listOf(9735), eTags = listOf(eventId))
         relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
         viewModelScope.launch {

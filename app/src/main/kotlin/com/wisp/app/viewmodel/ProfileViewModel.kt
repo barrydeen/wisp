@@ -93,7 +93,7 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
         // Load from cache immediately
         val profile = eventRepo.getProfileData(pubkeyHex)
         if (profile != null) {
-            _name.value = profile.name ?: ""
+            _name.value = profile.displayName?.ifBlank { null } ?: profile.name ?: ""
             _about.value = profile.about ?: ""
             _picture.value = profile.picture ?: ""
             _nip05.value = profile.nip05 ?: ""
@@ -115,7 +115,7 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
                 if (event.kind == 0 && event.pubkey == pubkeyHex) {
                     eventRepo.addEvent(event)
                     val updated = eventRepo.getProfileData(pubkeyHex) ?: return@collect
-                    _name.value = updated.name ?: ""
+                    _name.value = updated.displayName?.ifBlank { null } ?: updated.name ?: ""
                     _about.value = updated.about ?: ""
                     _picture.value = updated.picture ?: ""
                     _nip05.value = updated.nip05 ?: ""
@@ -136,7 +136,10 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
         return try {
             _publishing.value = true
             val content = buildJsonObject {
-                if (_name.value.isNotBlank()) put("name", JsonPrimitive(_name.value))
+                if (_name.value.isNotBlank()) {
+                    put("display_name", JsonPrimitive(_name.value))
+                    put("name", JsonPrimitive(_name.value))
+                }
                 if (_about.value.isNotBlank()) put("about", JsonPrimitive(_about.value))
                 if (_picture.value.isNotBlank()) put("picture", JsonPrimitive(_picture.value))
                 if (_nip05.value.isNotBlank()) put("nip05", JsonPrimitive(_nip05.value))

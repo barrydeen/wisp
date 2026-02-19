@@ -90,7 +90,8 @@ fun FeedScreen(
     onLists: () -> Unit = {},
     onSafety: () -> Unit = {},
     onConsole: () -> Unit = {},
-    onKeys: () -> Unit = {}
+    onKeys: () -> Unit = {},
+    scrollToTopTrigger: Int = 0
 ) {
     val feed by viewModel.feed.collectAsState()
     val feedType by viewModel.feedType.collectAsState()
@@ -104,6 +105,9 @@ fun FeedScreen(
     val nip05Version by viewModel.nip05Repo.version.collectAsState()
     val connectedCount by viewModel.relayPool.connectedCount.collectAsState()
     val listState = rememberLazyListState()
+    LaunchedEffect(scrollToTopTrigger) {
+        if (scrollToTopTrigger > 0) listState.animateScrollToItem(0)
+    }
     val userPubkey = viewModel.getUserPubkey()
     val selectedList by viewModel.selectedList.collectAsState()
     val ownLists by viewModel.listRepo.ownLists.collectAsState()

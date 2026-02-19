@@ -5,6 +5,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
+private fun String?.takeUnlessBlank(): String? = this?.ifBlank { null }
+
 @Serializable
 data class ProfileData(
     val pubkey: String,
@@ -18,7 +20,9 @@ data class ProfileData(
     val updatedAt: Long
 ) {
     val displayString: String
-        get() = displayName ?: name ?: "${pubkey.take(8)}...${pubkey.takeLast(4)}"
+        get() = displayName.takeUnlessBlank()
+            ?: name.takeUnlessBlank()
+            ?: "${pubkey.take(8)}...${pubkey.takeLast(4)}"
 
     companion object {
         private val json = Json { ignoreUnknownKeys = true }

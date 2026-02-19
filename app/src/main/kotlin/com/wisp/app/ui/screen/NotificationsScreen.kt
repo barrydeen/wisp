@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -19,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -43,11 +45,16 @@ import java.util.Locale
 @Composable
 fun NotificationsScreen(
     viewModel: NotificationsViewModel,
+    scrollToTopTrigger: Int = 0,
     onNoteClick: (String) -> Unit,
     onProfileClick: (String) -> Unit
 ) {
     val notifications by viewModel.notifications.collectAsState()
     val eventRepo = viewModel.eventRepository
+    val listState = rememberLazyListState()
+    LaunchedEffect(scrollToTopTrigger) {
+        if (scrollToTopTrigger > 0) listState.animateScrollToItem(0)
+    }
 
     Scaffold(
         topBar = {
@@ -76,6 +83,7 @@ fun NotificationsScreen(
             }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
@@ -86,6 +94,7 @@ fun NotificationsScreen(
                             group = group,
                             eventRepo = eventRepo,
                             resolveProfile = { viewModel.getProfileData(it) },
+                            isFollowing = { viewModel.isFollowing(it) },
                             onNoteClick = onNoteClick,
                             onProfileClick = onProfileClick
                         )
@@ -93,12 +102,14 @@ fun NotificationsScreen(
                             group = group,
                             eventRepo = eventRepo,
                             resolveProfile = { viewModel.getProfileData(it) },
+                            isFollowing = { viewModel.isFollowing(it) },
                             onNoteClick = onNoteClick,
                             onProfileClick = onProfileClick
                         )
                         is NotificationGroup.ReplyNotification -> ReplyNotificationRow(
                             item = group,
                             eventRepo = eventRepo,
+                            isFollowing = viewModel.isFollowing(group.senderPubkey),
                             onNoteClick = onNoteClick,
                             onProfileClick = onProfileClick
                         )
@@ -106,6 +117,7 @@ fun NotificationsScreen(
                             item = group,
                             eventRepo = eventRepo,
                             resolveProfile = { viewModel.getProfileData(it) },
+                            isFollowing = viewModel.isFollowing(group.senderPubkey),
                             onNoteClick = onNoteClick,
                             onProfileClick = onProfileClick
                         )
@@ -113,6 +125,7 @@ fun NotificationsScreen(
                             item = group,
                             eventRepo = eventRepo,
                             resolveProfile = { viewModel.getProfileData(it) },
+                            isFollowing = viewModel.isFollowing(group.senderPubkey),
                             onNoteClick = onNoteClick,
                             onProfileClick = onProfileClick
                         )
@@ -133,6 +146,7 @@ private fun ReactionGroupRow(
     group: NotificationGroup.ReactionGroup,
     eventRepo: EventRepository?,
     resolveProfile: (String) -> ProfileData?,
+    isFollowing: (String) -> Boolean,
     onNoteClick: (String) -> Unit,
     onProfileClick: (String) -> Unit
 ) {
@@ -171,6 +185,7 @@ private fun ReactionGroupRow(
                 StackedAvatarRow(
                     pubkeys = pubkeys,
                     resolveProfile = resolveProfile,
+                    isFollowing = isFollowing,
                     onProfileClick = onProfileClick
                 )
             }
@@ -195,6 +210,7 @@ private fun ZapGroupRow(
     group: NotificationGroup.ZapGroup,
     eventRepo: EventRepository?,
     resolveProfile: (String) -> ProfileData?,
+    isFollowing: (String) -> Boolean,
     onNoteClick: (String) -> Unit,
     onProfileClick: (String) -> Unit
 ) {
@@ -229,6 +245,7 @@ private fun ZapGroupRow(
             ZapEntryRow(
                 zap = zap,
                 profile = resolveProfile(zap.pubkey),
+                showFollowBadge = isFollowing(zap.pubkey),
                 onProfileClick = onProfileClick
             )
         }
@@ -247,6 +264,7 @@ private fun ZapGroupRow(
 private fun ZapEntryRow(
     zap: ZapEntry,
     profile: ProfileData?,
+    showFollowBadge: Boolean,
     onProfileClick: (String) -> Unit
 ) {
     Row(
@@ -269,6 +287,7 @@ private fun ZapEntryRow(
         ProfilePicture(
             url = profile?.picture,
             size = 24,
+            showFollowBadge = showFollowBadge,
             modifier = Modifier.clickable { onProfileClick(zap.pubkey) }
         )
         Spacer(Modifier.width(6.dp))
@@ -303,6 +322,7 @@ private fun ZapEntryRow(
 private fun ReplyNotificationRow(
     item: NotificationGroup.ReplyNotification,
     eventRepo: EventRepository?,
+    isFollowing: Boolean,
     onNoteClick: (String) -> Unit,
     onProfileClick: (String) -> Unit
 ) {
@@ -310,9 +330,16 @@ private fun ReplyNotificationRow(
 
     val version by eventRepo.quotedEventVersion.collectAsState()
     val event = remember(item.replyEventId, version) { eventRepo.getEvent(item.replyEventId) }
-    val profile = remember(event, version) { event?.let { eventRepo.getProfileData(it.pubkey) } }
+    val profile = remember(item.senderPubkey, version) { eventRepo.getProfileData(item.senderPubkey) }
     val displayName = profile?.displayString
         ?: item.senderPubkey.take(8) + "..." + item.senderPubkey.takeLast(4)
+
+    // Request the reply event on-demand if not yet cached
+    LaunchedEffect(item.replyEventId) {
+        if (eventRepo.getEvent(item.replyEventId) == null) {
+            eventRepo.requestQuotedEvent(item.replyEventId)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -328,6 +355,7 @@ private fun ReplyNotificationRow(
             ProfilePicture(
                 url = profile?.picture,
                 size = 34,
+                showFollowBadge = isFollowing,
                 modifier = Modifier.clickable { onProfileClick(item.senderPubkey) }
             )
             Spacer(Modifier.width(10.dp))
@@ -374,6 +402,7 @@ private fun QuoteNotificationRow(
     item: NotificationGroup.QuoteNotification,
     eventRepo: EventRepository?,
     resolveProfile: (String) -> ProfileData?,
+    isFollowing: Boolean,
     onNoteClick: (String) -> Unit,
     onProfileClick: (String) -> Unit
 ) {
@@ -394,6 +423,7 @@ private fun QuoteNotificationRow(
             ProfilePicture(
                 url = profile?.picture,
                 size = 34,
+                showFollowBadge = isFollowing,
                 modifier = Modifier.clickable { onProfileClick(item.senderPubkey) }
             )
             Spacer(Modifier.width(10.dp))
@@ -435,6 +465,7 @@ private fun MentionNotificationRow(
     item: NotificationGroup.MentionNotification,
     eventRepo: EventRepository?,
     resolveProfile: (String) -> ProfileData?,
+    isFollowing: Boolean,
     onNoteClick: (String) -> Unit,
     onProfileClick: (String) -> Unit
 ) {
@@ -455,6 +486,7 @@ private fun MentionNotificationRow(
             ProfilePicture(
                 url = profile?.picture,
                 size = 34,
+                showFollowBadge = isFollowing,
                 modifier = Modifier.clickable { onProfileClick(item.senderPubkey) }
             )
             Spacer(Modifier.width(10.dp))
