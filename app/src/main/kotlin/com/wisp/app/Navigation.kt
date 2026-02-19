@@ -40,6 +40,9 @@ import com.wisp.app.ui.screen.BookmarksScreen
 import com.wisp.app.ui.screen.KeysScreen
 import com.wisp.app.ui.screen.ListScreen
 import com.wisp.app.ui.screen.ListsHubScreen
+import com.wisp.app.ui.screen.OnboardingScreen
+import com.wisp.app.ui.screen.OnboardingSuggestionsScreen
+import com.wisp.app.ui.screen.SuggestionUser
 import com.wisp.app.ui.screen.WalletScreen
 import com.wisp.app.viewmodel.BlossomServersViewModel
 import com.wisp.app.viewmodel.AuthViewModel
@@ -55,6 +58,7 @@ import com.wisp.app.viewmodel.UserProfileViewModel
 import com.wisp.app.viewmodel.NotificationsViewModel
 import com.wisp.app.viewmodel.ConsoleViewModel
 import com.wisp.app.viewmodel.SearchViewModel
+import com.wisp.app.viewmodel.OnboardingViewModel
 import com.wisp.app.viewmodel.WalletViewModel
 
 object Routes {
@@ -77,6 +81,8 @@ object Routes {
     const val LIST_DETAIL = "list/{pubkey}/{dTag}"
     const val BOOKMARKS = "bookmarks"
     const val LISTS_HUB = "lists"
+    const val ONBOARDING_PROFILE = "onboarding/profile"
+    const val ONBOARDING_SUGGESTIONS = "onboarding/suggestions"
 }
 
 @Composable
@@ -89,20 +95,32 @@ fun WispNavHost() {
     val profileViewModel: ProfileViewModel = viewModel()
     val dmListViewModel: DmListViewModel = viewModel()
     val blossomServersViewModel: BlossomServersViewModel = viewModel()
-    val walletViewModel: WalletViewModel = viewModel()
+    val walletViewModel: WalletViewModel = viewModel(
+        factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                return WalletViewModel(feedViewModel.nwcRepo) as T
+            }
+        }
+    )
     val notificationsViewModel: NotificationsViewModel = viewModel()
     val searchViewModel: SearchViewModel = viewModel()
     val consoleViewModel: ConsoleViewModel = viewModel()
+    val onboardingViewModel: OnboardingViewModel = viewModel()
 
     relayViewModel.relayPool = feedViewModel.relayPool
 
     var replyTarget by remember { mutableStateOf<NostrEvent?>(null) }
     var quoteTarget by remember { mutableStateOf<NostrEvent?>(null) }
 
-    val startDestination = if (authViewModel.isLoggedIn) Routes.FEED else Routes.AUTH
+    val startDestination = when {
+        !authViewModel.isLoggedIn -> Routes.AUTH
+        !authViewModel.keyRepo.isOnboardingComplete() -> Routes.ONBOARDING_PROFILE
+        else -> Routes.FEED
+    }
 
-    // Initialize relays and NWC when logged in
-    if (authViewModel.isLoggedIn) {
+    // Initialize relays and NWC when logged in and onboarding is complete
+    if (authViewModel.isLoggedIn && startDestination == Routes.FEED) {
         LaunchedEffect(Unit) {
             feedViewModel.initRelays()
             feedViewModel.initNwc()
@@ -169,12 +187,20 @@ fun WispNavHost() {
         composable(Routes.AUTH) {
             AuthScreen(
                 viewModel = authViewModel,
-                onAuthenticated = {
-                    feedViewModel.reloadForNewAccount()
-                    feedViewModel.initRelays()
-                    feedViewModel.initNwc()
-                    navController.navigate(Routes.FEED) {
-                        popUpTo(Routes.AUTH) { inclusive = true }
+                onAuthenticated = { isNewAccount ->
+                    if (isNewAccount) {
+                        navController.navigate(Routes.ONBOARDING_PROFILE) {
+                            popUpTo(Routes.AUTH) { inclusive = true }
+                        }
+                    } else {
+                        feedViewModel.reloadForNewAccount()
+                        feedViewModel.initRelays()
+                        feedViewModel.initNwc()
+                        walletViewModel.refreshState()
+                        authViewModel.keyRepo.markOnboardingComplete()
+                        navController.navigate(Routes.FEED) {
+                            popUpTo(Routes.AUTH) { inclusive = true }
+                        }
                     }
                 }
             )
@@ -230,6 +256,7 @@ fun WispNavHost() {
                 },
                 onLogout = {
                     feedViewModel.resetForAccountSwitch()
+                    walletViewModel.refreshState()
                     authViewModel.logOut()
                     navController.navigate(Routes.AUTH) {
                         popUpTo(0) { inclusive = true }
@@ -328,6 +355,7 @@ fun WispNavHost() {
             val isBlockedState by feedViewModel.muteRepo.blockedPubkeys.collectAsState()
             val profileBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
             val profilePinnedIds by feedViewModel.pinRepo.pinnedIds.collectAsState()
+            val profileZapInProgress by feedViewModel.zapInProgress.collectAsState()
             UserProfileScreen(
                 viewModel = userProfileViewModel,
                 contactRepo = feedViewModel.contactRepo,
@@ -357,10 +385,11 @@ fun WispNavHost() {
                 onReact = { event, emoji -> feedViewModel.sendReaction(event, emoji) },
                 onZap = { event, amountMsats, message -> feedViewModel.sendZap(event, amountMsats, message) },
                 userPubkey = feedViewModel.getUserPubkey(),
-                isWalletConnected = feedViewModel.nwcRepo.isConnected.collectAsState().value,
+                isWalletConnected = feedViewModel.nwcRepo.hasConnection(),
                 onWallet = { navController.navigate(Routes.WALLET) },
                 zapSuccess = feedViewModel.zapSuccess,
                 zapError = feedViewModel.zapError,
+                zapInProgressIds = profileZapInProgress,
                 ownLists = feedViewModel.listRepo.ownLists.collectAsState().value,
                 onAddToList = { dTag, pk -> feedViewModel.addToList(dTag, pk) },
                 onRemoveFromList = { dTag, pk -> feedViewModel.removeFromList(dTag, pk) },
@@ -461,13 +490,23 @@ fun WispNavHost() {
                     eventId = eventId,
                     eventRepo = feedViewModel.eventRepo,
                     relayPool = feedViewModel.relayPool,
+                    subManager = feedViewModel.subManager,
                     queueProfileFetch = { pubkey -> feedViewModel.queueProfileFetch(pubkey) },
-                    outboxRouter = feedViewModel.outboxRouter,
                     muteRepo = feedViewModel.muteRepo
                 )
             }
             var threadZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
-            val isNwcConnected by feedViewModel.nwcRepo.isConnected.collectAsState()
+            val threadZapInProgress by feedViewModel.zapInProgress.collectAsState()
+            var threadZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
+            val isNwcConnected = feedViewModel.nwcRepo.hasConnection()
+
+            LaunchedEffect(Unit) {
+                feedViewModel.zapSuccess.collect { eventId ->
+                    threadZapAnimatingIds = threadZapAnimatingIds + eventId
+                    kotlinx.coroutines.delay(1500)
+                    threadZapAnimatingIds = threadZapAnimatingIds - eventId
+                }
+            }
 
             if (threadZapTarget != null) {
                 ZapDialog(
@@ -507,6 +546,15 @@ fun WispNavHost() {
                 onReact = { event, emoji ->
                     feedViewModel.sendReaction(event, emoji)
                 },
+                onRepost = { event ->
+                    feedViewModel.sendRepost(event)
+                },
+                onQuote = { event ->
+                    quoteTarget = event
+                    replyTarget = null
+                    composeViewModel.clear()
+                    navController.navigate(Routes.COMPOSE)
+                },
                 onToggleFollow = { pubkey ->
                     feedViewModel.toggleFollow(pubkey)
                 },
@@ -514,6 +562,8 @@ fun WispNavHost() {
                     feedViewModel.blockUser(pubkey)
                 },
                 onZap = { event -> threadZapTarget = event },
+                zapAnimatingIds = threadZapAnimatingIds,
+                zapInProgressIds = threadZapInProgress,
                 bookmarkedIds = threadBookmarkedIds,
                 pinnedIds = threadPinnedIds,
                 onToggleBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) },
@@ -598,6 +648,9 @@ fun WispNavHost() {
         }
 
         composable(Routes.BOOKMARKS) {
+            LaunchedEffect(Unit) {
+                feedViewModel.fetchBookmarkedEvents()
+            }
             BookmarksScreen(
                 bookmarkRepo = feedViewModel.bookmarkRepo,
                 eventRepo = feedViewModel.eventRepo,
@@ -631,6 +684,62 @@ fun WispNavHost() {
                 },
                 onCreateList = { name -> feedViewModel.createList(name) },
                 onDeleteList = { dTag -> feedViewModel.deleteList(dTag) }
+            )
+        }
+
+        composable(Routes.ONBOARDING_PROFILE) {
+            OnboardingScreen(
+                viewModel = onboardingViewModel,
+                onContinue = {
+                    if (onboardingViewModel.finishProfile(feedViewModel.relayPool)) {
+                        navController.navigate(Routes.ONBOARDING_SUGGESTIONS) {
+                            popUpTo(Routes.ONBOARDING_PROFILE) { inclusive = true }
+                        }
+                    }
+                }
+            )
+        }
+
+        composable(Routes.ONBOARDING_SUGGESTIONS) {
+            val harvestedPubkeys by onboardingViewModel.harvestedPubkeys.collectAsState()
+            val suggestions = remember(harvestedPubkeys) {
+                harvestedPubkeys.take(30).map { pubkey ->
+                    SuggestionUser(
+                        pubkey = pubkey,
+                        profile = feedViewModel.eventRepo.getProfileData(pubkey)
+                    )
+                }
+            }
+            OnboardingSuggestionsScreen(
+                suggestions = suggestions,
+                onContinue = { selectedPubkeys ->
+                    onboardingViewModel.finishOnboarding(
+                        relayPool = feedViewModel.relayPool,
+                        contactRepo = feedViewModel.contactRepo,
+                        selectedPubkeys = selectedPubkeys
+                    )
+                    feedViewModel.reloadForNewAccount()
+                    feedViewModel.initRelays()
+                    feedViewModel.initNwc()
+                    walletViewModel.refreshState()
+                    navController.navigate(Routes.FEED) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+                onSkip = {
+                    onboardingViewModel.finishOnboarding(
+                        relayPool = feedViewModel.relayPool,
+                        contactRepo = feedViewModel.contactRepo,
+                        selectedPubkeys = emptySet()
+                    )
+                    feedViewModel.reloadForNewAccount()
+                    feedViewModel.initRelays()
+                    feedViewModel.initNwc()
+                    walletViewModel.refreshState()
+                    navController.navigate(Routes.FEED) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
             )
         }
 

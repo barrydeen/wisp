@@ -7,22 +7,25 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -57,14 +60,15 @@ fun ComposeScreen(
     val content by viewModel.content.collectAsState()
     val publishing by viewModel.publishing.collectAsState()
     val error by viewModel.error.collectAsState()
-    val attachedImageUri by viewModel.attachedImageUri.collectAsState()
+    val uploadedUrls by viewModel.uploadedUrls.collectAsState()
     val uploadProgress by viewModel.uploadProgress.collectAsState()
+    val countdownSeconds by viewModel.countdownSeconds.collectAsState()
     val context = LocalContext.current
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        if (uri != null) viewModel.attachImage(uri)
+        if (uri != null) viewModel.uploadMedia(uri, context.contentResolver)
     }
 
     Scaffold(
@@ -92,9 +96,10 @@ fun ComposeScreen(
     ) { padding ->
         Column(
             modifier = Modifier
-                .fillMaxSize()
                 .padding(padding)
+                .imePadding()
                 .padding(16.dp)
+                .verticalScroll(rememberScrollState())
         ) {
             replyTo?.let {
                 Text(
@@ -146,38 +151,40 @@ fun ComposeScreen(
                 label = { Text("What's on your mind?") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
-                enabled = !publishing
+                    .height(160.dp),
+                enabled = !publishing && countdownSeconds == null
             )
 
-            // Image attachment preview
-            attachedImageUri?.let { uri ->
+            // Media previews
+            if (uploadedUrls.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                Box {
-                    AsyncImage(
-                        model = uri,
-                        contentDescription = "Attached image",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-                    IconButton(
-                        onClick = { viewModel.removeAttachment() },
-                        modifier = Modifier.align(Alignment.TopEnd)
-                    ) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Remove",
-                            tint = MaterialTheme.colorScheme.onSurface
+                uploadedUrls.forEach { url ->
+                    Box(modifier = Modifier.padding(bottom = 8.dp)) {
+                        AsyncImage(
+                            model = url,
+                            contentDescription = "Attached media",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
                         )
+                        IconButton(
+                            onClick = { viewModel.removeMediaUrl(url) },
+                            modifier = Modifier.align(Alignment.TopEnd)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Remove",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }
 
             // Attach button
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(
                     onClick = {
@@ -185,9 +192,9 @@ fun ComposeScreen(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                         )
                     },
-                    enabled = !publishing
+                    enabled = uploadProgress == null && countdownSeconds == null
                 ) {
-                    Icon(Icons.Outlined.Image, contentDescription = "Attach image")
+                    Icon(Icons.Outlined.Image, contentDescription = "Attach media")
                 }
 
                 uploadProgress?.let {
@@ -211,27 +218,49 @@ fun ComposeScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            Button(
-                onClick = {
-                    viewModel.publish(
-                        relayPool = relayPool,
-                        replyTo = replyTo,
-                        quoteTo = quoteTo,
-                        contentResolver = context.contentResolver,
-                        onSuccess = { onBack() },
-                        outboxRouter = outboxRouter
-                    )
-                },
-                enabled = !publishing,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    when {
-                        uploadProgress != null -> uploadProgress!!
-                        publishing -> "Publishing..."
-                        else -> "Publish"
+            if (countdownSeconds != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = { viewModel.cancelPublish() },
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text("Undo")
                     }
-                )
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = { viewModel.publishNow() },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Post now (${countdownSeconds}s)")
+                    }
+                }
+            } else {
+                Button(
+                    onClick = {
+                        viewModel.publish(
+                            relayPool = relayPool,
+                            replyTo = replyTo,
+                            quoteTo = quoteTo,
+                            onSuccess = { onBack() },
+                            outboxRouter = outboxRouter
+                        )
+                    },
+                    enabled = !publishing,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        when {
+                            uploadProgress != null -> uploadProgress!!
+                            publishing -> "Uploading..."
+                            else -> "Publish"
+                        }
+                    )
+                }
             }
         }
     }

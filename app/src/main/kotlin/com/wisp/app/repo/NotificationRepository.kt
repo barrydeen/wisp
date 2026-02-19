@@ -37,12 +37,10 @@ class NotificationRepository {
 
         _hasUnread.value = true
         val current = _notifications.value.toMutableList()
-        current.add(0, item)
-        if (current.size > 200) {
-            _notifications.value = current.take(200)
-        } else {
-            _notifications.value = current
-        }
+        // Insert in sorted position (newest first by event timestamp)
+        val insertIndex = current.indexOfFirst { it.createdAt < item.createdAt }
+        if (insertIndex == -1) current.add(item) else current.add(insertIndex, item)
+        _notifications.value = if (current.size > 200) current.take(200) else current
     }
 
     fun markRead() {

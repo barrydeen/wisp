@@ -26,7 +26,7 @@ import com.wisp.app.viewmodel.AuthViewModel
 @Composable
 fun AuthScreen(
     viewModel: AuthViewModel,
-    onAuthenticated: () -> Unit
+    onAuthenticated: (isNewAccount: Boolean) -> Unit
 ) {
     val nsecInput by viewModel.nsecInput.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -57,7 +57,7 @@ fun AuthScreen(
 
         Button(
             onClick = {
-                if (viewModel.signUp()) onAuthenticated()
+                if (viewModel.signUp()) onAuthenticated(true)
             },
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -87,7 +87,7 @@ fun AuthScreen(
 
         OutlinedButton(
             onClick = {
-                if (viewModel.logIn()) onAuthenticated()
+                if (viewModel.logIn()) onAuthenticated(false)
             },
             modifier = Modifier.fillMaxWidth()
         ) {

@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,13 +45,17 @@ fun ActionBar(
     userReactionEmoji: String? = null,
     onRepost: () -> Unit = {},
     onQuote: () -> Unit = {},
+    hasUserReposted: Boolean = false,
     onZap: () -> Unit = {},
+    hasUserZapped: Boolean = false,
     onBookmark: () -> Unit = {},
     isBookmarked: Boolean = false,
     likeCount: Int = 0,
+    repostCount: Int = 0,
     replyCount: Int = 0,
     zapSats: Long = 0,
     isZapAnimating: Boolean = false,
+    isZapInProgress: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var showEmojiPicker by remember { mutableStateOf(false) }
@@ -119,7 +124,7 @@ fun ActionBar(
                 Icon(
                     Icons.Outlined.Repeat,
                     contentDescription = "Repost",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = if (hasUserReposted) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -137,22 +142,37 @@ fun ActionBar(
                 )
             }
         }
-        Spacer(Modifier.width(8.dp))
-        IconButton(onClick = onZap) {
-            Icon(
-                Icons.Outlined.CurrencyBitcoin,
-                contentDescription = "Zaps",
-                tint = if (zapSats > 0) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .size(22.dp)
-                    .scale(zapScale)
+        if (repostCount > 0) {
+            Text(
+                text = repostCount.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (hasUserReposted) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        if (zapSats > 0) {
+        Spacer(Modifier.width(8.dp))
+        IconButton(onClick = onZap, enabled = !isZapInProgress) {
+            if (isZapInProgress) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = Color(0xFFFF9800)
+                )
+            } else {
+                Icon(
+                    Icons.Outlined.CurrencyBitcoin,
+                    contentDescription = "Zaps",
+                    tint = if (hasUserZapped) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .scale(zapScale)
+                )
+            }
+        }
+        if (!isZapInProgress && zapSats > 0) {
             Text(
                 text = formatSats(zapSats),
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFFFF9800)
+                color = if (hasUserZapped) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Spacer(Modifier.width(8.dp))

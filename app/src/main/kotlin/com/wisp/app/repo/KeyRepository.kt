@@ -98,6 +98,22 @@ class KeyRepository(private val context: Context) {
         return try { json.decodeFromString(str) } catch (_: Exception) { emptyList() }
     }
 
+    fun isOnboardingComplete(): Boolean {
+        if (prefs.getBoolean("onboarding_done", false)) return true
+        // Migration for existing users who had the app before onboarding was added:
+        // They'll have contacts data saved from previous sessions. New key users won't.
+        val pubkeyHex = getKeypair()?.pubkey?.toHex() ?: return false
+        val contactPrefs = context.getSharedPreferences("wisp_contacts_$pubkeyHex", Context.MODE_PRIVATE)
+        if (contactPrefs.contains("follows")) {
+            markOnboardingComplete()
+            return true
+        }
+        return false
+    }
+
+    fun markOnboardingComplete() =
+        prefs.edit().putBoolean("onboarding_done", true).apply()
+
     companion object {
         private fun prefsName(pubkeyHex: String?): String =
             if (pubkeyHex != null) "wisp_prefs_$pubkeyHex" else "wisp_prefs"

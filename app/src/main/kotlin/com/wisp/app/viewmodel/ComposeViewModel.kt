@@ -15,6 +15,8 @@ import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.BlossomRepository
 import com.wisp.app.repo.KeyRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -32,18 +34,39 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
-    private val _attachedImageUri = MutableStateFlow<Uri?>(null)
-    val attachedImageUri: StateFlow<Uri?> = _attachedImageUri
-
     private val _uploadProgress = MutableStateFlow<String?>(null)
     val uploadProgress: StateFlow<String?> = _uploadProgress
 
-    fun attachImage(uri: Uri) {
-        _attachedImageUri.value = uri
+    private val _uploadedUrls = MutableStateFlow<List<String>>(emptyList())
+    val uploadedUrls: StateFlow<List<String>> = _uploadedUrls
+
+    private val _countdownSeconds = MutableStateFlow<Int?>(null)
+    val countdownSeconds: StateFlow<Int?> = _countdownSeconds
+
+    private var countdownJob: Job? = null
+    private var pendingPublish: (() -> Unit)? = null
+
+    fun uploadMedia(uri: Uri, contentResolver: ContentResolver) {
+        viewModelScope.launch {
+            try {
+                _uploadProgress.value = "Uploading..."
+                val (bytes, mime, ext) = readFileFromUri(contentResolver, uri)
+                val url = blossomRepo.uploadMedia(bytes, mime, ext)
+                _uploadedUrls.value = _uploadedUrls.value + url
+                val current = _content.value
+                _content.value = if (current.isBlank()) url else "$current\n$url"
+                _uploadProgress.value = null
+            } catch (e: Exception) {
+                _error.value = "Upload failed: ${e.message}"
+                _uploadProgress.value = null
+            }
+        }
     }
 
-    fun removeAttachment() {
-        _attachedImageUri.value = null
+    fun removeMediaUrl(url: String) {
+        _uploadedUrls.value = _uploadedUrls.value - url
+        val current = _content.value
+        _content.value = current.replace(url, "").replace("\n\n", "\n").trim()
     }
 
     fun updateContent(value: String) {
@@ -54,14 +77,12 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
         relayPool: RelayPool,
         replyTo: NostrEvent? = null,
         quoteTo: NostrEvent? = null,
-        contentResolver: ContentResolver? = null,
         onSuccess: () -> Unit = {},
         outboxRouter: OutboxRouter? = null
     ) {
         val text = _content.value.trim()
-        val imageUri = _attachedImageUri.value
 
-        if (text.isBlank() && imageUri == null) {
+        if (text.isBlank()) {
             _error.value = "Post cannot be empty"
             return
         }
@@ -72,35 +93,56 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        if (imageUri != null && contentResolver != null) {
-            _publishing.value = true
-            viewModelScope.launch {
-                try {
-                    _uploadProgress.value = "Uploading image..."
-                    val (bytes, mime, ext) = readFileFromUri(contentResolver, imageUri)
-                    val url = blossomRepo.uploadMedia(bytes, mime, ext)
-                    _uploadProgress.value = "Publishing..."
-                    val finalContent = if (text.isBlank()) url else "$text\n$url"
-                    publishNote(finalContent, keypair, relayPool, replyTo, quoteTo, outboxRouter)
-                    _attachedImageUri.value = null
-                    _uploadProgress.value = null
-                    onSuccess()
-                } catch (e: Exception) {
-                    _error.value = "Upload failed: ${e.message}"
-                    _publishing.value = false
-                    _uploadProgress.value = null
-                }
-            }
-        } else {
+        _publishing.value = true
+        startCountdown(text, keypair, relayPool, replyTo, quoteTo, outboxRouter, onSuccess)
+    }
+
+    private fun startCountdown(
+        content: String,
+        keypair: Keys.Keypair,
+        relayPool: RelayPool,
+        replyTo: NostrEvent?,
+        quoteTo: NostrEvent?,
+        outboxRouter: OutboxRouter?,
+        onSuccess: () -> Unit
+    ) {
+        countdownJob?.cancel()
+        pendingPublish = {
             try {
-                _publishing.value = true
-                publishNote(text, keypair, relayPool, replyTo, quoteTo, outboxRouter)
+                publishNote(content, keypair, relayPool, replyTo, quoteTo, outboxRouter)
+                _uploadedUrls.value = emptyList()
                 onSuccess()
             } catch (e: Exception) {
                 _error.value = "Failed to publish: ${e.message}"
                 _publishing.value = false
             }
         }
+        _countdownSeconds.value = 10
+        countdownJob = viewModelScope.launch {
+            for (i in 10 downTo 1) {
+                _countdownSeconds.value = i
+                delay(1000)
+            }
+            _countdownSeconds.value = null
+            pendingPublish?.invoke()
+            pendingPublish = null
+        }
+    }
+
+    fun cancelPublish() {
+        countdownJob?.cancel()
+        countdownJob = null
+        pendingPublish = null
+        _countdownSeconds.value = null
+        _publishing.value = false
+    }
+
+    fun publishNow() {
+        countdownJob?.cancel()
+        countdownJob = null
+        _countdownSeconds.value = null
+        pendingPublish?.invoke()
+        pendingPublish = null
     }
 
     private fun publishNote(
@@ -155,7 +197,7 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
     fun clear() {
         _content.value = ""
         _error.value = null
-        _attachedImageUri.value = null
+        _uploadedUrls.value = emptyList()
         _uploadProgress.value = null
     }
 }

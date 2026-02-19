@@ -9,6 +9,8 @@ import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip02
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip51
+import com.wisp.app.nostr.Nip57
+import com.wisp.app.nostr.Nip65
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.Relay
@@ -47,6 +49,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.ConcurrentHashMap
 
 enum class FeedType { FOLLOWS, RELAY, LIST }
 
@@ -59,7 +62,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val profileRepo = ProfileRepository(app)
     val muteRepo = MuteRepository(app, pubkeyHex)
     val nip05Repo = Nip05Repository()
-    val eventRepo = EventRepository(profileRepo, muteRepo)
+    val eventRepo = EventRepository(profileRepo, muteRepo).also { it.currentUserPubkey = pubkeyHex }
     val contactRepo = ContactRepository(app, pubkeyHex)
     val listRepo = ListRepository(app, pubkeyHex)
     val dmRepo = DmRepository()
@@ -84,6 +87,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private var isLoadingMore = false
     private val activeReactionSubIds = mutableListOf<String>()
     private val activeZapSubIds = mutableListOf<String>()
+    private val replyCountSeenIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     val nwcRepo = NwcRepository(app, pubkeyHex)
     val zapSender = ZapSender(keyRepo, nwcRepo, relayPool, Relay.createClient())
@@ -159,6 +163,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         val newPubkey = getUserPubkey()
 
         // Reload per-account prefs for new pubkey
+        eventRepo.currentUserPubkey = newPubkey
         keyRepo.reloadPrefs(newPubkey)
         contactRepo.reload(newPubkey)
         muteRepo.reload(newPubkey)
@@ -252,6 +257,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         val selfDataFilters = listOf(
             Filter(kinds = listOf(0), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(3), authors = listOf(myPubkey), limit = 1),
+            Filter(kinds = listOf(10002), authors = listOf(myPubkey), limit = 1),
+            Filter(kinds = listOf(10050, 10007, 10006), authors = listOf(myPubkey), limit = 3),
             Filter(kinds = listOf(Nip51.KIND_MUTE_LIST), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Nip51.KIND_PIN_LIST), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Nip51.KIND_BOOKMARK_LIST), authors = listOf(myPubkey), limit = 1),
@@ -297,14 +304,52 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 metadataFetcher.addToPendingProfiles(event.pubkey)
             }
         } else if (subscriptionId.startsWith("reply-count-")) {
-            if (event.kind == 1) {
-                val targetId = Nip10.getReplyTarget(event)
-                if (targetId != null) eventRepo.addReplyCount(targetId)
+            if (event.kind == 1 && replyCountSeenIds.add(event.id)) {
+                val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
+                if (rootId != null) eventRepo.addReplyCount(rootId)
             }
-        } else if (subscriptionId.startsWith("zap-count-") || subscriptionId == "zaps") {
-            if (event.kind == 9735) eventRepo.addEvent(event)
+        } else if (subscriptionId.startsWith("zap-count-") || subscriptionId.startsWith("zaps") || subscriptionId.startsWith("zap-receipt-")) {
+            if (event.kind == 9735) {
+                eventRepo.addEvent(event)
+                val zapperPubkey = Nip57.getZapperPubkey(event)
+                if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
+                    metadataFetcher.addToPendingProfiles(zapperPubkey)
+                }
+            }
         } else {
-            if (event.kind == 10002) relayListRepo.updateFromEvent(event)
+            if (event.kind == 10002) {
+                relayListRepo.updateFromEvent(event)
+                val myPubkey = getUserPubkey()
+                if (myPubkey != null && event.pubkey == myPubkey) {
+                    val relays = Nip65.parseRelayList(event)
+                    if (relays.isNotEmpty()) {
+                        keyRepo.saveRelays(relays)
+                        relayPool.updateRelays(relays)
+                    }
+                }
+            }
+            if (event.kind == Nip51.KIND_DM_RELAYS) {
+                val myPubkey = getUserPubkey()
+                if (myPubkey != null && event.pubkey == myPubkey) {
+                    val urls = Nip51.parseRelaySet(event)
+                    keyRepo.saveDmRelays(urls)
+                    relayPool.updateDmRelays(urls)
+                }
+            }
+            if (event.kind == Nip51.KIND_SEARCH_RELAYS) {
+                val myPubkey = getUserPubkey()
+                if (myPubkey != null && event.pubkey == myPubkey) {
+                    keyRepo.saveSearchRelays(Nip51.parseRelaySet(event))
+                }
+            }
+            if (event.kind == Nip51.KIND_BLOCKED_RELAYS) {
+                val myPubkey = getUserPubkey()
+                if (myPubkey != null && event.pubkey == myPubkey) {
+                    val urls = Nip51.parseRelaySet(event)
+                    keyRepo.saveBlockedRelays(urls)
+                    relayPool.updateBlockedUrls(urls)
+                }
+            }
             if (event.kind == Nip51.KIND_MUTE_LIST) {
                 val myPubkey = getUserPubkey()
                 if (myPubkey != null && event.pubkey == myPubkey) muteRepo.loadFromEvent(event)
@@ -472,6 +517,22 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Opens a subscription for zap receipts (kind 9735) targeting [eventId].
+     * Kept open for 30s to catch the receipt whenever the LNURL provider publishes it.
+     * Returns the subscription ID so the caller can close it early on failure.
+     */
+    private fun subscribeZapReceipt(eventId: String): String {
+        val subId = "zap-receipt-$eventId"
+        val filter = Filter(kinds = listOf(9735), eTags = listOf(eventId))
+        relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(30_000)
+            relayPool.closeOnAllRelays(subId)
+        }
+        return subId
+    }
+
     fun toggleFollow(pubkey: String) {
         val keypair = keyRepo.getKeypair() ?: return
         val currentList = contactRepo.getFollowList()
@@ -536,6 +597,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 val msg = ClientMessage.event(repostEvent)
                 outboxRouter.publishToInbox(msg, event.pubkey)
+                eventRepo.markUserRepost(event.id)
                 eventRepo.addEvent(repostEvent)
             } catch (_: Exception) {}
         }
@@ -608,8 +670,15 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             _zapError.tryEmit("This user has no lightning address")
             return
         }
+        // Reconnect NWC relay if credentials exist but relay disconnected
+        if (nwcRepo.hasConnection() && !nwcRepo.isConnected.value) {
+            nwcRepo.connect()
+        }
         viewModelScope.launch {
             _zapInProgress.value = _zapInProgress.value + event.id
+            // Open receipt subscription BEFORE paying so we catch the 9735
+            // even if the LNURL provider publishes it before NWC confirms
+            val receiptSubId = subscribeZapReceipt(event.id)
             val result = zapSender.sendZap(
                 recipientLud16 = lud16,
                 recipientPubkey = event.pubkey,
@@ -620,11 +689,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             _zapInProgress.value = _zapInProgress.value - event.id
             result.fold(
                 onSuccess = {
-                    eventRepo.addZapSats(event.id, amountMsats / 1000)
+                    val myPubkey = getUserPubkey() ?: ""
+                    eventRepo.addOptimisticZap(event.id, myPubkey, amountMsats / 1000)
                     _zapSuccess.tryEmit(event.id)
                 },
                 onFailure = { e ->
                     _zapError.tryEmit(e.message ?: "Zap failed")
+                    // Close receipt subscription on failure
+                    relayPool.closeOnAllRelays(receiptSubId)
                 }
             )
         }
@@ -771,6 +843,24 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         )
         relayPool.sendToWriteRelays(ClientMessage.event(event))
         contactRepo.updateFromEvent(event)
+    }
+
+    fun fetchBookmarkedEvents() {
+        val ids = bookmarkRepo.getBookmarkedIds().toList()
+        if (ids.isEmpty()) return
+        // Skip IDs already in cache
+        val missing = ids.filter { eventRepo.getEvent(it) == null }
+        if (missing.isEmpty()) return
+        val subId = "fetch-bookmarks"
+        val filter = Filter(ids = missing)
+        relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
+        viewModelScope.launch {
+            subManager.awaitEoseWithTimeout(subId)
+            subManager.closeSubscription(subId)
+            withContext(processingDispatcher) {
+                metadataFetcher.sweepMissingProfiles()
+            }
+        }
     }
 
     fun fetchUserLists(pubkey: String) {
