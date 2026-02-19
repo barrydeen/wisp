@@ -10,8 +10,8 @@ class SubscriptionTracker {
     private val relaySubs = ConcurrentHashMap<String, MutableSet<String>>()
 
     companion object {
-        const val SOFT_CAP = 10
-        private val PRIORITY_PREFIXES = listOf("dms", "notif", "feed", "self-data")
+        const val SOFT_CAP = 15
+        private val PRIORITY_PREFIXES = listOf("dms", "notif", "feed", "self-data", "thread-")
     }
 
     fun track(relayUrl: String, subId: String) {

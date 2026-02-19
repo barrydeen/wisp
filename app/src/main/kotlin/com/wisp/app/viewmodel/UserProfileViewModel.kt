@@ -17,6 +17,7 @@ import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.RelayListRepository
+import com.wisp.app.relay.SubscriptionManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -55,6 +56,8 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     private var eventRepoRef: EventRepository? = null
     private var relayPoolRef: RelayPool? = null
     private var outboxRouterRef: OutboxRouter? = null
+    private var subManagerRef: SubscriptionManager? = null
+    private val activeEngagementSubIds = mutableListOf<String>()
 
     companion object {
         private val SUB_IDS = setOf("userprofile", "userposts", "userfollows", "userrelays", "followprofiles")
@@ -66,12 +69,14 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         contactRepo: ContactRepository,
         relayPool: RelayPool,
         outboxRouter: OutboxRouter? = null,
-        relayListRepo: RelayListRepository? = null
+        relayListRepo: RelayListRepository? = null,
+        subManager: SubscriptionManager? = null
     ) {
         targetPubkey = pubkey
         eventRepoRef = eventRepo
         relayPoolRef = relayPool
         outboxRouterRef = outboxRouter
+        subManagerRef = subManager
         _profile.value = eventRepo.getProfileData(pubkey)
         _isFollowing.value = contactRepo.isFollowing(pubkey)
 
@@ -99,10 +104,33 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
             relayPool.sendToAll(ClientMessage.req("userrelays", relayFilter))
         }
 
+        // After posts EOSE, subscribe for engagement data
+        if (subManager != null) {
+            viewModelScope.launch {
+                withTimeoutOrNull(15_000) {
+                    relayPool.eoseSignals.first { it == "userposts" }
+                }
+                subscribeEngagementForProfile(relayPool)
+            }
+        }
+
         viewModelScope.launch {
             relayPool.relayEvents.collect { (event, _, subscriptionId) ->
                 // Only process events from our own subscriptions
-                if (subscriptionId !in SUB_IDS) return@collect
+                if (subscriptionId !in SUB_IDS && !subscriptionId.startsWith("user-engage")) return@collect
+
+                // Route engagement events — reactions, zaps, reply counts
+                if (subscriptionId.startsWith("user-engage")) {
+                    when (event.kind) {
+                        7 -> eventRepo.addEvent(event)
+                        9735 -> eventRepo.addEvent(event)
+                        1 -> {
+                            val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
+                            if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
+                        }
+                    }
+                    return@collect
+                }
 
                 if (event.kind == 10002 && event.pubkey == pubkey) {
                     relayListRepo?.updateFromEvent(event)
@@ -196,10 +224,33 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun subscribeEngagementForProfile(relayPool: RelayPool) {
+        for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
+        activeEngagementSubIds.clear()
+
+        val eventIds = (_rootNotes.value.map { it.id } + _replies.value.map { it.id }).distinct()
+        if (eventIds.isEmpty()) return
+
+        eventIds.chunked(50).forEachIndexed { index, batch ->
+            val subId = if (index == 0) "user-engage" else "user-engage-$index"
+            activeEngagementSubIds.add(subId)
+            val filters = listOf(
+                Filter(kinds = listOf(7), eTags = batch),
+                Filter(kinds = listOf(9735), eTags = batch),
+                Filter(kinds = listOf(1), eTags = batch)
+            )
+            relayPool.sendToReadRelays(ClientMessage.req(subId, filters))
+        }
+    }
+
     private fun closeAllSubs(relayPool: RelayPool) {
         for (subId in SUB_IDS) {
             relayPool.closeOnAllRelays(subId)
         }
+        for (subId in activeEngagementSubIds) {
+            relayPool.closeOnAllRelays(subId)
+        }
+        activeEngagementSubIds.clear()
     }
 
     override fun onCleared() {
