@@ -9,7 +9,12 @@ object Keys {
 
     data class Keypair(val privkey: ByteArray, val pubkey: ByteArray) {
         override fun equals(other: Any?) = other is Keypair && privkey.contentEquals(other.privkey)
-        override fun hashCode() = privkey.contentHashCode()
+        override fun hashCode() = pubkey.contentHashCode()
+        override fun toString() = "Keypair(pubkey=${pubkey.toHex()})"
+
+        fun wipe() {
+            privkey.wipe()
+        }
     }
 
     fun generate(): Keypair {
@@ -57,3 +62,6 @@ object Keys {
         return sharedPoint.copyOfRange(1, 33)
     }
 }
+
+/** Zero out sensitive byte arrays to minimize key exposure in memory. */
+fun ByteArray.wipe() = fill(0)

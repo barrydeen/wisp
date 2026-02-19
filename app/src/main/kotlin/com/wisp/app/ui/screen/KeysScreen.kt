@@ -1,6 +1,10 @@
 package com.wisp.app.ui.screen
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ContextWrapper
+import android.os.Build
+import android.os.PersistableBundle
 import android.widget.Toast
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
@@ -25,6 +29,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +66,11 @@ fun KeysScreen(
     var nsec by remember { mutableStateOf<String?>(null) }
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
+
+    // Clear nsec from memory when the composable leaves composition
+    DisposableEffect(Unit) {
+        onDispose { nsec = null }
+    }
 
     Scaffold(
         topBar = {
@@ -147,8 +157,15 @@ fun KeysScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         IconButton(onClick = {
-                            nsec?.let {
-                                clipboardManager.setText(AnnotatedString(it))
+                            nsec?.let { key ->
+                                val clip = ClipData.newPlainText("", key)
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    clip.description.extras = PersistableBundle().apply {
+                                        putBoolean("android.content.extra.IS_SENSITIVE", true)
+                                    }
+                                }
+                                val cm = context.getSystemService(ClipboardManager::class.java)
+                                cm.setPrimaryClip(clip)
                                 Toast.makeText(context, "Private key copied", Toast.LENGTH_SHORT).show()
                             }
                         }) {
