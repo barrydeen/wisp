@@ -77,6 +77,15 @@ class DmRepository {
         updateConversationList()
     }
 
+    fun clear() {
+        conversations.evictAll()
+        conversationKeyCache.evictAll()
+        seenGiftWraps.evictAll()
+        dmRelayCache.evictAll()
+        _conversationList.value = emptyList()
+        _hasUnreadDms.value = false
+    }
+
     private fun updateConversationList() {
         val snapshot = conversations.snapshot()
         val list = snapshot.map { (peer, messages) ->

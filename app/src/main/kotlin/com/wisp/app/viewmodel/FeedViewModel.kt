@@ -31,6 +31,7 @@ import com.wisp.app.repo.NotificationRepository
 import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.repo.NwcRepository
+import com.wisp.app.repo.ReactionPreferences
 import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.repo.ZapSender
@@ -50,24 +51,28 @@ import kotlinx.coroutines.withTimeoutOrNull
 enum class FeedType { FOLLOWS, RELAY, LIST }
 
 class FeedViewModel(app: Application) : AndroidViewModel(app) {
+    // KeyRepo first — needed to derive pubkeyHex for all per-account repos
+    val keyRepo = KeyRepository(app)
+    private val pubkeyHex: String? = keyRepo.getKeypair()?.pubkey?.toHex()
+
     val relayPool = RelayPool()
     val profileRepo = ProfileRepository(app)
-    val muteRepo = MuteRepository(app)
+    val muteRepo = MuteRepository(app, pubkeyHex)
     val nip05Repo = Nip05Repository()
     val eventRepo = EventRepository(profileRepo, muteRepo)
-    val keyRepo = KeyRepository(app)
-    val contactRepo = ContactRepository(app)
-    val listRepo = ListRepository(app)
+    val contactRepo = ContactRepository(app, pubkeyHex)
+    val listRepo = ListRepository(app, pubkeyHex)
     val dmRepo = DmRepository()
     val notifRepo = NotificationRepository()
     val relayListRepo = RelayListRepository(app)
-    val bookmarkRepo = BookmarkRepository(app)
-    val pinRepo = PinRepository(app)
-    val blossomRepo = BlossomRepository(app)
+    val bookmarkRepo = BookmarkRepository(app, pubkeyHex)
+    val pinRepo = PinRepository(app, pubkeyHex)
+    val blossomRepo = BlossomRepository(app, pubkeyHex)
     val relayInfoRepo = RelayInfoRepository()
-    val relayScoreBoard = RelayScoreBoard(app, relayListRepo, contactRepo)
+    val relayScoreBoard = RelayScoreBoard(app, relayListRepo, contactRepo, pubkeyHex)
     val outboxRouter = OutboxRouter(relayPool, relayListRepo, relayScoreBoard)
     val subManager = SubscriptionManager(relayPool)
+    val reactionPrefs = ReactionPreferences(app, pubkeyHex)
     private val processingDispatcher = Dispatchers.Default
 
     val metadataFetcher = MetadataFetcher(
@@ -80,7 +85,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private val activeReactionSubIds = mutableListOf<String>()
     private val activeZapSubIds = mutableListOf<String>()
 
-    val nwcRepo = NwcRepository(app)
+    val nwcRepo = NwcRepository(app, pubkeyHex)
     val zapSender = ZapSender(keyRepo, nwcRepo, relayPool, Relay.createClient())
 
     private val _zapInProgress = MutableStateFlow<Set<String>>(emptySet())
@@ -114,6 +119,57 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun queueProfileFetch(pubkey: String) = metadataFetcher.queueProfileFetch(pubkey)
 
     private var relaysInitialized = false
+
+    fun resetForAccountSwitch() {
+        // Cancel feed subscriptions
+        feedEoseJob?.cancel()
+        relayPool.closeOnAllRelays(feedSubId)
+        for (subId in activeReactionSubIds) relayPool.closeOnAllRelays(subId)
+        activeReactionSubIds.clear()
+        for (subId in activeZapSubIds) relayPool.closeOnAllRelays(subId)
+        activeZapSubIds.clear()
+
+        // Disconnect relays and NWC
+        relayPool.disconnectAll()
+        nwcRepo.disconnect()
+
+        // Clear all repos
+        metadataFetcher.clear()
+        eventRepo.clearAll()
+        dmRepo.clear()
+        notifRepo.clear()
+        contactRepo.clear()
+        muteRepo.clear()
+        bookmarkRepo.clear()
+        pinRepo.clear()
+        listRepo.clear()
+        blossomRepo.clear()
+        relayScoreBoard.clear()
+        relayPool.clearSeenEvents()
+
+        // Reset state
+        relaysInitialized = false
+        _initialLoadDone.value = false
+        _feedType.value = FeedType.FOLLOWS
+        _selectedRelay.value = null
+        isLoadingMore = false
+    }
+
+    fun reloadForNewAccount() {
+        val newPubkey = getUserPubkey()
+
+        // Reload per-account prefs for new pubkey
+        keyRepo.reloadPrefs(newPubkey)
+        contactRepo.reload(newPubkey)
+        muteRepo.reload(newPubkey)
+        bookmarkRepo.reload(newPubkey)
+        pinRepo.reload(newPubkey)
+        listRepo.reload(newPubkey)
+        blossomRepo.reload(newPubkey)
+        nwcRepo.reload(newPubkey)
+        relayScoreBoard.reload(newPubkey)
+        reactionPrefs.reload(newPubkey)
+    }
 
     fun initRelays() {
         if (relaysInitialized) return

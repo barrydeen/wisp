@@ -17,14 +17,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.viewmodel.ThreadViewModel
 import kotlin.math.min
@@ -35,11 +40,13 @@ fun ThreadScreen(
     viewModel: ThreadViewModel,
     eventRepo: EventRepository,
     contactRepo: ContactRepository,
+    nip05Repo: Nip05Repository? = null,
     userPubkey: String?,
     onBack: () -> Unit,
     onReply: (NostrEvent) -> Unit = {},
     onProfileClick: (String) -> Unit = {},
     onNoteClick: (NostrEvent) -> Unit = {},
+    onQuotedNoteClick: ((String) -> Unit)? = null,
     onReact: (NostrEvent, String) -> Unit = { _, _ -> },
     onToggleFollow: (String) -> Unit = {},
     onBlockUser: (String) -> Unit = {},
@@ -52,8 +59,20 @@ fun ThreadScreen(
 ) {
     val flatThread by viewModel.flatThread.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val scrollToIndex by viewModel.scrollToIndex.collectAsState()
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(scrollToIndex) {
+        if (scrollToIndex >= 0) {
+            listState.animateScrollToItem(scrollToIndex)
+            viewModel.clearScrollTarget()
+        }
+    }
+
     val reactionVersion by eventRepo.reactionVersion.collectAsState()
     val zapVersion by eventRepo.zapVersion.collectAsState()
+    val replyCountVersion by eventRepo.replyCountVersion.collectAsState()
+    val nip05Version by nip05Repo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
 
     Scaffold(
         topBar = {
@@ -79,11 +98,13 @@ fun ThreadScreen(
             }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize().padding(padding)
             ) {
                 items(items = flatThread, key = { it.first.id }) { (event, depth) ->
                     val profileData = eventRepo.getProfileData(event.pubkey)
                     val likeCount = reactionVersion.let { eventRepo.getReactionCount(event.id) }
+                    val replyCount = replyCountVersion.let { eventRepo.getReplyCount(event.id) }
                     val zapSats = eventRepo.getZapSats(event.id)
                     val userEmoji = reactionVersion.let { userPubkey?.let { eventRepo.getUserReactionEmoji(event.id, it) } }
                     val reactionDetails = reactionVersion.let { eventRepo.getReactionDetails(event.id) }
@@ -99,6 +120,7 @@ fun ThreadScreen(
                         userReactionEmoji = userEmoji,
                         onZap = { onZap(event) },
                         likeCount = likeCount,
+                        replyCount = replyCount,
                         zapSats = zapSats,
                         isZapAnimating = event.id in zapAnimatingIds,
                         eventRepo = eventRepo,
@@ -113,6 +135,8 @@ fun ThreadScreen(
                         isBookmarked = event.id in bookmarkedIds,
                         onPin = { onTogglePin(event.id) },
                         isPinned = event.id in pinnedIds,
+                        nip05Repo = nip05Repo,
+                        onQuotedNoteClick = onQuotedNoteClick,
                         modifier = Modifier.padding(start = (min(depth, 4) * 24).dp)
                     )
                 }

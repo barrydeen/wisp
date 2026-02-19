@@ -202,7 +202,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun cacheEvent(event: NostrEvent) {
-        if (!seenEventIds.add(event.id)) return
+        if (eventCache.get(event.id) != null) return  // already cached
+        seenEventIds.add(event.id)
         eventCache.put(event.id, event)
         if (event.kind == 0) {
             val updated = profileRepo?.updateFromEvent(event)
@@ -313,5 +314,23 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         _feed.value = emptyList()
         _newNoteCount.value = 0
         countNewNotes = false
+    }
+
+    fun clearAll() {
+        clearFeed()
+        replyCounts.evictAll()
+        zapSats.evictAll()
+        eventRelays.evictAll()
+        repostAuthors.evictAll()
+        reactionCounts.evictAll()
+        userReactions.evictAll()
+        reactionDetails.evictAll()
+        zapDetails.evictAll()
+        _profileVersion.value = 0
+        _quotedEventVersion.value = 0
+        _replyCountVersion.value = 0
+        _zapVersion.value = 0
+        _relaySourceVersion.value = 0
+        _reactionVersion.value = 0
     }
 }

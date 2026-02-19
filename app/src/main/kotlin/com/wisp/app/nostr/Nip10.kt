@@ -31,19 +31,19 @@ object Nip10 {
         return eTags.firstOrNull()?.get(1)
     }
 
-    fun buildReplyTags(replyTo: NostrEvent): List<List<String>> {
+    fun buildReplyTags(replyTo: NostrEvent, relayHint: String = ""): List<List<String>> {
         val tags = mutableListOf<List<String>>()
 
         // Find existing root tag in the event we're replying to
         val existingRoot = replyTo.tags.firstOrNull { it.size >= 4 && it[0] == "e" && it[3] == "root" }
 
         if (existingRoot != null) {
-            // Thread reply: keep the original root, mark replyTo as reply
+            // Thread reply: keep the original root hint, mark replyTo as reply
             tags.add(listOf("e", existingRoot[1], existingRoot.getOrElse(2) { "" }, "root"))
-            tags.add(listOf("e", replyTo.id, "", "reply"))
+            tags.add(listOf("e", replyTo.id, relayHint, "reply"))
         } else {
             // Direct reply: replyTo is the root
-            tags.add(listOf("e", replyTo.id, "", "root"))
+            tags.add(listOf("e", replyTo.id, relayHint, "root"))
         }
 
         // Add p-tag for the author we're replying to

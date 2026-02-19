@@ -49,6 +49,12 @@ class NotificationRepository {
         _hasUnread.value = false
     }
 
+    fun clear() {
+        seenEvents.evictAll()
+        _notifications.value = emptyList()
+        _hasUnread.value = false
+    }
+
     fun purgeUser(pubkey: String) {
         _notifications.value = _notifications.value.filter { it.senderPubkey != pubkey }
     }

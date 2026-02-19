@@ -8,9 +8,9 @@ import com.wisp.app.nostr.NostrEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-class MuteRepository(context: Context) {
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("wisp_mutes", Context.MODE_PRIVATE)
+class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
+    private var prefs: SharedPreferences =
+        context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
 
     private val _blockedPubkeys = MutableStateFlow<Set<String>>(emptySet())
     val blockedPubkeys: StateFlow<Set<String>> = _blockedPubkeys
@@ -74,6 +74,20 @@ class MuteRepository(context: Context) {
 
     fun getMutedWords(): Set<String> = wordSet.toSet()
 
+    fun clear() {
+        _blockedPubkeys.value = emptySet()
+        _mutedWords.value = emptySet()
+        blockedSet = HashSet()
+        wordSet = HashSet()
+        lastUpdated = 0
+    }
+
+    fun reload(pubkeyHex: String?) {
+        clear()
+        prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
+        loadFromPrefs()
+    }
+
     private fun saveToPrefs() {
         prefs.edit()
             .putStringSet("blocked_pubkeys", blockedSet.toSet())
@@ -94,5 +108,10 @@ class MuteRepository(context: Context) {
             wordSet = HashSet(words)
             _mutedWords.value = wordSet.toSet()
         }
+    }
+
+    companion object {
+        private fun prefsName(pubkeyHex: String?): String =
+            if (pubkeyHex != null) "wisp_mutes_$pubkeyHex" else "wisp_mutes"
     }
 }

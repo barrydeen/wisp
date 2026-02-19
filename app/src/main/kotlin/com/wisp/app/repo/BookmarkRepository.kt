@@ -7,9 +7,9 @@ import com.wisp.app.nostr.NostrEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-class BookmarkRepository(context: Context) {
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("wisp_bookmarks", Context.MODE_PRIVATE)
+class BookmarkRepository(private val context: Context, pubkeyHex: String? = null) {
+    private var prefs: SharedPreferences =
+        context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
 
     private val _bookmarkedIds = MutableStateFlow<Set<String>>(emptySet())
     val bookmarkedIds: StateFlow<Set<String>> = _bookmarkedIds
@@ -53,6 +53,20 @@ class BookmarkRepository(context: Context) {
     fun getCoordinates(): Set<String> = coordinateSet.toSet()
     fun getHashtags(): Set<String> = hashtagSet.toSet()
 
+    fun clear() {
+        _bookmarkedIds.value = emptySet()
+        idSet = HashSet()
+        coordinateSet = HashSet()
+        hashtagSet = HashSet()
+        lastUpdated = 0
+    }
+
+    fun reload(pubkeyHex: String?) {
+        clear()
+        prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
+        loadFromPrefs()
+    }
+
     private fun saveToPrefs() {
         prefs.edit()
             .putStringSet("bookmark_ids", idSet.toSet())
@@ -73,5 +87,10 @@ class BookmarkRepository(context: Context) {
         if (coords != null) coordinateSet = HashSet(coords)
         val tags = prefs.getStringSet("bookmark_hashtags", null)
         if (tags != null) hashtagSet = HashSet(tags)
+    }
+
+    companion object {
+        private fun prefsName(pubkeyHex: String?): String =
+            if (pubkeyHex != null) "wisp_bookmarks_$pubkeyHex" else "wisp_bookmarks"
     }
 }

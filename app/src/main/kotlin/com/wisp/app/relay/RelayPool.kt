@@ -125,7 +125,8 @@ class RelayPool {
                         // Thread, user-profile, and notification subscriptions bypass dedup
                         // since events may already have been seen during feed loading
                         val bypassDedup = msg.subscriptionId.startsWith("thread-") ||
-                            msg.subscriptionId.startsWith("user")
+                            msg.subscriptionId.startsWith("user") ||
+                            msg.subscriptionId.startsWith("quote-")
                         val shouldEmit = if (bypassDedup) {
                             true
                         } else {

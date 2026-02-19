@@ -20,20 +20,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 
-class NwcRepository(context: Context) {
+class NwcRepository(private val context: Context, pubkeyHex: String? = null) {
     private val TAG = "NwcRepository"
 
     private val masterKey = MasterKey.Builder(context)
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
         .build()
 
-    private val encPrefs = EncryptedSharedPreferences.create(
-        context,
-        "wisp_nwc",
-        masterKey,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    private var encPrefs = createEncPrefs(pubkeyHex)
 
     private var connection: Nip47.NwcConnection? = null
     private var relay: Relay? = null
@@ -60,6 +54,12 @@ class NwcRepository(context: Context) {
         encPrefs.edit().remove("nwc_uri").apply()
         _balance.value = null
         _isConnected.value = false
+    }
+
+    fun reload(pubkeyHex: String?) {
+        disconnect()
+        encPrefs = createEncPrefs(pubkeyHex)
+        _balance.value = null
     }
 
     fun connect() {
@@ -226,4 +226,12 @@ class NwcRepository(context: Context) {
         connection = null
         _isConnected.value = false
     }
+
+    private fun createEncPrefs(pubkeyHex: String?) = EncryptedSharedPreferences.create(
+        context,
+        if (pubkeyHex != null) "wisp_nwc_$pubkeyHex" else "wisp_nwc",
+        masterKey,
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    )
 }

@@ -11,6 +11,7 @@ import com.wisp.app.relay.RelayPool
 import com.wisp.app.relay.SubscriptionManager
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.MuteRepository
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -26,9 +27,17 @@ class ThreadViewModel : ViewModel() {
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading
 
+    private val _scrollToIndex = MutableStateFlow(-1)
+    val scrollToIndex: StateFlow<Int> = _scrollToIndex
+
     private val threadEvents = mutableMapOf<String, NostrEvent>()
     private var rootId: String = ""
+    private var scrollTargetId: String? = null
     private var muteRepo: MuteRepository? = null
+
+    fun clearScrollTarget() {
+        _scrollToIndex.value = -1
+    }
 
     fun loadThread(
         eventId: String,
@@ -39,17 +48,38 @@ class ThreadViewModel : ViewModel() {
         muteRepo: MuteRepository? = null
     ) {
         this.muteRepo = muteRepo
-        rootId = eventId
 
-        // Load root from cache immediately
+        // Resolve the true root ID from the clicked event
         val cached = eventRepo.getEvent(eventId)
         if (cached != null) {
-            _rootEvent.value = cached
+            val resolvedRoot = Nip10.getRootId(cached) ?: eventId
+            rootId = resolvedRoot
+            scrollTargetId = if (resolvedRoot != eventId) eventId else null
             threadEvents[cached.id] = cached
+
+            // Load root from cache if we resolved to a different root
+            if (resolvedRoot != eventId) {
+                val cachedRoot = eventRepo.getEvent(resolvedRoot)
+                if (cachedRoot != null) {
+                    _rootEvent.value = cachedRoot
+                    threadEvents[cachedRoot.id] = cachedRoot
+                }
+            } else {
+                _rootEvent.value = cached
+            }
             rebuildTree()
+        } else {
+            rootId = eventId
         }
 
         viewModelScope.launch {
+            // If not cached, fetch the clicked event first to resolve the root
+            if (cached == null) {
+                val resolvedRootId = resolveRootFromRelay(eventId, eventRepo, relayPool, queueProfileFetch)
+                rootId = resolvedRootId
+                scrollTargetId = if (resolvedRootId != eventId) eventId else null
+            }
+
             // Start collecting BEFORE sending REQs to avoid race condition
             val collectJob = launch {
                 relayPool.relayEvents.collect { (event, _, subscriptionId) ->
@@ -58,7 +88,7 @@ class ThreadViewModel : ViewModel() {
                         if (event.kind == 1) {
                             val isNew = event.id !in threadEvents
                             threadEvents[event.id] = event
-                            if (subscriptionId == "thread-root" && event.id == eventId) {
+                            if (subscriptionId == "thread-root" && event.id == rootId) {
                                 _rootEvent.value = event
                             }
                             if (isNew) {
@@ -73,14 +103,15 @@ class ThreadViewModel : ViewModel() {
             }
 
             // Now send subscriptions — collector is already active
-            var rootRelayCount = relayPool.getRelayUrls().size.coerceAtLeast(1)
-            if (cached == null) {
-                relayPool.sendToAll(ClientMessage.req("thread-root", Filter(ids = listOf(eventId))))
+            val rootRelayCount = relayPool.getRelayUrls().size.coerceAtLeast(1)
+            val needsFetchRoot = _rootEvent.value == null || _rootEvent.value?.id != rootId
+            if (needsFetchRoot) {
+                relayPool.sendToAll(ClientMessage.req("thread-root", Filter(ids = listOf(rootId))))
             }
 
-            // Route replies to OP's read relays if we know the author
-            val repliesFilter = Filter(kinds = listOf(1), eTags = listOf(eventId))
-            val rootAuthor = cached?.pubkey
+            // Fetch ALL replies that reference the root event
+            val repliesFilter = Filter(kinds = listOf(1), eTags = listOf(rootId))
+            val rootAuthor = _rootEvent.value?.pubkey ?: cached?.pubkey
             val repliesRelays = if (rootAuthor != null && outboxRouter != null) {
                 outboxRouter.subscribeToUserReadRelays("thread-replies", rootAuthor, repliesFilter)
             } else {
@@ -92,7 +123,7 @@ class ThreadViewModel : ViewModel() {
             // Wait for EOSE from ALL relays before closing each subscription (with timeout)
             launch {
                 withTimeoutOrNull(20_000) {
-                    var rootEoseCount = if (cached != null) rootRelayCount else 0
+                    var rootEoseCount = if (!needsFetchRoot) rootRelayCount else 0
                     var repliesEoseCount = 0
                     relayPool.eoseSignals.collect { subId ->
                         when (subId) {
@@ -123,6 +154,46 @@ class ThreadViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Fetch the clicked event from relays, resolve its root ID, and return it.
+     * Returns as soon as the event is received — no need to wait for all relays.
+     */
+    private suspend fun resolveRootFromRelay(
+        eventId: String,
+        eventRepo: EventRepository,
+        relayPool: RelayPool,
+        queueProfileFetch: (String) -> Unit
+    ): String {
+        val eventReceived = CompletableDeferred<NostrEvent>()
+
+        val collectJob = viewModelScope.launch {
+            relayPool.relayEvents.collect { (event, _, subscriptionId) ->
+                if (subscriptionId == "thread-resolve" && event.id == eventId) {
+                    eventRepo.cacheEvent(event)
+                    threadEvents[event.id] = event
+                    if (eventRepo.getProfileData(event.pubkey) == null) {
+                        queueProfileFetch(event.pubkey)
+                    }
+                    eventReceived.complete(event)
+                }
+            }
+        }
+
+        relayPool.sendToAll(ClientMessage.req("thread-resolve", Filter(ids = listOf(eventId))))
+
+        // Wait for the event itself, not EOSE — we only need one copy
+        val fetched = withTimeoutOrNull(5_000) { eventReceived.await() }
+
+        relayPool.closeOnAllRelays("thread-resolve")
+        collectJob.cancel()
+
+        return if (fetched != null) {
+            Nip10.getRootId(fetched) ?: eventId
+        } else {
+            eventId
+        }
+    }
+
     private fun rebuildTree() {
         val parentToChildren = mutableMapOf<String, MutableList<NostrEvent>>()
 
@@ -149,6 +220,15 @@ class ThreadViewModel : ViewModel() {
         }
 
         _flatThread.value = result
+
+        // Update scroll target index
+        val targetId = scrollTargetId
+        if (targetId != null) {
+            val index = result.indexOfFirst { it.first.id == targetId }
+            if (index >= 0) {
+                _scrollToIndex.value = index
+            }
+        }
     }
 
     private fun dfs(

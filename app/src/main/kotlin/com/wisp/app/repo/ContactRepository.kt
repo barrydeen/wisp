@@ -10,9 +10,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 
-class ContactRepository(context: Context) {
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("wisp_contacts", Context.MODE_PRIVATE)
+class ContactRepository(private val context: Context, pubkeyHex: String? = null) {
+    private var prefs: SharedPreferences =
+        context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
 
     private val _followList = MutableStateFlow<List<Nip02.FollowEntry>>(emptyList())
@@ -39,6 +39,18 @@ class ContactRepository(context: Context) {
 
     fun getFollowList(): List<Nip02.FollowEntry> = _followList.value
 
+    fun clear() {
+        _followList.value = emptyList()
+        followSet = HashSet()
+        lastUpdated = 0
+    }
+
+    fun reload(pubkeyHex: String?) {
+        clear()
+        prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
+        loadFromPrefs()
+    }
+
     private fun saveToPrefs(entries: List<Nip02.FollowEntry>) {
         val serializable = entries.map { SerializableFollow(it.pubkey, it.relayHint, it.petname) }
         prefs.edit()
@@ -64,4 +76,9 @@ class ContactRepository(context: Context) {
         val relayHint: String? = null,
         val petname: String? = null
     )
+
+    companion object {
+        private fun prefsName(pubkeyHex: String?): String =
+            if (pubkeyHex != null) "wisp_contacts_$pubkeyHex" else "wisp_contacts"
+    }
 }

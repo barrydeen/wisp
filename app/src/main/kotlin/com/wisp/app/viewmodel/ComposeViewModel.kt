@@ -112,7 +112,10 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
         outboxRouter: OutboxRouter? = null
     ) {
         val tags = mutableListOf<List<String>>()
-        if (replyTo != null) tags.addAll(Nip10.buildReplyTags(replyTo))
+        if (replyTo != null) {
+            val hint = outboxRouter?.getRelayHint(replyTo.pubkey) ?: ""
+            tags.addAll(Nip10.buildReplyTags(replyTo, hint))
+        }
         val finalContent = if (quoteTo != null) {
             tags.addAll(Nip18.buildQuoteTags(quoteTo))
             Nip18.appendNoteUri(content, quoteTo.id)
