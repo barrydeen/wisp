@@ -34,6 +34,17 @@ object Nip57 {
         }
     }
 
+    fun getZapMessage(event: NostrEvent): String {
+        val description = event.tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
+            ?: return ""
+        return try {
+            val zapRequest = NostrEvent.fromJson(description)
+            zapRequest.content
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
     fun getZapAmountSats(event: NostrEvent): Long {
         val bolt11 = event.tags.firstOrNull { it.size >= 2 && it[0] == "bolt11" }?.get(1)
             ?: return 0

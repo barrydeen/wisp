@@ -191,7 +191,7 @@ fun RichContent(
 }
 
 @Composable
-private fun QuotedNote(eventId: String, eventRepo: EventRepository, relayHints: List<String> = emptyList(), onNoteClick: ((String) -> Unit)? = null) {
+fun QuotedNote(eventId: String, eventRepo: EventRepository, relayHints: List<String> = emptyList(), onNoteClick: ((String) -> Unit)? = null) {
     // Observe version so we recompose when quoted events arrive from relays
     val version by eventRepo.quotedEventVersion.collectAsState()
     val event = remember(eventId, version) { eventRepo.getEvent(eventId) }

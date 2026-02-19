@@ -1,5 +1,6 @@
 package com.wisp.app.relay
 
+import android.util.Log
 import android.util.LruCache
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.NostrEvent
@@ -25,13 +26,15 @@ class RelayPool {
     private val ephemeralRelays = java.util.concurrent.ConcurrentHashMap<String, Relay>()
     private val ephemeralLastUsed = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val relayCooldowns = java.util.concurrent.ConcurrentHashMap<String, Long>()
-    private val COOLDOWN_MS = 5 * 60 * 1000L  // 5 minutes
     private var blockedUrls = emptySet<String>()
 
     companion object {
         const val MAX_PERSISTENT = 50
         const val MAX_EPHEMERAL = 30
+        const val COOLDOWN_DOWN_MS = 10 * 60 * 1000L    // 10 min — 5xx, connection failures, DNS errors
+        const val COOLDOWN_REJECTED_MS = 1 * 60 * 1000L // 1 min — 4xx like 401/403/429
     }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val seenEvents = LruCache<String, Boolean>(5000)
     private val seenLock = Any()
@@ -126,7 +129,8 @@ class RelayPool {
                         // since events may already have been seen during feed loading
                         val bypassDedup = msg.subscriptionId.startsWith("thread-") ||
                             msg.subscriptionId.startsWith("user") ||
-                            msg.subscriptionId.startsWith("quote-")
+                            msg.subscriptionId.startsWith("quote-") ||
+                            msg.subscriptionId == "editprofile"
                         val shouldEmit = if (bypassDedup) {
                             true
                         } else {
@@ -172,6 +176,7 @@ class RelayPool {
         scope.launch {
             relay.connectionState.collect { updateConnectedCount() }
         }
+        collectRelayFailures(relay)
     }
 
     private fun updateConnectedCount() {
@@ -238,7 +243,6 @@ class RelayPool {
             val relay = Relay(RelayConfig(url, read = true, write = false), client)
             relay.autoReconnect = false
             collectMessages(relay)
-            collectEphemeralFailures(relay)
             relay.connect()
             relay
         }
@@ -247,17 +251,60 @@ class RelayPool {
         return true
     }
 
-    private fun collectEphemeralFailures(relay: Relay) {
+    private fun cooldownForFailure(httpCode: Int?): Long {
+        return if (httpCode != null && httpCode in 400..499) COOLDOWN_REJECTED_MS else COOLDOWN_DOWN_MS
+    }
+
+    private fun collectRelayFailures(relay: Relay) {
         scope.launch {
-            relay.connectionState.collect { connected ->
-                if (!connected) {
-                    relayCooldowns[relay.config.url] = System.currentTimeMillis() + COOLDOWN_MS
-                    // Clean up the dead ephemeral relay
+            relay.failures.collect { failure ->
+                val cooldownMs = cooldownForFailure(failure.httpCode)
+                val until = System.currentTimeMillis() + cooldownMs
+                // Set cooldownUntil on the relay itself (throttles auto-reconnect delay)
+                relay.cooldownUntil = until
+                // Only set relayCooldowns map entry for ephemeral relays
+                // (this map gates sendToRelayOrEphemeral — persistent/DM relays shouldn't be gated)
+                val isEphemeral = ephemeralRelays.containsKey(relay.config.url)
+                if (isEphemeral) {
+                    relayCooldowns[relay.config.url] = until
                     ephemeralRelays.remove(relay.config.url)
                     ephemeralLastUsed.remove(relay.config.url)
                 }
+                Log.d("RelayPool", "Cooldown ${cooldownMs / 1000}s for ${relay.config.url} (http=${failure.httpCode}, ephemeral=$isEphemeral)")
             }
         }
+    }
+
+    fun reconnectAll(): Int {
+        var count = 0
+        // Reconnect disconnected persistent relays — clear cooldowns since this is explicit resume
+        for (relay in relays) {
+            if (!relay.isConnected) {
+                relay.cooldownUntil = 0L
+                relayCooldowns.remove(relay.config.url)
+                Log.d("RelayPool", "Reconnecting persistent relay: ${relay.config.url}")
+                relay.connect()
+                count++
+            }
+        }
+        // Reconnect disconnected DM relays
+        for (relay in dmRelays) {
+            if (!relay.isConnected) {
+                relay.cooldownUntil = 0L
+                relayCooldowns.remove(relay.config.url)
+                Log.d("RelayPool", "Reconnecting DM relay: ${relay.config.url}")
+                relay.connect()
+                count++
+            }
+        }
+        // Clean up dead ephemeral relays so they can be recreated fresh
+        val deadEphemerals = ephemeralRelays.filter { !it.value.isConnected }.keys
+        for (url in deadEphemerals) {
+            ephemeralRelays.remove(url)?.disconnect()
+            ephemeralLastUsed.remove(url)
+        }
+        if (count > 0) Log.d("RelayPool", "reconnectAll: $count relays reconnecting")
+        return count
     }
 
     fun closeOnAllRelays(subscriptionId: String) {

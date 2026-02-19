@@ -287,12 +287,13 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             if (muteRepo.isBlocked(event.pubkey)) return
             val myPubkey = getUserPubkey()
             if (myPubkey != null) {
+                eventRepo.cacheEvent(event)
                 notifRepo.addEvent(event, myPubkey)
                 if (eventRepo.getProfileData(event.pubkey) == null) {
                     metadataFetcher.addToPendingProfiles(event.pubkey)
                 }
                 if (event.kind == 9735) {
-                    val zapperPubkey = event.tags.firstOrNull { it.size >= 2 && it[0] == "P" }?.get(1)
+                    val zapperPubkey = Nip57.getZapperPubkey(event)
                     if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
                         metadataFetcher.addToPendingProfiles(zapperPubkey)
                     }
@@ -422,8 +423,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onAppResume() {
         if (!relaysInitialized) return
-        subscribeFeed()
-        fetchRelayListsForFollows()
+        val reconnected = relayPool.reconnectAll()
+        viewModelScope.launch {
+            if (reconnected > 0) delay(2000) // Give WebSockets time to establish
+            subscribeFeed()
+            fetchRelayListsForFollows()
+        }
     }
 
     private fun subscribeFeed() {

@@ -11,6 +11,8 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.util.concurrent.TimeUnit
 
+data class RelayFailure(val relayUrl: String, val httpCode: Int?, val message: String)
+
 class Relay(
     val config: RelayConfig,
     private val client: OkHttpClient
@@ -19,6 +21,7 @@ class Relay(
     var isConnected = false
         private set
     var autoReconnect = true
+    @Volatile var cooldownUntil: Long = 0L
 
     private val _messages = MutableSharedFlow<RelayMessage>(extraBufferCapacity = 512)
     val messages: SharedFlow<RelayMessage> = _messages
@@ -28,6 +31,9 @@ class Relay(
 
     private val _connectionErrors = MutableSharedFlow<ConsoleLogEntry>(extraBufferCapacity = 16)
     val connectionErrors: SharedFlow<ConsoleLogEntry> = _connectionErrors
+
+    private val _failures = MutableSharedFlow<RelayFailure>(extraBufferCapacity = 16)
+    val failures: SharedFlow<RelayFailure> = _failures
 
     fun connect() {
         if (isConnected) return
@@ -57,6 +63,7 @@ class Relay(
                     type = ConsoleLogType.CONN_FAILURE,
                     message = t.message ?: "Unknown error"
                 ))
+                _failures.tryEmit(RelayFailure(config.url, response?.code, t.message ?: "Unknown error"))
                 reconnect()
             }
 
@@ -88,10 +95,12 @@ class Relay(
     private fun reconnect() {
         webSocket = null
         if (!autoReconnect) return
-        // Simple reconnect after a delay using OkHttp's thread pool
+        // Reconnect after cooldown delay using OkHttp's thread pool
         client.dispatcher.executorService.execute {
             try {
-                Thread.sleep(3000)
+                val now = System.currentTimeMillis()
+                val sleepMs = maxOf(3000L, cooldownUntil - now)
+                Thread.sleep(sleepMs)
                 if (!isConnected) connect()
             } catch (_: InterruptedException) {}
         }
