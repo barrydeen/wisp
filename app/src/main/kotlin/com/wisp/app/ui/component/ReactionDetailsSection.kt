@@ -168,6 +168,60 @@ fun ReactionDetailsSection(
     }
 }
 
+@Composable
+fun SeenOnSection(
+    relayIcons: List<Pair<String, String?>>,
+    onRelayClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    maxIcons: Int = 5
+) {
+    val displayed = if (relayIcons.size <= maxIcons) relayIcons else relayIcons.take(maxIcons)
+    val overflow = relayIcons.size - displayed.size
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Seen on",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(8.dp))
+            Box {
+                displayed.forEachIndexed { index, (relayUrl, iconUrl) ->
+                    RelayIcon(
+                        iconUrl = iconUrl,
+                        relayUrl = relayUrl,
+                        size = 24.dp,
+                        modifier = Modifier
+                            .zIndex((displayed.size - index).toFloat())
+                            .offset(x = (18 * index).dp)
+                            .clickable { onRelayClick(relayUrl) }
+                    )
+                }
+            }
+            Spacer(Modifier.width((18 * (displayed.size - 1) + 24).dp))
+            if (overflow > 0) {
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = "+$overflow",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
 private fun formatSats(sats: Long): String {
     return when {
         sats >= 1_000_000 -> "${sats / 1_000_000}M sats"

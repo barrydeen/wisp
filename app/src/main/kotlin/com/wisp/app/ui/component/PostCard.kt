@@ -59,7 +59,8 @@ fun PostCard(
     zapSats: Long = 0,
     isZapAnimating: Boolean = false,
     eventRepo: EventRepository? = null,
-    relayIcons: List<String> = emptyList(),
+    relayIcons: List<Pair<String, String?>> = emptyList(),
+    onRelayClick: (String) -> Unit = {},
     repostedBy: String? = null,
     reactionDetails: Map<String, List<String>> = emptyMap(),
     zapDetails: List<Pair<String, Long>> = emptyList(),
@@ -80,7 +81,8 @@ fun PostCard(
         if (relayIcons.size <= 5) relayIcons else relayIcons.take(5)
     }
 
-    val hasDetails = reactionDetails.isNotEmpty() || zapDetails.isNotEmpty()
+    val hasReactionDetails = reactionDetails.isNotEmpty() || zapDetails.isNotEmpty()
+    val hasDetails = hasReactionDetails || displayIcons.isNotEmpty()
     var expandedDetails by remember { mutableStateOf(false) }
 
     Column(
@@ -162,8 +164,9 @@ fun PostCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { expandedDetails = !expandedDetails },
-                contentAlignment = Alignment.Center
+                    .clickable { expandedDetails = !expandedDetails }
+                    .padding(vertical = 2.dp),
+                contentAlignment = Alignment.CenterEnd
             ) {
                 Icon(
                     imageVector = if (expandedDetails) Icons.Filled.KeyboardArrowUp
@@ -182,27 +185,17 @@ fun PostCard(
                     eventRepo?.getProfileData(pubkey)
                 }
                 val navToProfile = onNavigateToProfileFromDetails ?: onNavigateToProfile ?: {}
-                ReactionDetailsSection(
-                    reactionDetails = reactionDetails,
-                    zapDetails = zapDetails,
-                    resolveProfile = profileResolver,
-                    onProfileClick = navToProfile
-                )
-            }
-        }
-        if (displayIcons.isNotEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.CenterEnd
-            ) {
-                Row {
-                    displayIcons.forEachIndexed { index, iconUrl ->
-                        RelayIcon(
-                            url = iconUrl,
-                            modifier = Modifier
-                                .zIndex((displayIcons.size - index).toFloat())
-                                .offset(x = (-8 * index).dp)
+                Column {
+                    if (hasReactionDetails) {
+                        ReactionDetailsSection(
+                            reactionDetails = reactionDetails,
+                            zapDetails = zapDetails,
+                            resolveProfile = profileResolver,
+                            onProfileClick = navToProfile
                         )
+                    }
+                    if (displayIcons.isNotEmpty()) {
+                        SeenOnSection(relayIcons = displayIcons, onRelayClick = onRelayClick)
                     }
                 }
             }
