@@ -60,6 +60,11 @@ class Relay(
     private val _failures = MutableSharedFlow<RelayFailure>(extraBufferCapacity = 16)
     val failures: SharedFlow<RelayFailure> = _failures
 
+    private val _authChallenges = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val authChallenges: SharedFlow<String> = _authChallenges
+    @Volatile var lastChallenge: String? = null
+        private set
+
     fun connect() {
         if (isConnected || webSocket != null) return
 
@@ -107,7 +112,13 @@ class Relay(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                RelayMessage.parse(text)?.let { _messages.tryEmit(it) }
+                val msg = RelayMessage.parse(text) ?: return
+                if (msg is RelayMessage.Auth) {
+                    lastChallenge = msg.challenge
+                    _authChallenges.tryEmit(msg.challenge)
+                } else {
+                    _messages.tryEmit(msg)
+                }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {

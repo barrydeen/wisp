@@ -22,9 +22,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -73,6 +75,7 @@ import com.wisp.app.ui.component.FullScreenImageViewer
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.QrCodeDialog
 import com.wisp.app.ui.component.ProfilePicture
+import com.wisp.app.ui.component.RichContent
 import com.wisp.app.ui.component.ZapDialog
 import com.wisp.app.viewmodel.UserProfileViewModel
 import android.content.ClipData
@@ -121,7 +124,8 @@ fun UserProfileScreen(
     bookmarkedIds: Set<String> = emptySet(),
     pinnedIds: Set<String> = emptySet(),
     onToggleBookmark: (String) -> Unit = {},
-    onTogglePin: (String) -> Unit = {}
+    onTogglePin: (String) -> Unit = {},
+    onSendDm: (() -> Unit)? = null
 ) {
     val profile by viewModel.profile.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()
@@ -301,7 +305,10 @@ fun UserProfileScreen(
                     onEditProfile = onEditProfile,
                     onToggleFollow = { viewModel.toggleFollow(contactRepo, relayPool) },
                     nip05Repo = nip05Repo,
-                    pubkey = profilePubkey
+                    pubkey = profilePubkey,
+                    eventRepo = eventRepo,
+                    onNavigateToProfile = onNavigateToProfile,
+                    onSendDm = onSendDm
                 )
             }
 
@@ -514,7 +521,10 @@ private fun ProfileHeader(
     onEditProfile: () -> Unit,
     onToggleFollow: () -> Unit,
     nip05Repo: Nip05Repository? = null,
-    pubkey: String = ""
+    pubkey: String = "",
+    eventRepo: EventRepository? = null,
+    onNavigateToProfile: ((String) -> Unit)? = null,
+    onSendDm: (() -> Unit)? = null
 ) {
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
 
@@ -565,10 +575,21 @@ private fun ProfileHeader(
                     Text("Edit Profile")
                 }
             } else {
-                FollowButton(
-                    isFollowing = isFollowing,
-                    onClick = onToggleFollow
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (onSendDm != null) {
+                        IconButton(onClick = onSendDm) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send message",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    FollowButton(
+                        isFollowing = isFollowing,
+                        onClick = onToggleFollow
+                    )
+                }
             }
         }
 
@@ -613,11 +634,31 @@ private fun ProfileHeader(
 
         profile?.about?.let { about ->
             Spacer(Modifier.height(8.dp))
-            Text(
-                text = about,
+            RichContent(
+                content = about,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                eventRepo = eventRepo,
+                onProfileClick = onNavigateToProfile
             )
+        }
+
+        profile?.lud16?.let { lightning ->
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.ElectricBolt,
+                    contentDescription = "Lightning address",
+                    tint = Color(0xFFFFC107),
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = lightning,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         Spacer(Modifier.height(16.dp))

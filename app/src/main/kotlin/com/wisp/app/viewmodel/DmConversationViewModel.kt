@@ -30,6 +30,9 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
     private val _messageText = MutableStateFlow("")
     val messageText: StateFlow<String> = _messageText
 
+    private val _sending = MutableStateFlow(false)
+    val sending: StateFlow<Boolean> = _sending
+
     private var peerPubkey: String = ""
     private var dmRepo: DmRepository? = null
     private var relayListRepo: RelayListRepository? = null
@@ -110,8 +113,11 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
 
     fun sendMessage(relayPool: RelayPool) {
         val text = _messageText.value.trim()
-        if (text.isBlank()) return
+        if (text.isBlank() || _sending.value) return
         val keypair = keyRepo.getKeypair() ?: return
+
+        _messageText.value = ""
+        _sending.value = true
 
         viewModelScope.launch(Dispatchers.Default) {
             try {
@@ -161,8 +167,13 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                     relayUrls = sentRelayUrls
                 )
                 dmRepo?.addMessage(dmMsg, peerPubkey)
-                _messageText.value = ""
-            } catch (_: Exception) {}
+                // Pre-register the self-copy's gift wrap ID so it deduplicates
+                // when it arrives back from relays
+                dmRepo?.markGiftWrapSeen(selfWrap.id, dmMsg.id)
+            } catch (_: Exception) {
+            } finally {
+                _sending.value = false
+            }
         }
     }
 }

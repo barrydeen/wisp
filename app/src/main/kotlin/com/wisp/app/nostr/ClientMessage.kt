@@ -29,6 +29,14 @@ object ClientMessage {
         }.toString()
     }
 
+    fun auth(event: NostrEvent): String {
+        val eventJson = Json.parseToJsonElement(event.toJson())
+        return buildJsonArray {
+            add(JsonPrimitive("AUTH"))
+            add(eventJson)
+        }.toString()
+    }
+
     fun close(subscriptionId: String): String {
         return buildJsonArray {
             add(JsonPrimitive("CLOSE"))

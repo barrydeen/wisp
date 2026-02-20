@@ -403,7 +403,8 @@ fun WispNavHost() {
                 bookmarkedIds = profileBookmarkedIds,
                 pinnedIds = profilePinnedIds,
                 onToggleBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) },
-                onTogglePin = { eventId -> feedViewModel.togglePin(eventId) }
+                onTogglePin = { eventId -> feedViewModel.togglePin(eventId) },
+                onSendDm = if (!isOwnProfile) {{ navController.navigate("dm/$pubkey") }} else null
             )
         }
 
