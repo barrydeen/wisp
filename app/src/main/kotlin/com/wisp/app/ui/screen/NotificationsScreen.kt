@@ -413,8 +413,8 @@ private fun ReplyPostCard(
     val zapSats = remember(zapVersion, event.id) {
         eventRepo.getZapSats(event.id)
     }
-    val userEmoji = remember(reactionVersion, event.id, userPubkey) {
-        userPubkey?.let { eventRepo.getUserReactionEmoji(event.id, it) }
+    val userEmojis = remember(reactionVersion, event.id, userPubkey) {
+        userPubkey?.let { eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet()
     }
     val reactionDetails = remember(reactionVersion, event.id) {
         eventRepo.getReactionDetails(event.id)
@@ -469,7 +469,7 @@ private fun ReplyPostCard(
         onNavigateToProfile = onProfileClick,
         onNoteClick = { onNoteClick(event.id) },
         onReact = { emoji -> onReact(event, emoji) },
-        userReactionEmoji = userEmoji,
+        userReactionEmojis = userEmojis,
         onRepost = { onRepost(event) },
         onQuote = { onQuote(event) },
         hasUserReposted = hasUserReposted,

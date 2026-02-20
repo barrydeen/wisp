@@ -1,6 +1,8 @@
 package com.wisp.app.relay
 
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.withTimeoutOrNull
 
 class SubscriptionManager(private val relayPool: RelayPool) {
@@ -35,11 +37,10 @@ class SubscriptionManager(private val relayPool: RelayPool) {
         if (expectedCount <= 0) return 0
         var eoseCount = 0
         withTimeoutOrNull(timeoutMs) {
-            relayPool.eoseSignals.collect { subId ->
-                if (subId == targetSubId && ++eoseCount >= expectedCount) {
-                    return@collect
-                }
-            }
+            relayPool.eoseSignals
+                .filter { it == targetSubId }
+                .take(expectedCount)
+                .collect { eoseCount++ }
         }
         return eoseCount
     }

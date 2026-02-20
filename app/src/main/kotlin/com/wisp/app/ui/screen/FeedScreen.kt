@@ -634,8 +634,8 @@ private fun FeedItem(
     val zapSats = remember(zapVersion, event.id) {
         viewModel.eventRepo.getZapSats(event.id)
     }
-    val userEmoji = remember(reactionVersion, event.id, userPubkey) {
-        userPubkey?.let { viewModel.eventRepo.getUserReactionEmoji(event.id, it) }
+    val userEmojis = remember(reactionVersion, event.id, userPubkey) {
+        userPubkey?.let { viewModel.eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet()
     }
     val relayIcons = remember(relaySourceVersion, event.id) {
         viewModel.eventRepo.getEventRelays(event.id).map { url ->
@@ -677,7 +677,7 @@ private fun FeedItem(
         onNavigateToProfile = onNavigateToProfile,
         onNoteClick = onNoteClick,
         onReact = onReact,
-        userReactionEmoji = userEmoji,
+        userReactionEmojis = userEmojis,
         onRepost = onRepost,
         onQuote = onQuote,
         hasUserReposted = hasUserReposted,

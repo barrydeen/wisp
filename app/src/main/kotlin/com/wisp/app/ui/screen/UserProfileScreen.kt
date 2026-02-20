@@ -368,7 +368,7 @@ fun UserProfileScreen(
                             val likeCount = reactionVersion.let { eventRepo?.getReactionCount(event.id) ?: 0 }
                             val replyCount = replyCountVersion.let { eventRepo?.getReplyCount(event.id) ?: 0 }
                             val zapSats = zapVersion.let { eventRepo?.getZapSats(event.id) ?: 0L }
-                            val userEmoji = reactionVersion.let { userPubkey?.let { eventRepo?.getUserReactionEmoji(event.id, it) } }
+                            val userEmojis = reactionVersion.let { userPubkey?.let { eventRepo?.getUserReactionEmojis(event.id, it) } ?: emptySet() }
                             val reactionDetails = remember(reactionVersion, event.id) {
                                 eventRepo?.getReactionDetails(event.id) ?: emptyMap()
                             }
@@ -395,7 +395,7 @@ fun UserProfileScreen(
                                 onNoteClick = { onNoteClick(event) },
                                 onQuotedNoteClick = onQuotedNoteClick,
                                 onReact = { emoji -> onReact(event, emoji) },
-                                userReactionEmoji = userEmoji,
+                                userReactionEmojis = userEmojis,
                                 hasUserReposted = hasUserReposted,
                                 onZap = { zapTargetEvent = event },
                                 hasUserZapped = hasUserZapped,
@@ -431,7 +431,7 @@ fun UserProfileScreen(
                             val likeCount = reactionVersion.let { eventRepo?.getReactionCount(event.id) ?: 0 }
                             val replyCount = replyCountVersion.let { eventRepo?.getReplyCount(event.id) ?: 0 }
                             val zapSats = zapVersion.let { eventRepo?.getZapSats(event.id) ?: 0L }
-                            val userEmoji = reactionVersion.let { userPubkey?.let { eventRepo?.getUserReactionEmoji(event.id, it) } }
+                            val userEmojis = reactionVersion.let { userPubkey?.let { eventRepo?.getUserReactionEmojis(event.id, it) } ?: emptySet() }
                             val reactionDetails = remember(reactionVersion, event.id) {
                                 eventRepo?.getReactionDetails(event.id) ?: emptyMap()
                             }
@@ -453,7 +453,7 @@ fun UserProfileScreen(
                                 onNoteClick = { onNoteClick(event) },
                                 onQuotedNoteClick = onQuotedNoteClick,
                                 onReact = { emoji -> onReact(event, emoji) },
-                                userReactionEmoji = userEmoji,
+                                userReactionEmojis = userEmojis,
                                 hasUserReposted = hasUserReposted2,
                                 onZap = { zapTargetEvent = event },
                                 hasUserZapped = hasUserZapped2,

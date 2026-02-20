@@ -1,5 +1,6 @@
 package com.wisp.app.ui.component
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -32,7 +33,8 @@ import com.wisp.app.repo.ReactionPreferences
 @Composable
 fun EmojiReactionPopup(
     onSelect: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    selectedEmojis: Set<String> = emptySet()
 ) {
     val context = LocalContext.current
     var emojis by remember { mutableStateOf(ReactionPreferences(context).getReactionSet()) }
@@ -58,10 +60,17 @@ fun EmojiReactionPopup(
                 verticalArrangement = Arrangement.Center
             ) {
                 emojis.forEach { emoji ->
-                    TextButton(onClick = {
-                        onSelect(emoji)
-                        onDismiss()
-                    }) {
+                    val isSelected = emoji in selectedEmojis
+                    TextButton(
+                        onClick = {
+                            onSelect(emoji)
+                            onDismiss()
+                        },
+                        modifier = if (isSelected) Modifier.background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                            RoundedCornerShape(12.dp)
+                        ) else Modifier
+                    ) {
                         Text(emoji, fontSize = 24.sp)
                     }
                 }

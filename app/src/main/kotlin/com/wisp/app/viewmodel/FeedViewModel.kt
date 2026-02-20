@@ -89,7 +89,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private val activeEngagementSubIds = mutableListOf<String>()
     private var loadMoreCount = 0
 
-    val nwcRepo = NwcRepository(app, pubkeyHex)
+    val nwcRepo = NwcRepository(app, relayPool, pubkeyHex)
     val zapSender = ZapSender(keyRepo, nwcRepo, relayPool, Relay.createClient())
 
     private val _zapInProgress = MutableStateFlow<Set<String>>(emptySet())
@@ -636,7 +636,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val since = adaptiveSince(100)
                 val filter = Filter(kinds = listOf(1, 6), since = since, limit = 100)
                 val msg = ClientMessage.req(feedSubId, filter)
-                relayPool.sendToRelay(url, msg)
+                relayPool.sendToRelayOrEphemeral(url, msg)
                 setOf(url)
             }
         }
@@ -667,7 +667,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                         val url = _selectedRelay.value
                         if (url != null) {
                             val f = Filter(kinds = listOf(1, 6), limit = 30)
-                            relayPool.sendToRelay(url, ClientMessage.req("feed-backfill", f))
+                            relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("feed-backfill", f))
                         }
                         null
                     }
@@ -795,20 +795,42 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun sendReaction(event: NostrEvent, content: String = "+") {
+        toggleReaction(event, content)
+    }
+
+    fun toggleReaction(event: NostrEvent, emoji: String) {
         val keypair = keyRepo.getKeypair() ?: return
+        val myPubkey = keypair.pubkey.toHex()
+        val existingEventId = eventRepo.getUserReactionEventId(event.id, myPubkey, emoji)
+
         viewModelScope.launch {
             try {
-                val tags = com.wisp.app.nostr.Nip25.buildReactionTags(event)
-                val reactionEvent = NostrEvent.create(
-                    privkey = keypair.privkey,
-                    pubkey = keypair.pubkey,
-                    kind = 7,
-                    content = content,
-                    tags = tags
-                )
-                val msg = ClientMessage.event(reactionEvent)
-                outboxRouter.publishToInbox(msg, event.pubkey)
-                eventRepo.addEvent(reactionEvent)
+                if (existingEventId != null) {
+                    // Delete the existing reaction via NIP-09
+                    val tags = com.wisp.app.nostr.Nip09.buildDeletionTags(existingEventId, 7)
+                    val deletionEvent = NostrEvent.create(
+                        privkey = keypair.privkey,
+                        pubkey = keypair.pubkey,
+                        kind = 5,
+                        content = "",
+                        tags = tags
+                    )
+                    relayPool.sendToWriteRelays(ClientMessage.event(deletionEvent))
+                    eventRepo.removeReaction(event.id, myPubkey, emoji)
+                } else {
+                    // Create new reaction
+                    val tags = com.wisp.app.nostr.Nip25.buildReactionTags(event)
+                    val reactionEvent = NostrEvent.create(
+                        privkey = keypair.privkey,
+                        pubkey = keypair.pubkey,
+                        kind = 7,
+                        content = emoji,
+                        tags = tags
+                    )
+                    val msg = ClientMessage.event(reactionEvent)
+                    outboxRouter.publishToInbox(msg, event.pubkey)
+                    eventRepo.addEvent(reactionEvent)
+                }
             } catch (_: Exception) {}
         }
     }
@@ -829,7 +851,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val url = _selectedRelay.value
                 if (url != null) {
                     val filter = Filter(kinds = listOf(1, 6), until = oldest - 1, limit = 50)
-                    relayPool.sendToRelay(url, ClientMessage.req("loadmore", filter))
+                    relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("loadmore", filter))
                 } else { isLoadingMore = false; return }
             }
             FeedType.LIST -> {

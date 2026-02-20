@@ -248,7 +248,7 @@ fun WispNavHost() {
                     navController.navigate(Routes.DM_LIST)
                 },
                 onReact = { event, emoji ->
-                    feedViewModel.sendReaction(event, emoji)
+                    feedViewModel.toggleReaction(event, emoji)
                 },
                 onNoteClick = { event ->
                     navController.navigate("thread/${event.id}")
@@ -385,7 +385,7 @@ fun WispNavHost() {
                 onUnblockUser = { feedViewModel.unblockUser(pubkey) },
                 onNoteClick = { event -> navController.navigate("thread/${event.id}") },
                 onQuotedNoteClick = { eventId -> navController.navigate("thread/$eventId") },
-                onReact = { event, emoji -> feedViewModel.sendReaction(event, emoji) },
+                onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
                 onZap = { event, amountMsats, message -> feedViewModel.sendZap(event, amountMsats, message) },
                 userPubkey = feedViewModel.getUserPubkey(),
                 isWalletConnected = feedViewModel.nwcRepo.hasConnection(),
@@ -430,7 +430,7 @@ fun WispNavHost() {
                     navController.navigate(Routes.COMPOSE)
                 },
                 onReact = { event, emoji ->
-                    feedViewModel.sendReaction(event, emoji)
+                    feedViewModel.toggleReaction(event, emoji)
                 },
                 onListClick = { list ->
                     navController.navigate("list/${list.pubkey}/${list.dTag}")
@@ -552,7 +552,7 @@ fun WispNavHost() {
                     navController.navigate("thread/$eventId")
                 },
                 onReact = { event, emoji ->
-                    feedViewModel.sendReaction(event, emoji)
+                    feedViewModel.toggleReaction(event, emoji)
                 },
                 onRepost = { event ->
                     feedViewModel.sendRepost(event)
@@ -671,7 +671,7 @@ fun WispNavHost() {
                     composeViewModel.clear()
                     navController.navigate(Routes.COMPOSE)
                 },
-                onReact = { event, emoji -> feedViewModel.sendReaction(event, emoji) },
+                onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
                 onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                 onToggleBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) },
                 onToggleFollow = { pubkey -> feedViewModel.toggleFollow(pubkey) },
@@ -798,7 +798,7 @@ fun WispNavHost() {
                     navController.navigate(Routes.COMPOSE)
                 },
                 onReact = { event, emoji ->
-                    feedViewModel.sendReaction(event, emoji)
+                    feedViewModel.toggleReaction(event, emoji)
                 },
                 onRepost = { event ->
                     feedViewModel.sendRepost(event)

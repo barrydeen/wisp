@@ -122,6 +122,27 @@ object Nip57 {
         )
     }
 
+    suspend fun fetchSimpleInvoice(
+        callbackUrl: String,
+        amountMsats: Long,
+        httpClient: OkHttpClient
+    ): String? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val separator = if (callbackUrl.contains("?")) "&" else "?"
+                val url = "${callbackUrl}${separator}amount=$amountMsats"
+                val request = Request.Builder().url(url).build()
+                val response = httpClient.newCall(request).execute()
+                if (!response.isSuccessful) return@withContext null
+                val body = response.body?.string() ?: return@withContext null
+                val obj = json.parseToJsonElement(body).jsonObject
+                obj["pr"]?.jsonPrimitive?.content
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
     suspend fun fetchInvoice(
         callbackUrl: String,
         amountMsats: Long,

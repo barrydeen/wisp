@@ -110,7 +110,7 @@ fun ThreadScreen(
                     val likeCount = reactionVersion.let { eventRepo.getReactionCount(event.id) }
                     val replyCount = replyCountVersion.let { eventRepo.getReplyCount(event.id) }
                     val zapSats = zapVersion.let { eventRepo.getZapSats(event.id) }
-                    val userEmoji = reactionVersion.let { userPubkey?.let { eventRepo.getUserReactionEmoji(event.id, it) } }
+                    val userEmojis = reactionVersion.let { userPubkey?.let { eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet() }
                     val reactionDetails = reactionVersion.let { eventRepo.getReactionDetails(event.id) }
                     val zapDetailsList = zapVersion.let { eventRepo.getZapDetails(event.id) }
                     val repostCount = repostVersion.let { eventRepo.getRepostCount(event.id) }
@@ -124,7 +124,7 @@ fun ThreadScreen(
                         onNavigateToProfile = onProfileClick,
                         onNoteClick = { onNoteClick(event) },
                         onReact = { emoji -> onReact(event, emoji) },
-                        userReactionEmoji = userEmoji,
+                        userReactionEmojis = userEmojis,
                         onRepost = { onRepost(event) },
                         onQuote = { onQuote(event) },
                         hasUserReposted = hasUserReposted,

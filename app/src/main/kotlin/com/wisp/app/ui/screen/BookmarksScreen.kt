@@ -84,8 +84,8 @@ fun BookmarksScreen(
                 items(items = bookmarkedEvents, key = { it.id }) { event ->
                     val profile = eventRepo.getProfileData(event.pubkey)
                     val likeCount = reactionVersion.let { eventRepo.getReactionCount(event.id) }
-                    val userEmoji = reactionVersion.let {
-                        userPubkey?.let { eventRepo.getUserReactionEmoji(event.id, it) }
+                    val userEmojis = reactionVersion.let {
+                        userPubkey?.let { eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet()
                     }
                     PostCard(
                         event = event,
@@ -96,7 +96,7 @@ fun BookmarksScreen(
                         onNoteClick = { onNoteClick(event) },
                         onQuotedNoteClick = onQuotedNoteClick,
                         onReact = { emoji -> onReact(event, emoji) },
-                        userReactionEmoji = userEmoji,
+                        userReactionEmojis = userEmojis,
                         likeCount = likeCount,
                         eventRepo = eventRepo,
                         onBookmark = { onToggleBookmark(event.id) },
