@@ -197,6 +197,70 @@ class OutboxRouter(
         return subId
     }
 
+    /**
+     * Subscribe for engagement data (reactions, zaps, replies) on events, routed to each
+     * author's read (inbox) relays per NIP-65. Reactors publish to the author's inbox,
+     * so we must query there instead of our own read relays.
+     *
+     * @param prefix Subscription ID prefix (e.g. "engage", "user-engage")
+     * @param eventsByAuthor Map of authorPubkey -> list of eventIds authored by them
+     * @param activeSubIds Mutable list to track created subscription IDs for later cleanup
+     */
+    fun subscribeEngagementByAuthors(
+        prefix: String,
+        eventsByAuthor: Map<String, List<String>>,
+        activeSubIds: MutableList<String>
+    ) {
+        // Group authors by their read (inbox) relays
+        val relayToEventIds = mutableMapOf<String, MutableList<String>>()
+        val fallbackEventIds = mutableListOf<String>()
+
+        for ((authorPubkey, eventIds) in eventsByAuthor) {
+            val readRelays = relayListRepo.getReadRelays(authorPubkey)
+            if (readRelays != null && readRelays.isNotEmpty()) {
+                for (url in readRelays) {
+                    relayToEventIds.getOrPut(url) { mutableListOf() }.addAll(eventIds)
+                }
+            } else {
+                fallbackEventIds.addAll(eventIds)
+            }
+        }
+
+        var subIndex = 0
+
+        // Send targeted engagement queries to each author's inbox relays
+        for ((relayUrl, eventIds) in relayToEventIds) {
+            val uniqueIds = eventIds.distinct()
+            for (batch in uniqueIds.chunked(50)) {
+                val subId = if (subIndex == 0) prefix else "$prefix-$subIndex"
+                subIndex++
+                activeSubIds.add(subId)
+                val filters = listOf(
+                    Filter(kinds = listOf(7), eTags = batch),
+                    Filter(kinds = listOf(9735), eTags = batch),
+                    Filter(kinds = listOf(1), eTags = batch)
+                )
+                relayPool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(subId, filters))
+            }
+        }
+
+        // Fallback: authors without known relay lists → send to our read relays
+        if (fallbackEventIds.isNotEmpty()) {
+            val uniqueIds = fallbackEventIds.distinct()
+            for (batch in uniqueIds.chunked(50)) {
+                val subId = if (subIndex == 0) prefix else "$prefix-$subIndex"
+                subIndex++
+                activeSubIds.add(subId)
+                val filters = listOf(
+                    Filter(kinds = listOf(7), eTags = batch),
+                    Filter(kinds = listOf(9735), eTags = batch),
+                    Filter(kinds = listOf(1), eTags = batch)
+                )
+                relayPool.sendToReadRelays(ClientMessage.req(subId, filters))
+            }
+        }
+    }
+
     private fun groupAuthorsByWriteRelay(authors: List<String>): Map<String, List<String>> {
         // Use scoreboard if available — constrains to optimal relay set
         val scoreBoard = relayScoreBoard

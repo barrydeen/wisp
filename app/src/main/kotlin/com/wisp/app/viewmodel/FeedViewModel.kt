@@ -706,21 +706,16 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
         val feedEvents = eventRepo.feed.value
         if (feedEvents.isEmpty()) return
-        val eventIds = feedEvents.map { it.id }
-        subscribeEngagementForEvents(eventIds, "engage")
+        subscribeEngagementForEvents(feedEvents, "engage")
     }
 
-    private fun subscribeEngagementForEvents(eventIds: List<String>, prefix: String) {
-        eventIds.chunked(50).forEachIndexed { index, batch ->
-            val subId = if (index == 0) prefix else "$prefix-$index"
-            activeEngagementSubIds.add(subId)
-            val filters = listOf(
-                Filter(kinds = listOf(7), eTags = batch),
-                Filter(kinds = listOf(9735), eTags = batch),
-                Filter(kinds = listOf(1), eTags = batch)
-            )
-            relayPool.sendToReadRelays(ClientMessage.req(subId, filters))
+    private fun subscribeEngagementForEvents(events: List<NostrEvent>, prefix: String) {
+        // Group event IDs by author so engagement queries go to each author's inbox relays
+        val eventsByAuthor = mutableMapOf<String, MutableList<String>>()
+        for (event in events) {
+            eventsByAuthor.getOrPut(event.pubkey) { mutableListOf() }.add(event.id)
         }
+        outboxRouter.subscribeEngagementByAuthors(prefix, eventsByAuthor, activeEngagementSubIds)
     }
 
     /**
@@ -886,10 +881,20 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             // Subscribe engagement for newly loaded events
             val currentFeed = eventRepo.feed.value
             if (currentFeed.size > feedSizeBefore) {
-                val newEventIds = currentFeed.drop(feedSizeBefore).map { it.id }
-                if (newEventIds.isNotEmpty()) {
+                val newEvents = currentFeed.drop(feedSizeBefore)
+                if (newEvents.isNotEmpty()) {
                     loadMoreCount++
-                    subscribeEngagementForEvents(newEventIds, "engage-more-$loadMoreCount")
+                    val prefix = "engage-more-$loadMoreCount"
+                    subscribeEngagementForEvents(newEvents, prefix)
+                    // Close these engagement subs after EOSE to free subscription capacity
+                    val engageSubsCopy = activeEngagementSubIds.filter { it.startsWith(prefix) }
+                    launch {
+                        subManager.awaitEoseWithTimeout(prefix)
+                        for (subId in engageSubsCopy) {
+                            relayPool.closeOnAllRelays(subId)
+                            activeEngagementSubIds.remove(subId)
+                        }
+                    }
                 }
             }
 

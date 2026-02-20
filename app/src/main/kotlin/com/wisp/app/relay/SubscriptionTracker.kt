@@ -10,8 +10,10 @@ class SubscriptionTracker {
     private val relaySubs = ConcurrentHashMap<String, MutableSet<String>>()
 
     companion object {
-        const val SOFT_CAP = 15
-        private val PRIORITY_PREFIXES = listOf("dms", "notif", "feed", "self-data", "thread-")
+        const val SOFT_CAP = 20
+        private val PRIORITY_PREFIXES = listOf(
+            "dms", "notif", "feed", "self-data", "thread-", "engage", "user-engage"
+        )
     }
 
     fun track(relayUrl: String, subId: String) {
@@ -22,6 +24,10 @@ class SubscriptionTracker {
         for (subs in relaySubs.values) {
             subs.remove(subId)
         }
+    }
+
+    fun untrackRelay(relayUrl: String) {
+        relaySubs.remove(relayUrl)
     }
 
     fun hasCapacity(relayUrl: String, subId: String): Boolean {

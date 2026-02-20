@@ -244,15 +244,23 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         val eventIds = (_rootNotes.value.map { it.id } + _replies.value.map { it.id }).distinct()
         if (eventIds.isEmpty()) return
 
-        eventIds.chunked(50).forEachIndexed { index, batch ->
-            val subId = if (index == 0) "user-engage" else "user-engage-$index"
-            activeEngagementSubIds.add(subId)
-            val filters = listOf(
-                Filter(kinds = listOf(7), eTags = batch),
-                Filter(kinds = listOf(9735), eTags = batch),
-                Filter(kinds = listOf(1), eTags = batch)
-            )
-            relayPool.sendToReadRelays(ClientMessage.req(subId, filters))
+        // All events belong to targetPubkey — route to their inbox relays
+        val router = outboxRouterRef
+        if (router != null) {
+            val eventsByAuthor = mapOf(targetPubkey to eventIds)
+            router.subscribeEngagementByAuthors("user-engage", eventsByAuthor, activeEngagementSubIds)
+        } else {
+            // Fallback: no router available, use read relays
+            eventIds.chunked(50).forEachIndexed { index, batch ->
+                val subId = if (index == 0) "user-engage" else "user-engage-$index"
+                activeEngagementSubIds.add(subId)
+                val filters = listOf(
+                    Filter(kinds = listOf(7), eTags = batch),
+                    Filter(kinds = listOf(9735), eTags = batch),
+                    Filter(kinds = listOf(1), eTags = batch)
+                )
+                relayPool.sendToReadRelays(ClientMessage.req(subId, filters))
+            }
         }
     }
 

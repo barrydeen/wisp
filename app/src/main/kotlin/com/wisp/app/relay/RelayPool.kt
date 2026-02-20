@@ -8,6 +8,7 @@ import com.wisp.app.nostr.RelayMessage
 import com.wisp.app.nostr.RelayMessage.Auth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +35,7 @@ class RelayPool {
     companion object {
         const val MAX_PERSISTENT = 50
         const val MAX_EPHEMERAL = 30
+        const val MAX_DM_RELAYS = 10
         const val COOLDOWN_DOWN_MS = 10 * 60 * 1000L    // 10 min — 5xx, connection failures (ephemeral only)
         const val COOLDOWN_REJECTED_MS = 1 * 60 * 1000L // 1 min — 4xx like 401/403/429
         const val COOLDOWN_NETWORK_MS = 5_000L           // 5s — DNS/network failures on persistent relays
@@ -43,6 +45,17 @@ class RelayPool {
     val subscriptionTracker = SubscriptionTracker()
     private val seenEvents = LruCache<String, Boolean>(5000)
     private val seenLock = Any()
+
+    /** Relay URL → Relay index for O(1) lookup across all pools. */
+    private val relayIndex = java.util.concurrent.ConcurrentHashMap<String, Relay>()
+
+    /** Relay URL → parent Job for all collector coroutines on that relay. */
+    private val relayJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
+
+    /** Subscription prefixes that bypass event deduplication. */
+    private val dedupBypassPrefixes = java.util.concurrent.CopyOnWriteArrayList(
+        listOf("thread-", "user", "quote-", "editprofile")
+    )
 
     /** Signing lambda for NIP-42 AUTH — set via [setAuthSigner]. */
     private var authSigner: ((relayUrl: String, challenge: String) -> NostrEvent)? = null
@@ -54,6 +67,10 @@ class RelayPool {
      */
     fun setAuthSigner(signer: (relayUrl: String, challenge: String) -> NostrEvent) {
         authSigner = signer
+    }
+
+    fun registerDedupBypass(prefix: String) {
+        if (prefix !in dedupBypassPrefixes) dedupBypassPrefixes.add(prefix)
     }
 
     private val _events = MutableSharedFlow<NostrEvent>(extraBufferCapacity = 1024)
@@ -88,11 +105,20 @@ class RelayPool {
     fun updateBlockedUrls(urls: List<String>) {
         blockedUrls = urls.toSet()
         // Disconnect any currently-connected relays that are now blocked
-        relays.filter { it.config.url in blockedUrls }.forEach { it.disconnect(); relays.remove(it) }
-        dmRelays.filter { it.config.url in blockedUrls }.forEach { it.disconnect(); dmRelays.remove(it) }
+        relays.filter { it.config.url in blockedUrls }.forEach {
+            it.disconnect(); relays.remove(it); relayIndex.remove(it.config.url)
+            subscriptionTracker.untrackRelay(it.config.url); cancelRelayJobs(it.config.url)
+        }
+        dmRelays.filter { it.config.url in blockedUrls }.forEach {
+            it.disconnect(); dmRelays.remove(it); relayIndex.remove(it.config.url)
+            subscriptionTracker.untrackRelay(it.config.url); cancelRelayJobs(it.config.url)
+        }
         ephemeralRelays.keys.filter { it in blockedUrls }.forEach { url ->
             ephemeralRelays.remove(url)?.disconnect()
             ephemeralLastUsed.remove(url)
+            relayIndex.remove(url)
+            subscriptionTracker.untrackRelay(url)
+            cancelRelayJobs(url)
         }
     }
 
@@ -102,7 +128,13 @@ class RelayPool {
         // Disconnect removed relays
         val currentUrls = filtered.map { it.url }.toSet()
         val toRemove = relays.filter { it.config.url !in currentUrls }
-        toRemove.forEach { it.disconnect(); relays.remove(it) }
+        toRemove.forEach {
+            it.disconnect()
+            relays.remove(it)
+            relayIndex.remove(it.config.url)
+            subscriptionTracker.untrackRelay(it.config.url)
+            cancelRelayJobs(it.config.url)
+        }
 
         // Add new relays
         val existingUrls = relays.map { it.config.url }.toSet()
@@ -110,6 +142,7 @@ class RelayPool {
             if (config.url !in existingUrls) {
                 val relay = Relay(config, client, scope)
                 relays.add(relay)
+                relayIndex[config.url] = relay
                 collectMessages(relay)
                 relay.connect()
             }
@@ -117,15 +150,22 @@ class RelayPool {
     }
 
     fun updateDmRelays(urls: List<String>) {
-        val filtered = urls.filter { it !in blockedUrls }
+        val filtered = urls.filter { it !in blockedUrls }.take(MAX_DM_RELAYS)
         val currentUrls = filtered.toSet()
-        dmRelays.filter { it.config.url !in currentUrls }.forEach { it.disconnect(); dmRelays.remove(it) }
+        dmRelays.filter { it.config.url !in currentUrls }.forEach {
+            it.disconnect()
+            dmRelays.remove(it)
+            relayIndex.remove(it.config.url)
+            subscriptionTracker.untrackRelay(it.config.url)
+            cancelRelayJobs(it.config.url)
+        }
 
         val existingUrls = dmRelays.map { it.config.url }.toSet()
         for (url in filtered) {
             if (url !in existingUrls) {
                 val relay = Relay(RelayConfig(url, read = true, write = true), client, scope)
                 dmRelays.add(relay)
+                relayIndex[url] = relay
                 collectMessages(relay)
                 relay.connect()
             }
@@ -138,17 +178,25 @@ class RelayPool {
 
     fun hasDmRelays(): Boolean = dmRelays.isNotEmpty()
 
+    private fun cancelRelayJobs(url: String) {
+        relayJobs.remove(url)?.cancel()
+    }
+
     private fun collectMessages(relay: Relay) {
-        scope.launch {
+        val parentJob = SupervisorJob()
+        relayJobs[relay.config.url]?.cancel()
+        relayJobs[relay.config.url] = parentJob
+
+        scope.launch(parentJob) {
             relay.messages.collect { msg ->
                 when (msg) {
                     is RelayMessage.EventMsg -> {
-                        // Thread, user-profile, and notification subscriptions bypass dedup
-                        // since events may already have been seen during feed loading
-                        val bypassDedup = msg.subscriptionId.startsWith("thread-") ||
-                            msg.subscriptionId.startsWith("user") ||
-                            msg.subscriptionId.startsWith("quote-") ||
-                            msg.subscriptionId == "editprofile"
+                        // Some subscriptions bypass dedup since events may already
+                        // have been seen during feed loading
+                        val bypassDedup = dedupBypassPrefixes.any {
+                            if (it.endsWith("-")) msg.subscriptionId.startsWith(it)
+                            else msg.subscriptionId == it || msg.subscriptionId.startsWith(it)
+                        }
                         val shouldEmit = if (bypassDedup) {
                             true
                         } else {
@@ -188,18 +236,22 @@ class RelayPool {
                 }
             }
         }
-        scope.launch {
+        scope.launch(parentJob) {
             relay.connectionErrors.collect { addConsoleEntry(it) }
         }
-        scope.launch {
-            relay.connectionState.collect { updateConnectedCount() }
+        scope.launch(parentJob) {
+            relay.connectionState.collect {
+                updateConnectedCount()
+                // Clean up tracker when relay disconnects
+                if (!it) subscriptionTracker.untrackRelay(relay.config.url)
+            }
         }
-        collectRelayFailures(relay)
-        collectAuthChallenges(relay)
+        collectRelayFailures(relay, parentJob)
+        collectAuthChallenges(relay, parentJob)
     }
 
-    private fun collectAuthChallenges(relay: Relay) {
-        scope.launch {
+    private fun collectAuthChallenges(relay: Relay, parentJob: Job) {
+        scope.launch(parentJob) {
             relay.authChallenges.collect { challenge ->
                 val signer = authSigner ?: return@collect
                 try {
@@ -270,9 +322,7 @@ class RelayPool {
             if (!subscriptionTracker.hasCapacity(url, subId)) return
             subscriptionTracker.track(url, subId)
         }
-        relays.find { it.config.url == url }?.send(message)
-            ?: dmRelays.find { it.config.url == url }?.send(message)
-            ?: ephemeralRelays[url]?.send(message)
+        relayIndex[url]?.send(message)
     }
 
     /** Extracts subscription ID from a REQ message: ["REQ","subId",...] */
@@ -291,16 +341,13 @@ class RelayPool {
         val cooldownUntil = relayCooldowns[url]
         if (cooldownUntil != null && System.currentTimeMillis() < cooldownUntil) return false
 
-        // Check permanent relays first
-        relays.find { it.config.url == url }?.let {
-            it.send(message)
-            return true
-        }
-
-        // Check DM relays
-        dmRelays.find { it.config.url == url }?.let {
-            it.send(message)
-            return true
+        // O(1) lookup in persistent/DM relay index
+        relayIndex[url]?.let { existing ->
+            // Don't use this path for ephemeral relays (they're in relayIndex too)
+            if (existing !in ephemeralRelays.values) {
+                existing.send(message)
+                return true
+            }
         }
 
         // Check or create ephemeral relay (cap at MAX_EPHEMERAL)
@@ -308,6 +355,7 @@ class RelayPool {
         val ephemeral = ephemeralRelays.getOrPut(url) {
             val relay = Relay(RelayConfig(url, read = true, write = false), client, scope)
             relay.autoReconnect = false
+            relayIndex[url] = relay
             collectMessages(relay)
             relay.connect()
             relay
@@ -326,8 +374,8 @@ class RelayPool {
         return if (httpCode != null && httpCode in 400..499) COOLDOWN_REJECTED_MS else COOLDOWN_DOWN_MS
     }
 
-    private fun collectRelayFailures(relay: Relay) {
-        scope.launch {
+    private fun collectRelayFailures(relay: Relay, parentJob: Job) {
+        scope.launch(parentJob) {
             relay.failures.collect { failure ->
                 val isEphemeral = ephemeralRelays.containsKey(relay.config.url)
                 // Only apply cooldowns to ephemeral relays.
@@ -340,6 +388,7 @@ class RelayPool {
                     relayCooldowns[relay.config.url] = until
                     ephemeralRelays.remove(relay.config.url)
                     ephemeralLastUsed.remove(relay.config.url)
+                    relayIndex.remove(relay.config.url)
                     Log.d("RelayPool", "Cooldown ${cooldownMs / 1000}s for ephemeral ${relay.config.url} (http=${failure.httpCode})")
                 } else {
                     Log.d("RelayPool", "Failure on persistent relay ${relay.config.url} (http=${failure.httpCode}), will retry in 3s")
@@ -407,6 +456,8 @@ class RelayPool {
         for (url in stale) {
             ephemeralRelays.remove(url)?.disconnect()
             ephemeralLastUsed.remove(url)
+            relayIndex.remove(url)
+            cancelRelayJobs(url)
         }
         // Clear expired cooldowns
         val expiredCooldowns = relayCooldowns.filter { now >= it.value }.keys
@@ -416,18 +467,13 @@ class RelayPool {
     }
 
     fun disconnectRelay(url: String) {
-        relays.find { it.config.url == url }?.let {
-            it.disconnect()
-            relays.remove(it)
-        }
-        dmRelays.find { it.config.url == url }?.let {
-            it.disconnect()
-            dmRelays.remove(it)
-        }
-        ephemeralRelays.remove(url)?.let {
-            it.disconnect()
-            ephemeralLastUsed.remove(url)
-        }
+        relayIndex.remove(url)?.disconnect()
+        relays.removeAll { it.config.url == url }
+        dmRelays.removeAll { it.config.url == url }
+        ephemeralRelays.remove(url)
+        ephemeralLastUsed.remove(url)
+        subscriptionTracker.untrackRelay(url)
+        cancelRelayJobs(url)
         updateConnectedCount()
     }
 
@@ -454,6 +500,9 @@ class RelayPool {
         ephemeralRelays.clear()
         ephemeralLastUsed.clear()
         relayCooldowns.clear()
+        relayIndex.clear()
+        relayJobs.values.forEach { it.cancel() }
+        relayJobs.clear()
         subscriptionTracker.clear()
     }
 }
