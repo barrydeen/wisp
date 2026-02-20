@@ -1,5 +1,7 @@
 package com.wisp.app.repo
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.util.LruCache
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip57
@@ -9,7 +11,10 @@ import com.wisp.app.nostr.ZapEntry
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-class NotificationRepository {
+class NotificationRepository(context: Context, pubkeyHex: String?) {
+    private val prefs: SharedPreferences =
+        context.getSharedPreferences("wisp_notif_${pubkeyHex ?: "anon"}", Context.MODE_PRIVATE)
+
     private val seenEvents = LruCache<String, Boolean>(2000)
 
     private val lock = Any()
@@ -20,6 +25,8 @@ class NotificationRepository {
 
     private val _hasUnread = MutableStateFlow(false)
     val hasUnread: StateFlow<Boolean> = _hasUnread
+
+    private var lastReadTimestamp: Long = prefs.getLong(KEY_LAST_READ, 0L)
 
     fun addEvent(event: NostrEvent, myPubkey: String) {
         if (event.pubkey == myPubkey) return
@@ -38,13 +45,20 @@ class NotificationRepository {
             }
             if (!merged) return
 
-            _hasUnread.value = true
+            if (event.created_at > lastReadTimestamp) {
+                _hasUnread.value = true
+            }
             rebuildSortedList()
         }
     }
 
     fun markRead() {
         _hasUnread.value = false
+        val latestTimestamp = _notifications.value.firstOrNull()?.latestTimestamp ?: return
+        if (latestTimestamp > lastReadTimestamp) {
+            lastReadTimestamp = latestTimestamp
+            prefs.edit().putLong(KEY_LAST_READ, latestTimestamp).apply()
+        }
     }
 
     fun clear() {
@@ -197,5 +211,9 @@ class NotificationRepository {
             latestTimestamp = event.created_at
         )
         return true
+    }
+
+    companion object {
+        private const val KEY_LAST_READ = "last_read_timestamp"
     }
 }

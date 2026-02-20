@@ -137,6 +137,7 @@ class Relay(
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d("Relay", "Closed ${config.url}: $reason")
                 isConnected = false
+                this@Relay.webSocket = null
                 _connectionState.tryEmit(false)
                 if (code != 1000) {
                     _connectionErrors.tryEmit(ConsoleLogEntry(
@@ -144,6 +145,7 @@ class Relay(
                         type = ConsoleLogType.CONN_CLOSED,
                         message = "Code $code: $reason"
                     ))
+                    reconnect()
                 }
             }
         })
