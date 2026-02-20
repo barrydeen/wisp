@@ -68,7 +68,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val contactRepo = ContactRepository(app, pubkeyHex)
     val listRepo = ListRepository(app, pubkeyHex)
     val dmRepo = DmRepository()
-    val notifRepo = NotificationRepository()
+    val notifRepo = NotificationRepository(app, pubkeyHex)
     val relayListRepo = RelayListRepository(app)
     val bookmarkRepo = BookmarkRepository(app, pubkeyHex)
     val pinRepo = PinRepository(app, pubkeyHex)
@@ -443,19 +443,28 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 if (myPubkey != null && event.pubkey == myPubkey) blossomRepo.updateFromEvent(event)
             }
             if (event.kind == Nip51.KIND_FOLLOW_SET) listRepo.updateFromEvent(event)
-            eventRepo.addEvent(event)
-            if (event.kind == 1) eventRepo.addEventRelay(event.id, relayUrl)
-            when (event.kind) {
-                1 -> {
+
+            // Only add to feed for feed-related subscriptions;
+            // other subs (user profile, bookmarks, threads) just cache
+            val isFeedSub = subscriptionId == feedSubId ||
+                subscriptionId == "loadmore" ||
+                subscriptionId == "feed-backfill"
+            if (isFeedSub) {
+                eventRepo.addEvent(event)
+                if (event.kind == 1) eventRepo.addEventRelay(event.id, relayUrl)
+                if (event.kind == 1) {
                     metadataFetcher.fetchQuotedEvents(event)
                     if (eventRepo.getProfileData(event.pubkey) == null) {
                         metadataFetcher.addToPendingProfiles(event.pubkey)
                     }
                 }
-                3 -> {
-                    val myPubkey = getUserPubkey()
-                    if (myPubkey != null && event.pubkey == myPubkey) contactRepo.updateFromEvent(event)
-                }
+            } else {
+                eventRepo.cacheEvent(event)
+            }
+            // Always handle follow list updates (from self-data subscription)
+            if (event.kind == 3) {
+                val myPubkey = getUserPubkey()
+                if (myPubkey != null && event.pubkey == myPubkey) contactRepo.updateFromEvent(event)
             }
         }
     }
@@ -525,9 +534,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onAppResume() {
         if (!relaysInitialized) return
-        val reconnected = relayPool.reconnectAll()
+        relayPool.reconnectAll()
         viewModelScope.launch {
-            if (reconnected > 0) relayPool.awaitAnyConnected()
+            relayPool.awaitAnyConnected()
             subscribeFeed()
             fetchRelayListsForFollows()
         }
@@ -885,12 +894,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             isLoadingMore = false
-        }
-    }
-
-    fun initNwc() {
-        if (nwcRepo.hasConnection()) {
-            nwcRepo.connect()
         }
     }
 

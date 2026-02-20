@@ -123,7 +123,6 @@ fun WispNavHost() {
     if (authViewModel.isLoggedIn && startDestination == Routes.FEED) {
         LaunchedEffect(Unit) {
             feedViewModel.initRelays()
-            feedViewModel.initNwc()
         }
     }
 
@@ -195,7 +194,6 @@ fun WispNavHost() {
                     } else {
                         feedViewModel.reloadForNewAccount()
                         feedViewModel.initRelays()
-                        feedViewModel.initNwc()
                         walletViewModel.refreshState()
                         authViewModel.keyRepo.markOnboardingComplete()
                         navController.navigate(Routes.FEED) {
@@ -732,7 +730,6 @@ fun WispNavHost() {
                     )
                     feedViewModel.reloadForNewAccount()
                     feedViewModel.initRelays()
-                    feedViewModel.initNwc()
                     walletViewModel.refreshState()
                     navController.navigate(Routes.FEED) {
                         popUpTo(0) { inclusive = true }

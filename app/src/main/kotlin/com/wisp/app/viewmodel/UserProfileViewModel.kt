@@ -58,6 +58,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     private var outboxRouterRef: OutboxRouter? = null
     private var subManagerRef: SubscriptionManager? = null
     private val activeEngagementSubIds = mutableListOf<String>()
+    private val activeFollowProfileSubIds = mutableListOf<String>()
 
     companion object {
         private val SUB_IDS = setOf("userprofile", "userposts", "userfollows", "userrelays", "followprofiles")
@@ -117,7 +118,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             relayPool.relayEvents.collect { (event, _, subscriptionId) ->
                 // Only process events from our own subscriptions
-                if (subscriptionId !in SUB_IDS && !subscriptionId.startsWith("user-engage")) return@collect
+                if (subscriptionId !in SUB_IDS && !subscriptionId.startsWith("followprofiles") && !subscriptionId.startsWith("user-engage")) return@collect
 
                 // Route engagement events — reactions, zaps, reply counts
                 if (subscriptionId.startsWith("user-engage")) {
@@ -138,11 +139,11 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                 if (event.pubkey == pubkey) {
                     when (event.kind) {
                         0 -> {
-                            eventRepo.addEvent(event)
+                            eventRepo.cacheEvent(event)
                             _profile.value = eventRepo.getProfileData(pubkey)
                         }
                         1 -> {
-                            eventRepo.addEvent(event)
+                            eventRepo.cacheEvent(event)
                             if (Nip10.getReplyTarget(event) == null) {
                                 val current = _rootNotes.value.toMutableList()
                                 if (current.none { it.id == event.id }) {
@@ -160,7 +161,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                             }
                         }
                         6 -> {
-                            eventRepo.addEvent(event)
+                            eventRepo.cacheEvent(event)
                             // Show the reposted event in profile's root notes
                             if (event.content.isNotBlank()) {
                                 try {
@@ -184,20 +185,32 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                                 .map { it.pubkey }
                                 .filter { eventRepo.getProfileData(it) == null }
                             if (uncached.isNotEmpty()) {
-                                val profileReq = Filter(
-                                    kinds = listOf(0),
-                                    authors = uncached,
-                                    limit = uncached.size
-                                )
-                                relayPool.sendToAll(
-                                    ClientMessage.req("followprofiles", profileReq)
-                                )
-                                // Close followprofiles after EOSE or timeout
+                                // Close any prior follow profile subs
+                                for (subId in activeFollowProfileSubIds) relayPool.closeOnAllRelays(subId)
+                                activeFollowProfileSubIds.clear()
+                                // Chunk into batches to stay within relay filter limits
+                                val batches = uncached.chunked(50)
+                                batches.forEachIndexed { index, batch ->
+                                    val subId = if (index == 0) "followprofiles" else "followprofiles-$index"
+                                    activeFollowProfileSubIds.add(subId)
+                                    val profileReq = Filter(
+                                        kinds = listOf(0),
+                                        authors = batch,
+                                        limit = batch.size
+                                    )
+                                    relayPool.sendToAll(
+                                        ClientMessage.req(subId, profileReq)
+                                    )
+                                }
+                                // Close all followprofiles subs after EOSE or timeout
                                 viewModelScope.launch {
                                     withTimeoutOrNull(15_000) {
                                         relayPool.eoseSignals.first { it == "followprofiles" }
                                     }
-                                    relayPool.closeOnAllRelays("followprofiles")
+                                    for (subId in activeFollowProfileSubIds) {
+                                        relayPool.closeOnAllRelays(subId)
+                                    }
+                                    activeFollowProfileSubIds.clear()
                                 }
                             }
                         }
@@ -217,7 +230,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 } else if (event.kind == 0) {
                     // Profile for a followed user
-                    eventRepo.addEvent(event)
+                    eventRepo.cacheEvent(event)
                     _followProfileVersion.value++
                 }
             }
@@ -247,6 +260,10 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         for (subId in SUB_IDS) {
             relayPool.closeOnAllRelays(subId)
         }
+        for (subId in activeFollowProfileSubIds) {
+            relayPool.closeOnAllRelays(subId)
+        }
+        activeFollowProfileSubIds.clear()
         for (subId in activeEngagementSubIds) {
             relayPool.closeOnAllRelays(subId)
         }

@@ -90,13 +90,13 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         // Drop matching relay from the pool to avoid duplicate connections
         relayPool?.disconnectRelay(conn.relayUrl)
 
-        val client = Relay.createClient()
-        val r = Relay(RelayConfig(conn.relayUrl), client)
-        relay = r
-
         scope?.cancel()
         val newScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         scope = newScope
+
+        val client = Relay.createClient()
+        val r = Relay(RelayConfig(conn.relayUrl), client, scope = newScope)
+        relay = r
 
         emitStatus("Connecting to relay ${conn.relayUrl}...")
 

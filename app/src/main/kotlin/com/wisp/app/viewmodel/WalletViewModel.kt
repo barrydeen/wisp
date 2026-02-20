@@ -10,6 +10,7 @@ import com.wisp.app.repo.NwcRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 sealed class WalletState {
@@ -81,10 +82,14 @@ class WalletViewModel(val nwcRepo: NwcRepository) : ViewModel() {
 
     private var connectJob: Job? = null
     private var statusCollectJob: Job? = null
+    private var connectionMonitorJob: Job? = null
     private val httpClient by lazy { Relay.createClient() }
 
     init {
+        // Connection only happens when the wallet tab is opened (here) or
+        // on-demand when sending a zap (FeedViewModel.sendZap handles that).
         if (nwcRepo.hasConnection()) {
+            _connectionString.value = nwcRepo.getConnectionString() ?: ""
             connectWallet(nwcRepo.getConnectionString() ?: "")
         }
     }
@@ -134,6 +139,7 @@ class WalletViewModel(val nwcRepo: NwcRepository) : ViewModel() {
         _statusLines.value = emptyList()
         _walletState.value = WalletState.Connecting
         nwcRepo.saveConnectionString(trimmed)
+        _connectionString.value = trimmed
 
         statusCollectJob?.cancel()
         statusCollectJob = viewModelScope.launch {
@@ -144,27 +150,43 @@ class WalletViewModel(val nwcRepo: NwcRepository) : ViewModel() {
 
         nwcRepo.connect()
 
+        // Initial connection with timeout
         connectJob?.cancel()
         connectJob = viewModelScope.launch {
             val connected = kotlinx.coroutines.withTimeoutOrNull(10_000) {
-                nwcRepo.isConnected.collect { connected ->
-                    if (connected) {
-                        val result = nwcRepo.fetchBalance()
-                        result.fold(
-                            onSuccess = { balanceMsats ->
-                                _walletState.value = WalletState.Connected(balanceMsats)
-                            },
-                            onFailure = { e ->
-                                _walletState.value = WalletState.Error(e.message ?: "Failed to fetch balance")
-                            }
-                        )
-                        return@collect
-                    }
-                }
+                nwcRepo.isConnected.first { it }
             }
             if (connected == null && _walletState.value is WalletState.Connecting) {
                 _statusLines.value = _statusLines.value + "Connection timed out (10s)"
                 _walletState.value = WalletState.Error("Connection timed out")
+            } else if (connected == true) {
+                val result = nwcRepo.fetchBalance()
+                result.fold(
+                    onSuccess = { balanceMsats ->
+                        _walletState.value = WalletState.Connected(balanceMsats)
+                    },
+                    onFailure = { e ->
+                        _walletState.value = WalletState.Error(e.message ?: "Failed to fetch balance")
+                    }
+                )
+            }
+        }
+
+        // Persistent monitor: handle disconnect/reconnect after initial connection
+        connectionMonitorJob?.cancel()
+        connectionMonitorJob = viewModelScope.launch {
+            nwcRepo.isConnected.collect { connected ->
+                if (connected && _walletState.value !is WalletState.Connected) {
+                    val result = nwcRepo.fetchBalance()
+                    result.fold(
+                        onSuccess = { balanceMsats ->
+                            _walletState.value = WalletState.Connected(balanceMsats)
+                        },
+                        onFailure = { /* keep current state */ }
+                    )
+                } else if (!connected && _walletState.value is WalletState.Connected) {
+                    _walletState.value = WalletState.Connecting
+                }
             }
         }
     }
@@ -186,6 +208,7 @@ class WalletViewModel(val nwcRepo: NwcRepository) : ViewModel() {
     fun disconnectWallet() {
         connectJob?.cancel()
         statusCollectJob?.cancel()
+        connectionMonitorJob?.cancel()
         nwcRepo.disconnect()
         nwcRepo.clearConnection()
         _walletState.value = WalletState.NotConnected
