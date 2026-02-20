@@ -344,7 +344,7 @@ class RelayPool {
         // O(1) lookup in persistent/DM relay index
         relayIndex[url]?.let { existing ->
             // Don't use this path for ephemeral relays (they're in relayIndex too)
-            if (existing !in ephemeralRelays.values) {
+            if (!ephemeralRelays.containsKey(url)) {
                 existing.send(message)
                 return true
             }
@@ -424,6 +424,8 @@ class RelayPool {
         for (url in deadEphemerals) {
             ephemeralRelays.remove(url)?.disconnect()
             ephemeralLastUsed.remove(url)
+            relayIndex.remove(url)
+            cancelRelayJobs(url)
         }
         if (count > 0) Log.d("RelayPool", "reconnectAll: $count relays reconnecting")
         updateConnectedCount()

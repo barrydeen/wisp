@@ -284,10 +284,15 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
         getUserPubkey()?.let { listRepo.setOwner(it) }
 
-        subscribeSelfData()
-        subscribeFeed()
-        fetchRelayListsForFollows()
-        metadataFetcher.fetchProfilesForFollows(contactRepo.getFollowList().map { it.pubkey })
+        // Await relay connections before subscribing — prevents messages being
+        // silently dropped by not-yet-connected relays on initial load
+        viewModelScope.launch {
+            relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
+            subscribeSelfData()
+            subscribeFeed()
+            fetchRelayListsForFollows()
+            metadataFetcher.fetchProfilesForFollows(contactRepo.getFollowList().map { it.pubkey })
+        }
     }
 
     private fun subscribeSelfData() {
