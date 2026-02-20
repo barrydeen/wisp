@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -96,6 +97,7 @@ fun FeedScreen(
     onSafety: () -> Unit = {},
     onConsole: () -> Unit = {},
     onKeys: () -> Unit = {},
+    onNetworkDiscovery: () -> Unit = {},
     scrollToTopTrigger: Int = 0
 ) {
     val feed by viewModel.feed.collectAsState()
@@ -320,6 +322,22 @@ fun FeedScreen(
                             modifier = Modifier.fillMaxWidth(),
                             contentAlignment = Alignment.Center
                         ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                            if (feedType == FeedType.EXTENDED_FOLLOWS) {
+                                IconButton(
+                                    onClick = { onNetworkDiscovery() },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = "Rebuild network",
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Spacer(Modifier.width(4.dp))
+                            }
                             Box {
                                 Surface(
                                     onClick = { showFeedTypeDropdown = true },
@@ -332,6 +350,7 @@ fun FeedScreen(
                                     ) {
                                         val feedLabel = when (feedType) {
                                             FeedType.FOLLOWS -> "Follows"
+                                            FeedType.EXTENDED_FOLLOWS -> "Extended"
                                             FeedType.RELAY -> if (selectedRelay != null) {
                                                 selectedRelay!!.removePrefix("wss://").removeSuffix("/")
                                             } else "Relay"
@@ -369,6 +388,20 @@ fun FeedScreen(
                                         }} else null
                                     )
                                     DropdownMenuItem(
+                                        text = { Text("Extended") },
+                                        onClick = {
+                                            showFeedTypeDropdown = false
+                                            if (viewModel.isExtendedNetworkReady()) {
+                                                viewModel.setFeedType(FeedType.EXTENDED_FOLLOWS)
+                                            } else {
+                                                onNetworkDiscovery()
+                                            }
+                                        },
+                                        trailingIcon = if (feedType == FeedType.EXTENDED_FOLLOWS) {{
+                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        }} else null
+                                    )
+                                    DropdownMenuItem(
                                         text = { Text("Relay") },
                                         onClick = {
                                             showFeedTypeDropdown = false
@@ -390,6 +423,7 @@ fun FeedScreen(
                                     )
                                 }
                             }
+                            } // Row
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -496,6 +530,12 @@ fun FeedScreen(
                             feedType == FeedType.FOLLOWS && viewModel.contactRepo.getFollowList().isEmpty() -> {
                                 Text(
                                     "Follow some people to see their posts here",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            feedType == FeedType.EXTENDED_FOLLOWS && viewModel.extendedNetworkRepo.cachedNetwork.value == null -> {
+                                Text(
+                                    "Tap Extended in the feed menu to discover your network",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }

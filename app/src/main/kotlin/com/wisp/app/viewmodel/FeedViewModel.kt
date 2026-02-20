@@ -26,6 +26,7 @@ import com.wisp.app.repo.BookmarkRepository
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.ExtendedNetworkRepository
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.ListRepository
@@ -53,7 +54,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-enum class FeedType { FOLLOWS, RELAY, LIST }
+enum class FeedType { FOLLOWS, EXTENDED_FOLLOWS, RELAY, LIST }
 
 class FeedViewModel(app: Application) : AndroidViewModel(app) {
     // KeyRepo first — needed to derive pubkeyHex for all per-account repos
@@ -77,6 +78,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val relayScoreBoard = RelayScoreBoard(app, relayListRepo, contactRepo, pubkeyHex)
     val outboxRouter = OutboxRouter(relayPool, relayListRepo, relayScoreBoard)
     val subManager = SubscriptionManager(relayPool)
+    val extendedNetworkRepo = ExtendedNetworkRepository(
+        app, contactRepo, muteRepo, relayListRepo, relayPool, subManager, pubkeyHex
+    )
     val reactionPrefs = ReactionPreferences(app, pubkeyHex)
     val zapPrefs = ZapPreferences(app, pubkeyHex)
     private val processingDispatcher = Dispatchers.Default
@@ -151,6 +155,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         pinRepo.clear()
         listRepo.clear()
         blossomRepo.clear()
+        extendedNetworkRepo.clear()
         relayScoreBoard.clear()
         relayPool.clearSeenEvents()
 
@@ -176,6 +181,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         blossomRepo.reload(newPubkey)
         nwcRepo.reload(newPubkey)
         relayScoreBoard.reload(newPubkey)
+        extendedNetworkRepo.reload(newPubkey)
         reactionPrefs.reload(newPubkey)
         zapPrefs.reload(newPubkey)
     }
@@ -248,7 +254,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         // Re-subscribe feed when follow list changes (e.g. user follows someone from a profile)
         viewModelScope.launch {
             contactRepo.followList.drop(1).collectLatest {
-                if (_feedType.value == FeedType.FOLLOWS) {
+                if (_feedType.value == FeedType.FOLLOWS || _feedType.value == FeedType.EXTENDED_FOLLOWS) {
                     resubscribeFeed()
                 }
             }
@@ -394,6 +400,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                     if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
                 }
             }
+        } else if (subscriptionId.startsWith("extnet-k3-")) {
+            // Extended network discovery: kind 3 follow lists — route to repo, NOT feed
+            if (event.kind == 3) extendedNetworkRepo.processFollowListEvent(event)
+        } else if (subscriptionId.startsWith("extnet-rl-")) {
+            // Extended network discovery: relay lists — update relay list cache
+            if (event.kind == 10002) relayListRepo.updateFromEvent(event)
         } else if (subscriptionId.startsWith("onb-")) {
             // Onboarding suggestion fetches — only cache kind 0 profiles, don't add to feed
             if (event.kind == 0) eventRepo.cacheEvent(event)
@@ -634,6 +646,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val notesFilter = Filter(kinds = listOf(1, 6), limit = 25)
                 outboxRouter.subscribeByAuthors(feedSubId, authors, notesFilter)
             }
+            FeedType.EXTENDED_FOLLOWS -> {
+                val cache = extendedNetworkRepo.cachedNetwork.value ?: return
+                val firstDegree = contactRepo.getFollowList().map { it.pubkey }
+                val allAuthors = (firstDegree + cache.qualifiedPubkeys).distinct()
+                if (allAuthors.isEmpty()) return
+                val notesFilter = Filter(kinds = listOf(1, 6), limit = 25)
+                extendedNetworkRepo.subscribeByAuthors(feedSubId, allAuthors, notesFilter)
+            }
             FeedType.RELAY -> {
                 val url = _selectedRelay.value ?: return
                 val filter = Filter(kinds = listOf(1, 6), limit = 50)
@@ -813,6 +833,15 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val templateFilter = Filter(kinds = listOf(1, 6), until = oldest - 1, limit = 50)
                 outboxRouter.subscribeByAuthors("loadmore", authors, templateFilter)
             }
+            FeedType.EXTENDED_FOLLOWS -> {
+                val cache = extendedNetworkRepo.cachedNetwork.value
+                    ?: run { isLoadingMore = false; return }
+                val firstDegree = contactRepo.getFollowList().map { it.pubkey }
+                val allAuthors = (firstDegree + cache.qualifiedPubkeys).distinct()
+                if (allAuthors.isEmpty()) { isLoadingMore = false; return }
+                val templateFilter = Filter(kinds = listOf(1, 6), until = oldest - 1, limit = 50)
+                extendedNetworkRepo.subscribeByAuthors("loadmore", allAuthors, templateFilter)
+            }
             FeedType.RELAY -> {
                 val url = _selectedRelay.value
                 if (url != null) {
@@ -896,6 +925,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
     }
+
+    fun startNetworkDiscovery() {
+        viewModelScope.launch {
+            extendedNetworkRepo.discoverNetwork()
+        }
+    }
+
+    fun isExtendedNetworkReady(): Boolean = extendedNetworkRepo.isNetworkReady()
 
     fun setSelectedList(followSet: com.wisp.app.nostr.FollowSet) {
         listRepo.selectList(followSet)
