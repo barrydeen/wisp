@@ -25,7 +25,7 @@ class Relay(
     private val scope: CoroutineScope? = null
 ) {
     private var webSocket: WebSocket? = null
-    var isConnected = false
+    @Volatile var isConnected = false
         private set
     var autoReconnect = true
     @Volatile var cooldownUntil: Long = 0L

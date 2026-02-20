@@ -8,19 +8,25 @@ import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip47
 import com.wisp.app.nostr.RelayMessage
+import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.Relay
 import com.wisp.app.relay.RelayConfig
+import com.wisp.app.relay.RelayPool
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 
-class NwcRepository(private val context: Context, pubkeyHex: String? = null) {
+class NwcRepository(private val context: Context, private val relayPool: RelayPool? = null, pubkeyHex: String? = null) {
     private val TAG = "NwcRepository"
 
     private val masterKey = MasterKey.Builder(context)
@@ -34,13 +40,21 @@ class NwcRepository(private val context: Context, pubkeyHex: String? = null) {
     private var scope: CoroutineScope? = null
 
     private val pendingRequests = mutableMapOf<String, CompletableDeferred<Nip47.NwcResponse>>()
-    private var requestCounter = 0
 
     private val _balance = MutableStateFlow<Long?>(null)
     val balance: StateFlow<Long?> = _balance
 
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected
+
+    /** Granular status updates emitted during connect flow */
+    private val _statusLog = MutableSharedFlow<String>(extraBufferCapacity = 32)
+    val statusLog: SharedFlow<String> = _statusLog
+
+    private fun emitStatus(msg: String) {
+        Log.d(TAG, msg)
+        _statusLog.tryEmit(msg)
+    }
 
     fun hasConnection(): Boolean = encPrefs.getString("nwc_uri", null) != null
 
@@ -64,8 +78,17 @@ class NwcRepository(private val context: Context, pubkeyHex: String? = null) {
 
     fun connect() {
         val uri = getConnectionString() ?: return
-        val conn = Nip47.parseConnectionString(uri) ?: return
+        val conn = Nip47.parseConnectionString(uri) ?: run {
+            emitStatus("Failed to parse connection string")
+            return
+        }
         connection = conn
+
+        // Disconnect old relay if any
+        relay?.disconnect()
+
+        // Drop matching relay from the pool to avoid duplicate connections
+        relayPool?.disconnectRelay(conn.relayUrl)
 
         val client = Relay.createClient()
         val r = Relay(RelayConfig(conn.relayUrl), client)
@@ -74,6 +97,8 @@ class NwcRepository(private val context: Context, pubkeyHex: String? = null) {
         scope?.cancel()
         val newScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         scope = newScope
+
+        emitStatus("Connecting to relay ${conn.relayUrl}...")
 
         // Collect messages — route response events to pending request deferreds
         newScope.launch {
@@ -84,22 +109,29 @@ class NwcRepository(private val context: Context, pubkeyHex: String? = null) {
                             handleResponse(message.event)
                         }
                     }
-                    is RelayMessage.Eose -> {
-                        // When a per-request subscription gets EOSE, the sub is live
-                        val subId = message.subscriptionId
-                        if (subId.startsWith("nwc-req-")) {
-                            // EOSE means the relay has confirmed the subscription;
-                            // the actual request EVENT is sent after this (see sendRequest)
-                        }
-                    }
                     else -> {}
                 }
             }
         }
 
-        // Track relay connection state
+        // Track relay connection state, fetch info event, and set up subscription
         newScope.launch {
             r.connectionState.collect { connected ->
+                if (connected) {
+                    emitStatus("Relay connected")
+
+                    // Negotiate encryption before subscribing for responses
+                    negotiateEncryption(r, conn)
+
+                    // Subscribe for NWC response events
+                    val filter = Filter(
+                        kinds = listOf(23195),
+                        pTags = listOf(conn.clientPubkey.toHex()),
+                        since = System.currentTimeMillis() / 1000
+                    )
+                    r.send(ClientMessage.req("nwc-responses", filter))
+                    emitStatus("Subscribed for responses")
+                }
                 _isConnected.value = connected
             }
         }
@@ -107,99 +139,113 @@ class NwcRepository(private val context: Context, pubkeyHex: String? = null) {
         r.connect()
     }
 
+    /**
+     * Fetch the wallet service's info event (kind 13194) to determine
+     * supported encryption. Updates the connection's encryption accordingly.
+     */
+    private suspend fun negotiateEncryption(relay: Relay, conn: Nip47.NwcConnection) {
+        val wsPubkeyHex = conn.walletServicePubkey.toHex()
+
+        emitStatus("Fetching wallet info event...")
+
+        // Request the info event
+        val infoFilter = Filter(
+            kinds = listOf(13194),
+            authors = listOf(wsPubkeyHex),
+            limit = 1
+        )
+        relay.send(ClientMessage.req("nwc-info", infoFilter))
+
+        // Wait for the info event or EOSE (wallet may not publish one)
+        val encryption = withTimeoutOrNull(5_000) {
+            var result: Nip47.NwcEncryption? = null
+            relay.messages.first { msg ->
+                when (msg) {
+                    is RelayMessage.EventMsg -> {
+                        if (msg.subscriptionId == "nwc-info" && msg.event.kind == 13194) {
+                            result = Nip47.parseInfoEncryption(msg.event)
+                            true
+                        } else false
+                    }
+                    is RelayMessage.Eose -> msg.subscriptionId == "nwc-info"
+                    else -> false
+                }
+            }
+            relay.send(ClientMessage.close("nwc-info"))
+            result
+        }
+
+        val enc = encryption ?: Nip47.NwcEncryption.NIP04
+        connection = conn.withEncryption(enc)
+        emitStatus("Encryption: ${if (enc == Nip47.NwcEncryption.NIP44) "NIP-44" else "NIP-04"}")
+    }
+
     private fun handleResponse(event: com.wisp.app.nostr.NostrEvent) {
         val conn = connection ?: return
         try {
             val response = Nip47.parseResponse(conn, event)
+            emitStatus("Response decrypted")
             // Match by "e" tag pointing to request event id
             val requestId = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
             if (requestId != null) {
-                Log.d(TAG, "Received NWC response for request $requestId")
                 pendingRequests.remove(requestId)?.complete(response)
             } else {
                 Log.w(TAG, "NWC response has no 'e' tag, cannot match to request")
             }
         } catch (e: Exception) {
+            emitStatus("Decrypt failed: ${e.message}")
             Log.e(TAG, "Failed to parse NWC response: ${e.message}")
         }
     }
 
     /**
-     * Send a NWC request using the per-request subscribe-then-publish pattern:
-     * 1. Subscribe for kind 23195 responses filtered by our request event ID
-     * 2. Wait for EOSE (relay confirms subscription is active)
-     * 3. Publish the kind 23194 request event
-     * 4. Await the response on the deferred
-     * 5. Close the per-request subscription
+     * Send a NWC request: publish the event and await the response via the
+     * persistent subscription set up in [connect].
      */
     suspend fun sendRequest(
         request: Nip47.NwcRequest,
-        timeoutMs: Long = 30_000
+        timeoutMs: Long = 10_000
     ): Result<Nip47.NwcResponse> {
         val conn = connection ?: return Result.failure(Exception("Not connected"))
         val r = relay ?: return Result.failure(Exception("No relay"))
-        if (!r.isConnected) return Result.failure(Exception("Relay not connected"))
-
-        // Build the request event
-        val event = Nip47.buildRequest(conn, request)
-        val subId = "nwc-req-${requestCounter++}"
-
-        // Register deferred BEFORE subscribing so we don't miss anything
-        val deferred = CompletableDeferred<Nip47.NwcResponse>()
-        pendingRequests[event.id] = deferred
-
-        // Step 1: Start EOSE listener BEFORE sending REQ to avoid race condition
-        val eoseDeferred = CompletableDeferred<Unit>()
-        val eoseScope = scope ?: return Result.failure(Exception("No scope"))
-
-        val eoseJob = eoseScope.launch {
-            r.messages.collect { message ->
-                if (message is RelayMessage.Eose && message.subscriptionId == subId) {
-                    eoseDeferred.complete(Unit)
-                    return@collect
-                }
+        if (!_isConnected.value) {
+            emitStatus("Waiting for relay connection...")
+            val connected = withTimeoutOrNull(10_000) { _isConnected.first { it } }
+            if (connected == null) {
+                emitStatus("Relay connection timed out")
+                return Result.failure(Exception("Relay not connected"))
             }
         }
 
-        // Step 2: Subscribe for responses to THIS specific request
-        val filter = Filter(
-            kinds = listOf(23195),
-            eTags = listOf(event.id),
-            limit = 1
-        )
-        r.send(ClientMessage.req(subId, filter))
+        val event = Nip47.buildRequest(conn, request)
+
+        // Register deferred BEFORE publishing so we don't miss the response
+        val deferred = CompletableDeferred<Nip47.NwcResponse>()
+        pendingRequests[event.id] = deferred
+
+        r.send(ClientMessage.event(event))
+        emitStatus("Request sent, waiting for response...")
 
         return try {
             withTimeout(timeoutMs) {
-                // Wait for EOSE
-                eoseDeferred.await()
-                eoseJob.cancel()
-
-                // Step 3: NOW publish the request event
-                r.send(ClientMessage.event(event))
-                Log.d(TAG, "Sent NWC request: ${event.id}")
-
-                // Step 4: Await response
                 val response = deferred.await()
-
-                // Step 5: Close per-request subscription
-                r.send(ClientMessage.close(subId))
-
                 if (response is Nip47.NwcResponse.Error) {
+                    emitStatus("Wallet error: ${response.code}")
                     Result.failure(Exception("${response.code}: ${response.message}"))
                 } else {
+                    emitStatus("Success")
                     Result.success(response)
                 }
             }
         } catch (e: Exception) {
             pendingRequests.remove(event.id)
-            eoseJob.cancel()
-            r.send(ClientMessage.close(subId))
+            emitStatus("Timed out waiting for response")
             Result.failure(e)
         }
     }
 
     suspend fun fetchBalance(): Result<Long> {
+        emitStatus("Fetching balance...")
         val result = sendRequest(Nip47.NwcRequest.GetBalance)
         return result.map { response ->
             val balance = (response as Nip47.NwcResponse.Balance).balanceMsats
@@ -216,6 +262,11 @@ class NwcRepository(private val context: Context, pubkeyHex: String? = null) {
     suspend fun makeInvoice(amountMsats: Long, description: String): Result<String> {
         val result = sendRequest(Nip47.NwcRequest.MakeInvoice(amountMsats, description))
         return result.map { (it as Nip47.NwcResponse.MakeInvoiceResult).invoice }
+    }
+
+    suspend fun listTransactions(limit: Int = 50): Result<List<Nip47.Transaction>> {
+        val result = sendRequest(Nip47.NwcRequest.ListTransactions(limit = limit))
+        return result.map { (it as Nip47.NwcResponse.ListTransactionsResult).transactions }
     }
 
     fun disconnect() {

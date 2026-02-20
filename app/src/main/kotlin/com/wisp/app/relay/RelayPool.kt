@@ -418,6 +418,22 @@ class RelayPool {
         }
     }
 
+    fun disconnectRelay(url: String) {
+        relays.find { it.config.url == url }?.let {
+            it.disconnect()
+            relays.remove(it)
+        }
+        dmRelays.find { it.config.url == url }?.let {
+            it.disconnect()
+            dmRelays.remove(it)
+        }
+        ephemeralRelays.remove(url)?.let {
+            it.disconnect()
+            ephemeralLastUsed.remove(url)
+        }
+        updateConnectedCount()
+    }
+
     fun getRelayUrls(): List<String> = relays.map { it.config.url }
 
     fun getDmRelayUrls(): List<String> = dmRelays.map { it.config.url }

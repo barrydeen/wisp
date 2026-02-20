@@ -65,7 +65,7 @@ fun PostCard(
     onNavigateToProfile: ((String) -> Unit)? = null,
     onNoteClick: () -> Unit = {},
     onReact: (String) -> Unit = {},
-    userReactionEmoji: String? = null,
+    userReactionEmojis: Set<String> = emptySet(),
     onRepost: () -> Unit = {},
     onQuote: () -> Unit = {},
     hasUserReposted: Boolean = false,
@@ -295,7 +295,7 @@ fun PostCard(
             ActionBar(
                 onReply = onReply,
                 onReact = onReact,
-                userReactionEmoji = userReactionEmoji,
+                userReactionEmojis = userReactionEmojis,
                 onRepost = onRepost,
                 onQuote = onQuote,
                 hasUserReposted = hasUserReposted,

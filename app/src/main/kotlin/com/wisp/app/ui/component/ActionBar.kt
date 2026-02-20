@@ -42,7 +42,7 @@ import androidx.compose.ui.window.PopupProperties
 fun ActionBar(
     onReply: () -> Unit,
     onReact: (String) -> Unit = {},
-    userReactionEmoji: String? = null,
+    userReactionEmojis: Set<String> = emptySet(),
     onRepost: () -> Unit = {},
     onQuote: () -> Unit = {},
     hasUserReposted: Boolean = false,
@@ -87,12 +87,11 @@ fun ActionBar(
         }
         Spacer(Modifier.width(8.dp))
         Box {
-            IconButton(onClick = {
-                if (userReactionEmoji == null) showEmojiPicker = true
-            }) {
-                if (userReactionEmoji != null) {
+            IconButton(onClick = { showEmojiPicker = true }) {
+                val displayEmoji = userReactionEmojis.firstOrNull()
+                if (displayEmoji != null) {
                     Text(
-                        text = userReactionEmoji,
+                        text = displayEmoji,
                         fontSize = 20.sp
                     )
                 } else {
@@ -107,7 +106,8 @@ fun ActionBar(
             if (showEmojiPicker) {
                 EmojiReactionPopup(
                     onSelect = onReact,
-                    onDismiss = { showEmojiPicker = false }
+                    onDismiss = { showEmojiPicker = false },
+                    selectedEmojis = userReactionEmojis
                 )
             }
         }
@@ -115,7 +115,7 @@ fun ActionBar(
             Text(
                 text = likeCount.toString(),
                 style = MaterialTheme.typography.labelSmall,
-                color = if (userReactionEmoji != null) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (userReactionEmojis.isNotEmpty()) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Spacer(Modifier.width(8.dp))

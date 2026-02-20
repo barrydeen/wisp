@@ -62,8 +62,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     // Reaction tracking: eventId -> map of emoji -> count
     private val reactionCounts = LruCache<String, ConcurrentHashMap<String, Int>>(5000)
-    // Track which events the current user has reacted to: "eventId:pubkey" -> emoji string
-    private val userReactions = LruCache<String, String>(5000)
+    // Track which events the current user has reacted to: "eventId:pubkey" -> (emoji -> reactionEventId)
+    private val userReactions = LruCache<String, ConcurrentHashMap<String, String>>(5000)
     private val _reactionVersion = MutableStateFlow(0)
     val reactionVersion: StateFlow<Int> = _reactionVersion
     // Per-target-event dedup sets — evict with the same lifecycle as their count caches
@@ -223,7 +223,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         val pubkeys = details.getOrPut(emoji) { java.util.Collections.synchronizedList(mutableListOf()) }
         synchronized(pubkeys) { if (event.pubkey !in pubkeys) pubkeys.add(event.pubkey) }
 
-        userReactions.put("${targetEventId}:${event.pubkey}", emoji)
+        val key = "${targetEventId}:${event.pubkey}"
+        val emojiMap = userReactions.get(key)
+            ?: ConcurrentHashMap<String, String>().also { userReactions.put(key, it) }
+        emojiMap[emoji] = event.id
         reactionDirty = true
         markVersionDirty()
     }
@@ -270,11 +273,46 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun hasUserReacted(eventId: String, userPubkey: String): Boolean {
-        return userReactions.get("${eventId}:${userPubkey}") != null
+        val map = userReactions.get("${eventId}:${userPubkey}") ?: return false
+        return map.isNotEmpty()
     }
 
     fun getUserReactionEmoji(eventId: String, userPubkey: String): String? {
-        return userReactions.get("${eventId}:${userPubkey}")
+        return userReactions.get("${eventId}:${userPubkey}")?.keys?.firstOrNull()
+    }
+
+    fun getUserReactionEmojis(eventId: String, userPubkey: String): Set<String> {
+        return userReactions.get("${eventId}:${userPubkey}")?.keys?.toSet() ?: emptySet()
+    }
+
+    fun getUserReactionEventId(eventId: String, userPubkey: String, emoji: String): String? {
+        return userReactions.get("${eventId}:${userPubkey}")?.get(emoji)
+    }
+
+    fun removeReaction(eventId: String, userPubkey: String, emoji: String) {
+        val key = "${eventId}:${userPubkey}"
+        val emojiMap = userReactions.get(key) ?: return
+        emojiMap.remove(emoji)
+
+        // Decrement reaction count
+        val counts = reactionCounts.get(eventId)
+        if (counts != null) {
+            val current = counts[emoji] ?: 0
+            if (current > 1) counts[emoji] = current - 1 else counts.remove(emoji)
+        }
+
+        // Remove from reaction details
+        val details = reactionDetails.get(eventId)
+        if (details != null) {
+            val pubkeys = details[emoji]
+            if (pubkeys != null) {
+                synchronized(pubkeys) { pubkeys.remove(userPubkey) }
+                if (pubkeys.isEmpty()) details.remove(emoji)
+            }
+        }
+
+        reactionDirty = true
+        markVersionDirty()
     }
 
     fun addZapSats(eventId: String, sats: Long) {
