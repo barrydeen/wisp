@@ -105,6 +105,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private val _initialLoadDone = MutableStateFlow(false)
     val initialLoadDone: StateFlow<Boolean> = _initialLoadDone
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing
+
     private val _feedType = MutableStateFlow(FeedType.FOLLOWS)
     val feedType: StateFlow<FeedType> = _feedType
 
@@ -458,11 +461,84 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Full feed refresh: disconnect all relays, reconnect, rebuild outbox
+     * relay list, and resubscribe everything as if freshly logged in.
+     */
+    fun refreshFeed() {
+        if (_isRefreshing.value) return
+
+        // Cancel active subscriptions
+        feedEoseJob?.cancel()
+        relayPool.closeOnAllRelays(feedSubId)
+        for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
+        activeEngagementSubIds.clear()
+
+        // Clear feed state
+        eventRepo.clearFeed()
+        relayPool.clearSeenEvents()
+        _initialLoadDone.value = false
+        isLoadingMore = false
+
+        // Disconnect all relays
+        relayPool.disconnectAll()
+
+        _isRefreshing.value = true
+
+        viewModelScope.launch {
+            // Rebuild relay config from saved settings
+            relayPool.updateBlockedUrls(keyRepo.getBlockedRelays())
+            val pinnedRelays = keyRepo.getRelays()
+            val pinnedUrls = pinnedRelays.map { it.url }.toSet()
+            val cachedScored = relayScoreBoard.getScoredRelayConfigs()
+                .filter { it.url !in pinnedUrls }
+            relayPool.updateRelays(pinnedRelays + cachedScored)
+            relayPool.updateDmRelays(keyRepo.getDmRelays())
+
+            // Wait for at least one relay (updateRelays already called connect())
+            relayPool.awaitAnyConnected()
+
+            // Re-subscribe everything
+            subscribeSelfData()
+            subscribeFeed()
+            fetchRelayListsForFollows()
+            metadataFetcher.fetchProfilesForFollows(contactRepo.getFollowList().map { it.pubkey })
+
+            _isRefreshing.value = false
+
+            // Background: wait for relay lists then recompute outbox routing
+            launch {
+                subManager.awaitEoseWithTimeout("relay-lists")
+                subManager.closeSubscription("relay-lists")
+                recomputeAndMergeRelays()
+                resubscribeFeed()
+            }
+        }
+    }
+
     private fun subscribeFeed() {
         resubscribeFeed()
     }
 
     private var feedEoseJob: Job? = null
+
+    /**
+     * Compute an adaptive time window based on author count.
+     * More authors → shorter window (plenty of content expected).
+     * Fewer authors → longer window (need to reach further back).
+     * Returns a `since` epoch-second timestamp.
+     */
+    private fun adaptiveSince(authorCount: Int): Long {
+        val now = System.currentTimeMillis() / 1000
+        val windowSeconds = when {
+            authorCount <= 20  -> 7 * 86400L    // 7 days
+            authorCount <= 100 -> 2 * 86400L    // 48 hours
+            authorCount <= 300 -> 12 * 3600L    // 12 hours
+            authorCount <= 700 -> 3 * 3600L     // 3 hours
+            else               -> 30 * 60L      // 30 minutes
+        }
+        return now - windowSeconds
+    }
 
     private fun resubscribeFeed() {
         relayPool.closeOnAllRelays(feedSubId)
@@ -472,25 +548,27 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         eventRepo.countNewNotes = false
         feedEoseJob?.cancel()
 
-        val since24h = (System.currentTimeMillis() / 1000) - 86400
-
         val targetedRelays: Set<String> = when (_feedType.value) {
             FeedType.LIST -> {
                 val list = listRepo.selectedList.value ?: return
                 val authors = list.members.toList()
                 if (authors.isEmpty()) return
-                val notesFilter = Filter(kinds = listOf(1, 6), since = since24h, limit = 100)
+                val since = adaptiveSince(authors.size)
+                val notesFilter = Filter(kinds = listOf(1, 6), since = since, limit = 100)
                 outboxRouter.subscribeByAuthors(feedSubId, authors, notesFilter)
             }
             FeedType.FOLLOWS -> {
                 val authors = contactRepo.getFollowList().map { it.pubkey }
                 if (authors.isEmpty()) return
-                val notesFilter = Filter(kinds = listOf(1, 6), since = since24h, limit = 100)
+                val since = adaptiveSince(authors.size)
+                val notesFilter = Filter(kinds = listOf(1, 6), since = since, limit = 100)
                 outboxRouter.subscribeByAuthors(feedSubId, authors, notesFilter)
             }
             FeedType.RELAY -> {
                 val url = _selectedRelay.value ?: return
-                val filter = Filter(kinds = listOf(1, 6), since = since24h, limit = 100)
+                // Single relay: use a moderate default window
+                val since = adaptiveSince(100)
+                val filter = Filter(kinds = listOf(1, 6), since = since, limit = 100)
                 val msg = ClientMessage.req(feedSubId, filter)
                 relayPool.sendToRelay(url, msg)
                 setOf(url)

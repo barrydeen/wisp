@@ -185,8 +185,9 @@ class RelayPool {
 
     private fun updateConnectedCount() {
         val permanent = relays.count { it.isConnected }
+        val dm = dmRelays.count { it.isConnected }
         val ephemeral = ephemeralRelays.values.count { it.isConnected }
-        _connectedCount.value = permanent + ephemeral
+        _connectedCount.value = permanent + dm + ephemeral
     }
 
     fun getAllConnectedUrls(): List<String> {
@@ -318,7 +319,7 @@ class RelayPool {
         // Reconnect disconnected persistent relays — clear cooldowns since this is explicit resume
         for (relay in relays) {
             if (!relay.isConnected) {
-                relay.cooldownUntil = 0L
+                relay.resetBackoff()
                 relayCooldowns.remove(relay.config.url)
                 Log.d("RelayPool", "Reconnecting persistent relay: ${relay.config.url}")
                 relay.connect()
@@ -328,7 +329,7 @@ class RelayPool {
         // Reconnect disconnected DM relays
         for (relay in dmRelays) {
             if (!relay.isConnected) {
-                relay.cooldownUntil = 0L
+                relay.resetBackoff()
                 relayCooldowns.remove(relay.config.url)
                 Log.d("RelayPool", "Reconnecting DM relay: ${relay.config.url}")
                 relay.connect()
@@ -342,6 +343,7 @@ class RelayPool {
             ephemeralLastUsed.remove(url)
         }
         if (count > 0) Log.d("RelayPool", "reconnectAll: $count relays reconnecting")
+        updateConnectedCount()
         return count
     }
 
