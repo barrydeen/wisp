@@ -20,6 +20,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.compose.runtime.collectAsState
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.repo.DiscoveryState
 import com.wisp.app.ui.component.WispBottomBar
 import com.wisp.app.ui.component.ZapDialog
 import com.wisp.app.ui.screen.BlossomServersScreen
@@ -40,6 +41,7 @@ import com.wisp.app.ui.screen.BookmarksScreen
 import com.wisp.app.ui.screen.KeysScreen
 import com.wisp.app.ui.screen.ListScreen
 import com.wisp.app.ui.screen.ListsHubScreen
+import com.wisp.app.ui.screen.NetworkDiscoveryScreen
 import com.wisp.app.ui.screen.OnboardingScreen
 import com.wisp.app.ui.screen.OnboardingSuggestionsScreen
 import com.wisp.app.ui.screen.WalletScreen
@@ -80,6 +82,7 @@ object Routes {
     const val LIST_DETAIL = "list/{pubkey}/{dTag}"
     const val BOOKMARKS = "bookmarks"
     const val LISTS_HUB = "lists"
+    const val NETWORK_DISCOVERY = "network_discovery"
     const val ONBOARDING_PROFILE = "onboarding/profile"
     const val ONBOARDING_SUGGESTIONS = "onboarding/suggestions"
 }
@@ -148,7 +151,7 @@ fun WispNavHost() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    val hideBottomBarRoutes = setOf(Routes.AUTH, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS)
+    val hideBottomBarRoutes = setOf(Routes.AUTH, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS, Routes.NETWORK_DISCOVERY)
     val showBottomBar by remember(currentRoute) {
         derivedStateOf { currentRoute != null && currentRoute !in hideBottomBarRoutes }
     }
@@ -272,6 +275,9 @@ fun WispNavHost() {
                 },
                 onSafety = {
                     navController.navigate(Routes.SAFETY)
+                },
+                onNetworkDiscovery = {
+                    navController.navigate(Routes.NETWORK_DISCOVERY)
                 },
                 onSearch = {
                     navController.navigate(Routes.SEARCH) {
@@ -689,6 +695,33 @@ fun WispNavHost() {
                 },
                 onCreateList = { name -> feedViewModel.createList(name) },
                 onDeleteList = { dTag -> feedViewModel.deleteList(dTag) }
+            )
+        }
+
+        composable(Routes.NETWORK_DISCOVERY) {
+            val discoveryState by feedViewModel.extendedNetworkRepo.discoveryState.collectAsState()
+            val userProfile = feedViewModel.getUserPubkey()?.let { feedViewModel.eventRepo.getProfileData(it) }
+
+            LaunchedEffect(Unit) {
+                feedViewModel.startNetworkDiscovery()
+            }
+
+            // Auto-navigate on completion
+            LaunchedEffect(discoveryState) {
+                if (discoveryState is DiscoveryState.Complete) {
+                    kotlinx.coroutines.delay(1500)
+                    feedViewModel.setFeedType(FeedType.EXTENDED_FOLLOWS)
+                    navController.navigate(Routes.FEED) {
+                        popUpTo(Routes.NETWORK_DISCOVERY) { inclusive = true }
+                    }
+                }
+            }
+
+            NetworkDiscoveryScreen(
+                discoveryState = discoveryState,
+                profile = userProfile,
+                onCancel = { navController.popBackStack() },
+                onRetry = { feedViewModel.startNetworkDiscovery() }
             )
         }
 
