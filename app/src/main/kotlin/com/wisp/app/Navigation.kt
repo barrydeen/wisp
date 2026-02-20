@@ -42,7 +42,6 @@ import com.wisp.app.ui.screen.ListScreen
 import com.wisp.app.ui.screen.ListsHubScreen
 import com.wisp.app.ui.screen.OnboardingScreen
 import com.wisp.app.ui.screen.OnboardingSuggestionsScreen
-import com.wisp.app.ui.screen.SuggestionUser
 import com.wisp.app.ui.screen.WalletScreen
 import com.wisp.app.viewmodel.BlossomServersViewModel
 import com.wisp.app.viewmodel.AuthViewModel
@@ -709,36 +708,27 @@ fun WispNavHost() {
         }
 
         composable(Routes.ONBOARDING_SUGGESTIONS) {
-            val harvestedPubkeys by onboardingViewModel.harvestedPubkeys.collectAsState()
-            val suggestions = remember(harvestedPubkeys) {
-                harvestedPubkeys.take(30).map { pubkey ->
-                    SuggestionUser(
-                        pubkey = pubkey,
-                        profile = feedViewModel.eventRepo.getProfileData(pubkey)
-                    )
-                }
+            LaunchedEffect(Unit) {
+                onboardingViewModel.loadSuggestions(feedViewModel.relayPool)
             }
+            val activeNow by onboardingViewModel.activeNow.collectAsState()
+            val creators by onboardingViewModel.creators.collectAsState()
+            val news by onboardingViewModel.news.collectAsState()
+            val selectedPubkeys by onboardingViewModel.selectedPubkeys.collectAsState()
+
             OnboardingSuggestionsScreen(
-                suggestions = suggestions,
-                onContinue = { selectedPubkeys ->
+                activeNow = activeNow,
+                creators = creators,
+                news = news,
+                selectedPubkeys = selectedPubkeys,
+                onToggleFollowAll = { section -> onboardingViewModel.toggleFollowAll(section) },
+                onTogglePubkey = { pubkey -> onboardingViewModel.togglePubkey(pubkey) },
+                totalSelected = selectedPubkeys.size,
+                onContinue = {
                     onboardingViewModel.finishOnboarding(
                         relayPool = feedViewModel.relayPool,
                         contactRepo = feedViewModel.contactRepo,
                         selectedPubkeys = selectedPubkeys
-                    )
-                    feedViewModel.reloadForNewAccount()
-                    feedViewModel.initRelays()
-                    feedViewModel.initNwc()
-                    walletViewModel.refreshState()
-                    navController.navigate(Routes.FEED) {
-                        popUpTo(0) { inclusive = true }
-                    }
-                },
-                onSkip = {
-                    onboardingViewModel.finishOnboarding(
-                        relayPool = feedViewModel.relayPool,
-                        contactRepo = feedViewModel.contactRepo,
-                        selectedPubkeys = emptySet()
                     )
                     feedViewModel.reloadForNewAccount()
                     feedViewModel.initRelays()

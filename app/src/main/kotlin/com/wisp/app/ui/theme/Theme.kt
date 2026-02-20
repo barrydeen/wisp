@@ -13,13 +13,13 @@ private val DarkColorScheme = darkColorScheme(
     primary = Color(0xFFFF9800),
     onPrimary = Color.White,
     secondary = Color(0xFFFFB74D),
-    background = Color(0xFF121212),
-    surface = Color(0xFF1E1E1E),
-    surfaceVariant = Color(0xFF2A2A2A),
+    background = Color(0xFF131215),
+    surface = Color(0xFF1F1E21),
+    surfaceVariant = Color(0xFF2B2A2E),
     onBackground = Color(0xFFE0E0E0),
     onSurface = Color(0xFFE0E0E0),
-    onSurfaceVariant = Color(0xFF999999),
-    outline = Color(0xFF333333)
+    onSurfaceVariant = Color(0xFF9998A0),
+    outline = Color(0xFF343338)
 )
 
 private val WispTypography = Typography(

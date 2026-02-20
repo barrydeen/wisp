@@ -8,7 +8,7 @@
         android:allowBackup="false"
         android:label="Wisp"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.NoActionBar">
+        android:theme="@style/Theme.Wisp.Splash">
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.wisp.app.nostr.ProfileData
+import com.wisp.app.ui.component.WispLogo
 import com.wisp.app.viewmodel.FeedViewModel
 import kotlinx.coroutines.delay
 
@@ -112,22 +113,16 @@ fun LoadingScreen(
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
                     )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(80.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = profile.displayString,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground
                     )
+                } else {
+                    WispLogo(size = 80.dp)
                 }
-
-                Spacer(Modifier.height(16.dp))
-
-                Text(
-                    text = profile?.displayString ?: "wisp",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
 
                 Spacer(Modifier.height(32.dp))
 

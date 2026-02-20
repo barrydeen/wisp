@@ -12,6 +12,7 @@ import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.BlossomRepository
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.nostr.toHex
 import com.wisp.app.repo.KeyRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,7 +23,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 class ProfileViewModel(app: Application) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
-    private val blossomRepo = BlossomRepository(app)
+    private val blossomRepo = BlossomRepository(app, keyRepo.getKeypair()?.pubkey?.toHex())
 
     private val _name = MutableStateFlow("")
     val name: StateFlow<String> = _name
@@ -88,7 +89,7 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadCurrentProfile(eventRepo: EventRepository, relayPool: RelayPool? = null) {
         val keypair = keyRepo.getKeypair() ?: return
-        val pubkeyHex = keypair.pubkey.joinToString("") { "%02x".format(it) }
+        val pubkeyHex = keypair.pubkey.toHex()
 
         // Load from cache immediately
         val profile = eventRepo.getProfileData(pubkeyHex)

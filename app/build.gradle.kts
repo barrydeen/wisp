@@ -60,5 +60,6 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
     implementation(libs.biometric)
+    implementation(libs.splashscreen)
     implementation(libs.zxing.core)
 }

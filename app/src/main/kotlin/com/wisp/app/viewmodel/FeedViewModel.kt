@@ -36,6 +36,7 @@ import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.repo.NwcRepository
 import com.wisp.app.repo.ReactionPreferences
+import com.wisp.app.repo.ZapPreferences
 import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.repo.ZapSender
@@ -77,6 +78,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val outboxRouter = OutboxRouter(relayPool, relayListRepo, relayScoreBoard)
     val subManager = SubscriptionManager(relayPool)
     val reactionPrefs = ReactionPreferences(app, pubkeyHex)
+    val zapPrefs = ZapPreferences(app, pubkeyHex)
     private val processingDispatcher = Dispatchers.Default
 
     val metadataFetcher = MetadataFetcher(
@@ -175,6 +177,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         nwcRepo.reload(newPubkey)
         relayScoreBoard.reload(newPubkey)
         reactionPrefs.reload(newPubkey)
+        zapPrefs.reload(newPubkey)
     }
 
     fun initRelays() {
@@ -386,6 +389,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                     if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
                 }
             }
+        } else if (subscriptionId.startsWith("onb-")) {
+            // Onboarding suggestion fetches — only cache kind 0 profiles, don't add to feed
+            if (event.kind == 0) eventRepo.cacheEvent(event)
         } else {
             if (event.kind == 10002) {
                 relayListRepo.updateFromEvent(event)
@@ -915,7 +921,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             result.fold(
                 onSuccess = {
                     val myPubkey = getUserPubkey() ?: ""
-                    eventRepo.addOptimisticZap(event.id, myPubkey, amountMsats / 1000)
+                    eventRepo.addOptimisticZap(event.id, myPubkey, amountMsats / 1000, message)
                     _zapSuccess.tryEmit(event.id)
                 },
                 onFailure = { e ->

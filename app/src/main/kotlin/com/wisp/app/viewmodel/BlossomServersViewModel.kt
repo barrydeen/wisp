@@ -6,14 +6,15 @@ import com.wisp.app.nostr.Blossom
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.RelayPool
+import com.wisp.app.nostr.toHex
 import com.wisp.app.repo.BlossomRepository
 import com.wisp.app.repo.KeyRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 class BlossomServersViewModel(app: Application) : AndroidViewModel(app) {
-    val blossomRepo = BlossomRepository(app)
     private val keyRepo = KeyRepository(app)
+    val blossomRepo = BlossomRepository(app, keyRepo.getKeypair()?.pubkey?.toHex())
 
     val servers: StateFlow<List<String>> = blossomRepo.servers
 

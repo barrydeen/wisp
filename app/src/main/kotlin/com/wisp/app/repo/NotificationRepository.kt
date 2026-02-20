@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 class NotificationRepository {
     private val seenEvents = LruCache<String, Boolean>(2000)
 
+    private val lock = Any()
     private val groupMap = mutableMapOf<String, NotificationGroup>()
 
     private val _notifications = MutableStateFlow<List<NotificationGroup>>(emptyList())
@@ -28,16 +29,18 @@ class NotificationRepository {
 
         seenEvents.put(event.id, true)
 
-        val merged = when (event.kind) {
-            7 -> mergeReaction(event)
-            1 -> mergeKind1(event)
-            9735 -> mergeZap(event)
-            else -> false
-        }
-        if (!merged) return
+        synchronized(lock) {
+            val merged = when (event.kind) {
+                7 -> mergeReaction(event)
+                1 -> mergeKind1(event)
+                9735 -> mergeZap(event)
+                else -> false
+            }
+            if (!merged) return
 
-        _hasUnread.value = true
-        rebuildSortedList()
+            _hasUnread.value = true
+            rebuildSortedList()
+        }
     }
 
     fun markRead() {
@@ -45,13 +48,15 @@ class NotificationRepository {
     }
 
     fun clear() {
-        seenEvents.evictAll()
-        groupMap.clear()
-        _notifications.value = emptyList()
-        _hasUnread.value = false
+        synchronized(lock) {
+            seenEvents.evictAll()
+            groupMap.clear()
+            _notifications.value = emptyList()
+            _hasUnread.value = false
+        }
     }
 
-    fun purgeUser(pubkey: String) {
+    fun purgeUser(pubkey: String) = synchronized(lock) {
         val toRemove = mutableListOf<String>()
         val toUpdate = mutableMapOf<String, NotificationGroup>()
 
