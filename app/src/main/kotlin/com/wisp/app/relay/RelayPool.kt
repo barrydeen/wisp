@@ -5,6 +5,7 @@ import android.util.LruCache
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.RelayMessage
+import com.wisp.app.nostr.RelayMessage.Auth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -43,6 +44,18 @@ class RelayPool {
     private val seenEvents = LruCache<String, Boolean>(5000)
     private val seenLock = Any()
 
+    /** Signing lambda for NIP-42 AUTH — set via [setAuthSigner]. */
+    private var authSigner: ((relayUrl: String, challenge: String) -> NostrEvent)? = null
+    private val authenticatedRelays = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * Register a signer for NIP-42 AUTH challenges.
+     * The lambda receives the relay URL and challenge string and must return a signed kind-22242 event.
+     */
+    fun setAuthSigner(signer: (relayUrl: String, challenge: String) -> NostrEvent) {
+        authSigner = signer
+    }
+
     private val _events = MutableSharedFlow<NostrEvent>(extraBufferCapacity = 1024)
     val events: SharedFlow<NostrEvent> = _events
 
@@ -54,6 +67,10 @@ class RelayPool {
 
     private val _connectedCount = MutableStateFlow(0)
     val connectedCount: StateFlow<Int> = _connectedCount
+
+    private val _authCompleted = MutableSharedFlow<String>(extraBufferCapacity = 16)
+    /** Emits the relay URL after successful NIP-42 AUTH. */
+    val authCompleted: SharedFlow<String> = _authCompleted
 
     private val _consoleLog = MutableStateFlow<List<ConsoleLogEntry>>(emptyList())
     val consoleLog: StateFlow<List<ConsoleLogEntry>> = _consoleLog
@@ -181,6 +198,25 @@ class RelayPool {
             relay.connectionState.collect { updateConnectedCount() }
         }
         collectRelayFailures(relay)
+        collectAuthChallenges(relay)
+    }
+
+    private fun collectAuthChallenges(relay: Relay) {
+        scope.launch {
+            relay.authChallenges.collect { challenge ->
+                val signer = authSigner ?: return@collect
+                try {
+                    val authEvent = signer(relay.config.url, challenge)
+                    val msg = ClientMessage.auth(authEvent)
+                    relay.send(msg)
+                    authenticatedRelays.add(relay.config.url)
+                    Log.d("RelayPool", "AUTH response sent to ${relay.config.url}")
+                    _authCompleted.tryEmit(relay.config.url)
+                } catch (e: Exception) {
+                    Log.e("RelayPool", "AUTH failed for ${relay.config.url}: ${e.message}")
+                }
+            }
+        }
     }
 
     private fun updateConnectedCount() {
@@ -238,6 +274,7 @@ class RelayPool {
             subscriptionTracker.track(url, subId)
         }
         relays.find { it.config.url == url }?.send(message)
+            ?: dmRelays.find { it.config.url == url }?.send(message)
             ?: ephemeralRelays[url]?.send(message)
     }
 
@@ -363,6 +400,7 @@ class RelayPool {
         subscriptionTracker.untrackAll(subscriptionId)
         val msg = ClientMessage.close(subscriptionId)
         for (relay in relays) relay.send(msg)
+        for (relay in dmRelays) relay.send(msg)
         for (relay in ephemeralRelays.values) relay.send(msg)
     }
 

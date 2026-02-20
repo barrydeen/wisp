@@ -44,6 +44,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
 import com.wisp.app.nostr.Nip19
+import com.wisp.app.nostr.toHex
 import com.wisp.app.nostr.NostrUriData
 import com.wisp.app.repo.EventRepository
 import kotlinx.coroutines.Dispatchers
@@ -64,7 +65,7 @@ private sealed interface ContentSegment {
 private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp")
 private val videoExtensions = setOf("mp4", "mov", "webm")
 
-private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1)[a-z0-9]+|https?://\S+""", RegexOption.IGNORE_CASE)
+private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w)|https?://\S+""", RegexOption.IGNORE_CASE)
 
 private fun parseContent(content: String): List<ContentSegment> {
     val segments = mutableListOf<ContentSegment>()
@@ -80,6 +81,13 @@ private fun parseContent(content: String): List<ContentSegment> {
                 is NostrUriData.NoteRef -> segments.add(ContentSegment.NostrNoteSegment(decoded.eventId, decoded.relays))
                 is NostrUriData.ProfileRef -> segments.add(ContentSegment.NostrProfileSegment(decoded.pubkey))
                 null -> segments.add(ContentSegment.TextSegment(token))
+            }
+        } else if (token.startsWith("npub1", ignoreCase = true)) {
+            val pubkey = try { Nip19.npubDecode(token).toHex() } catch (_: Exception) { null }
+            if (pubkey != null) {
+                segments.add(ContentSegment.NostrProfileSegment(pubkey))
+            } else {
+                segments.add(ContentSegment.TextSegment(token))
             }
         } else {
             val url = token.trimEnd('.', ',', ')', ']', ';', ':', '!', '?')

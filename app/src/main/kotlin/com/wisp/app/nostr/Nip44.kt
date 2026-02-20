@@ -19,10 +19,8 @@ object Nip44 {
     fun getConversationKey(privkey: ByteArray, pubkey: ByteArray): ByteArray {
         val compressed = Keys.pubkeyToCompressed(pubkey)
         val sharedSecret = Keys.ecdh(privkey, compressed)
-        // HKDF-Extract(salt=empty, ikm=sharedSecret) -> PRK
-        val prk = hkdfExtract(ByteArray(32), sharedSecret)
-        // HKDF-Expand(prk, info="nip44-v2", len=32) -> conversation key
-        return hkdfExpand(prk, "nip44-v2".toByteArray(Charsets.UTF_8), 32)
+        // HKDF-Extract(salt="nip44-v2", ikm=sharedSecret) -> conversation key
+        return hkdfExtract("nip44-v2".toByteArray(Charsets.UTF_8), sharedSecret)
     }
 
     /**
@@ -145,8 +143,8 @@ object Nip44 {
     }
 
     private fun deriveMessageKeys(conversationKey: ByteArray, nonce: ByteArray): ByteArray {
-        val prk = hkdfExtract(conversationKey, nonce)
-        return hkdfExpand(prk, "nip44-v2".toByteArray(Charsets.UTF_8), 76)
+        // HKDF-Expand(prk=conversationKey, info=nonce, len=76)
+        return hkdfExpand(conversationKey, nonce, 76)
     }
 
     // --- Crypto Primitives ---

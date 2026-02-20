@@ -1,6 +1,7 @@
 package com.wisp.app.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.Blossom
@@ -18,6 +19,7 @@ import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.relay.RelayScoreBoard
+import com.wisp.app.relay.ScoredRelay
 import com.wisp.app.relay.SubscriptionManager
 import com.wisp.app.repo.BlossomRepository
 import com.wisp.app.repo.BookmarkRepository
@@ -249,6 +251,34 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
+        // NIP-42 AUTH: sign challenges with our keypair
+        keyRepo.getKeypair()?.let { kp ->
+            relayPool.setAuthSigner { relayUrl, challenge ->
+                NostrEvent.create(
+                    privkey = kp.privkey,
+                    pubkey = kp.pubkey,
+                    kind = 22242,
+                    content = "",
+                    tags = listOf(
+                        listOf("relay", relayUrl),
+                        listOf("challenge", challenge)
+                    )
+                )
+            }
+        }
+
+        // Re-send DM subscription to relays after AUTH completes
+        viewModelScope.launch {
+            relayPool.authCompleted.collect { relayUrl ->
+                val myPubkey = getUserPubkey() ?: return@collect
+                val dmRelayUrls = relayPool.getDmRelayUrls()
+                if (relayUrl in dmRelayUrls || relayUrl in relayPool.getRelayUrls()) {
+                    val dmFilter = Filter(kinds = listOf(1059), pTags = listOf(myPubkey))
+                    relayPool.sendToRelay(relayUrl, ClientMessage.req("dms", dmFilter))
+                }
+            }
+        }
+
         getUserPubkey()?.let { listRepo.setOwner(it) }
 
         subscribeSelfData()
@@ -278,7 +308,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val dmFilter = Filter(kinds = listOf(1059), pTags = listOf(myPubkey))
-        relayPool.sendToAll(ClientMessage.req("dms", dmFilter))
+        val dmReqMsg = ClientMessage.req("dms", dmFilter)
+        relayPool.sendToAll(dmReqMsg)
+        relayPool.sendToDmRelays(dmReqMsg)
+        // Track EOSE for initial DM load but keep subscription open for streaming
+        viewModelScope.launch {
+            subManager.awaitEoseWithTimeout("dms")
+            Log.d("FeedViewModel", "DM initial load complete")
+        }
 
         val notifFilter = Filter(
             kinds = listOf(1, 7, 9735),
@@ -450,6 +487,35 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun getRelayUrls(): List<String> = relayPool.getRelayUrls()
+
+    fun getScoredRelays(): List<ScoredRelay> = relayScoreBoard.getScoredRelays()
+
+    /**
+     * Probe whether a relay is reachable by attempting a WebSocket connection.
+     * Tries wss:// first, then ws://. Returns the working URL or null.
+     */
+    suspend fun probeRelay(domain: String): String? {
+        val wssUrl = "wss://$domain"
+        if (tryConnect(wssUrl)) return wssUrl
+        val wsUrl = "ws://$domain"
+        if (tryConnect(wsUrl)) return wsUrl
+        return null
+    }
+
+    private suspend fun tryConnect(url: String): Boolean {
+        val client = Relay.createClient()
+        val relay = Relay(RelayConfig(url, read = true, write = false), client)
+        relay.autoReconnect = false
+        return try {
+            relay.connect()
+            val connected = relay.awaitConnected(timeoutMs = 4000)
+            relay.disconnect()
+            connected
+        } catch (_: Exception) {
+            relay.disconnect()
+            false
+        }
+    }
 
     fun onAppResume() {
         if (!relaysInitialized) return

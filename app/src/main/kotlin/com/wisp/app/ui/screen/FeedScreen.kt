@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -66,6 +67,7 @@ import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.WispDrawerContent
 import com.wisp.app.ui.component.ZapDialog
+import com.wisp.app.relay.ScoredRelay
 import com.wisp.app.viewmodel.FeedType
 import com.wisp.app.viewmodel.FeedViewModel
 import kotlinx.coroutines.delay
@@ -203,12 +205,13 @@ fun FeedScreen(
 
     if (showRelayPicker) {
         RelayPickerDialog(
-            relayUrls = viewModel.getRelayUrls(),
+            scoredRelays = viewModel.getScoredRelays(),
             onSelect = { url ->
                 viewModel.setSelectedRelay(url)
                 viewModel.setFeedType(FeedType.RELAY)
                 showRelayPicker = false
             },
+            onProbe = { domain -> viewModel.probeRelay(domain) },
             onDismiss = { showRelayPicker = false }
         )
     }
@@ -708,27 +711,105 @@ private fun FeedItem(
 
 @Composable
 private fun RelayPickerDialog(
-    relayUrls: List<String>,
+    scoredRelays: List<ScoredRelay>,
     onSelect: (String) -> Unit,
+    onProbe: suspend (String) -> String?,
     onDismiss: () -> Unit
 ) {
+    var urlInput by remember { mutableStateOf("") }
+    var isProbing by remember { mutableStateOf(false) }
+    var probeError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Select Relay") },
         text = {
             Column {
-                if (relayUrls.isEmpty()) {
-                    Text("No relays configured")
+                // URL bar
+                androidx.compose.material3.OutlinedTextField(
+                    value = urlInput,
+                    onValueChange = {
+                        urlInput = it
+                        probeError = null
+                    },
+                    placeholder = { Text("relay.example.com") },
+                    singleLine = true,
+                    enabled = !isProbing,
+                    trailingIcon = {
+                        if (isProbing) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            IconButton(
+                                onClick = {
+                                    val domain = urlInput.trim()
+                                        .removePrefix("wss://")
+                                        .removePrefix("ws://")
+                                        .removeSuffix("/")
+                                    if (domain.isNotBlank()) {
+                                        isProbing = true
+                                        probeError = null
+                                        scope.launch {
+                                            val result = onProbe(domain)
+                                            isProbing = false
+                                            if (result != null) {
+                                                onSelect(result)
+                                            } else {
+                                                probeError = "Couldn't connect to relay"
+                                            }
+                                        }
+                                    }
+                                },
+                                enabled = urlInput.isNotBlank()
+                            ) {
+                                Text("Go", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (probeError != null) {
+                    Text(
+                        probeError!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+
+                Spacer(Modifier.size(12.dp))
+
+                // Scored relay list
+                if (scoredRelays.isEmpty()) {
+                    Text(
+                        "No relay scores available yet",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 } else {
-                    relayUrls.forEach { url ->
-                        TextButton(
-                            onClick = { onSelect(url) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                url.removePrefix("wss://").removeSuffix("/"),
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                    LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                        items(scoredRelays) { scored ->
+                            Surface(
+                                onClick = { onSelect(scored.url) },
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        scored.url.removePrefix("wss://").removePrefix("ws://").removeSuffix("/"),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        "covers ${scored.coverCount}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
                 }
