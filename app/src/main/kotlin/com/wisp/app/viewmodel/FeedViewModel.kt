@@ -608,24 +608,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     private var feedEoseJob: Job? = null
 
-    /**
-     * Compute an adaptive time window based on author count.
-     * More authors → shorter window (plenty of content expected).
-     * Fewer authors → longer window (need to reach further back).
-     * Returns a `since` epoch-second timestamp.
-     */
-    private fun adaptiveSince(authorCount: Int): Long {
-        val now = System.currentTimeMillis() / 1000
-        val windowSeconds = when {
-            authorCount <= 20  -> 2 * 86400L    // 2 days
-            authorCount <= 100 -> 12 * 3600L    // 12 hours
-            authorCount <= 300 -> 4 * 3600L     // 4 hours
-            authorCount <= 700 -> 1 * 3600L     // 1 hour
-            else               -> 15 * 60L      // 15 minutes
-        }
-        return now - windowSeconds
-    }
-
     private fun resubscribeFeed() {
         relayPool.closeOnAllRelays(feedSubId)
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
@@ -634,26 +616,27 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         eventRepo.countNewNotes = false
         feedEoseJob?.cancel()
 
+        // Initial load uses limit only (no `since`) so each relay returns its N most
+        // recent matching events. This avoids gaps caused by tight time windows — the
+        // limit already caps per-relay response size. After EOSE the subscription stays
+        // open for live streaming of new events.
         val targetedRelays: Set<String> = when (_feedType.value) {
             FeedType.LIST -> {
                 val list = listRepo.selectedList.value ?: return
                 val authors = list.members.toList()
                 if (authors.isEmpty()) return
-                val since = adaptiveSince(authors.size)
-                val notesFilter = Filter(kinds = listOf(1, 6), since = since, limit = 25)
+                val notesFilter = Filter(kinds = listOf(1, 6), limit = 25)
                 outboxRouter.subscribeByAuthors(feedSubId, authors, notesFilter)
             }
             FeedType.FOLLOWS -> {
                 val authors = contactRepo.getFollowList().map { it.pubkey }
                 if (authors.isEmpty()) return
-                val since = adaptiveSince(authors.size)
-                val notesFilter = Filter(kinds = listOf(1, 6), since = since, limit = 25)
+                val notesFilter = Filter(kinds = listOf(1, 6), limit = 25)
                 outboxRouter.subscribeByAuthors(feedSubId, authors, notesFilter)
             }
             FeedType.RELAY -> {
                 val url = _selectedRelay.value ?: return
-                val since = adaptiveSince(100)
-                val filter = Filter(kinds = listOf(1, 6), since = since, limit = 50)
+                val filter = Filter(kinds = listOf(1, 6), limit = 50)
                 val msg = ClientMessage.req(feedSubId, filter)
                 relayPool.sendToRelayOrEphemeral(url, msg)
                 setOf(url)
@@ -663,37 +646,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         feedEoseJob = viewModelScope.launch {
             subManager.awaitEoseCount(feedSubId, targetedRelays.size.coerceAtLeast(1))
             _initialLoadDone.value = true
-
-            // Backfill if the 24h window yielded very few results
-            if (eventRepo.feed.value.size < 10) {
-                val backfillFilter = when (_feedType.value) {
-                    FeedType.LIST -> {
-                        val list = listRepo.selectedList.value
-                        val authors = list?.members?.toList()
-                        if (!authors.isNullOrEmpty()) {
-                            outboxRouter.subscribeByAuthors("feed-backfill", authors, Filter(kinds = listOf(1, 6), limit = 30))
-                        }
-                        null // subscribed via outbox
-                    }
-                    FeedType.FOLLOWS -> {
-                        val authors = contactRepo.getFollowList().map { it.pubkey }
-                        if (authors.isNotEmpty()) {
-                            outboxRouter.subscribeByAuthors("feed-backfill", authors, Filter(kinds = listOf(1, 6), limit = 30))
-                        }
-                        null
-                    }
-                    FeedType.RELAY -> {
-                        val url = _selectedRelay.value
-                        if (url != null) {
-                            val f = Filter(kinds = listOf(1, 6), limit = 30)
-                            relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("feed-backfill", f))
-                        }
-                        null
-                    }
-                }
-                subManager.awaitEoseWithTimeout("feed-backfill")
-                subManager.closeSubscription("feed-backfill")
-            }
 
             eventRepo.countNewNotes = true
             subscribeEngagementForFeed()
