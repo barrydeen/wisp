@@ -21,6 +21,8 @@ class RelayScoreBoard(
     private var scoredRelayUrls: Set<String> = emptySet()
     // relay URL -> set of authors covered by that relay
     private var relayAuthorsMap: Map<String, Set<String>> = emptyMap()
+    // Inverse index: author -> primary scored relay URL (the first relay that covers them)
+    private var authorToRelay: Map<String, String> = emptyMap()
 
     companion object {
         private const val TAG = "RelayScoreBoard"
@@ -97,6 +99,17 @@ class RelayScoreBoard(
         scoredRelayUrls = result.map { it.url }.toSet()
         relayAuthorsMap = result.associate { it.url to it.authors }
 
+        // Build inverse author → primary relay index (first relay covering each author in scored order)
+        val inverseIndex = mutableMapOf<String, String>()
+        for (scored in result) {
+            for (author in scored.authors) {
+                if (author !in inverseIndex) {
+                    inverseIndex[author] = scored.url
+                }
+            }
+        }
+        authorToRelay = inverseIndex
+
         Log.d(TAG, "Scored ${result.size} relays covering ${follows.size - uncovered.size}/${follows.size} follows " +
                 "(${uncovered.size} uncovered, $knownCount with relay lists)")
 
@@ -111,23 +124,12 @@ class RelayScoreBoard(
     fun getRelaysForAuthors(authors: List<String>): Map<String, List<String>> {
         if (scoredRelays.isEmpty()) return emptyMap()
 
+        // O(n) group-by using the inverse author → relay index
         val result = mutableMapOf<String, MutableList<String>>()
-        val covered = mutableSetOf<String>()
-
-        for ((url, relayAuthors) in relayAuthorsMap) {
-            val overlap = authors.filter { it in relayAuthors }
-            if (overlap.isNotEmpty()) {
-                result[url] = overlap.toMutableList()
-                covered.addAll(overlap)
-            }
+        for (author in authors) {
+            val relay = authorToRelay[author] ?: ""
+            result.getOrPut(relay) { mutableListOf() }.add(author)
         }
-
-        // Authors not in any scored relay → returned under "" key for fallback
-        val uncovered = authors.filter { it !in covered }
-        if (uncovered.isNotEmpty()) {
-            result[""] = uncovered.toMutableList()
-        }
-
         return result
     }
 
@@ -142,6 +144,7 @@ class RelayScoreBoard(
         scoredRelays = emptyList()
         scoredRelayUrls = emptySet()
         relayAuthorsMap = emptyMap()
+        authorToRelay = emptyMap()
     }
 
     fun reload(pubkeyHex: String?) {
