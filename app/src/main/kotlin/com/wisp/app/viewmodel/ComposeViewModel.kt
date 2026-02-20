@@ -14,6 +14,7 @@ import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.BlossomRepository
+import com.wisp.app.nostr.toHex
 import com.wisp.app.repo.KeyRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,7 +24,7 @@ import kotlinx.coroutines.launch
 
 class ComposeViewModel(app: Application) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
-    val blossomRepo = BlossomRepository(app)
+    val blossomRepo = BlossomRepository(app, keyRepo.getKeypair()?.pubkey?.toHex())
 
     private val _content = MutableStateFlow("")
     val content: StateFlow<String> = _content

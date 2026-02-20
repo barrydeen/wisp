@@ -88,10 +88,8 @@ class RelayPool {
     fun updateBlockedUrls(urls: List<String>) {
         blockedUrls = urls.toSet()
         // Disconnect any currently-connected relays that are now blocked
-        relays.filter { it.config.url in blockedUrls }.forEach { it.disconnect() }
-        relays.removeAll { it.config.url in blockedUrls }
-        dmRelays.filter { it.config.url in blockedUrls }.forEach { it.disconnect() }
-        dmRelays.removeAll { it.config.url in blockedUrls }
+        relays.filter { it.config.url in blockedUrls }.forEach { it.disconnect(); relays.remove(it) }
+        dmRelays.filter { it.config.url in blockedUrls }.forEach { it.disconnect(); dmRelays.remove(it) }
         ephemeralRelays.keys.filter { it in blockedUrls }.forEach { url ->
             ephemeralRelays.remove(url)?.disconnect()
             ephemeralLastUsed.remove(url)
@@ -103,8 +101,8 @@ class RelayPool {
 
         // Disconnect removed relays
         val currentUrls = filtered.map { it.url }.toSet()
-        relays.filter { it.config.url !in currentUrls }.forEach { it.disconnect() }
-        relays.removeAll { it.config.url !in currentUrls }
+        val toRemove = relays.filter { it.config.url !in currentUrls }
+        toRemove.forEach { it.disconnect(); relays.remove(it) }
 
         // Add new relays
         val existingUrls = relays.map { it.config.url }.toSet()
@@ -121,8 +119,7 @@ class RelayPool {
     fun updateDmRelays(urls: List<String>) {
         val filtered = urls.filter { it !in blockedUrls }
         val currentUrls = filtered.toSet()
-        dmRelays.filter { it.config.url !in currentUrls }.forEach { it.disconnect() }
-        dmRelays.removeAll { it.config.url !in currentUrls }
+        dmRelays.filter { it.config.url !in currentUrls }.forEach { it.disconnect(); dmRelays.remove(it) }
 
         val existingUrls = dmRelays.map { it.config.url }.toSet()
         for (url in filtered) {

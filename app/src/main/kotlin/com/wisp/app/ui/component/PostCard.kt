@@ -82,7 +82,7 @@ fun PostCard(
     onRelayClick: (String) -> Unit = {},
     repostedBy: String? = null,
     reactionDetails: Map<String, List<String>> = emptyMap(),
-    zapDetails: List<Pair<String, Long>> = emptyList(),
+    zapDetails: List<Triple<String, Long, String>> = emptyList(),
     onNavigateToProfileFromDetails: ((String) -> Unit)? = null,
     onFollowAuthor: () -> Unit = {},
     onBlockAuthor: () -> Unit = {},

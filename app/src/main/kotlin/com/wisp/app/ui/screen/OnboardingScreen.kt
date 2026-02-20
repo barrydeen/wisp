@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.wisp.app.relay.OnboardingPhase
+import com.wisp.app.ui.component.WispLogo
 import com.wisp.app.viewmodel.OnboardingViewModel
 
 @Composable
@@ -81,14 +82,7 @@ fun OnboardingScreen(
     ) {
         Spacer(Modifier.height(48.dp))
 
-        Text(
-            text = "wisp",
-            style = MaterialTheme.typography.titleLarge.copy(
-                fontSize = 36.sp,
-                fontWeight = FontWeight.Bold
-            ),
-            color = MaterialTheme.colorScheme.primary
-        )
+        WispLogo(size = 64.dp)
         Spacer(Modifier.height(8.dp))
         Text(
             text = "Set up your profile",

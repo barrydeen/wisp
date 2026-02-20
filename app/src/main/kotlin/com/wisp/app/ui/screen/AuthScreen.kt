@@ -18,9 +18,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.wisp.app.ui.component.WispLogo
 import com.wisp.app.viewmodel.AuthViewModel
 
 @Composable
@@ -38,15 +37,8 @@ fun AuthScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            text = "wisp",
-            style = MaterialTheme.typography.titleLarge.copy(
-                fontSize = 36.sp,
-                fontWeight = FontWeight.Bold
-            ),
-            color = MaterialTheme.colorScheme.primary
-        )
-        Spacer(Modifier.height(8.dp))
+        WispLogo(size = 80.dp)
+        Spacer(Modifier.height(4.dp))
         Text(
             text = "a wee nostr client",
             style = MaterialTheme.typography.bodyMedium,

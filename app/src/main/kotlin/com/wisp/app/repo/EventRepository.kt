@@ -75,8 +75,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     // Detailed reaction tracking: eventId -> (emoji -> list of reactor pubkeys)
     private val reactionDetails = LruCache<String, ConcurrentHashMap<String, MutableList<String>>>(5000)
 
-    // Detailed zap tracking: eventId -> synchronized list of (zapper pubkey, sats)
-    private val zapDetails = LruCache<String, MutableList<Pair<String, Long>>>(5000)
+    // Detailed zap tracking: eventId -> synchronized list of (zapper pubkey, sats, message)
+    private val zapDetails = LruCache<String, MutableList<Triple<String, Long, String>>>(5000)
     // Track which events the current user has zapped: eventId -> true
     private val userZaps = LruCache<String, Boolean>(5000)
     // Events where we optimistically added the user's own zap (to avoid double-counting receipts)
@@ -189,11 +189,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                     if (!isOwnOptimistic) {
                         addZapSats(targetId, sats)
                         if (zapperPubkey != null) {
+                            val zapMessage = Nip57.getZapMessage(event)
                             val zaps = zapDetails.get(targetId)
-                                ?: java.util.Collections.synchronizedList(mutableListOf<Pair<String, Long>>()).also {
+                                ?: java.util.Collections.synchronizedList(mutableListOf<Triple<String, Long, String>>()).also {
                                     zapDetails.put(targetId, it)
                                 }
-                            zaps.add(zapperPubkey to sats)
+                            zaps.add(Triple(zapperPubkey, sats, zapMessage))
                         }
                     }
                     // Always mark user zap flag from receipts
@@ -329,7 +330,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         return details.mapValues { (_, pubkeys) -> synchronized(pubkeys) { pubkeys.toList() } }
     }
 
-    fun getZapDetails(eventId: String): List<Pair<String, Long>> {
+    fun getZapDetails(eventId: String): List<Triple<String, Long, String>> {
         val list = zapDetails.get(eventId) ?: return emptyList()
         return synchronized(list) { list.toList() }
     }
@@ -375,15 +376,15 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
      * Optimistically record the current user's zap so the UI updates immediately
      * without waiting for the 9735 receipt from relays.
      */
-    fun addOptimisticZap(eventId: String, zapperPubkey: String, sats: Long) {
+    fun addOptimisticZap(eventId: String, zapperPubkey: String, sats: Long, message: String = "") {
         userZaps.put(eventId, true)
         optimisticZaps.add(eventId)
         addZapSats(eventId, sats)
         val zaps = zapDetails.get(eventId)
-            ?: java.util.Collections.synchronizedList(mutableListOf<Pair<String, Long>>()).also {
+            ?: java.util.Collections.synchronizedList(mutableListOf<Triple<String, Long, String>>()).also {
                 zapDetails.put(eventId, it)
             }
-        zaps.add(zapperPubkey to sats)
+        zaps.add(Triple(zapperPubkey, sats, message))
     }
 
     fun hasUserZapped(eventId: String): Boolean = userZaps.get(eventId) == true

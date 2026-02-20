@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -73,6 +74,7 @@ fun StackedAvatarRow(
 fun ZapRow(
     pubkey: String,
     sats: Long,
+    message: String,
     profile: ProfileData?,
     onProfileClick: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -80,17 +82,17 @@ fun ZapRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp),
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         ProfilePicture(
             url = profile?.picture,
-            size = 24,
+            size = 30,
             modifier = Modifier.clickable { onProfileClick(pubkey) }
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            text = profile?.displayString ?: (pubkey.take(8) + "..."),
+            text = message.ifBlank { profile?.displayString ?: (pubkey.take(8) + "...") },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
@@ -101,9 +103,9 @@ fun ZapRow(
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            text = formatSats(sats),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.tertiary
+            text = "\u26A1 ${formatSats(sats)}",
+            style = MaterialTheme.typography.labelLarge,
+            color = Color(0xFFFF8C00)
         )
     }
 }
@@ -111,7 +113,7 @@ fun ZapRow(
 @Composable
 fun ReactionDetailsSection(
     reactionDetails: Map<String, List<String>>,
-    zapDetails: List<Pair<String, Long>>,
+    zapDetails: List<Triple<String, Long, String>>,
     resolveProfile: (String) -> ProfileData?,
     onProfileClick: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -129,10 +131,11 @@ fun ReactionDetailsSection(
             .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         if (hasZaps) {
-            sortedZaps.forEach { (pubkey, sats) ->
+            sortedZaps.forEach { (pubkey, sats, message) ->
                 ZapRow(
                     pubkey = pubkey,
                     sats = sats,
+                    message = message,
                     profile = resolveProfile(pubkey),
                     onProfileClick = onProfileClick
                 )
