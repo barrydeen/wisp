@@ -30,6 +30,21 @@ class Relay(
     var autoReconnect = true
     @Volatile var cooldownUntil: Long = 0L
 
+    // Connection attempt tracking for automatic backoff
+    private val connectAttempts = mutableListOf<Long>()
+    private val attemptLock = Any()
+
+    companion object {
+        private const val ATTEMPT_WINDOW_MS = 60_000L       // Track attempts in the last 60s
+        private const val MAX_ATTEMPTS_IN_WINDOW = 20        // Threshold before backing off
+        private const val BACKOFF_COOLDOWN_MS = 5 * 60_000L  // 5 min cooldown when threshold hit
+
+        fun createClient(): OkHttpClient = OkHttpClient.Builder()
+            .pingInterval(30, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.MILLISECONDS) // No read timeout for WebSocket
+            .build()
+    }
+
     private val pendingMessages = ConcurrentLinkedQueue<String>()
     private val maxPendingMessages = 50
 
@@ -46,7 +61,35 @@ class Relay(
     val failures: SharedFlow<RelayFailure> = _failures
 
     fun connect() {
-        if (isConnected) return
+        if (isConnected || webSocket != null) return
+
+        // Check if we're in a cooldown period
+        val now = System.currentTimeMillis()
+        if (now < cooldownUntil) {
+            Log.d("Relay", "Skipping connect to ${config.url} — cooled down for ${(cooldownUntil - now) / 1000}s more")
+            return
+        }
+
+        // Track this attempt and check for excessive reconnections
+        synchronized(attemptLock) {
+            connectAttempts.add(now)
+            // Prune old attempts outside the window
+            connectAttempts.removeAll { now - it > ATTEMPT_WINDOW_MS }
+            if (connectAttempts.size >= MAX_ATTEMPTS_IN_WINDOW) {
+                cooldownUntil = now + BACKOFF_COOLDOWN_MS
+                connectAttempts.clear()
+                Log.w("Relay", "Too many connection attempts to ${config.url} " +
+                    "(${MAX_ATTEMPTS_IN_WINDOW} in ${ATTEMPT_WINDOW_MS / 1000}s), " +
+                    "backing off for ${BACKOFF_COOLDOWN_MS / 1000 / 60} min")
+                _connectionErrors.tryEmit(ConsoleLogEntry(
+                    relayUrl = config.url,
+                    type = ConsoleLogType.CONN_FAILURE,
+                    message = "Too many reconnect attempts — cooling off for ${BACKOFF_COOLDOWN_MS / 1000 / 60} min"
+                ))
+                return
+            }
+        }
+
         val request = try {
             Request.Builder().url(config.url).build()
         } catch (e: IllegalArgumentException) {
@@ -57,6 +100,8 @@ class Relay(
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d("Relay", "Connected to ${config.url}")
                 isConnected = true
+                // Successful connection — reset attempt tracking
+                synchronized(attemptLock) { connectAttempts.clear() }
                 _connectionState.tryEmit(true)
                 drainPendingMessages(webSocket)
             }
@@ -131,6 +176,12 @@ class Relay(
         webSocket = null
     }
 
+    /** Reset backoff state — call when user explicitly reconnects */
+    fun resetBackoff() {
+        cooldownUntil = 0L
+        synchronized(attemptLock) { connectAttempts.clear() }
+    }
+
     private fun reconnect() {
         webSocket = null
         if (!autoReconnect) return
@@ -154,10 +205,4 @@ class Relay(
         }
     }
 
-    companion object {
-        fun createClient(): OkHttpClient = OkHttpClient.Builder()
-            .pingInterval(30, TimeUnit.SECONDS)
-            .readTimeout(0, TimeUnit.MILLISECONDS) // No read timeout for WebSocket
-            .build()
-    }
 }
