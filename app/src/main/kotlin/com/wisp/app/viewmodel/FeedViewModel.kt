@@ -59,6 +59,7 @@ enum class FeedType { FOLLOWS, EXTENDED_FOLLOWS, RELAY, LIST }
 sealed class InitLoadingState {
     data object Idle : InitLoadingState()
     data class Connecting(val connected: Int, val total: Int) : InitLoadingState()
+    data object FetchingSelfData : InitLoadingState()
     data class FoundFollows(val count: Int) : InitLoadingState()
     data class FetchingRelayLists(val found: Int, val total: Int) : InitLoadingState()
     data class ComputingRouting(val relayCount: Int, val coveredAuthors: Int) : InitLoadingState()
@@ -320,6 +321,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
             relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
             _initLoadingState.value = InitLoadingState.Connecting(relayPool.connectedCount.value, totalRelays)
+
+            _initLoadingState.value = InitLoadingState.FetchingSelfData
             subscribeSelfData()
 
             val follows = contactRepo.getFollowList().map { it.pubkey }
@@ -372,7 +375,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun subscribeSelfData() {
+    /**
+     * Fetches self-data (follow list, relay lists, mutes, etc.) and **awaits** EOSE
+     * so the caller has fresh data before proceeding to build the feed.
+     * DM and notification subscriptions are fire-and-forget (not feed-blocking).
+     */
+    private suspend fun subscribeSelfData() {
         val myPubkey = getUserPubkey() ?: return
 
         val selfDataFilters = listOf(
@@ -387,16 +395,17 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             Filter(kinds = listOf(Nip51.KIND_FOLLOW_SET), authors = listOf(myPubkey), limit = 50)
         )
         relayPool.sendToAll(ClientMessage.req("self-data", selfDataFilters))
-        viewModelScope.launch {
-            subManager.awaitEoseWithTimeout("self-data")
-            subManager.closeSubscription("self-data")
-        }
 
+        // Await EOSE so follow list (kind 3) and relay list (kind 10002) are
+        // available before the caller proceeds to build the feed.
+        subManager.awaitEoseWithTimeout("self-data")
+        subManager.closeSubscription("self-data")
+
+        // DMs and notifications are not feed-blocking — fire and forget
         val dmFilter = Filter(kinds = listOf(1059), pTags = listOf(myPubkey))
         val dmReqMsg = ClientMessage.req("dms", dmFilter)
         relayPool.sendToAll(dmReqMsg)
         relayPool.sendToDmRelays(dmReqMsg)
-        // Track EOSE for initial DM load but keep subscription open for streaming
         viewModelScope.launch {
             subManager.awaitEoseWithTimeout("dms")
             Log.d("FeedViewModel", "DM initial load complete")

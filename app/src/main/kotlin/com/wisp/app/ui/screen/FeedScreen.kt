@@ -1091,8 +1091,9 @@ private fun initLoadingProgress(state: InitLoadingState): Float {
         is InitLoadingState.Idle -> 0f
         is InitLoadingState.Connecting -> {
             val frac = if (state.total > 0) state.connected.toFloat() / state.total else 0f
-            frac * 0.15f
+            frac * 0.10f
         }
+        is InitLoadingState.FetchingSelfData -> 0.15f
         is InitLoadingState.FoundFollows -> 0.20f
         is InitLoadingState.FetchingRelayLists -> {
             val frac = if (state.total > 0) state.found.toFloat() / state.total else 0f
@@ -1108,6 +1109,7 @@ private fun initLoadingText(state: InitLoadingState): String {
     return when (state) {
         is InitLoadingState.Idle -> "Preparing..."
         is InitLoadingState.Connecting -> "Connecting to relays... ${state.connected}/${state.total}"
+        is InitLoadingState.FetchingSelfData -> "Searching for you on the network..."
         is InitLoadingState.FoundFollows -> "Found your ${state.count} follows"
         is InitLoadingState.FetchingRelayLists -> "Fetching relay lists... ${state.found}/${state.total}"
         is InitLoadingState.ComputingRouting -> "Computed routing across ${state.relayCount} relays for ${state.coveredAuthors} authors"
