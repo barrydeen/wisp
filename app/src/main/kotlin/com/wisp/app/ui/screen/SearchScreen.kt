@@ -64,8 +64,7 @@ fun SearchScreen(
     onToggleFollow: (String) -> Unit = {},
     onBlockUser: (String) -> Unit = {},
     userPubkey: String? = null,
-    bookmarkedIds: Set<String> = emptySet(),
-    onToggleBookmark: (String) -> Unit = {},
+    listedIds: Set<String> = emptySet(),
     onAddToList: (String) -> Unit = {}
 ) {
     val query by viewModel.query.collectAsState()
@@ -216,9 +215,8 @@ fun SearchScreen(
                                     onFollowAuthor = { onToggleFollow(event.pubkey) },
                                     onBlockAuthor = { onBlockUser(event.pubkey) },
                                     isOwnEvent = event.pubkey == userPubkey,
-                                    onBookmark = { onToggleBookmark(event.id) },
-                                    isBookmarked = event.id in bookmarkedIds,
-                                    onAddToList = { onAddToList(event.id) }
+                                    onAddToList = { onAddToList(event.id) },
+                                    isInList = event.id in listedIds
                                 )
                             }
                         }

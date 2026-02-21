@@ -16,14 +16,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,26 +46,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.BookmarkSet
 import com.wisp.app.nostr.FollowSet
-import com.wisp.app.repo.BookmarkRepository
 import com.wisp.app.repo.BookmarkSetRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.ListRepository
 import com.wisp.app.ui.component.ProfilePicture
 
-private sealed class UnifiedListItem(val name: String, val sortKey: String) {
-    class People(val followSet: FollowSet) : UnifiedListItem(followSet.name, followSet.name)
-    class Notes(val bookmarkSet: BookmarkSet) : UnifiedListItem(bookmarkSet.name, bookmarkSet.name)
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ListsHubScreen(
     listRepo: ListRepository,
-    bookmarkRepo: BookmarkRepository,
     bookmarkSetRepo: BookmarkSetRepository,
     eventRepo: EventRepository,
     onBack: () -> Unit,
-    onBookmarks: () -> Unit,
     onListDetail: (FollowSet) -> Unit,
     onBookmarkSetDetail: (BookmarkSet) -> Unit,
     onCreateList: (String) -> Unit,
@@ -74,10 +67,10 @@ fun ListsHubScreen(
 ) {
     val ownLists by listRepo.ownLists.collectAsState()
     val ownSets by bookmarkSetRepo.ownSets.collectAsState()
-    val bookmarkedIds by bookmarkRepo.bookmarkedIds.collectAsState()
     val profileVersion by eventRepo.profileVersion.collectAsState()
 
     var showCreateDialog by remember { mutableStateOf(false) }
+    var deleteConfirmation by remember { mutableStateOf<DeleteTarget?>(null) }
 
     if (showCreateDialog) {
         CreateListDialog(
@@ -92,16 +85,33 @@ fun ListsHubScreen(
         )
     }
 
-    val unifiedItems = remember(ownLists, ownSets) {
-        val items = mutableListOf<UnifiedListItem>()
-        for (list in ownLists) items.add(UnifiedListItem.People(list))
-        for (set in ownSets) {
-            // Only show non-empty sets or sets that aren't just deleted stubs
-            items.add(UnifiedListItem.Notes(set))
-        }
-        items.sortBy { it.sortKey }
-        items
+    if (deleteConfirmation != null) {
+        val target = deleteConfirmation!!
+        AlertDialog(
+            onDismissRequest = { deleteConfirmation = null },
+            title = { Text("Delete List") },
+            text = { Text("Are you sure you want to delete \"${target.name}\"? A deletion request will be sent to relays, but it cannot be guaranteed.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    when (target) {
+                        is DeleteTarget.People -> onDeleteList(target.dTag)
+                        is DeleteTarget.Notes -> onDeleteBookmarkSet(target.dTag)
+                    }
+                    deleteConfirmation = null
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteConfirmation = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
+
+    val peopleLists = remember(ownLists) { ownLists.sortedBy { it.name } }
+    val notesLists = remember(ownSets) { ownSets.sortedBy { it.name } }
 
     Scaffold(
         topBar = {
@@ -131,83 +141,78 @@ fun ListsHubScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Bookmarks section
-            item {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onBookmarks)
-                        .padding(horizontal = 16.dp, vertical = 14.dp)
-                ) {
-                    Icon(
-                        Icons.Outlined.Bookmark,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(Modifier.width(16.dp))
-                    Text(
-                        "Bookmarks",
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        "${bookmarkedIds.size}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            item {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            }
-
-            // Your Lists header
+            // People Lists section
             item {
                 Text(
-                    "Your Lists",
+                    "People Lists",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
 
-            if (unifiedItems.isEmpty()) {
+            if (peopleLists.isEmpty()) {
                 item {
                     Text(
-                        "No lists yet. Tap + to create one.",
+                        "No people lists yet.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                     )
                 }
             } else {
-                items(unifiedItems, key = { item ->
-                    when (item) {
-                        is UnifiedListItem.People -> "p:${item.followSet.pubkey}:${item.followSet.dTag}"
-                        is UnifiedListItem.Notes -> "n:${item.bookmarkSet.pubkey}:${item.bookmarkSet.dTag}"
-                    }
-                }) { item ->
-                    when (item) {
-                        is UnifiedListItem.People -> FollowSetRow(
-                            followSet = item.followSet,
-                            eventRepo = eventRepo,
-                            profileVersion = profileVersion,
-                            onClick = { onListDetail(item.followSet) },
-                            onDelete = { onDeleteList(item.followSet.dTag) }
-                        )
-                        is UnifiedListItem.Notes -> BookmarkSetRow(
-                            bookmarkSet = item.bookmarkSet,
-                            onClick = { onBookmarkSetDetail(item.bookmarkSet) },
-                            onDelete = { onDeleteBookmarkSet(item.bookmarkSet.dTag) }
-                        )
-                    }
+                items(peopleLists, key = { "p:${it.pubkey}:${it.dTag}" }) { followSet ->
+                    FollowSetRow(
+                        followSet = followSet,
+                        eventRepo = eventRepo,
+                        profileVersion = profileVersion,
+                        onClick = { onListDetail(followSet) },
+                        onDelete = {
+                            deleteConfirmation = DeleteTarget.People(followSet.dTag, followSet.name)
+                        },
+                        onViewJson = { /* handled inside row */ }
+                    )
+                }
+            }
+
+            // Notes Lists section
+            item {
+                Text(
+                    "Notes Lists",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)
+                )
+            }
+
+            if (notesLists.isEmpty()) {
+                item {
+                    Text(
+                        "No notes lists yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                    )
+                }
+            } else {
+                items(notesLists, key = { "n:${it.pubkey}:${it.dTag}" }) { bookmarkSet ->
+                    BookmarkSetRow(
+                        bookmarkSet = bookmarkSet,
+                        onClick = { onBookmarkSetDetail(bookmarkSet) },
+                        onDelete = {
+                            deleteConfirmation = DeleteTarget.Notes(bookmarkSet.dTag, bookmarkSet.name)
+                        },
+                        onViewJson = { /* handled inside row */ }
+                    )
                 }
             }
         }
     }
+}
+
+private sealed class DeleteTarget(val dTag: String, val name: String) {
+    class People(dTag: String, name: String) : DeleteTarget(dTag, name)
+    class Notes(dTag: String, name: String) : DeleteTarget(dTag, name)
 }
 
 @Composable
@@ -216,12 +221,37 @@ private fun FollowSetRow(
     eventRepo: EventRepository,
     profileVersion: Int,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onViewJson: () -> Unit
 ) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    var showJsonDialog by remember { mutableStateOf(false) }
+
     val memberAvatars = remember(followSet.members, profileVersion) {
         followSet.members.take(3).map { pk ->
             eventRepo.getProfileData(pk)?.picture
         }
+    }
+
+    if (showJsonDialog) {
+        val jsonText = remember(followSet) {
+            buildString {
+                appendLine("{")
+                appendLine("  \"kind\": 30000,")
+                appendLine("  \"pubkey\": \"${followSet.pubkey}\",")
+                appendLine("  \"d_tag\": \"${followSet.dTag}\",")
+                appendLine("  \"name\": \"${followSet.name}\",")
+                appendLine("  \"members\": [")
+                followSet.members.forEachIndexed { i, pk ->
+                    val comma = if (i < followSet.members.size - 1) "," else ""
+                    appendLine("    \"$pk\"$comma")
+                }
+                appendLine("  ],")
+                appendLine("  \"created_at\": ${followSet.createdAt}")
+                append("}")
+            }
+        }
+        JsonViewDialog(json = jsonText, onDismiss = { showJsonDialog = false })
     }
 
     Row(
@@ -258,12 +288,31 @@ private fun FollowSetRow(
                 )
             }
         }
-        IconButton(onClick = onDelete) {
+        IconButton(onClick = { menuExpanded = true }) {
             Icon(
-                Icons.Default.Delete,
-                contentDescription = "Delete",
-                tint = MaterialTheme.colorScheme.error,
+                Icons.Default.MoreVert,
+                contentDescription = "More options",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
+            )
+        }
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("View JSON") },
+                onClick = {
+                    menuExpanded = false
+                    showJsonDialog = true
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                onClick = {
+                    menuExpanded = false
+                    onDelete()
+                }
             )
         }
     }
@@ -273,8 +322,49 @@ private fun FollowSetRow(
 private fun BookmarkSetRow(
     bookmarkSet: BookmarkSet,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onViewJson: () -> Unit
 ) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    var showJsonDialog by remember { mutableStateOf(false) }
+
+    if (showJsonDialog) {
+        val jsonText = remember(bookmarkSet) {
+            buildString {
+                appendLine("{")
+                appendLine("  \"kind\": 30003,")
+                appendLine("  \"pubkey\": \"${bookmarkSet.pubkey}\",")
+                appendLine("  \"d_tag\": \"${bookmarkSet.dTag}\",")
+                appendLine("  \"name\": \"${bookmarkSet.name}\",")
+                appendLine("  \"event_ids\": [")
+                bookmarkSet.eventIds.forEachIndexed { i, id ->
+                    val comma = if (i < bookmarkSet.eventIds.size - 1) "," else ""
+                    appendLine("    \"$id\"$comma")
+                }
+                appendLine("  ],")
+                if (bookmarkSet.coordinates.isNotEmpty()) {
+                    appendLine("  \"coordinates\": [")
+                    bookmarkSet.coordinates.forEachIndexed { i, c ->
+                        val comma = if (i < bookmarkSet.coordinates.size - 1) "," else ""
+                        appendLine("    \"$c\"$comma")
+                    }
+                    appendLine("  ],")
+                }
+                if (bookmarkSet.hashtags.isNotEmpty()) {
+                    appendLine("  \"hashtags\": [")
+                    bookmarkSet.hashtags.forEachIndexed { i, t ->
+                        val comma = if (i < bookmarkSet.hashtags.size - 1) "," else ""
+                        appendLine("    \"$t\"$comma")
+                    }
+                    appendLine("  ],")
+                }
+                appendLine("  \"created_at\": ${bookmarkSet.createdAt}")
+                append("}")
+            }
+        }
+        JsonViewDialog(json = jsonText, onDismiss = { showJsonDialog = false })
+    }
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -302,15 +392,68 @@ private fun BookmarkSetRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        IconButton(onClick = onDelete) {
+        IconButton(onClick = { menuExpanded = true }) {
             Icon(
-                Icons.Default.Delete,
-                contentDescription = "Delete",
-                tint = MaterialTheme.colorScheme.error,
+                Icons.Default.MoreVert,
+                contentDescription = "More options",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
             )
         }
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("View JSON") },
+                onClick = {
+                    menuExpanded = false
+                    showJsonDialog = true
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                onClick = {
+                    menuExpanded = false
+                    onDelete()
+                }
+            )
+        }
     }
+}
+
+@Composable
+private fun JsonViewDialog(json: String, onDismiss: () -> Unit) {
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("List JSON") },
+        text = {
+            androidx.compose.foundation.lazy.LazyColumn {
+                item {
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(
+                            text = json,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(json))
+            }) {
+                Text("Copy")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
 }
 
 private enum class ListType { PEOPLE, NOTES }

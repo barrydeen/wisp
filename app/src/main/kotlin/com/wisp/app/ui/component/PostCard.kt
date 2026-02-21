@@ -89,9 +89,8 @@ fun PostCard(
     isFollowingAuthor: Boolean = false,
     isOwnEvent: Boolean = false,
     nip05Repo: Nip05Repository? = null,
-    onBookmark: () -> Unit = {},
-    isBookmarked: Boolean = false,
     onAddToList: () -> Unit = {},
+    isInList: Boolean = false,
     onPin: () -> Unit = {},
     isPinned: Boolean = false,
     onQuotedNoteClick: ((String) -> Unit)? = null,
@@ -233,13 +232,6 @@ fun PostCard(
                         )
                     }
                     DropdownMenuItem(
-                        text = { Text(if (isBookmarked) "Remove Bookmark" else "Bookmark") },
-                        onClick = {
-                            menuExpanded = false
-                            onBookmark()
-                        }
-                    )
-                    DropdownMenuItem(
                         text = { Text("Add to List") },
                         onClick = {
                             menuExpanded = false
@@ -310,8 +302,8 @@ fun PostCard(
                 repostCount = repostCount,
                 onZap = onZap,
                 hasUserZapped = hasUserZapped,
-                onBookmark = onBookmark,
-                isBookmarked = isBookmarked,
+                onAddToList = onAddToList,
+                isInList = isInList,
                 likeCount = likeCount,
                 replyCount = replyCount,
                 zapSats = zapSats,

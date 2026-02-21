@@ -61,6 +61,16 @@ class ListRepository(private val context: Context, pubkeyHex: String? = null) {
         return followSets["$pubkey:$dTag"]
     }
 
+    /** Remove a list from local state (after sending deletion event to relays). */
+    fun removeList(pubkey: String, dTag: String) {
+        followSets.remove("$pubkey:$dTag")
+        val sel = _selectedList.value
+        if (sel != null && sel.pubkey == pubkey && sel.dTag == dTag) {
+            _selectedList.value = null
+        }
+        refreshOwnLists()
+    }
+
     fun getAllListsForUser(pubkey: String): List<FollowSet> {
         return followSets.values.filter { it.pubkey == pubkey }
     }

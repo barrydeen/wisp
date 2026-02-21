@@ -46,7 +46,6 @@ fun BookmarkSetScreen(
     onReply: (NostrEvent) -> Unit = {},
     onReact: (NostrEvent, String) -> Unit = { _, _ -> },
     onProfileClick: (String) -> Unit = {},
-    onToggleBookmark: (String) -> Unit = {},
     onRemoveFromSet: ((String) -> Unit)? = null,
     onToggleFollow: (String) -> Unit = {},
     onBlockUser: (String) -> Unit = {}
@@ -137,7 +136,6 @@ fun BookmarkSetScreen(
                         userReactionEmojis = userEmojis,
                         likeCount = likeCount,
                         eventRepo = eventRepo,
-                        onBookmark = { onToggleBookmark(event.id) },
                         onFollowAuthor = { onToggleFollow(event.pubkey) },
                         onBlockAuthor = { onBlockUser(event.pubkey) },
                         isOwnEvent = event.pubkey == userPubkey

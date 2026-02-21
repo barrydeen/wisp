@@ -56,8 +56,8 @@ fun ActionBar(
     hasUserReposted: Boolean = false,
     onZap: () -> Unit = {},
     hasUserZapped: Boolean = false,
-    onBookmark: () -> Unit = {},
-    isBookmarked: Boolean = false,
+    onAddToList: () -> Unit = {},
+    isInList: Boolean = false,
     likeCount: Int = 0,
     repostCount: Int = 0,
     replyCount: Int = 0,
@@ -182,11 +182,11 @@ fun ActionBar(
             )
         }
         Spacer(Modifier.width(8.dp))
-        IconButton(onClick = onBookmark) {
+        IconButton(onClick = onAddToList) {
             Icon(
-                if (isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-                contentDescription = if (isBookmarked) "Remove Bookmark" else "Bookmark",
-                tint = if (isBookmarked) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant,
+                if (isInList) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                contentDescription = "Add to List",
+                tint = if (isInList) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(22.dp)
             )
         }

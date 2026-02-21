@@ -142,7 +142,7 @@ fun FeedScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val initLoadingState by viewModel.initLoadingState.collectAsState()
     val zapInProgress by viewModel.zapInProgress.collectAsState()
-    val bookmarkedIds by viewModel.bookmarkRepo.bookmarkedIds.collectAsState()
+    val listedIds by viewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
     val pinnedIds by viewModel.pinRepo.pinnedIds.collectAsState()
 
     var zapTargetEvent by remember { mutableStateOf<NostrEvent?>(null) }
@@ -600,7 +600,7 @@ fun FeedScreen(
                                     nip05Version = nip05Version,
                                     isZapAnimating = event.id in zapAnimatingIds,
                                     isZapInProgress = event.id in zapInProgress,
-                                    isBookmarked = event.id in bookmarkedIds,
+                                    isInList = event.id in listedIds,
                                     isPinned = event.id in pinnedIds,
                                     onReply = { onReply(event) },
                                     onProfileClick = { onProfileClick(event.pubkey) },
@@ -611,7 +611,6 @@ fun FeedScreen(
                                     onRepost = { onRepost(event) },
                                     onQuote = { onQuote(event) },
                                     onZap = { zapTargetEvent = event },
-                                    onBookmark = { viewModel.toggleBookmark(event.id) },
                                     onAddToList = { onAddToList(event.id) },
                                     onPin = { viewModel.togglePin(event.id) },
                                     onRelayClick = { url ->
@@ -672,7 +671,7 @@ private fun FeedItem(
     nip05Version: Int = 0,
     isZapAnimating: Boolean,
     isZapInProgress: Boolean = false,
-    isBookmarked: Boolean = false,
+    isInList: Boolean = false,
     isPinned: Boolean = false,
     onReply: () -> Unit,
     onProfileClick: () -> Unit,
@@ -683,7 +682,6 @@ private fun FeedItem(
     onRepost: () -> Unit,
     onQuote: () -> Unit,
     onZap: () -> Unit,
-    onBookmark: () -> Unit = {},
     onAddToList: () -> Unit = {},
     onPin: () -> Unit = {},
     onRelayClick: (String) -> Unit = {}
@@ -767,9 +765,8 @@ private fun FeedItem(
         isFollowingAuthor = isFollowing,
         isOwnEvent = event.pubkey == userPubkey,
         nip05Repo = viewModel.nip05Repo,
-        onBookmark = onBookmark,
-        isBookmarked = isBookmarked,
         onAddToList = onAddToList,
+        isInList = isInList,
         onPin = onPin,
         isPinned = isPinned,
         onQuotedNoteClick = onQuotedNoteClick

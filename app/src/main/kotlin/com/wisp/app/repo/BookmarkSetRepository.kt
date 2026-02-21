@@ -21,6 +21,9 @@ class BookmarkSetRepository(private val context: Context, pubkeyHex: String? = n
     private val _ownSets = MutableStateFlow<List<BookmarkSet>>(emptyList())
     val ownSets: StateFlow<List<BookmarkSet>> = _ownSets
 
+    private val _allListedEventIds = MutableStateFlow<Set<String>>(emptySet())
+    val allListedEventIds: StateFlow<Set<String>> = _allListedEventIds
+
     private var ownerPubkey: String? = null
 
     init {
@@ -45,6 +48,12 @@ class BookmarkSetRepository(private val context: Context, pubkeyHex: String? = n
         return bookmarkSets["$pubkey:$dTag"]
     }
 
+    /** Remove a set from local state (after sending deletion event to relays). */
+    fun removeSet(pubkey: String, dTag: String) {
+        bookmarkSets.remove("$pubkey:$dTag")
+        refreshOwnSets()
+    }
+
     fun getAllSetsForUser(pubkey: String): List<BookmarkSet> {
         return bookmarkSets.values.filter { it.pubkey == pubkey }
     }
@@ -52,6 +61,7 @@ class BookmarkSetRepository(private val context: Context, pubkeyHex: String? = n
     fun clear() {
         bookmarkSets.clear()
         _ownSets.value = emptyList()
+        _allListedEventIds.value = emptySet()
         ownerPubkey = null
     }
 
@@ -65,6 +75,7 @@ class BookmarkSetRepository(private val context: Context, pubkeyHex: String? = n
         val owner = ownerPubkey ?: return
         val own = bookmarkSets.values.filter { it.pubkey == owner }.sortedBy { it.name }
         _ownSets.value = own
+        _allListedEventIds.value = own.flatMapTo(mutableSetOf()) { it.eventIds }
         saveToPrefs(own)
     }
 

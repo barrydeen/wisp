@@ -8,6 +8,7 @@ import com.wisp.app.nostr.Blossom
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip02
+import com.wisp.app.nostr.Nip09
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.Nip57
@@ -1170,46 +1171,19 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteList(dTag: String) {
         val keypair = keyRepo.getKeypair() ?: return
-        val tags = Nip51.buildFollowSetTags(dTag, emptySet())
-        val event = NostrEvent.create(
+        val myPubkey = keypair.pubkey.toHex()
+        // Send NIP-09 deletion request to relays
+        val deletionTags = Nip09.buildAddressableDeletionTags(Nip51.KIND_FOLLOW_SET, myPubkey, dTag)
+        val deleteEvent = NostrEvent.create(
             privkey = keypair.privkey,
             pubkey = keypair.pubkey,
-            kind = Nip51.KIND_FOLLOW_SET,
+            kind = 5,
             content = "",
-            tags = tags
+            tags = deletionTags
         )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
-        listRepo.updateFromEvent(event)
-        val sel = listRepo.selectedList.value
-        if (sel != null && sel.dTag == dTag) {
-            listRepo.selectList(null)
-        }
-    }
-
-    fun toggleBookmark(eventId: String) {
-        if (bookmarkRepo.isBookmarked(eventId)) {
-            bookmarkRepo.removeBookmark(eventId)
-        } else {
-            bookmarkRepo.addBookmark(eventId)
-        }
-        publishBookmarkList()
-    }
-
-    private fun publishBookmarkList() {
-        val keypair = keyRepo.getKeypair() ?: return
-        val tags = Nip51.buildBookmarkListTags(
-            bookmarkRepo.getBookmarkedIds(),
-            bookmarkRepo.getCoordinates(),
-            bookmarkRepo.getHashtags()
-        )
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = Nip51.KIND_BOOKMARK_LIST,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
+        relayPool.sendToWriteRelays(ClientMessage.event(deleteEvent))
+        // Hide locally regardless of relay response
+        listRepo.removeList(myPubkey, dTag)
     }
 
     fun togglePin(eventId: String) {
@@ -1252,24 +1226,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         )
         relayPool.sendToWriteRelays(ClientMessage.event(event))
         contactRepo.updateFromEvent(event)
-    }
-
-    fun fetchBookmarkedEvents() {
-        val ids = bookmarkRepo.getBookmarkedIds().toList()
-        if (ids.isEmpty()) return
-        // Skip IDs already in cache
-        val missing = ids.filter { eventRepo.getEvent(it) == null }
-        if (missing.isEmpty()) return
-        val subId = "fetch-bookmarks"
-        val filter = Filter(ids = missing)
-        relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
-        viewModelScope.launch {
-            subManager.awaitEoseWithTimeout(subId)
-            subManager.closeSubscription(subId)
-            withContext(processingDispatcher) {
-                metadataFetcher.sweepMissingProfiles()
-            }
-        }
     }
 
     fun fetchUserLists(pubkey: String) {
@@ -1335,16 +1291,19 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteBookmarkSet(dTag: String) {
         val keypair = keyRepo.getKeypair() ?: return
-        val tags = Nip51.buildBookmarkSetTags(dTag, emptySet())
-        val event = NostrEvent.create(
+        val myPubkey = keypair.pubkey.toHex()
+        // Send NIP-09 deletion request to relays
+        val deletionTags = Nip09.buildAddressableDeletionTags(Nip51.KIND_BOOKMARK_SET, myPubkey, dTag)
+        val deleteEvent = NostrEvent.create(
             privkey = keypair.privkey,
             pubkey = keypair.pubkey,
-            kind = Nip51.KIND_BOOKMARK_SET,
+            kind = 5,
             content = "",
-            tags = tags
+            tags = deletionTags
         )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
-        bookmarkSetRepo.updateFromEvent(event)
+        relayPool.sendToWriteRelays(ClientMessage.event(deleteEvent))
+        // Hide locally regardless of relay response
+        bookmarkSetRepo.removeSet(myPubkey, dTag)
     }
 
     fun fetchBookmarkSetEvents(dTag: String) {

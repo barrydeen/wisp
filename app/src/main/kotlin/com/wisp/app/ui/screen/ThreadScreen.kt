@@ -55,9 +55,8 @@ fun ThreadScreen(
     onZap: (NostrEvent) -> Unit = {},
     zapAnimatingIds: Set<String> = emptySet(),
     zapInProgressIds: Set<String> = emptySet(),
-    bookmarkedIds: Set<String> = emptySet(),
+    listedIds: Set<String> = emptySet(),
     pinnedIds: Set<String> = emptySet(),
-    onToggleBookmark: (String) -> Unit = {},
     onTogglePin: (String) -> Unit = {},
     onAddToList: (String) -> Unit = {}
 ) {
@@ -145,9 +144,8 @@ fun ThreadScreen(
                         onBlockAuthor = { onBlockUser(event.pubkey) },
                         isFollowingAuthor = contactRepo.isFollowing(event.pubkey),
                         isOwnEvent = event.pubkey == userPubkey,
-                        onBookmark = { onToggleBookmark(event.id) },
-                        isBookmarked = event.id in bookmarkedIds,
                         onAddToList = { onAddToList(event.id) },
+                        isInList = event.id in listedIds,
                         onPin = { onTogglePin(event.id) },
                         isPinned = event.id in pinnedIds,
                         nip05Repo = nip05Repo,

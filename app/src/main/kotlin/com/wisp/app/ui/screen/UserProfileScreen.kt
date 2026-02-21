@@ -121,9 +121,8 @@ fun UserProfileScreen(
     profilePubkey: String = "",
     relayInfoRepo: RelayInfoRepository? = null,
     nip05Repo: Nip05Repository? = null,
-    bookmarkedIds: Set<String> = emptySet(),
+    listedIds: Set<String> = emptySet(),
     pinnedIds: Set<String> = emptySet(),
-    onToggleBookmark: (String) -> Unit = {},
     onTogglePin: (String) -> Unit = {},
     onAddNoteToList: (String) -> Unit = {},
     onSendDm: (() -> Unit)? = null
@@ -353,9 +352,8 @@ fun UserProfileScreen(
                                 onQuotedNoteClick = onQuotedNoteClick,
                                 onReact = { emoji -> onReact(event, emoji) },
                                 eventRepo = eventRepo,
-                                onBookmark = { onToggleBookmark(event.id) },
-                                isBookmarked = event.id in bookmarkedIds,
                                 onAddToList = { onAddNoteToList(event.id) },
+                                isInList = event.id in listedIds,
                                 onPin = { onTogglePin(event.id) },
                                 isPinned = true,
                                 isOwnEvent = event.pubkey == userPubkey
@@ -417,9 +415,8 @@ fun UserProfileScreen(
                                 isFollowingAuthor = contactRepo.isFollowing(event.pubkey),
                                 isOwnEvent = event.pubkey == userPubkey,
                                 nip05Repo = nip05Repo,
-                                onBookmark = { onToggleBookmark(event.id) },
-                                isBookmarked = event.id in bookmarkedIds,
                                 onAddToList = { onAddNoteToList(event.id) },
+                                isInList = event.id in listedIds,
                                 onPin = { onTogglePin(event.id) },
                                 isPinned = event.id in pinnedIds
                             )
@@ -475,9 +472,8 @@ fun UserProfileScreen(
                                 isFollowingAuthor = contactRepo.isFollowing(event.pubkey),
                                 isOwnEvent = event.pubkey == userPubkey,
                                 nip05Repo = nip05Repo,
-                                onBookmark = { onToggleBookmark(event.id) },
-                                isBookmarked = event.id in bookmarkedIds,
                                 onAddToList = { onAddNoteToList(event.id) },
+                                isInList = event.id in listedIds,
                                 onPin = { onTogglePin(event.id) },
                                 isPinned = event.id in pinnedIds
                             )

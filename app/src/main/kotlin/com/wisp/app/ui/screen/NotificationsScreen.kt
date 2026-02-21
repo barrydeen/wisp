@@ -59,12 +59,11 @@ fun NotificationsScreen(
     onZap: (NostrEvent) -> Unit = {},
     onFollowToggle: (String) -> Unit = {},
     onBlockUser: (String) -> Unit = {},
-    onBookmark: (String) -> Unit = {},
     onAddToList: (String) -> Unit = {},
     nip05Repo: Nip05Repository? = null,
     isZapAnimating: (String) -> Boolean = { false },
     isZapInProgress: (String) -> Boolean = { false },
-    isBookmarked: (String) -> Boolean = { false }
+    isInList: (String) -> Boolean = { false }
 ) {
     val notifications by viewModel.notifications.collectAsState()
     val eventRepo = viewModel.eventRepository
@@ -141,12 +140,11 @@ fun NotificationsScreen(
                             onZap = onZap,
                             onFollowToggle = onFollowToggle,
                             onBlockUser = onBlockUser,
-                            onBookmark = onBookmark,
                             onAddToList = onAddToList,
                             nip05Repo = nip05Repo,
                             isZapAnimating = isZapAnimating,
                             isZapInProgress = isZapInProgress,
-                            isBookmarked = isBookmarked
+                            isInList = isInList
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
                     }
@@ -175,12 +173,11 @@ fun NotificationsScreen(
                             onZap = onZap,
                             onFollowToggle = onFollowToggle,
                             onBlockUser = onBlockUser,
-                            onBookmark = onBookmark,
                             onAddToList = onAddToList,
                             nip05Repo = nip05Repo,
                             isZapAnimating = isZapAnimating,
                             isZapInProgress = isZapInProgress,
-                            isBookmarked = isBookmarked
+                            isInList = isInList
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
                     }
@@ -226,12 +223,11 @@ private fun NotificationItem(
     onZap: (NostrEvent) -> Unit,
     onFollowToggle: (String) -> Unit,
     onBlockUser: (String) -> Unit,
-    onBookmark: (String) -> Unit,
     onAddToList: (String) -> Unit = {},
     nip05Repo: Nip05Repository?,
     isZapAnimating: (String) -> Boolean,
     isZapInProgress: (String) -> Boolean,
-    isBookmarked: (String) -> Boolean
+    isInList: (String) -> Boolean
 ) {
     // Shared PostCard params for rendering referenced notes with full action bar
     val postCardParams = NotifPostCardParams(
@@ -252,12 +248,11 @@ private fun NotificationItem(
         onZap = onZap,
         onFollowToggle = onFollowToggle,
         onBlockUser = onBlockUser,
-        onBookmark = onBookmark,
         onAddToList = onAddToList,
         nip05Repo = nip05Repo,
         isZapAnimating = isZapAnimating,
         isZapInProgress = isZapInProgress,
-        isBookmarked = isBookmarked
+        isInList = isInList
     )
 
     when (group) {
@@ -652,12 +647,11 @@ private data class NotifPostCardParams(
     val onZap: (NostrEvent) -> Unit,
     val onFollowToggle: (String) -> Unit,
     val onBlockUser: (String) -> Unit,
-    val onBookmark: (String) -> Unit,
     val onAddToList: (String) -> Unit,
     val nip05Repo: Nip05Repository?,
     val isZapAnimating: (String) -> Boolean,
     val isZapInProgress: (String) -> Boolean,
-    val isBookmarked: (String) -> Boolean
+    val isInList: (String) -> Boolean
 )
 
 // ── Referenced Note PostCard ────────────────────────────────────────────
@@ -744,9 +738,8 @@ private fun ReferencedNotePostCard(
         isFollowingAuthor = followingAuthor,
         isOwnEvent = event.pubkey == params.userPubkey,
         nip05Repo = params.nip05Repo,
-        onBookmark = { params.onBookmark(event.id) },
-        isBookmarked = params.isBookmarked(event.id),
         onAddToList = { params.onAddToList(event.id) },
+        isInList = params.isInList(event.id),
         onQuotedNoteClick = params.onNoteClick,
         showDivider = false
     )
