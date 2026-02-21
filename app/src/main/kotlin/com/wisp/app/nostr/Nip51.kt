@@ -20,6 +20,16 @@ data class BookmarkList(
     val createdAt: Long = 0
 )
 
+data class BookmarkSet(
+    val pubkey: String,
+    val dTag: String,
+    val name: String,
+    val eventIds: Set<String>,
+    val coordinates: Set<String> = emptySet(),
+    val hashtags: Set<String> = emptySet(),
+    val createdAt: Long = 0
+)
+
 object Nip51 {
     const val KIND_BLOCKED_RELAYS = 10006
     const val KIND_SEARCH_RELAYS = 10007
@@ -28,6 +38,7 @@ object Nip51 {
     const val KIND_BOOKMARK_LIST = 10003
     const val KIND_DM_RELAYS = 10050
     const val KIND_FOLLOW_SET = 30000
+    const val KIND_BOOKMARK_SET = 30003
 
     fun parseRelaySet(event: NostrEvent): List<String> {
         return event.tags.mapNotNull { tag ->
@@ -79,6 +90,45 @@ object Nip51 {
         val tags = mutableListOf<List<String>>()
         tags.add(listOf("d", dTag))
         for (pubkey in members) tags.add(listOf("p", pubkey))
+        return tags
+    }
+
+    fun parseBookmarkSet(event: NostrEvent): BookmarkSet? {
+        if (event.kind != KIND_BOOKMARK_SET) return null
+        val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: return null
+        val eventIds = mutableSetOf<String>()
+        val coordinates = mutableSetOf<String>()
+        val hashtags = mutableSetOf<String>()
+        for (tag in event.tags) {
+            if (tag.size < 2) continue
+            when (tag[0]) {
+                "e" -> eventIds.add(tag[1])
+                "a" -> coordinates.add(tag[1])
+                "t" -> hashtags.add(tag[1])
+            }
+        }
+        return BookmarkSet(
+            pubkey = event.pubkey,
+            dTag = dTag,
+            name = dTag,
+            eventIds = eventIds,
+            coordinates = coordinates,
+            hashtags = hashtags,
+            createdAt = event.created_at
+        )
+    }
+
+    fun buildBookmarkSetTags(
+        dTag: String,
+        eventIds: Set<String>,
+        coordinates: Set<String> = emptySet(),
+        hashtags: Set<String> = emptySet()
+    ): List<List<String>> {
+        val tags = mutableListOf<List<String>>()
+        tags.add(listOf("d", dTag))
+        for (id in eventIds) tags.add(listOf("e", id))
+        for (coord in coordinates) tags.add(listOf("a", coord))
+        for (tag in hashtags) tags.add(listOf("t", tag))
         return tags
     }
 

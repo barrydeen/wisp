@@ -37,12 +37,14 @@ import com.wisp.app.ui.screen.SafetyScreen
 import com.wisp.app.ui.screen.UserProfileScreen
 import com.wisp.app.ui.screen.ConsoleScreen
 import com.wisp.app.ui.screen.SearchScreen
+import com.wisp.app.ui.screen.BookmarkSetScreen
 import com.wisp.app.ui.screen.BookmarksScreen
 import com.wisp.app.ui.screen.KeysScreen
 import com.wisp.app.ui.screen.ListScreen
 import com.wisp.app.ui.screen.ListsHubScreen
 import com.wisp.app.ui.screen.NetworkDiscoveryScreen
 import com.wisp.app.ui.screen.OnboardingScreen
+import com.wisp.app.ui.component.AddNoteToListDialog
 import com.wisp.app.ui.screen.OnboardingSuggestionsScreen
 import com.wisp.app.ui.screen.WalletScreen
 import com.wisp.app.viewmodel.BlossomServersViewModel
@@ -82,6 +84,7 @@ object Routes {
     const val LIST_DETAIL = "list/{pubkey}/{dTag}"
     const val BOOKMARKS = "bookmarks"
     const val LISTS_HUB = "lists"
+    const val BOOKMARK_SET_DETAIL = "bookmark_set/{pubkey}/{dTag}"
     const val NETWORK_DISCOVERY = "network_discovery"
     const val ONBOARDING_PROFILE = "onboarding/profile"
     const val ONBOARDING_SUGGESTIONS = "onboarding/suggestions"
@@ -115,6 +118,7 @@ fun WispNavHost() {
     var replyTarget by remember { mutableStateOf<NostrEvent?>(null) }
     var quoteTarget by remember { mutableStateOf<NostrEvent?>(null) }
     var scrollToTopTrigger by remember { mutableStateOf(0) }
+    var addToListEventId by remember { mutableStateOf<String?>(null) }
 
     val startDestination = when {
         !authViewModel.isLoggedIn -> Routes.AUTH
@@ -159,6 +163,19 @@ fun WispNavHost() {
     val newNoteCount by feedViewModel.newNoteCount.collectAsState()
     val hasUnreadDms by dmListViewModel.hasUnreadDms.collectAsState()
     val hasUnreadNotifications by notificationsViewModel.hasUnread.collectAsState()
+
+    // Add Note to List dialog — shared across all screens
+    if (addToListEventId != null) {
+        val ownSets by feedViewModel.bookmarkSetRepo.ownSets.collectAsState()
+        AddNoteToListDialog(
+            eventId = addToListEventId!!,
+            bookmarkSets = ownSets,
+            onAddToSet = { dTag, eventId -> feedViewModel.addNoteToBookmarkSet(dTag, eventId) },
+            onRemoveFromSet = { dTag, eventId -> feedViewModel.removeNoteFromBookmarkSet(dTag, eventId) },
+            onCreateSet = { name -> feedViewModel.createBookmarkSet(name) },
+            onDismiss = { addToListEventId = null }
+        )
+    }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -291,7 +308,8 @@ fun WispNavHost() {
                 },
                 onKeys = {
                     navController.navigate(Routes.KEYS)
-                }
+                },
+                onAddToList = { eventId -> addToListEventId = eventId }
             )
         }
 
@@ -407,6 +425,7 @@ fun WispNavHost() {
                 pinnedIds = profilePinnedIds,
                 onToggleBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) },
                 onTogglePin = { eventId -> feedViewModel.togglePin(eventId) },
+                onAddNoteToList = { eventId -> addToListEventId = eventId },
                 onSendDm = if (!isOwnProfile) {{ navController.navigate("dm/$pubkey") }} else null
             )
         }
@@ -446,7 +465,8 @@ fun WispNavHost() {
                 },
                 userPubkey = feedViewModel.getUserPubkey(),
                 bookmarkedIds = searchBookmarkedIds,
-                onToggleBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) }
+                onToggleBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) },
+                onAddToList = { eventId -> addToListEventId = eventId }
             )
         }
 
@@ -578,7 +598,8 @@ fun WispNavHost() {
                 bookmarkedIds = threadBookmarkedIds,
                 pinnedIds = threadPinnedIds,
                 onToggleBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) },
-                onTogglePin = { eventId -> feedViewModel.togglePin(eventId) }
+                onTogglePin = { eventId -> feedViewModel.togglePin(eventId) },
+                onAddToList = { eventId -> addToListEventId = eventId }
             )
         }
 
@@ -677,6 +698,7 @@ fun WispNavHost() {
                 onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
                 onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                 onToggleBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) },
+                onAddToList = { eventId -> addToListEventId = eventId },
                 onToggleFollow = { pubkey -> feedViewModel.toggleFollow(pubkey) },
                 onBlockUser = { pubkey -> feedViewModel.blockUser(pubkey) }
             )
@@ -686,15 +708,68 @@ fun WispNavHost() {
             ListsHubScreen(
                 listRepo = feedViewModel.listRepo,
                 bookmarkRepo = feedViewModel.bookmarkRepo,
-                pinRepo = feedViewModel.pinRepo,
+                bookmarkSetRepo = feedViewModel.bookmarkSetRepo,
                 eventRepo = feedViewModel.eventRepo,
                 onBack = { navController.popBackStack() },
                 onBookmarks = { navController.navigate(Routes.BOOKMARKS) },
                 onListDetail = { list ->
                     navController.navigate("list/${list.pubkey}/${list.dTag}")
                 },
+                onBookmarkSetDetail = { set ->
+                    navController.navigate("bookmark_set/${set.pubkey}/${set.dTag}")
+                },
                 onCreateList = { name -> feedViewModel.createList(name) },
-                onDeleteList = { dTag -> feedViewModel.deleteList(dTag) }
+                onCreateBookmarkSet = { name -> feedViewModel.createBookmarkSet(name) },
+                onDeleteList = { dTag -> feedViewModel.deleteList(dTag) },
+                onDeleteBookmarkSet = { dTag -> feedViewModel.deleteBookmarkSet(dTag) }
+            )
+        }
+
+        composable(
+            Routes.BOOKMARK_SET_DETAIL,
+            arguments = listOf(
+                navArgument("pubkey") { type = NavType.StringType },
+                navArgument("dTag") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val setPubkey = backStackEntry.arguments?.getString("pubkey") ?: return@composable
+            val dTag = backStackEntry.arguments?.getString("dTag") ?: return@composable
+            val isOwnList = setPubkey == feedViewModel.getUserPubkey()
+
+            LaunchedEffect(dTag) {
+                feedViewModel.fetchBookmarkSetEvents(dTag)
+            }
+
+            val ownSets by feedViewModel.bookmarkSetRepo.ownSets.collectAsState()
+            val bookmarkSet = remember(ownSets, setPubkey, dTag) {
+                feedViewModel.bookmarkSetRepo.getSet(setPubkey, dTag)
+            }
+
+            BookmarkSetScreen(
+                bookmarkSet = bookmarkSet,
+                eventRepo = feedViewModel.eventRepo,
+                userPubkey = feedViewModel.getUserPubkey(),
+                isOwnList = isOwnList,
+                onBack = { navController.popBackStack() },
+                onDeleteList = if (isOwnList) {{
+                    feedViewModel.deleteBookmarkSet(dTag)
+                    navController.popBackStack()
+                }} else null,
+                onNoteClick = { event -> navController.navigate("thread/${event.id}") },
+                onQuotedNoteClick = { eventId -> navController.navigate("thread/$eventId") },
+                onReply = { event ->
+                    replyTarget = event
+                    composeViewModel.clear()
+                    navController.navigate(Routes.COMPOSE)
+                },
+                onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
+                onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
+                onToggleBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) },
+                onRemoveFromSet = if (isOwnList) { eventId ->
+                    feedViewModel.removeNoteFromBookmarkSet(dTag, eventId)
+                } else null,
+                onToggleFollow = { pubkey -> feedViewModel.toggleFollow(pubkey) },
+                onBlockUser = { pubkey -> feedViewModel.blockUser(pubkey) }
             )
         }
 
@@ -833,6 +908,7 @@ fun WispNavHost() {
                 onFollowToggle = { pubkey -> feedViewModel.toggleFollow(pubkey) },
                 onBlockUser = { pubkey -> feedViewModel.blockUser(pubkey) },
                 onBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) },
+                onAddToList = { eventId -> addToListEventId = eventId },
                 nip05Repo = feedViewModel.nip05Repo,
                 isZapAnimating = { it in notifZapAnimatingIds },
                 isZapInProgress = { it in notifZapInProgress },

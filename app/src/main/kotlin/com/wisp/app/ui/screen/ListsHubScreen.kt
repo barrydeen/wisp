@@ -17,10 +17,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.Bookmark
-import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -42,41 +43,64 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.wisp.app.nostr.BookmarkSet
 import com.wisp.app.nostr.FollowSet
 import com.wisp.app.repo.BookmarkRepository
+import com.wisp.app.repo.BookmarkSetRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.ListRepository
-import com.wisp.app.repo.PinRepository
 import com.wisp.app.ui.component.ProfilePicture
+
+private sealed class UnifiedListItem(val name: String, val sortKey: String) {
+    class People(val followSet: FollowSet) : UnifiedListItem(followSet.name, followSet.name)
+    class Notes(val bookmarkSet: BookmarkSet) : UnifiedListItem(bookmarkSet.name, bookmarkSet.name)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ListsHubScreen(
     listRepo: ListRepository,
     bookmarkRepo: BookmarkRepository,
-    pinRepo: PinRepository,
+    bookmarkSetRepo: BookmarkSetRepository,
     eventRepo: EventRepository,
     onBack: () -> Unit,
     onBookmarks: () -> Unit,
     onListDetail: (FollowSet) -> Unit,
+    onBookmarkSetDetail: (BookmarkSet) -> Unit,
     onCreateList: (String) -> Unit,
-    onDeleteList: (String) -> Unit
+    onCreateBookmarkSet: (String) -> Unit,
+    onDeleteList: (String) -> Unit,
+    onDeleteBookmarkSet: (String) -> Unit
 ) {
     val ownLists by listRepo.ownLists.collectAsState()
+    val ownSets by bookmarkSetRepo.ownSets.collectAsState()
     val bookmarkedIds by bookmarkRepo.bookmarkedIds.collectAsState()
-    val pinnedIds by pinRepo.pinnedIds.collectAsState()
     val profileVersion by eventRepo.profileVersion.collectAsState()
 
     var showCreateDialog by remember { mutableStateOf(false) }
 
     if (showCreateDialog) {
         CreateListDialog(
-            onConfirm = { name ->
-                onCreateList(name)
+            onConfirm = { name, type ->
+                when (type) {
+                    ListType.PEOPLE -> onCreateList(name)
+                    ListType.NOTES -> onCreateBookmarkSet(name)
+                }
                 showCreateDialog = false
             },
             onDismiss = { showCreateDialog = false }
         )
+    }
+
+    val unifiedItems = remember(ownLists, ownSets) {
+        val items = mutableListOf<UnifiedListItem>()
+        for (list in ownLists) items.add(UnifiedListItem.People(list))
+        for (set in ownSets) {
+            // Only show non-empty sets or sets that aren't just deleted stubs
+            items.add(UnifiedListItem.Notes(set))
+        }
+        items.sortBy { it.sortKey }
+        items
     }
 
     Scaffold(
@@ -136,66 +160,50 @@ fun ListsHubScreen(
                 }
             }
 
-            // Pinned Notes section
-            item {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp)
-                ) {
-                    Icon(
-                        Icons.Outlined.PushPin,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(Modifier.width(16.dp))
-                    Text(
-                        "Pinned Notes",
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        "${pinnedIds.size}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
             item {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             }
 
-            // Follow Sets header
+            // Your Lists header
             item {
                 Text(
-                    "Follow Sets",
+                    "Your Lists",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
 
-            if (ownLists.isEmpty()) {
+            if (unifiedItems.isEmpty()) {
                 item {
                     Text(
-                        "No follow sets yet. Tap + to create one.",
+                        "No lists yet. Tap + to create one.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                     )
                 }
             } else {
-                items(ownLists, key = { "${it.pubkey}:${it.dTag}" }) { list ->
-                    FollowSetRow(
-                        followSet = list,
-                        eventRepo = eventRepo,
-                        profileVersion = profileVersion,
-                        onClick = { onListDetail(list) },
-                        onDelete = { onDeleteList(list.dTag) }
-                    )
+                items(unifiedItems, key = { item ->
+                    when (item) {
+                        is UnifiedListItem.People -> "p:${item.followSet.pubkey}:${item.followSet.dTag}"
+                        is UnifiedListItem.Notes -> "n:${item.bookmarkSet.pubkey}:${item.bookmarkSet.dTag}"
+                    }
+                }) { item ->
+                    when (item) {
+                        is UnifiedListItem.People -> FollowSetRow(
+                            followSet = item.followSet,
+                            eventRepo = eventRepo,
+                            profileVersion = profileVersion,
+                            onClick = { onListDetail(item.followSet) },
+                            onDelete = { onDeleteList(item.followSet.dTag) }
+                        )
+                        is UnifiedListItem.Notes -> BookmarkSetRow(
+                            bookmarkSet = item.bookmarkSet,
+                            onClick = { onBookmarkSetDetail(item.bookmarkSet) },
+                            onDelete = { onDeleteBookmarkSet(item.bookmarkSet.dTag) }
+                        )
+                    }
                 }
             }
         }
@@ -262,26 +270,100 @@ private fun FollowSetRow(
 }
 
 @Composable
+private fun BookmarkSetRow(
+    bookmarkSet: BookmarkSet,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Icon(
+            Icons.Outlined.BookmarkBorder,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = bookmarkSet.name,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                "${bookmarkSet.eventIds.size} notes",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        IconButton(onClick = onDelete) {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = "Delete",
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+private enum class ListType { PEOPLE, NOTES }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun CreateListDialog(
-    onConfirm: (String) -> Unit,
+    onConfirm: (String, ListType) -> Unit,
     onDismiss: () -> Unit
 ) {
     var name by remember { mutableStateOf("") }
+    var selectedType by remember { mutableStateOf(ListType.PEOPLE) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Create List") },
         text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                placeholder = { Text("List name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilterChip(
+                        selected = selectedType == ListType.PEOPLE,
+                        onClick = { selectedType = ListType.PEOPLE },
+                        label = { Text("People") },
+                        leadingIcon = if (selectedType == ListType.PEOPLE) {{
+                            Icon(Icons.Outlined.People, null, modifier = Modifier.size(18.dp))
+                        }} else null
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    FilterChip(
+                        selected = selectedType == ListType.NOTES,
+                        onClick = { selectedType = ListType.NOTES },
+                        label = { Text("Notes") },
+                        leadingIcon = if (selectedType == ListType.NOTES) {{
+                            Icon(Icons.Outlined.BookmarkBorder, null, modifier = Modifier.size(18.dp))
+                        }} else null
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    placeholder = { Text("List name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         },
         confirmButton = {
             TextButton(
-                onClick = { if (name.isNotBlank()) onConfirm(name.trim()) },
+                onClick = { if (name.isNotBlank()) onConfirm(name.trim(), selectedType) },
                 enabled = name.isNotBlank()
             ) { Text("Create") }
         },

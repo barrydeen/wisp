@@ -38,8 +38,6 @@ import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
-import com.wisp.app.ui.component.QuotedNote
-import com.wisp.app.ui.component.RichContent
 import com.wisp.app.ui.component.StackedAvatarRow
 import com.wisp.app.viewmodel.NotificationsViewModel
 import java.text.SimpleDateFormat
@@ -62,6 +60,7 @@ fun NotificationsScreen(
     onFollowToggle: (String) -> Unit = {},
     onBlockUser: (String) -> Unit = {},
     onBookmark: (String) -> Unit = {},
+    onAddToList: (String) -> Unit = {},
     nip05Repo: Nip05Repository? = null,
     isZapAnimating: (String) -> Boolean = { false },
     isZapInProgress: (String) -> Boolean = { false },
@@ -143,6 +142,7 @@ fun NotificationsScreen(
                             onFollowToggle = onFollowToggle,
                             onBlockUser = onBlockUser,
                             onBookmark = onBookmark,
+                            onAddToList = onAddToList,
                             nip05Repo = nip05Repo,
                             isZapAnimating = isZapAnimating,
                             isZapInProgress = isZapInProgress,
@@ -176,6 +176,7 @@ fun NotificationsScreen(
                             onFollowToggle = onFollowToggle,
                             onBlockUser = onBlockUser,
                             onBookmark = onBookmark,
+                            onAddToList = onAddToList,
                             nip05Repo = nip05Repo,
                             isZapAnimating = isZapAnimating,
                             isZapInProgress = isZapInProgress,
@@ -226,228 +227,193 @@ private fun NotificationItem(
     onFollowToggle: (String) -> Unit,
     onBlockUser: (String) -> Unit,
     onBookmark: (String) -> Unit,
+    onAddToList: (String) -> Unit = {},
     nip05Repo: Nip05Repository?,
     isZapAnimating: (String) -> Boolean,
     isZapInProgress: (String) -> Boolean,
     isBookmarked: (String) -> Boolean
 ) {
+    // Shared PostCard params for rendering referenced notes with full action bar
+    val postCardParams = NotifPostCardParams(
+        eventRepo = eventRepo,
+        userPubkey = userPubkey,
+        profileVersion = profileVersion,
+        reactionVersion = reactionVersion,
+        replyCountVersion = replyCountVersion,
+        zapVersion = zapVersion,
+        repostVersion = repostVersion,
+        isFollowing = { viewModel.isFollowing(it) },
+        onNoteClick = onNoteClick,
+        onProfileClick = onProfileClick,
+        onReply = onReply,
+        onReact = onReact,
+        onRepost = onRepost,
+        onQuote = onQuote,
+        onZap = onZap,
+        onFollowToggle = onFollowToggle,
+        onBlockUser = onBlockUser,
+        onBookmark = onBookmark,
+        onAddToList = onAddToList,
+        nip05Repo = nip05Repo,
+        isZapAnimating = isZapAnimating,
+        isZapInProgress = isZapInProgress,
+        isBookmarked = isBookmarked
+    )
+
     when (group) {
         is NotificationGroup.ReactionGroup -> ReactionGroupRow(
             group = group,
-            eventRepo = eventRepo,
-            userPubkey = userPubkey,
-            reactionVersion = reactionVersion,
-            zapVersion = zapVersion,
             resolveProfile = { viewModel.getProfileData(it) },
             isFollowing = { viewModel.isFollowing(it) },
-            onNoteClick = onNoteClick,
-            onProfileClick = onProfileClick
+            onProfileClick = onProfileClick,
+            postCardParams = postCardParams
         )
         is NotificationGroup.ZapGroup -> ZapGroupRow(
             group = group,
-            eventRepo = eventRepo,
-            userPubkey = userPubkey,
-            reactionVersion = reactionVersion,
-            zapVersion = zapVersion,
             resolveProfile = { viewModel.getProfileData(it) },
             isFollowing = { viewModel.isFollowing(it) },
-            onNoteClick = onNoteClick,
-            onProfileClick = onProfileClick
+            onProfileClick = onProfileClick,
+            postCardParams = postCardParams
         )
         is NotificationGroup.ReplyNotification -> ReplyPostCard(
             item = group,
-            eventRepo = eventRepo,
-            userPubkey = userPubkey,
-            profileVersion = profileVersion,
-            reactionVersion = reactionVersion,
-            replyCountVersion = replyCountVersion,
-            zapVersion = zapVersion,
-            repostVersion = repostVersion,
-            isFollowing = { viewModel.isFollowing(it) },
-            onNoteClick = onNoteClick,
-            onProfileClick = onProfileClick,
-            onReply = onReply,
-            onReact = onReact,
-            onRepost = onRepost,
-            onQuote = onQuote,
-            onZap = onZap,
-            onFollowToggle = onFollowToggle,
-            onBlockUser = onBlockUser,
-            onBookmark = onBookmark,
-            nip05Repo = nip05Repo,
-            isZapAnimating = isZapAnimating,
-            isZapInProgress = isZapInProgress,
-            isBookmarked = isBookmarked
+            postCardParams = postCardParams
         )
         is NotificationGroup.QuoteNotification -> QuoteNotificationRow(
             item = group,
-            eventRepo = eventRepo,
             resolveProfile = { viewModel.getProfileData(it) },
             isFollowing = viewModel.isFollowing(group.senderPubkey),
-            onNoteClick = onNoteClick,
-            onProfileClick = onProfileClick
+            onProfileClick = onProfileClick,
+            postCardParams = postCardParams
         )
         is NotificationGroup.MentionNotification -> MentionNotificationRow(
             item = group,
-            eventRepo = eventRepo,
             resolveProfile = { viewModel.getProfileData(it) },
             isFollowing = viewModel.isFollowing(group.senderPubkey),
-            onNoteClick = onNoteClick,
-            onProfileClick = onProfileClick
+            onProfileClick = onProfileClick,
+            postCardParams = postCardParams
         )
     }
 }
 
 // ── Reaction Group ──────────────────────────────────────────────────────
 // Each emoji on its own row: <emoji> <stacked avatars of that emoji's reactors>
-// Then the referenced note rendered inline.
+// Then the referenced note rendered as a full PostCard with action bar.
 
 @Composable
 private fun ReactionGroupRow(
     group: NotificationGroup.ReactionGroup,
-    eventRepo: EventRepository?,
-    userPubkey: String?,
-    reactionVersion: Int,
-    zapVersion: Int,
     resolveProfile: (String) -> ProfileData?,
     isFollowing: (String) -> Boolean,
-    onNoteClick: (String) -> Unit,
-    onProfileClick: (String) -> Unit
+    onProfileClick: (String) -> Unit,
+    postCardParams: NotifPostCardParams
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onNoteClick(group.referencedEventId) }
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-    ) {
-        // Timestamp on top-right
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Emoji summary header
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = formatNotifTimestamp(group.latestTimestamp),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        // Each emoji row: <emoji> <count> <avatars> (newest reactor first)
-        group.reactions.forEach { (emoji, pubkeys) ->
-            val displayEmoji = if (emoji == "+") "\u2764\uFE0F" else emoji
+            // Timestamp on top-right
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 3.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Spacer(Modifier.weight(1f))
                 Text(
-                    text = displayEmoji,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    text = "${pubkeys.size}",
-                    style = MaterialTheme.typography.labelMedium,
+                    text = formatNotifTimestamp(group.latestTimestamp),
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.width(8.dp))
-                StackedAvatarRow(
-                    pubkeys = pubkeys.reversed(),
-                    resolveProfile = resolveProfile,
-                    isFollowing = isFollowing,
-                    onProfileClick = onProfileClick,
-                    highlightFirst = pubkeys.size > 1
-                )
+            }
+            // Each emoji row: <emoji> <avatars> (newest reactor first)
+            group.reactions.forEach { (emoji, pubkeys) ->
+                val displayEmoji = if (emoji == "+") "\u2764\uFE0F" else emoji
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = displayEmoji,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    StackedAvatarRow(
+                        pubkeys = pubkeys.reversed(),
+                        resolveProfile = resolveProfile,
+                        isFollowing = isFollowing,
+                        onProfileClick = onProfileClick,
+                        highlightFirst = pubkeys.size > 1
+                    )
+                }
             }
         }
-        // Your interactions with this note
-        if (eventRepo != null) {
-            NoteInteractionSummary(
-                eventId = group.referencedEventId,
-                eventRepo = eventRepo,
-                userPubkey = userPubkey,
-                reactionVersion = reactionVersion,
-                zapVersion = zapVersion
-            )
-            // Inline referenced note
-            QuotedNote(
-                eventId = group.referencedEventId,
-                eventRepo = eventRepo,
-                onNoteClick = onNoteClick
-            )
-        }
+        // Referenced note as full PostCard
+        ReferencedNotePostCard(
+            eventId = group.referencedEventId,
+            params = postCardParams
+        )
     }
 }
 
 // ── Zap Group ───────────────────────────────────────────────────────────
 // Each zap on its own row (most recent first): <zap icon> <amount> <avatar> <message>
-// Then the referenced note rendered inline.
+// Then the referenced note rendered as a full PostCard with action bar.
 
 @Composable
 private fun ZapGroupRow(
     group: NotificationGroup.ZapGroup,
-    eventRepo: EventRepository?,
-    userPubkey: String?,
-    reactionVersion: Int,
-    zapVersion: Int,
     resolveProfile: (String) -> ProfileData?,
     isFollowing: (String) -> Boolean,
-    onNoteClick: (String) -> Unit,
-    onProfileClick: (String) -> Unit
+    onProfileClick: (String) -> Unit,
+    postCardParams: NotifPostCardParams
 ) {
     val sortedZaps = remember(group.zaps) { group.zaps.sortedByDescending { it.createdAt } }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onNoteClick(group.referencedEventId) }
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-    ) {
-        // Header with total + timestamp
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Zap summary header
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            Text(
-                text = "\u26A1 ${formatSats(group.totalSats)} total",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.tertiary
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = formatNotifTimestamp(group.latestTimestamp),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            // Header with total + timestamp
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "\u26A1 ${formatSats(group.totalSats)} total",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = formatNotifTimestamp(group.latestTimestamp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            // Each zap row: <zap icon> <amount> <avatar> <name> <message>
+            sortedZaps.forEachIndexed { index, zap ->
+                ZapEntryRow(
+                    zap = zap,
+                    profile = resolveProfile(zap.pubkey),
+                    showFollowBadge = isFollowing(zap.pubkey),
+                    highlighted = index == 0 && sortedZaps.size > 1,
+                    onProfileClick = onProfileClick
+                )
+            }
         }
-        Spacer(Modifier.height(4.dp))
-        // Each zap row: <zap icon> <amount> <avatar> <name> <message>
-        sortedZaps.forEachIndexed { index, zap ->
-            ZapEntryRow(
-                zap = zap,
-                profile = resolveProfile(zap.pubkey),
-                showFollowBadge = isFollowing(zap.pubkey),
-                highlighted = index == 0 && sortedZaps.size > 1,
-                onProfileClick = onProfileClick
-            )
-        }
-        // Your interactions with this note
-        if (eventRepo != null) {
-            NoteInteractionSummary(
-                eventId = group.referencedEventId,
-                eventRepo = eventRepo,
-                userPubkey = userPubkey,
-                reactionVersion = reactionVersion,
-                zapVersion = zapVersion
-            )
-            // Inline referenced note
-            QuotedNote(
-                eventId = group.referencedEventId,
-                eventRepo = eventRepo,
-                onNoteClick = onNoteClick
-            )
-        }
+        // Referenced note as full PostCard
+        ReferencedNotePostCard(
+            eventId = group.referencedEventId,
+            params = postCardParams
+        )
     }
 }
 
@@ -514,76 +480,9 @@ private fun ZapEntryRow(
 @Composable
 private fun ReplyPostCard(
     item: NotificationGroup.ReplyNotification,
-    eventRepo: EventRepository?,
-    userPubkey: String?,
-    profileVersion: Int,
-    reactionVersion: Int,
-    replyCountVersion: Int,
-    zapVersion: Int,
-    repostVersion: Int,
-    isFollowing: (String) -> Boolean,
-    onNoteClick: (String) -> Unit,
-    onProfileClick: (String) -> Unit,
-    onReply: (NostrEvent) -> Unit,
-    onReact: (NostrEvent, String) -> Unit,
-    onRepost: (NostrEvent) -> Unit,
-    onQuote: (NostrEvent) -> Unit,
-    onZap: (NostrEvent) -> Unit,
-    onFollowToggle: (String) -> Unit,
-    onBlockUser: (String) -> Unit,
-    onBookmark: (String) -> Unit,
-    nip05Repo: Nip05Repository?,
-    isZapAnimating: (String) -> Boolean,
-    isZapInProgress: (String) -> Boolean,
-    isBookmarked: (String) -> Boolean
+    postCardParams: NotifPostCardParams
 ) {
-    if (eventRepo == null) return
-
-    val version by eventRepo.quotedEventVersion.collectAsState()
-    val event = remember(item.replyEventId, version) { eventRepo.getEvent(item.replyEventId) }
-
-    // Request the reply event on-demand if not yet cached
-    LaunchedEffect(item.replyEventId) {
-        if (eventRepo.getEvent(item.replyEventId) == null) {
-            eventRepo.requestQuotedEvent(item.replyEventId)
-        }
-    }
-
-    if (event == null) return
-
-    val profile = remember(profileVersion, event.pubkey) {
-        eventRepo.getProfileData(event.pubkey)
-    }
-    val likeCount = remember(reactionVersion, event.id) {
-        eventRepo.getReactionCount(event.id)
-    }
-    val replyCount = remember(replyCountVersion, event.id) {
-        eventRepo.getReplyCount(event.id)
-    }
-    val zapSats = remember(zapVersion, event.id) {
-        eventRepo.getZapSats(event.id)
-    }
-    val userEmojis = remember(reactionVersion, event.id, userPubkey) {
-        userPubkey?.let { eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet()
-    }
-    val reactionDetails = remember(reactionVersion, event.id) {
-        eventRepo.getReactionDetails(event.id)
-    }
-    val zapDetails = remember(zapVersion, event.id) {
-        eventRepo.getZapDetails(event.id)
-    }
-    val repostCount = remember(repostVersion, event.id) {
-        eventRepo.getRepostCount(event.id)
-    }
-    val hasUserReposted = remember(repostVersion, event.id) {
-        eventRepo.hasUserReposted(event.id)
-    }
-    val hasUserZapped = remember(zapVersion, event.id) {
-        eventRepo.hasUserZapped(event.id)
-    }
-    val followingAuthor = remember(event.pubkey) {
-        isFollowing(event.pubkey)
-    }
+    val eventRepo = postCardParams.eventRepo ?: return
 
     // "reply to #note1abc..." label
     if (item.referencedEventId != null) {
@@ -606,44 +505,14 @@ private fun ReplyPostCard(
                 text = "reply to $truncatedNoteId",
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
                 color = androidx.compose.ui.graphics.Color(0xFFFF9800),
-                modifier = Modifier.clickable { onNoteClick(item.referencedEventId) }
+                modifier = Modifier.clickable { postCardParams.onNoteClick(item.referencedEventId) }
             )
         }
     }
 
-    PostCard(
-        event = event,
-        profile = profile,
-        onReply = { onReply(event) },
-        onProfileClick = { onProfileClick(event.pubkey) },
-        onNavigateToProfile = onProfileClick,
-        onNoteClick = { onNoteClick(event.id) },
-        onReact = { emoji -> onReact(event, emoji) },
-        userReactionEmojis = userEmojis,
-        onRepost = { onRepost(event) },
-        onQuote = { onQuote(event) },
-        hasUserReposted = hasUserReposted,
-        repostCount = repostCount,
-        onZap = { onZap(event) },
-        hasUserZapped = hasUserZapped,
-        likeCount = likeCount,
-        replyCount = replyCount,
-        zapSats = zapSats,
-        isZapAnimating = isZapAnimating(event.id),
-        isZapInProgress = isZapInProgress(event.id),
-        eventRepo = eventRepo,
-        reactionDetails = reactionDetails,
-        zapDetails = zapDetails,
-        onNavigateToProfileFromDetails = onProfileClick,
-        onFollowAuthor = { onFollowToggle(event.pubkey) },
-        onBlockAuthor = { onBlockUser(event.pubkey) },
-        isFollowingAuthor = followingAuthor,
-        isOwnEvent = event.pubkey == userPubkey,
-        nip05Repo = nip05Repo,
-        onBookmark = { onBookmark(event.id) },
-        isBookmarked = isBookmarked(event.id),
-        onQuotedNoteClick = onNoteClick,
-        showDivider = false
+    ReferencedNotePostCard(
+        eventId = item.replyEventId,
+        params = postCardParams
     )
 }
 
@@ -652,24 +521,21 @@ private fun ReplyPostCard(
 @Composable
 private fun QuoteNotificationRow(
     item: NotificationGroup.QuoteNotification,
-    eventRepo: EventRepository?,
     resolveProfile: (String) -> ProfileData?,
     isFollowing: Boolean,
-    onNoteClick: (String) -> Unit,
-    onProfileClick: (String) -> Unit
+    onProfileClick: (String) -> Unit,
+    postCardParams: NotifPostCardParams
 ) {
     val profile = resolveProfile(item.senderPubkey)
     val displayName = profile?.displayString
         ?: item.senderPubkey.take(8) + "..." + item.senderPubkey.takeLast(4)
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onNoteClick(item.quoteEventId) }
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Quote header
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             ProfilePicture(
@@ -700,13 +566,11 @@ private fun QuoteNotificationRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        if (eventRepo != null) {
-            QuotedNote(
-                eventId = item.quoteEventId,
-                eventRepo = eventRepo,
-                onNoteClick = onNoteClick
-            )
-        }
+        // Quote event as full PostCard
+        ReferencedNotePostCard(
+            eventId = item.quoteEventId,
+            params = postCardParams
+        )
     }
 }
 
@@ -715,24 +579,21 @@ private fun QuoteNotificationRow(
 @Composable
 private fun MentionNotificationRow(
     item: NotificationGroup.MentionNotification,
-    eventRepo: EventRepository?,
     resolveProfile: (String) -> ProfileData?,
     isFollowing: Boolean,
-    onNoteClick: (String) -> Unit,
-    onProfileClick: (String) -> Unit
+    onProfileClick: (String) -> Unit,
+    postCardParams: NotifPostCardParams
 ) {
     val profile = resolveProfile(item.senderPubkey)
     val displayName = profile?.displayString
         ?: item.senderPubkey.take(8) + "..." + item.senderPubkey.takeLast(4)
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onNoteClick(item.eventId) }
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Mention header
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             ProfilePicture(
@@ -763,99 +624,132 @@ private fun MentionNotificationRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        if (eventRepo != null) {
-            QuotedNote(
-                eventId = item.eventId,
-                eventRepo = eventRepo,
-                onNoteClick = onNoteClick
-            )
-        }
+        // Mention event as full PostCard
+        ReferencedNotePostCard(
+            eventId = item.eventId,
+            params = postCardParams
+        )
     }
 }
 
-// ── Note Interaction Summary ────────────────────────────────────────────
-// Shows the user's own reaction/zap status for the referenced note.
+// ── Shared PostCard params ───────────────────────────────────────────────
+
+private data class NotifPostCardParams(
+    val eventRepo: EventRepository?,
+    val userPubkey: String?,
+    val profileVersion: Int,
+    val reactionVersion: Int,
+    val replyCountVersion: Int,
+    val zapVersion: Int,
+    val repostVersion: Int,
+    val isFollowing: (String) -> Boolean,
+    val onNoteClick: (String) -> Unit,
+    val onProfileClick: (String) -> Unit,
+    val onReply: (NostrEvent) -> Unit,
+    val onReact: (NostrEvent, String) -> Unit,
+    val onRepost: (NostrEvent) -> Unit,
+    val onQuote: (NostrEvent) -> Unit,
+    val onZap: (NostrEvent) -> Unit,
+    val onFollowToggle: (String) -> Unit,
+    val onBlockUser: (String) -> Unit,
+    val onBookmark: (String) -> Unit,
+    val onAddToList: (String) -> Unit,
+    val nip05Repo: Nip05Repository?,
+    val isZapAnimating: (String) -> Boolean,
+    val isZapInProgress: (String) -> Boolean,
+    val isBookmarked: (String) -> Boolean
+)
+
+// ── Referenced Note PostCard ────────────────────────────────────────────
+// Renders any event ID as a full PostCard with action bar (reactions, zaps, etc.)
 
 @Composable
-private fun NoteInteractionSummary(
+private fun ReferencedNotePostCard(
     eventId: String,
-    eventRepo: EventRepository,
-    userPubkey: String?,
-    reactionVersion: Int,
-    zapVersion: Int
+    params: NotifPostCardParams
 ) {
-    val reactionCount = remember(reactionVersion, eventId) {
-        eventRepo.getReactionCount(eventId)
-    }
-    val zapSats = remember(zapVersion, eventId) {
-        eventRepo.getZapSats(eventId)
-    }
-    val userEmojis = remember(reactionVersion, eventId, userPubkey) {
-        userPubkey?.let { eventRepo.getUserReactionEmojis(eventId, it) } ?: emptySet()
-    }
-    val hasUserZapped = remember(zapVersion, eventId) {
-        eventRepo.hasUserZapped(eventId)
+    val eventRepo = params.eventRepo ?: return
+
+    val version by eventRepo.quotedEventVersion.collectAsState()
+    val event = remember(eventId, version) { eventRepo.getEvent(eventId) }
+
+    LaunchedEffect(eventId) {
+        if (eventRepo.getEvent(eventId) == null) {
+            eventRepo.requestQuotedEvent(eventId)
+        }
     }
 
-    val hasAnyData = reactionCount > 0 || zapSats > 0L || userEmojis.isNotEmpty() || hasUserZapped
-    if (!hasAnyData) return
+    if (event == null) return
 
-    Spacer(Modifier.height(6.dp))
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Reaction count with user's own emojis highlighted
-        if (reactionCount > 0 || userEmojis.isNotEmpty()) {
-            val reacted = userEmojis.isNotEmpty()
-            val displayEmoji = if (reacted) {
-                userEmojis.first().let { if (it == "+") "\u2764\uFE0F" else it }
-            } else {
-                "\u2764\uFE0F"
-            }
-            Text(
-                text = displayEmoji,
-                style = MaterialTheme.typography.labelMedium
-            )
-            Spacer(Modifier.width(2.dp))
-            Text(
-                text = "$reactionCount",
-                style = MaterialTheme.typography.labelMedium,
-                color = if (reacted) MaterialTheme.colorScheme.primary
-                       else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.width(12.dp))
-        }
-        // Zap total with user's own zap highlighted
-        if (zapSats > 0L || hasUserZapped) {
-            Text(
-                text = "\u26A1",
-                style = MaterialTheme.typography.labelMedium
-            )
-            Spacer(Modifier.width(2.dp))
-            Text(
-                text = formatSats(zapSats),
-                style = MaterialTheme.typography.labelMedium,
-                color = if (hasUserZapped) MaterialTheme.colorScheme.tertiary
-                       else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.width(12.dp))
-        }
-        // Explicit "You reacted/zapped" indicators
-        if (userEmojis.isNotEmpty() || hasUserZapped) {
-            val parts = mutableListOf<String>()
-            if (userEmojis.isNotEmpty()) {
-                val emojis = userEmojis.joinToString("") { if (it == "+") "\u2764\uFE0F" else it }
-                parts.add("reacted $emojis")
-            }
-            if (hasUserZapped) parts.add("zapped")
-            Text(
-                text = "You ${parts.joinToString(" & ")}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
+    val profile = remember(params.profileVersion, event.pubkey) {
+        eventRepo.getProfileData(event.pubkey)
     }
+    val likeCount = remember(params.reactionVersion, event.id) {
+        eventRepo.getReactionCount(event.id)
+    }
+    val replyCount = remember(params.replyCountVersion, event.id) {
+        eventRepo.getReplyCount(event.id)
+    }
+    val zapSats = remember(params.zapVersion, event.id) {
+        eventRepo.getZapSats(event.id)
+    }
+    val userEmojis = remember(params.reactionVersion, event.id, params.userPubkey) {
+        params.userPubkey?.let { eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet()
+    }
+    val reactionDetails = remember(params.reactionVersion, event.id) {
+        eventRepo.getReactionDetails(event.id)
+    }
+    val zapDetails = remember(params.zapVersion, event.id) {
+        eventRepo.getZapDetails(event.id)
+    }
+    val repostCount = remember(params.repostVersion, event.id) {
+        eventRepo.getRepostCount(event.id)
+    }
+    val hasUserReposted = remember(params.repostVersion, event.id) {
+        eventRepo.hasUserReposted(event.id)
+    }
+    val hasUserZapped = remember(params.zapVersion, event.id) {
+        eventRepo.hasUserZapped(event.id)
+    }
+    val followingAuthor = remember(event.pubkey) {
+        params.isFollowing(event.pubkey)
+    }
+
+    PostCard(
+        event = event,
+        profile = profile,
+        onReply = { params.onReply(event) },
+        onProfileClick = { params.onProfileClick(event.pubkey) },
+        onNavigateToProfile = params.onProfileClick,
+        onNoteClick = { params.onNoteClick(event.id) },
+        onReact = { emoji -> params.onReact(event, emoji) },
+        userReactionEmojis = userEmojis,
+        onRepost = { params.onRepost(event) },
+        onQuote = { params.onQuote(event) },
+        hasUserReposted = hasUserReposted,
+        repostCount = repostCount,
+        onZap = { params.onZap(event) },
+        hasUserZapped = hasUserZapped,
+        likeCount = likeCount,
+        replyCount = replyCount,
+        zapSats = zapSats,
+        isZapAnimating = params.isZapAnimating(event.id),
+        isZapInProgress = params.isZapInProgress(event.id),
+        eventRepo = eventRepo,
+        reactionDetails = reactionDetails,
+        zapDetails = zapDetails,
+        onNavigateToProfileFromDetails = params.onProfileClick,
+        onFollowAuthor = { params.onFollowToggle(event.pubkey) },
+        onBlockAuthor = { params.onBlockUser(event.pubkey) },
+        isFollowingAuthor = followingAuthor,
+        isOwnEvent = event.pubkey == params.userPubkey,
+        nip05Repo = params.nip05Repo,
+        onBookmark = { params.onBookmark(event.id) },
+        isBookmarked = params.isBookmarked(event.id),
+        onAddToList = { params.onAddToList(event.id) },
+        onQuotedNoteClick = params.onNoteClick,
+        showDivider = false
+    )
 }
 
 private val notifTimeFormat = SimpleDateFormat("MMM d", Locale.US)

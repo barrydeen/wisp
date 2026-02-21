@@ -91,6 +91,7 @@ fun PostCard(
     nip05Repo: Nip05Repository? = null,
     onBookmark: () -> Unit = {},
     isBookmarked: Boolean = false,
+    onAddToList: () -> Unit = {},
     onPin: () -> Unit = {},
     isPinned: Boolean = false,
     onQuotedNoteClick: ((String) -> Unit)? = null,
@@ -236,6 +237,13 @@ fun PostCard(
                         onClick = {
                             menuExpanded = false
                             onBookmark()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Add to List") },
+                        onClick = {
+                            menuExpanded = false
+                            onAddToList()
                         }
                     )
                     if (isOwnEvent) {

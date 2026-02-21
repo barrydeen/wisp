@@ -23,6 +23,7 @@ import com.wisp.app.relay.ScoredRelay
 import com.wisp.app.relay.SubscriptionManager
 import com.wisp.app.repo.BlossomRepository
 import com.wisp.app.repo.BookmarkRepository
+import com.wisp.app.repo.BookmarkSetRepository
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.EventRepository
@@ -83,6 +84,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val notifRepo = NotificationRepository(app, pubkeyHex)
     val relayListRepo = RelayListRepository(app)
     val bookmarkRepo = BookmarkRepository(app, pubkeyHex)
+    val bookmarkSetRepo = BookmarkSetRepository(app, pubkeyHex)
     val pinRepo = PinRepository(app, pubkeyHex)
     val blossomRepo = BlossomRepository(app, pubkeyHex)
     val relayInfoRepo = RelayInfoRepository()
@@ -166,6 +168,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         contactRepo.clear()
         muteRepo.clear()
         bookmarkRepo.clear()
+        bookmarkSetRepo.clear()
         pinRepo.clear()
         listRepo.clear()
         blossomRepo.clear()
@@ -190,6 +193,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         contactRepo.reload(newPubkey)
         muteRepo.reload(newPubkey)
         bookmarkRepo.reload(newPubkey)
+        bookmarkSetRepo.reload(newPubkey)
         pinRepo.reload(newPubkey)
         listRepo.reload(newPubkey)
         blossomRepo.reload(newPubkey)
@@ -310,7 +314,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-        getUserPubkey()?.let { listRepo.setOwner(it) }
+        getUserPubkey()?.let {
+            listRepo.setOwner(it)
+            bookmarkSetRepo.setOwner(it)
+        }
 
         // Sequential startup: self-data → relay lists → scoreboard → feed.
         // If the cached scoreboard matches the current follow list, skip the expensive
@@ -392,7 +399,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             Filter(kinds = listOf(Nip51.KIND_PIN_LIST), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Nip51.KIND_BOOKMARK_LIST), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Blossom.KIND_SERVER_LIST), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(Nip51.KIND_FOLLOW_SET), authors = listOf(myPubkey), limit = 50)
+            Filter(kinds = listOf(Nip51.KIND_FOLLOW_SET), authors = listOf(myPubkey), limit = 50),
+            Filter(kinds = listOf(Nip51.KIND_BOOKMARK_SET), authors = listOf(myPubkey), limit = 50)
         )
         relayPool.sendToAll(ClientMessage.req("self-data", selfDataFilters))
 
@@ -548,6 +556,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 if (myPubkey != null && event.pubkey == myPubkey) blossomRepo.updateFromEvent(event)
             }
             if (event.kind == Nip51.KIND_FOLLOW_SET) listRepo.updateFromEvent(event)
+            if (event.kind == Nip51.KIND_BOOKMARK_SET) bookmarkSetRepo.updateFromEvent(event)
 
             // Only add to feed for feed-related subscriptions;
             // other subs (user profile, bookmarks, threads) just cache
@@ -1270,6 +1279,90 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             subManager.awaitEoseWithTimeout(subId)
             subManager.closeSubscription(subId)
+        }
+    }
+
+    // -- Bookmark Set (kind 30003) CRUD --
+
+    fun createBookmarkSet(name: String) {
+        val keypair = keyRepo.getKeypair() ?: return
+        val dTag = name.trim().lowercase().replace(Regex("[^a-z0-9-_]"), "-")
+        val tags = Nip51.buildBookmarkSetTags(dTag, emptySet())
+        val event = NostrEvent.create(
+            privkey = keypair.privkey,
+            pubkey = keypair.pubkey,
+            kind = Nip51.KIND_BOOKMARK_SET,
+            content = "",
+            tags = tags
+        )
+        relayPool.sendToWriteRelays(ClientMessage.event(event))
+        bookmarkSetRepo.updateFromEvent(event)
+    }
+
+    fun addNoteToBookmarkSet(dTag: String, eventId: String) {
+        val keypair = keyRepo.getKeypair() ?: return
+        val myPubkey = keypair.pubkey.toHex()
+        val existing = bookmarkSetRepo.getSet(myPubkey, dTag) ?: return
+        val newIds = existing.eventIds + eventId
+        val tags = Nip51.buildBookmarkSetTags(dTag, newIds, existing.coordinates, existing.hashtags)
+        val event = NostrEvent.create(
+            privkey = keypair.privkey,
+            pubkey = keypair.pubkey,
+            kind = Nip51.KIND_BOOKMARK_SET,
+            content = "",
+            tags = tags
+        )
+        relayPool.sendToWriteRelays(ClientMessage.event(event))
+        bookmarkSetRepo.updateFromEvent(event)
+    }
+
+    fun removeNoteFromBookmarkSet(dTag: String, eventId: String) {
+        val keypair = keyRepo.getKeypair() ?: return
+        val myPubkey = keypair.pubkey.toHex()
+        val existing = bookmarkSetRepo.getSet(myPubkey, dTag) ?: return
+        val newIds = existing.eventIds - eventId
+        val tags = Nip51.buildBookmarkSetTags(dTag, newIds, existing.coordinates, existing.hashtags)
+        val event = NostrEvent.create(
+            privkey = keypair.privkey,
+            pubkey = keypair.pubkey,
+            kind = Nip51.KIND_BOOKMARK_SET,
+            content = "",
+            tags = tags
+        )
+        relayPool.sendToWriteRelays(ClientMessage.event(event))
+        bookmarkSetRepo.updateFromEvent(event)
+    }
+
+    fun deleteBookmarkSet(dTag: String) {
+        val keypair = keyRepo.getKeypair() ?: return
+        val tags = Nip51.buildBookmarkSetTags(dTag, emptySet())
+        val event = NostrEvent.create(
+            privkey = keypair.privkey,
+            pubkey = keypair.pubkey,
+            kind = Nip51.KIND_BOOKMARK_SET,
+            content = "",
+            tags = tags
+        )
+        relayPool.sendToWriteRelays(ClientMessage.event(event))
+        bookmarkSetRepo.updateFromEvent(event)
+    }
+
+    fun fetchBookmarkSetEvents(dTag: String) {
+        val myPubkey = getUserPubkey() ?: return
+        val set = bookmarkSetRepo.getSet(myPubkey, dTag) ?: return
+        val ids = set.eventIds.toList()
+        if (ids.isEmpty()) return
+        val missing = ids.filter { eventRepo.getEvent(it) == null }
+        if (missing.isEmpty()) return
+        val subId = "fetch-bkset-${dTag.take(8)}"
+        val filter = Filter(ids = missing)
+        relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
+        viewModelScope.launch {
+            subManager.awaitEoseWithTimeout(subId)
+            subManager.closeSubscription(subId)
+            withContext(processingDispatcher) {
+                metadataFetcher.sweepMissingProfiles()
+            }
         }
     }
 

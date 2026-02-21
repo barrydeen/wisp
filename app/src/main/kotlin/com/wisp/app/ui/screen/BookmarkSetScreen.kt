@@ -7,6 +7,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -18,47 +22,79 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.wisp.app.nostr.BookmarkSet
 import com.wisp.app.nostr.NostrEvent
-import com.wisp.app.repo.BookmarkRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.ui.component.PostCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BookmarksScreen(
-    bookmarkRepo: BookmarkRepository,
+fun BookmarkSetScreen(
+    bookmarkSet: BookmarkSet?,
     eventRepo: EventRepository,
     userPubkey: String?,
+    isOwnList: Boolean,
     onBack: () -> Unit,
+    onDeleteList: (() -> Unit)? = null,
     onNoteClick: (NostrEvent) -> Unit = {},
     onQuotedNoteClick: ((String) -> Unit)? = null,
     onReply: (NostrEvent) -> Unit = {},
     onReact: (NostrEvent, String) -> Unit = { _, _ -> },
     onProfileClick: (String) -> Unit = {},
     onToggleBookmark: (String) -> Unit = {},
-    onAddToList: (String) -> Unit = {},
+    onRemoveFromSet: ((String) -> Unit)? = null,
     onToggleFollow: (String) -> Unit = {},
     onBlockUser: (String) -> Unit = {}
 ) {
-    val bookmarkedIds by bookmarkRepo.bookmarkedIds.collectAsState()
     val profileVersion by eventRepo.profileVersion.collectAsState()
     val reactionVersion by eventRepo.reactionVersion.collectAsState()
 
-    val bookmarkedEvents = remember(bookmarkedIds, profileVersion) {
-        bookmarkedIds.mapNotNull { id -> eventRepo.getEvent(id) }
-            .sortedByDescending { it.created_at }
+    val events = remember(bookmarkSet?.eventIds, profileVersion) {
+        bookmarkSet?.eventIds?.mapNotNull { id -> eventRepo.getEvent(id) }
+            ?.sortedByDescending { it.created_at }
+            ?: emptyList()
     }
+
+    var menuExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Bookmarks") },
+                title = { Text(bookmarkSet?.name ?: "List") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                },
+                actions = {
+                    if (isOwnList && onDeleteList != null) {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, "More options")
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Delete List") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onDeleteList()
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -67,14 +103,15 @@ fun BookmarksScreen(
             )
         }
     ) { padding ->
-        if (bookmarkedEvents.isEmpty()) {
+        if (bookmarkSet == null || events.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    if (bookmarkedIds.isEmpty()) "No bookmarks yet"
-                    else "Bookmarked events not loaded yet",
+                    if (bookmarkSet == null) "List not found"
+                    else if (bookmarkSet.eventIds.isEmpty()) "No notes in this list"
+                    else "Notes not loaded yet",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -82,7 +119,7 @@ fun BookmarksScreen(
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding)
             ) {
-                items(items = bookmarkedEvents, key = { it.id }) { event ->
+                items(items = events, key = { it.id }) { event ->
                     val profile = eventRepo.getProfileData(event.pubkey)
                     val likeCount = reactionVersion.let { eventRepo.getReactionCount(event.id) }
                     val userEmojis = reactionVersion.let {
@@ -101,8 +138,6 @@ fun BookmarksScreen(
                         likeCount = likeCount,
                         eventRepo = eventRepo,
                         onBookmark = { onToggleBookmark(event.id) },
-                        isBookmarked = true,
-                        onAddToList = { onAddToList(event.id) },
                         onFollowAuthor = { onToggleFollow(event.pubkey) },
                         onBlockAuthor = { onBlockUser(event.pubkey) },
                         isOwnEvent = event.pubkey == userPubkey

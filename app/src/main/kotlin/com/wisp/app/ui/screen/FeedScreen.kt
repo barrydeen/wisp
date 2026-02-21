@@ -109,6 +109,7 @@ fun FeedScreen(
     onConsole: () -> Unit = {},
     onKeys: () -> Unit = {},
     onNetworkDiscovery: () -> Unit = {},
+    onAddToList: (String) -> Unit = {},
     scrollToTopTrigger: Int = 0
 ) {
     val feed by viewModel.feed.collectAsState()
@@ -611,6 +612,7 @@ fun FeedScreen(
                                     onQuote = { onQuote(event) },
                                     onZap = { zapTargetEvent = event },
                                     onBookmark = { viewModel.toggleBookmark(event.id) },
+                                    onAddToList = { onAddToList(event.id) },
                                     onPin = { viewModel.togglePin(event.id) },
                                     onRelayClick = { url ->
                                         viewModel.setSelectedRelay(url)
@@ -682,6 +684,7 @@ private fun FeedItem(
     onQuote: () -> Unit,
     onZap: () -> Unit,
     onBookmark: () -> Unit = {},
+    onAddToList: () -> Unit = {},
     onPin: () -> Unit = {},
     onRelayClick: (String) -> Unit = {}
 ) {
@@ -766,6 +769,7 @@ private fun FeedItem(
         nip05Repo = viewModel.nip05Repo,
         onBookmark = onBookmark,
         isBookmarked = isBookmarked,
+        onAddToList = onAddToList,
         onPin = onPin,
         isPinned = isPinned,
         onQuotedNoteClick = onQuotedNoteClick

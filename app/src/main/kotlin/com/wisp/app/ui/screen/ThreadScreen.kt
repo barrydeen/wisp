@@ -58,7 +58,8 @@ fun ThreadScreen(
     bookmarkedIds: Set<String> = emptySet(),
     pinnedIds: Set<String> = emptySet(),
     onToggleBookmark: (String) -> Unit = {},
-    onTogglePin: (String) -> Unit = {}
+    onTogglePin: (String) -> Unit = {},
+    onAddToList: (String) -> Unit = {}
 ) {
     val flatThread by viewModel.flatThread.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -146,6 +147,7 @@ fun ThreadScreen(
                         isOwnEvent = event.pubkey == userPubkey,
                         onBookmark = { onToggleBookmark(event.id) },
                         isBookmarked = event.id in bookmarkedIds,
+                        onAddToList = { onAddToList(event.id) },
                         onPin = { onTogglePin(event.id) },
                         isPinned = event.id in pinnedIds,
                         nip05Repo = nip05Repo,

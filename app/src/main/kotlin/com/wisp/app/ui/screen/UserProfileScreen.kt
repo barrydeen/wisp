@@ -125,6 +125,7 @@ fun UserProfileScreen(
     pinnedIds: Set<String> = emptySet(),
     onToggleBookmark: (String) -> Unit = {},
     onTogglePin: (String) -> Unit = {},
+    onAddNoteToList: (String) -> Unit = {},
     onSendDm: (() -> Unit)? = null
 ) {
     val profile by viewModel.profile.collectAsState()
@@ -354,6 +355,7 @@ fun UserProfileScreen(
                                 eventRepo = eventRepo,
                                 onBookmark = { onToggleBookmark(event.id) },
                                 isBookmarked = event.id in bookmarkedIds,
+                                onAddToList = { onAddNoteToList(event.id) },
                                 onPin = { onTogglePin(event.id) },
                                 isPinned = true,
                                 isOwnEvent = event.pubkey == userPubkey
@@ -417,6 +419,7 @@ fun UserProfileScreen(
                                 nip05Repo = nip05Repo,
                                 onBookmark = { onToggleBookmark(event.id) },
                                 isBookmarked = event.id in bookmarkedIds,
+                                onAddToList = { onAddNoteToList(event.id) },
                                 onPin = { onTogglePin(event.id) },
                                 isPinned = event.id in pinnedIds
                             )
@@ -474,6 +477,7 @@ fun UserProfileScreen(
                                 nip05Repo = nip05Repo,
                                 onBookmark = { onToggleBookmark(event.id) },
                                 isBookmarked = event.id in bookmarkedIds,
+                                onAddToList = { onAddNoteToList(event.id) },
                                 onPin = { onTogglePin(event.id) },
                                 isPinned = event.id in pinnedIds
                             )
