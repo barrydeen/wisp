@@ -211,7 +211,7 @@ private fun ReactionGroupRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        // Each emoji row: <emoji> <avatars>
+        // Each emoji row: <emoji> <avatars> (newest reactor first)
         group.reactions.forEach { (emoji, pubkeys) ->
             val displayEmoji = if (emoji == "+") "\u2764\uFE0F" else emoji
             Row(
@@ -226,10 +226,11 @@ private fun ReactionGroupRow(
                 )
                 Spacer(Modifier.width(8.dp))
                 StackedAvatarRow(
-                    pubkeys = pubkeys,
+                    pubkeys = pubkeys.reversed(),
                     resolveProfile = resolveProfile,
                     isFollowing = isFollowing,
-                    onProfileClick = onProfileClick
+                    onProfileClick = onProfileClick,
+                    highlightFirst = pubkeys.size > 1
                 )
             }
         }
@@ -284,11 +285,12 @@ private fun ZapGroupRow(
         }
         Spacer(Modifier.height(4.dp))
         // Each zap row: <zap icon> <amount> <avatar> <name> <message>
-        sortedZaps.forEach { zap ->
+        sortedZaps.forEachIndexed { index, zap ->
             ZapEntryRow(
                 zap = zap,
                 profile = resolveProfile(zap.pubkey),
                 showFollowBadge = isFollowing(zap.pubkey),
+                highlighted = index == 0 && sortedZaps.size > 1,
                 onProfileClick = onProfileClick
             )
         }
@@ -308,6 +310,7 @@ private fun ZapEntryRow(
     zap: ZapEntry,
     profile: ProfileData?,
     showFollowBadge: Boolean,
+    highlighted: Boolean = false,
     onProfileClick: (String) -> Unit
 ) {
     Row(
@@ -331,6 +334,7 @@ private fun ZapEntryRow(
             url = profile?.picture,
             size = 24,
             showFollowBadge = showFollowBadge,
+            highlighted = highlighted,
             modifier = Modifier.clickable { onProfileClick(zap.pubkey) }
         )
         Spacer(Modifier.width(6.dp))

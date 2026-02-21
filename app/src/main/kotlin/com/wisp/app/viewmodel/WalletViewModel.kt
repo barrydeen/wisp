@@ -150,7 +150,7 @@ class WalletViewModel(val nwcRepo: NwcRepository) : ViewModel() {
 
         nwcRepo.connect()
 
-        // Initial connection with timeout
+        // Initial connection timeout
         connectJob?.cancel()
         connectJob = viewModelScope.launch {
             val connected = kotlinx.coroutines.withTimeoutOrNull(10_000) {
@@ -159,20 +159,10 @@ class WalletViewModel(val nwcRepo: NwcRepository) : ViewModel() {
             if (connected == null && _walletState.value is WalletState.Connecting) {
                 _statusLines.value = _statusLines.value + "Connection timed out (10s)"
                 _walletState.value = WalletState.Error("Connection timed out")
-            } else if (connected == true) {
-                val result = nwcRepo.fetchBalance()
-                result.fold(
-                    onSuccess = { balanceMsats ->
-                        _walletState.value = WalletState.Connected(balanceMsats)
-                    },
-                    onFailure = { e ->
-                        _walletState.value = WalletState.Error(e.message ?: "Failed to fetch balance")
-                    }
-                )
             }
         }
 
-        // Persistent monitor: handle disconnect/reconnect after initial connection
+        // Persistent monitor: fetch balance on connect/reconnect
         connectionMonitorJob?.cancel()
         connectionMonitorJob = viewModelScope.launch {
             nwcRepo.isConnected.collect { connected ->
@@ -182,7 +172,9 @@ class WalletViewModel(val nwcRepo: NwcRepository) : ViewModel() {
                         onSuccess = { balanceMsats ->
                             _walletState.value = WalletState.Connected(balanceMsats)
                         },
-                        onFailure = { /* keep current state */ }
+                        onFailure = { e ->
+                            _walletState.value = WalletState.Error(e.message ?: "Failed to fetch balance")
+                        }
                     )
                 } else if (!connected && _walletState.value is WalletState.Connected) {
                     _walletState.value = WalletState.Connecting

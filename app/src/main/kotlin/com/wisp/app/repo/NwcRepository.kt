@@ -123,11 +123,13 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
                     // Negotiate encryption before subscribing for responses
                     negotiateEncryption(r, conn)
 
-                    // Subscribe for NWC response events
+                    // Subscribe for NWC response events (no since filter —
+                    // responses are matched by event ID so stale ones are harmlessly
+                    // dropped, and some relays apply since to live events which can
+                    // filter out responses when there's clock skew with the wallet service)
                     val filter = Filter(
                         kinds = listOf(23195),
-                        pTags = listOf(conn.clientPubkey.toHex()),
-                        since = System.currentTimeMillis() / 1000
+                        pTags = listOf(conn.clientPubkey.toHex())
                     )
                     r.send(ClientMessage.req("nwc-responses", filter))
                     emitStatus("Subscribed for responses")
