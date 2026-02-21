@@ -113,7 +113,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private var loadMoreCount = 0
 
     val nwcRepo = NwcRepository(app, relayPool, pubkeyHex)
-    val zapSender = ZapSender(keyRepo, nwcRepo, relayPool, Relay.createClient())
+    val zapSender = ZapSender(keyRepo, nwcRepo, relayPool, relayListRepo, Relay.createClient())
 
     private val _zapInProgress = MutableStateFlow<Set<String>>(emptySet())
     val zapInProgress: StateFlow<Set<String>> = _zapInProgress
@@ -460,6 +460,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             limit = 100
         )
         relayPool.sendToReadRelays(ClientMessage.req("notif", notifFilter))
+        viewModelScope.launch {
+            subManager.awaitEoseWithTimeout("notif")
+            subscribeNotifEngagement()
+        }
     }
 
     private fun processRelayEvent(event: NostrEvent, relayUrl: String, subscriptionId: String) {
@@ -915,6 +919,32 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             eventsByAuthor.getOrPut(event.pubkey) { mutableListOf() }.add(event.id)
         }
         outboxRouter.subscribeEngagementByAuthors(prefix, eventsByAuthor, activeEngagementSubIds)
+    }
+
+    private fun subscribeNotifEngagement() {
+        val eventIds = notifRepo.getAllPostCardEventIds()
+        if (eventIds.isEmpty()) return
+        // Group by author for outbox routing where possible
+        val eventsByAuthor = mutableMapOf<String, MutableList<String>>()
+        for (id in eventIds) {
+            val event = eventRepo.getEvent(id)
+            val author = event?.pubkey ?: "fallback"
+            eventsByAuthor.getOrPut(author) { mutableListOf() }.add(id)
+        }
+        outboxRouter.subscribeEngagementByAuthors("engage-notif", eventsByAuthor, activeEngagementSubIds)
+
+        // Zap receipts are published to the zapper's relays (specified in the zap
+        // request), not necessarily the author's inbox relays. Query our own read
+        // relays separately so the user's own zaps are discovered.
+        var subIndex = 0
+        for (batch in eventIds.chunked(50)) {
+            val subId = "engage-notif-zap${if (subIndex == 0) "" else "-$subIndex"}"
+            subIndex++
+            activeEngagementSubIds.add(subId)
+            relayPool.sendToReadRelays(
+                ClientMessage.req(subId, Filter(kinds = listOf(9735), eTags = batch))
+            )
+        }
     }
 
     /**

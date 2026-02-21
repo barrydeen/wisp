@@ -517,6 +517,8 @@ class RelayPool {
 
     fun getDmRelayUrls(): List<String> = dmRelays.map { it.config.url }
 
+    fun getReadRelayUrls(): List<String> = relays.filter { it.config.read }.map { it.config.url }
+
     fun getWriteRelayUrls(): List<String> = relays.filter { it.config.write }.map { it.config.url }
 
     fun getEphemeralCount(): Int = ephemeralRelays.size

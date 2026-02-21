@@ -290,6 +290,19 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
         return true
     }
 
+    /** Returns all event IDs that are rendered as PostCards in the notifications UI. */
+    fun getAllPostCardEventIds(): List<String> = synchronized(lock) {
+        groupMap.values.map { group ->
+            when (group) {
+                is NotificationGroup.ReactionGroup -> group.referencedEventId
+                is NotificationGroup.ZapGroup -> group.referencedEventId
+                is NotificationGroup.ReplyNotification -> group.replyEventId
+                is NotificationGroup.QuoteNotification -> group.quoteEventId
+                is NotificationGroup.MentionNotification -> group.eventId
+            }
+        }.distinct()
+    }
+
     companion object {
         private const val KEY_LAST_READ = "last_read_timestamp"
         private const val RECENT_WINDOW_SECONDS = 600L // 10 minutes

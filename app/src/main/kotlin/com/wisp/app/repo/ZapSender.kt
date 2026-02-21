@@ -8,6 +8,7 @@ class ZapSender(
     private val keyRepo: KeyRepository,
     private val nwcRepo: NwcRepository,
     private val relayPool: RelayPool,
+    private val relayListRepo: RelayListRepository,
     private val httpClient: OkHttpClient
 ) {
     suspend fun sendZap(
@@ -33,7 +34,12 @@ class ZapSender(
         }
 
         // 2. Build zap request (kind 9734)
-        val relayUrls = relayPool.getRelayUrls().take(3)
+        // Recipient's read relays first (so they see the receipt), then our own
+        // read relays (so we can verify it), deduped, capped at 5.
+        val recipientRelays = relayListRepo.getReadRelays(recipientPubkey) ?: emptyList()
+        val ourRelays = relayPool.getReadRelayUrls()
+        val relayUrls = (recipientRelays + ourRelays).distinct().take(5)
+            .ifEmpty { relayPool.getRelayUrls().take(3) }
         val zapRequest = Nip57.buildZapRequest(
             senderPrivkey = keypair.privkey,
             senderPubkey = keypair.pubkey,
