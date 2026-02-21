@@ -39,6 +39,7 @@ import com.wisp.app.ui.screen.SearchScreen
 import com.wisp.app.ui.screen.BookmarkSetScreen
 import com.wisp.app.ui.screen.KeysScreen
 import com.wisp.app.ui.screen.ListScreen
+import com.wisp.app.ui.screen.LoadingScreen
 import com.wisp.app.ui.screen.ListsHubScreen
 import com.wisp.app.ui.screen.OnboardingScreen
 import com.wisp.app.ui.component.AddNoteToListDialog
@@ -82,6 +83,7 @@ object Routes {
     const val LIST_DETAIL = "list/{pubkey}/{dTag}"
     const val LISTS_HUB = "lists"
     const val BOOKMARK_SET_DETAIL = "bookmark_set/{pubkey}/{dTag}"
+    const val LOADING = "loading"
     const val ONBOARDING_PROFILE = "onboarding/profile"
     const val ONBOARDING_SUGGESTIONS = "onboarding/suggestions"
     const val RELAY_DETAIL = "relay_detail/{relayUrl}"
@@ -120,11 +122,11 @@ fun WispNavHost() {
     val startDestination = when {
         !authViewModel.isLoggedIn -> Routes.AUTH
         !authViewModel.keyRepo.isOnboardingComplete() -> Routes.ONBOARDING_PROFILE
-        else -> Routes.FEED
+        else -> Routes.LOADING
     }
 
-    // Initialize relays and NWC when logged in and onboarding is complete
-    if (authViewModel.isLoggedIn && startDestination == Routes.FEED) {
+    // Initialize relays when logged in and onboarding is complete
+    if (authViewModel.isLoggedIn && startDestination == Routes.LOADING) {
         LaunchedEffect(Unit) {
             feedViewModel.initRelays()
         }
@@ -157,7 +159,7 @@ fun WispNavHost() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    val hideBottomBarRoutes = setOf(Routes.AUTH, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS)
+    val hideBottomBarRoutes = setOf(Routes.AUTH, Routes.LOADING, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS)
     val showBottomBar by remember(currentRoute) {
         derivedStateOf { currentRoute != null && currentRoute !in hideBottomBarRoutes }
     }
@@ -218,9 +220,20 @@ fun WispNavHost() {
                         feedViewModel.initRelays()
                         walletViewModel.refreshState()
                         authViewModel.keyRepo.markOnboardingComplete()
-                        navController.navigate(Routes.FEED) {
+                        navController.navigate(Routes.LOADING) {
                             popUpTo(Routes.AUTH) { inclusive = true }
                         }
+                    }
+                }
+            )
+        }
+
+        composable(Routes.LOADING) {
+            LoadingScreen(
+                viewModel = feedViewModel,
+                onReady = {
+                    navController.navigate(Routes.FEED) {
+                        popUpTo(Routes.LOADING) { inclusive = true }
                     }
                 }
             )
@@ -819,7 +832,7 @@ fun WispNavHost() {
                     feedViewModel.reloadForNewAccount()
                     feedViewModel.initRelays()
                     walletViewModel.refreshState()
-                    navController.navigate(Routes.FEED) {
+                    navController.navigate(Routes.LOADING) {
                         popUpTo(0) { inclusive = true }
                     }
                 }
