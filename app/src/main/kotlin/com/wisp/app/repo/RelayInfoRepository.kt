@@ -44,6 +44,12 @@ class RelayInfoRepository {
 
     fun getIconUrl(url: String): String? = iconCache[url]
 
+    /** Synchronous access to cached RelayInfo. Returns null if not yet fetched. */
+    fun getInfo(url: String): RelayInfo? = cache[url]
+
+    /** Fetch relay info if not cached, then return it. */
+    suspend fun fetchInfo(url: String): RelayInfo? = fetchAndCache(url)
+
     private fun faviconUrl(relayUrl: String): String? {
         return try {
             val domain = relayUrl

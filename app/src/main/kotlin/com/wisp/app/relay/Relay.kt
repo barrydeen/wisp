@@ -65,6 +65,10 @@ class Relay(
     @Volatile var lastChallenge: String? = null
         private set
 
+    /** Optional hooks for byte-level tracking (set by RelayPool). */
+    var onBytesReceived: ((url: String, size: Int) -> Unit)? = null
+    var onBytesSent: ((url: String, size: Int) -> Unit)? = null
+
     fun connect() {
         if (isConnected || webSocket != null) return
 
@@ -112,6 +116,7 @@ class Relay(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                onBytesReceived?.invoke(config.url, text.length)
                 val msg = RelayMessage.parse(text) ?: return
                 if (msg is RelayMessage.Auth) {
                     lastChallenge = msg.challenge
@@ -154,6 +159,7 @@ class Relay(
     fun send(message: String): Boolean {
         val ws = webSocket
         if (ws != null && isConnected) {
+            onBytesSent?.invoke(config.url, message.length)
             return ws.send(message)
         }
         // Queue message for delivery when connected

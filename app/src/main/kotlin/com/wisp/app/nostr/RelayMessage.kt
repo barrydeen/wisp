@@ -11,6 +11,7 @@ sealed class RelayMessage {
     data class Ok(val eventId: String, val accepted: Boolean, val message: String) : RelayMessage()
     data class Notice(val message: String) : RelayMessage()
     data class Auth(val challenge: String) : RelayMessage()
+    data class Closed(val subscriptionId: String, val message: String) : RelayMessage()
 
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
@@ -37,6 +38,10 @@ sealed class RelayMessage {
                     )
                     "NOTICE" -> Notice(array[1].jsonPrimitive.content)
                     "AUTH" -> Auth(array[1].jsonPrimitive.content)
+                    "CLOSED" -> Closed(
+                        subscriptionId = array[1].jsonPrimitive.content,
+                        message = if (array.size > 2) array[2].jsonPrimitive.content else ""
+                    )
                     else -> null
                 }
             } catch (e: Exception) {

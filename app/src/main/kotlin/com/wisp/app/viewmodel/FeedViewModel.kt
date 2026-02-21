@@ -18,6 +18,7 @@ import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.Relay
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayConfig
+import com.wisp.app.relay.RelayHealthTracker
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.relay.RelayScoreBoard
 import com.wisp.app.relay.ScoredRelay
@@ -78,6 +79,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private val pubkeyHex: String? = keyRepo.getKeypair()?.pubkey?.toHex()
 
     val relayPool = RelayPool()
+    val healthTracker = RelayHealthTracker(app, pubkeyHex)
     val profileRepo = ProfileRepository(app)
     val muteRepo = MuteRepository(app, pubkeyHex)
     val nip05Repo = Nip05Repository()
@@ -178,6 +180,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         blossomRepo.clear()
         extendedNetworkRepo.clear()
         relayScoreBoard.clear()
+        healthTracker.clear()
         relayPool.clearSeenEvents()
 
         // Reset state
@@ -203,6 +206,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         blossomRepo.reload(newPubkey)
         nwcRepo.reload(newPubkey)
         relayScoreBoard.reload(newPubkey)
+        healthTracker.reload(newPubkey)
         extendedNetworkRepo.reload(newPubkey)
         reactionPrefs.reload(newPubkey)
         zapPrefs.reload(newPubkey)
@@ -211,6 +215,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun initRelays() {
         if (relaysInitialized) return
         relaysInitialized = true
+        relayPool.healthTracker = healthTracker
+        relayPool.appIsActive = true
+        healthTracker.onBadRelaysChanged = { recomputeAndMergeRelays() }
         relayPool.updateBlockedUrls(keyRepo.getBlockedRelays())
         val pinnedRelays = keyRepo.getRelays()
         // Merge pinned relays with cached scored relays immediately so the pool
@@ -279,7 +286,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                     // Fetch relay list for new follow so we can route to them
                     outboxRouter.requestMissingRelayLists(listOf(pubkey))
                     delay(500) // brief wait for relay list to arrive
-                    relayScoreBoard.addAuthor(pubkey)
+                    relayScoreBoard.addAuthor(pubkey, excludeRelays = healthTracker.getBadRelays())
                 }
 
                 if ((added.isNotEmpty() || removed.isNotEmpty()) &&
@@ -653,7 +660,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun recomputeAndMergeRelays() {
-        relayScoreBoard.recompute()
+        relayScoreBoard.recompute(excludeRelays = healthTracker.getBadRelays())
         if (!relayScoreBoard.hasScoredRelays()) return
         rebuildRelayPool()
     }
@@ -675,11 +682,16 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setFeedType(type: FeedType) {
+        val prev = _feedType.value
         _feedType.value = type
         applyAuthorFilterForFeedType(type)
         when (type) {
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
-                // No relay/subscription changes — just a local filter swap
+                if (prev == FeedType.LIST || prev == FeedType.RELAY) {
+                    eventRepo.clearFeed()
+                    resubscribeFeed()
+                }
+                // Otherwise just a local filter swap (e.g. FOLLOWS <-> EXTENDED_FOLLOWS)
             }
             FeedType.RELAY, FeedType.LIST -> {
                 eventRepo.clearFeed()
@@ -760,6 +772,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             relayPool.forceReconnectAll()
             viewModelScope.launch {
                 relayPool.awaitAnyConnected(minCount = 3)
+                relayPool.appIsActive = true
                 subscribeFeed()
                 fetchRelayListsForFollows()
             }
@@ -768,6 +781,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             relayPool.reconnectAll()
             viewModelScope.launch {
                 relayPool.awaitAnyConnected()
+                relayPool.appIsActive = true
                 subscribeFeed()
             }
         }
@@ -885,7 +899,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val list = listRepo.selectedList.value ?: return
                 val authors = list.members.toList()
                 if (authors.isEmpty()) return
-                val notesFilter = Filter(kinds = listOf(1, 6))
+                val listSince = System.currentTimeMillis() / 1000 - 60 * 60 * 24 // 24 hours ago
+                val notesFilter = Filter(kinds = listOf(1, 6), since = listSince)
                 outboxRouter.subscribeByAuthors(feedSubId, authors, notesFilter)
             }
         }
@@ -1180,10 +1195,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         listRepo.selectList(followSet)
         // Pre-fetch relay lists for list members so outbox routing can target their write relays
         outboxRouter.requestMissingRelayLists(followSet.members.toList())
-        if (_feedType.value == FeedType.LIST) {
-            eventRepo.clearFeed()
-            resubscribeFeed()
-        }
     }
 
     fun createList(name: String) {

@@ -51,7 +51,7 @@ class RelayScoreBoard(
     /**
      * Recompute the optimal relay set using greedy set-cover over followed users' write relays.
      */
-    fun recompute() {
+    fun recompute(excludeRelays: Set<String> = emptySet()) {
         val follows = contactRepo.getFollowList().map { it.pubkey }
         if (follows.isEmpty()) {
             scoredRelays = emptyList()
@@ -74,8 +74,12 @@ class RelayScoreBoard(
             }
         }
 
+        // Remove excluded (bad) relays before scoring
+        for (url in excludeRelays) relayToAuthors.remove(url)
+
         Log.d(TAG, "recompute(): ${follows.size} follows, $knownCount have relay lists, " +
-                "${follows.size - knownCount} missing, ${relayToAuthors.size} unique relays")
+                "${follows.size - knownCount} missing, ${relayToAuthors.size} unique relays" +
+                if (excludeRelays.isNotEmpty()) ", ${excludeRelays.size} excluded" else "")
 
         if (relayToAuthors.isEmpty()) {
             scoredRelays = emptyList()
@@ -138,7 +142,7 @@ class RelayScoreBoard(
      * Looks up their write relays and inserts them into an existing scored relay if possible,
      * otherwise they'll fall back to sendToAll routing.
      */
-    fun addAuthor(pubkey: String) {
+    fun addAuthor(pubkey: String, excludeRelays: Set<String> = emptySet()) {
         if (pubkey in authorToRelay) return // already mapped
         cachedFollowSet = cachedFollowSet + pubkey
 
@@ -153,6 +157,7 @@ class RelayScoreBoard(
         var bestRelay: String? = null
         var bestSize = Int.MAX_VALUE
         for (url in writeRelays) {
+            if (url in excludeRelays) continue
             val existing = relayAuthorsMap[url]
             if (existing != null && existing.size < bestSize) {
                 bestRelay = url
@@ -166,8 +171,12 @@ class RelayScoreBoard(
             rebuildScoredRelays()
             Log.d(TAG, "addAuthor: $pubkey → $bestRelay (now ${relayAuthorsMap[bestRelay]!!.size} authors)")
         } else {
-            // Their write relays aren't in our scored set — use the first one as a new entry
-            val url = writeRelays.first()
+            // Their write relays aren't in our scored set — use the first non-excluded one
+            val url = writeRelays.firstOrNull { it !in excludeRelays } ?: run {
+                Log.d(TAG, "addAuthor: all write relays for $pubkey are excluded")
+                saveToPrefs()
+                return
+            }
             relayAuthorsMap[url] = mutableSetOf(pubkey)
             authorToRelay[pubkey] = url
             rebuildScoredRelays()

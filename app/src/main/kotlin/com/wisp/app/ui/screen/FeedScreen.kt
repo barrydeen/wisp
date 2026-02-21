@@ -65,8 +65,10 @@ import com.wisp.app.nostr.FollowSet
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
+import com.wisp.app.ui.component.RelayIcon
 import com.wisp.app.ui.component.WispDrawerContent
 import com.wisp.app.ui.component.ZapDialog
+import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.relay.ScoredRelay
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -74,6 +76,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -108,6 +111,7 @@ fun FeedScreen(
     onConsole: () -> Unit = {},
     onKeys: () -> Unit = {},
     onAddToList: (String) -> Unit = {},
+    onRelayDetail: (String) -> Unit = {},
     scrollToTopTrigger: Int = 0
 ) {
     val feed by viewModel.feed.collectAsState()
@@ -516,12 +520,23 @@ fun FeedScreen(
                 }
             }
         ) { padding ->
-            PullToRefreshBox(
-                isRefreshing = isRefreshing,
-                onRefresh = { viewModel.refreshFeed() },
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
+            ) {
+            // Relay feed header bar
+            if (feedType == FeedType.RELAY && selectedRelay != null) {
+                RelayFeedBar(
+                    relayUrl = selectedRelay!!,
+                    relayInfoRepo = viewModel.relayInfoRepo,
+                    onViewDetails = { onRelayDetail(selectedRelay!!) }
+                )
+            }
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = { viewModel.refreshFeed() },
+                modifier = Modifier.fillMaxSize()
             ) {
                 if (feed.isEmpty()) {
                     Box(
@@ -630,6 +645,7 @@ fun FeedScreen(
                     }
                 }
             }
+            } // Column
         }
     }
 }
@@ -1104,5 +1120,68 @@ private fun initLoadingText(state: InitLoadingState): String {
         is InitLoadingState.ExpandingRelays -> "Connecting to ${state.relayCount} extended relays..."
         is InitLoadingState.Subscribing -> "Subscribing to feed..."
         is InitLoadingState.Done -> "Done!"
+    }
+}
+
+@Composable
+private fun RelayFeedBar(
+    relayUrl: String,
+    relayInfoRepo: RelayInfoRepository,
+    onViewDetails: () -> Unit
+) {
+    val info = remember(relayUrl) { relayInfoRepo.getInfo(relayUrl) }
+    val iconUrl = remember(relayUrl) { relayInfoRepo.getIconUrl(relayUrl) }
+    val domain = remember(relayUrl) {
+        relayUrl.removePrefix("wss://").removePrefix("ws://").removeSuffix("/")
+    }
+
+    Surface(
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RelayIcon(
+                    iconUrl = iconUrl,
+                    relayUrl = relayUrl,
+                    size = 28.dp
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = info?.name ?: domain,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                    if (info?.name != null) {
+                        Text(
+                            text = domain,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                }
+                Surface(
+                    onClick = onViewDetails,
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Text(
+                        "Details",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+        }
     }
 }

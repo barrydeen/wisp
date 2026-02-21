@@ -32,6 +32,9 @@ class RelayPool {
     private val relayCooldowns = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private var blockedUrls = emptySet<String>()
 
+    @Volatile var appIsActive = false
+    var healthTracker: RelayHealthTracker? = null
+
     companion object {
         const val MAX_PERSISTENT = 150
         const val MAX_EPHEMERAL = 30
@@ -141,6 +144,7 @@ class RelayPool {
         for (config in filtered) {
             if (config.url !in existingUrls) {
                 val relay = Relay(config, client, scope)
+                wireByteTracking(relay)
                 relays.add(relay)
                 relayIndex[config.url] = relay
                 collectMessages(relay)
@@ -164,6 +168,7 @@ class RelayPool {
         for (url in filtered) {
             if (url !in existingUrls) {
                 val relay = Relay(RelayConfig(url, read = true, write = true), client, scope)
+                wireByteTracking(relay)
                 dmRelays.add(relay)
                 relayIndex[url] = relay
                 collectMessages(relay)
@@ -177,6 +182,15 @@ class RelayPool {
     }
 
     fun hasDmRelays(): Boolean = dmRelays.isNotEmpty()
+
+    private fun wireByteTracking(relay: Relay) {
+        relay.onBytesReceived = { url, size ->
+            if (appIsActive) healthTracker?.onBytesReceived(url, size)
+        }
+        relay.onBytesSent = { url, size ->
+            if (appIsActive) healthTracker?.onBytesSent(url, size)
+        }
+    }
 
     private fun cancelRelayJobs(url: String) {
         relayJobs.remove(url)?.cancel()
@@ -214,6 +228,7 @@ class RelayPool {
                             _events.tryEmit(msg.event)
                             _relayEvents.tryEmit(RelayEvent(msg.event, relay.config.url, msg.subscriptionId))
                         }
+                        if (appIsActive) healthTracker?.onEventReceived(relay.config.url, 0)
                     }
                     is RelayMessage.Eose -> _eoseSignals.tryEmit(msg.subscriptionId)
                     is RelayMessage.Ok -> {
@@ -231,6 +246,19 @@ class RelayPool {
                             type = ConsoleLogType.NOTICE,
                             message = msg.message
                         ))
+                        if (appIsActive && isRateLimitMessage(msg.message)) {
+                            healthTracker?.onRateLimitHit(relay.config.url)
+                        }
+                    }
+                    is RelayMessage.Closed -> {
+                        addConsoleEntry(ConsoleLogEntry(
+                            relayUrl = relay.config.url,
+                            type = ConsoleLogType.NOTICE,
+                            message = "CLOSED [${msg.subscriptionId}]: ${msg.message}"
+                        ))
+                        if (appIsActive && isRateLimitMessage(msg.message)) {
+                            healthTracker?.onRateLimitHit(relay.config.url)
+                        }
                     }
                     else -> {}
                 }
@@ -240,10 +268,17 @@ class RelayPool {
             relay.connectionErrors.collect { addConsoleEntry(it) }
         }
         scope.launch(parentJob) {
-            relay.connectionState.collect {
+            relay.connectionState.collect { connected ->
                 updateConnectedCount()
+                if (appIsActive) {
+                    if (connected) {
+                        healthTracker?.onRelayConnected(relay.config.url)
+                    } else {
+                        healthTracker?.closeSession(relay.config.url)
+                    }
+                }
                 // Clean up tracker when relay disconnects
-                if (!it) subscriptionTracker.untrackRelay(relay.config.url)
+                if (!connected) subscriptionTracker.untrackRelay(relay.config.url)
             }
         }
         collectRelayFailures(relay, parentJob)
@@ -287,8 +322,12 @@ class RelayPool {
     }
 
     fun sendToWriteRelays(message: String) {
+        val isEvent = message.startsWith("[\"EVENT\"")
         for (relay in relays) {
-            if (relay.config.write) relay.send(message)
+            if (relay.config.write) {
+                relay.send(message)
+                if (isEvent && appIsActive) healthTracker?.onEventSent(relay.config.url, message.length)
+            }
         }
     }
 
@@ -335,6 +374,7 @@ class RelayPool {
 
     fun sendToRelayOrEphemeral(url: String, message: String): Boolean {
         if (url in blockedUrls) return false
+        if (healthTracker?.isBad(url) == true) return false
         if (!url.startsWith("wss://") && !url.startsWith("ws://")) return false
 
         // Check cooldown for failed relays
@@ -355,6 +395,7 @@ class RelayPool {
         val ephemeral = ephemeralRelays.getOrPut(url) {
             val relay = Relay(RelayConfig(url, read = true, write = false), client, scope)
             relay.autoReconnect = false
+            wireByteTracking(relay)
             relayIndex[url] = relay
             collectMessages(relay)
             relay.connect()
@@ -377,6 +418,9 @@ class RelayPool {
     private fun collectRelayFailures(relay: Relay, parentJob: Job) {
         scope.launch(parentJob) {
             relay.failures.collect { failure ->
+                if (appIsActive && failure.httpCode == 429) {
+                    healthTracker?.onRateLimitHit(relay.config.url)
+                }
                 val isEphemeral = ephemeralRelays.containsKey(relay.config.url)
                 // Only apply cooldowns to ephemeral relays.
                 // Persistent/DM relays just use the default 3s retry in Relay.reconnect()
@@ -397,7 +441,14 @@ class RelayPool {
         }
     }
 
+    private fun isRateLimitMessage(message: String): Boolean {
+        val lower = message.lowercase()
+        return "rate" in lower || "throttle" in lower || "slow down" in lower || "too many" in lower
+    }
+
     fun reconnectAll(): Int {
+        appIsActive = false
+        healthTracker?.discardAllSessions()
         var count = 0
         // Reconnect disconnected persistent relays — clear cooldowns since this is explicit resume
         for (relay in relays) {
@@ -439,6 +490,8 @@ class RelayPool {
      */
     fun forceReconnectAll() {
         Log.d("RelayPool", "forceReconnectAll: tearing down all connections")
+        appIsActive = false
+        healthTracker?.closeAllSessions()
         // Server-side subscriptions are dead — clear tracker so fresh REQs are sent
         subscriptionTracker.clear()
         // Clear all cooldowns — background failures shouldn't block reconnection

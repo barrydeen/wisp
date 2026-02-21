@@ -43,6 +43,7 @@ import com.wisp.app.ui.screen.ListsHubScreen
 import com.wisp.app.ui.screen.OnboardingScreen
 import com.wisp.app.ui.component.AddNoteToListDialog
 import com.wisp.app.ui.screen.OnboardingSuggestionsScreen
+import com.wisp.app.ui.screen.RelayDetailScreen
 import com.wisp.app.ui.screen.WalletScreen
 import com.wisp.app.viewmodel.BlossomServersViewModel
 import com.wisp.app.viewmodel.AuthViewModel
@@ -83,6 +84,7 @@ object Routes {
     const val BOOKMARK_SET_DETAIL = "bookmark_set/{pubkey}/{dTag}"
     const val ONBOARDING_PROFILE = "onboarding/profile"
     const val ONBOARDING_SUGGESTIONS = "onboarding/suggestions"
+    const val RELAY_DETAIL = "relay_detail/{relayUrl}"
 }
 
 @Composable
@@ -301,7 +303,10 @@ fun WispNavHost() {
                 onKeys = {
                     navController.navigate(Routes.KEYS)
                 },
-                onAddToList = { eventId -> addToListEventId = eventId }
+                onAddToList = { eventId -> addToListEventId = eventId },
+                onRelayDetail = { url ->
+                    navController.navigate("relay_detail/${java.net.URLEncoder.encode(url, "UTF-8")}")
+                }
             )
         }
 
@@ -606,6 +611,35 @@ fun WispNavHost() {
             ConsoleScreen(
                 viewModel = consoleViewModel,
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            Routes.RELAY_DETAIL,
+            arguments = listOf(navArgument("relayUrl") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val encodedUrl = backStackEntry.arguments?.getString("relayUrl") ?: return@composable
+            val relayUrl = java.net.URLDecoder.decode(encodedUrl, "UTF-8")
+            val consoleLog by feedViewModel.relayPool.consoleLog.collectAsState()
+            val profileVersion by feedViewModel.eventRepo.profileVersion.collectAsState()
+            val operatorPubkey = feedViewModel.relayInfoRepo.getInfo(relayUrl)?.pubkey
+            val operatorProfile = remember(operatorPubkey, profileVersion) {
+                operatorPubkey?.let { feedViewModel.eventRepo.getProfileData(it) }
+            }
+            // Queue profile fetch for operator if needed
+            LaunchedEffect(operatorPubkey) {
+                if (operatorPubkey != null && feedViewModel.eventRepo.getProfileData(operatorPubkey) == null) {
+                    feedViewModel.queueProfileFetch(operatorPubkey)
+                }
+            }
+            RelayDetailScreen(
+                relayUrl = relayUrl,
+                relayInfoRepo = feedViewModel.relayInfoRepo,
+                healthTracker = feedViewModel.healthTracker,
+                consoleEntries = consoleLog,
+                operatorProfile = operatorProfile,
+                onBack = { navController.popBackStack() },
+                onOperatorClick = if (operatorPubkey != null) {{ navController.navigate("profile/$operatorPubkey") }} else null
             )
         }
 
