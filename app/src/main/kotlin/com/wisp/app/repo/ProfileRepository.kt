@@ -39,6 +39,17 @@ class ProfileRepository(context: Context) {
 
     fun has(pubkey: String): Boolean = get(pubkey) != null
 
+    fun search(query: String, limit: Int = 10): List<ProfileData> {
+        if (query.isBlank()) return emptyList()
+        val lowerQuery = query.lowercase()
+        val snapshot = cache.snapshot()
+        return snapshot.values.filter { profile ->
+            profile.name?.lowercase()?.contains(lowerQuery) == true ||
+            profile.displayName?.lowercase()?.contains(lowerQuery) == true ||
+            profile.nip05?.lowercase()?.contains(lowerQuery) == true
+        }.take(limit)
+    }
+
     private fun loadOneFromPrefs(pubkey: String): ProfileData? {
         val str = prefs.getString("p_$pubkey", null) ?: return null
         return try {

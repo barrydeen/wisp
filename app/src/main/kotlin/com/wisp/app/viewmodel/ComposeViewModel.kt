@@ -4,30 +4,41 @@ import android.app.Application
 import android.content.ContentResolver
 import android.net.Uri
 import android.webkit.MimeTypeMap
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Keys
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip18
+import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.BlossomRepository
-import com.wisp.app.nostr.toHex
+import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.KeyRepository
+import com.wisp.app.repo.MentionCandidate
+import com.wisp.app.repo.MentionSearchRepository
+import com.wisp.app.repo.ProfileRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
+private val NOSTR_URI_REGEX = Regex("nostr:(npub1[a-z0-9]{58}|nprofile1[a-z0-9]+|note1[a-z0-9]{58}|nevent1[a-z0-9]+)")
+// Matches bare bech32 IDs not already preceded by "nostr:"
+private val BARE_BECH32_REGEX = Regex("(?<!nostr:)(?<![a-z0-9])((note1|nevent1|npub1|nprofile1)[a-z0-9]{10,})")
+
 class ComposeViewModel(app: Application) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
     val blossomRepo = BlossomRepository(app, keyRepo.getKeypair()?.pubkey?.toHex())
 
-    private val _content = MutableStateFlow("")
-    val content: StateFlow<String> = _content
+    private val _content = MutableStateFlow(TextFieldValue())
+    val content: StateFlow<TextFieldValue> = _content
 
     private val _publishing = MutableStateFlow(false)
     val publishing: StateFlow<Boolean> = _publishing
@@ -44,8 +55,30 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
     private val _countdownSeconds = MutableStateFlow<Int?>(null)
     val countdownSeconds: StateFlow<Int?> = _countdownSeconds
 
+    private val _mentionQuery = MutableStateFlow<String?>(null)
+    val mentionQuery: StateFlow<String?> = _mentionQuery
+
+    private val _mentionCandidates = MutableStateFlow<List<MentionCandidate>>(emptyList())
+    val mentionCandidates: StateFlow<List<MentionCandidate>> = _mentionCandidates
+
+    private val _previewVisible = MutableStateFlow(false)
+    val previewVisible: StateFlow<Boolean> = _previewVisible
+
+    private var mentionStartIndex: Int = -1
     private var countdownJob: Job? = null
     private var pendingPublish: (() -> Unit)? = null
+    private var mentionSearchRepo: MentionSearchRepository? = null
+    private var initialized = false
+
+    fun init(profileRepo: ProfileRepository, contactRepo: ContactRepository, relayPool: RelayPool) {
+        if (initialized) return
+        initialized = true
+        mentionSearchRepo = MentionSearchRepository(profileRepo, contactRepo, relayPool, keyRepo)
+        // Forward candidates from search repo
+        viewModelScope.launch {
+            mentionSearchRepo!!.candidates.collect { _mentionCandidates.value = it }
+        }
+    }
 
     fun uploadMedia(uri: Uri, contentResolver: ContentResolver) {
         viewModelScope.launch {
@@ -54,8 +87,9 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
                 val (bytes, mime, ext) = readFileFromUri(contentResolver, uri)
                 val url = blossomRepo.uploadMedia(bytes, mime, ext)
                 _uploadedUrls.value = _uploadedUrls.value + url
-                val current = _content.value
-                _content.value = if (current.isBlank()) url else "$current\n$url"
+                val current = _content.value.text
+                val newText = if (current.isBlank()) url else "$current\n$url"
+                _content.value = TextFieldValue(newText, TextRange(newText.length))
                 _uploadProgress.value = null
             } catch (e: Exception) {
                 _error.value = "Upload failed: ${e.message}"
@@ -66,12 +100,113 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun removeMediaUrl(url: String) {
         _uploadedUrls.value = _uploadedUrls.value - url
-        val current = _content.value
-        _content.value = current.replace(url, "").replace("\n\n", "\n").trim()
+        val current = _content.value.text
+        val newText = current.replace(url, "").replace("\n\n", "\n").trim()
+        _content.value = TextFieldValue(newText, TextRange(newText.length))
     }
 
-    fun updateContent(value: String) {
-        _content.value = value
+    fun updateContent(value: TextFieldValue) {
+        // Check if cursor entered a nostr: URI and user backspaced — delete entire mention
+        val prev = _content.value
+        if (value.text.length < prev.text.length && value.text.length == prev.text.length - 1) {
+            // Single character deletion — check if we're inside a nostr: URI
+            val deletedAt = value.selection.start
+            for (match in NOSTR_URI_REGEX.findAll(prev.text)) {
+                if (deletedAt > match.range.first && deletedAt <= match.range.last + 1) {
+                    // Delete the entire mention
+                    val before = prev.text.substring(0, match.range.first)
+                    val after = prev.text.substring(match.range.last + 1)
+                    val newText = before + after
+                    _content.value = TextFieldValue(newText, TextRange(match.range.first))
+                    detectMentionQuery(_content.value)
+                    return
+                }
+            }
+        }
+
+        // Auto-prefix bare bech32 IDs with nostr:
+        val prefixed = prefixBareBech32(value)
+        _content.value = prefixed
+        detectMentionQuery(prefixed)
+    }
+
+    private fun prefixBareBech32(value: TextFieldValue): TextFieldValue {
+        val text = value.text
+        val match = BARE_BECH32_REGEX.find(text) ?: return value
+        // Validate it's actually a decodable bech32 before prefixing
+        val bare = match.groupValues[1]
+        val valid = try {
+            Nip19.decodeNostrUri("nostr:$bare") != null
+        } catch (_: Exception) { false }
+        if (!valid) return value
+
+        val newText = text.substring(0, match.range.first) + "nostr:" + text.substring(match.range.first)
+        val cursorShift = if (value.selection.start > match.range.first) 6 else 0
+        return TextFieldValue(newText, TextRange(value.selection.start + cursorShift))
+    }
+
+    private fun detectMentionQuery(value: TextFieldValue) {
+        val text = value.text
+        val cursor = value.selection.start
+
+        if (cursor == 0 || text.isEmpty()) {
+            clearMentionState()
+            return
+        }
+
+        // Walk backwards from cursor to find @ trigger
+        var atIndex = -1
+        for (i in (cursor - 1) downTo 0) {
+            val c = text[i]
+            if (c == '@') {
+                // Valid trigger: at start of text or preceded by whitespace/newline
+                if (i == 0 || text[i - 1].isWhitespace()) {
+                    atIndex = i
+                }
+                break
+            }
+            if (c.isWhitespace()) break
+        }
+
+        if (atIndex == -1) {
+            clearMentionState()
+            return
+        }
+
+        mentionStartIndex = atIndex
+        val query = text.substring(atIndex + 1, cursor)
+        _mentionQuery.value = query
+        mentionSearchRepo?.search(query, viewModelScope)
+    }
+
+    private fun clearMentionState() {
+        _mentionQuery.value = null
+        mentionStartIndex = -1
+        mentionSearchRepo?.clear()
+    }
+
+    fun selectMention(candidate: MentionCandidate) {
+        val value = _content.value
+        val text = value.text
+        val cursor = value.selection.start
+
+        if (mentionStartIndex < 0 || mentionStartIndex > text.length) {
+            clearMentionState()
+            return
+        }
+
+        val nprofile = "nostr:" + Nip19.nprofileEncode(candidate.profile.pubkey)
+        val before = text.substring(0, mentionStartIndex)
+        val after = if (cursor < text.length) text.substring(cursor) else ""
+        val newText = before + nprofile + " " + after
+        val newCursor = before.length + nprofile.length + 1
+
+        _content.value = TextFieldValue(newText, TextRange(newCursor))
+        clearMentionState()
+    }
+
+    fun togglePreview() {
+        _previewVisible.value = !_previewVisible.value
     }
 
     fun publish(
@@ -81,7 +216,7 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
         onSuccess: () -> Unit = {},
         outboxRouter: OutboxRouter? = null
     ) {
-        val text = _content.value.trim()
+        val text = _content.value.text.trim()
 
         if (text.isBlank()) {
             _error.value = "Post cannot be empty"
@@ -159,6 +294,22 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
             val hint = outboxRouter?.getRelayHint(replyTo.pubkey) ?: ""
             tags.addAll(Nip10.buildReplyTags(replyTo, hint))
         }
+
+        // Extract p-tags and e-tags from inline nostr: URIs
+        val (mentionedPubkeys, mentionedEventIds) = extractNostrRefs(content)
+        val existingPubkeys = tags.filter { it.firstOrNull() == "p" }.map { it[1] }.toSet()
+        for (pubkey in mentionedPubkeys) {
+            if (pubkey !in existingPubkeys) {
+                tags.add(listOf("p", pubkey))
+            }
+        }
+        val existingEventIds = tags.filter { it.firstOrNull() == "e" }.map { it[1] }.toSet()
+        for (eventId in mentionedEventIds) {
+            if (eventId !in existingEventIds) {
+                tags.add(listOf("e", eventId, "", "mention"))
+            }
+        }
+
         val finalContent = if (quoteTo != null) {
             tags.addAll(Nip18.buildQuoteTags(quoteTo))
             Nip18.appendNoteUri(content, quoteTo.id)
@@ -173,15 +324,30 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
             tags = tags
         )
         val msg = ClientMessage.event(event)
-        // Replies go to target's inbox relays; root posts go to own write relays
         if (replyTo != null && outboxRouter != null) {
             outboxRouter.publishToInbox(msg, replyTo.pubkey)
         } else {
             relayPool.sendToWriteRelays(msg)
         }
-        _content.value = ""
+        _content.value = TextFieldValue()
         _error.value = null
         _publishing.value = false
+    }
+
+    private fun extractNostrRefs(content: String): Pair<Set<String>, Set<String>> {
+        val pubkeys = mutableSetOf<String>()
+        val eventIds = mutableSetOf<String>()
+        for (match in NOSTR_URI_REGEX.findAll(content)) {
+            val bech32 = match.groupValues[1]
+            try {
+                when (val data = Nip19.decodeNostrUri("nostr:$bech32")) {
+                    is com.wisp.app.nostr.NostrUriData.ProfileRef -> pubkeys.add(data.pubkey)
+                    is com.wisp.app.nostr.NostrUriData.NoteRef -> eventIds.add(data.eventId)
+                    null -> {}
+                }
+            } catch (_: Exception) {}
+        }
+        return pubkeys to eventIds
     }
 
     private fun readFileFromUri(
@@ -196,9 +362,11 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clear() {
-        _content.value = ""
+        _content.value = TextFieldValue()
         _error.value = null
         _uploadedUrls.value = emptyList()
         _uploadProgress.value = null
+        _previewVisible.value = false
+        clearMentionState()
     }
 }

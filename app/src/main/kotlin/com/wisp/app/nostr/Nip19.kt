@@ -15,6 +15,14 @@ object Nip19 {
     fun nsecEncode(privkey: ByteArray): String = bech32Encode("nsec", privkey)
     fun noteEncode(eventId: ByteArray): String = bech32Encode("note", eventId)
 
+    fun nprofileEncode(pubkeyHex: String, relays: List<String> = emptyList()): String {
+        val tlv = buildTlv {
+            addTlv(0x00, pubkeyHex.hexToByteArray())
+            for (relay in relays) addTlv(0x01, relay.toByteArray(Charsets.UTF_8))
+        }
+        return bech32Encode("nprofile", tlv)
+    }
+
     fun neventEncode(eventId: ByteArray, relays: List<String> = emptyList(), author: ByteArray? = null): String {
         val tlv = buildTlv {
             addTlv(0x00, eventId)

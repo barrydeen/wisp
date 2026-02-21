@@ -130,6 +130,11 @@ fun WispNavHost() {
         }
     }
 
+    // Initialize compose viewmodel with shared repos
+    LaunchedEffect(Unit) {
+        composeViewModel.init(feedViewModel.profileRepo, feedViewModel.contactRepo, feedViewModel.relayPool)
+    }
+
     // Initialize DM list viewmodel with shared repo
     LaunchedEffect(Unit) {
         dmListViewModel.init(feedViewModel.dmRepo, feedViewModel.muteRepo)
@@ -317,7 +322,10 @@ fun WispNavHost() {
                 replyTo = replyTarget,
                 quoteTo = quoteTarget,
                 onBack = { navController.popBackStack() },
-                outboxRouter = feedViewModel.outboxRouter
+                outboxRouter = feedViewModel.outboxRouter,
+                eventRepo = feedViewModel.eventRepo,
+                profileRepo = feedViewModel.profileRepo,
+                userPubkey = feedViewModel.getUserPubkey()
             )
         }
 
