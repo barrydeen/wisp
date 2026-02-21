@@ -7,6 +7,7 @@ import android.webkit.MimeTypeMap
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Keys
@@ -33,11 +34,13 @@ private val NOSTR_URI_REGEX = Regex("nostr:(npub1[a-z0-9]{58}|nprofile1[a-z0-9]+
 // Matches bare bech32 IDs not already preceded by "nostr:"
 private val BARE_BECH32_REGEX = Regex("(?<!nostr:)(?<![a-z0-9])((note1|nevent1|npub1|nprofile1)[a-z0-9]{10,})")
 
-class ComposeViewModel(app: Application) : AndroidViewModel(app) {
+class ComposeViewModel(app: Application, private val savedStateHandle: SavedStateHandle) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
     val blossomRepo = BlossomRepository(app, keyRepo.getKeypair()?.pubkey?.toHex())
 
-    private val _content = MutableStateFlow(TextFieldValue())
+    private val _content = MutableStateFlow(
+        TextFieldValue(savedStateHandle.get<String>("draft_content") ?: "")
+    )
     val content: StateFlow<TextFieldValue> = _content
 
     private val _publishing = MutableStateFlow(false)
@@ -90,6 +93,7 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
                 val current = _content.value.text
                 val newText = if (current.isBlank()) url else "$current\n$url"
                 _content.value = TextFieldValue(newText, TextRange(newText.length))
+                savedStateHandle["draft_content"] = newText
                 _uploadProgress.value = null
             } catch (e: Exception) {
                 _error.value = "Upload failed: ${e.message}"
@@ -103,6 +107,7 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
         val current = _content.value.text
         val newText = current.replace(url, "").replace("\n\n", "\n").trim()
         _content.value = TextFieldValue(newText, TextRange(newText.length))
+        savedStateHandle["draft_content"] = newText
     }
 
     fun updateContent(value: TextFieldValue) {
@@ -118,6 +123,7 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
                     val after = prev.text.substring(match.range.last + 1)
                     val newText = before + after
                     _content.value = TextFieldValue(newText, TextRange(match.range.first))
+                    savedStateHandle["draft_content"] = newText
                     detectMentionQuery(_content.value)
                     return
                 }
@@ -127,6 +133,7 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
         // Auto-prefix bare bech32 IDs with nostr:
         val prefixed = prefixBareBech32(value)
         _content.value = prefixed
+        savedStateHandle["draft_content"] = prefixed.text
         detectMentionQuery(prefixed)
     }
 
@@ -330,6 +337,7 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
             relayPool.sendToWriteRelays(msg)
         }
         _content.value = TextFieldValue()
+        savedStateHandle.remove<String>("draft_content")
         _error.value = null
         _publishing.value = false
     }
@@ -363,6 +371,7 @@ class ComposeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clear() {
         _content.value = TextFieldValue()
+        savedStateHandle.remove<String>("draft_content")
         _error.value = null
         _uploadedUrls.value = emptyList()
         _uploadProgress.value = null

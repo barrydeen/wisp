@@ -339,14 +339,28 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         // Sequential startup: self-data → relay lists → scoreboard → extended network → feed.
         // If the cached scoreboard matches the current follow list, skip the expensive
         // relay-list fetch + recompute and go straight to the extended network phase.
+        //
+        // Silent init: when returning from process death with cached data, skip the
+        // multi-step loading overlay and let events arrive in the background.
         viewModelScope.launch {
+            val cachedFollows = contactRepo.getFollowList()
+            val silentInit = cachedFollows.isNotEmpty() && !relayScoreBoard.needsRecompute()
+            if (silentInit) {
+                Log.d("FeedViewModel", "init: silent init (${cachedFollows.size} cached follows, scoreboard valid)")
+                _initLoadingState.value = InitLoadingState.Done
+            }
+
+            val updateLoading: (InitLoadingState) -> Unit = { state ->
+                if (!silentInit) _initLoadingState.value = state
+            }
+
             val totalRelays = relayPool.getRelayUrls().size
-            _initLoadingState.value = InitLoadingState.Connecting(0, totalRelays)
+            updateLoading(InitLoadingState.Connecting(0, totalRelays))
 
             relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
-            _initLoadingState.value = InitLoadingState.Connecting(relayPool.connectedCount.value, totalRelays)
+            updateLoading(InitLoadingState.Connecting(relayPool.connectedCount.value, totalRelays))
 
-            _initLoadingState.value = InitLoadingState.FetchingSelfData
+            updateLoading(InitLoadingState.FetchingSelfData)
             subscribeSelfData()
 
             val follows = contactRepo.getFollowList().map { it.pubkey }
@@ -357,8 +371,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 Log.d("FeedViewModel", "init: scoreboard cache valid (${scored.size} relays, ${follows.size} follows), skipping recompute")
             } else {
                 // Follow list changed or first launch — full rebuild
-                _initLoadingState.value = InitLoadingState.FoundFollows(follows.size)
-                delay(400) // brief pause so the user sees the follow count
+                updateLoading(InitLoadingState.FoundFollows(follows.size))
+                if (!silentInit) delay(400) // brief pause so the user sees the follow count
 
                 val subscriptionSent = fetchRelayListsForFollows()
                 if (subscriptionSent) {
@@ -367,7 +381,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                     val deadline = System.currentTimeMillis() + 10_000
                     while (System.currentTimeMillis() < deadline) {
                         val covered = follows.size - relayListRepo.getMissingPubkeys(follows).size
-                        _initLoadingState.value = InitLoadingState.FetchingRelayLists(covered, follows.size)
+                        updateLoading(InitLoadingState.FetchingRelayLists(covered, follows.size))
                         if (covered >= target) break
                         delay(200)
                     }
@@ -377,8 +391,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 recomputeAndMergeRelays()
                 val scored = relayScoreBoard.getScoredRelays()
                 val coveredAuthors = scored.sumOf { it.authors.size }
-                _initLoadingState.value = InitLoadingState.ComputingRouting(scored.size, coveredAuthors)
-                delay(500) // brief pause so the user sees the routing result
+                updateLoading(InitLoadingState.ComputingRouting(scored.size, coveredAuthors))
+                if (!silentInit) delay(500) // brief pause so the user sees the routing result
 
                 relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
             }
@@ -392,7 +406,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val progressJob = launch {
                     extendedNetworkRepo.discoveryState.collect { ds ->
                         if (ds is DiscoveryState.FetchingFollowLists) {
-                            _initLoadingState.value = InitLoadingState.DiscoveringNetwork(ds.fetched, ds.total)
+                            updateLoading(InitLoadingState.DiscoveringNetwork(ds.fetched, ds.total))
                         }
                     }
                 }
@@ -407,7 +421,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             // Expand pool with extended relays
             val extConfigs = extendedNetworkRepo.getRelayConfigs()
             if (extConfigs.isNotEmpty()) {
-                _initLoadingState.value = InitLoadingState.ExpandingRelays(extConfigs.size)
+                updateLoading(InitLoadingState.ExpandingRelays(extConfigs.size))
                 rebuildRelayPool()
                 val poolSize = relayPool.getRelayUrls().size
                 val targetConnected = poolSize * 7 / 10
@@ -416,12 +430,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
             // Apply filter and subscribe
             applyAuthorFilterForFeedType(_feedType.value)
-            _initLoadingState.value = InitLoadingState.Subscribing
+            updateLoading(InitLoadingState.Subscribing)
             subscribeFeed()
             metadataFetcher.fetchProfilesForFollows(follows)
 
             // Let the "Subscribing" state show briefly, then clear
-            delay(300)
+            if (!silentInit) delay(300)
             _initLoadingState.value = InitLoadingState.Done
 
             // Background: fetch relay lists for any new follows (non-blocking)
@@ -789,7 +803,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch {
                 relayPool.awaitAnyConnected()
                 relayPool.appIsActive = true
-                subscribeFeed()
+                resumeSubscribeFeed()
             }
         }
     }
@@ -866,6 +880,53 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun subscribeFeed() {
         resubscribeFeed()
+    }
+
+    /**
+     * Lightweight re-subscribe for app resume: keeps dedup state and existing engagement
+     * subs, only requests events newer than what we already have.
+     */
+    private fun resumeSubscribeFeed() {
+        relayPool.closeOnAllRelays(feedSubId)
+        feedEoseJob?.cancel()
+
+        // Use newest event timestamp as `since` to avoid re-fetching events we already have
+        val newestTimestamp = eventRepo.feed.value.firstOrNull()?.created_at
+        val sinceTimestamp = newestTimestamp ?: (System.currentTimeMillis() / 1000 - 60 * 60 * 24)
+
+        val targetedRelays: Set<String> = when (_feedType.value) {
+            FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
+                val cache = extendedNetworkRepo.cachedNetwork.value
+                val firstDegree = contactRepo.getFollowList().map { it.pubkey }
+                val allAuthors = if (cache != null) {
+                    (listOfNotNull(pubkeyHex) + firstDegree + cache.qualifiedPubkeys).distinct()
+                } else {
+                    listOfNotNull(pubkeyHex) + firstDegree
+                }
+                if (allAuthors.isEmpty()) return
+                val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
+                outboxRouter.subscribeByAuthors(feedSubId, allAuthors, notesFilter)
+            }
+            FeedType.RELAY -> {
+                val url = _selectedRelay.value ?: return
+                val filter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
+                val msg = ClientMessage.req(feedSubId, filter)
+                relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
+                setOf(url)
+            }
+            FeedType.LIST -> {
+                val list = listRepo.selectedList.value ?: return
+                val authors = list.members.toList()
+                if (authors.isEmpty()) return
+                val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
+                outboxRouter.subscribeByAuthors(feedSubId, authors, notesFilter)
+            }
+        }
+
+        feedEoseJob = viewModelScope.launch {
+            subManager.awaitEoseCount(feedSubId, targetedRelays.size.coerceAtLeast(1))
+            // Don't reset initialLoadDone or countNewNotes — keep existing state
+        }
     }
 
     private var feedEoseJob: Job? = null
