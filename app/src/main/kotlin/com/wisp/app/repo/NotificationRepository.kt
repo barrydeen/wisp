@@ -80,7 +80,10 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
                     val filtered = group.reactions.mapValues { (_, pks) -> pks.filter { it != pubkey } }
                         .filter { it.value.isNotEmpty() }
                     if (filtered.isEmpty()) toRemove.add(key)
-                    else toUpdate[key] = group.copy(reactions = filtered)
+                    else toUpdate[key] = group.copy(
+                        reactions = filtered,
+                        reactionTimestamps = group.reactionTimestamps - pubkey
+                    )
                 }
                 is NotificationGroup.ZapGroup -> {
                     val filtered = group.zaps.filter { it.pubkey != pubkey }
@@ -109,8 +112,78 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
         }
     }
 
+    fun refreshSplits() = synchronized(lock) {
+        rebuildSortedList()
+    }
+
     private fun rebuildSortedList() {
-        val sorted = groupMap.values.sortedByDescending { it.latestTimestamp }
+        val now = System.currentTimeMillis() / 1000
+        val recentCutoff = now - RECENT_WINDOW_SECONDS
+
+        val result = mutableListOf<NotificationGroup>()
+
+        for (group in groupMap.values) {
+            when (group) {
+                is NotificationGroup.ReactionGroup -> {
+                    val recentReactions = mutableMapOf<String, MutableList<String>>()
+                    val olderReactions = mutableMapOf<String, MutableList<String>>()
+                    val recentTimestamps = mutableMapOf<String, Long>()
+                    val olderTimestamps = mutableMapOf<String, Long>()
+
+                    for ((emoji, pubkeys) in group.reactions) {
+                        for (pk in pubkeys) {
+                            val ts = group.reactionTimestamps[pk] ?: 0L
+                            if (ts >= recentCutoff) {
+                                recentReactions.getOrPut(emoji) { mutableListOf() }.add(pk)
+                                recentTimestamps[pk] = ts
+                            } else {
+                                olderReactions.getOrPut(emoji) { mutableListOf() }.add(pk)
+                                olderTimestamps[pk] = ts
+                            }
+                        }
+                    }
+
+                    if (recentReactions.isNotEmpty()) {
+                        result.add(group.copy(
+                            groupId = "${group.groupId}:recent",
+                            reactions = recentReactions,
+                            reactionTimestamps = recentTimestamps,
+                            latestTimestamp = recentTimestamps.values.max()
+                        ))
+                    }
+                    if (olderReactions.isNotEmpty()) {
+                        result.add(group.copy(
+                            reactions = olderReactions,
+                            reactionTimestamps = olderTimestamps,
+                            latestTimestamp = olderTimestamps.values.max()
+                        ))
+                    }
+                }
+                is NotificationGroup.ZapGroup -> {
+                    val recentZaps = group.zaps.filter { it.createdAt >= recentCutoff }
+                    val olderZaps = group.zaps.filter { it.createdAt < recentCutoff }
+
+                    if (recentZaps.isNotEmpty()) {
+                        result.add(group.copy(
+                            groupId = "${group.groupId}:recent",
+                            zaps = recentZaps,
+                            totalSats = recentZaps.sumOf { it.sats },
+                            latestTimestamp = recentZaps.maxOf { it.createdAt }
+                        ))
+                    }
+                    if (olderZaps.isNotEmpty()) {
+                        result.add(group.copy(
+                            zaps = olderZaps,
+                            totalSats = olderZaps.sumOf { it.sats },
+                            latestTimestamp = olderZaps.maxOf { it.createdAt }
+                        ))
+                    }
+                }
+                else -> result.add(group)
+            }
+        }
+
+        val sorted = result.sortedByDescending { it.latestTimestamp }
         _notifications.value = if (sorted.size > 200) sorted.take(200) else sorted
     }
 
@@ -126,8 +199,11 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
             if (event.pubkey in currentPubkeys) return false
             val updatedReactions = existing.reactions.toMutableMap()
             updatedReactions[emoji] = currentPubkeys + event.pubkey
+            val updatedTimestamps = existing.reactionTimestamps.toMutableMap()
+            updatedTimestamps[event.pubkey] = event.created_at
             groupMap[key] = existing.copy(
                 reactions = updatedReactions,
+                reactionTimestamps = updatedTimestamps,
                 latestTimestamp = maxOf(existing.latestTimestamp, event.created_at)
             )
         } else {
@@ -135,6 +211,7 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
                 groupId = key,
                 referencedEventId = referencedId,
                 reactions = mapOf(emoji to listOf(event.pubkey)),
+                reactionTimestamps = mapOf(event.pubkey to event.created_at),
                 latestTimestamp = event.created_at
             )
         }
@@ -215,5 +292,6 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
 
     companion object {
         private const val KEY_LAST_READ = "last_read_timestamp"
+        private const val RECENT_WINDOW_SECONDS = 600L // 10 minutes
     }
 }

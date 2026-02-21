@@ -2,13 +2,16 @@ package com.wisp.app.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.NotificationGroup
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.NotificationRepository
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -32,6 +35,16 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
         notifRepo = notificationRepository
         eventRepo = eventRepository
         contactRepo = contactRepository
+        startPeriodicRefresh()
+    }
+
+    private fun startPeriodicRefresh() {
+        viewModelScope.launch {
+            while (true) {
+                delay(60_000L)
+                notifRepo?.refreshSplits()
+            }
+        }
     }
 
     fun isFollowing(pubkey: String): Boolean {

@@ -15,6 +15,7 @@ sealed class NotificationGroup {
         override val groupId: String,
         val referencedEventId: String,
         val reactions: Map<String, List<String>>, // emoji -> list of pubkeys
+        val reactionTimestamps: Map<String, Long> = emptyMap(), // pubkey -> created_at
         override val latestTimestamp: Long
     ) : NotificationGroup()
 

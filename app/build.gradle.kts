@@ -54,6 +54,7 @@ dependencies {
     implementation(libs.secp256k1.kmp)
     implementation(libs.secp256k1.kmp.jni.android)
     implementation(libs.coil.compose)
+    implementation(libs.coil.gif)
     implementation(libs.coil.network.okhttp)
     implementation(libs.security.crypto)
     implementation(libs.bouncycastle)

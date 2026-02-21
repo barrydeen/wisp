@@ -107,32 +107,25 @@ fun NotificationsScreen(
                 )
             }
         } else {
+            val recentCutoff = System.currentTimeMillis() / 1000 - 600
+            val (recentNotifs, olderNotifs) = remember(notifications, recentCutoff / 60) {
+                notifications.partition { it.groupId.endsWith(":recent") || it.latestTimestamp >= recentCutoff }
+            }
+
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                items(items = notifications, key = { it.groupId }) { group ->
-                    when (group) {
-                        is NotificationGroup.ReactionGroup -> ReactionGroupRow(
+                if (recentNotifs.isNotEmpty()) {
+                    item(key = "header_recent") {
+                        SectionHeader("Recent")
+                    }
+                    items(items = recentNotifs, key = { it.groupId }) { group ->
+                        NotificationItem(
                             group = group,
-                            eventRepo = eventRepo,
-                            resolveProfile = { viewModel.getProfileData(it) },
-                            isFollowing = { viewModel.isFollowing(it) },
-                            onNoteClick = onNoteClick,
-                            onProfileClick = onProfileClick
-                        )
-                        is NotificationGroup.ZapGroup -> ZapGroupRow(
-                            group = group,
-                            eventRepo = eventRepo,
-                            resolveProfile = { viewModel.getProfileData(it) },
-                            isFollowing = { viewModel.isFollowing(it) },
-                            onNoteClick = onNoteClick,
-                            onProfileClick = onProfileClick
-                        )
-                        is NotificationGroup.ReplyNotification -> ReplyPostCard(
-                            item = group,
+                            viewModel = viewModel,
                             eventRepo = eventRepo,
                             userPubkey = userPubkey,
                             profileVersion = profileVersion,
@@ -140,7 +133,6 @@ fun NotificationsScreen(
                             replyCountVersion = replyCountVersion,
                             zapVersion = zapVersion,
                             repostVersion = repostVersion,
-                            isFollowing = { viewModel.isFollowing(it) },
                             onNoteClick = onNoteClick,
                             onProfileClick = onProfileClick,
                             onReply = onReply,
@@ -156,27 +148,153 @@ fun NotificationsScreen(
                             isZapInProgress = isZapInProgress,
                             isBookmarked = isBookmarked
                         )
-                        is NotificationGroup.QuoteNotification -> QuoteNotificationRow(
-                            item = group,
-                            eventRepo = eventRepo,
-                            resolveProfile = { viewModel.getProfileData(it) },
-                            isFollowing = viewModel.isFollowing(group.senderPubkey),
-                            onNoteClick = onNoteClick,
-                            onProfileClick = onProfileClick
-                        )
-                        is NotificationGroup.MentionNotification -> MentionNotificationRow(
-                            item = group,
-                            eventRepo = eventRepo,
-                            resolveProfile = { viewModel.getProfileData(it) },
-                            isFollowing = viewModel.isFollowing(group.senderPubkey),
-                            onNoteClick = onNoteClick,
-                            onProfileClick = onProfileClick
-                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
+                }
+                if (olderNotifs.isNotEmpty()) {
+                    item(key = "header_earlier") {
+                        SectionHeader("Earlier")
+                    }
+                    items(items = olderNotifs, key = { it.groupId }) { group ->
+                        NotificationItem(
+                            group = group,
+                            viewModel = viewModel,
+                            eventRepo = eventRepo,
+                            userPubkey = userPubkey,
+                            profileVersion = profileVersion,
+                            reactionVersion = reactionVersion,
+                            replyCountVersion = replyCountVersion,
+                            zapVersion = zapVersion,
+                            repostVersion = repostVersion,
+                            onNoteClick = onNoteClick,
+                            onProfileClick = onProfileClick,
+                            onReply = onReply,
+                            onReact = onReact,
+                            onRepost = onRepost,
+                            onQuote = onQuote,
+                            onZap = onZap,
+                            onFollowToggle = onFollowToggle,
+                            onBlockUser = onBlockUser,
+                            onBookmark = onBookmark,
+                            nip05Repo = nip05Repo,
+                            isZapAnimating = isZapAnimating,
+                            isZapInProgress = isZapInProgress,
+                            isBookmarked = isBookmarked
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
+                    }
                 }
             }
         }
+    }
+}
+
+// ── Section Header ──────────────────────────────────────────────────────
+
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    )
+}
+
+// ── Notification Item Router ────────────────────────────────────────────
+
+@Composable
+private fun NotificationItem(
+    group: NotificationGroup,
+    viewModel: NotificationsViewModel,
+    eventRepo: EventRepository?,
+    userPubkey: String?,
+    profileVersion: Int,
+    reactionVersion: Int,
+    replyCountVersion: Int,
+    zapVersion: Int,
+    repostVersion: Int,
+    onNoteClick: (String) -> Unit,
+    onProfileClick: (String) -> Unit,
+    onReply: (NostrEvent) -> Unit,
+    onReact: (NostrEvent, String) -> Unit,
+    onRepost: (NostrEvent) -> Unit,
+    onQuote: (NostrEvent) -> Unit,
+    onZap: (NostrEvent) -> Unit,
+    onFollowToggle: (String) -> Unit,
+    onBlockUser: (String) -> Unit,
+    onBookmark: (String) -> Unit,
+    nip05Repo: Nip05Repository?,
+    isZapAnimating: (String) -> Boolean,
+    isZapInProgress: (String) -> Boolean,
+    isBookmarked: (String) -> Boolean
+) {
+    when (group) {
+        is NotificationGroup.ReactionGroup -> ReactionGroupRow(
+            group = group,
+            eventRepo = eventRepo,
+            userPubkey = userPubkey,
+            reactionVersion = reactionVersion,
+            zapVersion = zapVersion,
+            resolveProfile = { viewModel.getProfileData(it) },
+            isFollowing = { viewModel.isFollowing(it) },
+            onNoteClick = onNoteClick,
+            onProfileClick = onProfileClick
+        )
+        is NotificationGroup.ZapGroup -> ZapGroupRow(
+            group = group,
+            eventRepo = eventRepo,
+            userPubkey = userPubkey,
+            reactionVersion = reactionVersion,
+            zapVersion = zapVersion,
+            resolveProfile = { viewModel.getProfileData(it) },
+            isFollowing = { viewModel.isFollowing(it) },
+            onNoteClick = onNoteClick,
+            onProfileClick = onProfileClick
+        )
+        is NotificationGroup.ReplyNotification -> ReplyPostCard(
+            item = group,
+            eventRepo = eventRepo,
+            userPubkey = userPubkey,
+            profileVersion = profileVersion,
+            reactionVersion = reactionVersion,
+            replyCountVersion = replyCountVersion,
+            zapVersion = zapVersion,
+            repostVersion = repostVersion,
+            isFollowing = { viewModel.isFollowing(it) },
+            onNoteClick = onNoteClick,
+            onProfileClick = onProfileClick,
+            onReply = onReply,
+            onReact = onReact,
+            onRepost = onRepost,
+            onQuote = onQuote,
+            onZap = onZap,
+            onFollowToggle = onFollowToggle,
+            onBlockUser = onBlockUser,
+            onBookmark = onBookmark,
+            nip05Repo = nip05Repo,
+            isZapAnimating = isZapAnimating,
+            isZapInProgress = isZapInProgress,
+            isBookmarked = isBookmarked
+        )
+        is NotificationGroup.QuoteNotification -> QuoteNotificationRow(
+            item = group,
+            eventRepo = eventRepo,
+            resolveProfile = { viewModel.getProfileData(it) },
+            isFollowing = viewModel.isFollowing(group.senderPubkey),
+            onNoteClick = onNoteClick,
+            onProfileClick = onProfileClick
+        )
+        is NotificationGroup.MentionNotification -> MentionNotificationRow(
+            item = group,
+            eventRepo = eventRepo,
+            resolveProfile = { viewModel.getProfileData(it) },
+            isFollowing = viewModel.isFollowing(group.senderPubkey),
+            onNoteClick = onNoteClick,
+            onProfileClick = onProfileClick
+        )
     }
 }
 
@@ -188,6 +306,9 @@ fun NotificationsScreen(
 private fun ReactionGroupRow(
     group: NotificationGroup.ReactionGroup,
     eventRepo: EventRepository?,
+    userPubkey: String?,
+    reactionVersion: Int,
+    zapVersion: Int,
     resolveProfile: (String) -> ProfileData?,
     isFollowing: (String) -> Boolean,
     onNoteClick: (String) -> Unit,
@@ -211,7 +332,7 @@ private fun ReactionGroupRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        // Each emoji row: <emoji> <avatars> (newest reactor first)
+        // Each emoji row: <emoji> <count> <avatars> (newest reactor first)
         group.reactions.forEach { (emoji, pubkeys) ->
             val displayEmoji = if (emoji == "+") "\u2764\uFE0F" else emoji
             Row(
@@ -224,6 +345,12 @@ private fun ReactionGroupRow(
                     text = displayEmoji,
                     style = MaterialTheme.typography.bodyLarge
                 )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = "${pubkeys.size}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Spacer(Modifier.width(8.dp))
                 StackedAvatarRow(
                     pubkeys = pubkeys.reversed(),
@@ -234,8 +361,16 @@ private fun ReactionGroupRow(
                 )
             }
         }
-        // Inline referenced note
+        // Your interactions with this note
         if (eventRepo != null) {
+            NoteInteractionSummary(
+                eventId = group.referencedEventId,
+                eventRepo = eventRepo,
+                userPubkey = userPubkey,
+                reactionVersion = reactionVersion,
+                zapVersion = zapVersion
+            )
+            // Inline referenced note
             QuotedNote(
                 eventId = group.referencedEventId,
                 eventRepo = eventRepo,
@@ -253,6 +388,9 @@ private fun ReactionGroupRow(
 private fun ZapGroupRow(
     group: NotificationGroup.ZapGroup,
     eventRepo: EventRepository?,
+    userPubkey: String?,
+    reactionVersion: Int,
+    zapVersion: Int,
     resolveProfile: (String) -> ProfileData?,
     isFollowing: (String) -> Boolean,
     onNoteClick: (String) -> Unit,
@@ -294,8 +432,16 @@ private fun ZapGroupRow(
                 onProfileClick = onProfileClick
             )
         }
-        // Inline referenced note
+        // Your interactions with this note
         if (eventRepo != null) {
+            NoteInteractionSummary(
+                eventId = group.referencedEventId,
+                eventRepo = eventRepo,
+                userPubkey = userPubkey,
+                reactionVersion = reactionVersion,
+                zapVersion = zapVersion
+            )
+            // Inline referenced note
             QuotedNote(
                 eventId = group.referencedEventId,
                 eventRepo = eventRepo,
@@ -622,6 +768,91 @@ private fun MentionNotificationRow(
                 eventId = item.eventId,
                 eventRepo = eventRepo,
                 onNoteClick = onNoteClick
+            )
+        }
+    }
+}
+
+// ── Note Interaction Summary ────────────────────────────────────────────
+// Shows the user's own reaction/zap status for the referenced note.
+
+@Composable
+private fun NoteInteractionSummary(
+    eventId: String,
+    eventRepo: EventRepository,
+    userPubkey: String?,
+    reactionVersion: Int,
+    zapVersion: Int
+) {
+    val reactionCount = remember(reactionVersion, eventId) {
+        eventRepo.getReactionCount(eventId)
+    }
+    val zapSats = remember(zapVersion, eventId) {
+        eventRepo.getZapSats(eventId)
+    }
+    val userEmojis = remember(reactionVersion, eventId, userPubkey) {
+        userPubkey?.let { eventRepo.getUserReactionEmojis(eventId, it) } ?: emptySet()
+    }
+    val hasUserZapped = remember(zapVersion, eventId) {
+        eventRepo.hasUserZapped(eventId)
+    }
+
+    val hasAnyData = reactionCount > 0 || zapSats > 0L || userEmojis.isNotEmpty() || hasUserZapped
+    if (!hasAnyData) return
+
+    Spacer(Modifier.height(6.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Reaction count with user's own emojis highlighted
+        if (reactionCount > 0 || userEmojis.isNotEmpty()) {
+            val reacted = userEmojis.isNotEmpty()
+            val displayEmoji = if (reacted) {
+                userEmojis.first().let { if (it == "+") "\u2764\uFE0F" else it }
+            } else {
+                "\u2764\uFE0F"
+            }
+            Text(
+                text = displayEmoji,
+                style = MaterialTheme.typography.labelMedium
+            )
+            Spacer(Modifier.width(2.dp))
+            Text(
+                text = "$reactionCount",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (reacted) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(12.dp))
+        }
+        // Zap total with user's own zap highlighted
+        if (zapSats > 0L || hasUserZapped) {
+            Text(
+                text = "\u26A1",
+                style = MaterialTheme.typography.labelMedium
+            )
+            Spacer(Modifier.width(2.dp))
+            Text(
+                text = formatSats(zapSats),
+                style = MaterialTheme.typography.labelMedium,
+                color = if (hasUserZapped) MaterialTheme.colorScheme.tertiary
+                       else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(12.dp))
+        }
+        // Explicit "You reacted/zapped" indicators
+        if (userEmojis.isNotEmpty() || hasUserZapped) {
+            val parts = mutableListOf<String>()
+            if (userEmojis.isNotEmpty()) {
+                val emojis = userEmojis.joinToString("") { if (it == "+") "\u2764\uFE0F" else it }
+                parts.add("reacted $emojis")
+            }
+            if (hasUserZapped) parts.add("zapped")
+            Text(
+                text = "You ${parts.joinToString(" & ")}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary
             )
         }
     }
