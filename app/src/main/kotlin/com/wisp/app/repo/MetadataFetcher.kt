@@ -28,6 +28,7 @@ class MetadataFetcher(
 ) {
     // Batched profile fetching
     private val pendingProfilePubkeys = mutableSetOf<String>()
+    private val inFlightProfiles = mutableSetOf<String>() // currently being fetched, prevents re-queueing
     private var profileBatchJob: Job? = null
     private var metaBatchCounter = 0
     private val profileAttempts = mutableMapOf<String, Int>()
@@ -48,30 +49,43 @@ class MetadataFetcher(
     private val nostrNoteUriRegex = Regex("""nostr:(note1|nevent1)[a-z0-9]+""")
     private val validHexId = Regex("""^[0-9a-f]{64}$""")
 
+    // Pubkeys that have been attempted MAX times and never found — stop fetching from feeds.
+    // Only cleared on account switch. Profile page bypasses this via forceProfileFetch().
+    private val exhaustedProfiles = mutableSetOf<String>()
+
     companion object {
-        private const val MAX_PROFILE_ATTEMPTS = 3
+        private const val MAX_PROFILE_ATTEMPTS = 2
         private const val QUOTE_RETRY_MS = 30_000L // retry failed quotes after 30s
     }
 
     // Batched quote fetching (unified queue for inline + on-demand)
     private val pendingOnDemandQuotes = mutableSetOf<String>()
+    private val inFlightQuotes = mutableSetOf<String>() // currently being fetched, prevents re-queueing
     private val pendingRelayHints = mutableMapOf<String, List<String>>()
     private var onDemandQuoteBatchJob: Job? = null
     private var onDemandQuoteBatchCounter = 0
+
+    /** Returns URLs of the top relays by author coverage for quote lookups. Set by FeedViewModel. */
+    var quoteRelayProvider: (() -> List<String>)? = null
 
     fun clear() {
         profileBatchJob?.cancel()
         replyCountBatchJob?.cancel()
         zapCountBatchJob?.cancel()
         onDemandQuoteBatchJob?.cancel()
-        synchronized(pendingProfilePubkeys) { pendingProfilePubkeys.clear() }
+        synchronized(pendingProfilePubkeys) {
+            pendingProfilePubkeys.clear()
+            inFlightProfiles.clear()
+        }
         synchronized(pendingReplyCountIds) { pendingReplyCountIds.clear() }
         synchronized(pendingZapCountIds) { pendingZapCountIds.clear() }
         synchronized(pendingOnDemandQuotes) {
             pendingOnDemandQuotes.clear()
+            inFlightQuotes.clear()
             pendingRelayHints.clear()
         }
         profileAttempts.clear()
+        exhaustedProfiles.clear()
         scannedQuoteEvents.clear()
         failedQuoteFetches.clear()
         metaBatchCounter = 0
@@ -82,11 +96,29 @@ class MetadataFetcher(
 
     fun queueProfileFetch(pubkey: String) = addToPendingProfiles(pubkey)
 
+    /**
+     * Force-fetch a profile even if it was previously exhausted. Used by profile pages
+     * where the user explicitly navigated to a profile and expects to see data.
+     */
+    fun forceProfileFetch(pubkey: String) {
+        synchronized(pendingProfilePubkeys) {
+            if (profileRepo.has(pubkey)) return
+            exhaustedProfiles.remove(pubkey)
+            profileAttempts.remove(pubkey)
+        }
+        addToPendingProfiles(pubkey)
+    }
+
     fun addToPendingProfiles(pubkey: String) {
         synchronized(pendingProfilePubkeys) {
             if (profileRepo.has(pubkey)) return
+            if (pubkey in exhaustedProfiles) return
+            if (pubkey in inFlightProfiles) return
             val attempts = profileAttempts[pubkey] ?: 0
-            if (attempts >= MAX_PROFILE_ATTEMPTS) return
+            if (attempts >= MAX_PROFILE_ATTEMPTS) {
+                exhaustedProfiles.add(pubkey)
+                return
+            }
             if (pubkey in pendingProfilePubkeys) return
             pendingProfilePubkeys.add(pubkey)
             val shouldFlushNow = pendingProfilePubkeys.size >= 20
@@ -137,6 +169,7 @@ class MetadataFetcher(
     fun requestQuotedEvent(eventId: String, relayHints: List<String> = emptyList()) {
         synchronized(pendingOnDemandQuotes) {
             if (eventRepo.getEvent(eventId) != null) return
+            if (eventId in inFlightQuotes) return
             val failedAt = failedQuoteFetches[eventId]
             if (failedAt != null && System.currentTimeMillis() - failedAt < QUOTE_RETRY_MS) return
             if (eventId in pendingOnDemandQuotes) return
@@ -179,7 +212,7 @@ class MetadataFetcher(
 
     fun fetchProfilesForFollows(follows: List<String>) {
         if (follows.isEmpty()) return
-        val missing = follows.filter { !profileRepo.has(it) }
+        val missing = follows.filter { !profileRepo.has(it) && it !in exhaustedProfiles }
         if (missing.isEmpty()) return
         missing.forEach { profileAttempts[it] = (profileAttempts[it] ?: 0) + 1 }
         missing.chunked(20).forEachIndexed { index, batch ->
@@ -217,6 +250,7 @@ class MetadataFetcher(
         val subId = "meta-batch-${metaBatchCounter++}"
         val pubkeys = pendingProfilePubkeys.toList()
         pendingProfilePubkeys.clear()
+        inFlightProfiles.addAll(pubkeys)
 
         pubkeys.forEach { profileAttempts[it] = (profileAttempts[it] ?: 0) + 1 }
 
@@ -231,11 +265,8 @@ class MetadataFetcher(
         scope.launch(processingContext) {
             subManager.awaitEoseWithTimeout(subId)
             subManager.closeSubscription(subId)
-            delay(15_000)
-            for (pk in pubkeys) {
-                if (!profileRepo.has(pk)) {
-                    addToPendingProfiles(pk)
-                }
+            synchronized(pendingProfilePubkeys) {
+                inFlightProfiles.removeAll(pubkeys.toSet())
             }
         }
     }
@@ -260,21 +291,31 @@ class MetadataFetcher(
         val hints = pendingRelayHints.toMap()
         pendingOnDemandQuotes.clear()
         pendingRelayHints.clear()
+        inFlightQuotes.addAll(batch)
 
         val subId = "quote-${onDemandQuoteBatchCounter++}"
-        relayPool.sendToAll(ClientMessage.req(subId, Filter(ids = batch)))
+        val msg = ClientMessage.req(subId, Filter(ids = batch))
 
-        // Also query hinted relays for IDs that have hints
-        for (id in batch) {
-            val relays = hints[id] ?: continue
-            for (url in relays) {
-                relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(subId, Filter(ids = listOf(id))))
+        // Send to top relays by coverage (most likely to have the quoted events)
+        // plus any relay hints. Falls back to sendToAll if no scored relays available.
+        val topRelays = quoteRelayProvider?.invoke() ?: emptyList()
+        val hintUrls = hints.values.flatten().toSet()
+        val targetUrls = (topRelays + hintUrls).distinct()
+
+        if (targetUrls.isNotEmpty()) {
+            for (url in targetUrls) {
+                relayPool.sendToRelayOrEphemeral(url, msg)
             }
+        } else {
+            relayPool.sendToAll(msg)
         }
 
         scope.launch {
             subManager.awaitEoseWithTimeout(subId)
             subManager.closeSubscription(subId)
+            synchronized(pendingOnDemandQuotes) {
+                inFlightQuotes.removeAll(batch.toSet())
+            }
             // Mark unfound events as temporarily failed (will retry after QUOTE_RETRY_MS)
             val now = System.currentTimeMillis()
             for (id in batch) {

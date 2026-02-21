@@ -514,7 +514,7 @@ fun WispNavHost() {
                     eventRepo = feedViewModel.eventRepo,
                     relayPool = feedViewModel.relayPool,
                     subManager = feedViewModel.subManager,
-                    queueProfileFetch = { pubkey -> feedViewModel.queueProfileFetch(pubkey) },
+                    queueProfileFetch = { pubkey -> feedViewModel.forceProfileFetch(pubkey) },
                     muteRepo = feedViewModel.muteRepo
                 )
             }
@@ -629,7 +629,7 @@ fun WispNavHost() {
             // Queue profile fetch for operator if needed
             LaunchedEffect(operatorPubkey) {
                 if (operatorPubkey != null && feedViewModel.eventRepo.getProfileData(operatorPubkey) == null) {
-                    feedViewModel.queueProfileFetch(operatorPubkey)
+                    feedViewModel.forceProfileFetch(operatorPubkey)
                 }
             }
             RelayDetailScreen(

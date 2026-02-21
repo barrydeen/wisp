@@ -7,12 +7,8 @@ import com.wisp.app.repo.RelayListRepository
 
 class OutboxRouter(
     private val relayPool: RelayPool,
-    private val relayListRepo: RelayListRepository,
-    private var relayScoreBoard: RelayScoreBoard? = null
+    private val relayListRepo: RelayListRepository
 ) {
-    fun setScoreBoard(scoreBoard: RelayScoreBoard) {
-        relayScoreBoard = scoreBoard
-    }
     /**
      * Subscribe to content from [authors] by routing to each author's write relays.
      * Accepts multiple template filters — each gets `.copy(authors=subset)` per relay group.
@@ -26,14 +22,14 @@ class OutboxRouter(
     ): Set<String> {
         val targetedRelays = mutableSetOf<String>()
 
-        // Group authors by relay (scoreboard-aware or fallback)
+        // Group authors by their write relays
         val knownAuthors = authors.filter { relayListRepo.hasRelayList(it) }
         val unknownAuthors = authors.filter { !relayListRepo.hasRelayList(it) }
 
         if (knownAuthors.isNotEmpty()) {
             val relayToAuthors = groupAuthorsByWriteRelay(knownAuthors)
             for ((relayUrl, relayAuthors) in relayToAuthors) {
-                // Empty key = scoreboard fallback authors (no scored relay covers them)
+                // Empty key = authors without write relays → broadcast to all
                 if (relayUrl.isEmpty()) {
                     val filters = templateFilters.map { it.copy(authors = relayAuthors) }
                     val msg = if (filters.size == 1) ClientMessage.req(subId, filters[0])
@@ -78,7 +74,6 @@ class OutboxRouter(
             for ((relayUrl, relayAuthors) in relayToAuthors) {
                 val f = Filter(kinds = listOf(0), authors = relayAuthors, limit = relayAuthors.size)
                 if (relayUrl.isEmpty()) {
-                    // Scoreboard fallback — broadcast to all
                     relayPool.sendToAll(ClientMessage.req(subId, f))
                 } else {
                     relayPool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(subId, f))
@@ -228,76 +223,44 @@ class OutboxRouter(
             }
         }
 
-        var subIndex = 0
+        // Single sub ID sent to each relevant inbox relay — each relay independently
+        // tracks its own subscription, and closeOnAllRelays(prefix) cleans up all of them.
+        activeSubIds.add(prefix)
 
-        // Send targeted engagement queries to each author's inbox relays
         for ((relayUrl, eventIds) in relayToEventIds) {
             val uniqueIds = eventIds.distinct()
-            for (batch in uniqueIds.chunked(50)) {
-                val subId = if (subIndex == 0) prefix else "$prefix-$subIndex"
-                subIndex++
-                activeSubIds.add(subId)
-                val filters = listOf(
-                    Filter(kinds = listOf(7), eTags = batch),
-                    Filter(kinds = listOf(9735), eTags = batch),
-                    Filter(kinds = listOf(1), eTags = batch)
-                )
-                relayPool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(subId, filters))
-            }
+            val filters = listOf(
+                Filter(kinds = listOf(7), eTags = uniqueIds),
+                Filter(kinds = listOf(9735), eTags = uniqueIds),
+                Filter(kinds = listOf(1), eTags = uniqueIds)
+            )
+            relayPool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(prefix, filters))
         }
 
         // Fallback: authors without known relay lists → send to our read relays
         if (fallbackEventIds.isNotEmpty()) {
             val uniqueIds = fallbackEventIds.distinct()
-            for (batch in uniqueIds.chunked(50)) {
-                val subId = if (subIndex == 0) prefix else "$prefix-$subIndex"
-                subIndex++
-                activeSubIds.add(subId)
-                val filters = listOf(
-                    Filter(kinds = listOf(7), eTags = batch),
-                    Filter(kinds = listOf(9735), eTags = batch),
-                    Filter(kinds = listOf(1), eTags = batch)
-                )
-                relayPool.sendToReadRelays(ClientMessage.req(subId, filters))
-            }
+            val filters = listOf(
+                Filter(kinds = listOf(7), eTags = uniqueIds),
+                Filter(kinds = listOf(9735), eTags = uniqueIds),
+                Filter(kinds = listOf(1), eTags = uniqueIds)
+            )
+            relayPool.sendToReadRelays(ClientMessage.req(prefix, filters))
         }
     }
 
     private fun groupAuthorsByWriteRelay(authors: List<String>): Map<String, List<String>> {
         val result = mutableMapOf<String, MutableList<String>>()
-
-        // Use scoreboard for authors it covers; for uncovered authors, look up
-        // their write relays directly so they get proper relay routing instead of
-        // being dumped into a single sendToAll broadcast.
-        val scoreBoard = relayScoreBoard
-        if (scoreBoard != null && scoreBoard.hasScoredRelays()) {
-            val grouped = scoreBoard.getRelaysForAuthors(authors)
-            for ((relay, group) in grouped) {
-                if (relay.isNotEmpty()) {
-                    result.getOrPut(relay) { mutableListOf() }.addAll(group)
-                } else {
-                    // Authors not in scoreboard — look up their write relays directly
-                    for (pubkey in group) {
-                        val writeRelays = relayListRepo.getWriteRelays(pubkey)
-                        if (writeRelays != null) {
-                            for (url in writeRelays) {
-                                result.getOrPut(url) { mutableListOf() }.add(pubkey)
-                            }
-                        } else {
-                            result.getOrPut("") { mutableListOf() }.add(pubkey)
-                        }
-                    }
-                }
-            }
-        } else {
-            for (pubkey in authors) {
-                val writeRelays = relayListRepo.getWriteRelays(pubkey) ?: continue
+        for (pubkey in authors) {
+            val writeRelays = relayListRepo.getWriteRelays(pubkey)
+            if (writeRelays != null) {
                 for (url in writeRelays) {
                     result.getOrPut(url) { mutableListOf() }.add(pubkey)
                 }
+            } else {
+                result.getOrPut("") { mutableListOf() }.add(pubkey)
             }
         }
-
         return result
     }
 }

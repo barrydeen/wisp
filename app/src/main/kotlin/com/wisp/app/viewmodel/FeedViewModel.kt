@@ -95,7 +95,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val blossomRepo = BlossomRepository(app, pubkeyHex)
     val relayInfoRepo = RelayInfoRepository()
     val relayScoreBoard = RelayScoreBoard(app, relayListRepo, contactRepo, pubkeyHex)
-    val outboxRouter = OutboxRouter(relayPool, relayListRepo, relayScoreBoard)
+    val outboxRouter = OutboxRouter(relayPool, relayListRepo)
     val subManager = SubscriptionManager(relayPool)
     val extendedNetworkRepo = ExtendedNetworkRepository(
         app, contactRepo, muteRepo, relayListRepo, relayPool, subManager, relayScoreBoard, pubkeyHex
@@ -107,12 +107,16 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val metadataFetcher = MetadataFetcher(
         relayPool, outboxRouter, subManager, profileRepo, eventRepo,
         viewModelScope, processingDispatcher
-    ).also { eventRepo.metadataFetcher = it }
+    ).also {
+        eventRepo.metadataFetcher = it
+        it.quoteRelayProvider = {
+            relayScoreBoard.getScoredRelays().take(5).map { sr -> sr.url }
+        }
+    }
 
     private var feedSubId = "feed"
     private var isLoadingMore = false
     private val activeEngagementSubIds = mutableListOf<String>()
-    private var loadMoreCount = 0
 
     val nwcRepo = NwcRepository(app, relayPool, pubkeyHex)
     val zapSender = ZapSender(keyRepo, nwcRepo, relayPool, relayListRepo, Relay.createClient())
@@ -152,6 +156,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun resetNewNoteCount() = eventRepo.resetNewNoteCount()
 
     fun queueProfileFetch(pubkey: String) = metadataFetcher.queueProfileFetch(pubkey)
+    fun forceProfileFetch(pubkey: String) = metadataFetcher.forceProfileFetch(pubkey)
 
     private var relaysInitialized = false
 
@@ -243,12 +248,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(processingDispatcher) {
             delay(5_000)
             metadataFetcher.sweepMissingProfiles()
-            repeat(7) {
+            repeat(3) {
                 delay(15_000)
                 metadataFetcher.sweepMissingProfiles()
             }
             while (true) {
-                delay(60_000)
+                delay(120_000)
                 metadataFetcher.sweepMissingProfiles()
             }
         }
@@ -951,15 +956,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         // Zap receipts are published to the zapper's relays (specified in the zap
         // request), not necessarily the author's inbox relays. Query our own read
         // relays separately so the user's own zaps are discovered.
-        var subIndex = 0
-        for (batch in eventIds.chunked(50)) {
-            val subId = "engage-notif-zap${if (subIndex == 0) "" else "-$subIndex"}"
-            subIndex++
-            activeEngagementSubIds.add(subId)
-            relayPool.sendToReadRelays(
-                ClientMessage.req(subId, Filter(kinds = listOf(9735), eTags = batch))
-            )
-        }
+        val zapSubId = "engage-notif-zap"
+        activeEngagementSubIds.add(zapSubId)
+        relayPool.sendToReadRelays(
+            ClientMessage.req(zapSubId, Filter(kinds = listOf(9735), eTags = eventIds))
+        )
     }
 
     /**
@@ -1128,24 +1129,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             subManager.awaitEoseWithTimeout("loadmore")
             subManager.closeSubscription("loadmore")
 
-            // Subscribe engagement for newly loaded events
-            val currentFeed = eventRepo.feed.value
-            if (currentFeed.size > feedSizeBefore) {
-                val newEvents = currentFeed.drop(feedSizeBefore)
-                if (newEvents.isNotEmpty()) {
-                    loadMoreCount++
-                    val prefix = "engage-more-$loadMoreCount"
-                    subscribeEngagementForEvents(newEvents, prefix)
-                    // Close these engagement subs after EOSE to free subscription capacity
-                    val engageSubsCopy = activeEngagementSubIds.filter { it.startsWith(prefix) }
-                    launch {
-                        subManager.awaitEoseWithTimeout(prefix)
-                        for (subId in engageSubsCopy) {
-                            relayPool.closeOnAllRelays(subId)
-                            activeEngagementSubIds.remove(subId)
-                        }
-                    }
-                }
+            // Re-subscribe engagement covering all feed events (including newly loaded ones)
+            if (eventRepo.feed.value.size > feedSizeBefore) {
+                subscribeEngagementForFeed()
             }
 
             isLoadingMore = false
