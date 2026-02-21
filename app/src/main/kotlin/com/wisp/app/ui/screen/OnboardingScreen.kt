@@ -38,10 +38,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.wisp.app.relay.OnboardingPhase
-import com.wisp.app.ui.component.WispLogo
 import com.wisp.app.viewmodel.OnboardingViewModel
 
 @Composable
@@ -71,7 +69,7 @@ fun OnboardingScreen(
     }
 
     val relaysReady = discoveredRelays != null
-    val continueEnabled = relaysReady && !publishing && uploading == null
+    val continueEnabled = relaysReady && !publishing && uploading == null && name.isNotBlank()
 
     Column(
         modifier = Modifier
@@ -80,16 +78,6 @@ fun OnboardingScreen(
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(Modifier.height(48.dp))
-
-        WispLogo(size = 64.dp)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "Set up your profile",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
         Spacer(Modifier.height(32.dp))
 
         // Profile picture

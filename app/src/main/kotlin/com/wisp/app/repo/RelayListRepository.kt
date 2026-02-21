@@ -52,6 +52,12 @@ class RelayListRepository(context: Context) {
     fun getMissingPubkeys(pubkeys: List<String>): List<String> =
         pubkeys.filter { cache.get(it) == null }
 
+    fun clear() {
+        cache.evictAll()
+        timestamps.evictAll()
+        prefs.edit().clear().apply()
+    }
+
     private fun saveToPrefs(pubkey: String, relays: List<RelayConfig>, timestamp: Long) {
         val serializable = relays.map { SerializableRelay(it.url, it.read, it.write) }
         prefs.edit()

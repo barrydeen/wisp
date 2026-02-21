@@ -124,6 +124,7 @@ fun FeedScreen(
     val reactionVersion by viewModel.eventRepo.reactionVersion.collectAsState()
     val repostVersion by viewModel.eventRepo.repostVersion.collectAsState()
     val relaySourceVersion by viewModel.eventRepo.relaySourceVersion.collectAsState()
+    val followList by viewModel.contactRepo.followList.collectAsState()
     val profileVersion by viewModel.eventRepo.profileVersion.collectAsState()
     val nip05Version by viewModel.nip05Repo.version.collectAsState()
     val connectedCount by viewModel.relayPool.connectedCount.collectAsState()
@@ -606,6 +607,7 @@ fun FeedScreen(
                                     repostVersion = repostVersion,
                                     relaySourceVersion = relaySourceVersion,
                                     nip05Version = nip05Version,
+                                    followList = followList,
                                     isZapAnimating = event.id in zapAnimatingIds,
                                     isZapInProgress = event.id in zapInProgress,
                                     isInList = event.id in listedIds,
@@ -693,6 +695,7 @@ private fun FeedItem(
     repostVersion: Int = 0,
     relaySourceVersion: Int,
     nip05Version: Int = 0,
+    followList: List<com.wisp.app.nostr.Nip02.FollowEntry> = emptyList(),
     isZapAnimating: Boolean,
     isZapInProgress: Boolean = false,
     isInList: Boolean = false,
@@ -755,7 +758,7 @@ private fun FeedItem(
     val hasUserZapped = remember(zapVersion, event.id) {
         viewModel.eventRepo.hasUserZapped(event.id)
     }
-    val isFollowing = remember(event.pubkey) {
+    val isFollowing = remember(followList, event.pubkey) {
         viewModel.contactRepo.isFollowing(event.pubkey)
     }
     PostCard(

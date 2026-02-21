@@ -121,6 +121,13 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private var feedSubId = "feed"
     private var isLoadingMore = false
     private val activeEngagementSubIds = mutableListOf<String>()
+    private var eventProcessingJob: Job? = null
+    private var metadataSweepJob: Job? = null
+    private var ephemeralCleanupJob: Job? = null
+    private var relayListRefreshJob: Job? = null
+    private var followWatcherJob: Job? = null
+    private var authCompletedJob: Job? = null
+    private var startupJob: Job? = null
 
     val nwcRepo = NwcRepository(app, relayPool, pubkeyHex)
     val zapSender = ZapSender(keyRepo, nwcRepo, relayPool, relayListRepo, Relay.createClient())
@@ -169,7 +176,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private var relaysInitialized = false
 
     fun resetForAccountSwitch() {
-        // Cancel feed subscriptions
+        // Cancel all background jobs
+        eventProcessingJob?.cancel()
+        metadataSweepJob?.cancel()
+        ephemeralCleanupJob?.cancel()
+        relayListRefreshJob?.cancel()
+        followWatcherJob?.cancel()
+        authCompletedJob?.cancel()
+        startupJob?.cancel()
         feedEoseJob?.cancel()
         relayPool.closeOnAllRelays(feedSubId)
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
@@ -194,11 +208,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         extendedNetworkRepo.clear()
         relayScoreBoard.clear()
         healthTracker.clear()
+        relayListRepo.clear()
+        nip05Repo.clear()
         relayPool.clearSeenEvents()
 
         // Reset state
         relaysInitialized = false
         _initialLoadDone.value = false
+        _initLoadingState.value = InitLoadingState.Idle
         _selectedRelay.value = null
         isLoadingMore = false
     }
@@ -245,14 +262,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { relayInfoRepo.prefetchAll(initialRelays.map { it.url }) }
 
         // Main event processing loop — runs on Default dispatcher to keep UI thread free
-        viewModelScope.launch(processingDispatcher) {
+        eventProcessingJob = viewModelScope.launch(processingDispatcher) {
             relayPool.relayEvents.collect { (event, relayUrl, subscriptionId) ->
                 processRelayEvent(event, relayUrl, subscriptionId)
             }
         }
 
         // Periodic profile & quote sweep — runs on Default dispatcher
-        viewModelScope.launch(processingDispatcher) {
+        metadataSweepJob = viewModelScope.launch(processingDispatcher) {
             delay(5_000)
             metadataFetcher.sweepMissingProfiles()
             repeat(3) {
@@ -266,7 +283,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         // Periodic ephemeral relay cleanup + seen event trimming
-        viewModelScope.launch {
+        ephemeralCleanupJob = viewModelScope.launch {
             while (true) {
                 delay(60_000)
                 relayPool.cleanupEphemeralRelays()
@@ -275,7 +292,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         // Periodic relay list refresh (every 30 minutes)
-        viewModelScope.launch {
+        relayListRefreshJob = viewModelScope.launch {
             while (true) {
                 delay(30 * 60 * 1000L)
                 fetchRelayListsForFollows()
@@ -285,7 +302,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         // Incrementally update scoreboard when follow list changes, then re-subscribe feed
-        viewModelScope.launch {
+        followWatcherJob = viewModelScope.launch {
             var previousFollows = contactRepo.getFollowList().map { it.pubkey }.toSet()
             contactRepo.followList.drop(1).collectLatest { entries ->
                 val currentFollows = entries.map { it.pubkey }.toSet()
@@ -327,7 +344,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         // Re-send DM subscription to relays after AUTH completes
-        viewModelScope.launch {
+        authCompletedJob = viewModelScope.launch {
             relayPool.authCompleted.collect { relayUrl ->
                 val myPubkey = getUserPubkey() ?: return@collect
                 val dmRelayUrls = relayPool.getDmRelayUrls()
@@ -349,7 +366,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         //
         // Silent init: when returning from process death with cached data, skip the
         // multi-step loading overlay and let events arrive in the background.
-        viewModelScope.launch {
+        startupJob = viewModelScope.launch {
             val cachedFollows = contactRepo.getFollowList()
             val silentInit = cachedFollows.isNotEmpty() && !relayScoreBoard.needsRecompute()
             if (silentInit) {

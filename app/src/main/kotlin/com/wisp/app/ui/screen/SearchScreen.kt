@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -37,13 +36,14 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.FollowSet
-import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
-import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.relay.RelayPool
+import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.ExtendedNetworkCache
 import com.wisp.app.repo.MuteRepository
+import com.wisp.app.ui.component.FollowButton
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.viewmodel.SearchViewModel
@@ -55,6 +55,8 @@ fun SearchScreen(
     relayPool: RelayPool,
     eventRepo: EventRepository,
     muteRepo: MuteRepository? = null,
+    contactRepo: ContactRepository? = null,
+    extendedNetworkCache: ExtendedNetworkCache? = null,
     onProfileClick: (String) -> Unit,
     onNoteClick: (NostrEvent) -> Unit,
     onQuotedNoteClick: ((String) -> Unit)? = null,
@@ -147,8 +149,17 @@ fun SearchScreen(
                 }
 
                 else -> {
+                    val filteredUsers = users.filter { profile ->
+                        val pk = profile.pubkey
+                        val inNetwork = contactRepo?.isFollowing(pk) == true ||
+                                extendedNetworkCache?.firstDegreePubkeys?.contains(pk) == true ||
+                                extendedNetworkCache?.qualifiedPubkeys?.contains(pk) == true ||
+                                profile.nip05 != null
+                        inNetwork
+                    }.take(5)
+
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        if (users.isNotEmpty()) {
+                        if (filteredUsers.isNotEmpty()) {
                             item {
                                 Text(
                                     "Users",
@@ -157,10 +168,12 @@ fun SearchScreen(
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                                 )
                             }
-                            items(users, key = { it.pubkey }) { profile ->
+                            items(filteredUsers, key = { it.pubkey }) { profile ->
                                 UserResultItem(
                                     profile = profile,
-                                    onClick = { onProfileClick(profile.pubkey) }
+                                    isFollowing = contactRepo?.isFollowing(profile.pubkey) == true,
+                                    onClick = { onProfileClick(profile.pubkey) },
+                                    onToggleFollow = { onToggleFollow(profile.pubkey) }
                                 )
                             }
                             item {
@@ -270,7 +283,9 @@ private fun ListResultItem(
 @Composable
 private fun UserResultItem(
     profile: ProfileData,
-    onClick: () -> Unit
+    isFollowing: Boolean = false,
+    onClick: () -> Unit,
+    onToggleFollow: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
@@ -288,28 +303,20 @@ private fun UserResultItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            val npubPreview = try {
-                val npub = Nip19.npubEncode(profile.pubkey.hexToByteArray())
-                npub.take(16) + "..."
-            } catch (_: Exception) {
-                profile.pubkey.take(12) + "..."
-            }
-            Text(
-                text = npubPreview,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
-            if (!profile.about.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(2.dp))
+            if (!profile.nip05.isNullOrBlank()) {
                 Text(
-                    text = profile.about,
+                    text = profile.nip05,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
         }
+        Spacer(modifier = Modifier.width(8.dp))
+        FollowButton(
+            isFollowing = isFollowing,
+            onClick = onToggleFollow
+        )
     }
 }

@@ -84,6 +84,7 @@ fun NotificationsScreen(
     val replyCountVersion = eventRepo?.replyCountVersion?.collectAsState()?.value ?: 0
     val repostVersion = eventRepo?.repostVersion?.collectAsState()?.value ?: 0
     val profileVersion = eventRepo?.profileVersion?.collectAsState()?.value ?: 0
+    val followListSize = viewModel.contactRepository?.followList?.collectAsState()?.value?.size ?: 0
 
     Scaffold(
         topBar = {
@@ -142,6 +143,7 @@ fun NotificationsScreen(
                             replyCountVersion = replyCountVersion,
                             zapVersion = zapVersion,
                             repostVersion = repostVersion,
+                            followListSize = followListSize,
                             onNoteClick = onNoteClick,
                             onProfileClick = onProfileClick,
                             onReply = onReply,
@@ -175,6 +177,7 @@ fun NotificationsScreen(
                             replyCountVersion = replyCountVersion,
                             zapVersion = zapVersion,
                             repostVersion = repostVersion,
+                            followListSize = followListSize,
                             onNoteClick = onNoteClick,
                             onProfileClick = onProfileClick,
                             onReply = onReply,
@@ -225,6 +228,7 @@ private fun NotificationItem(
     replyCountVersion: Int,
     zapVersion: Int,
     repostVersion: Int,
+    followListSize: Int = 0,
     onNoteClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
     onReply: (NostrEvent) -> Unit,
@@ -249,6 +253,7 @@ private fun NotificationItem(
         replyCountVersion = replyCountVersion,
         zapVersion = zapVersion,
         repostVersion = repostVersion,
+        followListSize = followListSize,
         isFollowing = { viewModel.isFollowing(it) },
         onNoteClick = onNoteClick,
         onProfileClick = onProfileClick,
@@ -645,6 +650,7 @@ private data class NotifPostCardParams(
     val replyCountVersion: Int,
     val zapVersion: Int,
     val repostVersion: Int,
+    val followListSize: Int = 0,
     val isFollowing: (String) -> Boolean,
     val onNoteClick: (String) -> Unit,
     val onProfileClick: (String) -> Unit,
@@ -713,7 +719,7 @@ private fun ReferencedNotePostCard(
     val hasUserZapped = remember(params.zapVersion, event.id) {
         eventRepo.hasUserZapped(event.id)
     }
-    val followingAuthor = remember(event.pubkey) {
+    val followingAuthor = remember(params.followListSize, event.pubkey) {
         params.isFollowing(event.pubkey)
     }
 

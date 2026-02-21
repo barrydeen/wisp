@@ -142,7 +142,7 @@ fun RichContent(
     noteActions: NoteActions? = null,
     modifier: Modifier = Modifier
 ) {
-    val segments = parseContent(content)
+    val segments = parseContent(content.trimEnd('\n', '\r'))
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
 
     if (fullScreenImageUrl != null) {
@@ -165,10 +165,9 @@ fun RichContent(
                     AsyncImage(
                         model = segment.url,
                         contentDescription = "Image",
-                        contentScale = ContentScale.Fit,
+                        contentScale = ContentScale.FillWidth,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 300.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .clickable { fullScreenImageUrl = segment.url }
                     )

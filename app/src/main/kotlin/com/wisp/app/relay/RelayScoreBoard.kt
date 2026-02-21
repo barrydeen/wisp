@@ -245,6 +245,7 @@ class RelayScoreBoard(
         relayAuthorsMap = mutableMapOf()
         authorToRelay = mutableMapOf()
         cachedFollowSet = emptySet()
+        prefs.edit().clear().apply()
     }
 
     fun reload(pubkeyHex: String?) {

@@ -277,7 +277,7 @@ fun WispNavHost() {
                 },
                 onLogout = {
                     feedViewModel.resetForAccountSwitch()
-                    walletViewModel.refreshState()
+                    walletViewModel.disconnectWallet()
                     authViewModel.logOut()
                     navController.navigate(Routes.AUTH) {
                         popUpTo(0) { inclusive = true }
@@ -436,11 +436,14 @@ fun WispNavHost() {
 
         composable(Routes.SEARCH) {
             val searchListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
+            val extNetCache by feedViewModel.extendedNetworkRepo.cachedNetwork.collectAsState()
             SearchScreen(
                 viewModel = searchViewModel,
                 relayPool = feedViewModel.relayPool,
                 eventRepo = feedViewModel.eventRepo,
                 muteRepo = feedViewModel.muteRepo,
+                contactRepo = feedViewModel.contactRepo,
+                extendedNetworkCache = extNetCache,
                 onProfileClick = { pubkey ->
                     navController.navigate("profile/$pubkey")
                 },
@@ -812,6 +815,7 @@ fun WispNavHost() {
                         contactRepo = feedViewModel.contactRepo,
                         selectedPubkeys = selectedPubkeys
                     )
+                    feedViewModel.setFeedType(FeedType.EXTENDED_FOLLOWS)
                     feedViewModel.reloadForNewAccount()
                     feedViewModel.initRelays()
                     walletViewModel.refreshState()

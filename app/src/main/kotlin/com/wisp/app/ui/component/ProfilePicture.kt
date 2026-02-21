@@ -31,8 +31,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.wisp.app.R
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -111,10 +113,13 @@ private fun HighlightedProfilePicture(
                 )
             }
     ) {
+        val fallbackPainter = painterResource(R.drawable.ic_launcher_foreground)
         AsyncImage(
             model = url,
             contentDescription = "Profile picture",
             contentScale = ContentScale.Crop,
+            fallback = fallbackPainter,
+            error = fallbackPainter,
             modifier = Modifier
                 .size(size.dp)
                 .clip(CircleShape)
@@ -150,10 +155,13 @@ private fun BaseProfilePicture(
 ) {
     val haptic = LocalHapticFeedback.current
     Box(modifier = modifier) {
+        val fallbackPainter = painterResource(R.drawable.ic_launcher_foreground)
         AsyncImage(
             model = url,
             contentDescription = "Profile picture",
             contentScale = ContentScale.Crop,
+            fallback = fallbackPainter,
+            error = fallbackPainter,
             modifier = Modifier
                 .size(size.dp)
                 .clip(CircleShape)

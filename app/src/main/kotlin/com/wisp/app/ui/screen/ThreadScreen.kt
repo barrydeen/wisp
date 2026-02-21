@@ -78,6 +78,7 @@ fun ThreadScreen(
     val replyCountVersion by eventRepo.replyCountVersion.collectAsState()
     val repostVersion by eventRepo.repostVersion.collectAsState()
     val nip05Version by nip05Repo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
+    val followList by contactRepo.followList.collectAsState()
 
     val noteActions = remember(userPubkey) {
         NoteActions(
@@ -162,7 +163,7 @@ fun ThreadScreen(
                         onNavigateToProfileFromDetails = onProfileClick,
                         onFollowAuthor = { onToggleFollow(event.pubkey) },
                         onBlockAuthor = { onBlockUser(event.pubkey) },
-                        isFollowingAuthor = contactRepo.isFollowing(event.pubkey),
+                        isFollowingAuthor = followList.let { contactRepo.isFollowing(event.pubkey) },
                         isOwnEvent = event.pubkey == userPubkey,
                         onAddToList = { onAddToList(event.id) },
                         isInList = event.id in listedIds,

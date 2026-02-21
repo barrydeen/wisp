@@ -152,7 +152,7 @@ fun PostCard(
             ProfilePicture(
                 url = profile?.picture,
                 showFollowBadge = isFollowingAuthor && !isOwnEvent,
-                modifier = Modifier.clickable(onClick = onProfileClick),
+                onClick = onProfileClick,
                 onLongPress = if (!isOwnEvent) onFollowAuthor else null
             )
             Spacer(Modifier.width(10.dp))

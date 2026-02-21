@@ -37,6 +37,12 @@ class Nip05Repository {
         .followRedirects(true)
         .build()
 
+    fun clear() {
+        statusCache.clear()
+        identifierCache.clear()
+        _version.value++
+    }
+
     fun getStatus(pubkey: String): Nip05Status = statusCache[pubkey] ?: Nip05Status.UNKNOWN
 
     /**

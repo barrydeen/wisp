@@ -188,7 +188,7 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
     }
 
     private fun mergeReaction(event: NostrEvent): Boolean {
-        val emoji = event.content.ifBlank { "+" }
+        val emoji = event.content.ifBlank { "❤️" }
         val referencedId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
             ?: return false
         val key = "reactions:$referencedId"
