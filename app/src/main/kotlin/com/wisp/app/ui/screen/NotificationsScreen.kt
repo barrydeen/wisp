@@ -28,16 +28,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NotificationGroup
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.nostr.ZapEntry
-import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
 import com.wisp.app.ui.component.StackedAvatarRow
 import com.wisp.app.viewmodel.NotificationsViewModel
 import java.text.SimpleDateFormat
@@ -479,28 +480,28 @@ private fun ReplyPostCard(
 ) {
     val eventRepo = postCardParams.eventRepo ?: return
 
-    // "reply to #note1abc..." label
+    // Render the parent note inline above the reply
     if (item.referencedEventId != null) {
-        val truncatedNoteId = remember(item.referencedEventId) {
-            try {
-                val noteId = Nip19.noteEncode(item.referencedEventId.hexToByteArray())
-                "#" + noteId.take(10)
-            } catch (_: Exception) {
-                "#" + item.referencedEventId.take(8)
-            }
-        }
-        Row(
+        Text(
+            text = "replying to",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 16.dp, vertical = 2.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.End
+        )
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 4.dp)
         ) {
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = "reply to $truncatedNoteId",
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
-                color = androidx.compose.ui.graphics.Color(0xFFFF9800),
-                modifier = Modifier.clickable { postCardParams.onNoteClick(item.referencedEventId) }
+            ReferencedNotePostCard(
+                eventId = item.referencedEventId,
+                params = postCardParams
             )
         }
     }
