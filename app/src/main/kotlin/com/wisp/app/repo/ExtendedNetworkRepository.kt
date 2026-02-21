@@ -29,7 +29,8 @@ data class ExtendedNetworkCache(
     val relayUrls: List<String> = emptyList(),
     // Legacy fields kept for deserialization compat with old caches
     val authorToRelay: Map<String, String> = emptyMap(),
-    val scoredRelayUrls: List<String> = emptyList()
+    val scoredRelayUrls: List<String> = emptyList(),
+    val relayHints: Map<String, Set<String>> = emptyMap()
 )
 
 @Serializable
@@ -58,7 +59,7 @@ class ExtendedNetworkRepository(
     private val relayPool: RelayPool,
     private val subManager: SubscriptionManager,
     private val relayScoreBoard: RelayScoreBoard,
-    private val pubkeyHex: String?
+    private var pubkeyHex: String?
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -77,8 +78,9 @@ class ExtendedNetworkRepository(
         private const val THRESHOLD = 10
         private const val FOLLOW_LIST_TIMEOUT_MS = 3_000L
         private const val RELAY_LIST_CHUNK_SIZE = 500
-        private const val RELAY_LIST_TIMEOUT_MS = 3_000L
-        private const val MAX_EXTENDED_RELAYS = 75
+        private const val RELAY_LIST_TIMEOUT_MS = 8_000L
+        private const val MAX_EXTENDED_RELAYS = 100
+        private const val MAX_AUTHORS_PER_RELAY = 300
         private const val STALE_HOURS = 24
         private const val STALE_DRIFT_THRESHOLD = 0.10
 
@@ -173,14 +175,20 @@ class ExtendedNetworkRepository(
 
             Log.d(TAG, "Fetched ${pendingFollowLists.size} follow lists from ${firstDegree.size} follows")
 
-            // Step 2: Parse follow lists and count 2nd-degree appearances
+            // Step 2: Parse follow lists, count 2nd-degree appearances, collect relay hints
+            val relayHints = mutableMapOf<String, MutableSet<String>>()
             val secondDegreeCount = withContext(Dispatchers.Default) {
                 val counts = mutableMapOf<String, Int>()
                 for ((_, event) in pendingFollowLists) {
-                    val follows = Nip02.parseFollowList(event).map { it.pubkey }
-                    for (pk in follows) {
+                    val entries = Nip02.parseFollowList(event)
+                    for (entry in entries) {
+                        val pk = entry.pubkey
                         if (pk != myPubkey && pk !in firstDegreeSet) {
                             counts[pk] = (counts[pk] ?: 0) + 1
+                            val hint = entry.relayHint?.let { normalizeRelayUrl(it) }
+                            if (hint != null) {
+                                relayHints.getOrPut(pk) { mutableSetOf() }.add(hint)
+                            }
                         }
                     }
                 }
@@ -237,8 +245,12 @@ class ExtendedNetworkRepository(
             }
 
             // Step 5: Greedy set-cover to find optimal relays for the extended network
+            val qualifiedHints: Map<String, Set<String>> = relayHints
+                .filterKeys { it in qualified }
+                .mapValues { it.value.toSet() }
+
             val relayUrls = withContext(Dispatchers.Default) {
-                computeRelaySetCover(qualified)
+                computeRelaySetCover(qualified, qualifiedHints)
             }
 
             val stats = NetworkStats(
@@ -253,7 +265,8 @@ class ExtendedNetworkRepository(
                 firstDegreePubkeys = firstDegreeSet,
                 computedAtEpoch = System.currentTimeMillis() / 1000,
                 stats = stats,
-                relayUrls = relayUrls
+                relayUrls = relayUrls,
+                relayHints = qualifiedHints
             )
 
             _cachedNetwork.value = cache
@@ -273,14 +286,34 @@ class ExtendedNetworkRepository(
      * Greedy set-cover: pick relay covering most uncovered qualified pubkeys, repeat.
      * Returns the selected relay URLs in coverage order.
      */
-    private fun computeRelaySetCover(qualified: Set<String>): List<String> {
+    private fun computeRelaySetCover(
+        qualified: Set<String>,
+        relayHints: Map<String, Set<String>> = emptyMap()
+    ): List<String> {
         val relayToAuthors = mutableMapOf<String, MutableSet<String>>()
+        var fromRelayLists = 0
+        var fromHints = 0
+        var uncoveredInput = 0
         for (pubkey in qualified) {
-            val writeRelays = relayListRepo.getWriteRelays(pubkey) ?: continue
-            for (url in writeRelays) {
-                relayToAuthors.getOrPut(url) { mutableSetOf() }.add(pubkey)
+            val writeRelays = relayListRepo.getWriteRelays(pubkey)
+            if (writeRelays != null) {
+                fromRelayLists++
+                for (url in writeRelays) {
+                    relayToAuthors.getOrPut(url) { mutableSetOf() }.add(pubkey)
+                }
+            } else {
+                val hints = relayHints[pubkey]
+                if (hints != null && hints.isNotEmpty()) {
+                    fromHints++
+                    for (url in hints) {
+                        relayToAuthors.getOrPut(url) { mutableSetOf() }.add(pubkey)
+                    }
+                } else {
+                    uncoveredInput++
+                }
             }
         }
+        Log.d(TAG, "Set-cover input: $fromRelayLists from relay lists, $fromHints from hints, $uncoveredInput uncovered")
         if (relayToAuthors.isEmpty()) return emptyList()
 
         val uncovered = qualified.toMutableSet()
@@ -299,7 +332,14 @@ class ExtendedNetworkRepository(
             }
             if (bestUrl == null || bestSize == 0) break
             selected.add(bestUrl)
-            uncovered.removeAll(remaining.remove(bestUrl)!!)
+            val covered = remaining.remove(bestUrl)!!.filter { it in uncovered }
+            if (covered.size <= MAX_AUTHORS_PER_RELAY) {
+                uncovered.removeAll(covered.toSet())
+            } else {
+                // Only claim up to the cap; leave the rest for other relays
+                val claimed = covered.take(MAX_AUTHORS_PER_RELAY).toSet()
+                uncovered.removeAll(claimed)
+            }
         }
 
         Log.d(TAG, "Set-cover: ${selected.size} relays cover ${qualified.size - uncovered.size}/${qualified.size} pubkeys")
@@ -322,12 +362,22 @@ class ExtendedNetworkRepository(
         val cache = _cachedNetwork.value ?: return emptyMap()
         val counts = mutableMapOf<String, Int>()
         for (pubkey in cache.qualifiedPubkeys) {
-            val writeRelays = relayListRepo.getWriteRelays(pubkey) ?: continue
-            for (url in writeRelays) {
+            val writeRelays = relayListRepo.getWriteRelays(pubkey)
+            val urls = writeRelays
+                ?: cache.relayHints[pubkey]?.toList()
+                ?: continue
+            for (url in urls) {
                 counts[url] = (counts[url] ?: 0) + 1
             }
         }
         return counts
+    }
+
+    private fun normalizeRelayUrl(raw: String): String? {
+        val trimmed = raw.trim().trimEnd('/')
+        if (!trimmed.startsWith("wss://", ignoreCase = true) &&
+            !trimmed.startsWith("ws://", ignoreCase = true)) return null
+        return trimmed.lowercase()
     }
 
     fun clear() {
@@ -339,6 +389,7 @@ class ExtendedNetworkRepository(
 
     fun reload(pubkeyHex: String?) {
         clear()
+        this.pubkeyHex = pubkeyHex
         prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
         loadFromPrefs()
     }
