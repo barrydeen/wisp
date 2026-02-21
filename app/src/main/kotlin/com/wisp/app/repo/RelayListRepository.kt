@@ -16,9 +16,9 @@ class RelayListRepository(context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
 
     // pubkey -> parsed relay list
-    private val cache = LruCache<String, List<RelayConfig>>(500)
+    private val cache = LruCache<String, List<RelayConfig>>(5000)
     // pubkey -> event timestamp
-    private val timestamps = LruCache<String, Long>(500)
+    private val timestamps = LruCache<String, Long>(5000)
 
     init {
         loadFromPrefs()

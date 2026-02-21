@@ -1083,6 +1083,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun startNetworkDiscovery() {
         viewModelScope.launch {
             extendedNetworkRepo.discoverNetwork()
+            // Rebuild pool with new extended relay map if already on extended feed
+            if (_feedType.value == FeedType.EXTENDED_FOLLOWS) {
+                rebuildRelayPool()
+                resubscribeFeed()
+            }
         }
     }
 
