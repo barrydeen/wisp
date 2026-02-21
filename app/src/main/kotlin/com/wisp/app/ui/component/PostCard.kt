@@ -94,6 +94,7 @@ fun PostCard(
     onPin: () -> Unit = {},
     isPinned: Boolean = false,
     onQuotedNoteClick: ((String) -> Unit)? = null,
+    noteActions: NoteActions? = null,
     modifier: Modifier = Modifier,
     showDivider: Boolean = true
 ) {
@@ -289,7 +290,8 @@ fun PostCard(
             color = MaterialTheme.colorScheme.onSurface,
             eventRepo = eventRepo,
             onProfileClick = onNavigateToProfile,
-            onNoteClick = onQuotedNoteClick
+            onNoteClick = onQuotedNoteClick,
+            noteActions = noteActions
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             ActionBar(

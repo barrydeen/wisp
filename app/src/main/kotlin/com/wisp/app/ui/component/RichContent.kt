@@ -45,13 +45,36 @@ import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.toHex
+import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrUriData
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.Nip05Repository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
+
+/**
+ * Bundles event-generic action callbacks so quoted notes can render
+ * a full PostCard (action bar, triple-dot menu, expandable details, etc.).
+ */
+data class NoteActions(
+    val onReply: (NostrEvent) -> Unit = {},
+    val onReact: (NostrEvent, String) -> Unit = { _, _ -> },
+    val onRepost: (NostrEvent) -> Unit = {},
+    val onQuote: (NostrEvent) -> Unit = {},
+    val onZap: (NostrEvent) -> Unit = {},
+    val onProfileClick: (String) -> Unit = {},
+    val onNoteClick: (String) -> Unit = {},
+    val onAddToList: (String) -> Unit = {},
+    val onFollowAuthor: (String) -> Unit = {},
+    val onBlockAuthor: (String) -> Unit = {},
+    val onPin: (String) -> Unit = {},
+    val isFollowing: (String) -> Boolean = { false },
+    val userPubkey: String? = null,
+    val nip05Repo: Nip05Repository? = null,
+)
 
 private sealed interface ContentSegment {
     data class TextSegment(val text: String) : ContentSegment
@@ -116,6 +139,7 @@ fun RichContent(
     eventRepo: EventRepository? = null,
     onProfileClick: ((String) -> Unit)? = null,
     onNoteClick: ((String) -> Unit)? = null,
+    noteActions: NoteActions? = null,
     modifier: Modifier = Modifier
 ) {
     val segments = parseContent(content)
@@ -166,7 +190,8 @@ fun RichContent(
                             eventId = segment.eventId,
                             eventRepo = eventRepo,
                             relayHints = segment.relayHints,
-                            onNoteClick = onNoteClick
+                            onNoteClick = onNoteClick,
+                            noteActions = noteActions
                         )
                     } else {
                         Text(
@@ -200,8 +225,14 @@ fun RichContent(
 }
 
 @Composable
-fun QuotedNote(eventId: String, eventRepo: EventRepository, relayHints: List<String> = emptyList(), onNoteClick: ((String) -> Unit)? = null) {
-    // Observe version so we recompose when quoted events arrive from relays
+fun QuotedNote(
+    eventId: String,
+    eventRepo: EventRepository,
+    relayHints: List<String> = emptyList(),
+    onNoteClick: ((String) -> Unit)? = null,
+    noteActions: NoteActions? = null
+) {
+    // Observe versions so we recompose when data arrives from relays
     val version by eventRepo.quotedEventVersion.collectAsState()
     val event = remember(eventId, version) { eventRepo.getEvent(eventId) }
     val profile = remember(event, version) { event?.let { eventRepo.getProfileData(it.pubkey) } }
@@ -213,19 +244,83 @@ fun QuotedNote(eventId: String, eventRepo: EventRepository, relayHints: List<Str
         }
     }
 
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp)
-            .then(
-                if (onNoteClick != null) Modifier.clickable { onNoteClick(eventId) }
-                else Modifier
+    val effectiveNoteClick = noteActions?.onNoteClick ?: onNoteClick
+
+    if (event != null && noteActions != null) {
+        // Full PostCard rendering with all interactive features
+        val reactionVersion by eventRepo.reactionVersion.collectAsState()
+        val zapVersion by eventRepo.zapVersion.collectAsState()
+        val replyCountVersion by eventRepo.replyCountVersion.collectAsState()
+        val repostVersion by eventRepo.repostVersion.collectAsState()
+
+        val likeCount = remember(reactionVersion, eventId) { eventRepo.getReactionCount(eventId) }
+        val replyCount = remember(replyCountVersion, eventId) { eventRepo.getReplyCount(eventId) }
+        val zapSats = remember(zapVersion, eventId) { eventRepo.getZapSats(eventId) }
+        val repostCount = remember(repostVersion, eventId) { eventRepo.getRepostCount(eventId) }
+        val userEmojis = remember(reactionVersion, eventId, noteActions.userPubkey) {
+            noteActions.userPubkey?.let { eventRepo.getUserReactionEmojis(eventId, it) } ?: emptySet()
+        }
+        val hasUserReposted = remember(repostVersion, eventId) { eventRepo.hasUserReposted(eventId) }
+        val hasUserZapped = remember(zapVersion, eventId) { eventRepo.hasUserZapped(eventId) }
+        val reactionDetails = remember(reactionVersion, eventId) { eventRepo.getReactionDetails(eventId) }
+        val zapDetails = remember(zapVersion, eventId) { eventRepo.getZapDetails(eventId) }
+
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp)
+        ) {
+            PostCard(
+                event = event,
+                profile = profile,
+                onReply = { noteActions.onReply(event) },
+                onProfileClick = { noteActions.onProfileClick(event.pubkey) },
+                onNavigateToProfile = noteActions.onProfileClick,
+                onNoteClick = { effectiveNoteClick?.invoke(eventId) },
+                onReact = { emoji -> noteActions.onReact(event, emoji) },
+                userReactionEmojis = userEmojis,
+                onRepost = { noteActions.onRepost(event) },
+                onQuote = { noteActions.onQuote(event) },
+                hasUserReposted = hasUserReposted,
+                repostCount = repostCount,
+                onZap = { noteActions.onZap(event) },
+                hasUserZapped = hasUserZapped,
+                likeCount = likeCount,
+                replyCount = replyCount,
+                zapSats = zapSats,
+                eventRepo = eventRepo,
+                reactionDetails = reactionDetails,
+                zapDetails = zapDetails,
+                onNavigateToProfileFromDetails = noteActions.onProfileClick,
+                onFollowAuthor = { noteActions.onFollowAuthor(event.pubkey) },
+                onBlockAuthor = { noteActions.onBlockAuthor(event.pubkey) },
+                isFollowingAuthor = noteActions.isFollowing(event.pubkey),
+                isOwnEvent = event.pubkey == noteActions.userPubkey,
+                nip05Repo = noteActions.nip05Repo,
+                onAddToList = { noteActions.onAddToList(eventId) },
+                onPin = { noteActions.onPin(eventId) },
+                onQuotedNoteClick = effectiveNoteClick,
+                noteActions = noteActions,
+                showDivider = false
             )
-    ) {
-        if (event != null) {
+        }
+    } else if (event != null) {
+        // Simple fallback rendering (no noteActions available)
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp)
+                .then(
+                    if (effectiveNoteClick != null) Modifier.clickable { effectiveNoteClick(eventId) }
+                    else Modifier
+                )
+        ) {
             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ProfilePicture(url = profile?.picture, size = 34)
@@ -254,7 +349,17 @@ fun QuotedNote(eventId: String, eventRepo: EventRepository, relayHints: List<Str
                     eventRepo = eventRepo
                 )
             }
-        } else {
+        }
+    } else {
+        // Loading state
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp)
+        ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(14.dp)

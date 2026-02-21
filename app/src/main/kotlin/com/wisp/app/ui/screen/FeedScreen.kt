@@ -63,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.FollowSet
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RelayIcon
@@ -152,6 +153,25 @@ fun FeedScreen(
     var zapErrorMessage by remember { mutableStateOf<String?>(null) }
 
     val isWalletConnected = viewModel.nwcRepo.hasConnection()
+
+    val noteActions = remember(userPubkey) {
+        NoteActions(
+            onReply = onReply,
+            onReact = onReact,
+            onRepost = onRepost,
+            onQuote = onQuote,
+            onZap = { event -> zapTargetEvent = event },
+            onProfileClick = onProfileClick,
+            onNoteClick = { eventId -> onQuotedNoteClick?.invoke(eventId) },
+            onAddToList = onAddToList,
+            onFollowAuthor = { pubkey -> viewModel.toggleFollow(pubkey) },
+            onBlockAuthor = { pubkey -> viewModel.blockUser(pubkey) },
+            onPin = { eventId -> viewModel.togglePin(eventId) },
+            isFollowing = { pubkey -> viewModel.contactRepo.isFollowing(pubkey) },
+            userPubkey = userPubkey,
+            nip05Repo = viewModel.nip05Repo
+        )
+    }
 
     // Re-establish subscriptions when app returns from background.
     // Use the Activity lifecycle (not NavBackStackEntry) so tab navigation
@@ -603,7 +623,8 @@ fun FeedScreen(
                                     onRelayClick = { url ->
                                         viewModel.setSelectedRelay(url)
                                         viewModel.setFeedType(FeedType.RELAY)
-                                    }
+                                    },
+                                    noteActions = noteActions
                                 )
                             }
                             if (initialLoadDone) {
@@ -686,7 +707,8 @@ private fun FeedItem(
     onZap: () -> Unit,
     onAddToList: () -> Unit = {},
     onPin: () -> Unit = {},
-    onRelayClick: (String) -> Unit = {}
+    onRelayClick: (String) -> Unit = {},
+    noteActions: NoteActions? = null
 ) {
     val profileData = remember(profileVersion, event.pubkey) {
         viewModel.eventRepo.getProfileData(event.pubkey)
@@ -771,7 +793,8 @@ private fun FeedItem(
         isInList = isInList,
         onPin = onPin,
         isPinned = isPinned,
-        onQuotedNoteClick = onQuotedNoteClick
+        onQuotedNoteClick = onQuotedNoteClick,
+        noteActions = noteActions
     )
 }
 

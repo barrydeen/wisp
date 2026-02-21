@@ -30,6 +30,7 @@ import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
+import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.viewmodel.ThreadViewModel
 import kotlin.math.min
@@ -77,6 +78,25 @@ fun ThreadScreen(
     val replyCountVersion by eventRepo.replyCountVersion.collectAsState()
     val repostVersion by eventRepo.repostVersion.collectAsState()
     val nip05Version by nip05Repo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
+
+    val noteActions = remember(userPubkey) {
+        NoteActions(
+            onReply = onReply,
+            onReact = onReact,
+            onRepost = onRepost,
+            onQuote = onQuote,
+            onZap = onZap,
+            onProfileClick = onProfileClick,
+            onNoteClick = { eventId -> onQuotedNoteClick?.invoke(eventId) },
+            onAddToList = onAddToList,
+            onFollowAuthor = onToggleFollow,
+            onBlockAuthor = onBlockUser,
+            onPin = onTogglePin,
+            isFollowing = { pubkey -> contactRepo.isFollowing(pubkey) },
+            userPubkey = userPubkey,
+            nip05Repo = nip05Repo
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -150,6 +170,7 @@ fun ThreadScreen(
                         isPinned = event.id in pinnedIds,
                         nip05Repo = nip05Repo,
                         onQuotedNoteClick = onQuotedNoteClick,
+                        noteActions = noteActions,
                         modifier = Modifier.padding(start = (min(depth, 4) * 24).dp)
                     )
                 }
