@@ -28,6 +28,7 @@ import com.wisp.app.repo.BookmarkSetRepository
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.DiscoveryState
 import com.wisp.app.repo.ExtendedNetworkRepository
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.KeyRepository
@@ -65,6 +66,8 @@ sealed class InitLoadingState {
     data class FoundFollows(val count: Int) : InitLoadingState()
     data class FetchingRelayLists(val found: Int, val total: Int) : InitLoadingState()
     data class ComputingRouting(val relayCount: Int, val coveredAuthors: Int) : InitLoadingState()
+    data class DiscoveringNetwork(val fetched: Int, val total: Int) : InitLoadingState()
+    data class ExpandingRelays(val relayCount: Int) : InitLoadingState()
     data object Subscribing : InitLoadingState()
     data object Done : InitLoadingState()
 }
@@ -283,6 +286,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                     (_feedType.value == FeedType.FOLLOWS || _feedType.value == FeedType.EXTENDED_FOLLOWS)) {
                     rebuildRelayPool()
                     resubscribeFeed()
+                    applyAuthorFilterForFeedType(_feedType.value)
                 }
             }
         }
@@ -320,9 +324,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             bookmarkSetRepo.setOwner(it)
         }
 
-        // Sequential startup: self-data → relay lists → scoreboard → feed.
+        // Sequential startup: self-data → relay lists → scoreboard → extended network → feed.
         // If the cached scoreboard matches the current follow list, skip the expensive
-        // relay-list fetch + recompute and go straight to subscribing the feed.
+        // relay-list fetch + recompute and go straight to the extended network phase.
         viewModelScope.launch {
             val totalRelays = relayPool.getRelayUrls().size
             _initLoadingState.value = InitLoadingState.Connecting(0, totalRelays)
@@ -339,7 +343,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 // Cached scoreboard is valid — skip relay-list fetch
                 val scored = relayScoreBoard.getScoredRelays()
                 Log.d("FeedViewModel", "init: scoreboard cache valid (${scored.size} relays, ${follows.size} follows), skipping recompute")
-                _initLoadingState.value = InitLoadingState.Subscribing
             } else {
                 // Follow list changed or first launch — full rebuild
                 _initLoadingState.value = InitLoadingState.FoundFollows(follows.size)
@@ -366,9 +369,40 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 delay(500) // brief pause so the user sees the routing result
 
                 relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
-                _initLoadingState.value = InitLoadingState.Subscribing
             }
 
+            // Phase B: Extended network discovery
+            val cache = extendedNetworkRepo.cachedNetwork.value
+            val cacheValid = cache != null && !extendedNetworkRepo.isCacheStale(cache)
+
+            if (!cacheValid && follows.isNotEmpty()) {
+                // Pipe discoveryState updates into initLoadingState
+                val progressJob = launch {
+                    extendedNetworkRepo.discoveryState.collect { ds ->
+                        if (ds is DiscoveryState.FetchingFollowLists) {
+                            _initLoadingState.value = InitLoadingState.DiscoveringNetwork(ds.fetched, ds.total)
+                        }
+                    }
+                }
+                try {
+                    extendedNetworkRepo.discoverNetwork()
+                } catch (e: Exception) {
+                    Log.e("FeedViewModel", "Extended network discovery failed during init", e)
+                }
+                progressJob.cancel()
+            }
+
+            // Expand pool with extended relays
+            val extConfigs = extendedNetworkRepo.getRelayConfigs()
+            if (extConfigs.isNotEmpty()) {
+                _initLoadingState.value = InitLoadingState.ExpandingRelays(extConfigs.size)
+                rebuildRelayPool()
+                relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
+            }
+
+            // Apply filter and subscribe
+            applyAuthorFilterForFeedType(_feedType.value)
+            _initLoadingState.value = InitLoadingState.Subscribing
             subscribeFeed()
             metadataFetcher.fetchProfilesForFollows(follows)
 
@@ -622,8 +656,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Rebuild the persistent relay pool from pinned + scored + extended network relays.
-     * When extended follows is active, the pool expands to include relays needed for
-     * the 2nd-degree network. When switching back, those relays are removed.
+     * Extended relays are always included so feed type switching is a cheap local filter.
      */
     private fun rebuildRelayPool() {
         val pinnedRelays = keyRepo.getRelays()
@@ -631,24 +664,32 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         val scoredConfigs = relayScoreBoard.getScoredRelayConfigs()
             .filter { it.url !in pinnedUrls }
         val baseUrls = pinnedUrls + scoredConfigs.map { it.url }.toSet()
-
-        val extendedConfigs = if (_feedType.value == FeedType.EXTENDED_FOLLOWS) {
-            extendedNetworkRepo.getRelayConfigs().filter { it.url !in baseUrls }
-        } else {
-            emptyList()
-        }
+        val extendedConfigs = extendedNetworkRepo.getRelayConfigs()
+            .filter { it.url !in baseUrls }
 
         relayPool.updateRelays(pinnedRelays + scoredConfigs + extendedConfigs)
     }
 
     fun setFeedType(type: FeedType) {
-        val wasExtended = _feedType.value == FeedType.EXTENDED_FOLLOWS
         _feedType.value = type
-        val isExtended = type == FeedType.EXTENDED_FOLLOWS
-        // Expand or shrink the persistent pool when toggling extended follows
-        if (wasExtended != isExtended) rebuildRelayPool()
-        eventRepo.clearFeed()
-        resubscribeFeed()
+        applyAuthorFilterForFeedType(type)
+        when (type) {
+            FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
+                // No relay/subscription changes — just a local filter swap
+            }
+            FeedType.RELAY, FeedType.LIST -> {
+                eventRepo.clearFeed()
+                resubscribeFeed()
+            }
+        }
+    }
+
+    private fun applyAuthorFilterForFeedType(type: FeedType) {
+        eventRepo.setAuthorFilter(when (type) {
+            FeedType.FOLLOWS -> contactRepo.getFollowList().map { it.pubkey }.toSet()
+            FeedType.LIST -> listRepo.selectedList.value?.members
+            else -> null  // EXTENDED_FOLLOWS and RELAY show everything
+        })
     }
 
     fun setSelectedRelay(url: String) {
@@ -673,11 +714,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         for ((url, count) in relayScoreBoard.getCoverageCounts()) {
             counts[url] = (counts[url] ?: 0) + count
         }
-        // Add extended network counts when that feed is active
-        if (_feedType.value == FeedType.EXTENDED_FOLLOWS) {
-            for ((url, count) in extendedNetworkRepo.getCoverageCounts()) {
-                counts[url] = (counts[url] ?: 0) + count
-            }
+        // Always include extended network counts (pool is always expanded)
+        for ((url, count) in extendedNetworkRepo.getCoverageCounts()) {
+            counts[url] = (counts[url] ?: 0) + count
         }
         return counts
     }
@@ -777,9 +816,22 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 awaitRelayListCoverage(follows, target, timeoutMs = 10_000)
                 subManager.closeSubscription("relay-lists")
                 recomputeAndMergeRelays()
-                relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
             }
 
+            // Re-discover extended network if cache is stale
+            val cache = extendedNetworkRepo.cachedNetwork.value
+            if (cache == null || extendedNetworkRepo.isCacheStale(cache)) {
+                val follows = contactRepo.getFollowList().map { it.pubkey }
+                if (follows.isNotEmpty()) {
+                    try { extendedNetworkRepo.discoverNetwork() } catch (_: Exception) {}
+                }
+            }
+
+            // Always rebuild pool (includes extended relays)
+            rebuildRelayPool()
+            relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
+
+            applyAuthorFilterForFeedType(_feedType.value)
             subscribeFeed()
             metadataFetcher.fetchProfilesForFollows(contactRepo.getFollowList().map { it.pubkey })
 
@@ -813,16 +865,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
                 outboxRouter.subscribeByAuthors(feedSubId, authors, notesFilter)
             }
-            FeedType.FOLLOWS -> {
-                val authors = contactRepo.getFollowList().map { it.pubkey }
-                if (authors.isEmpty()) return
-                val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                outboxRouter.subscribeByAuthors(feedSubId, authors, notesFilter)
-            }
-            FeedType.EXTENDED_FOLLOWS -> {
-                val cache = extendedNetworkRepo.cachedNetwork.value ?: return
+            FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
+                val cache = extendedNetworkRepo.cachedNetwork.value
                 val firstDegree = contactRepo.getFollowList().map { it.pubkey }
-                val allAuthors = (firstDegree + cache.qualifiedPubkeys).distinct()
+                val allAuthors = if (cache != null) {
+                    (firstDegree + cache.qualifiedPubkeys).distinct()
+                } else {
+                    firstDegree
+                }
                 if (allAuthors.isEmpty()) return
                 val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
                 outboxRouter.subscribeByAuthors(feedSubId, allAuthors, notesFilter)
@@ -1000,17 +1050,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         val oldest = eventRepo.getOldestTimestamp() ?: run { isLoadingMore = false; return }
 
         when (_feedType.value) {
-            FeedType.FOLLOWS -> {
-                val authors = contactRepo.getFollowList().map { it.pubkey }
-                if (authors.isEmpty()) { isLoadingMore = false; return }
-                val templateFilter = Filter(kinds = listOf(1, 6), until = oldest - 1, limit = 50)
-                outboxRouter.subscribeByAuthors("loadmore", authors, templateFilter)
-            }
-            FeedType.EXTENDED_FOLLOWS -> {
+            FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
                 val cache = extendedNetworkRepo.cachedNetwork.value
-                    ?: run { isLoadingMore = false; return }
                 val firstDegree = contactRepo.getFollowList().map { it.pubkey }
-                val allAuthors = (firstDegree + cache.qualifiedPubkeys).distinct()
+                val allAuthors = if (cache != null) {
+                    (firstDegree + cache.qualifiedPubkeys).distinct()
+                } else {
+                    firstDegree
+                }
                 if (allAuthors.isEmpty()) { isLoadingMore = false; return }
                 val templateFilter = Filter(kinds = listOf(1, 6), until = oldest - 1, limit = 50)
                 outboxRouter.subscribeByAuthors("loadmore", allAuthors, templateFilter)
@@ -1098,19 +1145,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
     }
-
-    fun startNetworkDiscovery() {
-        viewModelScope.launch {
-            extendedNetworkRepo.discoverNetwork()
-            // Rebuild pool with new extended relay map if already on extended feed
-            if (_feedType.value == FeedType.EXTENDED_FOLLOWS) {
-                rebuildRelayPool()
-                resubscribeFeed()
-            }
-        }
-    }
-
-    fun isExtendedNetworkReady(): Boolean = extendedNetworkRepo.isNetworkReady()
 
     fun setSelectedList(followSet: com.wisp.app.nostr.FollowSet) {
         listRepo.selectList(followSet)

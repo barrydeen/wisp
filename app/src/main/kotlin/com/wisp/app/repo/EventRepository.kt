@@ -26,6 +26,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val _feed = MutableStateFlow<List<NostrEvent>>(emptyList())
     val feed: StateFlow<List<NostrEvent>> = _feed
 
+    // Author filter: null = show all, non-null = only show events from these pubkeys
+    private val _authorFilter = MutableStateFlow<Set<String>?>(null)
+
     private val _newNoteCount = MutableStateFlow(0)
     val newNoteCount: StateFlow<Int> = _newNoteCount
     var countNewNotes = false
@@ -91,7 +94,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         // Debounce feed list emissions — emit at most once per 16ms frame
         scope.launch {
             for (signal in feedDirty) {
-                _feed.value = synchronized(feedList) { feedList.toList() }
+                val filter = _authorFilter.value
+                val raw = synchronized(feedList) { feedList.toList() }
+                _feed.value = if (filter == null) raw else raw.filter { it.pubkey in filter }
                 delay(16)
             }
         }
@@ -244,7 +249,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             feedList.add(low, event)
         }
         feedDirty.trySend(Unit)
-        if (countNewNotes) _newNoteCount.value++
+        val filter = _authorFilter.value
+        if (countNewNotes && (filter == null || event.pubkey in filter)) _newNoteCount.value++
     }
 
     fun cacheEvent(event: NostrEvent) {
@@ -389,7 +395,25 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun hasUserZapped(eventId: String): Boolean = userZaps.get(eventId) == true
 
-    fun getOldestTimestamp(): Long? = synchronized(feedList) { feedList.lastOrNull()?.created_at }
+    fun setAuthorFilter(pubkeys: Set<String>?) {
+        _authorFilter.value = pubkeys
+        rebuildFilteredFeed()
+    }
+
+    private fun rebuildFilteredFeed() {
+        val filter = _authorFilter.value
+        val raw = synchronized(feedList) { feedList.toList() }
+        _feed.value = if (filter == null) raw else raw.filter { it.pubkey in filter }
+    }
+
+    fun getOldestTimestamp(): Long? {
+        // Return oldest from the filtered feed so loadMore pages correctly
+        val filter = _authorFilter.value
+        return synchronized(feedList) {
+            if (filter == null) feedList.lastOrNull()?.created_at
+            else feedList.lastOrNull { it.pubkey in filter }?.created_at
+        }
+    }
 
     fun resetNewNoteCount() {
         _newNoteCount.value = 0
@@ -434,6 +458,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun clearAll() {
+        _authorFilter.value = null
         clearFeed()
         replyCounts.evictAll()
         zapSats.evictAll()

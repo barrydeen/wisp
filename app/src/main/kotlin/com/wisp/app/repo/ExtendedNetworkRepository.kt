@@ -72,6 +72,7 @@ class ExtendedNetworkRepository(
     // Temporary storage for kind 3 events received during discovery
     private val pendingFollowLists = java.util.concurrent.ConcurrentHashMap<String, NostrEvent>()
     @Volatile private var discoveryTotal = 0
+    @Volatile private var discoveryInProgress = false
 
     companion object {
         private const val TAG = "ExtendedNetworkRepo"
@@ -126,6 +127,8 @@ class ExtendedNetworkRepository(
     }
 
     suspend fun discoverNetwork() {
+        if (discoveryInProgress) return
+        discoveryInProgress = true
         try {
             val myPubkey = pubkeyHex ?: run {
                 _discoveryState.value = DiscoveryState.Failed("No account logged in")
@@ -279,6 +282,8 @@ class ExtendedNetworkRepository(
         } catch (e: Exception) {
             Log.e(TAG, "Discovery failed", e)
             _discoveryState.value = DiscoveryState.Failed(e.message ?: "Unknown error")
+        } finally {
+            discoveryInProgress = false
         }
     }
 

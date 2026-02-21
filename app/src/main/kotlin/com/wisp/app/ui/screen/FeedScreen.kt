@@ -24,7 +24,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -108,7 +107,6 @@ fun FeedScreen(
     onSafety: () -> Unit = {},
     onConsole: () -> Unit = {},
     onKeys: () -> Unit = {},
-    onNetworkDiscovery: () -> Unit = {},
     onAddToList: (String) -> Unit = {},
     scrollToTopTrigger: Int = 0
 ) {
@@ -340,19 +338,6 @@ fun FeedScreen(
                             Row(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                            if (feedType == FeedType.EXTENDED_FOLLOWS) {
-                                IconButton(
-                                    onClick = { onNetworkDiscovery() },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Refresh,
-                                        contentDescription = "Rebuild network",
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                                Spacer(Modifier.width(4.dp))
-                            }
                             Box {
                                 Surface(
                                     onClick = { showFeedTypeDropdown = true },
@@ -406,11 +391,7 @@ fun FeedScreen(
                                         text = { Text("Extended") },
                                         onClick = {
                                             showFeedTypeDropdown = false
-                                            if (viewModel.isExtendedNetworkReady()) {
-                                                viewModel.setFeedType(FeedType.EXTENDED_FOLLOWS)
-                                            } else {
-                                                onNetworkDiscovery()
-                                            }
+                                            viewModel.setFeedType(FeedType.EXTENDED_FOLLOWS)
                                         },
                                         trailingIcon = if (feedType == FeedType.EXTENDED_FOLLOWS) {{
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -1092,16 +1073,21 @@ private fun initLoadingProgress(state: InitLoadingState): Float {
         is InitLoadingState.Idle -> 0f
         is InitLoadingState.Connecting -> {
             val frac = if (state.total > 0) state.connected.toFloat() / state.total else 0f
-            frac * 0.10f
+            frac * 0.08f
         }
-        is InitLoadingState.FetchingSelfData -> 0.15f
-        is InitLoadingState.FoundFollows -> 0.20f
+        is InitLoadingState.FetchingSelfData -> 0.10f
+        is InitLoadingState.FoundFollows -> 0.12f
         is InitLoadingState.FetchingRelayLists -> {
             val frac = if (state.total > 0) state.found.toFloat() / state.total else 0f
-            0.20f + frac * 0.55f
+            0.12f + frac * 0.28f
         }
-        is InitLoadingState.ComputingRouting -> 0.85f
-        is InitLoadingState.Subscribing -> 0.95f
+        is InitLoadingState.ComputingRouting -> 0.45f
+        is InitLoadingState.DiscoveringNetwork -> {
+            val frac = if (state.total > 0) state.fetched.toFloat() / state.total else 0f
+            0.45f + frac * 0.30f
+        }
+        is InitLoadingState.ExpandingRelays -> 0.80f
+        is InitLoadingState.Subscribing -> 0.90f
         is InitLoadingState.Done -> 1f
     }
 }
@@ -1114,6 +1100,8 @@ private fun initLoadingText(state: InitLoadingState): String {
         is InitLoadingState.FoundFollows -> "Found your ${state.count} follows"
         is InitLoadingState.FetchingRelayLists -> "Fetching relay lists... ${state.found}/${state.total}"
         is InitLoadingState.ComputingRouting -> "Computed routing across ${state.relayCount} relays for ${state.coveredAuthors} authors"
+        is InitLoadingState.DiscoveringNetwork -> "Discovering extended network... ${state.fetched}/${state.total}"
+        is InitLoadingState.ExpandingRelays -> "Connecting to ${state.relayCount} extended relays..."
         is InitLoadingState.Subscribing -> "Subscribing to feed..."
         is InitLoadingState.Done -> "Done!"
     }
