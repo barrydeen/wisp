@@ -12,8 +12,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -51,6 +55,7 @@ fun NotificationsScreen(
     viewModel: NotificationsViewModel,
     scrollToTopTrigger: Int = 0,
     userPubkey: String? = null,
+    onBack: () -> Unit = {},
     onNoteClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
     onReply: (NostrEvent) -> Unit = {},
@@ -84,6 +89,11 @@ fun NotificationsScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Notifications") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
@@ -376,16 +386,11 @@ private fun ZapGroupRow(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            // Header with total + timestamp
+            // Header with timestamp
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "\u26A1 ${formatSats(group.totalSats)} total",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.tertiary
-                )
                 Spacer(Modifier.weight(1f))
                 Text(
                     text = formatNotifTimestamp(group.latestTimestamp),
@@ -506,10 +511,12 @@ private fun ReplyPostCard(
         }
     }
 
-    ReferencedNotePostCard(
-        eventId = item.replyEventId,
-        params = postCardParams
-    )
+    Column(modifier = Modifier.padding(start = 24.dp)) {
+        ReferencedNotePostCard(
+            eventId = item.replyEventId,
+            params = postCardParams
+        )
+    }
 }
 
 // ── Quote ───────────────────────────────────────────────────────────────
@@ -746,11 +753,28 @@ private fun ReferencedNotePostCard(
     )
 }
 
-private val notifTimeFormat = SimpleDateFormat("MMM d", Locale.US)
+private val notifDateTimeFormat = SimpleDateFormat("MMM d, HH:mm", Locale.US)
 
 private fun formatNotifTimestamp(epoch: Long): String {
     if (epoch == 0L) return ""
-    return notifTimeFormat.format(Date(epoch * 1000))
+    val now = System.currentTimeMillis()
+    val millis = epoch * 1000
+    val diff = now - millis
+
+    if (diff < 0) return notifDateTimeFormat.format(Date(millis))
+
+    val seconds = diff / 1000
+    val minutes = seconds / 60
+    val hours = minutes / 60
+
+    if (seconds < 60) return "${seconds}s"
+    if (minutes < 60) return "${minutes}m"
+    if (hours < 24) return "${hours}h"
+
+    val days = diff / (24 * 60 * 60 * 1000L)
+    if (days == 1L) return "yesterday"
+
+    return notifDateTimeFormat.format(Date(millis))
 }
 
 private fun formatSats(sats: Long): String = when {

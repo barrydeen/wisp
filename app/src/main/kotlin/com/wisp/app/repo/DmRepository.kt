@@ -1,5 +1,7 @@
 package com.wisp.app.repo
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.util.LruCache
 import com.wisp.app.nostr.DmConversation
 import com.wisp.app.nostr.DmMessage
@@ -7,7 +9,10 @@ import com.wisp.app.nostr.wipe
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-class DmRepository {
+class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
+    private val prefs: SharedPreferences? =
+        context?.getSharedPreferences("wisp_dm_${pubkeyHex ?: "anon"}", Context.MODE_PRIVATE)
+    private var lastReadDmTimestamp: Long = prefs?.getLong("last_read_dm", 0L) ?: 0L
     private val lock = Any()
     private val conversations = LruCache<String, MutableList<DmMessage>>(100)
     private val conversationKeyCache = object : LruCache<String, ByteArray>(50) {
@@ -35,7 +40,9 @@ class DmRepository {
                 return
             }
             seenGiftWraps.put(msg.giftWrapId, msg.id)
-            _hasUnreadDms.value = true
+            if (msg.createdAt > lastReadDmTimestamp) {
+                _hasUnreadDms.value = true
+            }
 
             val messages = conversations.get(peerPubkey) ?: mutableListOf<DmMessage>().also {
                 conversations.put(peerPubkey, it)
@@ -79,6 +86,15 @@ class DmRepository {
 
     fun markDmsRead() {
         _hasUnreadDms.value = false
+        // Persist the latest message timestamp so we don't show stale indicators on relaunch
+        val latestTimestamp = synchronized(lock) {
+            val snapshot = conversations.snapshot()
+            snapshot.values.flatMap { it }.maxOfOrNull { it.createdAt } ?: 0L
+        }
+        if (latestTimestamp > lastReadDmTimestamp) {
+            lastReadDmTimestamp = latestTimestamp
+            prefs?.edit()?.putLong("last_read_dm", latestTimestamp)?.apply()
+        }
     }
 
     fun cacheDmRelays(pubkey: String, urls: List<String>) {
@@ -93,6 +109,10 @@ class DmRepository {
             conversationKeyCache.remove(pubkey)
         }
         updateConversationList()
+    }
+
+    fun reload(pubkeyHex: String?) {
+        lastReadDmTimestamp = prefs?.getLong("last_read_dm", 0L) ?: 0L
     }
 
     fun clear() {

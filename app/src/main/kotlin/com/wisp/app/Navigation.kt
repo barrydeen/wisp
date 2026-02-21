@@ -857,6 +857,7 @@ fun WispNavHost() {
                 viewModel = notificationsViewModel,
                 scrollToTopTrigger = scrollToTopTrigger,
                 userPubkey = feedViewModel.getUserPubkey(),
+                onBack = { navController.popBackStack() },
                 onNoteClick = { eventId ->
                     navController.navigate("thread/$eventId")
                 },

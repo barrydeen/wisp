@@ -1,6 +1,7 @@
 package com.wisp.app.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -1009,8 +1010,8 @@ private fun ScrollToTopButton(
         Surface(
             onClick = onClick,
             shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Color(0xFFFF9800),
+            contentColor = Color.White,
             shadowElevation = 4.dp
         ) {
             Row(

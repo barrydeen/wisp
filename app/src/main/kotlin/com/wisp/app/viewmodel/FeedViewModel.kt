@@ -57,6 +57,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import android.content.Context
+import android.content.SharedPreferences
 
 enum class FeedType { FOLLOWS, EXTENDED_FOLLOWS, RELAY, LIST }
 
@@ -86,7 +88,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val eventRepo = EventRepository(profileRepo, muteRepo).also { it.currentUserPubkey = pubkeyHex }
     val contactRepo = ContactRepository(app, pubkeyHex)
     val listRepo = ListRepository(app, pubkeyHex)
-    val dmRepo = DmRepository()
+    val dmRepo = DmRepository(app, pubkeyHex)
     val notifRepo = NotificationRepository(app, pubkeyHex)
     val relayListRepo = RelayListRepository(app)
     val bookmarkRepo = BookmarkRepository(app, pubkeyHex)
@@ -103,6 +105,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val reactionPrefs = ReactionPreferences(app, pubkeyHex)
     val zapPrefs = ZapPreferences(app, pubkeyHex)
     private val processingDispatcher = Dispatchers.Default
+    private val feedPrefs: SharedPreferences =
+        app.getSharedPreferences("wisp_feed_${pubkeyHex ?: "anon"}", Context.MODE_PRIVATE)
 
     val metadataFetcher = MetadataFetcher(
         relayPool, outboxRouter, subManager, profileRepo, eventRepo,
@@ -142,7 +146,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private val _initLoadingState = MutableStateFlow<InitLoadingState>(InitLoadingState.Idle)
     val initLoadingState: StateFlow<InitLoadingState> = _initLoadingState
 
-    private val _feedType = MutableStateFlow(FeedType.FOLLOWS)
+    private val _feedType = MutableStateFlow(
+        feedPrefs.getString("feed_type", null)
+            ?.let { runCatching { FeedType.valueOf(it) }.getOrNull() }
+            ?: FeedType.EXTENDED_FOLLOWS
+    )
     val feedType: StateFlow<FeedType> = _feedType
 
 
@@ -191,7 +199,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         // Reset state
         relaysInitialized = false
         _initialLoadDone.value = false
-        _feedType.value = FeedType.FOLLOWS
         _selectedRelay.value = null
         isLoadingMore = false
     }
@@ -705,6 +712,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun setFeedType(type: FeedType) {
         val prev = _feedType.value
         _feedType.value = type
+        feedPrefs.edit().putString("feed_type", type.name).apply()
         applyAuthorFilterForFeedType(type)
         when (type) {
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {

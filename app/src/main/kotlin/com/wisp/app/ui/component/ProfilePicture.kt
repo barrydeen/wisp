@@ -5,9 +5,11 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
@@ -26,10 +28,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ProfilePicture(
     url: String?,
@@ -37,23 +42,27 @@ fun ProfilePicture(
     size: Int = 40,
     showFollowBadge: Boolean = false,
     highlighted: Boolean = false,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null
 ) {
     if (highlighted) {
-        HighlightedProfilePicture(url, modifier, size, showFollowBadge, onClick)
+        HighlightedProfilePicture(url, modifier, size, showFollowBadge, onClick, onLongPress)
     } else {
-        BaseProfilePicture(url, modifier, size, showFollowBadge, onClick)
+        BaseProfilePicture(url, modifier, size, showFollowBadge, onClick, onLongPress)
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HighlightedProfilePicture(
     url: String?,
     modifier: Modifier,
     size: Int,
     showFollowBadge: Boolean,
-    onClick: (() -> Unit)?
+    onClick: (() -> Unit)?,
+    onLongPress: (() -> Unit)?
 ) {
+    val haptic = LocalHapticFeedback.current
     val transition = rememberInfiniteTransition(label = "highlight")
 
     // Breathing scale
@@ -110,7 +119,17 @@ private fun HighlightedProfilePicture(
                 .size(size.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .then(
+                    if (onClick != null || onLongPress != null) {
+                        Modifier.combinedClickable(
+                            onClick = { onClick?.invoke() },
+                            onLongClick = onLongPress?.let { lp -> {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                lp()
+                            }}
+                        )
+                    } else Modifier
+                )
         )
 
         if (showFollowBadge) {
@@ -119,14 +138,17 @@ private fun HighlightedProfilePicture(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun BaseProfilePicture(
     url: String?,
     modifier: Modifier,
     size: Int,
     showFollowBadge: Boolean,
-    onClick: (() -> Unit)?
+    onClick: (() -> Unit)?,
+    onLongPress: (() -> Unit)?
 ) {
+    val haptic = LocalHapticFeedback.current
     Box(modifier = modifier) {
         AsyncImage(
             model = url,
@@ -136,7 +158,17 @@ private fun BaseProfilePicture(
                 .size(size.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .then(
+                    if (onClick != null || onLongPress != null) {
+                        Modifier.combinedClickable(
+                            onClick = { onClick?.invoke() },
+                            onLongClick = onLongPress?.let { lp -> {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                lp()
+                            }}
+                        )
+                    } else Modifier
+                )
         )
         if (showFollowBadge) {
             FollowBadge(size, Modifier.align(Alignment.BottomEnd))

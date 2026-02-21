@@ -77,13 +77,11 @@ fun ActionBar(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        if (replyCount > 0) {
-            Text(
-                text = replyCount.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        Text(
+            text = replyCount.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(Modifier.width(8.dp))
         Box {
             IconButton(onClick = { showEmojiPicker = true }) {
@@ -110,13 +108,11 @@ fun ActionBar(
                 )
             }
         }
-        if (likeCount > 0) {
-            Text(
-                text = likeCount.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                color = if (userReactionEmojis.isNotEmpty()) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        Text(
+            text = likeCount.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (userReactionEmojis.isNotEmpty()) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(Modifier.width(8.dp))
         Box {
             IconButton(onClick = { showRepostMenu = true }) {
@@ -141,13 +137,11 @@ fun ActionBar(
                 )
             }
         }
-        if (repostCount > 0) {
-            Text(
-                text = repostCount.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                color = if (hasUserReposted) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        Text(
+            text = repostCount.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (hasUserReposted) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(Modifier.width(8.dp))
         Box {
             IconButton(onClick = onZap, enabled = !isZapInProgress) {
@@ -174,7 +168,7 @@ fun ActionBar(
                 )
             }
         }
-        if (!isZapInProgress && zapSats > 0) {
+        if (!isZapInProgress) {
             Text(
                 text = formatSats(zapSats),
                 style = MaterialTheme.typography.labelSmall,
