@@ -415,7 +415,15 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             if (muteRepo.isBlocked(event.pubkey)) return
             val myPubkey = getUserPubkey()
             if (myPubkey != null) {
-                eventRepo.cacheEvent(event)
+                when (event.kind) {
+                    7, 9735 -> eventRepo.addEvent(event)
+                    1 -> {
+                        eventRepo.cacheEvent(event)
+                        val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
+                        if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
+                    }
+                    else -> eventRepo.cacheEvent(event)
+                }
                 notifRepo.addEvent(event, myPubkey)
                 if (eventRepo.getProfileData(event.pubkey) == null) {
                     metadataFetcher.addToPendingProfiles(event.pubkey)
