@@ -409,7 +409,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             if (extConfigs.isNotEmpty()) {
                 _initLoadingState.value = InitLoadingState.ExpandingRelays(extConfigs.size)
                 rebuildRelayPool()
-                relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
+                val poolSize = relayPool.getRelayUrls().size
+                val targetConnected = poolSize * 7 / 10
+                relayPool.awaitAnyConnected(minCount = targetConnected, timeoutMs = 8_000)
             }
 
             // Apply filter and subscribe
@@ -879,7 +881,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         // Use a `since` timestamp so every relay queries the same time window, producing
         // deterministic results across refreshes. The limit still caps per-relay response
         // size. After EOSE the subscription stays open for live streaming of new events.
-        val sinceTimestamp = System.currentTimeMillis() / 1000 - 60 * 60 // 1 hour ago
+        val sinceTimestamp = System.currentTimeMillis() / 1000 - 60 * 60 * 24 // 24 hours ago
         val targetedRelays: Set<String> = when (_feedType.value) {
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
                 val cache = extendedNetworkRepo.cachedNetwork.value

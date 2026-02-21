@@ -206,16 +206,7 @@ fun FeedScreen(
             }
     }
 
-    val shouldLoadMore by remember {
-        derivedStateOf {
-            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            lastVisible >= feed.size - 5 && feed.isNotEmpty()
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore) viewModel.loadMore()
-    }
+    val initialLoadDone by viewModel.initialLoadDone.collectAsState()
 
     LaunchedEffect(isAtTop) {
         if (isAtTop) viewModel.resetNewNoteCount()
@@ -614,6 +605,20 @@ fun FeedScreen(
                                         viewModel.setFeedType(FeedType.RELAY)
                                     }
                                 )
+                            }
+                            if (initialLoadDone) {
+                                item(key = "load-more") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        TextButton(onClick = { viewModel.loadMore() }) {
+                                            Text("Load more")
+                                        }
+                                    }
+                                }
                             }
                         }
 

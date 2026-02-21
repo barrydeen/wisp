@@ -90,14 +90,31 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val feedDirty = Channel<Unit>(Channel.CONFLATED)
     private val versionDirty = Channel<Unit>(Channel.CONFLATED)
 
+    // Feed rendering version — bumped by the polling loop, consumed by the UI
+    @Volatile private var feedListVersion = 0
+    private var lastRenderedVersion = -1
+
     init {
-        // Debounce feed list emissions — emit at most once per 16ms frame
+        // Poll feedList and emit to _feed at a controlled pace (decoupled from inserts)
+        scope.launch {
+            while (true) {
+                delay(250)
+                val ver = feedListVersion
+                if (ver != lastRenderedVersion) {
+                    lastRenderedVersion = ver
+                    val filter = _authorFilter.value
+                    val raw = synchronized(feedList) { feedList.toList() }
+                    _feed.value = if (filter == null) raw else raw.filter { it.pubkey in filter }
+                }
+            }
+        }
+        // Immediate emission channel — used for explicit flushes (purge, filter change, etc.)
         scope.launch {
             for (signal in feedDirty) {
                 val filter = _authorFilter.value
                 val raw = synchronized(feedList) { feedList.toList() }
                 _feed.value = if (filter == null) raw else raw.filter { it.pubkey in filter }
-                delay(16)
+                lastRenderedVersion = feedListVersion
             }
         }
         // Debounce version counter emissions — coalesce into one bump per 50ms window
@@ -248,7 +265,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             }
             feedList.add(low, event)
         }
-        feedDirty.trySend(Unit)
+        feedListVersion++  // polling loop will pick this up
         val filter = _authorFilter.value
         if (countNewNotes && (filter == null || event.pubkey in filter)) _newNoteCount.value++
     }
