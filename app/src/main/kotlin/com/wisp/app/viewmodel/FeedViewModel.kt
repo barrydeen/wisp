@@ -887,9 +887,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val cache = extendedNetworkRepo.cachedNetwork.value
                 val firstDegree = contactRepo.getFollowList().map { it.pubkey }
                 val allAuthors = if (cache != null) {
-                    (firstDegree + cache.qualifiedPubkeys).distinct()
+                    (listOfNotNull(pubkeyHex) + firstDegree + cache.qualifiedPubkeys).distinct()
                 } else {
-                    firstDegree
+                    listOfNotNull(pubkeyHex) + firstDegree
                 }
                 if (allAuthors.isEmpty()) return
                 val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
@@ -899,7 +899,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val url = _selectedRelay.value ?: return
                 val filter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
                 val msg = ClientMessage.req(feedSubId, filter)
-                relayPool.sendToRelayOrEphemeral(url, msg)
+                relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
                 setOf(url)
             }
             FeedType.LIST -> {
@@ -1102,9 +1102,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val cache = extendedNetworkRepo.cachedNetwork.value
                 val firstDegree = contactRepo.getFollowList().map { it.pubkey }
                 val allAuthors = if (cache != null) {
-                    (firstDegree + cache.qualifiedPubkeys).distinct()
+                    (listOfNotNull(pubkeyHex) + firstDegree + cache.qualifiedPubkeys).distinct()
                 } else {
-                    firstDegree
+                    listOfNotNull(pubkeyHex) + firstDegree
                 }
                 if (allAuthors.isEmpty()) { isLoadingMore = false; return }
                 val templateFilter = Filter(kinds = listOf(1, 6), until = oldest - 1, limit = 50)
@@ -1114,7 +1114,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val url = _selectedRelay.value
                 if (url != null) {
                     val filter = Filter(kinds = listOf(1, 6), until = oldest - 1, limit = 50)
-                    relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("loadmore", filter))
+                    relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("loadmore", filter), skipBadCheck = true)
                 } else { isLoadingMore = false; return }
             }
             FeedType.LIST -> {

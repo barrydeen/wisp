@@ -126,7 +126,8 @@ class RelayPool {
     }
 
     fun updateRelays(configs: List<RelayConfig>) {
-        val filtered = configs.filter { it.url !in blockedUrls }.take(MAX_PERSISTENT)
+        val badRelays = healthTracker?.getBadRelays() ?: emptySet()
+        val filtered = configs.filter { it.url !in blockedUrls && it.url !in badRelays }.take(MAX_PERSISTENT)
 
         // Disconnect removed relays
         val currentUrls = filtered.map { it.url }.toSet()
@@ -372,9 +373,9 @@ class RelayPool {
         return if (end > start) message.substring(start, end) else null
     }
 
-    fun sendToRelayOrEphemeral(url: String, message: String): Boolean {
+    fun sendToRelayOrEphemeral(url: String, message: String, skipBadCheck: Boolean = false): Boolean {
         if (url in blockedUrls) return false
-        if (healthTracker?.isBad(url) == true) return false
+        if (!skipBadCheck && healthTracker?.isBad(url) == true) return false
         if (!url.startsWith("wss://") && !url.startsWith("ws://")) return false
 
         // Check cooldown for failed relays

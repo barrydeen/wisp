@@ -21,6 +21,7 @@ class OutboxRouter(
         vararg templateFilters: Filter
     ): Set<String> {
         val targetedRelays = mutableSetOf<String>()
+        val coveredAuthors = mutableSetOf<String>()
 
         // Group authors by their write relays
         val knownAuthors = authors.filter { relayListRepo.hasRelayList(it) }
@@ -36,6 +37,7 @@ class OutboxRouter(
                     else ClientMessage.req(subId, filters)
                     relayPool.sendToAll(msg)
                     targetedRelays.addAll(relayPool.getRelayUrls())
+                    coveredAuthors.addAll(relayAuthors)
                     continue
                 }
                 val filters = templateFilters.map { it.copy(authors = relayAuthors) }
@@ -43,13 +45,16 @@ class OutboxRouter(
                 else ClientMessage.req(subId, filters)
                 if (relayPool.sendToRelayOrEphemeral(relayUrl, msg)) {
                     targetedRelays.add(relayUrl)
+                    coveredAuthors.addAll(relayAuthors)
                 }
             }
         }
 
-        // Authors without any relay list → sendToAll
-        if (unknownAuthors.isNotEmpty()) {
-            val filters = templateFilters.map { it.copy(authors = unknownAuthors) }
+        // Authors without any relay list OR whose write relays all failed (bad/blocked/cooldown) → sendToAll
+        val uncoveredKnown = knownAuthors.filter { it !in coveredAuthors }
+        val allFallback = unknownAuthors + uncoveredKnown
+        if (allFallback.isNotEmpty()) {
+            val filters = templateFilters.map { it.copy(authors = allFallback) }
             val msg = if (filters.size == 1) ClientMessage.req(subId, filters[0])
             else ClientMessage.req(subId, filters)
             relayPool.sendToAll(msg)
