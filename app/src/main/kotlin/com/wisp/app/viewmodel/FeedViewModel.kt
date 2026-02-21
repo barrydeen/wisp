@@ -862,13 +862,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         // size. After EOSE the subscription stays open for live streaming of new events.
         val sinceTimestamp = System.currentTimeMillis() / 1000 - 60 * 60 // 1 hour ago
         val targetedRelays: Set<String> = when (_feedType.value) {
-            FeedType.LIST -> {
-                val list = listRepo.selectedList.value ?: return
-                val authors = list.members.toList()
-                if (authors.isEmpty()) return
-                val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                outboxRouter.subscribeByAuthors(feedSubId, authors, notesFilter)
-            }
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
                 val cache = extendedNetworkRepo.cachedNetwork.value
                 val firstDegree = contactRepo.getFollowList().map { it.pubkey }
@@ -887,6 +880,13 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val msg = ClientMessage.req(feedSubId, filter)
                 relayPool.sendToRelayOrEphemeral(url, msg)
                 setOf(url)
+            }
+            FeedType.LIST -> {
+                val list = listRepo.selectedList.value ?: return
+                val authors = list.members.toList()
+                if (authors.isEmpty()) return
+                val notesFilter = Filter(kinds = listOf(1, 6))
+                outboxRouter.subscribeByAuthors(feedSubId, authors, notesFilter)
             }
         }
 
@@ -1103,7 +1103,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val list = listRepo.selectedList.value ?: run { isLoadingMore = false; return }
                 val authors = list.members.toList()
                 if (authors.isEmpty()) { isLoadingMore = false; return }
-                val templateFilter = Filter(kinds = listOf(1, 6), until = oldest - 1, limit = 50)
+                val templateFilter = Filter(kinds = listOf(1, 6), until = oldest - 1)
                 outboxRouter.subscribeByAuthors("loadmore", authors, templateFilter)
             }
         }
@@ -1178,6 +1178,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSelectedList(followSet: com.wisp.app.nostr.FollowSet) {
         listRepo.selectList(followSet)
+        // Pre-fetch relay lists for list members so outbox routing can target their write relays
+        outboxRouter.requestMissingRelayLists(followSet.members.toList())
         if (_feedType.value == FeedType.LIST) {
             eventRepo.clearFeed()
             resubscribeFeed()
