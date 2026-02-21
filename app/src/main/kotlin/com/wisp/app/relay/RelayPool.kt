@@ -33,7 +33,7 @@ class RelayPool {
     private var blockedUrls = emptySet<String>()
 
     companion object {
-        const val MAX_PERSISTENT = 50
+        const val MAX_PERSISTENT = 150
         const val MAX_EPHEMERAL = 30
         const val MAX_DM_RELAYS = 10
         const val COOLDOWN_DOWN_MS = 10 * 60 * 1000L    // 10 min — 5xx, connection failures (ephemeral only)
@@ -430,6 +430,40 @@ class RelayPool {
         if (count > 0) Log.d("RelayPool", "reconnectAll: $count relays reconnecting")
         updateConnectedCount()
         return count
+    }
+
+    /**
+     * Force-reconnects ALL relays by tearing down every WebSocket (even "connected" ones)
+     * and rebuilding from scratch. Use this after a long background pause where server-side
+     * subscriptions have been silently dropped.
+     */
+    fun forceReconnectAll() {
+        Log.d("RelayPool", "forceReconnectAll: tearing down all connections")
+        // Server-side subscriptions are dead — clear tracker so fresh REQs are sent
+        subscriptionTracker.clear()
+        // Clear all cooldowns — background failures shouldn't block reconnection
+        relayCooldowns.clear()
+        // Tear down and reconnect persistent relays
+        for (relay in relays) {
+            relay.resetBackoff()
+            relay.disconnect()
+            relay.connect()
+        }
+        // Tear down and reconnect DM relays
+        for (relay in dmRelays) {
+            relay.resetBackoff()
+            relay.disconnect()
+            relay.connect()
+        }
+        // Evict all ephemeral relays — they'll be recreated on demand
+        for ((url, relay) in ephemeralRelays) {
+            relay.disconnect()
+            relayIndex.remove(url)
+            cancelRelayJobs(url)
+        }
+        ephemeralRelays.clear()
+        ephemeralLastUsed.clear()
+        updateConnectedCount()
     }
 
     /**

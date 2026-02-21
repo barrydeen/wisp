@@ -420,6 +420,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         }
     }
 
+
     fun clearFeed() {
         synchronized(feedList) {
             feedList.clear()
