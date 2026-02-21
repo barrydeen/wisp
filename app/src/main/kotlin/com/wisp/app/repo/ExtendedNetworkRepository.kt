@@ -9,6 +9,7 @@ import com.wisp.app.nostr.Nip02
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
+import com.wisp.app.relay.RelayScoreBoard
 import com.wisp.app.relay.SubscriptionManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,10 +23,13 @@ import kotlinx.serialization.json.Json
 data class ExtendedNetworkCache(
     val qualifiedPubkeys: Set<String>,
     val firstDegreePubkeys: Set<String>,
-    val authorToRelay: Map<String, String>,
-    val scoredRelayUrls: List<String>,
     val computedAtEpoch: Long,
-    val stats: NetworkStats
+    val stats: NetworkStats,
+    /** Relay URLs needed to cover the extended network, sorted by coverage count. */
+    val relayUrls: List<String> = emptyList(),
+    // Legacy fields kept for deserialization compat with old caches
+    val authorToRelay: Map<String, String> = emptyMap(),
+    val scoredRelayUrls: List<String> = emptyList()
 )
 
 @Serializable
@@ -42,7 +46,6 @@ sealed class DiscoveryState {
     data class ComputingNetwork(val uniqueUsers: Int) : DiscoveryState()
     data class Filtering(val qualified: Int) : DiscoveryState()
     data class FetchingRelayLists(val fetched: Int, val total: Int) : DiscoveryState()
-    data object BuildingRelayMap : DiscoveryState()
     data class Complete(val stats: NetworkStats) : DiscoveryState()
     data class Failed(val reason: String) : DiscoveryState()
 }
@@ -54,6 +57,7 @@ class ExtendedNetworkRepository(
     private val relayListRepo: RelayListRepository,
     private val relayPool: RelayPool,
     private val subManager: SubscriptionManager,
+    private val relayScoreBoard: RelayScoreBoard,
     private val pubkeyHex: String?
 ) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -71,11 +75,10 @@ class ExtendedNetworkRepository(
     companion object {
         private const val TAG = "ExtendedNetworkRepo"
         private const val THRESHOLD = 10
-        private const val MAX_RELAYS = 100
-        private const val MAX_AUTHORS_PER_FILTER = 250
-        private const val WAVE_SIZE = 500
-        private const val WAVE_TIMEOUT_MS = 12_000L
-        private const val MIN_EOSE_COUNT = 5
+        private const val FOLLOW_LIST_TIMEOUT_MS = 3_000L
+        private const val RELAY_LIST_CHUNK_SIZE = 500
+        private const val RELAY_LIST_TIMEOUT_MS = 3_000L
+        private const val MAX_EXTENDED_RELAYS = 75
         private const val STALE_HOURS = 24
         private const val STALE_DRIFT_THRESHOLD = 0.10
 
@@ -137,37 +140,51 @@ class ExtendedNetworkRepository(
             pendingFollowLists.clear()
             discoveryTotal = firstDegree.size
 
-            // Step 1: Fetch kind 3 events for all first-degree follows in waves
-            val waves = firstDegree.chunked(WAVE_SIZE)
+            // Step 1: Fetch kind 3 events for all follows using scoreboard routing, 3s timeout.
+            // Group authors by their optimal relay and fire all requests simultaneously.
             _discoveryState.value = DiscoveryState.FetchingFollowLists(0, firstDegree.size)
 
-            val eoseTarget = MIN_EOSE_COUNT.coerceAtMost(relayPool.connectedCount.value.coerceAtLeast(1))
-            for ((i, wave) in waves.withIndex()) {
-                val subId = "extnet-k3-$i"
-                val filter = Filter(kinds = listOf(3), authors = wave, limit = wave.size)
-                relayPool.sendToAll(ClientMessage.req(subId, filter))
-
-                subManager.awaitEoseCount(subId, eoseTarget, WAVE_TIMEOUT_MS)
-                subManager.closeSubscription(subId)
+            val relayGroups = relayScoreBoard.getRelaysForAuthors(firstDegree)
+            val subIds = mutableListOf<String>()
+            var subIndex = 0
+            for ((relayUrl, authors) in relayGroups) {
+                val subId = "extnet-k3-${subIndex++}"
+                subIds.add(subId)
+                val filter = Filter(kinds = listOf(3), authors = authors)
+                if (relayUrl.isEmpty()) {
+                    // Uncovered authors — send to all relays
+                    relayPool.sendToAll(ClientMessage.req(subId, filter))
+                } else {
+                    relayPool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(subId, filter))
+                }
             }
+            // If scoreboard is empty, fall back to sending everything to all relays
+            if (relayGroups.isEmpty()) {
+                val subId = "extnet-k3-0"
+                subIds.add(subId)
+                val filter = Filter(kinds = listOf(3), authors = firstDegree)
+                relayPool.sendToAll(ClientMessage.req(subId, filter))
+            }
+
+            // Wait for all with a single 3s timeout, then close everything
+            kotlinx.coroutines.delay(FOLLOW_LIST_TIMEOUT_MS)
+            for (subId in subIds) subManager.closeSubscription(subId)
             discoveryTotal = 0
 
             Log.d(TAG, "Fetched ${pendingFollowLists.size} follow lists from ${firstDegree.size} follows")
 
             // Step 2: Parse follow lists and count 2nd-degree appearances
-            val followMaps = mutableMapOf<String, Set<String>>()
-            for ((pubkey, event) in pendingFollowLists) {
-                val follows = Nip02.parseFollowList(event).map { it.pubkey }.toSet()
-                followMaps[pubkey] = follows
-            }
-
-            val secondDegreeCount = mutableMapOf<String, Int>()
-            for ((_, follows) in followMaps) {
-                for (pk in follows) {
-                    if (pk != myPubkey && pk !in firstDegreeSet) {
-                        secondDegreeCount[pk] = (secondDegreeCount[pk] ?: 0) + 1
+            val secondDegreeCount = withContext(Dispatchers.Default) {
+                val counts = mutableMapOf<String, Int>()
+                for ((_, event) in pendingFollowLists) {
+                    val follows = Nip02.parseFollowList(event).map { it.pubkey }
+                    for (pk in follows) {
+                        if (pk != myPubkey && pk !in firstDegreeSet) {
+                            counts[pk] = (counts[pk] ?: 0) + 1
+                        }
                     }
                 }
+                counts
             }
 
             _discoveryState.value = DiscoveryState.ComputingNetwork(secondDegreeCount.size)
@@ -195,50 +212,48 @@ class ExtendedNetworkRepository(
                 return
             }
 
-            // Step 4: Fetch relay lists for qualified pubkeys missing from cache
+            // Step 4: Fetch relay lists for qualified pubkeys missing from cache.
+            // Split into chunks of 500, send all to all relays, 3s timeout.
             val missingRelayLists = relayListRepo.getMissingPubkeys(qualified.toList())
             if (missingRelayLists.isNotEmpty()) {
-                val rlWaves = missingRelayLists.chunked(WAVE_SIZE)
-                var rlFetched = 0
+                val chunks = missingRelayLists.chunked(RELAY_LIST_CHUNK_SIZE)
+                val rlSubIds = mutableListOf<String>()
                 _discoveryState.value = DiscoveryState.FetchingRelayLists(0, missingRelayLists.size)
 
-                for ((i, wave) in rlWaves.withIndex()) {
+                for ((i, chunk) in chunks.withIndex()) {
                     val subId = "extnet-rl-$i"
-                    val filter = Filter(kinds = listOf(10002), authors = wave, limit = wave.size)
+                    rlSubIds.add(subId)
+                    val filter = Filter(kinds = listOf(10002), authors = chunk)
                     relayPool.sendToAll(ClientMessage.req(subId, filter))
-
-                    subManager.awaitEoseCount(subId, eoseTarget, WAVE_TIMEOUT_MS)
-                    subManager.closeSubscription(subId)
-
-                    rlFetched += wave.size
-                    _discoveryState.value = DiscoveryState.FetchingRelayLists(
-                        fetched = rlFetched.coerceAtMost(missingRelayLists.size),
-                        total = missingRelayLists.size
-                    )
                 }
+
+                kotlinx.coroutines.delay(RELAY_LIST_TIMEOUT_MS)
+                for (subId in rlSubIds) subManager.closeSubscription(subId)
+
+                _discoveryState.value = DiscoveryState.FetchingRelayLists(
+                    fetched = missingRelayLists.size,
+                    total = missingRelayLists.size
+                )
             }
 
-            // Step 5: Greedy set-cover algorithm to select optimal relays
-            _discoveryState.value = DiscoveryState.BuildingRelayMap
-
-            val (authorToRelay, scoredRelayUrls) = withContext(Dispatchers.Default) {
-                computeRelayMap(qualified)
+            // Step 5: Greedy set-cover to find optimal relays for the extended network
+            val relayUrls = withContext(Dispatchers.Default) {
+                computeRelaySetCover(qualified)
             }
 
             val stats = NetworkStats(
                 firstDegreeCount = firstDegree.size,
                 totalSecondDegree = secondDegreeCount.size,
                 qualifiedCount = qualified.size,
-                relaysCovered = scoredRelayUrls.size
+                relaysCovered = relayUrls.size
             )
 
             val cache = ExtendedNetworkCache(
                 qualifiedPubkeys = qualified,
                 firstDegreePubkeys = firstDegreeSet,
-                authorToRelay = authorToRelay,
-                scoredRelayUrls = scoredRelayUrls,
                 computedAtEpoch = System.currentTimeMillis() / 1000,
-                stats = stats
+                stats = stats,
+                relayUrls = relayUrls
             )
 
             _cachedNetwork.value = cache
@@ -254,113 +269,65 @@ class ExtendedNetworkRepository(
         }
     }
 
-    private fun computeRelayMap(qualified: Set<String>): Pair<Map<String, String>, List<String>> {
-        // Build relay -> authors mapping from relay list cache
+    /**
+     * Greedy set-cover: pick relay covering most uncovered qualified pubkeys, repeat.
+     * Returns the selected relay URLs in coverage order.
+     */
+    private fun computeRelaySetCover(qualified: Set<String>): List<String> {
         val relayToAuthors = mutableMapOf<String, MutableSet<String>>()
-        val authorToRelays = mutableMapOf<String, MutableList<String>>()
         for (pubkey in qualified) {
             val writeRelays = relayListRepo.getWriteRelays(pubkey) ?: continue
             for (url in writeRelays) {
                 relayToAuthors.getOrPut(url) { mutableSetOf() }.add(pubkey)
-                authorToRelays.getOrPut(pubkey) { mutableListOf() }.add(url)
             }
         }
+        if (relayToAuthors.isEmpty()) return emptyList()
 
-        if (relayToAuthors.isEmpty()) {
-            return Pair(emptyMap(), emptyList())
-        }
-
-        // Phase 1: Greedy set-cover to select which relays to use
         val uncovered = qualified.toMutableSet()
-        val selectedRelays = mutableListOf<String>()
-        val remainingRelays = relayToAuthors.toMutableMap()
+        val selected = mutableListOf<String>()
+        val remaining = relayToAuthors.toMutableMap()
 
-        while (uncovered.isNotEmpty() && selectedRelays.size < MAX_RELAYS && remainingRelays.isNotEmpty()) {
+        while (uncovered.isNotEmpty() && selected.size < MAX_EXTENDED_RELAYS && remaining.isNotEmpty()) {
             var bestUrl: String? = null
-            var bestCover: Set<String> = emptySet()
-            for ((url, authors) in remainingRelays) {
-                val cover = authors.intersect(uncovered)
-                if (cover.size > bestCover.size) {
+            var bestSize = 0
+            for ((url, authors) in remaining) {
+                val coverSize = authors.count { it in uncovered }
+                if (coverSize > bestSize) {
                     bestUrl = url
-                    bestCover = cover
+                    bestSize = coverSize
                 }
             }
-            if (bestUrl == null || bestCover.isEmpty()) break
-
-            selectedRelays.add(bestUrl)
-            uncovered.removeAll(bestCover)
-            remainingRelays.remove(bestUrl)
+            if (bestUrl == null || bestSize == 0) break
+            selected.add(bestUrl)
+            uncovered.removeAll(remaining.remove(bestUrl)!!)
         }
 
-        // Phase 2: Distribute authors across selected relays for balanced load.
-        // Each author is assigned to whichever of their available selected relays
-        // currently has the fewest assignments.
-        val selectedSet = selectedRelays.toSet()
-        val relayCounts = mutableMapOf<String, Int>()
-        for (url in selectedRelays) relayCounts[url] = 0
-
-        val inverseIndex = mutableMapOf<String, String>()
-        for (pubkey in qualified) {
-            val candidates = authorToRelays[pubkey]?.filter { it in selectedSet } ?: continue
-            if (candidates.isEmpty()) continue
-            val best = candidates.minBy { relayCounts[it] ?: Int.MAX_VALUE }
-            inverseIndex[pubkey] = best
-            relayCounts[best] = (relayCounts[best] ?: 0) + 1
-        }
-
-        return Pair(inverseIndex, selectedRelays)
+        Log.d(TAG, "Set-cover: ${selected.size} relays cover ${qualified.size - uncovered.size}/${qualified.size} pubkeys")
+        return selected
     }
 
     /**
-     * Route subscriptions for extended network authors to their optimal relays.
-     * Groups authors using cached authorToRelay index. Uncovered authors fall back to sendToAll.
-     * Returns the set of relay URLs that received subscriptions.
+     * Returns read-only relay configs for the extended network relays.
+     * Used by FeedViewModel to expand the persistent pool when extended feed is active.
      */
-    fun subscribeByAuthors(
-        subId: String,
-        authors: List<String>,
-        vararg templateFilters: Filter
-    ): Set<String> {
-        val cache = _cachedNetwork.value ?: return emptySet()
-        val targetedRelays = mutableSetOf<String>()
+    fun getRelayConfigs(): List<RelayConfig> {
+        val cache = _cachedNetwork.value ?: return emptyList()
+        return cache.relayUrls.map { RelayConfig(it, read = true, write = false) }
+    }
 
-        // Group authors by their assigned relay
-        val relayToAuthors = mutableMapOf<String, MutableList<String>>()
-        val uncoveredAuthors = mutableListOf<String>()
-
-        for (author in authors) {
-            val relay = cache.authorToRelay[author]
-            if (relay != null) {
-                relayToAuthors.getOrPut(relay) { mutableListOf() }.add(author)
-            } else {
-                uncoveredAuthors.add(author)
+    /**
+     * Returns relay URL → count of qualified pubkeys that write to it.
+     */
+    fun getCoverageCounts(): Map<String, Int> {
+        val cache = _cachedNetwork.value ?: return emptyMap()
+        val counts = mutableMapOf<String, Int>()
+        for (pubkey in cache.qualifiedPubkeys) {
+            val writeRelays = relayListRepo.getWriteRelays(pubkey) ?: continue
+            for (url in writeRelays) {
+                counts[url] = (counts[url] ?: 0) + 1
             }
         }
-
-        for ((relayUrl, relayAuthors) in relayToAuthors) {
-            for ((j, chunk) in relayAuthors.chunked(MAX_AUTHORS_PER_FILTER).withIndex()) {
-                val chunkSubId = if (j == 0) subId else "$subId-$j"
-                val filters = templateFilters.map { it.copy(authors = chunk) }
-                val msg = if (filters.size == 1) ClientMessage.req(chunkSubId, filters[0])
-                else ClientMessage.req(chunkSubId, filters)
-                if (relayPool.sendToRelayOrEphemeral(relayUrl, msg)) {
-                    targetedRelays.add(relayUrl)
-                }
-            }
-        }
-
-        if (uncoveredAuthors.isNotEmpty()) {
-            for ((j, chunk) in uncoveredAuthors.chunked(MAX_AUTHORS_PER_FILTER).withIndex()) {
-                val chunkSubId = if (j == 0) subId else "$subId-uc-$j"
-                val filters = templateFilters.map { it.copy(authors = chunk) }
-                val msg = if (filters.size == 1) ClientMessage.req(chunkSubId, filters[0])
-                else ClientMessage.req(chunkSubId, filters)
-                relayPool.sendToAll(msg)
-            }
-            targetedRelays.addAll(relayPool.getRelayUrls())
-        }
-
-        return targetedRelays
+        return counts
     }
 
     fun clear() {

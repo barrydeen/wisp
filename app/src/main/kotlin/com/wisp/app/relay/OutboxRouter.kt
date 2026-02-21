@@ -1,5 +1,6 @@
 package com.wisp.app.relay
 
+import android.util.Log
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.repo.RelayListRepository
@@ -188,6 +189,7 @@ class OutboxRouter(
      */
     fun requestMissingRelayLists(pubkeys: List<String>): String? {
         val missing = relayListRepo.getMissingPubkeys(pubkeys)
+        Log.d("OutboxRouter", "requestMissingRelayLists: ${pubkeys.size} total, ${pubkeys.size - missing.size} cached, ${missing.size} missing")
         if (missing.isEmpty()) return null
 
         val subId = "relay-lists"
@@ -262,20 +264,40 @@ class OutboxRouter(
     }
 
     private fun groupAuthorsByWriteRelay(authors: List<String>): Map<String, List<String>> {
-        // Use scoreboard if available — constrains to optimal relay set
+        val result = mutableMapOf<String, MutableList<String>>()
+
+        // Use scoreboard for authors it covers; for uncovered authors, look up
+        // their write relays directly so they get proper relay routing instead of
+        // being dumped into a single sendToAll broadcast.
         val scoreBoard = relayScoreBoard
         if (scoreBoard != null && scoreBoard.hasScoredRelays()) {
-            return scoreBoard.getRelaysForAuthors(authors)
-        }
-
-        // Fallback: unconstrained grouping
-        val relayToAuthors = mutableMapOf<String, MutableList<String>>()
-        for (pubkey in authors) {
-            val writeRelays = relayListRepo.getWriteRelays(pubkey) ?: continue
-            for (url in writeRelays) {
-                relayToAuthors.getOrPut(url) { mutableListOf() }.add(pubkey)
+            val grouped = scoreBoard.getRelaysForAuthors(authors)
+            for ((relay, group) in grouped) {
+                if (relay.isNotEmpty()) {
+                    result.getOrPut(relay) { mutableListOf() }.addAll(group)
+                } else {
+                    // Authors not in scoreboard — look up their write relays directly
+                    for (pubkey in group) {
+                        val writeRelays = relayListRepo.getWriteRelays(pubkey)
+                        if (writeRelays != null) {
+                            for (url in writeRelays) {
+                                result.getOrPut(url) { mutableListOf() }.add(pubkey)
+                            }
+                        } else {
+                            result.getOrPut("") { mutableListOf() }.add(pubkey)
+                        }
+                    }
+                }
+            }
+        } else {
+            for (pubkey in authors) {
+                val writeRelays = relayListRepo.getWriteRelays(pubkey) ?: continue
+                for (url in writeRelays) {
+                    result.getOrPut(url) { mutableListOf() }.add(pubkey)
+                }
             }
         }
-        return relayToAuthors
+
+        return result
     }
 }

@@ -69,8 +69,19 @@ import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.WispDrawerContent
 import com.wisp.app.ui.component.ZapDialog
 import com.wisp.app.relay.ScoredRelay
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import com.wisp.app.viewmodel.FeedType
 import com.wisp.app.viewmodel.FeedViewModel
+import com.wisp.app.viewmodel.InitLoadingState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -128,6 +139,7 @@ fun FeedScreen(
 
     val newNoteCount by viewModel.newNoteCount.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val initLoadingState by viewModel.initLoadingState.collectAsState()
     val zapInProgress by viewModel.zapInProgress.collectAsState()
     val bookmarkedIds by viewModel.bookmarkRepo.bookmarkedIds.collectAsState()
     val pinnedIds by viewModel.pinRepo.pinnedIds.collectAsState()
@@ -143,12 +155,14 @@ fun FeedScreen(
     // doesn't trigger unnecessary re-subscriptions that duplicate counts.
     val activity = LocalContext.current as ComponentActivity
     DisposableEffect(activity) {
-        var hasPaused = false
+        var pausedAt = 0L
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE) {
-                hasPaused = true
-            } else if (event == Lifecycle.Event.ON_RESUME && hasPaused) {
-                viewModel.onAppResume()
+                pausedAt = System.currentTimeMillis()
+            } else if (event == Lifecycle.Event.ON_RESUME && pausedAt > 0L) {
+                val pausedMs = System.currentTimeMillis() - pausedAt
+                pausedAt = 0L
+                viewModel.onAppResume(pausedMs)
             }
         }
         activity.lifecycle.addObserver(observer)
@@ -484,11 +498,17 @@ fun FeedScreen(
                                         onClick = {}
                                     )
                                 } else {
+                                    val coverageCounts = viewModel.getRelayCoverageCounts()
                                     connectedUrls.forEach { url ->
+                                        val count = coverageCounts[url]
+                                        val label = buildString {
+                                            append(url.removePrefix("wss://").removeSuffix("/"))
+                                            if (count != null && count > 0) append(" ($count)")
+                                        }
                                         DropdownMenuItem(
                                             text = {
                                                 Text(
-                                                    url.removePrefix("wss://").removeSuffix("/"),
+                                                    label,
                                                     style = MaterialTheme.typography.bodyMedium
                                                 )
                                             },
@@ -550,6 +570,9 @@ fun FeedScreen(
                                     "This list is empty",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                            }
+                            initLoadingState != InitLoadingState.Done && initLoadingState != InitLoadingState.Idle -> {
+                                InitLoadingOverlay(initLoadingState)
                             }
                             else -> {
                                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -1019,5 +1042,76 @@ private fun NewNotesButton(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun InitLoadingOverlay(state: InitLoadingState) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier.padding(horizontal = 32.dp)
+    ) {
+        Text(
+            text = "Setting Up Your Feed",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        val progress = initLoadingProgress(state)
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        AnimatedContent(
+            targetState = initLoadingText(state),
+            transitionSpec = { fadeIn() togetherWith fadeOut() },
+            label = "init-status"
+        ) { text ->
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+private fun initLoadingProgress(state: InitLoadingState): Float {
+    return when (state) {
+        is InitLoadingState.Idle -> 0f
+        is InitLoadingState.Connecting -> {
+            val frac = if (state.total > 0) state.connected.toFloat() / state.total else 0f
+            frac * 0.15f
+        }
+        is InitLoadingState.FoundFollows -> 0.20f
+        is InitLoadingState.FetchingRelayLists -> {
+            val frac = if (state.total > 0) state.found.toFloat() / state.total else 0f
+            0.20f + frac * 0.55f
+        }
+        is InitLoadingState.ComputingRouting -> 0.85f
+        is InitLoadingState.Subscribing -> 0.95f
+        is InitLoadingState.Done -> 1f
+    }
+}
+
+private fun initLoadingText(state: InitLoadingState): String {
+    return when (state) {
+        is InitLoadingState.Idle -> "Preparing..."
+        is InitLoadingState.Connecting -> "Connecting to relays... ${state.connected}/${state.total}"
+        is InitLoadingState.FoundFollows -> "Found your ${state.count} follows"
+        is InitLoadingState.FetchingRelayLists -> "Fetching relay lists... ${state.found}/${state.total}"
+        is InitLoadingState.ComputingRouting -> "Computed routing across ${state.relayCount} relays for ${state.coveredAuthors} authors"
+        is InitLoadingState.Subscribing -> "Subscribing to feed..."
+        is InitLoadingState.Done -> "Done!"
     }
 }

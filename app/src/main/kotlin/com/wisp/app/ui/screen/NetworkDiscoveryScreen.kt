@@ -141,9 +141,8 @@ private fun computeProgress(state: DiscoveryState): Float {
         is DiscoveryState.Filtering -> 0.65f
         is DiscoveryState.FetchingRelayLists -> {
             val frac = if (state.total > 0) state.fetched.toFloat() / state.total else 0f
-            0.70f + frac * 0.20f
+            0.70f + frac * 0.30f
         }
-        is DiscoveryState.BuildingRelayMap -> 0.90f
         is DiscoveryState.Complete -> 1.0f
         is DiscoveryState.Failed -> 0f
     }
@@ -156,7 +155,6 @@ private fun getStatusText(state: DiscoveryState): String {
         is DiscoveryState.ComputingNetwork -> "Computing network... ${state.uniqueUsers} users found"
         is DiscoveryState.Filtering -> "Filtering... ${state.qualified} qualified"
         is DiscoveryState.FetchingRelayLists -> "Fetching relay lists... ${state.fetched}/${state.total}"
-        is DiscoveryState.BuildingRelayMap -> "Building relay map..."
         is DiscoveryState.Complete -> "Found ${state.stats.qualifiedCount} people across ${state.stats.relaysCovered} relays"
         is DiscoveryState.Failed -> "Discovery failed: ${state.reason}"
     }
