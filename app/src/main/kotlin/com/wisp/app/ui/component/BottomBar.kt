@@ -6,10 +6,12 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Notifications
@@ -32,6 +34,7 @@ enum class BottomTab(
     val unselectedIcon: ImageVector
 ) {
     HOME(Routes.FEED, "Home", Icons.Filled.Home, Icons.Outlined.Home),
+    WALLET(Routes.WALLET, "Wallet", Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet),
     SEARCH(Routes.SEARCH, "Search", Icons.Filled.Search, Icons.Outlined.Search),
     MESSAGES(Routes.DM_LIST, "Messages", Icons.Filled.Email, Icons.Outlined.Email),
     NOTIFICATIONS(Routes.NOTIFICATIONS, "Notifications", Icons.Filled.Notifications, Icons.Outlined.Notifications)
@@ -50,6 +53,7 @@ fun WispBottomBar(
             val selected = currentRoute == tab.route
             val hasUnread = when (tab) {
                 BottomTab.HOME -> hasUnreadHome
+                BottomTab.WALLET -> false
                 BottomTab.SEARCH -> false
                 BottomTab.MESSAGES -> hasUnreadMessages
                 BottomTab.NOTIFICATIONS -> hasUnreadNotifications
