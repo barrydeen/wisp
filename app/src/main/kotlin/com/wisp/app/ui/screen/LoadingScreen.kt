@@ -93,6 +93,7 @@ fun LoadingScreen(
         val initDone = initLoadingState == InitLoadingState.Done
         val hasContent = feed.size >= 5 || initialLoadDone
         if (minTimeElapsed && ((initDone && hasContent) || timedOut)) {
+            viewModel.markLoadingComplete()
             onReady()
         }
     }

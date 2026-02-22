@@ -175,6 +175,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     private var relaysInitialized = false
 
+    /** Set to true once the LoadingScreen has completed and navigated away. */
+    private val _loadingScreenComplete = MutableStateFlow(false)
+    val loadingScreenComplete: StateFlow<Boolean> = _loadingScreenComplete
+
+    fun markLoadingComplete() { _loadingScreenComplete.value = true }
+
     fun resetForAccountSwitch() {
         // Cancel all background jobs
         eventProcessingJob?.cancel()
@@ -214,6 +220,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
         // Reset state
         relaysInitialized = false
+        _loadingScreenComplete.value = false
         _initialLoadDone.value = false
         _initLoadingState.value = InitLoadingState.Idle
         _selectedRelay.value = null

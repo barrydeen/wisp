@@ -159,9 +159,22 @@ fun WispNavHost() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    val hideBottomBarRoutes = setOf(Routes.AUTH, Routes.LOADING, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS)
+    val nonAppRoutes = setOf(Routes.AUTH, Routes.LOADING, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS)
+    val hideBottomBarRoutes = nonAppRoutes
     val showBottomBar by remember(currentRoute) {
         derivedStateOf { currentRoute != null && currentRoute !in hideBottomBarRoutes }
+    }
+
+    // After process death, Navigation restores the last screen but the ViewModel
+    // is fresh (no relay connections, empty feed). Redirect to LOADING so the user
+    // sees init progress instead of a broken screen.
+    val loadingComplete by feedViewModel.loadingScreenComplete.collectAsState()
+    if (currentRoute != null && currentRoute !in nonAppRoutes && !loadingComplete) {
+        LaunchedEffect(Unit) {
+            navController.navigate(Routes.LOADING) {
+                popUpTo(0) { inclusive = true }
+            }
+        }
     }
 
     val newNoteCount by feedViewModel.newNoteCount.collectAsState()
