@@ -128,7 +128,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         scope = viewModelScope,
         onReconnected = { force ->
             if (force) subscribeFeed() else resumeSubscribeFeed()
-            if (force) fetchRelayListsForFollows()
+            if (force) {
+                fetchRelayListsForFollows()
+                // Force reconnect tears down all subscriptions — re-establish DMs and notifications
+                val myPubkey = getUserPubkey()
+                if (myPubkey != null) subscribeDmsAndNotifications(myPubkey)
+            }
         }
     )
     val extendedNetworkRepo = ExtendedNetworkRepository(
@@ -572,17 +577,25 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         // DMs and notifications are not feed-blocking — fire and forget
+        subscribeDmsAndNotifications(myPubkey)
+    }
+
+    /**
+     * Subscribe to DMs and notifications. Extracted so it can be re-called on force reconnect
+     * when all relay subscriptions have been torn down.
+     */
+    private fun subscribeDmsAndNotifications(myPubkey: String) {
         val dmFilter = Filter(kinds = listOf(1059), pTags = listOf(myPubkey))
         val dmReqMsg = ClientMessage.req("dms", dmFilter)
         relayPool.sendToAll(dmReqMsg)
         relayPool.sendToDmRelays(dmReqMsg)
         viewModelScope.launch {
             subManager.awaitEoseWithTimeout("dms")
-            Log.d("FeedViewModel", "DM initial load complete")
+            Log.d("FeedViewModel", "DM subscription (re)established")
         }
 
         val notifFilter = Filter(
-            kinds = listOf(1, 7, 9735),
+            kinds = listOf(1, 6, 7, 9735),
             pTags = listOf(myPubkey),
             limit = 100
         )
@@ -599,6 +612,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             val myPubkey = getUserPubkey()
             if (myPubkey != null) {
                 when (event.kind) {
+                    6 -> eventRepo.addEvent(event)
                     7, 9735 -> eventRepo.addEvent(event)
                     1 -> {
                         eventRepo.cacheEvent(event)
@@ -1013,7 +1027,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
         feedEoseJob = viewModelScope.launch {
             subManager.awaitEoseCount(feedSubId, targetedRelays.size.coerceAtLeast(1))
-            // Don't reset initialLoadDone or countNewNotes — keep existing state
+            // Re-subscribe engagement for any new events that arrived while paused
+            subscribeEngagementForFeed()
         }
     }
 
@@ -1067,6 +1082,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
             eventRepo.countNewNotes = true
             subscribeEngagementForFeed()
+            subscribeNotifEngagement()
 
             withContext(processingDispatcher) {
                 metadataFetcher.sweepMissingProfiles()
