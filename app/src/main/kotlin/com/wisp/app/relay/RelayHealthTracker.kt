@@ -75,6 +75,7 @@ class RelayHealthTracker(
 
     // -- Session lifecycle --
 
+    @Synchronized
     fun onRelayConnected(url: String) {
         activeSessions[url] = ActiveSession()
         val stats = getOrCreateStats(url)
@@ -84,6 +85,7 @@ class RelayHealthTracker(
         Log.d(TAG, "Session started: $url")
     }
 
+    @Synchronized
     fun onEventReceived(url: String, byteSize: Int) {
         activeSessions[url]?.eventsReceived?.let {
             activeSessions[url]!!.eventsReceived = it + 1
@@ -93,20 +95,24 @@ class RelayHealthTracker(
         stats.bytesReceived += byteSize
     }
 
+    @Synchronized
     fun onEventSent(url: String, byteSize: Int) {
         val stats = getOrCreateStats(url)
         stats.totalEventsSent++
         stats.bytesSent += byteSize
     }
 
+    @Synchronized
     fun onBytesReceived(url: String, size: Int) {
         getOrCreateStats(url).bytesReceived += size
     }
 
+    @Synchronized
     fun onBytesSent(url: String, size: Int) {
         getOrCreateStats(url).bytesSent += size
     }
 
+    @Synchronized
     fun onRateLimitHit(url: String) {
         activeSessions[url]?.rateLimitHits?.let {
             activeSessions[url]!!.rateLimitHits = it + 1
@@ -119,6 +125,7 @@ class RelayHealthTracker(
      * Record all active sessions normally (app going to background after >=30s).
      * No failure penalty for the disconnect itself.
      */
+    @Synchronized
     fun closeAllSessions() {
         val now = System.currentTimeMillis()
         for ((url, session) in activeSessions) {
@@ -136,6 +143,7 @@ class RelayHealthTracker(
     /**
      * Record a single relay disconnect as a failure (relay-side only, app is active).
      */
+    @Synchronized
     fun closeSession(url: String) {
         val session = activeSessions.remove(url) ?: return
         val duration = System.currentTimeMillis() - session.startedAt
@@ -150,6 +158,7 @@ class RelayHealthTracker(
     /**
      * Throw away all active sessions without recording (short app pause <30s).
      */
+    @Synchronized
     fun discardAllSessions() {
         activeSessions.clear()
         Log.d(TAG, "Discarded all sessions (short pause)")
@@ -249,6 +258,7 @@ class RelayHealthTracker(
 
     // -- Persistence --
 
+    @Synchronized
     private fun saveToPrefs() {
         val editor = prefs.edit()
 
@@ -256,8 +266,9 @@ class RelayHealthTracker(
         editor.putStringSet("bad_relays", _badRelays.toSet())
 
         // Session history: url -> "events,failure,ratelimit,duration;..."
-        val historyEntries = sessionHistory.entries.joinToString("\n") { (url, records) ->
-            val recordStr = records.joinToString(";") { r ->
+        val historySnapshot = HashMap(sessionHistory)
+        val historyEntries = historySnapshot.entries.joinToString("\n") { (url, records) ->
+            val recordStr = records.toList().joinToString(";") { r ->
                 "${r.eventsReceived},${if (r.hadMidSessionFailure) 1 else 0},${if (r.hadRateLimit) 1 else 0},${r.durationMs}"
             }
             "$url\t$recordStr"
@@ -265,7 +276,8 @@ class RelayHealthTracker(
         editor.putString("session_history", historyEntries)
 
         // Lifetime stats: url -> "evRcv,evSent,byRcv,bySent,conns,connMs,fails,rl,first,last"
-        val statsEntries = lifetimeStats.entries.joinToString("\n") { (url, s) ->
+        val statsSnapshot = HashMap(lifetimeStats)
+        val statsEntries = statsSnapshot.entries.joinToString("\n") { (url, s) ->
             "$url\t${s.totalEventsReceived},${s.totalEventsSent},${s.bytesReceived},${s.bytesSent}," +
                     "${s.totalConnections},${s.totalConnectedMs},${s.totalFailures},${s.totalRateLimits}," +
                     "${s.firstSeenAt},${s.lastConnectedAt}"
