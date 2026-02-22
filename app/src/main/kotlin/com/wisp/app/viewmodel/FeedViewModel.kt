@@ -20,6 +20,8 @@ import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.nostr.RemoteSignerBridge
 import com.wisp.app.nostr.RemoteSigner
 import com.wisp.app.nostr.toHex
+import com.wisp.app.relay.ConnectivityFlow
+import com.wisp.app.relay.ConnectivityStatus
 import com.wisp.app.relay.Relay
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayConfig
@@ -149,6 +151,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private var relayListRefreshJob: Job? = null
     private var followWatcherJob: Job? = null
     private var authCompletedJob: Job? = null
+    private var connectivityJob: Job? = null
     private var startupJob: Job? = null
 
     val nwcRepo = NwcRepository(app, relayPool, pubkeyHex)
@@ -211,6 +214,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         relayListRefreshJob?.cancel()
         followWatcherJob?.cancel()
         authCompletedJob?.cancel()
+        connectivityJob?.cancel()
         startupJob?.cancel()
         feedEoseJob?.cancel()
         relayPool.closeOnAllRelays(feedSubId)
@@ -384,6 +388,43 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 if (relayUrl in dmRelayUrls || relayUrl in relayPool.getRelayUrls()) {
                     val dmFilter = Filter(kinds = listOf(1059), pTags = listOf(myPubkey))
                     relayPool.sendToRelay(relayUrl, ClientMessage.req("dms", dmFilter))
+                }
+            }
+        }
+
+        // Reactive network monitoring — detect WiFi drops/reconnects while app is in foreground.
+        // When the network changes (different handle) or comes back after being lost, force
+        // reconnect all relays and re-subscribe the feed so data flows immediately.
+        connectivityJob = viewModelScope.launch {
+            var lastNetworkId: Long? = null
+            ConnectivityFlow.observe(getApplication()).collect { status ->
+                when (status) {
+                    is ConnectivityStatus.Active -> {
+                        if (lastNetworkId != null && lastNetworkId != status.networkId) {
+                            // Network transport changed (e.g. WiFi → cellular) — force reconnect
+                            Log.d("FeedViewModel", "Network changed (${lastNetworkId} → ${status.networkId}), force reconnecting")
+                            relayPool.forceReconnectAll()
+                            launch {
+                                relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
+                                relayPool.appIsActive = true
+                                subscribeFeed()
+                            }
+                        } else if (lastNetworkId == null && _initialLoadDone.value) {
+                            // Network restored after being lost — reconnect and re-subscribe
+                            Log.d("FeedViewModel", "Network restored, reconnecting relays")
+                            relayPool.reconnectAll()
+                            launch {
+                                relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
+                                relayPool.appIsActive = true
+                                resumeSubscribeFeed()
+                            }
+                        }
+                        lastNetworkId = status.networkId
+                    }
+                    is ConnectivityStatus.Off -> {
+                        Log.d("FeedViewModel", "Network lost")
+                        lastNetworkId = null
+                    }
                 }
             }
         }
