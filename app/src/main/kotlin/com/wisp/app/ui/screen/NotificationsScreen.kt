@@ -323,6 +323,13 @@ private fun NotificationItem(
             onProfileClick = onProfileClick,
             postCardParams = postCardParams
         )
+        is NotificationGroup.RepostNotification -> RepostNotificationRow(
+            item = group,
+            resolveProfile = { viewModel.getProfileData(it) },
+            isFollowing = viewModel.isFollowing(group.senderPubkey),
+            onProfileClick = onProfileClick,
+            postCardParams = postCardParams
+        )
     }
 }
 
@@ -665,6 +672,62 @@ private fun MentionNotificationRow(
         // Mention event as full PostCard
         ReferencedNotePostCard(
             eventId = item.eventId,
+            params = postCardParams
+        )
+    }
+}
+
+// ── Repost Notification ──────────────────────────────────────────────────
+
+@Composable
+private fun RepostNotificationRow(
+    item: NotificationGroup.RepostNotification,
+    resolveProfile: (String) -> ProfileData?,
+    isFollowing: Boolean,
+    onProfileClick: (String) -> Unit,
+    postCardParams: NotifPostCardParams
+) {
+    val profile = resolveProfile(item.senderPubkey)
+    val displayName = profile?.displayString
+        ?: item.senderPubkey.take(8) + "..." + item.senderPubkey.takeLast(4)
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ProfilePicture(
+                url = profile?.picture,
+                size = 34,
+                showFollowBadge = isFollowing,
+                modifier = Modifier.clickable { onProfileClick(item.senderPubkey) }
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = displayName,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = "reposted",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = formatNotifTimestamp(item.latestTimestamp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        ReferencedNotePostCard(
+            eventId = item.repostedEventId,
             params = postCardParams
         )
     }

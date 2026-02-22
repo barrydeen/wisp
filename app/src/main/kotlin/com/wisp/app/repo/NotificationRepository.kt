@@ -39,6 +39,7 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
 
         synchronized(lock) {
             val merged = when (event.kind) {
+                6 -> mergeRepost(event)
                 7 -> mergeReaction(event)
                 1 -> mergeKind1(event)
                 9735 -> mergeZap(event)
@@ -102,6 +103,9 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
                     if (group.senderPubkey == pubkey) toRemove.add(key)
                 }
                 is NotificationGroup.MentionNotification -> {
+                    if (group.senderPubkey == pubkey) toRemove.add(key)
+                }
+                is NotificationGroup.RepostNotification -> {
                     if (group.senderPubkey == pubkey) toRemove.add(key)
                 }
             }
@@ -301,6 +305,20 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
         return true
     }
 
+    private fun mergeRepost(event: NostrEvent): Boolean {
+        val repostedId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+            ?: return false
+        val key = "repost:${event.id}"
+        groupMap[key] = NotificationGroup.RepostNotification(
+            groupId = key,
+            senderPubkey = event.pubkey,
+            repostEventId = event.id,
+            repostedEventId = repostedId,
+            latestTimestamp = event.created_at
+        )
+        return true
+    }
+
     /** Returns all event IDs that are rendered as PostCards in the notifications UI. */
     fun getAllPostCardEventIds(): List<String> = synchronized(lock) {
         groupMap.values.map { group ->
@@ -310,6 +328,7 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
                 is NotificationGroup.ReplyNotification -> group.replyEventId
                 is NotificationGroup.QuoteNotification -> group.quoteEventId
                 is NotificationGroup.MentionNotification -> group.eventId
+                is NotificationGroup.RepostNotification -> group.repostedEventId
             }
         }.distinct()
     }

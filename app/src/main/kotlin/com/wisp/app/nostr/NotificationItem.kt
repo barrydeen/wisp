@@ -49,4 +49,12 @@ sealed class NotificationGroup {
         val eventId: String,
         override val latestTimestamp: Long
     ) : NotificationGroup()
+
+    data class RepostNotification(
+        override val groupId: String,
+        val senderPubkey: String,
+        val repostEventId: String,
+        val repostedEventId: String,
+        override val latestTimestamp: Long
+    ) : NotificationGroup()
 }
