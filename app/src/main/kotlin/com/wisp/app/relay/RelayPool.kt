@@ -37,7 +37,6 @@ class RelayPool {
 
     companion object {
         const val MAX_PERSISTENT = 150
-        const val MAX_EPHEMERAL = 30
         const val MAX_DM_RELAYS = 10
         const val COOLDOWN_DOWN_MS = 10 * 60 * 1000L    // 10 min — 5xx, connection failures (ephemeral only)
         const val COOLDOWN_REJECTED_MS = 1 * 60 * 1000L // 1 min — 4xx like 401/403/429
@@ -391,8 +390,7 @@ class RelayPool {
             }
         }
 
-        // Check or create ephemeral relay (cap at MAX_EPHEMERAL)
-        if (!ephemeralRelays.containsKey(url) && ephemeralRelays.size >= MAX_EPHEMERAL) return false
+        // Create ephemeral relay if needed
         val ephemeral = ephemeralRelays.getOrPut(url) {
             val relay = Relay(RelayConfig(url, read = true, write = false), client, scope)
             relay.autoReconnect = false

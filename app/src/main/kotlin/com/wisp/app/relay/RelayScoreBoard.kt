@@ -28,7 +28,6 @@ class RelayScoreBoard(
 
     companion object {
         private const val TAG = "RelayScoreBoard"
-        const val MAX_SCORED_RELAYS = 75
 
         private fun prefsName(pubkeyHex: String?): String =
             if (pubkeyHex != null) "wisp_relay_scores_$pubkeyHex" else "wisp_relay_scores"
@@ -97,7 +96,7 @@ class RelayScoreBoard(
         val result = mutableListOf<ScoredRelay>()
         val remainingRelays = relayToAuthors.toMutableMap()
 
-        while (uncovered.isNotEmpty() && result.size < MAX_SCORED_RELAYS && remainingRelays.isNotEmpty()) {
+        while (uncovered.isNotEmpty() && remainingRelays.isNotEmpty()) {
             // Find relay that covers the most uncovered authors
             var bestUrl: String? = null
             var bestCover: Set<String> = emptySet()

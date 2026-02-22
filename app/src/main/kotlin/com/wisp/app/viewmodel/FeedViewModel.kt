@@ -28,7 +28,6 @@ import com.wisp.app.relay.RelayPool
 import com.wisp.app.relay.RelayScoreBoard
 import com.wisp.app.relay.ScoredRelay
 import com.wisp.app.relay.SubscriptionManager
-import com.wisp.app.db.WispDatabase
 import com.wisp.app.repo.BlossomRepository
 import com.wisp.app.repo.BookmarkRepository
 import com.wisp.app.repo.BookmarkSetRepository
@@ -103,8 +102,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val profileRepo = ProfileRepository(app)
     val muteRepo = MuteRepository(app, pubkeyHex)
     val nip05Repo = Nip05Repository()
-    private val db = WispDatabase.getInstance(app)
-    val eventRepo = EventRepository(profileRepo, muteRepo, db.eventDao()).also { it.currentUserPubkey = pubkeyHex }
+    val eventRepo = EventRepository(profileRepo, muteRepo).also { it.currentUserPubkey = pubkeyHex }
     val contactRepo = ContactRepository(app, pubkeyHex)
     val listRepo = ListRepository(app, pubkeyHex)
     val dmRepo = DmRepository(app, pubkeyHex)
@@ -397,16 +395,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         // Silent init: when returning from process death with cached data, skip the
         // multi-step loading overlay and let events arrive in the background.
         startupJob = viewModelScope.launch {
-            // Load cached events from DB before anything else — feed appears instantly
-            launch(Dispatchers.IO) { eventRepo.runTtlCleanup() }
-            val cachedNewest = eventRepo.loadCachedFeed()
-            val engageNewest = eventRepo.loadCachedEngagement()
-            val hasCachedEvents = cachedNewest != null
-            if (hasCachedEvents) {
-                _initialLoadDone.value = true
-                Log.d("FeedViewModel", "Loaded cached feed (newest=$cachedNewest, engageNewest=$engageNewest)")
-            }
-
             val cachedFollows = contactRepo.getFollowList()
             val silentInit = cachedFollows.isNotEmpty() && !relayScoreBoard.needsRecompute()
             if (silentInit) {
@@ -496,11 +484,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             // Apply filter and subscribe
             applyAuthorFilterForFeedType(_feedType.value)
             updateLoading(InitLoadingState.Subscribing)
-            if (hasCachedEvents) {
-                resubscribeFeed(sinceOverride = cachedNewest, clearSeen = false)
-            } else {
-                subscribeFeed()
-            }
+            subscribeFeed()
             metadataFetcher.fetchProfilesForFollows(follows)
 
             // Let the "Subscribing" state show briefly, then clear
@@ -898,8 +882,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
         activeEngagementSubIds.clear()
 
-        // Clear in-memory feed state (DB is NOT cleared — refresh reconnects relays)
+        // Clear feed state
         eventRepo.clearFeed()
+        relayPool.clearSeenEvents()
+        _initialLoadDone.value = false
         isLoadingMore = false
 
         // Disconnect all relays
@@ -908,15 +894,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         _isRefreshing.value = true
 
         viewModelScope.launch {
-            // Reload from DB immediately so feed reappears while relays reconnect
-            val cachedNewest = eventRepo.loadCachedFeed()
-            eventRepo.loadCachedEngagement()
-            if (cachedNewest != null) {
-                _initialLoadDone.value = true
-            } else {
-                _initialLoadDone.value = false
-            }
-
             // Rebuild relay config from saved settings
             relayPool.updateBlockedUrls(keyRepo.getBlockedRelays())
             val pinnedRelays = keyRepo.getRelays()
@@ -955,12 +932,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
 
             applyAuthorFilterForFeedType(_feedType.value)
-            // Incremental sync: only fetch events newer than cached
-            if (cachedNewest != null) {
-                resubscribeFeed(sinceOverride = cachedNewest, clearSeen = false)
-            } else {
-                subscribeFeed()
-            }
+            subscribeFeed()
             metadataFetcher.fetchProfilesForFollows(contactRepo.getFollowList().map { it.pubkey })
 
             _isRefreshing.value = false
@@ -1020,21 +992,18 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     private var feedEoseJob: Job? = null
 
-    private fun resubscribeFeed(
-        sinceOverride: Long? = null,
-        clearSeen: Boolean = true
-    ) {
+    private fun resubscribeFeed() {
         relayPool.closeOnAllRelays(feedSubId)
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
         activeEngagementSubIds.clear()
-        if (clearSeen) relayPool.clearSeenEvents()
+        relayPool.clearSeenEvents()
         eventRepo.countNewNotes = false
         feedEoseJob?.cancel()
 
         // Use a `since` timestamp so every relay queries the same time window, producing
         // deterministic results across refreshes. The limit still caps per-relay response
         // size. After EOSE the subscription stays open for live streaming of new events.
-        val sinceTimestamp = sinceOverride ?: (System.currentTimeMillis() / 1000 - 60 * 60 * 24) // 24 hours ago
+        val sinceTimestamp = System.currentTimeMillis() / 1000 - 60 * 60 * 24 // 24 hours ago
         val targetedRelays: Set<String> = when (_feedType.value) {
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
                 val cache = extendedNetworkRepo.cachedNetwork.value

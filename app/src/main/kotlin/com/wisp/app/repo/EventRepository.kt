@@ -1,10 +1,6 @@
 package com.wisp.app.repo
 
-import android.util.Log
 import android.util.LruCache
-import com.wisp.app.db.EventDao
-import com.wisp.app.db.toEntity
-import com.wisp.app.db.toNostrEvent
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.NostrEvent
@@ -18,14 +14,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
-class EventRepository(
-    val profileRepo: ProfileRepository? = null,
-    val muteRepo: MuteRepository? = null,
-    val eventDao: EventDao? = null
-) {
+class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: MuteRepository? = null) {
     var metadataFetcher: MetadataFetcher? = null
     var currentUserPubkey: String? = null
     private val eventCache = LruCache<String, NostrEvent>(5000)
@@ -163,34 +154,6 @@ class EventRepository(
     @Volatile private var repostDirty = false
     @Volatile private var relaySourceDirtyFlag = false
 
-    // Batched DB writer — coalesces events for 500ms then writes in bulk
-    private val dbWriteChannel = Channel<NostrEvent>(Channel.BUFFERED)
-
-    init {
-        if (eventDao != null) {
-            scope.launch(Dispatchers.IO) {
-                val batch = mutableListOf<NostrEvent>()
-                while (true) {
-                    // Wait for first event
-                    val first = dbWriteChannel.receiveCatching().getOrNull() ?: break
-                    batch.add(first)
-                    // Drain any queued events (non-blocking)
-                    delay(500)
-                    while (true) {
-                        val next = dbWriteChannel.tryReceive().getOrNull() ?: break
-                        batch.add(next)
-                    }
-                    try {
-                        eventDao.insertAll(batch.map { it.toEntity() })
-                    } catch (e: Exception) {
-                        Log.e("EventRepository", "DB batch write failed", e)
-                    }
-                    batch.clear()
-                }
-            }
-        }
-    }
-
     private fun markVersionDirty() {
         versionDirty.trySend(Unit)
     }
@@ -212,10 +175,7 @@ class EventRepository(
             1 -> {
                 // Only show root notes in feed, not replies
                 val isReply = event.tags.any { it.size >= 2 && it[0] == "e" }
-                if (!isReply) {
-                    binaryInsert(event)
-                    if (eventDao != null) dbWriteChannel.trySend(event)
-                }
+                if (!isReply) binaryInsert(event)
             }
             6 -> {
                 // Repost: parse embedded event from content and insert it into the feed
@@ -236,14 +196,10 @@ class EventRepository(
                             val isReply = inner.tags.any { it.size >= 2 && it[0] == "e" }
                             if (!isReply) binaryInsert(inner)
                         }
-                        if (eventDao != null) dbWriteChannel.trySend(event)
                     } catch (_: Exception) {}
                 }
             }
-            7 -> {
-                addReaction(event)
-                if (eventDao != null) dbWriteChannel.trySend(event)
-            }
+            7 -> addReaction(event)
             9735 -> {
                 val targetId = Nip57.getZappedEventId(event) ?: return
                 // Per-target dedup — evicts alongside the zap count cache
@@ -271,7 +227,6 @@ class EventRepository(
                         userZaps.put(targetId, true)
                     }
                 }
-                if (eventDao != null) dbWriteChannel.trySend(event)
             }
         }
     }
@@ -517,7 +472,6 @@ class EventRepository(
             }
         }
         feedDirty.trySend(Unit)
-        eventDao?.let { dao -> scope.launch(Dispatchers.IO) { dao.deleteByPubkey(pubkey) } }
     }
 
     fun trimSeenEvents(maxSize: Int = 50_000) {
@@ -528,121 +482,6 @@ class EventRepository(
         }
     }
 
-
-    /**
-     * Load cached feed events (kind 1, 6) from DB into memory.
-     * Returns the newest created_at timestamp, or null if no cached events.
-     */
-    suspend fun loadCachedFeed(): Long? {
-        val dao = eventDao ?: return null
-        return withContext(Dispatchers.IO) {
-            val entities = dao.getFeedEvents()
-            if (entities.isEmpty()) return@withContext null
-            for (entity in entities) {
-                val event = entity.toNostrEvent()
-                seenEventIds.add(event.id)
-                eventCache.put(event.id, event)
-                when (event.kind) {
-                    1 -> {
-                        val isReply = event.tags.any { it.size >= 2 && it[0] == "e" }
-                        if (!isReply) {
-                            synchronized(feedList) {
-                                if (feedIds.add(event.id)) {
-                                    feedList.add(event)
-                                }
-                            }
-                        }
-                    }
-                    6 -> {
-                        if (event.content.isNotBlank()) {
-                            try {
-                                val inner = fromJson(event.content)
-                                repostAuthors.put(inner.id, event.pubkey)
-                                val count = repostCounts.get(inner.id) ?: 0
-                                repostCounts.put(inner.id, count + 1)
-                                if (event.pubkey == currentUserPubkey) {
-                                    userReposts.put(inner.id, true)
-                                }
-                                if (seenEventIds.add(inner.id)) {
-                                    eventCache.put(inner.id, inner)
-                                    val isReply = inner.tags.any { it.size >= 2 && it[0] == "e" }
-                                    if (!isReply) {
-                                        synchronized(feedList) {
-                                            if (feedIds.add(inner.id)) {
-                                                feedList.add(inner)
-                                            }
-                                        }
-                                    }
-                                }
-                            } catch (_: Exception) {}
-                        }
-                    }
-                }
-            }
-            // Sort feed by created_at descending
-            synchronized(feedList) { feedList.sortByDescending { it.created_at } }
-            feedListVersion++
-            feedDirty.trySend(Unit)
-            Log.d("EventRepository", "Loaded ${entities.size} cached feed events")
-            dao.getNewestFeedTimestamp()
-        }
-    }
-
-    private fun replayCachedZap(event: NostrEvent) {
-        val targetId = Nip57.getZappedEventId(event) ?: return
-        val dedupSet = countedZapIds.get(targetId)
-            ?: mutableSetOf<String>().also { countedZapIds.put(targetId, it) }
-        synchronized(dedupSet) { if (!dedupSet.add(event.id)) return }
-        val sats = Nip57.getZapAmountSats(event)
-        if (sats > 0) {
-            val zapperPubkey = Nip57.getZapperPubkey(event)
-            addZapSats(targetId, sats)
-            if (zapperPubkey != null) {
-                val zapMessage = Nip57.getZapMessage(event)
-                val zaps = zapDetails.get(targetId)
-                    ?: java.util.Collections.synchronizedList(mutableListOf<Triple<String, Long, String>>()).also {
-                        zapDetails.put(targetId, it)
-                    }
-                zaps.add(Triple(zapperPubkey, sats, zapMessage))
-            }
-            if (zapperPubkey == currentUserPubkey) {
-                userZaps.put(targetId, true)
-            }
-        }
-    }
-
-    /**
-     * Load cached engagement events (kind 7, 9735) from DB and replay through counting logic.
-     * Returns the newest engagement created_at timestamp, or null if none.
-     */
-    suspend fun loadCachedEngagement(): Long? {
-        val dao = eventDao ?: return null
-        return withContext(Dispatchers.IO) {
-            val entities = dao.getEngagementEvents()
-            if (entities.isEmpty()) return@withContext null
-            for (entity in entities) {
-                val event = entity.toNostrEvent()
-                if (!seenEventIds.add(event.id)) continue
-                eventCache.put(event.id, event)
-                when (event.kind) {
-                    7 -> addReaction(event)
-                    9735 -> replayCachedZap(event)
-                }
-            }
-            Log.d("EventRepository", "Replayed ${entities.size} cached engagement events")
-            dao.getNewestEngagementTimestamp()
-        }
-    }
-
-    /** Delete cached events older than [maxAgeMs] based on cached_at wall-clock time. */
-    suspend fun runTtlCleanup(maxAgeMs: Long = 24L * 60 * 60 * 1000) {
-        val dao = eventDao ?: return
-        withContext(Dispatchers.IO) {
-            val cutoff = System.currentTimeMillis() - maxAgeMs
-            dao.deleteOlderThan(cutoff)
-            Log.d("EventRepository", "TTL cleanup: deleted events cached before ${cutoff}")
-        }
-    }
 
     fun clearFeed() {
         synchronized(feedList) {
@@ -680,6 +519,5 @@ class EventRepository(
         _zapVersion.value = 0
         _relaySourceVersion.value = 0
         _reactionVersion.value = 0
-        eventDao?.let { dao -> scope.launch(Dispatchers.IO) { dao.deleteAll() } }
     }
 }

@@ -40,6 +40,3 @@
 
 # ZXing
 -keep class com.google.zxing.** { *; }
-
-# Room
--keep class com.wisp.app.db.** { *; }
