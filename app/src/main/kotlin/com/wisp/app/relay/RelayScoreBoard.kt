@@ -21,13 +21,14 @@ class RelayScoreBoard(
     private var scoredRelayUrls: Set<String> = emptySet()
     // relay URL -> set of authors covered by that relay
     private var relayAuthorsMap: MutableMap<String, MutableSet<String>> = mutableMapOf()
-    // Inverse index: author -> primary scored relay URL (the first relay that covers them)
-    private var authorToRelay: MutableMap<String, String> = mutableMapOf()
+    // Inverse index: author -> set of scored relay URLs (up to MIN_REDUNDANCY)
+    private var authorToRelays: MutableMap<String, MutableSet<String>> = mutableMapOf()
     // The set of follow pubkeys used to build the current scoreboard
     private var cachedFollowSet: Set<String> = emptySet()
 
     companion object {
         private const val TAG = "RelayScoreBoard"
+        private const val MIN_REDUNDANCY = 3
 
         private fun prefsName(pubkeyHex: String?): String =
             if (pubkeyHex != null) "wisp_relay_scores_$pubkeyHex" else "wisp_relay_scores"
@@ -48,7 +49,9 @@ class RelayScoreBoard(
     }
 
     /**
-     * Recompute the optimal relay set using greedy set-cover over followed users' write relays.
+     * Recompute the persistent relay set: for each followed author, include up to
+     * [MIN_REDUNDANCY] of their write relays so that a single relay going down
+     * doesn't lose that author's notes.
      */
     fun recompute(excludeRelays: Set<String> = emptySet()) {
         val follows = contactRepo.getFollowList().map { it.pubkey }
@@ -56,93 +59,59 @@ class RelayScoreBoard(
             scoredRelays = emptyList()
             scoredRelayUrls = emptySet()
             relayAuthorsMap = mutableMapOf()
-            authorToRelay = mutableMapOf()
+            authorToRelays = mutableMapOf()
             cachedFollowSet = emptySet()
             saveToPrefs()
             return
         }
 
-        // Build relay -> authors mapping from known relay lists
-        val relayToAuthors = mutableMapOf<String, MutableSet<String>>()
         var knownCount = 0
+        val newRelayAuthors = mutableMapOf<String, MutableSet<String>>()
+        val newAuthorRelays = mutableMapOf<String, MutableSet<String>>()
+
         for (pubkey in follows) {
             val writeRelays = relayListRepo.getWriteRelays(pubkey) ?: continue
             knownCount++
-            for (url in writeRelays) {
-                relayToAuthors.getOrPut(url) { mutableSetOf() }.add(pubkey)
+            val eligible = writeRelays.filter { it !in excludeRelays }.take(MIN_REDUNDANCY)
+            for (url in eligible) {
+                newRelayAuthors.getOrPut(url) { mutableSetOf() }.add(pubkey)
+                newAuthorRelays.getOrPut(pubkey) { mutableSetOf() }.add(url)
             }
         }
 
-        // Remove excluded (bad) relays before scoring
-        for (url in excludeRelays) relayToAuthors.remove(url)
-
         Log.d(TAG, "recompute(): ${follows.size} follows, $knownCount have relay lists, " +
-                "${follows.size - knownCount} missing, ${relayToAuthors.size} unique relays" +
+                "${follows.size - knownCount} missing, ${newRelayAuthors.size} unique relays" +
                 if (excludeRelays.isNotEmpty()) ", ${excludeRelays.size} excluded" else "")
 
-        if (relayToAuthors.isEmpty()) {
+        if (newRelayAuthors.isEmpty()) {
             scoredRelays = emptyList()
             scoredRelayUrls = emptySet()
             relayAuthorsMap = mutableMapOf()
-            authorToRelay = mutableMapOf()
+            authorToRelays = mutableMapOf()
             cachedFollowSet = follows.toSet()
             Log.d(TAG, "No relay lists known — aborting")
             saveToPrefs()
             return
         }
 
-        // Greedy set-cover: pick relay covering most uncovered follows, repeat
-        val uncovered = follows.toMutableSet()
-        val result = mutableListOf<ScoredRelay>()
-        val remainingRelays = relayToAuthors.toMutableMap()
-
-        while (uncovered.isNotEmpty() && remainingRelays.isNotEmpty()) {
-            // Find relay that covers the most uncovered authors
-            var bestUrl: String? = null
-            var bestCover: Set<String> = emptySet()
-            for ((url, authors) in remainingRelays) {
-                val cover = authors.intersect(uncovered)
-                if (cover.size > bestCover.size) {
-                    bestUrl = url
-                    bestCover = cover
-                }
-            }
-            if (bestUrl == null || bestCover.isEmpty()) break
-
-            result.add(ScoredRelay(bestUrl, bestCover.size, bestCover))
-            uncovered.removeAll(bestCover)
-            remainingRelays.remove(bestUrl)
-        }
-
-        scoredRelays = result
-        scoredRelayUrls = result.map { it.url }.toSet()
-        relayAuthorsMap = result.associate { it.url to it.authors.toMutableSet() }.toMutableMap()
-
-        // Build inverse author → primary relay index (first relay covering each author in scored order)
-        val inverseIndex = mutableMapOf<String, String>()
-        for (scored in result) {
-            for (author in scored.authors) {
-                if (author !in inverseIndex) {
-                    inverseIndex[author] = scored.url
-                }
-            }
-        }
-        authorToRelay = inverseIndex
+        relayAuthorsMap = newRelayAuthors
+        authorToRelays = newAuthorRelays
         cachedFollowSet = follows.toSet()
+        rebuildScoredRelays()
 
-        Log.d(TAG, "Scored ${result.size} relays covering ${follows.size - uncovered.size}/${follows.size} follows " +
-                "(${uncovered.size} uncovered, $knownCount with relay lists)")
+        val coveredCount = newAuthorRelays.size
+        Log.d(TAG, "Scored ${scoredRelays.size} relays covering $coveredCount/${follows.size} follows " +
+                "(${follows.size - coveredCount} uncovered, $knownCount with relay lists)")
 
         saveToPrefs()
     }
 
     /**
      * Incrementally add a newly-followed author to the scoreboard.
-     * Looks up their write relays and inserts them into an existing scored relay if possible,
-     * otherwise they'll fall back to sendToAll routing.
+     * Places them on up to [MIN_REDUNDANCY] of their write relays.
      */
     fun addAuthor(pubkey: String, excludeRelays: Set<String> = emptySet()) {
-        if (pubkey in authorToRelay) return // already mapped
+        if (pubkey in authorToRelays) return // already mapped
         cachedFollowSet = cachedFollowSet + pubkey
 
         val writeRelays = relayListRepo.getWriteRelays(pubkey)
@@ -152,35 +121,21 @@ class RelayScoreBoard(
             return
         }
 
-        // Try to place on an existing scored relay (prefer the smallest to distribute load)
-        var bestRelay: String? = null
-        var bestSize = Int.MAX_VALUE
-        for (url in writeRelays) {
-            if (url in excludeRelays) continue
-            val existing = relayAuthorsMap[url]
-            if (existing != null && existing.size < bestSize) {
-                bestRelay = url
-                bestSize = existing.size
-            }
+        val eligible = writeRelays.filter { it !in excludeRelays }.take(MIN_REDUNDANCY)
+        if (eligible.isEmpty()) {
+            Log.d(TAG, "addAuthor: all write relays for $pubkey are excluded")
+            saveToPrefs()
+            return
         }
 
-        if (bestRelay != null) {
-            relayAuthorsMap[bestRelay]!!.add(pubkey)
-            authorToRelay[pubkey] = bestRelay
-            rebuildScoredRelays()
-            Log.d(TAG, "addAuthor: $pubkey → $bestRelay (now ${relayAuthorsMap[bestRelay]!!.size} authors)")
-        } else {
-            // Their write relays aren't in our scored set — use the first non-excluded one
-            val url = writeRelays.firstOrNull { it !in excludeRelays } ?: run {
-                Log.d(TAG, "addAuthor: all write relays for $pubkey are excluded")
-                saveToPrefs()
-                return
-            }
-            relayAuthorsMap[url] = mutableSetOf(pubkey)
-            authorToRelay[pubkey] = url
-            rebuildScoredRelays()
-            Log.d(TAG, "addAuthor: $pubkey → $url (new relay)")
+        val relaySet = mutableSetOf<String>()
+        for (url in eligible) {
+            relayAuthorsMap.getOrPut(url) { mutableSetOf() }.add(pubkey)
+            relaySet.add(url)
         }
+        authorToRelays[pubkey] = relaySet
+        rebuildScoredRelays()
+        Log.d(TAG, "addAuthor: $pubkey → ${eligible.joinToString()} (${eligible.size} relays)")
 
         saveToPrefs()
     }
@@ -190,16 +145,18 @@ class RelayScoreBoard(
      */
     fun removeAuthor(pubkey: String) {
         cachedFollowSet = cachedFollowSet - pubkey
-        val relay = authorToRelay.remove(pubkey) ?: run {
+        val relays = authorToRelays.remove(pubkey) ?: run {
             saveToPrefs()
             return
         }
-        relayAuthorsMap[relay]?.remove(pubkey)
-        if (relayAuthorsMap[relay]?.isEmpty() == true) {
-            relayAuthorsMap.remove(relay)
+        for (relay in relays) {
+            relayAuthorsMap[relay]?.remove(pubkey)
+            if (relayAuthorsMap[relay]?.isEmpty() == true) {
+                relayAuthorsMap.remove(relay)
+            }
         }
         rebuildScoredRelays()
-        Log.d(TAG, "removeAuthor: $pubkey removed from $relay")
+        Log.d(TAG, "removeAuthor: $pubkey removed from ${relays.size} relays")
         saveToPrefs()
     }
 
@@ -213,17 +170,23 @@ class RelayScoreBoard(
 
     /**
      * Returns relay→authors grouping constrained to scored relays only.
+     * An author may appear under multiple relay keys for redundancy.
      * Authors not covered by any scored relay are returned under the empty-string key
      * (caller should fall back to sendToAll for those).
      */
     fun getRelaysForAuthors(authors: List<String>): Map<String, List<String>> {
         if (scoredRelays.isEmpty()) return emptyMap()
 
-        // O(n) group-by using the inverse author → relay index
         val result = mutableMapOf<String, MutableList<String>>()
         for (author in authors) {
-            val relay = authorToRelay[author] ?: ""
-            result.getOrPut(relay) { mutableListOf() }.add(author)
+            val relays = authorToRelays[author]
+            if (relays.isNullOrEmpty()) {
+                result.getOrPut("") { mutableListOf() }.add(author)
+            } else {
+                for (relay in relays) {
+                    result.getOrPut(relay) { mutableListOf() }.add(author)
+                }
+            }
         }
         return result
     }
@@ -242,7 +205,7 @@ class RelayScoreBoard(
         scoredRelays = emptyList()
         scoredRelayUrls = emptySet()
         relayAuthorsMap = mutableMapOf()
-        authorToRelay = mutableMapOf()
+        authorToRelays = mutableMapOf()
         cachedFollowSet = emptySet()
         prefs.edit().clear().apply()
     }
@@ -278,7 +241,7 @@ class RelayScoreBoard(
         val mapStr = prefs.getString("author_relay_map", null)
         if (!mapStr.isNullOrBlank()) {
             val restoredMap = mutableMapOf<String, MutableSet<String>>()
-            val restoredInverse = mutableMapOf<String, String>()
+            val restoredInverse = mutableMapOf<String, MutableSet<String>>()
             for (line in mapStr.split("\n")) {
                 val parts = line.split("\t", limit = 2)
                 if (parts.size != 2) continue
@@ -287,16 +250,14 @@ class RelayScoreBoard(
                 if (authors.isEmpty()) continue
                 restoredMap[url] = authors
                 for (author in authors) {
-                    if (author !in restoredInverse) {
-                        restoredInverse[author] = url
-                    }
+                    restoredInverse.getOrPut(author) { mutableSetOf() }.add(url)
                 }
             }
             if (restoredMap.isNotEmpty()) {
                 relayAuthorsMap = restoredMap
-                authorToRelay = restoredInverse
+                authorToRelays = restoredInverse
                 rebuildScoredRelays()
-                Log.d(TAG, "Restored scoreboard from cache: ${scoredRelays.size} relays, ${authorToRelay.size} authors")
+                Log.d(TAG, "Restored scoreboard from cache: ${scoredRelays.size} relays, ${authorToRelays.size} authors")
             }
         } else {
             // Legacy fallback: restore just URLs (will trigger recompute)

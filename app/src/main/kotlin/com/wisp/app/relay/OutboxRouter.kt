@@ -9,6 +9,9 @@ class OutboxRouter(
     private val relayPool: RelayPool,
     private val relayListRepo: RelayListRepository
 ) {
+    companion object {
+        private const val MAX_AUTHORS_PER_RELAY = 300
+    }
     /**
      * Subscribe to content from [authors] by routing to each author's write relays.
      * Accepts multiple template filters — each gets `.copy(authors=subset)` per relay group.
@@ -259,8 +262,17 @@ class OutboxRouter(
         for (pubkey in authors) {
             val writeRelays = relayListRepo.getWriteRelays(pubkey)
             if (writeRelays != null) {
+                var placed = false
                 for (url in writeRelays) {
-                    result.getOrPut(url) { mutableListOf() }.add(pubkey)
+                    val list = result.getOrPut(url) { mutableListOf() }
+                    if (list.size < MAX_AUTHORS_PER_RELAY) {
+                        list.add(pubkey)
+                        placed = true
+                    }
+                }
+                if (!placed) {
+                    // All write relays at capacity — fall back to broadcast
+                    result.getOrPut("") { mutableListOf() }.add(pubkey)
                 }
             } else {
                 result.getOrPut("") { mutableListOf() }.add(pubkey)
