@@ -184,8 +184,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private val _initialLoadDone = MutableStateFlow(false)
     val initialLoadDone: StateFlow<Boolean> = _initialLoadDone
 
-    private val _isRefreshing = MutableStateFlow(false)
-    val isRefreshing: StateFlow<Boolean> = _isRefreshing
 
     private val _initLoadingState = MutableStateFlow<InitLoadingState>(InitLoadingState.SearchingProfile)
     val initLoadingState: StateFlow<InitLoadingState> = _initLoadingState
@@ -909,76 +907,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Called by Activity lifecycle — delegates to RelayLifecycleManager. */
     fun onAppResume(pausedMs: Long) = lifecycleManager.onAppResume(pausedMs)
-
-    /**
-     * Full feed refresh: disconnect all relays, reconnect, rebuild outbox
-     * relay list, and resubscribe everything as if freshly logged in.
-     */
-    fun refreshFeed() {
-        if (_isRefreshing.value) return
-
-        // Cancel active subscriptions
-        feedEoseJob?.cancel()
-        relayPool.closeOnAllRelays(feedSubId)
-        for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
-        activeEngagementSubIds.clear()
-
-        // Clear feed state
-        eventRepo.clearFeed()
-        relayPool.clearSeenEvents()
-        _initialLoadDone.value = false
-        isLoadingMore = false
-
-        // Disconnect all relays
-        relayPool.disconnectAll()
-
-        _isRefreshing.value = true
-
-        viewModelScope.launch {
-            // Rebuild relay config from saved settings
-            relayPool.updateBlockedUrls(keyRepo.getBlockedRelays())
-            val pinnedRelays = keyRepo.getRelays()
-            val pinnedUrls = pinnedRelays.map { it.url }.toSet()
-            val cachedScored = relayScoreBoard.getScoredRelayConfigs()
-                .filter { it.url !in pinnedUrls }
-            relayPool.updateRelays(pinnedRelays + cachedScored)
-            relayPool.updateDmRelays(keyRepo.getDmRelays())
-
-            // Wait for relays to connect
-            relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
-
-            subscribeSelfData()
-
-            // Wait until 90% of follows have relay list coverage before subscribing feed
-            val subscriptionSent = fetchRelayListsForFollows()
-            if (subscriptionSent) {
-                val follows = contactRepo.getFollowList().map { it.pubkey }
-                val target = (follows.size * 0.9).toInt()
-                awaitRelayListCoverage(follows, target, timeoutMs = 10_000)
-                subManager.closeSubscription("relay-lists")
-                recomputeAndMergeRelays()
-            }
-
-            // Re-discover extended network if cache is stale
-            val cache = extendedNetworkRepo.cachedNetwork.value
-            if (cache == null || extendedNetworkRepo.isCacheStale(cache)) {
-                val follows = contactRepo.getFollowList().map { it.pubkey }
-                if (follows.isNotEmpty()) {
-                    try { extendedNetworkRepo.discoverNetwork() } catch (_: Exception) {}
-                }
-            }
-
-            // Always rebuild pool (includes extended relays)
-            rebuildRelayPool()
-            relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
-
-            applyAuthorFilterForFeedType(_feedType.value)
-            subscribeFeed()
-            metadataFetcher.fetchProfilesForFollows(contactRepo.getFollowList().map { it.pubkey })
-
-            _isRefreshing.value = false
-        }
-    }
 
     private fun subscribeFeed() {
         resubscribeFeed()

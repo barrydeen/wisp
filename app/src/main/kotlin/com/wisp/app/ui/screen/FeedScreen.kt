@@ -29,7 +29,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -130,7 +129,6 @@ fun FeedScreen(
     val userProfile = profileVersion.let { userPubkey?.let { viewModel.eventRepo.getProfileData(it) } }
 
     val newNoteCount by viewModel.newNoteCount.collectAsState()
-    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val initLoadingState by viewModel.initLoadingState.collectAsState()
     val zapInProgress by viewModel.zapInProgress.collectAsState()
     val listedIds by viewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
@@ -506,9 +504,7 @@ fun FeedScreen(
                     onViewDetails = { onRelayDetail(selectedRelay!!) }
                 )
             }
-            PullToRefreshBox(
-                isRefreshing = isRefreshing,
-                onRefresh = { viewModel.refreshFeed() },
+            Box(
                 modifier = Modifier.fillMaxSize()
             ) {
                 if (feed.isEmpty()) {

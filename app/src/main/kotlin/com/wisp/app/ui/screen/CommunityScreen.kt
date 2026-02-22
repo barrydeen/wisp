@@ -31,7 +31,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -80,9 +79,7 @@ fun CommunityScreen(
             )
         }
     ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = false,
-            onRefresh = { viewModel.refresh() },
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
