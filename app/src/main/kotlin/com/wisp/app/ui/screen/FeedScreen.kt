@@ -72,17 +72,9 @@ import com.wisp.app.ui.component.WispDrawerContent
 import com.wisp.app.ui.component.ZapDialog
 import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.relay.ScoredRelay
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.sp
 import com.wisp.app.viewmodel.FeedType
 import com.wisp.app.viewmodel.FeedViewModel
 import com.wisp.app.viewmodel.InitLoadingState
@@ -564,10 +556,7 @@ fun FeedScreen(
                                 )
                             }
                             feedType == FeedType.EXTENDED_FOLLOWS && viewModel.extendedNetworkRepo.cachedNetwork.value == null -> {
-                                Text(
-                                    "Tap Extended in the feed menu to discover your network",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                             }
                             feedType == FeedType.LIST && selectedList == null -> {
                                 Text(
@@ -582,7 +571,7 @@ fun FeedScreen(
                                 )
                             }
                             initLoadingState != InitLoadingState.Done && initLoadingState != InitLoadingState.Idle -> {
-                                InitLoadingOverlay(initLoadingState)
+                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                             }
                             else -> {
                                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -1072,86 +1061,6 @@ private fun NewNotesButton(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun InitLoadingOverlay(state: InitLoadingState) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = Modifier.padding(horizontal = 32.dp)
-    ) {
-        Text(
-            text = "Setting Up Your Feed",
-            fontSize = 20.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-
-        Spacer(Modifier.height(24.dp))
-
-        val progress = initLoadingProgress(state)
-        LinearProgressIndicator(
-            progress = { progress },
-            modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-
-        Spacer(Modifier.height(16.dp))
-
-        AnimatedContent(
-            targetState = initLoadingText(state),
-            transitionSpec = { fadeIn() togetherWith fadeOut() },
-            label = "init-status"
-        ) { text ->
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-private fun initLoadingProgress(state: InitLoadingState): Float {
-    return when (state) {
-        is InitLoadingState.Idle -> 0f
-        is InitLoadingState.Connecting -> {
-            val frac = if (state.total > 0) state.connected.toFloat() / state.total else 0f
-            frac * 0.08f
-        }
-        is InitLoadingState.FetchingSelfData -> 0.10f
-        is InitLoadingState.FoundFollows -> 0.12f
-        is InitLoadingState.FetchingRelayLists -> {
-            val frac = if (state.total > 0) state.found.toFloat() / state.total else 0f
-            0.12f + frac * 0.28f
-        }
-        is InitLoadingState.ComputingRouting -> 0.45f
-        is InitLoadingState.DiscoveringNetwork -> {
-            val frac = if (state.total > 0) state.fetched.toFloat() / state.total else 0f
-            0.45f + frac * 0.30f
-        }
-        is InitLoadingState.ExpandingRelays -> 0.80f
-        is InitLoadingState.Subscribing -> 0.90f
-        is InitLoadingState.Done -> 1f
-    }
-}
-
-private fun initLoadingText(state: InitLoadingState): String {
-    return when (state) {
-        is InitLoadingState.Idle -> "Preparing..."
-        is InitLoadingState.Connecting -> "Connecting to relays... ${state.connected}/${state.total}"
-        is InitLoadingState.FetchingSelfData -> "Searching for you on the network..."
-        is InitLoadingState.FoundFollows -> "Found your ${state.count} follows"
-        is InitLoadingState.FetchingRelayLists -> "Fetching relay lists... ${state.found}/${state.total}"
-        is InitLoadingState.ComputingRouting -> "Computed routing across ${state.relayCount} relays for ${state.coveredAuthors} authors"
-        is InitLoadingState.DiscoveringNetwork -> "Discovering extended network... ${state.fetched}/${state.total}"
-        is InitLoadingState.ExpandingRelays -> "Connecting to ${state.relayCount} extended relays..."
-        is InitLoadingState.Subscribing -> "Subscribing to feed..."
-        is InitLoadingState.Done -> "Done!"
     }
 }
 
