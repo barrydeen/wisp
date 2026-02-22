@@ -42,6 +42,17 @@ class Relay(
         fun createClient(): OkHttpClient = OkHttpClient.Builder()
             .pingInterval(30, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS) // No read timeout for WebSocket
+            // Disable WebSocket permessage-deflate compression.
+            // OkHttp's MessageDeflater is not thread-safe — concurrent send/close/failWebSocket
+            // calls cause FATAL NPE and "Failed requirement" crashes in the deflater.
+            // Stripping the extension header from server responses prevents OkHttp from
+            // activating compression. Negligible bandwidth impact for small Nostr JSON messages.
+            .addNetworkInterceptor { chain ->
+                val response = chain.proceed(chain.request())
+                response.newBuilder()
+                    .removeHeader("Sec-WebSocket-Extensions")
+                    .build()
+            }
             .build()
     }
 
