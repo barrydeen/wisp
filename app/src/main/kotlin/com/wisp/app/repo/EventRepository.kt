@@ -1,6 +1,7 @@
 package com.wisp.app.repo
 
 import android.util.LruCache
+import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrEvent.Companion.fromJson
@@ -77,6 +78,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     // Detailed reaction tracking: eventId -> (emoji -> list of reactor pubkeys)
     private val reactionDetails = LruCache<String, ConcurrentHashMap<String, MutableList<String>>>(5000)
+    // Custom emoji URL tracking for reactions: target eventId -> (":shortcode:" -> url)
+    private val reactionEmojiUrls = LruCache<String, MutableMap<String, String>>(5000)
 
     // Detailed zap tracking: eventId -> synchronized list of (zapper pubkey, sats, message)
     private val zapDetails = LruCache<String, MutableList<Triple<String, Long, String>>>(5000)
@@ -236,6 +239,16 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         synchronized(dedupSet) { if (!dedupSet.add(event.id)) return }
         val emoji = event.content.ifBlank { "❤️" }
 
+        // Cache custom emoji URLs from reaction event tags
+        val emojiTags = Nip30.parseEmojiTags(event)
+        if (emojiTags.isNotEmpty()) {
+            val urlMap = reactionEmojiUrls.get(targetEventId)
+                ?: mutableMapOf<String, String>().also { reactionEmojiUrls.put(targetEventId, it) }
+            for ((shortcode, url) in emojiTags) {
+                urlMap[":$shortcode:"] = url
+            }
+        }
+
         val counts = reactionCounts.get(targetEventId)
             ?: ConcurrentHashMap<String, Int>().also { reactionCounts.put(targetEventId, it) }
         counts[emoji] = (counts[emoji] ?: 0) + 1
@@ -347,6 +360,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun getZapSats(eventId: String): Long = zapSats.get(eventId) ?: 0L
+
+    fun getReactionEmojiUrl(eventId: String, emojiKey: String): String? {
+        return reactionEmojiUrls.get(eventId)?.get(emojiKey)
+    }
+
+    fun getReactionEmojiUrls(eventId: String): Map<String, String> {
+        return reactionEmojiUrls.get(eventId)?.toMap() ?: emptyMap()
+    }
 
     fun getReactionDetails(eventId: String): Map<String, List<String>> {
         val details = reactionDetails.get(eventId) ?: return emptyMap()
@@ -484,6 +505,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         reactionCounts.evictAll()
         userReactions.evictAll()
         reactionDetails.evictAll()
+        reactionEmojiUrls.evictAll()
         zapDetails.evictAll()
         repostCounts.evictAll()
         userReposts.evictAll()

@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import coil3.compose.AsyncImage
+import com.wisp.app.nostr.Nip30
 import kotlin.math.sin
 
 @Composable
@@ -64,6 +66,10 @@ fun ActionBar(
     zapSats: Long = 0,
     isZapAnimating: Boolean = false,
     isZapInProgress: Boolean = false,
+    reactionEmojiUrls: Map<String, String> = emptyMap(),
+    resolvedEmojis: Map<String, String> = emptyMap(),
+    unicodeEmojis: List<String> = emptyList(),
+    onManageEmojis: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showEmojiPicker by remember { mutableStateOf(false) }
@@ -86,7 +92,14 @@ fun ActionBar(
         Box {
             IconButton(onClick = { showEmojiPicker = true }) {
                 val displayEmoji = userReactionEmojis.firstOrNull()
-                if (displayEmoji != null) {
+                val displayEmojiUrl = displayEmoji?.let { reactionEmojiUrls[it] ?: resolvedEmojis[it.removeSurrounding(":")] }
+                if (displayEmoji != null && displayEmojiUrl != null) {
+                    AsyncImage(
+                        model = displayEmojiUrl,
+                        contentDescription = displayEmoji,
+                        modifier = Modifier.size(20.dp)
+                    )
+                } else if (displayEmoji != null) {
                     Text(
                         text = displayEmoji,
                         fontSize = 20.sp
@@ -104,7 +117,10 @@ fun ActionBar(
                 EmojiReactionPopup(
                     onSelect = onReact,
                     onDismiss = { showEmojiPicker = false },
-                    selectedEmojis = userReactionEmojis
+                    selectedEmojis = userReactionEmojis,
+                    resolvedEmojis = resolvedEmojis,
+                    unicodeEmojis = unicodeEmojis,
+                    onManageEmojis = onManageEmojis
                 )
             }
         }

@@ -387,6 +387,7 @@ fun UserProfileScreen(
                             }
                             val hasUserReposted = eventRepo?.hasUserReposted(event.id) == true
                             val hasUserZapped = zapVersion.let { eventRepo?.hasUserZapped(event.id) == true }
+                            val eventReactionEmojiUrls = reactionVersion.let { eventRepo?.getReactionEmojiUrls(event.id) ?: emptyMap() }
                             PostCard(
                                 event = event,
                                 profile = if (repostPubkey != null) eventRepo?.getProfileData(event.pubkey) else profile,
@@ -408,6 +409,7 @@ fun UserProfileScreen(
                                 repostedBy = repostedByName,
                                 reactionDetails = reactionDetails,
                                 zapDetails = zapDetails,
+                                reactionEmojiUrls = eventReactionEmojiUrls,
                                 relayIcons = relayIcons,
                                 onNavigateToProfileFromDetails = onNavigateToProfile,
                                 onFollowAuthor = { onToggleFollow?.invoke(event.pubkey) },
@@ -445,6 +447,7 @@ fun UserProfileScreen(
                             }
                             val hasUserReposted2 = eventRepo?.hasUserReposted(event.id) == true
                             val hasUserZapped2 = zapVersion.let { eventRepo?.hasUserZapped(event.id) == true }
+                            val eventReactionEmojiUrls2 = reactionVersion.let { eventRepo?.getReactionEmojiUrls(event.id) ?: emptyMap() }
                             PostCard(
                                 event = event,
                                 profile = profile,
@@ -465,6 +468,7 @@ fun UserProfileScreen(
                                 eventRepo = eventRepo,
                                 reactionDetails = reactionDetails,
                                 zapDetails = zapDetails,
+                                reactionEmojiUrls = eventReactionEmojiUrls2,
                                 relayIcons = relayIcons,
                                 onNavigateToProfileFromDetails = onNavigateToProfile,
                                 onFollowAuthor = { onToggleFollow?.invoke(event.pubkey) },

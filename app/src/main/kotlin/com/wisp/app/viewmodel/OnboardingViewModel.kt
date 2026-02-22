@@ -192,8 +192,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun loadSuggestions(relayPool: RelayPool) {
         if (suggestionsJob != null) return
-        // Pre-select creators
-        _selectedPubkeys.value = CREATOR_PUBKEYS.toSet()
+        _selectedPubkeys.value = emptySet()
 
         suggestionsJob = viewModelScope.launch {
             // Wait for at least one relay to connect
@@ -375,23 +374,24 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     ) {
         val keypair = keyRepo.getKeypair() ?: return
 
-        if (selectedPubkeys.isNotEmpty()) {
-            // Build follow list from selected pubkeys
-            var follows = contactRepo.getFollowList()
-            for (pubkey in selectedPubkeys) {
-                follows = Nip02.addFollow(follows, pubkey)
-            }
-            val tags = Nip02.buildFollowTags(follows)
-            val event = NostrEvent.create(
-                privkey = keypair.privkey,
-                pubkey = keypair.pubkey,
-                kind = 3,
-                content = "",
-                tags = tags
-            )
-            relayPool.sendToWriteRelays(ClientMessage.event(event))
-            contactRepo.updateFromEvent(event)
+        // Always follow self + any selected pubkeys
+        val allFollows = selectedPubkeys + keypair.pubkey.toHex()
+
+        // Build follow list
+        var follows = contactRepo.getFollowList()
+        for (pubkey in allFollows) {
+            follows = Nip02.addFollow(follows, pubkey)
         }
+        val tags = Nip02.buildFollowTags(follows)
+        val event = NostrEvent.create(
+            privkey = keypair.privkey,
+            pubkey = keypair.pubkey,
+            kind = 3,
+            content = "",
+            tags = tags
+        )
+        relayPool.sendToWriteRelays(ClientMessage.event(event))
+        contactRepo.updateFromEvent(event)
 
         keyRepo.markOnboardingComplete()
     }

@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import coil3.compose.AsyncImage
 import com.wisp.app.nostr.ProfileData
 
 @Composable
@@ -115,6 +116,7 @@ fun ReactionDetailsSection(
     zapDetails: List<Triple<String, Long, String>>,
     resolveProfile: (String) -> ProfileData?,
     onProfileClick: (String) -> Unit,
+    reactionEmojiUrls: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
     val sortedZaps = zapDetails.sortedByDescending { it.second }
@@ -154,10 +156,19 @@ fun ReactionDetailsSection(
                         .padding(vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = emoji,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    val emojiUrl = reactionEmojiUrls[emoji]
+                    if (emojiUrl != null) {
+                        AsyncImage(
+                            model = emojiUrl,
+                            contentDescription = emoji,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    } else {
+                        Text(
+                            text = emoji,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                     Spacer(Modifier.width(8.dp))
                     StackedAvatarRow(
                         pubkeys = pubkeys,

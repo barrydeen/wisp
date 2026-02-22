@@ -35,6 +35,7 @@ import com.wisp.app.ui.screen.NotificationsScreen
 import com.wisp.app.ui.screen.SafetyScreen
 import com.wisp.app.ui.screen.UserProfileScreen
 import com.wisp.app.ui.screen.ConsoleScreen
+import com.wisp.app.ui.screen.CustomEmojiScreen
 import com.wisp.app.ui.screen.SearchScreen
 import com.wisp.app.ui.screen.BookmarkSetScreen
 import com.wisp.app.ui.screen.KeysScreen
@@ -62,6 +63,7 @@ import com.wisp.app.viewmodel.ConsoleViewModel
 import com.wisp.app.viewmodel.SearchViewModel
 import com.wisp.app.viewmodel.OnboardingViewModel
 import com.wisp.app.viewmodel.WalletViewModel
+import kotlinx.coroutines.launch
 
 object Routes {
     const val AUTH = "auth"
@@ -87,6 +89,7 @@ object Routes {
     const val ONBOARDING_PROFILE = "onboarding/profile"
     const val ONBOARDING_SUGGESTIONS = "onboarding/suggestions"
     const val RELAY_DETAIL = "relay_detail/{relayUrl}"
+    const val CUSTOM_EMOJIS = "custom_emojis"
 }
 
 @Composable
@@ -328,6 +331,9 @@ fun WispNavHost() {
                         restoreState = true
                     }
                 },
+                onCustomEmojis = {
+                    navController.navigate(Routes.CUSTOM_EMOJIS)
+                },
                 onConsole = {
                     navController.navigate(Routes.CONSOLE)
                 },
@@ -505,6 +511,11 @@ fun WispNavHost() {
         composable(Routes.DM_LIST) {
             LaunchedEffect(Unit) {
                 dmListViewModel.markDmsRead()
+                // Fetch profile metadata for all DM peers
+                val peerPubkeys = dmListViewModel.conversationList.value.map { it.peerPubkey }
+                if (peerPubkeys.isNotEmpty()) {
+                    feedViewModel.metadataFetcher.fetchProfilesForFollows(peerPubkeys)
+                }
             }
             DmListScreen(
                 viewModel = dmListViewModel,
@@ -640,6 +651,35 @@ fun WispNavHost() {
                 profileRepo = feedViewModel.profileRepo,
                 onBack = { navController.popBackStack() },
                 onChanged = { feedViewModel.updateMutedWords() }
+            )
+        }
+
+        composable(Routes.CUSTOM_EMOJIS) {
+            val emojiUploadScope = androidx.compose.runtime.rememberCoroutineScope()
+            CustomEmojiScreen(
+                customEmojiRepo = feedViewModel.customEmojiRepo,
+                onBack = { navController.popBackStack() },
+                onCreateSet = { name, emojis -> feedViewModel.createEmojiSet(name, emojis) },
+                onUpdateSet = { dTag, title, emojis -> feedViewModel.updateEmojiSet(dTag, title, emojis) },
+                onDeleteSet = { dTag -> feedViewModel.deleteEmojiSet(dTag) },
+                onPublishEmojiList = { emojis, refs -> feedViewModel.publishUserEmojiList(emojis, refs) },
+                onAddSet = { pubkey, dTag -> feedViewModel.addSetToEmojiList(pubkey, dTag) },
+                onRemoveSet = { pubkey, dTag -> feedViewModel.removeSetFromEmojiList(pubkey, dTag) },
+                onUploadEmoji = { contentResolver, uri, onResult ->
+                    emojiUploadScope.launch {
+                        try {
+                            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                                ?: throw Exception("Cannot read file")
+                            val mimeType = contentResolver.getType(uri) ?: "image/png"
+                            val ext = mimeType.substringAfter("/", "png")
+                            val url = feedViewModel.blossomRepo.uploadMedia(bytes, mimeType, ext)
+                            onResult(url)
+                        } catch (e: Exception) {
+                            android.util.Log.e("CustomEmoji", "Upload failed: ${e.message}")
+                            onResult("")
+                        }
+                    }
+                }
             )
         }
 
@@ -883,6 +923,9 @@ fun WispNavHost() {
                 )
             }
 
+            val notifResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
+            val notifUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+
             NotificationsScreen(
                 viewModel = notificationsViewModel,
                 scrollToTopTrigger = scrollToTopTrigger,
@@ -918,7 +961,10 @@ fun WispNavHost() {
                 nip05Repo = feedViewModel.nip05Repo,
                 isZapAnimating = { it in notifZapAnimatingIds },
                 isZapInProgress = { it in notifZapInProgress },
-                isInList = { it in notifListedIds }
+                isInList = { it in notifListedIds },
+                resolvedEmojis = notifResolvedEmojis,
+                unicodeEmojis = notifUnicodeEmojis,
+                onManageEmojis = { navController.navigate(Routes.CUSTOM_EMOJIS) }
             )
         }
     }

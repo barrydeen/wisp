@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.LruCache
 import com.wisp.app.nostr.Nip10
+import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NotificationGroup
@@ -194,6 +195,9 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
         val key = "reactions:$referencedId"
         val existing = groupMap[key] as? NotificationGroup.ReactionGroup
 
+        // Extract custom emoji URLs from event tags
+        val eventEmojiUrls = Nip30.parseEmojiTags(event)
+
         if (existing != null) {
             val currentPubkeys = existing.reactions[emoji] ?: emptyList()
             if (event.pubkey in currentPubkeys) return false
@@ -201,17 +205,23 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
             updatedReactions[emoji] = currentPubkeys + event.pubkey
             val updatedTimestamps = existing.reactionTimestamps.toMutableMap()
             updatedTimestamps[event.pubkey] = event.created_at
+            val updatedEmojiUrls = if (eventEmojiUrls.isNotEmpty()) {
+                existing.emojiUrls + eventEmojiUrls.map { (k, v) -> ":$k:" to v }
+            } else existing.emojiUrls
             groupMap[key] = existing.copy(
                 reactions = updatedReactions,
                 reactionTimestamps = updatedTimestamps,
+                emojiUrls = updatedEmojiUrls,
                 latestTimestamp = maxOf(existing.latestTimestamp, event.created_at)
             )
         } else {
+            val emojiUrls = eventEmojiUrls.map { (k, v) -> ":$k:" to v }.toMap()
             groupMap[key] = NotificationGroup.ReactionGroup(
                 groupId = key,
                 referencedEventId = referencedId,
                 reactions = mapOf(emoji to listOf(event.pubkey)),
                 reactionTimestamps = mapOf(event.pubkey to event.created_at),
+                emojiUrls = emojiUrls,
                 latestTimestamp = event.created_at
             )
         }

@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Email
@@ -57,6 +58,7 @@ fun WispDrawerContent(
     onMediaServers: () -> Unit,
     onKeys: () -> Unit = {},
     onSafety: () -> Unit = {},
+    onCustomEmojis: () -> Unit = {},
     onConsole: () -> Unit = {},
     onRelaySettings: () -> Unit,
     onLogout: () -> Unit
@@ -213,6 +215,13 @@ fun WispDrawerContent(
                     label = { Text("Safety") },
                     selected = false,
                     onClick = onSafety,
+                    modifier = Modifier.padding(start = 36.dp, end = 12.dp)
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Outlined.EmojiEmotions, contentDescription = null) },
+                    label = { Text("Custom Emojis") },
+                    selected = false,
+                    onClick = onCustomEmojis,
                     modifier = Modifier.padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(

@@ -56,6 +56,7 @@ import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.nostr.hexToByteArray
+import com.wisp.app.nostr.Nip30
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.Nip05Status
@@ -102,6 +103,10 @@ fun PostCard(
     isPinned: Boolean = false,
     onQuotedNoteClick: ((String) -> Unit)? = null,
     noteActions: NoteActions? = null,
+    reactionEmojiUrls: Map<String, String> = emptyMap(),
+    resolvedEmojis: Map<String, String> = emptyMap(),
+    unicodeEmojis: List<String> = emptyList(),
+    onManageEmojis: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     showDivider: Boolean = true
 ) {
@@ -276,8 +281,13 @@ fun PostCard(
                         onClick = {
                             menuExpanded = false
                             try {
-                                val noteId = Nip19.noteEncode(event.id.hexToByteArray())
-                                clipboardManager.setText(AnnotatedString(noteId))
+                                val relays = eventRepo?.getEventRelays(event.id)?.take(3)?.toList() ?: emptyList()
+                                val neventId = Nip19.neventEncode(
+                                    eventId = event.id.hexToByteArray(),
+                                    relays = relays,
+                                    author = event.pubkey.hexToByteArray()
+                                )
+                                clipboardManager.setText(AnnotatedString(neventId))
                             } catch (_: Exception) {}
                         }
                     )
@@ -313,10 +323,12 @@ fun PostCard(
                         }
                     }
             ) {
+                val emojiMap = remember(event.id) { Nip30.parseEmojiTags(event) }
                 RichContent(
                     content = event.content,
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
+                    emojiMap = emojiMap,
                     eventRepo = eventRepo,
                     onProfileClick = onNavigateToProfile,
                     onNoteClick = onQuotedNoteClick,
@@ -374,6 +386,10 @@ fun PostCard(
                 zapSats = zapSats,
                 isZapAnimating = isZapAnimating,
                 isZapInProgress = isZapInProgress,
+                reactionEmojiUrls = reactionEmojiUrls,
+                resolvedEmojis = resolvedEmojis,
+                unicodeEmojis = unicodeEmojis,
+                onManageEmojis = onManageEmojis,
                 modifier = Modifier.weight(1f)
             )
             if (hasDetails) {
@@ -404,7 +420,8 @@ fun PostCard(
                             reactionDetails = reactionDetails,
                             zapDetails = zapDetails,
                             resolveProfile = profileResolver,
-                            onProfileClick = navToProfile
+                            onProfileClick = navToProfile,
+                            reactionEmojiUrls = reactionEmojiUrls
                         )
                     }
                     if (displayIcons.isNotEmpty()) {

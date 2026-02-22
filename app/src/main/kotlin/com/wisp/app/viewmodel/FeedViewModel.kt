@@ -11,6 +11,7 @@ import com.wisp.app.nostr.Nip02
 import com.wisp.app.nostr.Nip09
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip51
+import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.Nip65
 import com.wisp.app.nostr.NostrEvent
@@ -40,7 +41,7 @@ import com.wisp.app.repo.NotificationRepository
 import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.repo.NwcRepository
-import com.wisp.app.repo.ReactionPreferences
+import com.wisp.app.repo.CustomEmojiRepository
 import com.wisp.app.repo.ZapPreferences
 import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.repo.RelayListRepository
@@ -102,7 +103,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val extendedNetworkRepo = ExtendedNetworkRepository(
         app, contactRepo, muteRepo, relayListRepo, relayPool, subManager, relayScoreBoard, pubkeyHex
     )
-    val reactionPrefs = ReactionPreferences(app, pubkeyHex)
+    val customEmojiRepo = CustomEmojiRepository(app, pubkeyHex)
     val zapPrefs = ZapPreferences(app, pubkeyHex)
     private val processingDispatcher = Dispatchers.Default
     private val feedPrefs: SharedPreferences =
@@ -202,6 +203,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         // Clear all repos
         metadataFetcher.clear()
         eventRepo.clearAll()
+        customEmojiRepo.clear()
         dmRepo.clear()
         notifRepo.clear()
         contactRepo.clear()
@@ -244,7 +246,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         relayScoreBoard.reload(newPubkey)
         healthTracker.reload(newPubkey)
         extendedNetworkRepo.reload(newPubkey)
-        reactionPrefs.reload(newPubkey)
+        customEmojiRepo.reload(newPubkey)
         zapPrefs.reload(newPubkey)
     }
 
@@ -393,6 +395,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
             updateLoading(InitLoadingState.FetchingSelfData)
             subscribeSelfData()
+            fetchMissingEmojiSets()
 
             val follows = contactRepo.getFollowList().map { it.pubkey }
 
@@ -494,7 +497,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             Filter(kinds = listOf(Nip51.KIND_BOOKMARK_LIST), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Blossom.KIND_SERVER_LIST), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Nip51.KIND_FOLLOW_SET), authors = listOf(myPubkey), limit = 50),
-            Filter(kinds = listOf(Nip51.KIND_BOOKMARK_SET), authors = listOf(myPubkey), limit = 50)
+            Filter(kinds = listOf(Nip51.KIND_BOOKMARK_SET), authors = listOf(myPubkey), limit = 50),
+            Filter(kinds = listOf(Nip30.KIND_USER_EMOJI_LIST), authors = listOf(myPubkey), limit = 1),
+            Filter(kinds = listOf(Nip30.KIND_EMOJI_SET), authors = listOf(myPubkey), limit = 50)
         )
         relayPool.sendToAll(ClientMessage.req("self-data", selfDataFilters))
 
@@ -655,6 +660,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (event.kind == Nip51.KIND_FOLLOW_SET) listRepo.updateFromEvent(event)
             if (event.kind == Nip51.KIND_BOOKMARK_SET) bookmarkSetRepo.updateFromEvent(event)
+            if (event.kind == Nip30.KIND_USER_EMOJI_LIST) {
+                val myPubkey = getUserPubkey()
+                if (myPubkey != null && event.pubkey == myPubkey) customEmojiRepo.updateFromEvent(event)
+            }
+            if (event.kind == Nip30.KIND_EMOJI_SET) customEmojiRepo.updateFromEvent(event)
 
             // Only add to feed for feed-related subscriptions;
             // other subs (user profile, bookmarks, threads) just cache
@@ -1168,8 +1178,21 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                     relayPool.sendToWriteRelays(ClientMessage.event(deletionEvent))
                     eventRepo.removeReaction(event.id, myPubkey, emoji)
                 } else {
-                    // Create new reaction
-                    val tags = com.wisp.app.nostr.Nip25.buildReactionTags(event)
+                    // Check if this is a custom emoji reaction (:shortcode:)
+                    val shortcodeMatch = Nip30.shortcodeRegex.matchEntire(emoji)
+                    val tags = if (shortcodeMatch != null) {
+                        val shortcode = shortcodeMatch.groupValues[1]
+                        val url = customEmojiRepo.resolvedEmojis.value[shortcode]
+                        if (url != null) {
+                            com.wisp.app.nostr.Nip25.buildReactionTagsWithEmoji(
+                                event, com.wisp.app.nostr.CustomEmoji(shortcode, url)
+                            )
+                        } else {
+                            com.wisp.app.nostr.Nip25.buildReactionTags(event)
+                        }
+                    } else {
+                        com.wisp.app.nostr.Nip25.buildReactionTags(event)
+                    }
                     val reactionEvent = NostrEvent.create(
                         privkey = keypair.privkey,
                         pubkey = keypair.pubkey,
@@ -1497,6 +1520,97 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun resumeEngagement() {
         if (activeEngagementSubIds.isEmpty()) {
             subscribeEngagementForFeed()
+        }
+    }
+
+    // -- Custom Emoji (NIP-30) CRUD --
+
+    fun createEmojiSet(name: String, emojis: List<com.wisp.app.nostr.CustomEmoji>) {
+        val keypair = keyRepo.getKeypair() ?: return
+        val dTag = name.trim().lowercase().replace(Regex("[^a-z0-9-_]"), "-")
+        val tags = Nip30.buildEmojiSetTags(dTag, name.trim(), emojis)
+        val event = NostrEvent.create(
+            privkey = keypair.privkey,
+            pubkey = keypair.pubkey,
+            kind = Nip30.KIND_EMOJI_SET,
+            content = "",
+            tags = tags
+        )
+        relayPool.sendToWriteRelays(ClientMessage.event(event))
+        customEmojiRepo.updateFromEvent(event)
+    }
+
+    fun updateEmojiSet(dTag: String, title: String, emojis: List<com.wisp.app.nostr.CustomEmoji>) {
+        val keypair = keyRepo.getKeypair() ?: return
+        val tags = Nip30.buildEmojiSetTags(dTag, title, emojis)
+        val event = NostrEvent.create(
+            privkey = keypair.privkey,
+            pubkey = keypair.pubkey,
+            kind = Nip30.KIND_EMOJI_SET,
+            content = "",
+            tags = tags
+        )
+        relayPool.sendToWriteRelays(ClientMessage.event(event))
+        customEmojiRepo.updateFromEvent(event)
+    }
+
+    fun deleteEmojiSet(dTag: String) {
+        val keypair = keyRepo.getKeypair() ?: return
+        val myPubkey = keypair.pubkey.toHex()
+        val deletionTags = com.wisp.app.nostr.Nip09.buildAddressableDeletionTags(Nip30.KIND_EMOJI_SET, myPubkey, dTag)
+        val deleteEvent = NostrEvent.create(
+            privkey = keypair.privkey,
+            pubkey = keypair.pubkey,
+            kind = 5,
+            content = "",
+            tags = deletionTags
+        )
+        relayPool.sendToWriteRelays(ClientMessage.event(deleteEvent))
+    }
+
+    fun publishUserEmojiList(emojis: List<com.wisp.app.nostr.CustomEmoji>, setRefs: List<String>) {
+        val keypair = keyRepo.getKeypair() ?: return
+        val tags = Nip30.buildUserEmojiListTags(emojis, setRefs)
+        val event = NostrEvent.create(
+            privkey = keypair.privkey,
+            pubkey = keypair.pubkey,
+            kind = Nip30.KIND_USER_EMOJI_LIST,
+            content = "",
+            tags = tags
+        )
+        relayPool.sendToWriteRelays(ClientMessage.event(event))
+        customEmojiRepo.updateFromEvent(event)
+    }
+
+    fun addSetToEmojiList(pubkey: String, dTag: String) {
+        val current = customEmojiRepo.userEmojiList.value
+        val emojis = current?.emojis ?: emptyList()
+        val refs = current?.setReferences?.toMutableList() ?: mutableListOf()
+        val newRef = Nip30.buildSetReference(pubkey, dTag)
+        if (newRef !in refs) refs.add(newRef)
+        publishUserEmojiList(emojis, refs)
+    }
+
+    fun removeSetFromEmojiList(pubkey: String, dTag: String) {
+        val current = customEmojiRepo.userEmojiList.value
+        val emojis = current?.emojis ?: emptyList()
+        val refs = current?.setReferences?.toMutableList() ?: mutableListOf()
+        refs.remove(Nip30.buildSetReference(pubkey, dTag))
+        publishUserEmojiList(emojis, refs)
+    }
+
+    private fun fetchMissingEmojiSets() {
+        val missing = customEmojiRepo.getMissingSetReferences()
+        if (missing.isEmpty()) return
+        val filters = missing.mapNotNull { ref ->
+            val parsed = Nip30.parseSetReference(ref) ?: return@mapNotNull null
+            Filter(kinds = listOf(Nip30.KIND_EMOJI_SET), authors = listOf(parsed.second), dTags = listOf(parsed.third), limit = 1)
+        }
+        if (filters.isEmpty()) return
+        relayPool.sendToReadRelays(ClientMessage.req("emoji-sets", filters))
+        viewModelScope.launch {
+            subManager.awaitEoseWithTimeout("emoji-sets")
+            subManager.closeSubscription("emoji-sets")
         }
     }
 

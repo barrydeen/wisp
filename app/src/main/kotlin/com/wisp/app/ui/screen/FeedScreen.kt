@@ -102,6 +102,7 @@ fun FeedScreen(
     onWallet: () -> Unit = {},
     onLists: () -> Unit = {},
     onSafety: () -> Unit = {},
+    onCustomEmojis: () -> Unit = {},
     onConsole: () -> Unit = {},
     onKeys: () -> Unit = {},
     onAddToList: (String) -> Unit = {},
@@ -316,6 +317,10 @@ fun FeedScreen(
                 onSafety = {
                     scope.launch { drawerState.close() }
                     onSafety()
+                },
+                onCustomEmojis = {
+                    scope.launch { drawerState.close() }
+                    onCustomEmojis()
                 },
                 onKeys = {
                     scope.launch { drawerState.close() }
@@ -616,7 +621,8 @@ fun FeedScreen(
                                         viewModel.setSelectedRelay(url)
                                         viewModel.setFeedType(FeedType.RELAY)
                                     },
-                                    noteActions = noteActions
+                                    noteActions = noteActions,
+                                    onManageEmojis = onCustomEmojis
                                 )
                             }
                             if (initialLoadDone) {
@@ -701,7 +707,8 @@ private fun FeedItem(
     onAddToList: () -> Unit = {},
     onPin: () -> Unit = {},
     onRelayClick: (String) -> Unit = {},
-    noteActions: NoteActions? = null
+    noteActions: NoteActions? = null,
+    onManageEmojis: (() -> Unit)? = null
 ) {
     val profileData = remember(profileVersion, event.pubkey) {
         viewModel.eventRepo.getProfileData(event.pubkey)
@@ -750,6 +757,11 @@ private fun FeedItem(
     val isFollowing = remember(followList, event.pubkey) {
         viewModel.contactRepo.isFollowing(event.pubkey)
     }
+    val resolvedEmojis by viewModel.customEmojiRepo.resolvedEmojis.collectAsState()
+    val unicodeEmojis by viewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+    val eventReactionEmojiUrls = remember(reactionVersion, event.id) {
+        viewModel.eventRepo.getReactionEmojiUrls(event.id)
+    }
     PostCard(
         event = event,
         profile = profileData,
@@ -787,7 +799,11 @@ private fun FeedItem(
         onPin = onPin,
         isPinned = isPinned,
         onQuotedNoteClick = onQuotedNoteClick,
-        noteActions = noteActions
+        noteActions = noteActions,
+        reactionEmojiUrls = eventReactionEmojiUrls,
+        resolvedEmojis = resolvedEmojis,
+        unicodeEmojis = unicodeEmojis,
+        onManageEmojis = onManageEmojis
     )
 }
 

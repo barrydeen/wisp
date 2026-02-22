@@ -41,8 +41,12 @@ import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
+import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
+import com.wisp.app.nostr.Nip30
 import com.wisp.app.ui.component.StackedAvatarRow
 import com.wisp.app.viewmodel.NotificationsViewModel
 import java.text.SimpleDateFormat
@@ -69,7 +73,10 @@ fun NotificationsScreen(
     nip05Repo: Nip05Repository? = null,
     isZapAnimating: (String) -> Boolean = { false },
     isZapInProgress: (String) -> Boolean = { false },
-    isInList: (String) -> Boolean = { false }
+    isInList: (String) -> Boolean = { false },
+    resolvedEmojis: Map<String, String> = emptyMap(),
+    unicodeEmojis: List<String> = emptyList(),
+    onManageEmojis: (() -> Unit)? = null
 ) {
     val notifications by viewModel.notifications.collectAsState()
     val eventRepo = viewModel.eventRepository
@@ -157,7 +164,10 @@ fun NotificationsScreen(
                             nip05Repo = nip05Repo,
                             isZapAnimating = isZapAnimating,
                             isZapInProgress = isZapInProgress,
-                            isInList = isInList
+                            isInList = isInList,
+                            resolvedEmojis = resolvedEmojis,
+                            unicodeEmojis = unicodeEmojis,
+                            onManageEmojis = onManageEmojis
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
                     }
@@ -191,7 +201,10 @@ fun NotificationsScreen(
                             nip05Repo = nip05Repo,
                             isZapAnimating = isZapAnimating,
                             isZapInProgress = isZapInProgress,
-                            isInList = isInList
+                            isInList = isInList,
+                            resolvedEmojis = resolvedEmojis,
+                            unicodeEmojis = unicodeEmojis,
+                            onManageEmojis = onManageEmojis
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
                     }
@@ -242,7 +255,10 @@ private fun NotificationItem(
     nip05Repo: Nip05Repository?,
     isZapAnimating: (String) -> Boolean,
     isZapInProgress: (String) -> Boolean,
-    isInList: (String) -> Boolean
+    isInList: (String) -> Boolean,
+    resolvedEmojis: Map<String, String> = emptyMap(),
+    unicodeEmojis: List<String> = emptyList(),
+    onManageEmojis: (() -> Unit)? = null
 ) {
     // Shared PostCard params for rendering referenced notes with full action bar
     val postCardParams = NotifPostCardParams(
@@ -254,6 +270,9 @@ private fun NotificationItem(
         zapVersion = zapVersion,
         repostVersion = repostVersion,
         followListSize = followListSize,
+        resolvedEmojis = resolvedEmojis,
+        unicodeEmojis = unicodeEmojis,
+        onManageEmojis = onManageEmojis,
         isFollowing = { viewModel.isFollowing(it) },
         onNoteClick = onNoteClick,
         onProfileClick = onProfileClick,
@@ -341,16 +360,27 @@ private fun ReactionGroupRow(
             // Each emoji row: <emoji> <avatars> (newest reactor first)
             group.reactions.forEach { (emoji, pubkeys) ->
                 val displayEmoji = if (emoji == "+") "\u2764\uFE0F" else emoji
+                val shortcode = Nip30.shortcodeRegex.matchEntire(displayEmoji)?.groupValues?.get(1)
+                val customEmojiUrl = group.emojiUrls[displayEmoji]
+                    ?: shortcode?.let { group.emojiUrls[":$it:"] }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = displayEmoji,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
+                    if (customEmojiUrl != null) {
+                        AsyncImage(
+                            model = customEmojiUrl,
+                            contentDescription = shortcode ?: displayEmoji,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    } else {
+                        Text(
+                            text = displayEmoji,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
                     Spacer(Modifier.width(8.dp))
                     StackedAvatarRow(
                         pubkeys = pubkeys.reversed(),
@@ -651,6 +681,9 @@ private data class NotifPostCardParams(
     val zapVersion: Int,
     val repostVersion: Int,
     val followListSize: Int = 0,
+    val resolvedEmojis: Map<String, String> = emptyMap(),
+    val unicodeEmojis: List<String> = emptyList(),
+    val onManageEmojis: (() -> Unit)? = null,
     val isFollowing: (String) -> Boolean,
     val onNoteClick: (String) -> Unit,
     val onProfileClick: (String) -> Unit,
@@ -723,6 +756,10 @@ private fun ReferencedNotePostCard(
         params.isFollowing(event.pubkey)
     }
 
+    val eventReactionEmojiUrls = remember(params.reactionVersion, event.id) {
+        eventRepo.getReactionEmojiUrls(event.id)
+    }
+
     PostCard(
         event = event,
         profile = profile,
@@ -746,6 +783,10 @@ private fun ReferencedNotePostCard(
         eventRepo = eventRepo,
         reactionDetails = reactionDetails,
         zapDetails = zapDetails,
+        reactionEmojiUrls = eventReactionEmojiUrls,
+        resolvedEmojis = params.resolvedEmojis,
+        unicodeEmojis = params.unicodeEmojis,
+        onManageEmojis = params.onManageEmojis,
         onNavigateToProfileFromDetails = params.onProfileClick,
         onFollowAuthor = { params.onFollowToggle(event.pubkey) },
         onBlockAuthor = { params.onBlockUser(event.pubkey) },

@@ -8,4 +8,10 @@ object Nip25 {
         tags.add(listOf("k", targetEvent.kind.toString()))
         return tags
     }
+
+    fun buildReactionTagsWithEmoji(targetEvent: NostrEvent, emoji: CustomEmoji): List<List<String>> {
+        val tags = buildReactionTags(targetEvent).toMutableList()
+        tags.add(Nip30.buildEmojiTag(emoji))
+        return tags
+    }
 }

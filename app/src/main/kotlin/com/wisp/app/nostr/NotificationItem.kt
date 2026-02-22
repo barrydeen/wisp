@@ -16,6 +16,7 @@ sealed class NotificationGroup {
         val referencedEventId: String,
         val reactions: Map<String, List<String>>, // emoji -> list of pubkeys
         val reactionTimestamps: Map<String, Long> = emptyMap(), // pubkey -> created_at
+        val emojiUrls: Map<String, String> = emptyMap(), // ":shortcode:" -> url for custom emojis
         override val latestTimestamp: Long
     ) : NotificationGroup()
 

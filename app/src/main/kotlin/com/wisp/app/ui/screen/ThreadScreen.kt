@@ -137,6 +137,7 @@ fun ThreadScreen(
                     val repostCount = repostVersion.let { eventRepo.getRepostCount(event.id) }
                     val hasUserReposted = repostVersion.let { eventRepo.hasUserReposted(event.id) }
                     val hasUserZapped = zapVersion.let { eventRepo.hasUserZapped(event.id) }
+                    val eventReactionEmojiUrls = reactionVersion.let { eventRepo.getReactionEmojiUrls(event.id) }
                     PostCard(
                         event = event,
                         profile = profileData,
@@ -160,6 +161,7 @@ fun ThreadScreen(
                         eventRepo = eventRepo,
                         reactionDetails = reactionDetails,
                         zapDetails = zapDetailsList,
+                        reactionEmojiUrls = eventReactionEmojiUrls,
                         onNavigateToProfileFromDetails = onProfileClick,
                         onFollowAuthor = { onToggleFollow(event.pubkey) },
                         onBlockAuthor = { onBlockUser(event.pubkey) },

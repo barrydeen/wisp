@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
@@ -83,6 +84,7 @@ private sealed interface ContentSegment {
     data class LinkSegment(val url: String) : ContentSegment
     data class NostrNoteSegment(val eventId: String, val relayHints: List<String> = emptyList()) : ContentSegment
     data class NostrProfileSegment(val pubkey: String) : ContentSegment
+    data class CustomEmojiSegment(val shortcode: String, val url: String) : ContentSegment
 }
 
 private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp")
@@ -90,7 +92,9 @@ private val videoExtensions = setOf("mp4", "mov", "webm")
 
 private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w)|https?://\S+""", RegexOption.IGNORE_CASE)
 
-private fun parseContent(content: String): List<ContentSegment> {
+private val emojiShortcodeRegex = Regex(""":([a-zA-Z0-9_]+):""")
+
+private fun parseContent(content: String, emojiMap: Map<String, String> = emptyMap()): List<ContentSegment> {
     val segments = mutableListOf<ContentSegment>()
     var lastEnd = 0
 
@@ -128,7 +132,37 @@ private fun parseContent(content: String): List<ContentSegment> {
         segments.add(ContentSegment.TextSegment(content.substring(lastEnd)))
     }
 
-    return segments
+    // Second pass: split TextSegments that contain :shortcode: where shortcode is in emojiMap
+    if (emojiMap.isEmpty()) return segments
+    val result = mutableListOf<ContentSegment>()
+    for (segment in segments) {
+        if (segment is ContentSegment.TextSegment) {
+            result.addAll(splitTextForEmojis(segment.text, emojiMap))
+        } else {
+            result.add(segment)
+        }
+    }
+    return result
+}
+
+private fun splitTextForEmojis(text: String, emojiMap: Map<String, String>): List<ContentSegment> {
+    val result = mutableListOf<ContentSegment>()
+    var lastEnd = 0
+    for (match in emojiShortcodeRegex.findAll(text)) {
+        val shortcode = match.groupValues[1]
+        val url = emojiMap[shortcode] ?: continue
+        if (match.range.first > lastEnd) {
+            result.add(ContentSegment.TextSegment(text.substring(lastEnd, match.range.first)))
+        }
+        result.add(ContentSegment.CustomEmojiSegment(shortcode, url))
+        lastEnd = match.range.last + 1
+    }
+    if (lastEnd < text.length) {
+        result.add(ContentSegment.TextSegment(text.substring(lastEnd)))
+    } else if (lastEnd == 0 && result.isEmpty()) {
+        result.add(ContentSegment.TextSegment(text))
+    }
+    return result
 }
 
 @Composable
@@ -136,13 +170,14 @@ fun RichContent(
     content: String,
     style: TextStyle = MaterialTheme.typography.bodyLarge,
     color: Color = MaterialTheme.colorScheme.onSurface,
+    emojiMap: Map<String, String> = emptyMap(),
     eventRepo: EventRepository? = null,
     onProfileClick: ((String) -> Unit)? = null,
     onNoteClick: ((String) -> Unit)? = null,
     noteActions: NoteActions? = null,
     modifier: Modifier = Modifier
 ) {
-    val segments = parseContent(content.trimEnd('\n', '\r'))
+    val segments = parseContent(content.trimEnd('\n', '\r'), emojiMap)
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
 
     if (fullScreenImageUrl != null) {
@@ -199,6 +234,15 @@ fun RichContent(
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
+                }
+                is ContentSegment.CustomEmojiSegment -> {
+                    AsyncImage(
+                        model = segment.url,
+                        contentDescription = segment.shortcode,
+                        modifier = Modifier
+                            .height(with(LocalDensity.current) { style.fontSize.toDp() * 1.3f })
+                            .padding(horizontal = 1.dp)
+                    )
                 }
                 is ContentSegment.NostrProfileSegment -> {
                     val profile = eventRepo?.let { repo ->
