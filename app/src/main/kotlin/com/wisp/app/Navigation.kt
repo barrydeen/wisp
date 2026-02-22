@@ -3,7 +3,9 @@ package com.wisp.app
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -12,6 +14,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -155,6 +159,32 @@ fun WispNavHost() {
         LaunchedEffect(Unit) {
             feedViewModel.initRelays()
         }
+    }
+
+    // App lifecycle observer — handles relay pause/resume regardless of which screen is active.
+    // Previously lived in FeedScreen's DisposableEffect, which meant pauses/resumes on
+    // Notifications, DMs, or any other screen were silently ignored.
+    val activity = LocalContext.current as ComponentActivity
+    DisposableEffect(activity) {
+        var pausedAt = 0L
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> {
+                    pausedAt = System.currentTimeMillis()
+                    feedViewModel.onAppPause()
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    if (pausedAt > 0L) {
+                        val pausedMs = System.currentTimeMillis() - pausedAt
+                        pausedAt = 0L
+                        feedViewModel.onAppResume(pausedMs)
+                    }
+                }
+                else -> {}
+            }
+        }
+        activity.lifecycle.addObserver(observer)
+        onDispose { activity.lifecycle.removeObserver(observer) }
     }
 
     // Initialize compose viewmodel with shared repos

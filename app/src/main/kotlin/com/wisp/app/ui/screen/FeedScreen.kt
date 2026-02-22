@@ -43,7 +43,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -52,12 +51,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
-import androidx.activity.ComponentActivity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.FollowSet
@@ -164,25 +159,6 @@ fun FeedScreen(
             userPubkey = userPubkey,
             nip05Repo = viewModel.nip05Repo
         )
-    }
-
-    // Re-establish subscriptions when app returns from background.
-    // Use the Activity lifecycle (not NavBackStackEntry) so tab navigation
-    // doesn't trigger unnecessary re-subscriptions that duplicate counts.
-    val activity = LocalContext.current as ComponentActivity
-    DisposableEffect(activity) {
-        var pausedAt = 0L
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE) {
-                pausedAt = System.currentTimeMillis()
-            } else if (event == Lifecycle.Event.ON_RESUME && pausedAt > 0L) {
-                val pausedMs = System.currentTimeMillis() - pausedAt
-                pausedAt = 0L
-                viewModel.onAppResume(pausedMs)
-            }
-        }
-        activity.lifecycle.addObserver(observer)
-        onDispose { activity.lifecycle.removeObserver(observer) }
     }
 
     // Collect zap success events for animation
