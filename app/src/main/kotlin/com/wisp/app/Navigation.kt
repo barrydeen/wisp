@@ -148,14 +148,21 @@ fun WispNavHost() {
     var scrollToTopTrigger by remember { mutableStateOf(0) }
     var addToListEventId by remember { mutableStateOf<String?>(null) }
 
+    val hasCachedFeed = remember {
+        if (authViewModel.isLoggedIn && authViewModel.keyRepo.isOnboardingComplete()) {
+            feedViewModel.loadCachedFeed()
+        } else false
+    }
+
     val startDestination = when {
         !authViewModel.isLoggedIn -> Routes.AUTH
         !authViewModel.keyRepo.isOnboardingComplete() -> Routes.ONBOARDING_PROFILE
+        hasCachedFeed -> Routes.FEED
         else -> Routes.LOADING
     }
 
     // Initialize relays when logged in and onboarding is complete
-    if (authViewModel.isLoggedIn && startDestination == Routes.LOADING) {
+    if (authViewModel.isLoggedIn && (startDestination == Routes.LOADING || startDestination == Routes.FEED)) {
         LaunchedEffect(Unit) {
             feedViewModel.initRelays()
         }
@@ -221,13 +228,19 @@ fun WispNavHost() {
     }
 
     // After process death, Navigation restores the last screen but the ViewModel
-    // is fresh (no relay connections, empty feed). Redirect to LOADING so the user
-    // sees init progress instead of a broken screen.
+    // is fresh (no relay connections, empty feed). Try loading from disk cache first;
+    // only redirect to LOADING if no cache is available.
     val loadingComplete by feedViewModel.loadingScreenComplete.collectAsState()
     if (currentRoute != null && currentRoute !in nonAppRoutes && !loadingComplete) {
-        LaunchedEffect(Unit) {
-            navController.navigate(Routes.LOADING) {
-                popUpTo(0) { inclusive = true }
+        val cacheRecovered = remember { feedViewModel.loadCachedFeed() }
+        if (cacheRecovered) {
+            LaunchedEffect(Unit) { feedViewModel.initRelays() }
+        } else {
+            LaunchedEffect(Unit) {
+                feedViewModel.initRelays()
+                navController.navigate(Routes.LOADING) {
+                    popUpTo(0) { inclusive = true }
+                }
             }
         }
     }

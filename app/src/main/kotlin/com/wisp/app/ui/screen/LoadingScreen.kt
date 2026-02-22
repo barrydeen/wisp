@@ -83,7 +83,9 @@ fun LoadingScreen(
         timedOut = true
     }
 
-    // Navigate when ready: require Done + feed content, with a brief settle delay
+    // Navigate when ready: require Done + feed content, with a brief settle delay.
+    // Early exit: if min time elapsed and we already have 5+ notes, go to feed even
+    // before EOSE — notes will continue trickling in via the open subscription.
     LaunchedEffect(minTimeElapsed, initLoadingState, timedOut, feed.size, initialLoadDone) {
         val initDone = initLoadingState == InitLoadingState.Done
         val feedReady = feed.isNotEmpty()
@@ -97,6 +99,10 @@ fun LoadingScreen(
         } else if (minTimeElapsed && initDone && feedReady) {
             // Brief settle so "Done" state is visible
             delay(300)
+            viewModel.markLoadingComplete()
+            onReady()
+        } else if (minTimeElapsed && feed.size >= 5) {
+            // Early exit: enough notes to show a useful feed, don't wait for full EOSE
             viewModel.markLoadingComplete()
             onReady()
         }

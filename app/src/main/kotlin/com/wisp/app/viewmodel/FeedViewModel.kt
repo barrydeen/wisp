@@ -35,6 +35,7 @@ import com.wisp.app.repo.BookmarkSetRepository
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.FeedCache
 import com.wisp.app.repo.DiscoveryState
 import com.wisp.app.repo.ExtendedNetworkRepository
 import com.wisp.app.repo.Nip05Repository
@@ -161,6 +162,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private val feedPrefs: SharedPreferences =
         app.getSharedPreferences("wisp_feed_${pubkeyHex ?: "anon"}", Context.MODE_PRIVATE)
 
+    val feedCache = FeedCache(app, pubkeyHex)
+    private var feedCacheSaveJob: Job? = null
+
     val metadataFetcher = MetadataFetcher(
         relayPool, outboxRouter, subManager, profileRepo, eventRepo,
         viewModelScope, processingDispatcher
@@ -235,12 +239,43 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun forceProfileFetch(pubkey: String) = metadataFetcher.forceProfileFetch(pubkey)
 
     private var relaysInitialized = false
+    private var hasCachedFeed = false
 
     /** Set to true once the LoadingScreen has completed and navigated away. */
     private val _loadingScreenComplete = MutableStateFlow(false)
     val loadingScreenComplete: StateFlow<Boolean> = _loadingScreenComplete
 
     fun markLoadingComplete() { _loadingScreenComplete.value = true }
+
+    /**
+     * Attempt to load cached feed from disk. Returns true if cache had content.
+     * Must be called before initRelays() so seeded events dedup against relay events.
+     */
+    fun loadCachedFeed(): Boolean {
+        if (_feedType.value != FeedType.FOLLOWS && _feedType.value != FeedType.EXTENDED_FOLLOWS) return false
+        if (!feedCache.exists()) return false
+        val events = feedCache.load()
+        if (events.isEmpty()) return false
+        // Apply author filter to cached events (in case follow list changed)
+        val follows = contactRepo.getFollowList().map { it.pubkey }.toSet()
+        val filtered = if (follows.isNotEmpty()) events.filter { it.pubkey in follows } else events
+        if (filtered.isEmpty()) return false
+        eventRepo.seedFromCache(filtered)
+        applyAuthorFilterForFeedType(_feedType.value)
+        _loadingScreenComplete.value = true
+        _initialLoadDone.value = true
+        hasCachedFeed = true
+        return true
+    }
+
+    /** Save feed snapshot to disk on IO thread. */
+    private fun saveFeedCache() {
+        feedCacheSaveJob?.cancel()
+        feedCacheSaveJob = viewModelScope.launch(Dispatchers.IO) {
+            val snapshot = eventRepo.getFeedSnapshot()
+            if (snapshot.isNotEmpty()) feedCache.save(snapshot)
+        }
+    }
 
     fun resetForAccountSwitch() {
         // Cancel all background jobs
@@ -252,6 +287,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         authCompletedJob?.cancel()
         startupJob?.cancel()
         feedEoseJob?.cancel()
+        feedCacheSaveJob?.cancel()
+        feedCache.clear()
         relayPool.closeOnAllRelays(feedSubId)
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
         activeEngagementSubIds.clear()
@@ -288,6 +325,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         _initLoadingState.value = InitLoadingState.SearchingProfile
         _selectedRelay.value = null
         isLoadingMore = false
+        hasCachedFeed = false
     }
 
     fun reloadForNewAccount() {
@@ -329,7 +367,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         relayPool.updateRelays(initialRelays)
         relayPool.updateDmRelays(keyRepo.getDmRelays())
 
-        viewModelScope.launch { relayInfoRepo.prefetchAll(initialRelays.map { it.url }) }
+        viewModelScope.launch {
+            if (hasCachedFeed) delay(5_000) // defer when feed is already showing
+            relayInfoRepo.prefetchAll(initialRelays.map { it.url })
+        }
 
         // Main event processing loop — runs on Default dispatcher to keep UI thread free
         eventProcessingJob = viewModelScope.launch(processingDispatcher) {
@@ -481,58 +522,98 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 // Warm start: connect + background self-data refresh, no discovery UI
                 Log.d("FeedViewModel", "init: warm start (${cachedFollows.size} cached follows, scoreboard valid)")
                 _initLoadingState.value = InitLoadingState.WarmLoading
-                relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
 
-                // Fire-and-forget self-data refresh
-                launch {
-                    subscribeSelfData()
-                    fetchMissingEmojiSets()
+                if (hasCachedFeed) {
+                    // Don't block — relays will connect in background, feed is already showing
+                    launch {
+                        relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
+                        subscribeSelfData()
+                        fetchMissingEmojiSets()
+                    }
+                } else {
+                    relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
+                    // Fire-and-forget self-data refresh
+                    launch {
+                        subscribeSelfData()
+                        fetchMissingEmojiSets()
+                    }
                 }
 
                 follows = cachedFollows.map { it.pubkey }
             }
 
             // Phase 2: Extended network discovery (common path)
-            val cache = extendedNetworkRepo.cachedNetwork.value
-            val cacheValid = cache != null && !extendedNetworkRepo.isCacheStale(cache)
+            val extNetCache = extendedNetworkRepo.cachedNetwork.value
+            val extNetCacheValid = extNetCache != null && !extendedNetworkRepo.isCacheStale(extNetCache)
 
-            if (!cacheValid && follows.isNotEmpty()) {
-                val progressJob = launch {
-                    extendedNetworkRepo.discoveryState.collect { ds ->
-                        if (ds is DiscoveryState.FetchingFollowLists && isColdStart) {
-                            _initLoadingState.value = InitLoadingState.DiscoveringNetwork(ds.fetched, ds.total)
-                        }
+            if (hasCachedFeed) {
+                // Feed is already showing from disk cache.
+                // Stagger background work so the UI isn't competing for CPU.
+
+                // Phase A: Wait for at least 1 relay, then subscribe to new events only
+                delay(300) // let Compose finish initial layout
+                relayPool.awaitAnyConnected(minCount = 1, timeoutMs = 5_000)
+                applyAuthorFilterForFeedType(_feedType.value)
+                resumeSubscribeFeed()
+
+                // Phase B: Deferred heavy work — self-data, discovery, relay lists
+                launch {
+                    delay(3_000) // let feed subscription settle first
+                    if (!extNetCacheValid && follows.isNotEmpty()) {
+                        try { extendedNetworkRepo.discoverNetwork() } catch (_: Exception) {}
+                        val extConfigs = extendedNetworkRepo.getRelayConfigs()
+                        if (extConfigs.isNotEmpty()) rebuildRelayPool()
+                    }
+                    if (!relayScoreBoard.needsRecompute()) fetchRelayListsForFollows()
+                    saveFeedCache()
+                }
+
+                // Periodic save timer
+                launch {
+                    while (true) {
+                        delay(60_000)
+                        saveFeedCache()
                     }
                 }
-                try {
-                    extendedNetworkRepo.discoverNetwork()
-                } catch (e: Exception) {
-                    Log.e("FeedViewModel", "Extended network discovery failed during init", e)
+            } else {
+                if (!extNetCacheValid && follows.isNotEmpty()) {
+                    val progressJob = launch {
+                        extendedNetworkRepo.discoveryState.collect { ds ->
+                            if (ds is DiscoveryState.FetchingFollowLists && isColdStart) {
+                                _initLoadingState.value = InitLoadingState.DiscoveringNetwork(ds.fetched, ds.total)
+                            }
+                        }
+                    }
+                    try {
+                        extendedNetworkRepo.discoverNetwork()
+                    } catch (e: Exception) {
+                        Log.e("FeedViewModel", "Extended network discovery failed during init", e)
+                    }
+                    progressJob.cancel()
                 }
-                progressJob.cancel()
-            }
 
-            // Expand pool with extended relays
-            val extConfigs = extendedNetworkRepo.getRelayConfigs()
-            if (extConfigs.isNotEmpty()) {
-                if (isColdStart) _initLoadingState.value = InitLoadingState.ExpandingRelays(extConfigs.size)
-                rebuildRelayPool()
-                val poolSize = relayPool.getRelayUrls().size
-                val targetConnected = poolSize * 3 / 10
-                relayPool.awaitAnyConnected(minCount = targetConnected, timeoutMs = 3_000)
-            }
+                // Expand pool with extended relays
+                val extConfigs = extendedNetworkRepo.getRelayConfigs()
+                if (extConfigs.isNotEmpty()) {
+                    if (isColdStart) _initLoadingState.value = InitLoadingState.ExpandingRelays(extConfigs.size)
+                    rebuildRelayPool()
+                    val poolSize = relayPool.getRelayUrls().size
+                    val targetConnected = poolSize * 3 / 10
+                    relayPool.awaitAnyConnected(minCount = targetConnected, timeoutMs = 3_000)
+                }
 
-            // Apply filter and subscribe
-            applyAuthorFilterForFeedType(_feedType.value)
-            _initLoadingState.value = InitLoadingState.Subscribing
-            subscribeFeed()
+                // Apply filter and subscribe
+                applyAuthorFilterForFeedType(_feedType.value)
+                _initLoadingState.value = InitLoadingState.Subscribing
+                subscribeFeed()
 
-            // Don't set Done here — subscribeFeed() is non-blocking.
-            // InitLoadingState.Done is set inside feedEoseJob after EOSE arrives.
+                // Don't set Done here — subscribeFeed() is non-blocking.
+                // InitLoadingState.Done is set inside feedEoseJob after EOSE arrives.
 
-            // Background: fetch relay lists for any new follows (non-blocking)
-            if (!relayScoreBoard.needsRecompute()) {
-                fetchRelayListsForFollows()
+                // Background: fetch relay lists for any new follows (non-blocking)
+                if (!relayScoreBoard.needsRecompute()) {
+                    fetchRelayListsForFollows()
+                }
             }
         }
     }
@@ -928,7 +1009,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Called by Activity lifecycle — delegates to RelayLifecycleManager. */
-    fun onAppPause() = lifecycleManager.onAppPause()
+    fun onAppPause() {
+        lifecycleManager.onAppPause()
+        if (_feedType.value == FeedType.FOLLOWS || _feedType.value == FeedType.EXTENDED_FOLLOWS) {
+            saveFeedCache()
+        }
+    }
 
     /** Called by Activity lifecycle — delegates to RelayLifecycleManager. */
     fun onAppResume(pausedMs: Long) = lifecycleManager.onAppResume(pausedMs)
@@ -1055,6 +1141,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             eventRepo.countNewNotes = true
             subscribeEngagementForFeed()
             subscribeNotifEngagement()
+
+            // Save feed to disk after initial load
+            if (_feedType.value == FeedType.FOLLOWS || _feedType.value == FeedType.EXTENDED_FOLLOWS) {
+                saveFeedCache()
+            }
 
             withContext(processingDispatcher) {
                 metadataFetcher.sweepMissingProfiles()

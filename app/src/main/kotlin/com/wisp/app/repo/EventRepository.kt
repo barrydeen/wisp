@@ -515,6 +515,24 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
 
+    fun seedFromCache(events: List<NostrEvent>) {
+        synchronized(feedList) {
+            for (event in events) {
+                if (feedIds.add(event.id)) {
+                    seenEventIds.add(event.id)
+                    eventCache.put(event.id, event)
+                    feedList.add(event)
+                }
+            }
+            feedList.sortByDescending { it.created_at }
+        }
+        feedDirty.trySend(Unit)
+    }
+
+    fun getFeedSnapshot(): List<NostrEvent> {
+        return synchronized(feedList) { feedList.toList() }
+    }
+
     fun clearFeed() {
         synchronized(feedList) {
             feedList.clear()
