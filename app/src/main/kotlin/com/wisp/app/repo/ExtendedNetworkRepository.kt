@@ -390,6 +390,7 @@ class ExtendedNetworkRepository(
         _discoveryState.value = DiscoveryState.Idle
         pendingFollowLists.clear()
         discoveryTotal = 0
+        prefs.edit().clear().apply()
     }
 
     fun reload(pubkeyHex: String?) {

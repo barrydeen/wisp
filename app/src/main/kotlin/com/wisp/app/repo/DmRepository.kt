@@ -149,6 +149,7 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
         }
         _conversationList.value = emptyList()
         _hasUnreadDms.value = false
+        prefs?.edit()?.clear()?.apply()
     }
 
     private fun updateConversationList() {

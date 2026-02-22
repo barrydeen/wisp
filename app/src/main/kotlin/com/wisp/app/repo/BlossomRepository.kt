@@ -45,6 +45,7 @@ class BlossomRepository(private val context: Context, pubkeyHex: String? = null)
 
     fun clear() {
         _servers.value = listOf(Blossom.DEFAULT_SERVER)
+        prefs.edit().clear().apply()
     }
 
     fun reload(pubkeyHex: String?) {

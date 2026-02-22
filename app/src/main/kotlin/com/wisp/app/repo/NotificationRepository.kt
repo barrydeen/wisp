@@ -69,6 +69,7 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
             _notifications.value = emptyList()
             _hasUnread.value = false
         }
+        prefs.edit().clear().apply()
     }
 
     fun purgeUser(pubkey: String) = synchronized(lock) {

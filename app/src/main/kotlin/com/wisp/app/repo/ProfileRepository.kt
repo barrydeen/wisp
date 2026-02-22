@@ -3,10 +3,14 @@ package com.wisp.app.repo
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.LruCache
+import android.util.Log
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class ProfileRepository(context: Context) {
     private val prefs: SharedPreferences =
@@ -15,6 +19,8 @@ class ProfileRepository(context: Context) {
 
     private val cache = LruCache<String, ProfileData>(2000)
     private val timestamps = LruCache<String, Long>(2000)
+
+    val avatarDir = File(context.filesDir, "avatars").also { it.mkdirs() }
 
     init {
         loadFromPrefs()
@@ -68,6 +74,37 @@ class ProfileRepository(context: Context) {
             .putString("p_$pubkey", json.encodeToString(profile))
             .putLong("p_ts_$pubkey", timestamp)
             .apply()
+    }
+
+    /**
+     * Returns a local File for the user's cached avatar, or null if not cached.
+     */
+    fun getLocalAvatar(pubkey: String): File? {
+        val file = File(avatarDir, pubkey)
+        return if (file.exists() && file.length() > 0) file else null
+    }
+
+    /**
+     * Downloads the avatar from [url] and saves it to local storage.
+     * Call from a coroutine — runs on IO dispatcher.
+     */
+    suspend fun cacheAvatar(pubkey: String, url: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                val file = File(avatarDir, pubkey)
+                val connection = java.net.URL(url).openConnection()
+                connection.connectTimeout = 5_000
+                connection.readTimeout = 5_000
+                connection.getInputStream().use { input ->
+                    file.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                Log.d("ProfileRepository", "Cached avatar for ${pubkey.take(8)} (${file.length()} bytes)")
+            } catch (e: Exception) {
+                Log.e("ProfileRepository", "Failed to cache avatar for ${pubkey.take(8)}", e)
+            }
+        }
     }
 
     private fun loadFromPrefs() {

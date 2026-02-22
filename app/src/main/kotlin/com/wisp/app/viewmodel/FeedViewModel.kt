@@ -65,18 +65,23 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import android.content.Context
 import android.content.SharedPreferences
+import java.io.File
 
 enum class FeedType { FOLLOWS, EXTENDED_FOLLOWS, RELAY, LIST }
 
 sealed class InitLoadingState {
-    data object Idle : InitLoadingState()
-    data class Connecting(val connected: Int, val total: Int) : InitLoadingState()
-    data object FetchingSelfData : InitLoadingState()
-    data class FoundFollows(val count: Int) : InitLoadingState()
-    data class FetchingRelayLists(val found: Int, val total: Int) : InitLoadingState()
-    data class ComputingRouting(val relayCount: Int, val coveredAuthors: Int) : InitLoadingState()
+    // Cold-start only (skipped when cached):
+    data object SearchingProfile : InitLoadingState()
+    data class FoundProfile(val name: String, val picture: String?) : InitLoadingState()
+    data class FindingFriends(val found: Int, val total: Int) : InitLoadingState()
+
+    // Common path (both cold and warm):
     data class DiscoveringNetwork(val fetched: Int, val total: Int) : InitLoadingState()
     data class ExpandingRelays(val relayCount: Int) : InitLoadingState()
+
+    // Warm-start path (no progress bar, rotating text):
+    data object WarmLoading : InitLoadingState()
+
     data object Subscribing : InitLoadingState()
     data object Done : InitLoadingState()
 }
@@ -167,13 +172,13 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing
 
-    private val _initLoadingState = MutableStateFlow<InitLoadingState>(InitLoadingState.Idle)
+    private val _initLoadingState = MutableStateFlow<InitLoadingState>(InitLoadingState.SearchingProfile)
     val initLoadingState: StateFlow<InitLoadingState> = _initLoadingState
 
     private val _feedType = MutableStateFlow(
         feedPrefs.getString("feed_type", null)
             ?.let { runCatching { FeedType.valueOf(it) }.getOrNull() }
-            ?: FeedType.EXTENDED_FOLLOWS
+            ?: FeedType.FOLLOWS
     )
     val feedType: StateFlow<FeedType> = _feedType
 
@@ -240,7 +245,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         relaysInitialized = false
         _loadingScreenComplete.value = false
         _initialLoadDone.value = false
-        _initLoadingState.value = InitLoadingState.Idle
+        _initLoadingState.value = InitLoadingState.SearchingProfile
         _selectedRelay.value = null
         isLoadingMore = false
     }
@@ -388,78 +393,89 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             bookmarkSetRepo.setOwner(it)
         }
 
-        // Sequential startup: self-data → relay lists → scoreboard → extended network → feed.
-        // If the cached scoreboard matches the current follow list, skip the expensive
-        // relay-list fetch + recompute and go straight to the extended network phase.
-        //
-        // Silent init: when returning from process death with cached data, skip the
-        // multi-step loading overlay and let events arrive in the background.
+        // Unified startup: cold start shows profile discovery UI, warm start skips to feed.
+        // Cold start = first login or cache invalidated; warm start = returning with valid cache.
         startupJob = viewModelScope.launch {
             val cachedFollows = contactRepo.getFollowList()
-            val silentInit = cachedFollows.isNotEmpty() && !relayScoreBoard.needsRecompute()
-            if (silentInit) {
-                Log.d("FeedViewModel", "init: silent init (${cachedFollows.size} cached follows, scoreboard valid)")
-                _initLoadingState.value = InitLoadingState.Done
-            }
+            val isColdStart = cachedFollows.isEmpty() || relayScoreBoard.needsRecompute()
 
-            val updateLoading: (InitLoadingState) -> Unit = { state ->
-                if (!silentInit) _initLoadingState.value = state
-            }
+            val follows: List<String>
 
-            val totalRelays = relayPool.getRelayUrls().size
-            updateLoading(InitLoadingState.Connecting(0, totalRelays))
+            if (isColdStart) {
+                Log.d("FeedViewModel", "init: cold start (${cachedFollows.size} cached follows, needsRecompute=${relayScoreBoard.needsRecompute()})")
 
-            relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
-            updateLoading(InitLoadingState.Connecting(relayPool.connectedCount.value, totalRelays))
-
-            updateLoading(InitLoadingState.FetchingSelfData)
-            subscribeSelfData()
-            fetchMissingEmojiSets()
-
-            val follows = contactRepo.getFollowList().map { it.pubkey }
-
-            if (!relayScoreBoard.needsRecompute()) {
-                // Cached scoreboard is valid — skip relay-list fetch
-                val scored = relayScoreBoard.getScoredRelays()
-                Log.d("FeedViewModel", "init: scoreboard cache valid (${scored.size} relays, ${follows.size} follows), skipping recompute")
-            } else {
-                // Follow list changed or first launch — full rebuild
-                updateLoading(InitLoadingState.FoundFollows(follows.size))
-                if (!silentInit) delay(400) // brief pause so the user sees the follow count
-
-                val subscriptionSent = fetchRelayListsForFollows()
-                if (subscriptionSent) {
-                    val target = (follows.size * 0.9).toInt()
-                    // Poll coverage, updating UI each tick
-                    val deadline = System.currentTimeMillis() + 10_000
-                    while (System.currentTimeMillis() < deadline) {
-                        val covered = follows.size - relayListRepo.getMissingPubkeys(follows).size
-                        updateLoading(InitLoadingState.FetchingRelayLists(covered, follows.size))
-                        if (covered >= target) break
-                        delay(200)
-                    }
-                    subManager.closeSubscription("relay-lists")
+                // Show cached profile immediately if available (e.g. re-login same account)
+                val myPubkey = getUserPubkey()
+                val cachedProfile = myPubkey?.let { profileRepo.get(it) }
+                if (cachedProfile != null) {
+                    _initLoadingState.value = InitLoadingState.FoundProfile(cachedProfile.displayString, cachedProfile.picture)
+                } else {
+                    _initLoadingState.value = InitLoadingState.SearchingProfile
                 }
 
-                recomputeAndMergeRelays()
-                val scored = relayScoreBoard.getScoredRelays()
-                val coveredAuthors = scored.sumOf { it.authors.size }
-                updateLoading(InitLoadingState.ComputingRouting(scored.size, coveredAuthors))
-                if (!silentInit) delay(500) // brief pause so the user sees the routing result
-
+                // Phase 1a: Connect + fetch self-data (profile, follow list, relay lists)
                 relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
+                subscribeSelfData()
+                fetchMissingEmojiSets()
+
+                // Show profile if we didn't have it cached but now have it from self-data
+                if (cachedProfile == null) {
+                    val profile = myPubkey?.let { profileRepo.get(it) }
+                    if (profile != null) {
+                        _initLoadingState.value = InitLoadingState.FoundProfile(profile.displayString, profile.picture)
+                        delay(1200)
+                    }
+                }
+
+                // Phase 1b: Relay list fetch + compute routing
+                follows = contactRepo.getFollowList().map { it.pubkey }
+
+                if (relayScoreBoard.needsRecompute() && follows.isNotEmpty()) {
+                    _initLoadingState.value = InitLoadingState.FindingFriends(0, follows.size)
+
+                    val subscriptionSent = fetchRelayListsForFollows()
+                    if (subscriptionSent) {
+                        val target = (follows.size * 0.9).toInt()
+                        val deadline = System.currentTimeMillis() + 10_000
+                        while (System.currentTimeMillis() < deadline) {
+                            val covered = follows.size - relayListRepo.getMissingPubkeys(follows).size
+                            _initLoadingState.value = InitLoadingState.FindingFriends(covered, follows.size)
+                            if (covered >= target) break
+                            delay(200)
+                        }
+                        subManager.closeSubscription("relay-lists")
+                    }
+
+                    recomputeAndMergeRelays()
+                    relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
+                } else {
+                    val scored = relayScoreBoard.getScoredRelays()
+                    Log.d("FeedViewModel", "init: scoreboard cache valid (${scored.size} relays, ${follows.size} follows), skipping recompute")
+                }
+            } else {
+                // Warm start: connect + background self-data refresh, no discovery UI
+                Log.d("FeedViewModel", "init: warm start (${cachedFollows.size} cached follows, scoreboard valid)")
+                _initLoadingState.value = InitLoadingState.WarmLoading
+                relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
+
+                // Fire-and-forget self-data refresh
+                launch {
+                    subscribeSelfData()
+                    fetchMissingEmojiSets()
+                }
+
+                follows = cachedFollows.map { it.pubkey }
             }
 
-            // Phase B: Extended network discovery
+            // Phase 2: Extended network discovery (common path)
             val cache = extendedNetworkRepo.cachedNetwork.value
             val cacheValid = cache != null && !extendedNetworkRepo.isCacheStale(cache)
 
             if (!cacheValid && follows.isNotEmpty()) {
-                // Pipe discoveryState updates into initLoadingState
                 val progressJob = launch {
                     extendedNetworkRepo.discoveryState.collect { ds ->
-                        if (ds is DiscoveryState.FetchingFollowLists) {
-                            updateLoading(InitLoadingState.DiscoveringNetwork(ds.fetched, ds.total))
+                        if (ds is DiscoveryState.FetchingFollowLists && isColdStart) {
+                            _initLoadingState.value = InitLoadingState.DiscoveringNetwork(ds.fetched, ds.total)
                         }
                     }
                 }
@@ -474,21 +490,19 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             // Expand pool with extended relays
             val extConfigs = extendedNetworkRepo.getRelayConfigs()
             if (extConfigs.isNotEmpty()) {
-                updateLoading(InitLoadingState.ExpandingRelays(extConfigs.size))
+                if (isColdStart) _initLoadingState.value = InitLoadingState.ExpandingRelays(extConfigs.size)
                 rebuildRelayPool()
                 val poolSize = relayPool.getRelayUrls().size
-                val targetConnected = poolSize * 7 / 10
-                relayPool.awaitAnyConnected(minCount = targetConnected, timeoutMs = 8_000)
+                val targetConnected = poolSize * 3 / 10
+                relayPool.awaitAnyConnected(minCount = targetConnected, timeoutMs = 3_000)
             }
 
             // Apply filter and subscribe
             applyAuthorFilterForFeedType(_feedType.value)
-            updateLoading(InitLoadingState.Subscribing)
+            _initLoadingState.value = InitLoadingState.Subscribing
             subscribeFeed()
             metadataFetcher.fetchProfilesForFollows(follows)
 
-            // Let the "Subscribing" state show briefly, then clear
-            if (!silentInit) delay(300)
             _initLoadingState.value = InitLoadingState.Done
 
             // Background: fetch relay lists for any new follows (non-blocking)
@@ -526,6 +540,21 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         // available before the caller proceeds to build the feed.
         subManager.awaitEoseWithTimeout("self-data")
         subManager.closeSubscription("self-data")
+
+        // Cache the user's avatar locally for instant loading screen display.
+        // Re-download if the URL changed (compare with what we had before self-data fetch).
+        val profile = profileRepo.get(myPubkey)
+        if (profile?.picture != null) {
+            val localFile = profileRepo.getLocalAvatar(myPubkey)
+            val urlFile = File(profileRepo.avatarDir, "${myPubkey}.url")
+            val cachedUrl = if (urlFile.exists()) urlFile.readText() else null
+            if (localFile == null || cachedUrl != profile.picture) {
+                viewModelScope.launch {
+                    profileRepo.cacheAvatar(myPubkey, profile.picture)
+                    urlFile.writeText(profile.picture)
+                }
+            }
+        }
 
         // DMs and notifications are not feed-blocking — fire and forget
         val dmFilter = Filter(kinds = listOf(1059), pTags = listOf(myPubkey))
