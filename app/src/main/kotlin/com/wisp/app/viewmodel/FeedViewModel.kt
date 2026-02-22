@@ -63,6 +63,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
 import kotlinx.coroutines.withTimeoutOrNull
 import android.content.Context
 import android.content.SharedPreferences
@@ -647,6 +648,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
         } else if (subscriptionId.startsWith("reply-count-")) {
             if (event.kind == 1) {
+                eventRepo.cacheEvent(event)
                 val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
                 if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
             }
@@ -658,17 +660,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                     metadataFetcher.addToPendingProfiles(zapperPubkey)
                 }
             }
-        } else if (subscriptionId.startsWith("thread-reactions")) {
-            when (event.kind) {
-                7, 6 -> eventRepo.addEvent(event)
-                9735 -> {
-                    eventRepo.addEvent(event)
-                    val zapperPubkey = Nip57.getZapperPubkey(event)
-                    if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
-                        metadataFetcher.addToPendingProfiles(zapperPubkey)
-                    }
-                }
-            }
+        } else if (subscriptionId == "thread-root" || subscriptionId == "thread-replies" ||
+                   subscriptionId.startsWith("thread-reactions")) {
+            // ThreadViewModel handles these via its own RelayPool collector — just cache
+            eventRepo.cacheEvent(event)
+            return
         } else if (subscriptionId.startsWith("engage") || subscriptionId.startsWith("user-engage")) {
             when (event.kind) {
                 7 -> eventRepo.addEvent(event)
@@ -680,6 +676,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
                 1 -> {
+                    eventRepo.cacheEvent(event)
                     val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
                     if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
                 }

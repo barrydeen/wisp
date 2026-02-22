@@ -75,6 +75,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val countedZapIds = LruCache<String, MutableSet<String>>(5000)
     // Reply dedup: track individual reply event IDs to prevent double-counting
     private val countedReplyIds = ConcurrentHashMap.newKeySet<String>()
+    // Reply index: rootEventId -> set of reply event IDs (for thread cache seeding)
+    private val rootReplyIds = ConcurrentHashMap<String, MutableSet<String>>()
 
     // Detailed reaction tracking: eventId -> (emoji -> list of reactor pubkeys)
     private val reactionDetails = LruCache<String, ConcurrentHashMap<String, MutableList<String>>>(5000)
@@ -382,6 +384,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun addReplyCount(parentEventId: String, replyEventId: String): Boolean {
         if (!countedReplyIds.add(replyEventId)) return false
+        rootReplyIds.getOrPut(parentEventId) { ConcurrentHashMap.newKeySet() }.add(replyEventId)
         val current = replyCounts.get(parentEventId) ?: 0
         replyCounts.put(parentEventId, current + 1)
         replyCountDirtyFlag = true
@@ -390,6 +393,26 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun getReplyCount(eventId: String): Int = replyCounts.get(eventId) ?: 0
+
+    fun getCachedThreadEvents(rootId: String): List<NostrEvent> {
+        val result = mutableListOf<NostrEvent>()
+        val visited = mutableSetOf<String>()
+        val queue = ArrayDeque<String>()
+        queue.add(rootId)
+        visited.add(rootId)
+        eventCache.get(rootId)?.let { result.add(it) }
+        while (queue.isNotEmpty()) {
+            val parentId = queue.removeFirst()
+            val childIds = rootReplyIds[parentId] ?: continue
+            for (id in childIds) {
+                if (id in visited) continue
+                visited.add(id)
+                eventCache.get(id)?.let { result.add(it) }
+                queue.add(id)
+            }
+        }
+        return result
+    }
 
     fun addEventRelay(eventId: String, relayUrl: String) {
         val relays = eventRelays.get(eventId) ?: mutableSetOf<String>().also {
@@ -522,6 +545,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         countedReactionIds.evictAll()
         countedZapIds.evictAll()
         countedReplyIds.clear()
+        rootReplyIds.clear()
         _profileVersion.value = 0
         _quotedEventVersion.value = 0
         _replyCountVersion.value = 0

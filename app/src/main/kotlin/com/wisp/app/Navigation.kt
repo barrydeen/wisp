@@ -623,8 +623,9 @@ fun WispNavHost() {
                     eventId = eventId,
                     eventRepo = feedViewModel.eventRepo,
                     relayPool = feedViewModel.relayPool,
+                    outboxRouter = feedViewModel.outboxRouter,
                     subManager = feedViewModel.subManager,
-                    queueProfileFetch = { pubkey -> feedViewModel.forceProfileFetch(pubkey) },
+                    metadataFetcher = feedViewModel.metadataFetcher,
                     muteRepo = feedViewModel.muteRepo
                 )
             }

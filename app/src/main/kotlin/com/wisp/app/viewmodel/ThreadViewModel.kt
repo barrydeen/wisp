@@ -6,15 +6,17 @@ import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.relay.SubscriptionManager
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.MetadataFetcher
 import com.wisp.app.repo.MuteRepository
-import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 
 class ThreadViewModel : ViewModel() {
     private val _rootEvent = MutableStateFlow<NostrEvent?>(null)
@@ -36,6 +38,17 @@ class ThreadViewModel : ViewModel() {
     private val activeMetadataSubs = mutableListOf<String>()
     private var relayPoolRef: RelayPool? = null
 
+    // Jobs for cleanup
+    private var collectorJob: Job? = null
+    private var loadJob: Job? = null
+    private var rebuildJob: Job? = null
+    private var metadataBatchJob: Job? = null
+
+    // Incremental metadata tracking
+    private val metadataSubscribedIds = mutableSetOf<String>()
+    private val pendingMetadataIds = mutableSetOf<String>()
+    private var metadataBatchIndex = 0
+
     fun clearScrollTarget() {
         _scrollToIndex.value = -1
     }
@@ -44,14 +57,15 @@ class ThreadViewModel : ViewModel() {
         eventId: String,
         eventRepo: EventRepository,
         relayPool: RelayPool,
+        outboxRouter: OutboxRouter,
         subManager: SubscriptionManager,
-        queueProfileFetch: (String) -> Unit,
+        metadataFetcher: MetadataFetcher,
         muteRepo: MuteRepository? = null
     ) {
         this.muteRepo = muteRepo
         this.relayPoolRef = relayPool
 
-        // Resolve the true root ID from the clicked event
+        // Resolve root from cached event (we clicked on it, so it's in cache)
         val cached = eventRepo.getEvent(eventId)
         if (cached != null) {
             val resolvedRoot = Nip10.getRootId(cached) ?: eventId
@@ -59,7 +73,6 @@ class ThreadViewModel : ViewModel() {
             scrollTargetId = if (resolvedRoot != eventId) eventId else null
             threadEvents[cached.id] = cached
 
-            // Load root from cache if we resolved to a different root
             if (resolvedRoot != eventId) {
                 val cachedRoot = eventRepo.getEvent(resolvedRoot)
                 if (cachedRoot != null) {
@@ -69,147 +82,128 @@ class ThreadViewModel : ViewModel() {
             } else {
                 _rootEvent.value = cached
             }
-            rebuildTree()
         } else {
             rootId = eventId
         }
 
-        viewModelScope.launch {
-            // If not cached, fetch the clicked event first to resolve the root
-            if (cached == null) {
-                val resolvedRootId = resolveRootFromRelay(eventId, eventRepo, relayPool, queueProfileFetch)
-                rootId = resolvedRootId
-                scrollTargetId = if (resolvedRootId != eventId) eventId else null
-            }
+        // Seed from cache: BFS walks nested replies
+        val cachedEvents = eventRepo.getCachedThreadEvents(rootId)
+        for (event in cachedEvents) {
+            threadEvents[event.id] = event
+            if (event.id == rootId) _rootEvent.value = event
+        }
+        rebuildTree()
+        if (cachedEvents.size > 1) {
+            _isLoading.value = false
+        }
 
-            // Start collecting BEFORE sending REQs to avoid race condition
-            val collectJob = launch {
-                relayPool.relayEvents.collect { (event, _, subscriptionId) ->
-                    if (subscriptionId == "thread-root" || subscriptionId == "thread-replies") {
-                        eventRepo.cacheEvent(event)
-                        if (event.kind == 1) {
-                            val isNew = event.id !in threadEvents
-                            threadEvents[event.id] = event
-                            if (subscriptionId == "thread-root" && event.id == rootId) {
-                                _rootEvent.value = event
-                            }
-                            if (isNew) {
-                                if (eventRepo.getProfileData(event.pubkey) == null) {
-                                    queueProfileFetch(event.pubkey)
-                                }
-                                rebuildTree()
-                            }
+        // Direct RelayPool collection — no dependency on FeedViewModel
+        collectorJob = viewModelScope.launch {
+            relayPool.relayEvents.collect { (event, _, subscriptionId) ->
+                if (subscriptionId != "thread-root" && subscriptionId != "thread-replies") return@collect
+                if (event.kind != 1) return@collect
+
+                eventRepo.cacheEvent(event)
+
+                val isNew = event.id !in threadEvents
+                threadEvents[event.id] = event
+                if (event.id == rootId) {
+                    _rootEvent.value = event
+                }
+                if (isNew) {
+                    // Queue profile fetch for new authors
+                    if (eventRepo.getProfileData(event.pubkey) == null) {
+                        metadataFetcher.addToPendingProfiles(event.pubkey)
+                    }
+                    // Track for incremental metadata subscriptions
+                    synchronized(pendingMetadataIds) {
+                        pendingMetadataIds.add(event.id)
+                    }
+                    scheduleRebuild()
+                }
+            }
+        }
+
+        // Also collect thread reactions/engagement
+        viewModelScope.launch {
+            relayPool.relayEvents.collect { (event, _, subscriptionId) ->
+                if (!subscriptionId.startsWith("thread-reactions")) return@collect
+                when (event.kind) {
+                    7, 6 -> eventRepo.addEvent(event)
+                    9735 -> {
+                        eventRepo.addEvent(event)
+                        val zapperPubkey = com.wisp.app.nostr.Nip57.getZapperPubkey(event)
+                        if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
+                            metadataFetcher.addToPendingProfiles(zapperPubkey)
                         }
                     }
                 }
             }
+        }
 
-            // Now send subscriptions — collector is already active
-            val rootRelayCount = relayPool.getRelayUrls().size.coerceAtLeast(1)
+        // Two-phase loading with outbox routing
+        loadJob = viewModelScope.launch {
+            // Phase 1: Fetch root if not cached
             val needsFetchRoot = _rootEvent.value == null || _rootEvent.value?.id != rootId
             if (needsFetchRoot) {
                 relayPool.sendToAll(ClientMessage.req("thread-root", Filter(ids = listOf(rootId))))
+                subManager.awaitEoseWithTimeout("thread-root", 5_000)
             }
 
-            // Fetch ALL replies that reference the root event
-            // Use sendToAll because replies from different participants may be on different relays
-            val repliesFilter = Filter(kinds = listOf(1), eTags = listOf(rootId))
-            relayPool.sendToAll(ClientMessage.req("thread-replies", repliesFilter))
-            val repliesRelayCount = relayPool.getRelayUrls().size.coerceAtLeast(1)
-
-            // Wait for EOSE — short timeout since relays deliver replies quickly
-            launch {
-                withTimeoutOrNull(1_500) {
-                    var rootEoseCount = if (!needsFetchRoot) rootRelayCount else 0
-                    var repliesEoseCount = 0
-                    relayPool.eoseSignals.collect { subId ->
-                        when (subId) {
-                            "thread-root" -> {
-                                rootEoseCount++
-                                if (rootEoseCount >= rootRelayCount) {
-                                    relayPool.closeOnAllRelays("thread-root")
-                                }
-                            }
-                            "thread-replies" -> {
-                                repliesEoseCount++
-                                if (repliesEoseCount >= repliesRelayCount) {
-                                    relayPool.closeOnAllRelays("thread-replies")
-                                }
-                            }
-                        }
-                        if (rootEoseCount >= rootRelayCount && repliesEoseCount >= repliesRelayCount) {
-                            return@collect
-                        }
-                    }
-                }
-                // Unconditionally close both subs and finish loading
-                relayPool.closeOnAllRelays("thread-root")
-                relayPool.closeOnAllRelays("thread-replies")
-                _isLoading.value = false
-                collectJob.cancel()
-
-                // Subscribe for reactions, zaps, and reply counts for thread events
-                subscribeThreadMetadata(relayPool, subManager, eventRepo)
+            // Phase 2: Now we (hopefully) have the root — use outbox routing for replies
+            val rootEvent = _rootEvent.value
+            if (rootEvent != null) {
+                outboxRouter.subscribeToUserReadRelays(
+                    "thread-replies", rootEvent.pubkey,
+                    Filter(kinds = listOf(1), eTags = listOf(rootId))
+                )
+            } else {
+                // Root still not found — query all relays as fallback
+                relayPool.sendToAll(
+                    ClientMessage.req("thread-replies", Filter(kinds = listOf(1), eTags = listOf(rootId)))
+                )
             }
+
+            // Wait for replies EOSE, then hide spinner
+            subManager.awaitEoseWithTimeout("thread-replies", 5_000)
+            _isLoading.value = false
+
+            // Baseline metadata subscription for all events known at this point
+            subscribeThreadMetadata(relayPool, eventRepo)
+
+            // Start incremental metadata batching for late arrivals
+            startMetadataBatching(relayPool)
         }
     }
 
     /**
-     * Fetch the clicked event from relays, resolve its root ID, and return it.
-     * Returns as soon as the event is received — no need to wait for all relays.
+     * Debounced tree rebuild — cancels any pending rebuild and waits 100ms.
+     * 50 rapid events = 1 rebuild instead of 50.
      */
-    private suspend fun resolveRootFromRelay(
-        eventId: String,
-        eventRepo: EventRepository,
-        relayPool: RelayPool,
-        queueProfileFetch: (String) -> Unit
-    ): String {
-        val eventReceived = CompletableDeferred<NostrEvent>()
-
-        val collectJob = viewModelScope.launch {
-            relayPool.relayEvents.collect { (event, _, subscriptionId) ->
-                if (subscriptionId == "thread-resolve" && event.id == eventId) {
-                    eventRepo.cacheEvent(event)
-                    threadEvents[event.id] = event
-                    if (eventRepo.getProfileData(event.pubkey) == null) {
-                        queueProfileFetch(event.pubkey)
-                    }
-                    eventReceived.complete(event)
-                }
-            }
-        }
-
-        relayPool.sendToAll(ClientMessage.req("thread-resolve", Filter(ids = listOf(eventId))))
-
-        // Wait for the event itself, not EOSE — we only need one copy
-        val fetched = withTimeoutOrNull(5_000) { eventReceived.await() }
-
-        relayPool.closeOnAllRelays("thread-resolve")
-        collectJob.cancel()
-
-        return if (fetched != null) {
-            Nip10.getRootId(fetched) ?: eventId
-        } else {
-            eventId
+    private fun scheduleRebuild() {
+        rebuildJob?.cancel()
+        rebuildJob = viewModelScope.launch {
+            delay(100)
+            rebuildTree()
         }
     }
 
-    private fun subscribeThreadMetadata(relayPool: RelayPool, subManager: SubscriptionManager, eventRepo: EventRepository) {
-        // Close any prior metadata subs
+    private fun subscribeThreadMetadata(relayPool: RelayPool, eventRepo: EventRepository) {
         for (subId in activeMetadataSubs) relayPool.closeOnAllRelays(subId)
         activeMetadataSubs.clear()
 
         val eventIds = threadEvents.keys.toList()
         if (eventIds.isEmpty()) return
 
-        // Compute reply counts from loaded thread events
         for (event in threadEvents.values) {
             if (event.id == rootId) continue
             val parentId = Nip10.getReplyTarget(event) ?: rootId
             eventRepo.addReplyCount(parentId, event.id)
         }
 
-        // Reactions (kind 7), reposts (kind 6), and zaps (kind 9735) — single sub per batch
+        // Track these as already subscribed
+        metadataSubscribedIds.addAll(eventIds)
+
         eventIds.chunked(50).forEachIndexed { index, batch ->
             val subId = if (index == 0) "thread-reactions" else "thread-reactions-$index"
             activeMetadataSubs.add(subId)
@@ -218,9 +212,41 @@ class ThreadViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Batch pending metadata IDs every 500ms into new subscriptions.
+     * Late-arriving events get their engagement data fetched incrementally.
+     */
+    private fun startMetadataBatching(relayPool: RelayPool) {
+        metadataBatchJob = viewModelScope.launch {
+            while (true) {
+                delay(500)
+                val batch = synchronized(pendingMetadataIds) {
+                    val newIds = pendingMetadataIds.filter { it !in metadataSubscribedIds }
+                    pendingMetadataIds.clear()
+                    if (newIds.isEmpty()) null
+                    else {
+                        metadataSubscribedIds.addAll(newIds)
+                        newIds.toList()
+                    }
+                } ?: continue
+                metadataBatchIndex++
+                val subId = "thread-reactions-b$metadataBatchIndex"
+                activeMetadataSubs.add(subId)
+                val filter = Filter(kinds = listOf(7, 6, 9735), eTags = batch)
+                relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
+        collectorJob?.cancel()
+        loadJob?.cancel()
+        rebuildJob?.cancel()
+        metadataBatchJob?.cancel()
         relayPoolRef?.let { pool ->
+            pool.closeOnAllRelays("thread-root")
+            pool.closeOnAllRelays("thread-replies")
             for (subId in activeMetadataSubs) pool.closeOnAllRelays(subId)
         }
         activeMetadataSubs.clear()
@@ -233,19 +259,16 @@ class ThreadViewModel : ViewModel() {
             if (event.id == rootId) continue
             if (muteRepo?.isBlocked(event.pubkey) == true) continue
             var parentId = Nip10.getReplyTarget(event) ?: rootId
-            // If the parent isn't in threadEvents, attach to root so the reply isn't orphaned
             if (parentId != rootId && parentId !in threadEvents) {
                 parentId = rootId
             }
             parentToChildren.getOrPut(parentId) { mutableListOf() }.add(event)
         }
 
-        // Sort children by created_at
         for (children in parentToChildren.values) {
             children.sortBy { it.created_at }
         }
 
-        // DFS flatten — track visited to prevent cycles from causing duplicate keys
         val result = mutableListOf<Pair<NostrEvent, Int>>()
         val visited = mutableSetOf<String>()
         val root = threadEvents[rootId]
@@ -253,11 +276,19 @@ class ThreadViewModel : ViewModel() {
             result.add(root to 0)
             visited.add(root.id)
             dfs(rootId, 1, parentToChildren, result, visited)
+        } else {
+            // Root not yet loaded — render replies we have
+            val rootChildren = parentToChildren[rootId] ?: emptyList()
+            for (child in rootChildren) {
+                if (child.id in visited) continue
+                visited.add(child.id)
+                result.add(child to 0)
+                dfs(child.id, 1, parentToChildren, result, visited)
+            }
         }
 
         _flatThread.value = result
 
-        // Update scroll target index
         val targetId = scrollTargetId
         if (targetId != null) {
             val index = result.indexOfFirst { it.first.id == targetId }
