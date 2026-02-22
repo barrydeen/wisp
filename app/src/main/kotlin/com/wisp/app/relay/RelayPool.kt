@@ -68,14 +68,14 @@ class RelayPool {
     )
 
     /** Signing lambda for NIP-42 AUTH — set via [setAuthSigner]. */
-    private var authSigner: ((relayUrl: String, challenge: String) -> NostrEvent)? = null
+    private var authSigner: (suspend (relayUrl: String, challenge: String) -> NostrEvent)? = null
     private val authenticatedRelays = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     /**
      * Register a signer for NIP-42 AUTH challenges.
      * The lambda receives the relay URL and challenge string and must return a signed kind-22242 event.
      */
-    fun setAuthSigner(signer: (relayUrl: String, challenge: String) -> NostrEvent) {
+    fun setAuthSigner(signer: suspend (relayUrl: String, challenge: String) -> NostrEvent) {
         authSigner = signer
     }
 

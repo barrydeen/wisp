@@ -56,6 +56,7 @@ fun ZapBurstEffect(
 
         progress.snapTo(0f)
         progress.animateTo(1f, animationSpec = tween(800, easing = LinearEasing))
+        progress.snapTo(0f)
     }
 
     Canvas(modifier = modifier.fillMaxSize()) {

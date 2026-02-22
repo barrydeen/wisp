@@ -39,7 +39,6 @@ import com.wisp.app.repo.DiscoveryState
 import com.wisp.app.repo.ExtendedNetworkRepository
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.KeyRepository
-import com.wisp.app.repo.SigningMode
 import com.wisp.app.repo.ListRepository
 import com.wisp.app.repo.MetadataFetcher
 import com.wisp.app.repo.MuteRepository
@@ -102,6 +101,22 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun setSigner(s: NostrSigner) {
         signer = s
         zapSender.signer = s
+        registerAuthSigner()
+    }
+
+    /** Register current signer for NIP-42 AUTH. Called from initRelays() and setSigner(). */
+    private fun registerAuthSigner() {
+        val s = signer ?: return
+        relayPool.setAuthSigner { relayUrl, challenge ->
+            s.signEvent(
+                kind = 22242,
+                content = "",
+                tags = listOf(
+                    listOf("relay", relayUrl),
+                    listOf("challenge", challenge)
+                )
+            )
+        }
     }
 
     val relayPool = RelayPool()
@@ -379,24 +394,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-        // NIP-42 AUTH: sign challenges with our keypair (local mode only)
-        // Remote signer skips AUTH to avoid flooding the signer app with 40+ challenges at startup
-        if (keyRepo.getSigningMode() == SigningMode.LOCAL) {
-            keyRepo.getKeypair()?.let { kp ->
-                relayPool.setAuthSigner { relayUrl, challenge ->
-                    NostrEvent.create(
-                        privkey = kp.privkey,
-                        pubkey = kp.pubkey,
-                        kind = 22242,
-                        content = "",
-                        tags = listOf(
-                            listOf("relay", relayUrl),
-                            listOf("challenge", challenge)
-                        )
-                    )
-                }
-            }
-        }
+        // NIP-42 AUTH: sign challenges via signer (local or remote)
+        registerAuthSigner()
 
         // Re-send DM subscription to relays after AUTH completes
         authCompletedJob = viewModelScope.launch {
@@ -528,7 +527,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             _initLoadingState.value = InitLoadingState.Subscribing
             subscribeFeed()
 
-            _initLoadingState.value = InitLoadingState.Done
+            // Don't set Done here — subscribeFeed() is non-blocking.
+            // InitLoadingState.Done is set inside feedEoseJob after EOSE arrives.
 
             // Background: fetch relay lists for any new follows (non-blocking)
             if (!relayScoreBoard.needsRecompute()) {
@@ -1045,8 +1045,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         feedEoseJob = viewModelScope.launch {
-            subManager.awaitEoseCount(feedSubId, targetedRelays.size.coerceAtLeast(1))
+            // Wait for a majority of relays rather than all — avoids blocking on slow
+            // stragglers while still ensuring most notes have arrived.
+            val eoseTarget = (targetedRelays.size * 0.65).toInt().coerceIn(1, targetedRelays.size)
+            subManager.awaitEoseCount(feedSubId, eoseTarget)
             _initialLoadDone.value = true
+            _initLoadingState.value = InitLoadingState.Done
 
             eventRepo.countNewNotes = true
             subscribeEngagementForFeed()

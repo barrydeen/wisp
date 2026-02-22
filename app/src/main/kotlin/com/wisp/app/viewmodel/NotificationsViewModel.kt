@@ -9,7 +9,9 @@ import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.NotificationRepository
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
@@ -20,6 +22,9 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
 
     val hasUnread: StateFlow<Boolean>
         get() = notifRepo?.hasUnread ?: MutableStateFlow(false)
+
+    val zapReceived: SharedFlow<Unit>
+        get() = notifRepo?.zapReceived ?: MutableSharedFlow()
 
     val eventRepository: EventRepository?
         get() = eventRepo

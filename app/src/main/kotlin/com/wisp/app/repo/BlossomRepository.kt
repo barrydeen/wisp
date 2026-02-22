@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.wisp.app.nostr.Blossom
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.nostr.NostrSigner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,6 +55,10 @@ class BlossomRepository(private val context: Context, pubkeyHex: String? = null)
         _servers.value = loadServers()
     }
 
+    fun refreshFromPrefs() {
+        _servers.value = loadServers()
+    }
+
     private fun loadServers(): List<String> {
         val str = prefs.getString("blossom_servers", null) ?: return listOf(Blossom.DEFAULT_SERVER)
         return try {
@@ -67,50 +72,59 @@ class BlossomRepository(private val context: Context, pubkeyHex: String? = null)
     suspend fun uploadMedia(
         fileBytes: ByteArray,
         mimeType: String,
-        ext: String
+        ext: String,
+        signer: NostrSigner? = null
     ): String = withContext(Dispatchers.IO) {
-        val keypair = keyRepo.getKeypair() ?: throw IllegalStateException("Not logged in")
         val sha256Hex = Blossom.sha256Hex(fileBytes)
-        val authHeader = Blossom.createUploadAuth(keypair.privkey, keypair.pubkey, sha256Hex)
+        val authHeader = if (signer != null) {
+            Blossom.createUploadAuth(signer, sha256Hex)
+        } else {
+            val keypair = keyRepo.getKeypair() ?: throw IllegalStateException("Not logged in")
+            Blossom.createUploadAuth(keypair.privkey, keypair.pubkey, sha256Hex)
+        }
         val mediaType = mimeType.toMediaType()
         val body = fileBytes.toRequestBody(mediaType)
 
-        val serverList = _servers.value
-        var lastException: Exception? = null
+        // Always read fresh from SharedPreferences so we pick up changes from BlossomServersViewModel
+        val serverList = loadServers()
 
-        for (server in serverList) {
-            // Try BUD-05 /media first (strips EXIF), fall back to /upload
-            for (path in listOf("/media", "/upload")) {
-                try {
-                    val url = server.trimEnd('/') + path
-                    val request = Request.Builder()
-                        .url(url)
-                        .put(body)
-                        .header("Authorization", authHeader)
-                        .header("Content-Type", mimeType)
-                        .build()
+        // Upload to the first (preferred) server only
+        val server = serverList.first()
+        val result = uploadToServer(server, body, authHeader, mimeType)
+        return@withContext result
+    }
 
-                    val response = httpClient.newCall(request).execute()
-                    if (response.isSuccessful) {
-                        val responseBody = response.body?.string()
-                            ?: throw Exception("Empty response")
-                        val responseJson = json.parseToJsonElement(responseBody)
-                        val urlField = (responseJson as? kotlinx.serialization.json.JsonObject)
-                            ?.get("url")
-                            ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
-                            ?: throw Exception("No url in response")
-                        return@withContext urlField
-                    }
-                    // If /media returns 404, try /upload
-                    if (response.code == 404 && path == "/media") continue
-                    lastException = Exception("Upload failed: ${response.code} ${response.message}")
-                } catch (e: Exception) {
-                    lastException = e
-                    if (path == "/media") continue
-                }
+    private fun uploadToServer(
+        server: String,
+        body: okhttp3.RequestBody,
+        authHeader: String,
+        mimeType: String
+    ): String {
+        // Try BUD-05 /media first (strips EXIF), fall back to /upload on 404
+        for (path in listOf("/media", "/upload")) {
+            val url = server.trimEnd('/') + path
+            val request = Request.Builder()
+                .url(url)
+                .put(body)
+                .header("Authorization", authHeader)
+                .header("Content-Type", mimeType)
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                val responseBody = response.body?.string()
+                    ?: throw Exception("Empty response")
+                val responseJson = json.parseToJsonElement(responseBody)
+                val urlField = (responseJson as? kotlinx.serialization.json.JsonObject)
+                    ?.get("url")
+                    ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+                    ?: throw Exception("No url in response")
+                return urlField
             }
+            if (response.code == 404 && path == "/media") continue
+            throw Exception("Upload failed: ${response.code} ${response.message}")
         }
-        throw lastException ?: Exception("Upload failed")
+        throw Exception("Upload failed")
     }
 
     companion object {

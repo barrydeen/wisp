@@ -157,7 +157,7 @@ fun AuthScreen(
 
             OutlinedButton(
                 onClick = {
-                    val permissions = """[{"type":"sign_event"},{"type":"nip44_encrypt"},{"type":"nip44_decrypt"}]"""
+                    val permissions = """[{"type":"sign_event","kind":0},{"type":"sign_event","kind":1},{"type":"sign_event","kind":3},{"type":"sign_event","kind":5},{"type":"sign_event","kind":6},{"type":"sign_event","kind":7},{"type":"sign_event","kind":13},{"type":"sign_event","kind":9734},{"type":"sign_event","kind":10000},{"type":"sign_event","kind":10001},{"type":"sign_event","kind":10002},{"type":"sign_event","kind":10030},{"type":"sign_event","kind":10063},{"type":"sign_event","kind":22242},{"type":"sign_event","kind":24242},{"type":"sign_event","kind":30000},{"type":"sign_event","kind":30003},{"type":"sign_event","kind":30030},{"type":"nip44_encrypt"},{"type":"nip44_decrypt"}]"""
                     val intent = RemoteSignerBridge.buildGetPublicKeyIntent(permissions)
                     signerLauncher.launch(intent)
                 },

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -98,9 +100,9 @@ fun ComposeScreen(
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) viewModel.uploadMedia(uri, context.contentResolver)
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isNotEmpty()) viewModel.uploadMedia(uris, context.contentResolver, signer)
     }
 
     val accentColor = MaterialTheme.colorScheme.primary
@@ -313,10 +315,16 @@ fun ComposeScreen(
                         }
                     }
 
-                    uploadProgress?.let {
+                    if (uploadProgress != null) {
                         Spacer(Modifier.width(8.dp))
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(6.dp))
                         Text(
-                            text = it,
+                            text = "Uploading...",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -417,13 +425,7 @@ fun ComposeScreen(
                         enabled = !publishing,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            when {
-                                uploadProgress != null -> uploadProgress!!
-                                publishing -> "Uploading..."
-                                else -> "Publish"
-                            }
-                        )
+                        Text(if (publishing) "Publishing..." else "Publish")
                     }
                 }
             }

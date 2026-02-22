@@ -45,7 +45,8 @@ import com.wisp.app.viewmodel.OnboardingViewModel
 @Composable
 fun OnboardingScreen(
     viewModel: OnboardingViewModel,
-    onContinue: () -> Unit
+    onContinue: () -> Unit,
+    signer: com.wisp.app.nostr.NostrSigner? = null
 ) {
     val name by viewModel.name.collectAsState()
     val about by viewModel.about.collectAsState()
@@ -65,7 +66,7 @@ fun OnboardingScreen(
     val avatarPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        if (uri != null) viewModel.uploadImage(context.contentResolver, uri)
+        if (uri != null) viewModel.uploadImage(context.contentResolver, uri, signer)
     }
 
     val relaysReady = discoveredRelays != null

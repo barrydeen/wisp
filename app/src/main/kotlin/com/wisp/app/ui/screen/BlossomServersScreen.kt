@@ -45,6 +45,7 @@ fun BlossomServersScreen(
     val servers by viewModel.servers.collectAsState()
     val newServerUrl by viewModel.newServerUrl.collectAsState()
     val error by viewModel.error.collectAsState()
+    val published by viewModel.published.collectAsState()
 
     Scaffold(
         topBar = {
@@ -99,7 +100,7 @@ fun BlossomServersScreen(
                 onClick = { viewModel.publishServerList(relayPool, signer = signer) },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Broadcast Server List")
+                Text(if (published) "Broadcast Sent" else "Broadcast Server List")
             }
 
             Spacer(Modifier.height(16.dp))

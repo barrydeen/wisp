@@ -85,22 +85,25 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
     }
 
-    fun uploadMedia(uri: Uri, contentResolver: ContentResolver) {
+    fun uploadMedia(uris: List<Uri>, contentResolver: ContentResolver, signer: NostrSigner? = null) {
         viewModelScope.launch {
-            try {
-                _uploadProgress.value = "Uploading..."
-                val (bytes, mime, ext) = readFileFromUri(contentResolver, uri)
-                val url = blossomRepo.uploadMedia(bytes, mime, ext)
-                _uploadedUrls.value = _uploadedUrls.value + url
-                val current = _content.value.text
-                val newText = if (current.isBlank()) url else "$current\n$url"
-                _content.value = TextFieldValue(newText, TextRange(newText.length))
-                savedStateHandle["draft_content"] = newText
-                _uploadProgress.value = null
-            } catch (e: Exception) {
-                _error.value = "Upload failed: ${e.message}"
-                _uploadProgress.value = null
+            val total = uris.size
+            for ((index, uri) in uris.withIndex()) {
+                try {
+                    _uploadProgress.value = if (total > 1) "Uploading ${index + 1}/$total..." else "Uploading..."
+                    val (bytes, mime, ext) = readFileFromUri(contentResolver, uri)
+                    val url = blossomRepo.uploadMedia(bytes, mime, ext, signer)
+                    _uploadedUrls.value = _uploadedUrls.value + url
+                    val current = _content.value.text
+                    val newText = if (current.isBlank()) url else "$current\n$url"
+                    _content.value = TextFieldValue(newText, TextRange(newText.length))
+                    savedStateHandle["draft_content"] = newText
+                } catch (e: Exception) {
+                    _error.value = "Upload failed: ${e.message}"
+                    break
+                }
             }
+            _uploadProgress.value = null
         }
     }
 

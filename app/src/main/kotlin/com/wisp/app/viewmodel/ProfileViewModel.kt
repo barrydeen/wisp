@@ -63,7 +63,7 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
 
     private var refreshJob: Job? = null
 
-    fun uploadImage(contentResolver: ContentResolver, uri: Uri, target: ImageTarget) {
+    fun uploadImage(contentResolver: ContentResolver, uri: Uri, target: ImageTarget, signer: NostrSigner? = null) {
         viewModelScope.launch {
             try {
                 _uploading.value = when (target) {
@@ -74,7 +74,7 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
                     ?: throw Exception("Cannot read file")
                 val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
                 val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "bin"
-                val url = blossomRepo.uploadMedia(bytes, mimeType, ext)
+                val url = blossomRepo.uploadMedia(bytes, mimeType, ext, signer)
                 when (target) {
                     ImageTarget.PICTURE -> _picture.value = url
                     ImageTarget.BANNER -> _banner.value = url

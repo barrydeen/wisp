@@ -28,6 +28,13 @@ class BlossomServersViewModel(app: Application) : AndroidViewModel(app) {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
+    private val _published = MutableStateFlow(false)
+    val published: StateFlow<Boolean> = _published
+
+    fun refreshServers() {
+        blossomRepo.refreshFromPrefs()
+    }
+
     fun updateNewServerUrl(url: String) {
         _newServerUrl.value = url
     }
@@ -58,9 +65,16 @@ class BlossomServersViewModel(app: Application) : AndroidViewModel(app) {
     fun publishServerList(relayPool: RelayPool, signer: NostrSigner? = null) {
         val s = signer ?: keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) } ?: return
         val tags = Blossom.buildServerListTags(servers.value)
+        _published.value = false
         viewModelScope.launch {
-            val event = s.signEvent(kind = Blossom.KIND_SERVER_LIST, content = "", tags = tags)
-            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            try {
+                val event = s.signEvent(kind = Blossom.KIND_SERVER_LIST, content = "", tags = tags)
+                relayPool.sendToWriteRelays(ClientMessage.event(event))
+                _published.value = true
+                _error.value = null
+            } catch (e: Exception) {
+                _error.value = "Failed to sign event: ${e.message}"
+            }
         }
     }
 }

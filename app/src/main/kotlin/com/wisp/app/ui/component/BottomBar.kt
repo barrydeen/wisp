@@ -3,6 +3,7 @@ package com.wisp.app.ui.component
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -15,6 +16,7 @@ import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 import com.wisp.app.Routes
 
@@ -46,6 +49,7 @@ fun WispBottomBar(
     hasUnreadHome: Boolean,
     hasUnreadMessages: Boolean,
     hasUnreadNotifications: Boolean,
+    isZapAnimating: Boolean = false,
     onTabSelected: (BottomTab) -> Unit
 ) {
     NavigationBar {
@@ -63,9 +67,16 @@ fun WispBottomBar(
                 selected = selected,
                 onClick = { onTabSelected(tab) },
                 icon = {
-                    Box {
+                    Box(
+                        modifier = Modifier.requiredSize(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val icon = if (tab == BottomTab.NOTIFICATIONS && isZapAnimating)
+                            Icons.Outlined.CurrencyBitcoin
+                        else if (selected) tab.selectedIcon
+                        else tab.unselectedIcon
                         Icon(
-                            imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                            imageVector = icon,
                             contentDescription = tab.label
                         )
                         if (hasUnread) {
@@ -78,6 +89,27 @@ fun WispBottomBar(
                                         color = MaterialTheme.colorScheme.primary,
                                         shape = CircleShape
                                     )
+                            )
+                        }
+                        if (tab == BottomTab.NOTIFICATIONS) {
+                            ZapBurstEffect(
+                                isActive = isZapAnimating,
+                                modifier = Modifier
+                                    .size(120.dp)
+                                    .layout { measurable, constraints ->
+                                        val placeable = measurable.measure(
+                                            constraints.copy(
+                                                minWidth = 0,
+                                                minHeight = 0
+                                            )
+                                        )
+                                        layout(0, 0) {
+                                            placeable.place(
+                                                -placeable.width / 2,
+                                                -placeable.height / 2
+                                            )
+                                        }
+                                    }
                             )
                         }
                     }

@@ -67,8 +67,7 @@ class RemoteSigner(
     override suspend fun signEvent(kind: Int, content: String, tags: List<List<String>>, createdAt: Long): NostrEvent {
         val unsigned = NostrEvent.createUnsigned(pubkeyHex, kind, content, tags, createdAt)
         val eventJson = unsigned.toJson()
-        val signature = queryContentResolver("SIGN_EVENT", eventJson)
-        return unsigned.withSignature(signature)
+        return querySignEvent(eventJson, unsigned)
     }
 
     override suspend fun nip44Encrypt(plaintext: String, peerPubkeyHex: String): String {
@@ -79,26 +78,52 @@ class RemoteSigner(
         return queryContentResolver("NIP44_DECRYPT", ciphertext, peerPubkeyHex)
     }
 
+    private suspend fun querySignEvent(
+        eventJson: String,
+        unsigned: NostrEvent
+    ): NostrEvent = withContext(Dispatchers.IO) {
+        val uri = Uri.parse("content://${signerPackage}.SIGN_EVENT")
+        val projection = arrayOf(eventJson, "", npub)
+        android.util.Log.d("RemoteSigner", "querySignEvent: uri=$uri, npub=$npub, kind=${unsigned.kind}")
+        val cursor = contentResolver.query(uri, projection, null, null, null)
+            ?: throw Exception("Signer ($signerPackage) returned no cursor for SIGN_EVENT kind=${unsigned.kind}")
+
+        cursor.use {
+            if (!it.moveToFirst()) throw Exception("Signer returned empty cursor for SIGN_EVENT")
+            if (it.getColumnIndex("rejected") >= 0) throw Exception("Signer rejected SIGN_EVENT")
+
+            // Prefer full signed event from "event" column
+            val eventIdx = it.getColumnIndex("event")
+            if (eventIdx >= 0) {
+                val signedJson = it.getString(eventIdx)
+                if (!signedJson.isNullOrBlank()) {
+                    return@withContext NostrEvent.fromJson(signedJson)
+                }
+            }
+
+            // Fallback: apply signature to our unsigned event
+            val sig = it.getString(it.getColumnIndex("signature"))
+                ?: it.getString(it.getColumnIndex("result"))
+                ?: throw Exception("Signer returned no signature")
+            return@withContext unsigned.withSignature(sig)
+        }
+    }
+
     private suspend fun queryContentResolver(
         method: String,
         data: String,
         peerPubkey: String = ""
     ): String = withContext(Dispatchers.IO) {
         val uri = Uri.parse("content://${signerPackage}.$method")
-        // NIP-55 content resolver: data goes in projection array as [data, pubkey, currentUser]
         val projection = arrayOf(data, peerPubkey, npub)
-        val cursor = contentResolver.query(
-            uri,
-            projection,
-            null,
-            null,
-            null
-        ) ?: throw Exception("Signer returned no cursor for $method")
+        android.util.Log.d("RemoteSigner", "query: uri=$uri, method=$method")
+        val cursor = contentResolver.query(uri, projection, null, null, null)
+            ?: throw Exception("Signer ($signerPackage) returned no cursor for $method")
 
         cursor.use {
             if (!it.moveToFirst()) throw Exception("Signer returned empty cursor for $method")
+            if (it.getColumnIndex("rejected") >= 0) throw Exception("Signer rejected $method")
 
-            // Try "result" column (used by all operations), then "signature" as fallback
             val resIdx = it.getColumnIndex("result")
             if (resIdx >= 0) {
                 return@withContext it.getString(resIdx)
@@ -111,7 +136,6 @@ class RemoteSigner(
                     ?: throw Exception("Signer returned null signature")
             }
 
-            // Fallback: try column index 0
             return@withContext it.getString(0)
                 ?: throw Exception("Signer returned null in column 0 for $method")
         }

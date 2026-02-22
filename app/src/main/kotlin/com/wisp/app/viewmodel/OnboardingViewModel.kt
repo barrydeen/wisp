@@ -101,7 +101,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     fun updateName(value: String) { _name.value = value }
     fun updateAbout(value: String) { _about.value = value }
 
-    fun uploadImage(contentResolver: ContentResolver, uri: Uri) {
+    fun uploadImage(contentResolver: ContentResolver, uri: Uri, signer: NostrSigner? = null) {
         viewModelScope.launch {
             try {
                 _uploading.value = "Uploading..."
@@ -109,7 +109,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
                     ?: throw Exception("Cannot read file")
                 val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
                 val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "bin"
-                val url = blossomRepo.uploadMedia(bytes, mimeType, ext)
+                val url = blossomRepo.uploadMedia(bytes, mimeType, ext, signer)
                 _picture.value = url
                 _uploading.value = null
             } catch (e: Exception) {

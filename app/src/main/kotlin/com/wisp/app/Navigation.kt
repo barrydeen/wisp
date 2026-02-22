@@ -236,6 +236,15 @@ fun WispNavHost() {
     val hasUnreadDms by dmListViewModel.hasUnreadDms.collectAsState()
     val hasUnreadNotifications by notificationsViewModel.hasUnread.collectAsState()
 
+    var isZapAnimating by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        notificationsViewModel.zapReceived.collect {
+            isZapAnimating = true
+            kotlinx.coroutines.delay(900)
+            isZapAnimating = false
+        }
+    }
+
     // Add Note to List dialog — shared across all screens
     if (addToListEventId != null) {
         val ownSets by feedViewModel.bookmarkSetRepo.ownSets.collectAsState()
@@ -258,11 +267,15 @@ fun WispNavHost() {
                     hasUnreadHome = newNoteCount > 0,
                     hasUnreadMessages = hasUnreadDms,
                     hasUnreadNotifications = hasUnreadNotifications,
+                    isZapAnimating = isZapAnimating,
                     onTabSelected = { tab ->
-                        scrollToTopTrigger++
-                        navController.navigate(tab.route) {
-                            popUpTo(Routes.FEED) { inclusive = false }
-                            launchSingleTop = true
+                        if (currentRoute == tab.route) {
+                            scrollToTopTrigger++
+                        } else {
+                            navController.navigate(tab.route) {
+                                popUpTo(Routes.FEED) { inclusive = false }
+                                launchSingleTop = true
+                            }
                         }
                     }
                 )
@@ -427,6 +440,7 @@ fun WispNavHost() {
         }
 
         composable(Routes.BLOSSOM_SERVERS) {
+            LaunchedEffect(Unit) { blossomServersViewModel.refreshServers() }
             BlossomServersScreen(
                 viewModel = blossomServersViewModel,
                 relayPool = feedViewModel.relayPool,
@@ -735,7 +749,7 @@ fun WispNavHost() {
                                 ?: throw Exception("Cannot read file")
                             val mimeType = contentResolver.getType(uri) ?: "image/png"
                             val ext = mimeType.substringAfter("/", "png")
-                            val url = feedViewModel.blossomRepo.uploadMedia(bytes, mimeType, ext)
+                            val url = feedViewModel.blossomRepo.uploadMedia(bytes, mimeType, ext, feedViewModel.signer)
                             onResult(url)
                         } catch (e: Exception) {
                             android.util.Log.e("CustomEmoji", "Upload failed: ${e.message}")
@@ -917,7 +931,8 @@ fun WispNavHost() {
                             popUpTo(Routes.ONBOARDING_PROFILE) { inclusive = true }
                         }
                     }
-                }
+                },
+                signer = remoteSigner
             )
         }
 

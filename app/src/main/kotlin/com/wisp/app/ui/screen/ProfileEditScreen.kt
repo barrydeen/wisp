@@ -59,13 +59,13 @@ fun ProfileEditScreen(
     val avatarPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        if (uri != null) viewModel.uploadImage(context.contentResolver, uri, ProfileViewModel.ImageTarget.PICTURE)
+        if (uri != null) viewModel.uploadImage(context.contentResolver, uri, ProfileViewModel.ImageTarget.PICTURE, signer)
     }
 
     val bannerPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        if (uri != null) viewModel.uploadImage(context.contentResolver, uri, ProfileViewModel.ImageTarget.BANNER)
+        if (uri != null) viewModel.uploadImage(context.contentResolver, uri, ProfileViewModel.ImageTarget.BANNER, signer)
     }
 
     Scaffold(

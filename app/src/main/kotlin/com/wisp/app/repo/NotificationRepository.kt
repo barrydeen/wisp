@@ -9,7 +9,9 @@ import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NotificationGroup
 import com.wisp.app.nostr.ZapEntry
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 class NotificationRepository(context: Context, pubkeyHex: String?) {
@@ -26,6 +28,9 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
 
     private val _hasUnread = MutableStateFlow(false)
     val hasUnread: StateFlow<Boolean> = _hasUnread
+
+    private val _zapReceived = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val zapReceived: SharedFlow<Unit> = _zapReceived
 
     private var lastReadTimestamp: Long = prefs.getLong(KEY_LAST_READ, 0L)
 
@@ -49,6 +54,9 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
 
             if (event.created_at > lastReadTimestamp) {
                 _hasUnread.value = true
+                if (event.kind == 9735) {
+                    _zapReceived.tryEmit(Unit)
+                }
             }
             rebuildSortedList()
         }
