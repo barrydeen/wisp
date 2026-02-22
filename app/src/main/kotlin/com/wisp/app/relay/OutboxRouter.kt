@@ -19,9 +19,11 @@ class OutboxRouter(
     }
 
     /**
-     * Send chunked REQ messages when an author list exceeds [MAX_AUTHORS_PER_FILTER].
-     * Chunk 0 uses [subId] as-is; subsequent chunks use "{subId}:c{N}".
-     * [RelayPool.closeOnAllRelays] knows about this convention and cleans up all chunks.
+     * Build a single REQ with multiple filters, each containing ≤[MAX_AUTHORS_PER_FILTER] authors.
+     * Uses one subscription ID — no chunk subIds needed. Each template filter is expanded into
+     * N copies (one per author chunk), all packed into a single REQ message.
+     *
+     * Example: 500 authors + 1 template → ["REQ","feed",{authors:[1..200]},{authors:[201..400]},{authors:[401..500]}]
      *
      * @param limitPerAuthor When true, each chunk's filter gets `limit = chunk.size`
      *                       (useful for kind-0 profile requests where you expect 1 event/author).
@@ -33,16 +35,16 @@ class OutboxRouter(
         limitPerAuthor: Boolean = false
     ) {
         val chunks = authors.chunked(MAX_AUTHORS_PER_FILTER)
-        for ((index, chunk) in chunks.withIndex()) {
-            val chunkSubId = if (index == 0) subId else "$subId:c$index"
-            val filters = templateFilters.map { f ->
+        val allFilters = mutableListOf<Filter>()
+        for (chunk in chunks) {
+            for (f in templateFilters) {
                 val withAuthors = f.copy(authors = chunk)
-                if (limitPerAuthor) withAuthors.copy(limit = chunk.size) else withAuthors
+                allFilters.add(if (limitPerAuthor) withAuthors.copy(limit = chunk.size) else withAuthors)
             }
-            val msg = if (filters.size == 1) ClientMessage.req(chunkSubId, filters[0])
-            else ClientMessage.req(chunkSubId, filters)
-            relayPool.sendToAll(msg)
         }
+        val msg = if (allFilters.size == 1) ClientMessage.req(subId, allFilters[0])
+        else ClientMessage.req(subId, allFilters)
+        relayPool.sendToAll(msg)
     }
 
     /**
