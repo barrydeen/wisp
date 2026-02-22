@@ -31,6 +31,7 @@ class RelayPool {
     private val ephemeralLastUsed = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val relayCooldowns = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private var blockedUrls = emptySet<String>()
+    fun getBlockedUrls(): Set<String> = blockedUrls
 
     @Volatile var appIsActive = false
     var healthTracker: RelayHealthTracker? = null

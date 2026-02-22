@@ -20,5 +20,13 @@ data class RelayConfig(
             RelayConfig("wss://relay.damus.io", read = true, write = true),
             RelayConfig("wss://relay.primal.net", read = true, write = true)
         )
+
+        /** Fallback indexer relays used when the user hasn't configured search relays (kind 10007). */
+        val DEFAULT_INDEXER_RELAYS = listOf(
+            "wss://indexer.coracle.social",
+            "wss://relay.nos.social",
+            "wss://relay.damus.io",
+            "wss://relay.primal.net"
+        )
     }
 }

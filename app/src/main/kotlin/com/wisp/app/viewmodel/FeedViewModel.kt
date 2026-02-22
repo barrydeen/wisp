@@ -155,6 +155,16 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Resolve indexer relays: user's search relays (kind 10007) with default fallback. */
+    private fun getIndexerRelays(): List<String> {
+        val userSearchRelays = keyRepo.getSearchRelays()
+        return userSearchRelays.ifEmpty { RelayConfig.DEFAULT_INDEXER_RELAYS }
+    }
+
+    /** Blocked + bad relay URLs combined for outbox routing exclusion. */
+    private fun getExcludedRelayUrls(): Set<String> =
+        relayPool.getBlockedUrls() + healthTracker.getBadRelays()
+
     private var feedSubId = "feed"
     private var isLoadingMore = false
     private val activeEngagementSubIds = mutableListOf<String>()
@@ -359,7 +369,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                     // Fetch relay list for new follow so we can route to them
                     outboxRouter.requestMissingRelayLists(listOf(pubkey))
                     delay(500) // brief wait for relay list to arrive
-                    relayScoreBoard.addAuthor(pubkey, excludeRelays = healthTracker.getBadRelays())
+                    relayScoreBoard.addAuthor(pubkey, excludeRelays = getExcludedRelayUrls())
                 }
 
                 if ((added.isNotEmpty() || removed.isNotEmpty()) &&
@@ -807,7 +817,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun recomputeAndMergeRelays() {
-        relayScoreBoard.recompute(excludeRelays = healthTracker.getBadRelays())
+        relayScoreBoard.recompute(excludeRelays = getExcludedRelayUrls())
         if (!relayScoreBoard.hasScoredRelays()) return
         rebuildRelayPool()
     }
@@ -934,6 +944,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         val newestTimestamp = eventRepo.feed.value.firstOrNull()?.created_at
         val sinceTimestamp = newestTimestamp ?: (System.currentTimeMillis() / 1000 - 60 * 60 * 24)
 
+        val indexerRelays = getIndexerRelays()
+        val excludedUrls = getExcludedRelayUrls()
         val targetedRelays: Set<String> = when (_feedType.value) {
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
                 val cache = extendedNetworkRepo.cachedNetwork.value
@@ -945,7 +957,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 if (allAuthors.isEmpty()) return
                 val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                outboxRouter.subscribeByAuthors(feedSubId, allAuthors, notesFilter)
+                outboxRouter.subscribeByAuthors(
+                    feedSubId, allAuthors, notesFilter,
+                    indexerRelays = indexerRelays, blockedUrls = excludedUrls
+                )
             }
             FeedType.RELAY -> {
                 val url = _selectedRelay.value ?: return
@@ -959,7 +974,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val authors = list.members.toList()
                 if (authors.isEmpty()) return
                 val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                outboxRouter.subscribeByAuthors(feedSubId, authors, notesFilter)
+                outboxRouter.subscribeByAuthors(
+                    feedSubId, authors, notesFilter,
+                    indexerRelays = indexerRelays, blockedUrls = excludedUrls
+                )
             }
         }
 
@@ -984,6 +1002,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         // deterministic results across refreshes. The limit still caps per-relay response
         // size. After EOSE the subscription stays open for live streaming of new events.
         val sinceTimestamp = System.currentTimeMillis() / 1000 - 60 * 60 * 24 // 24 hours ago
+        val indexerRelays = getIndexerRelays()
+        val excludedUrls = getExcludedRelayUrls()
         val targetedRelays: Set<String> = when (_feedType.value) {
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
                 val cache = extendedNetworkRepo.cachedNetwork.value
@@ -995,7 +1015,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 if (allAuthors.isEmpty()) return
                 val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                outboxRouter.subscribeByAuthors(feedSubId, allAuthors, notesFilter)
+                outboxRouter.subscribeByAuthors(
+                    feedSubId, allAuthors, notesFilter,
+                    indexerRelays = indexerRelays, blockedUrls = excludedUrls
+                )
             }
             FeedType.RELAY -> {
                 val url = _selectedRelay.value ?: return
@@ -1008,9 +1031,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val list = listRepo.selectedList.value ?: return
                 val authors = list.members.toList()
                 if (authors.isEmpty()) return
-                val listSince = System.currentTimeMillis() / 1000 - 60 * 60 * 24 // 24 hours ago
-                val notesFilter = Filter(kinds = listOf(1, 6), since = listSince)
-                outboxRouter.subscribeByAuthors(feedSubId, authors, notesFilter)
+                val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
+                outboxRouter.subscribeByAuthors(
+                    feedSubId, authors, notesFilter,
+                    indexerRelays = indexerRelays, blockedUrls = excludedUrls
+                )
             }
         }
 
@@ -1185,6 +1210,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         isLoadingMore = true
         val oldest = eventRepo.getOldestTimestamp() ?: run { isLoadingMore = false; return }
 
+        val indexerRelays = getIndexerRelays()
+        val excludedUrls = getExcludedRelayUrls()
         when (_feedType.value) {
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
                 val cache = extendedNetworkRepo.cachedNetwork.value
@@ -1196,7 +1223,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 if (allAuthors.isEmpty()) { isLoadingMore = false; return }
                 val templateFilter = Filter(kinds = listOf(1, 6), until = oldest - 1, limit = 50)
-                outboxRouter.subscribeByAuthors("loadmore", allAuthors, templateFilter)
+                outboxRouter.subscribeByAuthors(
+                    "loadmore", allAuthors, templateFilter,
+                    indexerRelays = indexerRelays, blockedUrls = excludedUrls
+                )
             }
             FeedType.RELAY -> {
                 val url = _selectedRelay.value
@@ -1210,7 +1240,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val authors = list.members.toList()
                 if (authors.isEmpty()) { isLoadingMore = false; return }
                 val templateFilter = Filter(kinds = listOf(1, 6), until = oldest - 1)
-                outboxRouter.subscribeByAuthors("loadmore", authors, templateFilter)
+                outboxRouter.subscribeByAuthors(
+                    "loadmore", authors, templateFilter,
+                    indexerRelays = indexerRelays, blockedUrls = excludedUrls
+                )
             }
         }
 

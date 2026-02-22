@@ -50,50 +50,99 @@ class OutboxRouter(
     /**
      * Subscribe to content from [authors] by routing to each author's write relays.
      * Accepts multiple template filters — each gets `.copy(authors=subset)` per relay group.
-     * Authors without known relay lists fall back to sendToAll.
-     * Large author lists are automatically chunked to stay within relay filter limits.
+     *
+     * Uses a unified per-relay author map: each relay gets exactly ONE REQ containing all
+     * authors relevant to it (outbox-routed + fallback merged). This avoids sub ID collisions
+     * where a second sendToAll would overwrite a targeted REQ on the same relay.
+     *
+     * Authors without known relay lists are merged into each persistent relay's author set
+     * (not broadcast separately), so each relay only receives authors relevant to it.
+     *
+     * [indexerRelays] receive the FULL author list as a safety net — when an author's write
+     * relay is down, the indexer catches their notes. Event dedup handles overlaps.
+     *
+     * [blockedUrls] filters write relays before placement so authors always land on reachable
+     * relays within their MIN_REDUNDANCY budget.
+     *
      * Returns the set of relay URLs that received subscriptions.
      */
     fun subscribeByAuthors(
         subId: String,
         authors: List<String>,
-        vararg templateFilters: Filter
+        vararg templateFilters: Filter,
+        indexerRelays: List<String> = emptyList(),
+        blockedUrls: Set<String> = emptySet()
     ): Set<String> {
         val targetedRelays = mutableSetOf<String>()
-        val coveredAuthors = mutableSetOf<String>()
         val templateList = templateFilters.toList()
 
-        // Group authors by their write relays
-        val knownAuthors = authors.filter { relayListRepo.hasRelayList(it) }
-        val unknownAuthors = authors.filter { !relayListRepo.hasRelayList(it) }
+        // Build unified relay → authors map
+        val relayToAuthors = mutableMapOf<String, MutableSet<String>>()
+        val fallbackAuthors = mutableListOf<String>()
 
-        if (knownAuthors.isNotEmpty()) {
-            val relayToAuthors = groupAuthorsByWriteRelay(knownAuthors)
-            for ((relayUrl, relayAuthors) in relayToAuthors) {
-                // Empty key = authors without write relays → broadcast to all (chunked)
-                if (relayUrl.isEmpty()) {
-                    sendChunkedToAll(subId, relayAuthors, templateList)
-                    targetedRelays.addAll(relayPool.getRelayUrls())
-                    coveredAuthors.addAll(relayAuthors)
-                    continue
+        for (author in authors) {
+            val writeRelays = relayListRepo.getWriteRelays(author)
+            if (writeRelays != null) {
+                val eligible = writeRelays.filter { it !in blockedUrls }
+                if (eligible.isNotEmpty()) {
+                    for (url in eligible) {
+                        relayToAuthors.getOrPut(url) { mutableSetOf() }.add(author)
+                    }
+                } else {
+                    fallbackAuthors.add(author)
                 }
-                val filters = templateList.map { it.copy(authors = relayAuthors) }
-                val msg = if (filters.size == 1) ClientMessage.req(subId, filters[0])
-                else ClientMessage.req(subId, filters)
-                if (relayPool.sendToRelayOrEphemeral(relayUrl, msg)) {
-                    targetedRelays.add(relayUrl)
-                    coveredAuthors.addAll(relayAuthors)
+            } else {
+                fallbackAuthors.add(author)
+            }
+        }
+
+        // Merge fallback authors into each persistent relay's entry
+        if (fallbackAuthors.isNotEmpty()) {
+            val persistentUrls = relayPool.getRelayUrls()
+            for (url in persistentUrls) {
+                relayToAuthors.getOrPut(url) { mutableSetOf() }.addAll(fallbackAuthors)
+            }
+        }
+
+        // Send one REQ per relay with its complete author set (chunked)
+        for ((relayUrl, relayAuthors) in relayToAuthors) {
+            val authorList = relayAuthors.toList()
+            val chunks = authorList.chunked(MAX_AUTHORS_PER_FILTER)
+            val allFilters = mutableListOf<Filter>()
+            for (chunk in chunks) {
+                for (f in templateList) {
+                    allFilters.add(f.copy(authors = chunk))
+                }
+            }
+            val msg = if (allFilters.size == 1) ClientMessage.req(subId, allFilters[0])
+            else ClientMessage.req(subId, allFilters)
+            if (relayPool.sendToRelayOrEphemeral(relayUrl, msg)) {
+                targetedRelays.add(relayUrl)
+            }
+        }
+
+        // Indexer relay safety net: send FULL author list to each indexer relay
+        if (indexerRelays.isNotEmpty() && authors.isNotEmpty()) {
+            val chunks = authors.chunked(MAX_AUTHORS_PER_FILTER)
+            val allFilters = mutableListOf<Filter>()
+            for (chunk in chunks) {
+                for (f in templateList) {
+                    allFilters.add(f.copy(authors = chunk))
+                }
+            }
+            val msg = if (allFilters.size == 1) ClientMessage.req(subId, allFilters[0])
+            else ClientMessage.req(subId, allFilters)
+            for (indexerUrl in indexerRelays) {
+                if (indexerUrl in blockedUrls) continue
+                if (relayPool.sendToRelayOrEphemeral(indexerUrl, msg)) {
+                    targetedRelays.add(indexerUrl)
                 }
             }
         }
 
-        // Authors without any relay list OR whose write relays all failed → sendToAll (chunked)
-        val uncoveredKnown = knownAuthors.filter { it !in coveredAuthors }
-        val allFallback = unknownAuthors + uncoveredKnown
-        if (allFallback.isNotEmpty()) {
-            sendChunkedToAll(subId, allFallback, templateList)
-            targetedRelays.addAll(relayPool.getRelayUrls())
-        }
+        Log.d("OutboxRouter", "subscribeByAuthors($subId): ${authors.size} authors → " +
+                "${relayToAuthors.size} relays + ${indexerRelays.size} indexers, " +
+                "${fallbackAuthors.size} fallback, ${targetedRelays.size} total targeted")
 
         return targetedRelays
     }
