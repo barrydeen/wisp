@@ -45,6 +45,7 @@ class Relay(
             .build()
     }
 
+    private val sendLock = Any()
     private val pendingMessages = ConcurrentLinkedQueue<String>()
     private val maxPendingMessages = 50
 
@@ -160,7 +161,12 @@ class Relay(
         val ws = webSocket
         if (ws != null && isConnected) {
             onBytesSent?.invoke(config.url, message.length)
-            return ws.send(message)
+            // OkHttp's MessageDeflater (permessage-deflate) is not thread-safe.
+            // Concurrent ws.send() calls crash with "Failed requirement" in deflate().
+            // Serialize all writes to the same WebSocket.
+            synchronized(sendLock) {
+                return ws.send(message)
+            }
         }
         // Queue message for delivery when connected
         if (pendingMessages.size < maxPendingMessages) {
@@ -182,10 +188,12 @@ class Relay(
     }
 
     private fun drainPendingMessages(ws: WebSocket) {
-        var msg = pendingMessages.poll()
-        while (msg != null) {
-            ws.send(msg)
-            msg = pendingMessages.poll()
+        synchronized(sendLock) {
+            var msg = pendingMessages.poll()
+            while (msg != null) {
+                ws.send(msg)
+                msg = pendingMessages.poll()
+            }
         }
     }
 
