@@ -283,6 +283,30 @@ class OutboxRouter(
     }
 
     /**
+     * Bootstrap request: fetch both relay lists (kind 10002) and profiles (kind 0)
+     * for all [pubkeys] in a single REQ. Profiles are fetched for all pubkeys regardless
+     * of whether we already have their relay list — profile data may be missing or stale.
+     *
+     * Returns the subscription ID if a request was sent, null otherwise.
+     */
+    fun requestRelayListsAndProfiles(
+        pubkeys: List<String>,
+        profileRepo: com.wisp.app.repo.ProfileRepository
+    ): String? {
+        val missingRelayLists = relayListRepo.getMissingPubkeys(pubkeys)
+        val missingProfiles = pubkeys.filter { !profileRepo.has(it) }
+        val allMissing = (missingRelayLists + missingProfiles).distinct()
+        Log.d("OutboxRouter", "requestRelayListsAndProfiles: ${pubkeys.size} total, " +
+                "${missingRelayLists.size} missing relay lists, ${missingProfiles.size} missing profiles, " +
+                "${allMissing.size} unique to fetch")
+        if (allMissing.isEmpty()) return null
+
+        val subId = "relay-lists"
+        sendChunkedToAll(subId, allMissing, listOf(Filter(kinds = listOf(0, 10002))))
+        return subId
+    }
+
+    /**
      * Subscribe for engagement data (reactions, zaps, replies) on events, routed to each
      * author's read (inbox) relays per NIP-65. Reactors publish to the author's inbox,
      * so we must query there instead of our own read relays.

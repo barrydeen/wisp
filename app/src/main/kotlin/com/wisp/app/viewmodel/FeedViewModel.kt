@@ -323,16 +323,13 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-        // Periodic profile & quote sweep — runs on Default dispatcher
+        // Periodic profile & quote sweep — safety net, not primary fetch mechanism.
+        // Profiles are bootstrapped with relay lists before feed loads.
         metadataSweepJob = viewModelScope.launch(processingDispatcher) {
-            delay(5_000)
+            delay(15_000)
             metadataFetcher.sweepMissingProfiles()
-            repeat(3) {
-                delay(15_000)
-                metadataFetcher.sweepMissingProfiles()
-            }
             while (true) {
-                delay(120_000)
+                delay(60_000)
                 metadataFetcher.sweepMissingProfiles()
             }
         }
@@ -462,7 +459,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 if (relayScoreBoard.needsRecompute() && follows.isNotEmpty()) {
                     _initLoadingState.value = InitLoadingState.FindingFriends(0, follows.size)
 
-                    val subscriptionSent = fetchRelayListsForFollows()
+                    val subscriptionSent = fetchRelayListsForFollows(includeProfiles = true)
                     if (subscriptionSent) {
                         val target = (follows.size * 0.9).toInt()
                         val deadline = System.currentTimeMillis() + 10_000
@@ -530,7 +527,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             applyAuthorFilterForFeedType(_feedType.value)
             _initLoadingState.value = InitLoadingState.Subscribing
             subscribeFeed()
-            metadataFetcher.fetchProfilesForFollows(follows)
 
             _initLoadingState.value = InitLoadingState.Done
 
@@ -783,15 +779,27 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** @return true if a "relay-lists" subscription was sent (callers should await EOSE). */
-    private fun fetchRelayListsForFollows(): Boolean {
+    /**
+     * Bootstrap follow data: fetch relay lists (kind 10002) AND profiles (kind 0)
+     * for all follows in a single REQ. On cold start this piggybacks profiles onto
+     * the relay-list wait window so avatars are ready before the feed renders.
+     *
+     * @param includeProfiles true on cold start to co-fetch kind 0; false for
+     *                        background refreshes where profiles are already cached.
+     * @return true if a "relay-lists" subscription was sent (callers should await EOSE).
+     */
+    private fun fetchRelayListsForFollows(includeProfiles: Boolean = false): Boolean {
         val authors = contactRepo.getFollowList().map { it.pubkey }
         if (authors.isEmpty()) {
             Log.d("FeedViewModel", "fetchRelayListsForFollows: follow list empty")
             return false
         }
-        val sent = outboxRouter.requestMissingRelayLists(authors) != null
-        Log.d("FeedViewModel", "fetchRelayListsForFollows: ${authors.size} follows, subscription sent=$sent")
+        val sent = if (includeProfiles) {
+            outboxRouter.requestRelayListsAndProfiles(authors, profileRepo) != null
+        } else {
+            outboxRouter.requestMissingRelayLists(authors) != null
+        }
+        Log.d("FeedViewModel", "fetchRelayListsForFollows: ${authors.size} follows, includeProfiles=$includeProfiles, subscription sent=$sent")
         return sent
     }
 

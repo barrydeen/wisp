@@ -121,7 +121,7 @@ class MetadataFetcher(
             }
             if (pubkey in pendingProfilePubkeys) return
             pendingProfilePubkeys.add(pubkey)
-            val shouldFlushNow = pendingProfilePubkeys.size >= 20
+            val shouldFlushNow = pendingProfilePubkeys.size >= 200
             if (shouldFlushNow) {
                 profileBatchJob?.cancel()
                 flushProfileBatch()
@@ -137,7 +137,7 @@ class MetadataFetcher(
     fun addToPendingReplyCounts(eventId: String) {
         synchronized(pendingReplyCountIds) {
             pendingReplyCountIds.add(eventId)
-            val shouldFlushNow = pendingReplyCountIds.size >= 20
+            val shouldFlushNow = pendingReplyCountIds.size >= 200
             if (shouldFlushNow) {
                 replyCountBatchJob?.cancel()
                 flushReplyCountBatch()
@@ -153,7 +153,7 @@ class MetadataFetcher(
     fun addToPendingZapCounts(eventId: String) {
         synchronized(pendingZapCountIds) {
             pendingZapCountIds.add(eventId)
-            val shouldFlushNow = pendingZapCountIds.size >= 20
+            val shouldFlushNow = pendingZapCountIds.size >= 200
             if (shouldFlushNow) {
                 zapCountBatchJob?.cancel()
                 flushZapCountBatch()
@@ -179,7 +179,7 @@ class MetadataFetcher(
             if (relayHints.isNotEmpty()) {
                 pendingRelayHints[eventId] = relayHints
             }
-            val shouldFlushNow = pendingOnDemandQuotes.size >= 20
+            val shouldFlushNow = pendingOnDemandQuotes.size >= 200
             if (shouldFlushNow) {
                 onDemandQuoteBatchJob?.cancel()
                 flushOnDemandQuoteBatch()
@@ -206,21 +206,6 @@ class MetadataFetcher(
             val decoded = Nip19.decodeNostrUri(match.value)
             if (decoded is NostrUriData.NoteRef) {
                 requestQuotedEvent(decoded.eventId, decoded.relays)
-            }
-        }
-    }
-
-    fun fetchProfilesForFollows(follows: List<String>) {
-        if (follows.isEmpty()) return
-        val missing = follows.filter { !profileRepo.has(it) && it !in exhaustedProfiles }
-        if (missing.isEmpty()) return
-        missing.forEach { profileAttempts[it] = (profileAttempts[it] ?: 0) + 1 }
-        missing.chunked(20).forEachIndexed { index, batch ->
-            val subId = "follow-profiles-$index"
-            outboxRouter.requestProfiles(subId, batch)
-            scope.launch {
-                subManager.awaitEoseWithTimeout(subId)
-                subManager.closeSubscription(subId)
             }
         }
     }

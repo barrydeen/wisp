@@ -574,8 +574,8 @@ fun WispNavHost() {
                 dmListViewModel.markDmsRead()
                 // Fetch profile metadata for all DM peers
                 val peerPubkeys = dmListViewModel.conversationList.value.map { it.peerPubkey }
-                if (peerPubkeys.isNotEmpty()) {
-                    feedViewModel.metadataFetcher.fetchProfilesForFollows(peerPubkeys)
+                for (pubkey in peerPubkeys) {
+                    feedViewModel.metadataFetcher.queueProfileFetch(pubkey)
                 }
             }
             DmListScreen(
