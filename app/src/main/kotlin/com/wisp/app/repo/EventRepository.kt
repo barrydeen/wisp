@@ -55,8 +55,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val _relaySourceVersion = MutableStateFlow(0)
     val relaySourceVersion: StateFlow<Int> = _relaySourceVersion
 
-    // Repost tracking: inner event id -> reposter pubkey
-    private val repostAuthors = LruCache<String, String>(2000)
+    // Repost tracking: inner event id -> set of reposter pubkeys
+    private val repostAuthors = LruCache<String, MutableSet<String>>(2000)
     // Repost count tracking: inner event id -> count
     private val repostCounts = LruCache<String, Int>(5000)
     // Track which events the current user has reposted: eventId -> true
@@ -104,7 +104,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 delay(50)  // settle window: coalesce concurrent inserts
                 val filter = _authorFilter.value
                 val raw = synchronized(feedList) { feedList.toList() }
-                _feed.value = if (filter == null) raw else raw.filter { it.pubkey in filter }
+                _feed.value = if (filter == null) raw else raw.filter {
+                    it.pubkey in filter || isRepostedByAny(it.id, filter)
+                }
             }
         }
         // Immediate emission channel — used for explicit flushes (purge, filter change, etc.)
@@ -112,7 +114,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             for (signal in feedDirty) {
                 val filter = _authorFilter.value
                 val raw = synchronized(feedList) { feedList.toList() }
-                _feed.value = if (filter == null) raw else raw.filter { it.pubkey in filter }
+                _feed.value = if (filter == null) raw else raw.filter {
+                    it.pubkey in filter || isRepostedByAny(it.id, filter)
+                }
             }
         }
         // Debounce version counter emissions — coalesce into one bump per 50ms window
@@ -177,7 +181,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 if (event.content.isNotBlank()) {
                     try {
                         val inner = fromJson(event.content)
-                        repostAuthors.put(inner.id, event.pubkey)
+                        val authors = repostAuthors.get(inner.id)
+                            ?: mutableSetOf<String>().also { repostAuthors.put(inner.id, it) }
+                        authors.add(event.pubkey)
                         val count = repostCounts.get(inner.id) ?: 0
                         repostCounts.put(inner.id, count + 1)
                         // Auto-mark if this is the current user's repost
@@ -275,7 +281,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         }
         feedInserted.trySend(Unit)  // coalesced emission via 50ms settle window
         val filter = _authorFilter.value
-        if (countNewNotes && (filter == null || event.pubkey in filter)) _newNoteCount.value++
+        if (countNewNotes && (filter == null || event.pubkey in filter || isRepostedByAny(event.id, filter))) _newNoteCount.value++
     }
 
     fun cacheEvent(event: NostrEvent) {
@@ -397,7 +403,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun getEventRelays(eventId: String): Set<String> = eventRelays.get(eventId) ?: emptySet()
 
-    fun getRepostAuthor(eventId: String): String? = repostAuthors.get(eventId)
+    fun getRepostAuthor(eventId: String): String? = repostAuthors.get(eventId)?.firstOrNull()
+
+    /** Check if any of the reposters of [eventId] are in the given [pubkeys] set. */
+    fun isRepostedByAny(eventId: String, pubkeys: Set<String>): Boolean {
+        val authors = repostAuthors.get(eventId) ?: return false
+        return authors.any { it in pubkeys }
+    }
 
     fun getRepostCount(eventId: String): Int = repostCounts.get(eventId) ?: 0
 
@@ -436,7 +448,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private fun rebuildFilteredFeed() {
         val filter = _authorFilter.value
         val raw = synchronized(feedList) { feedList.toList() }
-        _feed.value = if (filter == null) raw else raw.filter { it.pubkey in filter }
+        _feed.value = if (filter == null) raw else raw.filter {
+            it.pubkey in filter || isRepostedByAny(it.id, filter)
+        }
     }
 
     fun getOldestTimestamp(): Long? {
@@ -444,7 +458,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         val filter = _authorFilter.value
         return synchronized(feedList) {
             if (filter == null) feedList.lastOrNull()?.created_at
-            else feedList.lastOrNull { it.pubkey in filter }?.created_at
+            else feedList.lastOrNull { it.pubkey in filter || isRepostedByAny(it.id, filter) }?.created_at
         }
     }
 

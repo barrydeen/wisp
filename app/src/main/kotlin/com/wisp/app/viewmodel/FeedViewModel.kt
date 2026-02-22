@@ -755,6 +755,16 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                         metadataFetcher.addToPendingProfiles(event.pubkey)
                     }
                 }
+                if (event.kind == 6 && event.content.isNotBlank()) {
+                    // Fetch profile for the reposted event's original author
+                    try {
+                        val inner = NostrEvent.fromJson(event.content)
+                        if (eventRepo.getProfileData(inner.pubkey) == null) {
+                            metadataFetcher.addToPendingProfiles(inner.pubkey)
+                        }
+                        metadataFetcher.fetchQuotedEvents(inner)
+                    } catch (_: Exception) {}
+                }
             } else {
                 eventRepo.cacheEvent(event)
             }
