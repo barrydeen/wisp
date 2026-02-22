@@ -21,8 +21,9 @@ class RelayHealthTracker(
         private const val MIN_SESSIONS_FOR_EVAL = 3
         private const val MIN_SESSION_DURATION_MS = 30_000L
         private const val BAD_ZERO_EVENT_SESSIONS = 5
-        private const val BAD_DISCONNECT_SESSIONS = 4
+        private const val BAD_DISCONNECT_SESSIONS = 6
         private const val BAD_RATE_LIMIT_SESSIONS = 3
+        private const val BAD_RELAY_EXPIRY_MS = 24 * 60 * 60 * 1000L // 24 hours
 
         private fun prefsName(pubkeyHex: String?): String =
             if (pubkeyHex != null) "wisp_relay_health_$pubkeyHex" else "wisp_relay_health"
@@ -65,7 +66,8 @@ class RelayHealthTracker(
     private val activeSessions = mutableMapOf<String, ActiveSession>()
     private val sessionHistory = mutableMapOf<String, MutableList<SessionRecord>>()
     private val lifetimeStats = mutableMapOf<String, RelayStats>()
-    private val _badRelays = mutableSetOf<String>()
+    /** URL → timestamp when marked bad. Entries expire after [BAD_RELAY_EXPIRY_MS]. */
+    private val _badRelays = mutableMapOf<String, Long>()
 
     var onBadRelaysChanged: (() -> Unit)? = null
 
@@ -166,16 +168,45 @@ class RelayHealthTracker(
 
     // -- Query --
 
-    fun isBad(url: String): Boolean = url in _badRelays
+    fun isBad(url: String): Boolean {
+        val markedAt = _badRelays[url] ?: return false
+        if (System.currentTimeMillis() - markedAt > BAD_RELAY_EXPIRY_MS) {
+            _badRelays.remove(url)
+            sessionHistory.remove(url)
+            Log.d(TAG, "Bad relay expired, giving second chance: $url")
+            return false
+        }
+        return true
+    }
 
-    fun getBadRelays(): Set<String> = _badRelays.toSet()
+    fun getBadRelays(): Set<String> {
+        val now = System.currentTimeMillis()
+        val expired = _badRelays.filter { now - it.value > BAD_RELAY_EXPIRY_MS }.keys
+        for (url in expired) {
+            _badRelays.remove(url)
+            sessionHistory.remove(url)
+            Log.d(TAG, "Bad relay expired: $url")
+        }
+        return _badRelays.keys.toSet()
+    }
 
     fun clearBadRelay(url: String) {
-        if (_badRelays.remove(url)) {
+        if (_badRelays.remove(url) != null) {
             sessionHistory.remove(url)
             saveToPrefs()
             onBadRelaysChanged?.invoke()
             Log.d(TAG, "Cleared bad relay: $url")
+        }
+    }
+
+    fun clearAllBadRelays() {
+        if (_badRelays.isNotEmpty()) {
+            val count = _badRelays.size
+            _badRelays.clear()
+            sessionHistory.clear()
+            saveToPrefs()
+            onBadRelaysChanged?.invoke()
+            Log.d(TAG, "Cleared all $count bad relays")
         }
     }
 
@@ -189,7 +220,7 @@ class RelayHealthTracker(
         activeSessions.clear()
         sessionHistory.clear()
         lifetimeStats.clear()
-        _badRelays.clear()
+        _badRelays.clear()  // Map.clear()
         prefs.edit().clear().apply()
     }
 
@@ -219,19 +250,19 @@ class RelayHealthTracker(
     }
 
     private fun evaluateAllRelays() {
-        val previousBad = _badRelays.toSet()
+        val previousBad = _badRelays.keys.toSet()
         for (url in sessionHistory.keys) {
             evaluateRelayInternal(url)
         }
-        if (_badRelays != previousBad) {
+        if (_badRelays.keys != previousBad) {
             onBadRelaysChanged?.invoke()
         }
     }
 
     private fun evaluateRelay(url: String) {
-        val previousBad = _badRelays.toSet()
+        val previousBad = _badRelays.keys.toSet()
         evaluateRelayInternal(url)
-        if (_badRelays != previousBad) {
+        if (_badRelays.keys != previousBad) {
             onBadRelaysChanged?.invoke()
         }
     }
@@ -252,7 +283,7 @@ class RelayHealthTracker(
                 rateLimitSessions >= BAD_RATE_LIMIT_SESSIONS
 
         if (isBadNow && !wasBad) {
-            _badRelays.add(url)
+            _badRelays[url] = System.currentTimeMillis()
             Log.w(TAG, "Relay marked BAD: $url (zero=$zeroEventSessions, disconnects=$disconnectSessions, rateLimit=$rateLimitSessions)")
         }
     }
@@ -263,8 +294,10 @@ class RelayHealthTracker(
     private fun saveToPrefs() {
         val editor = prefs.edit()
 
-        // Bad relays
-        editor.putStringSet("bad_relays", _badRelays.toSet())
+        // Bad relays with timestamps: "url\ttimestamp" per line
+        val badRelayEntries = _badRelays.entries.joinToString("\n") { "${it.key}\t${it.value}" }
+        editor.putString("bad_relays_v2", badRelayEntries)
+        editor.remove("bad_relays") // Remove old format
 
         // Session history: url -> "events,failure,ratelimit,duration;..."
         val historySnapshot = HashMap(sessionHistory)
@@ -289,8 +322,34 @@ class RelayHealthTracker(
     }
 
     private fun loadFromPrefs() {
-        // Bad relays
-        prefs.getStringSet("bad_relays", null)?.let { _badRelays.addAll(it) }
+        // Bad relays with timestamps (v2 format: "url\ttimestamp" per line)
+        val badRelaysV2 = prefs.getString("bad_relays_v2", null)
+        val now = System.currentTimeMillis()
+        if (!badRelaysV2.isNullOrBlank()) {
+            for (line in badRelaysV2.split("\n")) {
+                val parts = line.split("\t", limit = 2)
+                if (parts.size == 2) {
+                    val url = parts[0]
+                    val ts = parts[1].toLongOrNull() ?: now
+                    // Skip expired entries on load
+                    if (now - ts <= BAD_RELAY_EXPIRY_MS) {
+                        _badRelays[url] = ts
+                    } else {
+                        Log.d(TAG, "Skipping expired bad relay on load: $url")
+                    }
+                }
+            }
+        } else {
+            // Migrate old format (no timestamps) — treat as freshly marked
+            // But since we can't know when they were marked, DON'T migrate — let them expire
+            // by simply not loading. This clears stale bad relay lists on upgrade.
+            prefs.getStringSet("bad_relays", null)?.let { oldSet ->
+                if (oldSet.isNotEmpty()) {
+                    Log.d(TAG, "Discarding ${oldSet.size} bad relays from old format (no timestamps)")
+                    prefs.edit().remove("bad_relays").apply()
+                }
+            }
+        }
 
         // Session history
         val historyStr = prefs.getString("session_history", null)
@@ -344,7 +403,7 @@ class RelayHealthTracker(
         }
 
         if (_badRelays.isNotEmpty()) {
-            Log.d(TAG, "Loaded ${_badRelays.size} bad relays, ${lifetimeStats.size} relay stats")
+            Log.d(TAG, "Loaded ${_badRelays.size} bad relays (24h expiry), ${lifetimeStats.size} relay stats")
         }
     }
 }

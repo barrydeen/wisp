@@ -41,7 +41,11 @@ class RelayPool {
         const val COOLDOWN_DOWN_MS = 10 * 60 * 1000L    // 10 min — 5xx, connection failures (ephemeral only)
         const val COOLDOWN_REJECTED_MS = 1 * 60 * 1000L // 1 min — 4xx like 401/403/429
         const val COOLDOWN_NETWORK_MS = 5_000L           // 5s — DNS/network failures on persistent relays
+        private const val UNSUPPORTED_THRESHOLD = 3      // Disconnect after N "unsupported" notices
     }
+
+    /** Tracks consecutive "unsupported message" NOTICEs per relay URL. */
+    private val unsupportedCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val subscriptionTracker = SubscriptionTracker()
@@ -232,8 +236,12 @@ class RelayPool {
                             _relayEvents.tryEmit(RelayEvent(msg.event, relay.config.url, msg.subscriptionId))
                         }
                         if (appIsActive) healthTracker?.onEventReceived(relay.config.url, 0)
+                        unsupportedCounts.remove(relay.config.url) // Relay works, clear counter
                     }
-                    is RelayMessage.Eose -> _eoseSignals.tryEmit(msg.subscriptionId)
+                    is RelayMessage.Eose -> {
+                        _eoseSignals.tryEmit(msg.subscriptionId)
+                        unsupportedCounts.remove(relay.config.url) // Relay works, clear counter
+                    }
                     is RelayMessage.Ok -> {
                         if (!msg.accepted) {
                             addConsoleEntry(ConsoleLogEntry(
@@ -251,6 +259,21 @@ class RelayPool {
                         ))
                         if (appIsActive && isRateLimitMessage(msg.message)) {
                             healthTracker?.onRateLimitHit(relay.config.url)
+                        }
+                        // Detect relays that don't support standard Nostr protocol
+                        // (e.g., push notification relays like notify.damus.io)
+                        if (isUnsupportedMessage(msg.message)) {
+                            val count = unsupportedCounts.merge(relay.config.url, 1) { a, b -> a + b } ?: 1
+                            if (count >= UNSUPPORTED_THRESHOLD) {
+                                Log.w("RelayPool", "Relay ${relay.config.url} doesn't support standard protocol ($count unsupported notices), disconnecting")
+                                addConsoleEntry(ConsoleLogEntry(
+                                    relayUrl = relay.config.url,
+                                    type = ConsoleLogType.NOTICE,
+                                    message = "Disconnected: relay does not support standard Nostr protocol"
+                                ))
+                                disconnectRelay(relay.config.url)
+                                blockedUrls = blockedUrls + relay.config.url
+                            }
                         }
                     }
                     is RelayMessage.Closed -> {
@@ -481,6 +504,11 @@ class RelayPool {
         return "rate" in lower || "throttle" in lower || "slow down" in lower || "too many" in lower
     }
 
+    private fun isUnsupportedMessage(message: String): Boolean {
+        val lower = message.lowercase()
+        return "unsupported" in lower || "not supported" in lower || "unknown message" in lower
+    }
+
     fun reconnectAll(): Int {
         appIsActive = false
         healthTracker?.discardAllSessions()
@@ -647,6 +675,7 @@ class RelayPool {
         relayJobs.clear()
         subscriptionTracker.clear()
         activeSubscriptions.clear()
+        unsupportedCounts.clear()
         _connectedCount.value = 0
     }
 }
