@@ -596,26 +596,14 @@ class RelayPool {
     }
 
     fun closeOnAllRelays(subscriptionId: String) {
-        // Collect all chunk subIds (e.g., "feed", "feed:c1", "feed:c2") in addition to the base.
-        // OutboxRouter uses ":c{N}" suffixes when chunking large author filters.
-        val chunkPrefix = "$subscriptionId:c"
-        val allSubIds = mutableListOf(subscriptionId)
+        subscriptionTracker.untrackAll(subscriptionId)
         for (relayMap in activeSubscriptions.values) {
-            for (key in relayMap.keys) {
-                if (key.startsWith(chunkPrefix)) allSubIds.add(key)
-            }
+            relayMap.remove(subscriptionId)
         }
-        val uniqueSubIds = allSubIds.distinct()
-        for (subId in uniqueSubIds) {
-            subscriptionTracker.untrackAll(subId)
-            for (relayMap in activeSubscriptions.values) {
-                relayMap.remove(subId)
-            }
-            val msg = ClientMessage.close(subId)
-            for (relay in relays) relay.send(msg)
-            for (relay in dmRelays) relay.send(msg)
-            for (relay in ephemeralRelays.values) relay.send(msg)
-        }
+        val msg = ClientMessage.close(subscriptionId)
+        for (relay in relays) relay.send(msg)
+        for (relay in dmRelays) relay.send(msg)
+        for (relay in ephemeralRelays.values) relay.send(msg)
     }
 
     fun cleanupEphemeralRelays() {
