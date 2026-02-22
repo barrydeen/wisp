@@ -122,6 +122,25 @@ object Nip57 {
         )
     }
 
+    suspend fun buildZapRequestWithSigner(
+        signer: NostrSigner,
+        recipientPubkey: String,
+        eventId: String?,
+        amountMsats: Long,
+        relayUrls: List<String>,
+        lnurl: String,
+        message: String = ""
+    ): NostrEvent {
+        val tags = mutableListOf<List<String>>()
+        tags.add(listOf("p", recipientPubkey))
+        if (eventId != null) tags.add(listOf("e", eventId))
+        tags.add(listOf("relays") + relayUrls)
+        tags.add(listOf("amount", amountMsats.toString()))
+        tags.add(listOf("lnurl", lnurl))
+
+        return signer.signEvent(kind = 9734, content = message, tags = tags)
+    }
+
     suspend fun fetchSimpleInvoice(
         callbackUrl: String,
         amountMsats: Long,

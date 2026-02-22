@@ -14,7 +14,11 @@ import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.Nip65
+import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.nostr.NostrSigner
+import com.wisp.app.nostr.RemoteSignerBridge
+import com.wisp.app.nostr.RemoteSigner
 import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.Relay
 import com.wisp.app.relay.OutboxRouter
@@ -34,6 +38,7 @@ import com.wisp.app.repo.DiscoveryState
 import com.wisp.app.repo.ExtendedNetworkRepository
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.KeyRepository
+import com.wisp.app.repo.SigningMode
 import com.wisp.app.repo.ListRepository
 import com.wisp.app.repo.MetadataFetcher
 import com.wisp.app.repo.MuteRepository
@@ -79,7 +84,18 @@ sealed class InitLoadingState {
 class FeedViewModel(app: Application) : AndroidViewModel(app) {
     // KeyRepo first — needed to derive pubkeyHex for all per-account repos
     val keyRepo = KeyRepository(app)
-    private val pubkeyHex: String? = keyRepo.getKeypair()?.pubkey?.toHex()
+    private val pubkeyHex: String? = keyRepo.getPubkeyHex()
+
+    // Signer abstraction — null until setSigner() is called (remote mode)
+    // or built lazily from keypair (local mode)
+    var signer: NostrSigner? = keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) }
+        private set
+
+    /** Set the signer for remote mode. Called from Navigation.kt after bridge is ready. */
+    fun setSigner(s: NostrSigner) {
+        signer = s
+        zapSender.signer = s
+    }
 
     val relayPool = RelayPool()
     val healthTracker = RelayHealthTracker(app, pubkeyHex)
@@ -167,7 +183,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     val selectedList: StateFlow<com.wisp.app.nostr.FollowSet?> = listRepo.selectedList
 
-    fun getUserPubkey(): String? = keyRepo.getKeypair()?.pubkey?.toHex()
+    fun getUserPubkey(): String? = keyRepo.getPubkeyHex()
 
     fun resetNewNoteCount() = eventRepo.resetNewNoteCount()
 
@@ -336,19 +352,22 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-        // NIP-42 AUTH: sign challenges with our keypair
-        keyRepo.getKeypair()?.let { kp ->
-            relayPool.setAuthSigner { relayUrl, challenge ->
-                NostrEvent.create(
-                    privkey = kp.privkey,
-                    pubkey = kp.pubkey,
-                    kind = 22242,
-                    content = "",
-                    tags = listOf(
-                        listOf("relay", relayUrl),
-                        listOf("challenge", challenge)
+        // NIP-42 AUTH: sign challenges with our keypair (local mode only)
+        // Remote signer skips AUTH to avoid flooding the signer app with 40+ challenges at startup
+        if (keyRepo.getSigningMode() == SigningMode.LOCAL) {
+            keyRepo.getKeypair()?.let { kp ->
+                relayPool.setAuthSigner { relayUrl, challenge ->
+                    NostrEvent.create(
+                        privkey = kp.privkey,
+                        pubkey = kp.pubkey,
+                        kind = 22242,
+                        content = "",
+                        tags = listOf(
+                            listOf("relay", relayUrl),
+                            listOf("challenge", challenge)
+                        )
                     )
-                )
+                }
             }
         }
 
@@ -1085,7 +1104,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleFollow(pubkey: String) {
-        val keypair = keyRepo.getKeypair() ?: return
+        val s = signer ?: return
         val currentList = contactRepo.getFollowList()
         val newList = if (contactRepo.isFollowing(pubkey)) {
             Nip02.removeFollow(currentList, pubkey)
@@ -1093,15 +1112,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             Nip02.addFollow(currentList, pubkey)
         }
         val tags = Nip02.buildFollowTags(newList)
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = 3,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
-        contactRepo.updateFromEvent(event)
+        viewModelScope.launch {
+            val event = s.signEvent(kind = 3, content = "", tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            contactRepo.updateFromEvent(event)
+        }
     }
 
     fun blockUser(pubkey: String) {
@@ -1122,30 +1137,20 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun publishMuteList() {
-        val keypair = keyRepo.getKeypair() ?: return
+        val s = signer ?: return
         val tags = Nip51.buildMuteListTags(muteRepo.getBlockedPubkeys(), muteRepo.getMutedWords())
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = Nip51.KIND_MUTE_LIST,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
+        viewModelScope.launch {
+            val event = s.signEvent(kind = Nip51.KIND_MUTE_LIST, content = "", tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+        }
     }
 
     fun sendRepost(event: NostrEvent) {
-        val keypair = keyRepo.getKeypair() ?: return
+        val s = signer ?: return
         viewModelScope.launch {
             try {
                 val tags = com.wisp.app.nostr.Nip18.buildRepostTags(event)
-                val repostEvent = NostrEvent.create(
-                    privkey = keypair.privkey,
-                    pubkey = keypair.pubkey,
-                    kind = 6,
-                    content = event.toJson(),
-                    tags = tags
-                )
+                val repostEvent = s.signEvent(kind = 6, content = event.toJson(), tags = tags)
                 val msg = ClientMessage.event(repostEvent)
                 outboxRouter.publishToInbox(msg, event.pubkey)
                 eventRepo.markUserRepost(event.id)
@@ -1159,26 +1164,18 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleReaction(event: NostrEvent, emoji: String) {
-        val keypair = keyRepo.getKeypair() ?: return
-        val myPubkey = keypair.pubkey.toHex()
+        val s = signer ?: return
+        val myPubkey = s.pubkeyHex
         val existingEventId = eventRepo.getUserReactionEventId(event.id, myPubkey, emoji)
 
         viewModelScope.launch {
             try {
                 if (existingEventId != null) {
-                    // Delete the existing reaction via NIP-09
                     val tags = com.wisp.app.nostr.Nip09.buildDeletionTags(existingEventId, 7)
-                    val deletionEvent = NostrEvent.create(
-                        privkey = keypair.privkey,
-                        pubkey = keypair.pubkey,
-                        kind = 5,
-                        content = "",
-                        tags = tags
-                    )
+                    val deletionEvent = s.signEvent(kind = 5, content = "", tags = tags)
                     relayPool.sendToWriteRelays(ClientMessage.event(deletionEvent))
                     eventRepo.removeReaction(event.id, myPubkey, emoji)
                 } else {
-                    // Check if this is a custom emoji reaction (:shortcode:)
                     val shortcodeMatch = Nip30.shortcodeRegex.matchEntire(emoji)
                     val tags = if (shortcodeMatch != null) {
                         val shortcode = shortcodeMatch.groupValues[1]
@@ -1193,13 +1190,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                     } else {
                         com.wisp.app.nostr.Nip25.buildReactionTags(event)
                     }
-                    val reactionEvent = NostrEvent.create(
-                        privkey = keypair.privkey,
-                        pubkey = keypair.pubkey,
-                        kind = 7,
-                        content = emoji,
-                        tags = tags
-                    )
+                    val reactionEvent = s.signEvent(kind = 7, content = emoji, tags = tags)
                     val msg = ClientMessage.event(reactionEvent)
                     outboxRouter.publishToInbox(msg, event.pubkey)
                     eventRepo.addEvent(reactionEvent)
@@ -1302,69 +1293,51 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun createList(name: String) {
-        val keypair = keyRepo.getKeypair() ?: return
+        val s = signer ?: return
         val dTag = name.trim().lowercase().replace(Regex("[^a-z0-9-_]"), "-")
         val tags = Nip51.buildFollowSetTags(dTag, emptySet())
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = Nip51.KIND_FOLLOW_SET,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
-        listRepo.updateFromEvent(event)
+        viewModelScope.launch {
+            val event = s.signEvent(kind = Nip51.KIND_FOLLOW_SET, content = "", tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            listRepo.updateFromEvent(event)
+        }
     }
 
     fun addToList(dTag: String, pubkey: String) {
-        val keypair = keyRepo.getKeypair() ?: return
-        val myPubkey = keypair.pubkey.toHex()
+        val s = signer ?: return
+        val myPubkey = s.pubkeyHex
         val existing = listRepo.getList(myPubkey, dTag) ?: return
         val newMembers = existing.members + pubkey
         val tags = Nip51.buildFollowSetTags(dTag, newMembers)
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = Nip51.KIND_FOLLOW_SET,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
-        listRepo.updateFromEvent(event)
+        viewModelScope.launch {
+            val event = s.signEvent(kind = Nip51.KIND_FOLLOW_SET, content = "", tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            listRepo.updateFromEvent(event)
+        }
     }
 
     fun removeFromList(dTag: String, pubkey: String) {
-        val keypair = keyRepo.getKeypair() ?: return
-        val myPubkey = keypair.pubkey.toHex()
+        val s = signer ?: return
+        val myPubkey = s.pubkeyHex
         val existing = listRepo.getList(myPubkey, dTag) ?: return
         val newMembers = existing.members - pubkey
         val tags = Nip51.buildFollowSetTags(dTag, newMembers)
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = Nip51.KIND_FOLLOW_SET,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
-        listRepo.updateFromEvent(event)
+        viewModelScope.launch {
+            val event = s.signEvent(kind = Nip51.KIND_FOLLOW_SET, content = "", tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            listRepo.updateFromEvent(event)
+        }
     }
 
     fun deleteList(dTag: String) {
-        val keypair = keyRepo.getKeypair() ?: return
-        val myPubkey = keypair.pubkey.toHex()
-        // Send NIP-09 deletion request to relays
+        val s = signer ?: return
+        val myPubkey = s.pubkeyHex
         val deletionTags = Nip09.buildAddressableDeletionTags(Nip51.KIND_FOLLOW_SET, myPubkey, dTag)
-        val deleteEvent = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = 5,
-            content = "",
-            tags = deletionTags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(deleteEvent))
-        // Hide locally regardless of relay response
-        listRepo.removeList(myPubkey, dTag)
+        viewModelScope.launch {
+            val deleteEvent = s.signEvent(kind = 5, content = "", tags = deletionTags)
+            relayPool.sendToWriteRelays(ClientMessage.event(deleteEvent))
+            listRepo.removeList(myPubkey, dTag)
+        }
     }
 
     fun togglePin(eventId: String) {
@@ -1377,20 +1350,16 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun publishPinList() {
-        val keypair = keyRepo.getKeypair() ?: return
+        val s = signer ?: return
         val tags = Nip51.buildPinListTags(pinRepo.getPinnedIds())
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = Nip51.KIND_PIN_LIST,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
+        viewModelScope.launch {
+            val event = s.signEvent(kind = Nip51.KIND_PIN_LIST, content = "", tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+        }
     }
 
     fun followAll(pubkeys: Set<String>) {
-        val keypair = keyRepo.getKeypair() ?: return
+        val s = signer ?: return
         var currentList = contactRepo.getFollowList()
         for (pk in pubkeys) {
             if (!contactRepo.isFollowing(pk)) {
@@ -1398,15 +1367,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         val tags = Nip02.buildFollowTags(currentList)
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = 3,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
-        contactRepo.updateFromEvent(event)
+        viewModelScope.launch {
+            val event = s.signEvent(kind = 3, content = "", tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            contactRepo.updateFromEvent(event)
+        }
     }
 
     fun fetchUserLists(pubkey: String) {
@@ -1422,69 +1387,51 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     // -- Bookmark Set (kind 30003) CRUD --
 
     fun createBookmarkSet(name: String) {
-        val keypair = keyRepo.getKeypair() ?: return
+        val s = signer ?: return
         val dTag = name.trim().lowercase().replace(Regex("[^a-z0-9-_]"), "-")
         val tags = Nip51.buildBookmarkSetTags(dTag, emptySet())
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = Nip51.KIND_BOOKMARK_SET,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
-        bookmarkSetRepo.updateFromEvent(event)
+        viewModelScope.launch {
+            val event = s.signEvent(kind = Nip51.KIND_BOOKMARK_SET, content = "", tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            bookmarkSetRepo.updateFromEvent(event)
+        }
     }
 
     fun addNoteToBookmarkSet(dTag: String, eventId: String) {
-        val keypair = keyRepo.getKeypair() ?: return
-        val myPubkey = keypair.pubkey.toHex()
+        val s = signer ?: return
+        val myPubkey = s.pubkeyHex
         val existing = bookmarkSetRepo.getSet(myPubkey, dTag) ?: return
         val newIds = existing.eventIds + eventId
         val tags = Nip51.buildBookmarkSetTags(dTag, newIds, existing.coordinates, existing.hashtags)
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = Nip51.KIND_BOOKMARK_SET,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
-        bookmarkSetRepo.updateFromEvent(event)
+        viewModelScope.launch {
+            val event = s.signEvent(kind = Nip51.KIND_BOOKMARK_SET, content = "", tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            bookmarkSetRepo.updateFromEvent(event)
+        }
     }
 
     fun removeNoteFromBookmarkSet(dTag: String, eventId: String) {
-        val keypair = keyRepo.getKeypair() ?: return
-        val myPubkey = keypair.pubkey.toHex()
+        val s = signer ?: return
+        val myPubkey = s.pubkeyHex
         val existing = bookmarkSetRepo.getSet(myPubkey, dTag) ?: return
         val newIds = existing.eventIds - eventId
         val tags = Nip51.buildBookmarkSetTags(dTag, newIds, existing.coordinates, existing.hashtags)
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = Nip51.KIND_BOOKMARK_SET,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
-        bookmarkSetRepo.updateFromEvent(event)
+        viewModelScope.launch {
+            val event = s.signEvent(kind = Nip51.KIND_BOOKMARK_SET, content = "", tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            bookmarkSetRepo.updateFromEvent(event)
+        }
     }
 
     fun deleteBookmarkSet(dTag: String) {
-        val keypair = keyRepo.getKeypair() ?: return
-        val myPubkey = keypair.pubkey.toHex()
-        // Send NIP-09 deletion request to relays
+        val s = signer ?: return
+        val myPubkey = s.pubkeyHex
         val deletionTags = Nip09.buildAddressableDeletionTags(Nip51.KIND_BOOKMARK_SET, myPubkey, dTag)
-        val deleteEvent = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = 5,
-            content = "",
-            tags = deletionTags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(deleteEvent))
-        // Hide locally regardless of relay response
-        bookmarkSetRepo.removeSet(myPubkey, dTag)
+        viewModelScope.launch {
+            val deleteEvent = s.signEvent(kind = 5, content = "", tags = deletionTags)
+            relayPool.sendToWriteRelays(ClientMessage.event(deleteEvent))
+            bookmarkSetRepo.removeSet(myPubkey, dTag)
+        }
     }
 
     fun fetchBookmarkSetEvents(dTag: String) {
@@ -1526,60 +1473,44 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     // -- Custom Emoji (NIP-30) CRUD --
 
     fun createEmojiSet(name: String, emojis: List<com.wisp.app.nostr.CustomEmoji>) {
-        val keypair = keyRepo.getKeypair() ?: return
+        val s = signer ?: return
         val dTag = name.trim().lowercase().replace(Regex("[^a-z0-9-_]"), "-")
         val tags = Nip30.buildEmojiSetTags(dTag, name.trim(), emojis)
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = Nip30.KIND_EMOJI_SET,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
-        customEmojiRepo.updateFromEvent(event)
+        viewModelScope.launch {
+            val event = s.signEvent(kind = Nip30.KIND_EMOJI_SET, content = "", tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            customEmojiRepo.updateFromEvent(event)
+        }
     }
 
     fun updateEmojiSet(dTag: String, title: String, emojis: List<com.wisp.app.nostr.CustomEmoji>) {
-        val keypair = keyRepo.getKeypair() ?: return
+        val s = signer ?: return
         val tags = Nip30.buildEmojiSetTags(dTag, title, emojis)
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = Nip30.KIND_EMOJI_SET,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
-        customEmojiRepo.updateFromEvent(event)
+        viewModelScope.launch {
+            val event = s.signEvent(kind = Nip30.KIND_EMOJI_SET, content = "", tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            customEmojiRepo.updateFromEvent(event)
+        }
     }
 
     fun deleteEmojiSet(dTag: String) {
-        val keypair = keyRepo.getKeypair() ?: return
-        val myPubkey = keypair.pubkey.toHex()
+        val s = signer ?: return
+        val myPubkey = s.pubkeyHex
         val deletionTags = com.wisp.app.nostr.Nip09.buildAddressableDeletionTags(Nip30.KIND_EMOJI_SET, myPubkey, dTag)
-        val deleteEvent = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = 5,
-            content = "",
-            tags = deletionTags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(deleteEvent))
+        viewModelScope.launch {
+            val deleteEvent = s.signEvent(kind = 5, content = "", tags = deletionTags)
+            relayPool.sendToWriteRelays(ClientMessage.event(deleteEvent))
+        }
     }
 
     fun publishUserEmojiList(emojis: List<com.wisp.app.nostr.CustomEmoji>, setRefs: List<String>) {
-        val keypair = keyRepo.getKeypair() ?: return
+        val s = signer ?: return
         val tags = Nip30.buildUserEmojiListTags(emojis, setRefs)
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = Nip30.KIND_USER_EMOJI_LIST,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
-        customEmojiRepo.updateFromEvent(event)
+        viewModelScope.launch {
+            val event = s.signEvent(kind = Nip30.KIND_USER_EMOJI_LIST, content = "", tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            customEmojiRepo.updateFromEvent(event)
+        }
     }
 
     fun addSetToEmojiList(pubkey: String, dTag: String) {

@@ -12,6 +12,8 @@ import com.wisp.app.relay.RelayConfig
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 
+enum class SigningMode { LOCAL, REMOTE }
+
 class KeyRepository(private val context: Context) {
     private val masterKey = MasterKey.Builder(context)
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -26,7 +28,7 @@ class KeyRepository(private val context: Context) {
     )
 
     private var prefs: SharedPreferences =
-        context.getSharedPreferences(prefsName(getKeypair()?.pubkey?.toHex()), Context.MODE_PRIVATE)
+        context.getSharedPreferences(prefsName(getPubkeyHex()), Context.MODE_PRIVATE)
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -34,6 +36,8 @@ class KeyRepository(private val context: Context) {
         encPrefs.edit()
             .putString("privkey", keypair.privkey.toHex())
             .putString("pubkey", keypair.pubkey.toHex())
+            .putString("signing_mode", SigningMode.LOCAL.name)
+            .remove("signer_package")
             .apply()
     }
 
@@ -43,9 +47,29 @@ class KeyRepository(private val context: Context) {
         return Keys.Keypair(privHex.hexToByteArray(), pubHex.hexToByteArray())
     }
 
+    fun savePubkeyOnly(pubkeyHex: String, signerPackage: String?) {
+        encPrefs.edit()
+            .putString("pubkey", pubkeyHex)
+            .putString("signing_mode", SigningMode.REMOTE.name)
+            .putString("signer_package", signerPackage)
+            .remove("privkey")
+            .apply()
+    }
+
+    fun getSigningMode(): SigningMode {
+        val mode = encPrefs.getString("signing_mode", null)
+        return if (mode == SigningMode.REMOTE.name) SigningMode.REMOTE else SigningMode.LOCAL
+    }
+
+    fun getSignerPackage(): String? = encPrefs.getString("signer_package", null)
+
+    fun getPubkeyHex(): String? = encPrefs.getString("pubkey", null)
+
     fun clearKeypair() {
         encPrefs.edit().clear().apply()
     }
+
+    fun isLoggedIn(): Boolean = encPrefs.getString("pubkey", null) != null
 
     fun hasKeypair(): Boolean = encPrefs.getString("privkey", null) != null
 
@@ -102,7 +126,7 @@ class KeyRepository(private val context: Context) {
         if (prefs.getBoolean("onboarding_done", false)) return true
         // Migration for existing users who had the app before onboarding was added:
         // They'll have contacts data saved from previous sessions. New key users won't.
-        val pubkeyHex = getKeypair()?.pubkey?.toHex() ?: return false
+        val pubkeyHex = getPubkeyHex() ?: return false
         val contactPrefs = context.getSharedPreferences("wisp_contacts_$pubkeyHex", Context.MODE_PRIVATE)
         if (contactPrefs.contains("follows")) {
             markOnboardingComplete()

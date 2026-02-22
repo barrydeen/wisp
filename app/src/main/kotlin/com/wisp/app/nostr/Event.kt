@@ -87,6 +87,25 @@ data class NostrEvent(
             return digest.digest(serialized.toByteArray(Charsets.UTF_8)).toHex()
         }
 
+        fun createUnsigned(
+            pubkeyHex: String,
+            kind: Int,
+            content: String,
+            tags: List<List<String>> = emptyList(),
+            createdAt: Long = System.currentTimeMillis() / 1000
+        ): NostrEvent {
+            val id = computeId(pubkeyHex, createdAt, kind, tags, content)
+            return NostrEvent(
+                id = id,
+                pubkey = pubkeyHex,
+                created_at = createdAt,
+                kind = kind,
+                tags = tags,
+                content = content,
+                sig = ""
+            )
+        }
+
         fun fromJson(jsonStr: String): NostrEvent = json.decodeFromString(jsonStr)
 
         fun fromJsonArray(array: JsonArray): NostrEvent {
@@ -107,6 +126,8 @@ data class NostrEvent(
     }
 
     fun toJson(): String = json.encodeToString(serializer(), this)
+
+    fun withSignature(sig: String): NostrEvent = copy(sig = sig)
 }
 
 private object LongAsStringSerializer : KSerializer<Long> {

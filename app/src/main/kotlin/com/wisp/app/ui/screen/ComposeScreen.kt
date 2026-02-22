@@ -81,7 +81,8 @@ fun ComposeScreen(
     outboxRouter: com.wisp.app.relay.OutboxRouter? = null,
     eventRepo: EventRepository? = null,
     profileRepo: ProfileRepository? = null,
-    userPubkey: String? = null
+    userPubkey: String? = null,
+    signer: com.wisp.app.nostr.NostrSigner? = null
 ) {
     val content by viewModel.content.collectAsState()
     val publishing by viewModel.publishing.collectAsState()
@@ -409,7 +410,8 @@ fun ComposeScreen(
                                 replyTo = replyTo,
                                 quoteTo = quoteTo,
                                 onSuccess = { onBack() },
-                                outboxRouter = outboxRouter
+                                outboxRouter = outboxRouter,
+                                signer = signer
                             )
                         },
                         enabled = !publishing,

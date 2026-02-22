@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.LruCache
 import com.wisp.app.nostr.DmConversation
 import com.wisp.app.nostr.DmMessage
+import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.wipe
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +24,11 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
     // Maps giftWrapId → messageId so we can merge relay URLs on duplicate receipt
     private val seenGiftWraps = LruCache<String, String>(2000)
     private val dmRelayCache = LruCache<String, List<String>>(200)
+
+    // Pending gift wraps for remote signer mode (stored raw, decrypted on demand)
+    data class PendingGiftWrap(val event: NostrEvent, val relayUrl: String)
+    private val pendingGiftWraps = mutableListOf<PendingGiftWrap>()
+    private val pendingLock = Any()
 
     private val _conversationList = MutableStateFlow<List<DmConversation>>(emptyList())
     val conversationList: StateFlow<List<DmConversation>> = _conversationList
@@ -111,6 +117,22 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
         updateConversationList()
     }
 
+    fun addPendingGiftWrap(event: NostrEvent, relayUrl: String) {
+        synchronized(pendingLock) {
+            // Dedup by event id
+            if (pendingGiftWraps.any { it.event.id == event.id }) return
+            pendingGiftWraps.add(PendingGiftWrap(event, relayUrl))
+        }
+    }
+
+    fun takePendingGiftWraps(): List<PendingGiftWrap> {
+        return synchronized(pendingLock) {
+            val copy = pendingGiftWraps.toList()
+            pendingGiftWraps.clear()
+            copy
+        }
+    }
+
     fun reload(pubkeyHex: String?) {
         lastReadDmTimestamp = prefs?.getLong("last_read_dm", 0L) ?: 0L
     }
@@ -121,6 +143,9 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
             conversationKeyCache.evictAll()
             seenGiftWraps.evictAll()
             dmRelayCache.evictAll()
+        }
+        synchronized(pendingLock) {
+            pendingGiftWraps.clear()
         }
         _conversationList.value = emptyList()
         _hasUnreadDms.value = false

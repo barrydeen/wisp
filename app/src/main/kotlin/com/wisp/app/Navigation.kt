@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -20,6 +21,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.compose.runtime.collectAsState
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.nostr.RemoteSigner
+import com.wisp.app.repo.SigningMode
 import com.wisp.app.ui.component.WispBottomBar
 import com.wisp.app.ui.component.ZapDialog
 import com.wisp.app.ui.screen.BlossomServersScreen
@@ -116,6 +119,25 @@ fun WispNavHost() {
     val onboardingViewModel: OnboardingViewModel = viewModel()
 
     relayViewModel.relayPool = feedViewModel.relayPool
+
+    // NIP-55 Remote Signer Bridge
+    // Not wrapped in remember — recomputed on each recomposition so it picks up
+    // the signing mode change that happens after Amber login triggers navigation.
+    // NIP-55 Remote Signer — uses ContentResolver for silent background signing
+    val context = LocalContext.current
+    val isRemoteMode = authViewModel.isLoggedIn && authViewModel.keyRepo.getSigningMode() == SigningMode.REMOTE
+    val remoteSigner = remember(isRemoteMode) {
+        if (isRemoteMode) {
+            val pubkey = authViewModel.keyRepo.getPubkeyHex() ?: ""
+            val pkg = authViewModel.keyRepo.getSignerPackage() ?: ""
+            RemoteSigner(pubkey, context.contentResolver, pkg)
+        } else null
+    }
+
+    // Push signer into FeedViewModel when it becomes available
+    LaunchedEffect(remoteSigner) {
+        remoteSigner?.let { feedViewModel.setSigner(it) }
+    }
 
     var replyTarget by remember { mutableStateOf<NostrEvent?>(null) }
     var quoteTarget by remember { mutableStateOf<NostrEvent?>(null) }
@@ -357,7 +379,8 @@ fun WispNavHost() {
                 outboxRouter = feedViewModel.outboxRouter,
                 eventRepo = feedViewModel.eventRepo,
                 profileRepo = feedViewModel.profileRepo,
-                userPubkey = feedViewModel.getUserPubkey()
+                userPubkey = feedViewModel.getUserPubkey(),
+                signer = remoteSigner
             )
         }
 
@@ -368,7 +391,8 @@ fun WispNavHost() {
                 onBack = {
                     feedViewModel.refreshRelays()
                     navController.popBackStack()
-                }
+                },
+                signer = remoteSigner
             )
         }
 
@@ -376,7 +400,8 @@ fun WispNavHost() {
             BlossomServersScreen(
                 viewModel = blossomServersViewModel,
                 relayPool = feedViewModel.relayPool,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                signer = remoteSigner
             )
         }
 
@@ -391,7 +416,8 @@ fun WispNavHost() {
             ProfileEditScreen(
                 viewModel = profileViewModel,
                 relayPool = feedViewModel.relayPool,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                signer = remoteSigner
             )
         }
 
@@ -462,7 +488,8 @@ fun WispNavHost() {
                 pinnedIds = profilePinnedIds,
                 onTogglePin = { eventId -> feedViewModel.togglePin(eventId) },
                 onAddNoteToList = { eventId -> addToListEventId = eventId },
-                onSendDm = if (!isOwnProfile) {{ navController.navigate("dm/$pubkey") }} else null
+                onSendDm = if (!isOwnProfile) {{ navController.navigate("dm/$pubkey") }} else null,
+                signer = remoteSigner
             )
         }
 
@@ -510,6 +537,10 @@ fun WispNavHost() {
 
         composable(Routes.DM_LIST) {
             LaunchedEffect(Unit) {
+                // Decrypt pending gift wraps in remote signer mode
+                if (isRemoteMode && remoteSigner != null) {
+                    dmListViewModel.decryptPending(remoteSigner)
+                }
                 dmListViewModel.markDmsRead()
                 // Fetch profile metadata for all DM peers
                 val peerPubkeys = dmListViewModel.conversationList.value.map { it.peerPubkey }
@@ -545,7 +576,8 @@ fun WispNavHost() {
                 userPubkey = userPubkey,
                 eventRepo = feedViewModel.eventRepo,
                 relayInfoRepo = feedViewModel.relayInfoRepo,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                signer = remoteSigner
             )
         }
 
@@ -849,7 +881,7 @@ fun WispNavHost() {
             OnboardingScreen(
                 viewModel = onboardingViewModel,
                 onContinue = {
-                    if (onboardingViewModel.finishProfile(feedViewModel.relayPool)) {
+                    if (onboardingViewModel.finishProfile(feedViewModel.relayPool, signer = remoteSigner)) {
                         navController.navigate(Routes.ONBOARDING_SUGGESTIONS) {
                             popUpTo(Routes.ONBOARDING_PROFILE) { inclusive = true }
                         }
@@ -879,7 +911,8 @@ fun WispNavHost() {
                     onboardingViewModel.finishOnboarding(
                         relayPool = feedViewModel.relayPool,
                         contactRepo = feedViewModel.contactRepo,
-                        selectedPubkeys = selectedPubkeys
+                        selectedPubkeys = selectedPubkeys,
+                        signer = remoteSigner
                     )
                     feedViewModel.setFeedType(FeedType.EXTENDED_FOLLOWS)
                     feedViewModel.reloadForNewAccount()

@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.wisp.app.nostr.Keys
 import com.wisp.app.nostr.Nip19
+import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.nostr.toHex
 import com.wisp.app.repo.KeyRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +22,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
     private val _npub = MutableStateFlow<String?>(keyRepo.getNpub())
     val npub: StateFlow<String?> = _npub
 
-    val isLoggedIn: Boolean get() = keyRepo.hasKeypair()
+    val isLoggedIn: Boolean get() = keyRepo.isLoggedIn()
 
     fun updateNsecInput(value: String) {
         _nsecInput.value = value
@@ -61,6 +62,13 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             _error.value = "Invalid nsec key: ${e.message}"
             false
         }
+    }
+
+    fun loginWithSigner(pubkeyHex: String, signerPackage: String?) {
+        keyRepo.savePubkeyOnly(pubkeyHex, signerPackage)
+        keyRepo.reloadPrefs(pubkeyHex)
+        _npub.value = Nip19.npubEncode(pubkeyHex.hexToByteArray())
+        _error.value = null
     }
 
     fun logOut() {

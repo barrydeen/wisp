@@ -39,7 +39,8 @@ import com.wisp.app.viewmodel.BlossomServersViewModel
 fun BlossomServersScreen(
     viewModel: BlossomServersViewModel,
     relayPool: RelayPool,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    signer: com.wisp.app.nostr.NostrSigner? = null
 ) {
     val servers by viewModel.servers.collectAsState()
     val newServerUrl by viewModel.newServerUrl.collectAsState()
@@ -95,7 +96,7 @@ fun BlossomServersScreen(
             Spacer(Modifier.height(8.dp))
 
             Button(
-                onClick = { viewModel.publishServerList(relayPool) },
+                onClick = { viewModel.publishServerList(relayPool, signer = signer) },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Broadcast Server List")

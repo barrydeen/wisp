@@ -8,7 +8,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
+import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.BlossomRepository
 import com.wisp.app.repo.EventRepository
@@ -23,7 +25,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 class ProfileViewModel(app: Application) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
-    private val blossomRepo = BlossomRepository(app, keyRepo.getKeypair()?.pubkey?.toHex())
+    private val blossomRepo = BlossomRepository(app, keyRepo.getPubkeyHex())
 
     private val _name = MutableStateFlow("")
     val name: StateFlow<String> = _name
@@ -88,8 +90,7 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
     enum class ImageTarget { PICTURE, BANNER }
 
     fun loadCurrentProfile(eventRepo: EventRepository, relayPool: RelayPool? = null) {
-        val keypair = keyRepo.getKeypair() ?: return
-        val pubkeyHex = keypair.pubkey.toHex()
+        val pubkeyHex = keyRepo.getPubkeyHex() ?: return
 
         // Load from cache immediately
         val profile = eventRepo.getProfileData(pubkeyHex)
@@ -127,9 +128,9 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun publishProfile(relayPool: RelayPool): Boolean {
-        val keypair = keyRepo.getKeypair()
-        if (keypair == null) {
+    fun publishProfile(relayPool: RelayPool, signer: NostrSigner? = null): Boolean {
+        val s = signer ?: keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) }
+        if (s == null) {
             _error.value = "Not logged in"
             return false
         }
@@ -148,16 +149,13 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
                 if (_lud16.value.isNotBlank()) put("lud16", JsonPrimitive(_lud16.value))
             }.toString()
 
-            val event = NostrEvent.create(
-                privkey = keypair.privkey,
-                pubkey = keypair.pubkey,
-                kind = 0,
-                content = content
-            )
-            val msg = ClientMessage.event(event)
-            relayPool.sendToWriteRelays(msg)
-            _error.value = null
-            _publishing.value = false
+            viewModelScope.launch {
+                val event = s.signEvent(kind = 0, content = content)
+                val msg = ClientMessage.event(event)
+                relayPool.sendToWriteRelays(msg)
+                _error.value = null
+                _publishing.value = false
+            }
             true
         } catch (e: Exception) {
             _error.value = "Failed to publish: ${e.message}"

@@ -8,6 +8,7 @@ import com.wisp.app.nostr.DmMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip17
 import com.wisp.app.nostr.Nip51
+import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.RelayPool
@@ -111,9 +112,64 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
         return relayPool.getWriteRelayUrls()
     }
 
-    fun sendMessage(relayPool: RelayPool) {
+    fun sendMessage(relayPool: RelayPool, signer: NostrSigner? = null) {
         val text = _messageText.value.trim()
         if (text.isBlank() || _sending.value) return
+
+        // Remote signer mode: use signer, no keypair needed
+        if (signer != null) {
+            _messageText.value = ""
+            _sending.value = true
+            viewModelScope.launch(Dispatchers.Default) {
+                try {
+                    val recipientDmRelays = fetchRecipientDmRelays(relayPool)
+                    val deliveryRelays = resolveRecipientRelays(recipientDmRelays, relayPool)
+
+                    val recipientWrap = Nip17.createGiftWrapRemote(
+                        signer = signer,
+                        recipientPubkeyHex = peerPubkey,
+                        message = text
+                    )
+                    val recipientMsg = ClientMessage.event(recipientWrap)
+                    val sentRelayUrls = mutableSetOf<String>()
+                    for (url in deliveryRelays) {
+                        if (relayPool.sendToRelayOrEphemeral(url, recipientMsg)) {
+                            sentRelayUrls.add(url)
+                        }
+                    }
+
+                    val selfWrap = Nip17.createGiftWrapRemote(
+                        signer = signer,
+                        recipientPubkeyHex = signer.pubkeyHex,
+                        message = text,
+                        rumorPTag = peerPubkey
+                    )
+                    val selfMsg = ClientMessage.event(selfWrap)
+                    if (relayPool.hasDmRelays()) {
+                        relayPool.sendToDmRelays(selfMsg)
+                    } else {
+                        relayPool.sendToWriteRelays(selfMsg)
+                    }
+
+                    val dmMsg = DmMessage(
+                        id = "${recipientWrap.id}:${System.currentTimeMillis() / 1000}",
+                        senderPubkey = signer.pubkeyHex,
+                        content = text,
+                        createdAt = System.currentTimeMillis() / 1000,
+                        giftWrapId = recipientWrap.id,
+                        relayUrls = sentRelayUrls
+                    )
+                    dmRepo?.addMessage(dmMsg, peerPubkey)
+                    dmRepo?.markGiftWrapSeen(selfWrap.id, dmMsg.id)
+                } catch (_: Exception) {
+                } finally {
+                    _sending.value = false
+                }
+            }
+            return
+        }
+
+        // Local signer mode
         val keypair = keyRepo.getKeypair() ?: return
 
         _messageText.value = ""
@@ -123,11 +179,9 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val senderPubkeyHex = keypair.pubkey.toHex()
 
-                // Discover recipient's DM relays
                 val recipientDmRelays = fetchRecipientDmRelays(relayPool)
                 val deliveryRelays = resolveRecipientRelays(recipientDmRelays, relayPool)
 
-                // Gift wrap #1: for recipient, sent to recipient's relays
                 val recipientWrap = Nip17.createGiftWrap(
                     senderPrivkey = keypair.privkey,
                     senderPubkey = keypair.pubkey,
@@ -142,13 +196,12 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
 
-                // Gift wrap #2: self-copy, sent to sender's own DM/write relays
                 val selfWrap = Nip17.createGiftWrap(
                     senderPrivkey = keypair.privkey,
                     senderPubkey = keypair.pubkey,
-                    recipientPubkey = keypair.pubkey, // encrypt to self
+                    recipientPubkey = keypair.pubkey,
                     message = text,
-                    rumorPTag = peerPubkey // rumor p-tag points at peer for conversation identification
+                    rumorPTag = peerPubkey
                 )
                 val selfMsg = ClientMessage.event(selfWrap)
                 if (relayPool.hasDmRelays()) {
@@ -157,7 +210,6 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                     relayPool.sendToWriteRelays(selfMsg)
                 }
 
-                // Add to local conversation immediately
                 val dmMsg = DmMessage(
                     id = "${recipientWrap.id}:${System.currentTimeMillis() / 1000}",
                     senderPubkey = senderPubkeyHex,
@@ -167,8 +219,6 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                     relayUrls = sentRelayUrls
                 )
                 dmRepo?.addMessage(dmMsg, peerPubkey)
-                // Pre-register the self-copy's gift wrap ID so it deduplicates
-                // when it arrives back from relays
                 dmRepo?.markGiftWrapSeen(selfWrap.id, dmMsg.id)
             } catch (_: Exception) {
             } finally {

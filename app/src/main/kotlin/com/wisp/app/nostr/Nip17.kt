@@ -130,6 +130,107 @@ object Nip17 {
         }
     }
 
+    /**
+     * Create a gift-wrapped DM using a NostrSigner (for remote signer support).
+     * The seal is encrypted and signed via the signer. The gift wrap layer
+     * still uses a local throwaway key (no reason to involve the signer).
+     */
+    suspend fun createGiftWrapRemote(
+        signer: NostrSigner,
+        recipientPubkeyHex: String,
+        message: String,
+        replyTags: List<List<String>> = emptyList(),
+        rumorPTag: String? = null
+    ): NostrEvent {
+        val senderPubkeyHex = signer.pubkeyHex
+
+        // Layer 1: Build unsigned kind 14 rumor (no id, no sig)
+        val rumorTags = mutableListOf<List<String>>()
+        rumorTags.add(listOf("p", rumorPTag ?: recipientPubkeyHex))
+        rumorTags.addAll(replyTags)
+
+        val now = System.currentTimeMillis() / 1000
+        val rumorJson = buildJsonObject {
+            put("kind", JsonPrimitive(14))
+            put("pubkey", JsonPrimitive(senderPubkeyHex))
+            put("created_at", JsonPrimitive(now))
+            put("tags", buildJsonArray {
+                for (tag in rumorTags) {
+                    add(buildJsonArray { for (t in tag) add(JsonPrimitive(t)) })
+                }
+            })
+            put("content", JsonPrimitive(message))
+        }.toString()
+
+        // Layer 2: Seal (kind 13) — encrypt rumor with signer, sign seal with signer
+        val encryptedRumor = signer.nip44Encrypt(rumorJson, recipientPubkeyHex)
+        val sealTimestamp = randomizeTimestamp(now)
+        val seal = signer.signEvent(
+            kind = 13,
+            content = encryptedRumor,
+            tags = emptyList(),
+            createdAt = sealTimestamp
+        )
+
+        // Layer 3: Gift wrap (kind 1059) — local throwaway key (no signer needed)
+        val throwaway = Keys.generate()
+        val throwawayRecipientKey = Nip44.getConversationKey(throwaway.privkey, recipientPubkeyHex.hexToByteArray())
+        val encryptedSeal = Nip44.encrypt(seal.toJson(), throwawayRecipientKey)
+        val wrapTimestamp = randomizeTimestamp(now)
+        val giftWrap = NostrEvent.create(
+            privkey = throwaway.privkey,
+            pubkey = throwaway.pubkey,
+            kind = 1059,
+            content = encryptedSeal,
+            tags = listOf(listOf("p", recipientPubkeyHex)),
+            createdAt = wrapTimestamp
+        )
+
+        throwaway.wipe()
+        throwawayRecipientKey.wipe()
+
+        return giftWrap
+    }
+
+    /**
+     * Unwrap a received gift wrap using a NostrSigner (for remote signer support).
+     * Uses signer.nip44Decrypt for both decrypt layers.
+     */
+    suspend fun unwrapGiftWrapRemote(signer: NostrSigner, giftWrap: NostrEvent): Rumor? {
+        if (giftWrap.kind != 1059) return null
+
+        return try {
+            // Decrypt gift wrap → seal JSON
+            val sealJson = signer.nip44Decrypt(giftWrap.content, giftWrap.pubkey)
+
+            // Parse seal
+            val seal = NostrEvent.fromJson(sealJson)
+            if (seal.kind != 13) return null
+
+            // Decrypt seal → rumor JSON
+            val rumorJson = signer.nip44Decrypt(seal.content, seal.pubkey)
+
+            // Parse rumor
+            val rumorObj = json.parseToJsonElement(rumorJson).jsonObject
+            val kind = rumorObj["kind"]?.jsonPrimitive?.content?.toIntOrNull()
+            if (kind != 14) return null
+
+            val tags = rumorObj["tags"]?.jsonArray?.map { tagArr ->
+                tagArr.jsonArray.map { it.jsonPrimitive.content }
+            } ?: emptyList()
+
+            Rumor(
+                pubkey = rumorObj["pubkey"]?.jsonPrimitive?.content ?: seal.pubkey,
+                createdAt = rumorObj["created_at"]?.jsonPrimitive?.content?.toLongOrNull()
+                    ?: seal.created_at,
+                content = rumorObj["content"]?.jsonPrimitive?.content ?: "",
+                tags = tags
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun randomizeTimestamp(base: Long): Long {
         // +-2 days in seconds
         val twoDays = 2 * 24 * 60 * 60

@@ -2,16 +2,20 @@ package com.wisp.app.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.ClientMessage
+import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.Nip65
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.relay.RelaySetType
 import com.wisp.app.repo.KeyRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 class RelayViewModel(app: Application) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
@@ -121,8 +125,8 @@ class RelayViewModel(app: Application) : AndroidViewModel(app) {
         keyRepo.saveRelays(updated)
     }
 
-    fun publishRelayList(relayPool: RelayPool): Boolean {
-        val keypair = keyRepo.getKeypair() ?: return false
+    fun publishRelayList(relayPool: RelayPool, signer: NostrSigner? = null): Boolean {
+        val s = signer ?: keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) } ?: return false
         return try {
             val tab = _selectedTab.value
             val tags: List<List<String>>
@@ -147,15 +151,11 @@ class RelayViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            val event = NostrEvent.create(
-                privkey = keypair.privkey,
-                pubkey = keypair.pubkey,
-                kind = kind,
-                content = "",
-                tags = tags
-            )
-            val msg = ClientMessage.event(event)
-            relayPool.sendToWriteRelays(msg)
+            viewModelScope.launch {
+                val event = s.signEvent(kind = kind, content = "", tags = tags)
+                val msg = ClientMessage.event(event)
+                relayPool.sendToWriteRelays(msg)
+            }
             true
         } catch (_: Exception) {
             false

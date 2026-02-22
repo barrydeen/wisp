@@ -44,7 +44,8 @@ import com.wisp.app.viewmodel.RelayViewModel
 fun RelayScreen(
     viewModel: RelayViewModel,
     relayPool: RelayPool? = null,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    signer: com.wisp.app.nostr.NostrSigner? = null
 ) {
     val selectedTab by viewModel.selectedTab.collectAsState()
     val relays by viewModel.relays.collectAsState()
@@ -113,7 +114,7 @@ fun RelayScreen(
                         RelaySetType.BLOCKED -> "Broadcast Blocked Relays"
                     }
                     Button(
-                        onClick = { viewModel.publishRelayList(relayPool) },
+                        onClick = { viewModel.publishRelayList(relayPool, signer = signer) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(buttonLabel)

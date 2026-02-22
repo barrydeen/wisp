@@ -8,7 +8,9 @@ import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip02
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip65
+import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayConfig
@@ -285,9 +287,10 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleFollow(
         contactRepo: ContactRepository,
-        relayPool: RelayPool
+        relayPool: RelayPool,
+        signer: NostrSigner? = null
     ) {
-        val keypair = keyRepo.getKeypair() ?: return
+        val s = signer ?: keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) } ?: return
         val currentList = contactRepo.getFollowList()
         val newList = if (contactRepo.isFollowing(targetPubkey)) {
             Nip02.removeFollow(currentList, targetPubkey)
@@ -296,15 +299,11 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val tags = Nip02.buildFollowTags(newList)
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = 3,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
-        contactRepo.updateFromEvent(event)
-        _isFollowing.value = contactRepo.isFollowing(targetPubkey)
+        viewModelScope.launch {
+            val event = s.signEvent(kind = 3, content = "", tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            contactRepo.updateFromEvent(event)
+            _isFollowing.value = contactRepo.isFollowing(targetPubkey)
+        }
     }
 }

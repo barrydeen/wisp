@@ -71,7 +71,7 @@ class CommunityViewModel(app: Application) : AndroidViewModel(app) {
             val profRepo = profileRepo ?: return@launch
             val contacts = contactRepo ?: return@launch
             val fetcher = metadataFetcher ?: return@launch
-            val myPubkey = keyRepo.getKeypair()?.pubkey?.toHex()
+            val myPubkey = keyRepo.getPubkeyHex()
 
             _isLoading.value = _profiles.value.isEmpty()
 

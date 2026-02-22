@@ -125,7 +125,8 @@ fun UserProfileScreen(
     pinnedIds: Set<String> = emptySet(),
     onTogglePin: (String) -> Unit = {},
     onAddNoteToList: (String) -> Unit = {},
-    onSendDm: (() -> Unit)? = null
+    onSendDm: (() -> Unit)? = null,
+    signer: com.wisp.app.nostr.NostrSigner? = null
 ) {
     val profile by viewModel.profile.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()
@@ -303,7 +304,7 @@ fun UserProfileScreen(
                     isOwnProfile = isOwnProfile,
                     isFollowing = isFollowing,
                     onEditProfile = onEditProfile,
-                    onToggleFollow = { viewModel.toggleFollow(contactRepo, relayPool) },
+                    onToggleFollow = { viewModel.toggleFollow(contactRepo, relayPool, signer) },
                     nip05Repo = nip05Repo,
                     pubkey = profilePubkey,
                     eventRepo = eventRepo,

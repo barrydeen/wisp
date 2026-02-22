@@ -11,10 +11,12 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Keys
+import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip18
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
@@ -36,7 +38,7 @@ private val BARE_BECH32_REGEX = Regex("(?<!nostr:)(?<![a-z0-9])((note1|nevent1|n
 
 class ComposeViewModel(app: Application, private val savedStateHandle: SavedStateHandle) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
-    val blossomRepo = BlossomRepository(app, keyRepo.getKeypair()?.pubkey?.toHex())
+    val blossomRepo = BlossomRepository(app, keyRepo.getPubkeyHex())
 
     private val _content = MutableStateFlow(
         TextFieldValue(savedStateHandle.get<String>("draft_content") ?: "")
@@ -221,7 +223,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         replyTo: NostrEvent? = null,
         quoteTo: NostrEvent? = null,
         onSuccess: () -> Unit = {},
-        outboxRouter: OutboxRouter? = null
+        outboxRouter: OutboxRouter? = null,
+        signer: NostrSigner? = null
     ) {
         val text = _content.value.text.trim()
 
@@ -230,19 +233,19 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             return
         }
 
-        val keypair = keyRepo.getKeypair()
-        if (keypair == null) {
+        val s = signer ?: keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) }
+        if (s == null) {
             _error.value = "Not logged in"
             return
         }
 
         _publishing.value = true
-        startCountdown(text, keypair, relayPool, replyTo, quoteTo, outboxRouter, onSuccess)
+        startCountdown(text, s, relayPool, replyTo, quoteTo, outboxRouter, onSuccess)
     }
 
     private fun startCountdown(
         content: String,
-        keypair: Keys.Keypair,
+        signer: NostrSigner,
         relayPool: RelayPool,
         replyTo: NostrEvent?,
         quoteTo: NostrEvent?,
@@ -251,13 +254,15 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     ) {
         countdownJob?.cancel()
         pendingPublish = {
-            try {
-                publishNote(content, keypair, relayPool, replyTo, quoteTo, outboxRouter)
-                _uploadedUrls.value = emptyList()
-                onSuccess()
-            } catch (e: Exception) {
-                _error.value = "Failed to publish: ${e.message}"
-                _publishing.value = false
+            viewModelScope.launch {
+                try {
+                    publishNote(content, signer, relayPool, replyTo, quoteTo, outboxRouter)
+                    _uploadedUrls.value = emptyList()
+                    onSuccess()
+                } catch (e: Exception) {
+                    _error.value = "Failed to publish: ${e.message}"
+                    _publishing.value = false
+                }
             }
         }
         _countdownSeconds.value = 10
@@ -288,9 +293,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         pendingPublish = null
     }
 
-    private fun publishNote(
+    private suspend fun publishNote(
         content: String,
-        keypair: Keys.Keypair,
+        signer: NostrSigner,
         relayPool: RelayPool,
         replyTo: NostrEvent?,
         quoteTo: NostrEvent? = null,
@@ -302,7 +307,6 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             tags.addAll(Nip10.buildReplyTags(replyTo, hint))
         }
 
-        // Extract p-tags and e-tags from inline nostr: URIs
         val (mentionedPubkeys, mentionedEventIds) = extractNostrRefs(content)
         val existingPubkeys = tags.filter { it.firstOrNull() == "p" }.map { it[1] }.toSet()
         for (pubkey in mentionedPubkeys) {
@@ -323,13 +327,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         } else {
             content
         }
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = 1,
-            content = finalContent,
-            tags = tags
-        )
+        val event = signer.signEvent(kind = 1, content = finalContent, tags = tags)
         val msg = ClientMessage.event(event)
         if (replyTo != null && outboxRouter != null) {
             outboxRouter.publishToInbox(msg, replyTo.pubkey)

@@ -9,9 +9,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
+import com.wisp.app.nostr.Keys
 import com.wisp.app.nostr.Nip02
 import com.wisp.app.nostr.Nip65
+import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.OnboardingPhase
@@ -117,9 +120,9 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun startDiscovery() {
-        val keypair = keyRepo.getKeypair() ?: return
-        // Reload prefs to the new pubkey (ViewModel may have been created before signUp)
-        val pubHex = keypair.pubkey.toHex()
+        // Use real keypair if available, otherwise generate a throwaway for probing
+        val keypair = keyRepo.getKeypair() ?: Keys.generate()
+        val pubHex = keyRepo.getPubkeyHex() ?: keypair.pubkey.toHex()
         keyRepo.reloadPrefs(pubHex)
         blossomRepo.reload(pubHex)
         viewModelScope.launch {
@@ -137,48 +140,36 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
      * Finish profile step: save relays, init relay pool, publish kind 0.
      * Returns true if successful.
      */
-    fun finishProfile(relayPool: RelayPool): Boolean {
-        val keypair = keyRepo.getKeypair() ?: return false
+    fun finishProfile(relayPool: RelayPool, signer: NostrSigner? = null): Boolean {
+        val s = signer ?: keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) } ?: return false
         val relays = _discoveredRelays.value ?: RelayConfig.DEFAULTS
 
         return try {
             _publishing.value = true
 
-            // Save and connect to discovered relays
             keyRepo.saveRelays(relays)
             relayPool.updateRelays(relays)
 
             _phase.value = OnboardingPhase.BROADCASTING
 
-            // Publish kind 10002 relay list so other users can find us
-            val relayTags = Nip65.buildRelayTags(relays)
-            val relayListEvent = NostrEvent.create(
-                privkey = keypair.privkey,
-                pubkey = keypair.pubkey,
-                kind = 10002,
-                content = "",
-                tags = relayTags
-            )
-            relayPool.sendToWriteRelays(ClientMessage.event(relayListEvent))
+            viewModelScope.launch {
+                val relayTags = Nip65.buildRelayTags(relays)
+                val relayListEvent = s.signEvent(kind = 10002, content = "", tags = relayTags)
+                relayPool.sendToWriteRelays(ClientMessage.event(relayListEvent))
 
-            // Publish kind 0 profile if user filled in any field
-            if (_name.value.isNotBlank() || _about.value.isNotBlank() || _picture.value.isNotBlank()) {
-                val content = buildJsonObject {
-                    if (_name.value.isNotBlank()) put("name", JsonPrimitive(_name.value))
-                    if (_about.value.isNotBlank()) put("about", JsonPrimitive(_about.value))
-                    if (_picture.value.isNotBlank()) put("picture", JsonPrimitive(_picture.value))
-                }.toString()
+                if (_name.value.isNotBlank() || _about.value.isNotBlank() || _picture.value.isNotBlank()) {
+                    val content = buildJsonObject {
+                        if (_name.value.isNotBlank()) put("name", JsonPrimitive(_name.value))
+                        if (_about.value.isNotBlank()) put("about", JsonPrimitive(_about.value))
+                        if (_picture.value.isNotBlank()) put("picture", JsonPrimitive(_picture.value))
+                    }.toString()
 
-                val event = NostrEvent.create(
-                    privkey = keypair.privkey,
-                    pubkey = keypair.pubkey,
-                    kind = 0,
-                    content = content
-                )
-                relayPool.sendToWriteRelays(ClientMessage.event(event))
+                    val event = s.signEvent(kind = 0, content = content)
+                    relayPool.sendToWriteRelays(ClientMessage.event(event))
+                }
+
+                _publishing.value = false
             }
-
-            _publishing.value = false
             true
         } catch (e: Exception) {
             _error.value = "Failed: ${e.message}"
@@ -370,28 +361,24 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     fun finishOnboarding(
         relayPool: RelayPool,
         contactRepo: ContactRepository,
-        selectedPubkeys: Set<String>
+        selectedPubkeys: Set<String>,
+        signer: NostrSigner? = null
     ) {
-        val keypair = keyRepo.getKeypair() ?: return
+        val s = signer ?: keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) } ?: return
+        val myPubkey = s.pubkeyHex
 
-        // Always follow self + any selected pubkeys
-        val allFollows = selectedPubkeys + keypair.pubkey.toHex()
+        val allFollows = selectedPubkeys + myPubkey
 
-        // Build follow list
         var follows = contactRepo.getFollowList()
         for (pubkey in allFollows) {
             follows = Nip02.addFollow(follows, pubkey)
         }
         val tags = Nip02.buildFollowTags(follows)
-        val event = NostrEvent.create(
-            privkey = keypair.privkey,
-            pubkey = keypair.pubkey,
-            kind = 3,
-            content = "",
-            tags = tags
-        )
-        relayPool.sendToWriteRelays(ClientMessage.event(event))
-        contactRepo.updateFromEvent(event)
+        viewModelScope.launch {
+            val event = s.signEvent(kind = 3, content = "", tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            contactRepo.updateFromEvent(event)
+        }
 
         keyRepo.markOnboardingComplete()
     }

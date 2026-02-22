@@ -1,5 +1,7 @@
 package com.wisp.app.ui.screen
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -29,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -37,6 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wisp.app.R
+import com.wisp.app.nostr.RemoteSignerBridge
+import com.wisp.app.nostr.toHex
 import com.wisp.app.viewmodel.AuthViewModel
 
 @Composable
@@ -44,9 +49,27 @@ fun AuthScreen(
     viewModel: AuthViewModel,
     onAuthenticated: (isNewAccount: Boolean) -> Unit
 ) {
+    val context = LocalContext.current
     val nsecInput by viewModel.nsecInput.collectAsState()
     val error by viewModel.error.collectAsState()
     var nsecVisible by remember { mutableStateOf(false) }
+    val signerAvailable = remember { RemoteSignerBridge.isSignerAvailable(context) }
+
+    val signerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val data = result.data ?: return@rememberLauncherForActivityResult
+        val result = data.getStringExtra("result") ?: return@rememberLauncherForActivityResult
+        val pkg = data.getStringExtra("package")
+        // Amber returns npub bech32 — decode to hex
+        val pubkeyHex = if (result.startsWith("npub1")) {
+            try { com.wisp.app.nostr.Nip19.npubDecode(result).toHex() } catch (_: Exception) { return@rememberLauncherForActivityResult }
+        } else {
+            result
+        }
+        viewModel.loginWithSigner(pubkeyHex, pkg)
+        onAuthenticated(false)
+    }
 
     Column(
         modifier = Modifier
@@ -125,6 +148,23 @@ fun AuthScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Log In")
+        }
+
+        if (signerAvailable) {
+            Spacer(Modifier.height(24.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            Spacer(Modifier.height(24.dp))
+
+            OutlinedButton(
+                onClick = {
+                    val permissions = """[{"type":"sign_event"},{"type":"nip44_encrypt"},{"type":"nip44_decrypt"}]"""
+                    val intent = RemoteSignerBridge.buildGetPublicKeyIntent(permissions)
+                    signerLauncher.launch(intent)
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Login with Signer")
+            }
         }
 
         error?.let {

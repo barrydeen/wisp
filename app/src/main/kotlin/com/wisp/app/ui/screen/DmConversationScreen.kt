@@ -38,6 +38,7 @@ import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.ui.component.DmBubble
+import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.viewmodel.DmConversationViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,7 +50,8 @@ fun DmConversationScreen(
     userPubkey: String?,
     eventRepo: EventRepository? = null,
     relayInfoRepo: RelayInfoRepository? = null,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    signer: NostrSigner? = null
 ) {
     val messages by viewModel.messages.collectAsState()
     val messageText by viewModel.messageText.collectAsState()
@@ -134,7 +136,7 @@ fun DmConversationScreen(
                     )
                 } else {
                     IconButton(
-                        onClick = { viewModel.sendMessage(relayPool) },
+                        onClick = { viewModel.sendMessage(relayPool, signer) },
                         enabled = messageText.isNotBlank()
                     ) {
                         Icon(

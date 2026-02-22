@@ -42,7 +42,8 @@ import com.wisp.app.viewmodel.ProfileViewModel
 fun ProfileEditScreen(
     viewModel: ProfileViewModel,
     relayPool: RelayPool,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    signer: com.wisp.app.nostr.NostrSigner? = null
 ) {
     val name by viewModel.name.collectAsState()
     val about by viewModel.about.collectAsState()
@@ -183,7 +184,7 @@ fun ProfileEditScreen(
 
             Button(
                 onClick = {
-                    if (viewModel.publishProfile(relayPool)) onBack()
+                    if (viewModel.publishProfile(relayPool, signer = signer)) onBack()
                 },
                 enabled = !publishing,
                 modifier = Modifier.fillMaxWidth()
