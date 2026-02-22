@@ -63,6 +63,7 @@ class BookmarkSetRepository(private val context: Context, pubkeyHex: String? = n
         _ownSets.value = emptyList()
         _allListedEventIds.value = emptySet()
         ownerPubkey = null
+        prefs.edit().clear().apply()
     }
 
     fun reload(pubkeyHex: String?) {

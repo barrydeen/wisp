@@ -43,6 +43,7 @@ class ContactRepository(private val context: Context, pubkeyHex: String? = null)
         _followList.value = emptyList()
         followSet = HashSet()
         lastUpdated = 0
+        prefs.edit().clear().apply()
     }
 
     fun reload(pubkeyHex: String?) {

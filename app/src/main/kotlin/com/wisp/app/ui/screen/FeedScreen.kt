@@ -575,7 +575,7 @@ fun FeedScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            initLoadingState != InitLoadingState.Done && initLoadingState != InitLoadingState.Idle -> {
+                            initLoadingState != InitLoadingState.Done -> {
                                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                             }
                             else -> {

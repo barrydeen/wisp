@@ -594,5 +594,6 @@ class RelayPool {
         relayJobs.values.forEach { it.cancel() }
         relayJobs.clear()
         subscriptionTracker.clear()
+        _connectedCount.value = 0
     }
 }

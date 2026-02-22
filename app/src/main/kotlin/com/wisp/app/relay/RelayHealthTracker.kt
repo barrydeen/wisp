@@ -190,6 +190,7 @@ class RelayHealthTracker(
         sessionHistory.clear()
         lifetimeStats.clear()
         _badRelays.clear()
+        prefs.edit().clear().apply()
     }
 
     fun reload(pubkeyHex: String?) {

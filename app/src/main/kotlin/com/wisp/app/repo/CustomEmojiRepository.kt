@@ -131,6 +131,7 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
         _resolvedEmojis.value = emptyMap()
         eventEmojiCache.evictAll()
         _unicodeEmojis.value = emptyList()
+        prefs.edit().clear().apply()
     }
 
     fun reload(pubkeyHex: String?) {
