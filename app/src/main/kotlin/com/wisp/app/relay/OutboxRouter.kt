@@ -10,12 +10,46 @@ class OutboxRouter(
     private val relayListRepo: RelayListRepository
 ) {
     companion object {
-        private const val MAX_AUTHORS_PER_RELAY = 300
+        /**
+         * Maximum number of authors per filter in a single REQ.
+         * Big relays (damus.io, nos.social) reject requests where total filter items exceed
+         * their limit. Keeping author lists ≤200 per REQ avoids "total filter items too large".
+         */
+        private const val MAX_AUTHORS_PER_FILTER = 200
     }
+
+    /**
+     * Send chunked REQ messages when an author list exceeds [MAX_AUTHORS_PER_FILTER].
+     * Chunk 0 uses [subId] as-is; subsequent chunks use "{subId}:c{N}".
+     * [RelayPool.closeOnAllRelays] knows about this convention and cleans up all chunks.
+     *
+     * @param limitPerAuthor When true, each chunk's filter gets `limit = chunk.size`
+     *                       (useful for kind-0 profile requests where you expect 1 event/author).
+     */
+    private fun sendChunkedToAll(
+        subId: String,
+        authors: List<String>,
+        templateFilters: List<Filter>,
+        limitPerAuthor: Boolean = false
+    ) {
+        val chunks = authors.chunked(MAX_AUTHORS_PER_FILTER)
+        for ((index, chunk) in chunks.withIndex()) {
+            val chunkSubId = if (index == 0) subId else "$subId:c$index"
+            val filters = templateFilters.map { f ->
+                val withAuthors = f.copy(authors = chunk)
+                if (limitPerAuthor) withAuthors.copy(limit = chunk.size) else withAuthors
+            }
+            val msg = if (filters.size == 1) ClientMessage.req(chunkSubId, filters[0])
+            else ClientMessage.req(chunkSubId, filters)
+            relayPool.sendToAll(msg)
+        }
+    }
+
     /**
      * Subscribe to content from [authors] by routing to each author's write relays.
      * Accepts multiple template filters — each gets `.copy(authors=subset)` per relay group.
      * Authors without known relay lists fall back to sendToAll.
+     * Large author lists are automatically chunked to stay within relay filter limits.
      * Returns the set of relay URLs that received subscriptions.
      */
     fun subscribeByAuthors(
@@ -25,6 +59,7 @@ class OutboxRouter(
     ): Set<String> {
         val targetedRelays = mutableSetOf<String>()
         val coveredAuthors = mutableSetOf<String>()
+        val templateList = templateFilters.toList()
 
         // Group authors by their write relays
         val knownAuthors = authors.filter { relayListRepo.hasRelayList(it) }
@@ -33,17 +68,14 @@ class OutboxRouter(
         if (knownAuthors.isNotEmpty()) {
             val relayToAuthors = groupAuthorsByWriteRelay(knownAuthors)
             for ((relayUrl, relayAuthors) in relayToAuthors) {
-                // Empty key = authors without write relays → broadcast to all
+                // Empty key = authors without write relays → broadcast to all (chunked)
                 if (relayUrl.isEmpty()) {
-                    val filters = templateFilters.map { it.copy(authors = relayAuthors) }
-                    val msg = if (filters.size == 1) ClientMessage.req(subId, filters[0])
-                    else ClientMessage.req(subId, filters)
-                    relayPool.sendToAll(msg)
+                    sendChunkedToAll(subId, relayAuthors, templateList)
                     targetedRelays.addAll(relayPool.getRelayUrls())
                     coveredAuthors.addAll(relayAuthors)
                     continue
                 }
-                val filters = templateFilters.map { it.copy(authors = relayAuthors) }
+                val filters = templateList.map { it.copy(authors = relayAuthors) }
                 val msg = if (filters.size == 1) ClientMessage.req(subId, filters[0])
                 else ClientMessage.req(subId, filters)
                 if (relayPool.sendToRelayOrEphemeral(relayUrl, msg)) {
@@ -53,14 +85,11 @@ class OutboxRouter(
             }
         }
 
-        // Authors without any relay list OR whose write relays all failed (bad/blocked/cooldown) → sendToAll
+        // Authors without any relay list OR whose write relays all failed → sendToAll (chunked)
         val uncoveredKnown = knownAuthors.filter { it !in coveredAuthors }
         val allFallback = unknownAuthors + uncoveredKnown
         if (allFallback.isNotEmpty()) {
-            val filters = templateFilters.map { it.copy(authors = allFallback) }
-            val msg = if (filters.size == 1) ClientMessage.req(subId, filters[0])
-            else ClientMessage.req(subId, filters)
-            relayPool.sendToAll(msg)
+            sendChunkedToAll(subId, allFallback, templateList)
             targetedRelays.addAll(relayPool.getRelayUrls())
         }
 
@@ -69,10 +98,9 @@ class OutboxRouter(
 
     /**
      * Request profiles for [pubkeys] from their known write relays + general relays.
+     * Large author lists are chunked to stay within relay filter limits.
      */
     fun requestProfiles(subId: String, pubkeys: List<String>) {
-        val filter = Filter(kinds = listOf(0), authors = pubkeys, limit = pubkeys.size)
-
         // Group by write relay and send targeted requests
         val knownPubkeys = pubkeys.filter { relayListRepo.hasRelayList(it) }
         val unknownPubkeys = pubkeys.filter { !relayListRepo.hasRelayList(it) }
@@ -80,19 +108,22 @@ class OutboxRouter(
         if (knownPubkeys.isNotEmpty()) {
             val relayToAuthors = groupAuthorsByWriteRelay(knownPubkeys)
             for ((relayUrl, relayAuthors) in relayToAuthors) {
-                val f = Filter(kinds = listOf(0), authors = relayAuthors, limit = relayAuthors.size)
                 if (relayUrl.isEmpty()) {
-                    relayPool.sendToAll(ClientMessage.req(subId, f))
+                    sendChunkedToAll(subId, relayAuthors, listOf(
+                        Filter(kinds = listOf(0))
+                    ), limitPerAuthor = true)
                 } else {
+                    val f = Filter(kinds = listOf(0), authors = relayAuthors, limit = relayAuthors.size)
                     relayPool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(subId, f))
                 }
             }
         }
 
-        // Fallback: send unknown pubkeys to all general relays
+        // Fallback: send unknown pubkeys to all general relays (chunked)
         if (unknownPubkeys.isNotEmpty()) {
-            val f = Filter(kinds = listOf(0), authors = unknownPubkeys, limit = unknownPubkeys.size)
-            relayPool.sendToAll(ClientMessage.req(subId, f))
+            sendChunkedToAll(subId, unknownPubkeys, listOf(
+                Filter(kinds = listOf(0))
+            ), limitPerAuthor = true)
         }
     }
 
@@ -196,9 +227,7 @@ class OutboxRouter(
         if (missing.isEmpty()) return null
 
         val subId = "relay-lists"
-        val filter = Filter(kinds = listOf(10002), authors = missing)
-        val msg = ClientMessage.req(subId, filter)
-        relayPool.sendToAll(msg)
+        sendChunkedToAll(subId, missing, listOf(Filter(kinds = listOf(10002))))
         return subId
     }
 
@@ -265,7 +294,7 @@ class OutboxRouter(
                 var placed = false
                 for (url in writeRelays) {
                     val list = result.getOrPut(url) { mutableListOf() }
-                    if (list.size < MAX_AUTHORS_PER_RELAY) {
+                    if (list.size < MAX_AUTHORS_PER_FILTER) {
                         list.add(pubkey)
                         placed = true
                     }
