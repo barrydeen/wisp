@@ -21,6 +21,7 @@ import com.wisp.app.nostr.RemoteSignerBridge
 import com.wisp.app.nostr.RemoteSigner
 import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.Relay
+import com.wisp.app.relay.RelayLifecycleManager
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayHealthTracker
@@ -121,6 +122,15 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val relayScoreBoard = RelayScoreBoard(app, relayListRepo, contactRepo, pubkeyHex)
     val outboxRouter = OutboxRouter(relayPool, relayListRepo)
     val subManager = SubscriptionManager(relayPool)
+    val lifecycleManager = RelayLifecycleManager(
+        context = app,
+        relayPool = relayPool,
+        scope = viewModelScope,
+        onReconnected = { force ->
+            if (force) subscribeFeed() else resumeSubscribeFeed()
+            if (force) fetchRelayListsForFollows()
+        }
+    )
     val extendedNetworkRepo = ExtendedNetworkRepository(
         app, contactRepo, muteRepo, relayListRepo, relayPool, subManager, relayScoreBoard, pubkeyHex
     )
@@ -217,7 +227,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
         activeEngagementSubIds.clear()
 
-        // Disconnect relays and NWC
+        // Stop lifecycle manager and disconnect relays
+        lifecycleManager.stop()
         relayPool.disconnectAll()
         nwcRepo.disconnect()
 
@@ -387,6 +398,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+
+        // Start network-aware lifecycle manager — handles connectivity changes
+        // and works regardless of which screen is active.
+        lifecycleManager.start()
 
         getUserPubkey()?.let {
             listRepo.setOwner(it)
@@ -875,28 +890,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun onAppResume(pausedMs: Long = 0L) {
-        if (!relaysInitialized) return
-        val forceThresholdMs = 30_000L
-        if (pausedMs >= forceThresholdMs) {
-            Log.d("FeedViewModel", "Long pause (${pausedMs / 1000}s) — force reconnecting all relays")
-            relayPool.forceReconnectAll()
-            viewModelScope.launch {
-                relayPool.awaitAnyConnected(minCount = 3)
-                relayPool.appIsActive = true
-                subscribeFeed()
-                fetchRelayListsForFollows()
-            }
-        } else {
-            Log.d("FeedViewModel", "Short pause (${pausedMs / 1000}s) — lightweight reconnect")
-            relayPool.reconnectAll()
-            viewModelScope.launch {
-                relayPool.awaitAnyConnected()
-                relayPool.appIsActive = true
-                resumeSubscribeFeed()
-            }
-        }
-    }
+    /** Called by Activity lifecycle — delegates to RelayLifecycleManager. */
+    fun onAppPause() = lifecycleManager.onAppPause()
+
+    /** Called by Activity lifecycle — delegates to RelayLifecycleManager. */
+    fun onAppResume(pausedMs: Long) = lifecycleManager.onAppResume(pausedMs)
 
     /**
      * Full feed refresh: disconnect all relays, reconnect, rebuild outbox

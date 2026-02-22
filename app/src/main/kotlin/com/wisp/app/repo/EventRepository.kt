@@ -91,24 +91,20 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     // Debouncing: coalesce rapid-fire feed list and version updates
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val feedDirty = Channel<Unit>(Channel.CONFLATED)
+    private val feedInserted = Channel<Unit>(Channel.CONFLATED)
     private val versionDirty = Channel<Unit>(Channel.CONFLATED)
 
-    // Feed rendering version — bumped by the polling loop, consumed by the UI
-    @Volatile private var feedListVersion = 0
-    private var lastRenderedVersion = -1
-
     init {
-        // Poll feedList and emit to _feed at a controlled pace (decoupled from inserts)
+        // Emit feed updates when new events are inserted. Uses a conflated channel so
+        // rapid-fire inserts from multiple relays coalesce into a single emission after
+        // a brief 50ms settle window — 5x faster than the previous 250ms polling loop
+        // while still batching concurrent inserts.
         scope.launch {
-            while (true) {
-                delay(250)
-                val ver = feedListVersion
-                if (ver != lastRenderedVersion) {
-                    lastRenderedVersion = ver
-                    val filter = _authorFilter.value
-                    val raw = synchronized(feedList) { feedList.toList() }
-                    _feed.value = if (filter == null) raw else raw.filter { it.pubkey in filter }
-                }
+            for (signal in feedInserted) {
+                delay(50)  // settle window: coalesce concurrent inserts
+                val filter = _authorFilter.value
+                val raw = synchronized(feedList) { feedList.toList() }
+                _feed.value = if (filter == null) raw else raw.filter { it.pubkey in filter }
             }
         }
         // Immediate emission channel — used for explicit flushes (purge, filter change, etc.)
@@ -117,7 +113,6 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 val filter = _authorFilter.value
                 val raw = synchronized(feedList) { feedList.toList() }
                 _feed.value = if (filter == null) raw else raw.filter { it.pubkey in filter }
-                lastRenderedVersion = feedListVersion
             }
         }
         // Debounce version counter emissions — coalesce into one bump per 50ms window
@@ -278,7 +273,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             }
             feedList.add(low, event)
         }
-        feedListVersion++  // polling loop will pick this up
+        feedInserted.trySend(Unit)  // coalesced emission via 50ms settle window
         val filter = _authorFilter.value
         if (countNewNotes && (filter == null || event.pubkey in filter)) _newNoteCount.value++
     }

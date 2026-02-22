@@ -54,6 +54,9 @@ class RelayPool {
     /** Relay URL → parent Job for all collector coroutines on that relay. */
     private val relayJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
 
+    /** Last REQ message per subscription ID per relay URL, for re-sync on reconnect. */
+    private val activeSubscriptions = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, String>>()
+
     /** Subscription prefixes that bypass event deduplication. */
     private val dedupBypassPrefixes = java.util.concurrent.CopyOnWriteArrayList(
         listOf("thread-", "user", "quote-", "editprofile")
@@ -273,6 +276,9 @@ class RelayPool {
                 if (appIsActive) {
                     if (connected) {
                         healthTracker?.onRelayConnected(relay.config.url)
+                        // Re-send tracked subscriptions after reconnect so data flows immediately.
+                        // Without this, a reconnected relay sits idle until the next manual action.
+                        resyncSubscriptions(relay)
                     } else {
                         healthTracker?.closeSession(relay.config.url)
                     }
@@ -338,6 +344,7 @@ class RelayPool {
                 if (subId != null) {
                     if (!subscriptionTracker.hasCapacity(relay.config.url, subId)) continue
                     subscriptionTracker.track(relay.config.url, subId)
+                    trackSubscription(relay.config.url, subId, message)
                 }
                 relay.send(message)
             }
@@ -350,6 +357,7 @@ class RelayPool {
             if (subId != null) {
                 if (!subscriptionTracker.hasCapacity(relay.config.url, subId)) continue
                 subscriptionTracker.track(relay.config.url, subId)
+                trackSubscription(relay.config.url, subId, message)
             }
             relay.send(message)
         }
@@ -360,6 +368,7 @@ class RelayPool {
         if (subId != null) {
             if (!subscriptionTracker.hasCapacity(url, subId)) return
             subscriptionTracker.track(url, subId)
+            trackSubscription(url, subId, message)
         }
         relayIndex[url]?.send(message)
     }
@@ -370,6 +379,18 @@ class RelayPool {
         val start = 8 // after ["REQ","
         val end = message.indexOf('"', start)
         return if (end > start) message.substring(start, end) else null
+    }
+
+    /** Track a REQ message for a relay so it can be re-sent on reconnect. */
+    private fun trackSubscription(relayUrl: String, subId: String, message: String) {
+        activeSubscriptions.getOrPut(relayUrl) {
+            java.util.concurrent.ConcurrentHashMap()
+        }[subId] = message
+    }
+
+    /** Remove a tracked subscription for a relay. */
+    private fun untrackSubscription(relayUrl: String, subId: String) {
+        activeSubscriptions[relayUrl]?.remove(subId)
     }
 
     fun sendToRelayOrEphemeral(url: String, message: String, skipBadCheck: Boolean = false): Boolean {
@@ -404,6 +425,7 @@ class RelayPool {
         if (subId != null) {
             if (!subscriptionTracker.hasCapacity(url, subId)) return false
             subscriptionTracker.track(url, subId)
+            trackSubscription(url, subId, message)
         }
         ephemeralLastUsed[url] = System.currentTimeMillis()
         ephemeral.send(message)
@@ -438,6 +460,20 @@ class RelayPool {
                 }
             }
         }
+    }
+
+    /**
+     * Re-send all tracked subscriptions for a relay after it reconnects.
+     * This ensures data flows immediately instead of the relay sitting idle.
+     */
+    private fun resyncSubscriptions(relay: Relay) {
+        val subs = activeSubscriptions[relay.config.url] ?: return
+        if (subs.isEmpty()) return
+        val count = subs.size
+        for ((_, message) in subs) {
+            relay.send(message)
+        }
+        Log.d("RelayPool", "Re-synced $count subscriptions to ${relay.config.url}")
     }
 
     private fun isRateLimitMessage(message: String): Boolean {
@@ -493,6 +529,7 @@ class RelayPool {
         healthTracker?.closeAllSessions()
         // Server-side subscriptions are dead — clear tracker so fresh REQs are sent
         subscriptionTracker.clear()
+        activeSubscriptions.clear()
         // Clear all cooldowns — background failures shouldn't block reconnection
         relayCooldowns.clear()
         // Tear down and reconnect persistent relays
@@ -532,6 +569,10 @@ class RelayPool {
 
     fun closeOnAllRelays(subscriptionId: String) {
         subscriptionTracker.untrackAll(subscriptionId)
+        // Remove tracked subscription from all relays
+        for (relayMap in activeSubscriptions.values) {
+            relayMap.remove(subscriptionId)
+        }
         val msg = ClientMessage.close(subscriptionId)
         for (relay in relays) relay.send(msg)
         for (relay in dmRelays) relay.send(msg)
@@ -594,6 +635,7 @@ class RelayPool {
         relayJobs.values.forEach { it.cancel() }
         relayJobs.clear()
         subscriptionTracker.clear()
+        activeSubscriptions.clear()
         _connectedCount.value = 0
     }
 }
