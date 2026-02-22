@@ -82,7 +82,7 @@ fun NotificationsScreen(
     val eventRepo = viewModel.eventRepository
     val listState = rememberLazyListState()
     LaunchedEffect(scrollToTopTrigger) {
-        if (scrollToTopTrigger > 0) listState.animateScrollToItem(0)
+        if (scrollToTopTrigger > 0) listState.scrollToItem(0)
     }
 
     // Version flows for cache invalidation on reply PostCards

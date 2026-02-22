@@ -1,8 +1,6 @@
 package com.wisp.app.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.ui.graphics.Color
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
@@ -123,7 +121,7 @@ fun FeedScreen(
     val connectedCount by viewModel.relayPool.connectedCount.collectAsState()
     val listState = rememberLazyListState()
     LaunchedEffect(scrollToTopTrigger) {
-        if (scrollToTopTrigger > 0) listState.animateScrollToItem(0)
+        if (scrollToTopTrigger > 0) listState.scrollToItem(0)
     }
     val userPubkey = viewModel.getUserPubkey()
     val selectedList by viewModel.selectedList.collectAsState()
@@ -209,17 +207,6 @@ fun FeedScreen(
         }
     }
 
-    var isScrollingUp by remember { mutableStateOf(false) }
-    LaunchedEffect(listState) {
-        var previousIndex = listState.firstVisibleItemIndex
-        var previousOffset = listState.firstVisibleItemScrollOffset
-        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
-            .collect { (index, offset) ->
-                isScrollingUp = index < previousIndex || (index == previousIndex && offset < previousOffset)
-                previousIndex = index
-                previousOffset = offset
-            }
-    }
 
     val initialLoadDone by viewModel.initialLoadDone.collectAsState()
 
@@ -655,17 +642,6 @@ fun FeedScreen(
                                 .padding(top = 8.dp)
                         )
 
-                        ScrollToTopButton(
-                            visible = !isAtTop && isScrollingUp && newNoteCount == 0,
-                            onClick = {
-                                scope.launch {
-                                    listState.animateScrollToItem(0)
-                                }
-                            },
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .padding(top = 8.dp)
-                        )
                     }
                 }
             }
@@ -1001,44 +977,6 @@ private fun ListPickerDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
-}
-
-@Composable
-private fun ScrollToTopButton(
-    visible: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    androidx.compose.animation.AnimatedVisibility(
-        visible = visible,
-        enter = slideInVertically { -it },
-        exit = slideOutVertically { -it },
-        modifier = modifier
-    ) {
-        Surface(
-            onClick = onClick,
-            shape = RoundedCornerShape(20.dp),
-            color = Color(0xFFFF9800),
-            contentColor = Color.White,
-            shadowElevation = 4.dp
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.KeyboardArrowUp,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    "Back to top",
-                    style = MaterialTheme.typography.labelMedium
-                )
-            }
-        }
-    }
 }
 
 @Composable
