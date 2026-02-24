@@ -162,19 +162,20 @@ fun PostCard(
                 onLongPress = if (!isOwnEvent) onFollowAuthor else null
             )
             Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f).clickable(onClick = onProfileClick)) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = displayName,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clickable(onClick = onProfileClick)
                 )
                 profile?.nip05?.let { nip05 ->
                     nip05Repo?.checkOrFetch(event.pubkey, nip05)
                     val status = nip05Repo?.getStatus(event.pubkey)
                     val isImpersonator = status == Nip05Status.IMPERSONATOR
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable(onClick = onProfileClick)) {
                         Text(
                             text = if (isImpersonator) "\u2715 $nip05" else nip05,
                             style = MaterialTheme.typography.bodySmall,

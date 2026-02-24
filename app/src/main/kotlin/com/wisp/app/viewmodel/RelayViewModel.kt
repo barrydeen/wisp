@@ -49,7 +49,7 @@ class RelayViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun addRelay(): Boolean {
-        val url = _newRelayUrl.value.trim()
+        val url = _newRelayUrl.value.trim().trimEnd('/')
         if (url.isBlank() || !url.startsWith("wss://")) return false
 
         when (_selectedTab.value) {

@@ -7,7 +7,8 @@ import com.wisp.app.repo.RelayListRepository
 
 class OutboxRouter(
     private val relayPool: RelayPool,
-    private val relayListRepo: RelayListRepository
+    private val relayListRepo: RelayListRepository,
+    private val relayHintStore: com.wisp.app.repo.RelayHintStore? = null
 ) {
     companion object {
         /**
@@ -92,7 +93,20 @@ class OutboxRouter(
                     fallbackAuthors.add(author)
                 }
             } else {
-                fallbackAuthors.add(author)
+                // No kind 10002 relay list — try accumulated hints
+                val hints = relayHintStore?.getHints(author)
+                if (!hints.isNullOrEmpty()) {
+                    val eligible = hints.filter { it !in blockedUrls }
+                    if (eligible.isNotEmpty()) {
+                        for (url in eligible) {
+                            relayToAuthors.getOrPut(url) { mutableSetOf() }.add(author)
+                        }
+                    } else {
+                        fallbackAuthors.add(author)
+                    }
+                } else {
+                    fallbackAuthors.add(author)
+                }
             }
         }
 
@@ -195,7 +209,20 @@ class OutboxRouter(
             }
         }
 
-        // Fallback: if no targeted relays found, send to all general relays
+        // Hint tier: try accumulated relay hints before broadcast fallback
+        if (targetedRelays.isEmpty()) {
+            val hints = relayHintStore?.getHints(pubkey) ?: emptySet()
+            if (hints.isNotEmpty()) {
+                val msg = ClientMessage.req(subId, filter)
+                for (url in hints) {
+                    if (relayPool.sendToRelayOrEphemeral(url, msg)) {
+                        targetedRelays.add(url)
+                    }
+                }
+            }
+        }
+
+        // Fallback: if still no targeted relays found, send to all general relays
         if (targetedRelays.isEmpty()) {
             val msg = ClientMessage.req(subId, filter)
             relayPool.sendToAll(msg)
@@ -261,6 +288,10 @@ class OutboxRouter(
 
         // Next: their inbox
         if (theirInbox.isNotEmpty()) return theirInbox.first()
+
+        // Hint tier: accumulated relay hints
+        val hints = relayHintStore?.getHints(pubkey) ?: emptySet()
+        if (hints.isNotEmpty()) return hints.first()
 
         // Fallback: our outbox
         if (ourOutbox.isNotEmpty()) return ourOutbox.first()

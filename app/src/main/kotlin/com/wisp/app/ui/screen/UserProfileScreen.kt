@@ -134,6 +134,7 @@ fun UserProfileScreen(
     val replies by viewModel.replies.collectAsState()
     val followList by viewModel.followList.collectAsState()
     val relayList by viewModel.relayList.collectAsState()
+    val relayHints by viewModel.relayHints.collectAsState()
     val followProfileVersion by viewModel.followProfileVersion.collectAsState()
     val myFollowList by contactRepo.followList.collectAsState()
 
@@ -424,6 +425,11 @@ fun UserProfileScreen(
                                 isPinned = event.id in pinnedIds
                             )
                         }
+                        if (rootNotes.isNotEmpty()) {
+                            item {
+                                LoadMoreButton(onClick = { viewModel.loadMoreNotes() })
+                            }
+                        }
                     }
                 }
                 1 -> {
@@ -483,6 +489,9 @@ fun UserProfileScreen(
                                 isPinned = event.id in pinnedIds
                             )
                         }
+                        item {
+                            LoadMoreButton(onClick = { viewModel.loadMoreReplies() })
+                        }
                     }
                 }
                 2 -> {
@@ -505,11 +514,27 @@ fun UserProfileScreen(
                     }
                 }
                 3 -> {
-                    if (relayList.isEmpty()) {
+                    if (relayList.isEmpty() && relayHints.isEmpty()) {
                         item { EmptyTabContent("No relay list published") }
                     } else {
-                        items(items = relayList, key = { it.url }) { relay ->
-                            RelayRow(relay)
+                        if (relayList.isNotEmpty()) {
+                            item {
+                                SectionLabel("Relay List (NIP-65)")
+                            }
+                            items(items = relayList, key = { it.url }) { relay ->
+                                RelayRow(relay)
+                            }
+                        }
+                        // Show relay hints (discovered from events) that aren't already in the relay list
+                        val relayListUrls = relayList.map { it.url }.toSet()
+                        val extraHints = relayHints.filter { it !in relayListUrls }.sorted()
+                        if (extraHints.isNotEmpty()) {
+                            item {
+                                SectionLabel(if (relayList.isEmpty()) "Discovered Relays" else "Other Discovered Relays")
+                            }
+                            items(items = extraHints, key = { it }) { url ->
+                                HintRelayRow(url)
+                            }
                         }
                     }
                 }
@@ -774,6 +799,51 @@ private fun RelayRow(relay: RelayConfig) {
 }
 
 @Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+    )
+}
+
+@Composable
+private fun HintRelayRow(url: String) {
+    val displayUrl = url
+        .removePrefix("wss://")
+        .removePrefix("ws://")
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Text(
+            text = displayUrl,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = "hint",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .background(
+                    MaterialTheme.colorScheme.surfaceVariant,
+                    RoundedCornerShape(4.dp)
+                )
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        )
+    }
+}
+
+@Composable
 private fun AddToListDialog(
     pubkey: String,
     ownLists: List<FollowSet>,
@@ -861,6 +931,20 @@ private fun AddToListDialog(
         },
         dismissButton = {}
     )
+}
+
+@Composable
+private fun LoadMoreButton(onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 16.dp)
+    ) {
+        OutlinedButton(onClick = onClick) {
+            Text("Load More")
+        }
+    }
 }
 
 @Composable

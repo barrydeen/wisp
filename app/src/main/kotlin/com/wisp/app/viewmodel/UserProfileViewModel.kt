@@ -18,6 +18,7 @@ import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.KeyRepository
+import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.relay.SubscriptionManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +52,9 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     private val _relayList = MutableStateFlow<List<RelayConfig>>(emptyList())
     val relayList: StateFlow<List<RelayConfig>> = _relayList
 
+    private val _relayHints = MutableStateFlow<Set<String>>(emptySet())
+    val relayHints: StateFlow<Set<String>> = _relayHints
+
     private val _followProfileVersion = MutableStateFlow(0)
     val followProfileVersion: StateFlow<Int> = _followProfileVersion
 
@@ -59,9 +63,18 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     private var relayPoolRef: RelayPool? = null
     private var outboxRouterRef: OutboxRouter? = null
     private var subManagerRef: SubscriptionManager? = null
+    private var relayHintStoreRef: RelayHintStore? = null
     private val activeEngagementSubIds = mutableListOf<String>()
     private val activeFollowProfileSubIds = mutableListOf<String>()
     private var topRelayUrls: List<String> = emptyList()
+
+    private var isLoadingMoreNotes = false
+    private var isLoadingMoreReplies = false
+    // Track oldest event timestamps from the target user (kind 1/6) for pagination.
+    // rootNotes contains repost inner events with different authors/timestamps,
+    // so we track the user's own event timestamps separately.
+    private var oldestNoteTimestamp: Long = Long.MAX_VALUE
+    private var oldestReplyTimestamp: Long = Long.MAX_VALUE
 
     companion object {
         private val SUB_IDS = setOf("userprofile", "userposts", "userfollows", "userrelays", "followprofiles")
@@ -75,15 +88,20 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         outboxRouter: OutboxRouter? = null,
         relayListRepo: RelayListRepository? = null,
         subManager: SubscriptionManager? = null,
-        topRelayUrls: List<String> = emptyList()
+        topRelayUrls: List<String> = emptyList(),
+        relayHintStore: RelayHintStore? = null
     ) {
         targetPubkey = pubkey
         eventRepoRef = eventRepo
         relayPoolRef = relayPool
         outboxRouterRef = outboxRouter
         subManagerRef = subManager
+        relayHintStoreRef = relayHintStore
         this.topRelayUrls = topRelayUrls
+        oldestNoteTimestamp = Long.MAX_VALUE
+        oldestReplyTimestamp = Long.MAX_VALUE
         _profile.value = eventRepo.getProfileData(pubkey)
+        _relayHints.value = relayHintStore?.getHints(pubkey) ?: emptySet()
         _isFollowing.value = contactRepo.isFollowing(pubkey)
 
         // Close any prior subs (e.g. re-subscribe after relay list discovery)
@@ -127,9 +145,16 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         viewModelScope.launch {
-            relayPool.relayEvents.collect { (event, _, subscriptionId) ->
+            relayPool.relayEvents.collect { (event, relayUrl, subscriptionId) ->
+                // Track relay hints for all events we see
+                relayHintStore?.addAuthorRelay(event.pubkey, relayUrl)
+                relayHintStore?.extractHintsFromTags(event)
+                // Refresh hints for the profile being viewed
+                if (event.pubkey == pubkey) {
+                    _relayHints.value = relayHintStore?.getHints(pubkey) ?: emptySet()
+                }
                 // Only process events from our own subscriptions
-                if (subscriptionId !in SUB_IDS && !subscriptionId.startsWith("followprofiles") && !subscriptionId.startsWith("user-engage")) return@collect
+                if (subscriptionId !in SUB_IDS && !subscriptionId.startsWith("followprofiles") && !subscriptionId.startsWith("user-engage") && subscriptionId != "userposts-more" && subscriptionId != "userreplies-more") return@collect
 
                 // Route engagement events — reactions, zaps, reply counts
                 if (subscriptionId.startsWith("user-engage")) {
@@ -156,6 +181,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                         1 -> {
                             eventRepo.cacheEvent(event)
                             if (Nip10.getReplyTarget(event) == null) {
+                                if (event.created_at < oldestNoteTimestamp) oldestNoteTimestamp = event.created_at
                                 val current = _rootNotes.value.toMutableList()
                                 if (current.none { it.id == event.id }) {
                                     current.add(event)
@@ -163,6 +189,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                                     _rootNotes.value = current
                                 }
                             } else {
+                                if (event.created_at < oldestReplyTimestamp) oldestReplyTimestamp = event.created_at
                                 val current = _replies.value.toMutableList()
                                 if (current.none { it.id == event.id }) {
                                     current.add(event)
@@ -173,6 +200,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         6 -> {
                             eventRepo.cacheEvent(event)
+                            if (event.created_at < oldestNoteTimestamp) oldestNoteTimestamp = event.created_at
                             // Show the reposted event in profile's root notes
                             if (event.content.isNotBlank()) {
                                 try {
@@ -292,6 +320,8 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         for (subId in SUB_IDS) {
             relayPool.closeOnAllRelays(subId)
         }
+        relayPool.closeOnAllRelays("userposts-more")
+        relayPool.closeOnAllRelays("userreplies-more")
         for (subId in activeFollowProfileSubIds) {
             relayPool.closeOnAllRelays(subId)
         }
@@ -305,6 +335,60 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         super.onCleared()
         relayPoolRef?.let { closeAllSubs(it) }
+    }
+
+    fun loadMoreNotes() {
+        if (isLoadingMoreNotes) return
+        isLoadingMoreNotes = true
+        if (oldestNoteTimestamp == Long.MAX_VALUE) { isLoadingMoreNotes = false; return }
+
+        val pool = relayPoolRef ?: run { isLoadingMoreNotes = false; return }
+        val filter = Filter(kinds = listOf(1, 6), authors = listOf(targetPubkey), until = oldestNoteTimestamp - 1, limit = 50)
+
+        val router = outboxRouterRef
+        if (router != null) {
+            router.subscribeToUserWriteRelays("userposts-more", targetPubkey, filter)
+        } else {
+            pool.sendToAll(ClientMessage.req("userposts-more", filter))
+        }
+        for (url in topRelayUrls) {
+            pool.sendToRelayOrEphemeral(url, ClientMessage.req("userposts-more", filter))
+        }
+
+        viewModelScope.launch {
+            withTimeoutOrNull(10_000) {
+                pool.eoseSignals.first { it == "userposts-more" }
+            }
+            pool.closeOnAllRelays("userposts-more")
+            isLoadingMoreNotes = false
+        }
+    }
+
+    fun loadMoreReplies() {
+        if (isLoadingMoreReplies) return
+        isLoadingMoreReplies = true
+        if (oldestReplyTimestamp == Long.MAX_VALUE) { isLoadingMoreReplies = false; return }
+
+        val pool = relayPoolRef ?: run { isLoadingMoreReplies = false; return }
+        val filter = Filter(kinds = listOf(1), authors = listOf(targetPubkey), until = oldestReplyTimestamp - 1, limit = 50)
+
+        val router = outboxRouterRef
+        if (router != null) {
+            router.subscribeToUserWriteRelays("userreplies-more", targetPubkey, filter)
+        } else {
+            pool.sendToAll(ClientMessage.req("userreplies-more", filter))
+        }
+        for (url in topRelayUrls) {
+            pool.sendToRelayOrEphemeral(url, ClientMessage.req("userreplies-more", filter))
+        }
+
+        viewModelScope.launch {
+            withTimeoutOrNull(10_000) {
+                pool.eoseSignals.first { it == "userreplies-more" }
+            }
+            pool.closeOnAllRelays("userreplies-more")
+            isLoadingMoreReplies = false
+        }
     }
 
     fun toggleFollow(

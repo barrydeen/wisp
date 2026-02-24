@@ -25,6 +25,9 @@ class RelayScoreBoard(
     private var authorToRelays: MutableMap<String, MutableSet<String>> = mutableMapOf()
     // The set of follow pubkeys used to build the current scoreboard
     private var cachedFollowSet: Set<String> = emptySet()
+    // Hint-based relay mappings for followed authors without kind 10002 relay lists.
+    // Kept separate from authorToRelays so confirmed relay lists can overwrite them.
+    private var hintAuthorRelays: MutableMap<String, MutableSet<String>> = mutableMapOf()
 
     companion object {
         private const val TAG = "RelayScoreBoard"
@@ -60,6 +63,7 @@ class RelayScoreBoard(
             scoredRelayUrls = emptySet()
             relayAuthorsMap = mutableMapOf()
             authorToRelays = mutableMapOf()
+            hintAuthorRelays = mutableMapOf()
             cachedFollowSet = emptySet()
             saveToPrefs()
             return
@@ -96,6 +100,7 @@ class RelayScoreBoard(
 
         relayAuthorsMap = newRelayAuthors
         authorToRelays = newAuthorRelays
+        hintAuthorRelays = mutableMapOf()  // full rebuild from confirmed data
         cachedFollowSet = follows.toSet()
         rebuildScoredRelays()
 
@@ -119,6 +124,15 @@ class RelayScoreBoard(
             Log.d(TAG, "addAuthor: no relay list for $pubkey, will fall back to sendToAll")
             saveToPrefs()
             return
+        }
+
+        // Confirmed relay list replaces any hint-based mappings
+        val oldHints = hintAuthorRelays.remove(pubkey)
+        if (oldHints != null) {
+            for (url in oldHints) {
+                relayAuthorsMap[url]?.remove(pubkey)
+                if (relayAuthorsMap[url]?.isEmpty() == true) relayAuthorsMap.remove(url)
+            }
         }
 
         val eligible = writeRelays.filter { it !in excludeRelays }.take(MIN_REDUNDANCY)
@@ -160,6 +174,33 @@ class RelayScoreBoard(
         saveToPrefs()
     }
 
+    /**
+     * Add hint-based relay mappings for a followed author who has no confirmed
+     * kind 10002 relay list. Hints come from p-tag relay URLs and author provenance.
+     * When a real relay list arrives via [addAuthor] or [recompute], it overwrites hints.
+     */
+    fun addHintRelays(pubkey: String, urls: List<String>) {
+        if (pubkey !in cachedFollowSet) return  // only for followed authors
+        if (pubkey in authorToRelays) return     // already has confirmed relay list
+        val validUrls = urls.filter { it.startsWith("wss://") }.map { it.trimEnd('/') }
+        if (validUrls.isEmpty()) return
+
+        val hints = hintAuthorRelays.getOrPut(pubkey) { mutableSetOf() }
+        var changed = false
+        for (url in validUrls) {
+            if (hints.size >= MIN_REDUNDANCY) break
+            if (hints.add(url)) {
+                relayAuthorsMap.getOrPut(url) { mutableSetOf() }.add(pubkey)
+                changed = true
+            }
+        }
+        if (changed) {
+            rebuildScoredRelays()
+            saveToPrefs()
+            Log.d(TAG, "addHintRelays: $pubkey → ${hints.joinToString()} (${hints.size} hints)")
+        }
+    }
+
     /** Rebuild the scoredRelays list from the current relayAuthorsMap. */
     private fun rebuildScoredRelays() {
         scoredRelays = relayAuthorsMap.map { (url, authors) ->
@@ -181,7 +222,14 @@ class RelayScoreBoard(
         for (author in authors) {
             val relays = authorToRelays[author]
             if (relays.isNullOrEmpty()) {
-                result.getOrPut("") { mutableListOf() }.add(author)
+                val hints = hintAuthorRelays[author]
+                if (!hints.isNullOrEmpty()) {
+                    for (relay in hints) {
+                        result.getOrPut(relay) { mutableListOf() }.add(author)
+                    }
+                } else {
+                    result.getOrPut("") { mutableListOf() }.add(author)
+                }
             } else {
                 for (relay in relays) {
                     result.getOrPut(relay) { mutableListOf() }.add(author)
@@ -206,6 +254,7 @@ class RelayScoreBoard(
         scoredRelayUrls = emptySet()
         relayAuthorsMap = mutableMapOf()
         authorToRelays = mutableMapOf()
+        hintAuthorRelays = mutableMapOf()
         cachedFollowSet = emptySet()
         prefs.edit().clear().apply()
     }
@@ -227,6 +276,15 @@ class RelayScoreBoard(
         editor.putString("author_relay_map", mapEntries)
         // Follow set used to build this cache
         editor.putString("cached_follows", cachedFollowSet.joinToString(","))
+        // Hint-based relay mappings (separate from confirmed relay lists)
+        if (hintAuthorRelays.isNotEmpty()) {
+            val hintEntries = hintAuthorRelays.entries.joinToString("\n") { (pubkey, urls) ->
+                "$pubkey\t${urls.joinToString(",")}"
+            }
+            editor.putString("hint_author_relay_map", hintEntries)
+        } else {
+            editor.remove("hint_author_relay_map")
+        }
         editor.apply()
     }
 
@@ -264,6 +322,31 @@ class RelayScoreBoard(
             val urls = prefs.getString("scored_urls", null) ?: return
             if (urls.isBlank()) return
             scoredRelayUrls = urls.split(",").toSet()
+        }
+
+        // Restore hint-based relay mappings
+        val hintStr = prefs.getString("hint_author_relay_map", null)
+        if (!hintStr.isNullOrBlank()) {
+            val restoredHints = mutableMapOf<String, MutableSet<String>>()
+            for (line in hintStr.split("\n")) {
+                val parts = line.split("\t", limit = 2)
+                if (parts.size != 2) continue
+                val pubkey = parts[0]
+                val urls = parts[1].split(",").filter { it.isNotBlank() }.toMutableSet()
+                if (urls.isEmpty()) continue
+                // Only restore hints for followed authors without confirmed relay lists
+                if (pubkey in cachedFollowSet && pubkey !in authorToRelays) {
+                    restoredHints[pubkey] = urls
+                    for (url in urls) {
+                        relayAuthorsMap.getOrPut(url) { mutableSetOf() }.add(pubkey)
+                    }
+                }
+            }
+            if (restoredHints.isNotEmpty()) {
+                hintAuthorRelays = restoredHints
+                rebuildScoredRelays()
+                Log.d(TAG, "Restored ${restoredHints.size} hint relay entries")
+            }
         }
     }
 }

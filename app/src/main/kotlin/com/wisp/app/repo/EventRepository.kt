@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
-class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: MuteRepository? = null) {
+class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: MuteRepository? = null, val relayHintStore: RelayHintStore? = null) {
     var metadataFetcher: MetadataFetcher? = null
     var currentUserPubkey: String? = null
     private val eventCache = LruCache<String, NostrEvent>(5000)
@@ -164,6 +164,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (muteRepo?.isBlocked(event.pubkey) == true) return
         if (event.kind == 1 && muteRepo?.containsMutedWord(event.content) == true) return
         eventCache.put(event.id, event)
+        relayHintStore?.extractHintsFromTags(event)
 
         when (event.kind) {
             0 -> {
@@ -290,6 +291,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (eventCache.get(event.id) != null) return  // already cached
         seenEventIds.add(event.id)
         eventCache.put(event.id, event)
+        relayHintStore?.extractHintsFromTags(event)
         if (event.kind == 0) {
             val updated = profileRepo?.updateFromEvent(event)
             if (updated != null) {

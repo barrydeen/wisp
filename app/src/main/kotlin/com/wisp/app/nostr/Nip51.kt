@@ -42,7 +42,7 @@ object Nip51 {
 
     fun parseRelaySet(event: NostrEvent): List<String> {
         return event.tags.mapNotNull { tag ->
-            if (tag.size >= 2 && (tag[0] == "relay" || tag[0] == "r")) tag[1] else null
+            if (tag.size >= 2 && (tag[0] == "relay" || tag[0] == "r")) tag[1].trim().trimEnd('/') else null
         }
     }
 

@@ -7,7 +7,7 @@ object Nip65 {
         if (event.kind != 10002) return emptyList()
         return event.tags.mapNotNull { tag ->
             if (tag.size < 2 || tag[0] != "r") return@mapNotNull null
-            val url = tag[1].trim()
+            val url = tag[1].trim().trimEnd('/')
             val marker = tag.getOrNull(2)
             RelayConfig(
                 url = url,

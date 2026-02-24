@@ -50,6 +50,7 @@ import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.repo.NwcRepository
 import com.wisp.app.repo.CustomEmojiRepository
 import com.wisp.app.repo.ZapPreferences
+import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.repo.ZapSender
@@ -138,7 +139,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val profileRepo = ProfileRepository(app)
     val muteRepo = MuteRepository(app, pubkeyHex)
     val nip05Repo = Nip05Repository()
-    val eventRepo = EventRepository(profileRepo, muteRepo).also { it.currentUserPubkey = pubkeyHex }
+    val relayHintStore = RelayHintStore(app)
+    val eventRepo = EventRepository(profileRepo, muteRepo, relayHintStore).also { it.currentUserPubkey = pubkeyHex }
     val contactRepo = ContactRepository(app, pubkeyHex)
     val listRepo = ListRepository(app, pubkeyHex)
     val dmRepo = DmRepository(app, pubkeyHex)
@@ -150,7 +152,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val blossomRepo = BlossomRepository(app, pubkeyHex)
     val relayInfoRepo = RelayInfoRepository()
     val relayScoreBoard = RelayScoreBoard(app, relayListRepo, contactRepo, pubkeyHex)
-    val outboxRouter = OutboxRouter(relayPool, relayListRepo)
+    val outboxRouter = OutboxRouter(relayPool, relayListRepo, relayHintStore)
     val subManager = SubscriptionManager(relayPool)
     val lifecycleManager = RelayLifecycleManager(
         context = app,
@@ -326,6 +328,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         blossomRepo.clear()
         extendedNetworkRepo.clear()
         relayScoreBoard.clear()
+        relayHintStore.clear()
         healthTracker.clear()
         relayListRepo.clear()
         nip05Repo.clear()
@@ -409,6 +412,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 delay(60_000)
                 relayPool.cleanupEphemeralRelays()
                 eventRepo.trimSeenEvents()
+                relayHintStore.flush()
             }
         }
 
@@ -851,6 +855,20 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
             // Only add to feed for feed-related subscriptions;
             // other subs (user profile, bookmarks, threads) just cache
+            // Track author provenance and feed hints into scoreboard
+            relayHintStore.addAuthorRelay(event.pubkey, relayUrl)
+            if (!relayListRepo.hasRelayList(event.pubkey)) {
+                relayScoreBoard.addHintRelays(event.pubkey, listOf(relayUrl))
+            }
+            for (tag in event.tags) {
+                if (tag.size >= 3 && tag[0] == "p") {
+                    val url = tag[2].trimEnd('/')
+                    if (url.startsWith("wss://") && !relayListRepo.hasRelayList(tag[1])) {
+                        relayScoreBoard.addHintRelays(tag[1], listOf(url))
+                    }
+                }
+            }
+
             val isFeedSub = subscriptionId == feedSubId ||
                 subscriptionId == "loadmore" ||
                 subscriptionId == "feed-backfill"
