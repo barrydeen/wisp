@@ -12,6 +12,8 @@ import com.wisp.app.relay.SubscriptionManager
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.MetadataFetcher
 import com.wisp.app.repo.MuteRepository
+import com.wisp.app.repo.RelayHintStore
+import com.wisp.app.repo.RelayListRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +40,8 @@ class ThreadViewModel : ViewModel() {
     private val activeMetadataSubs = mutableListOf<String>()
     private var relayPoolRef: RelayPool? = null
     private var topRelayUrls: List<String> = emptyList()
+    private var relayListRepoRef: RelayListRepository? = null
+    private var relayHintStoreRef: RelayHintStore? = null
 
     // Jobs for cleanup
     private var collectorJob: Job? = null
@@ -62,11 +66,15 @@ class ThreadViewModel : ViewModel() {
         subManager: SubscriptionManager,
         metadataFetcher: MetadataFetcher,
         muteRepo: MuteRepository? = null,
-        topRelayUrls: List<String> = emptyList()
+        topRelayUrls: List<String> = emptyList(),
+        relayListRepo: RelayListRepository? = null,
+        relayHintStore: RelayHintStore? = null
     ) {
         this.muteRepo = muteRepo
         this.relayPoolRef = relayPool
         this.topRelayUrls = topRelayUrls
+        this.relayListRepoRef = relayListRepo
+        this.relayHintStoreRef = relayHintStore
 
         // Resolve root from cached event (we clicked on it, so it's in cache)
         val cached = eventRepo.getEvent(eventId)
@@ -177,7 +185,7 @@ class ThreadViewModel : ViewModel() {
             _isLoading.value = false
 
             // Baseline metadata subscription for all events known at this point
-            subscribeThreadMetadata(relayPool, eventRepo)
+            subscribeThreadMetadata(relayPool, eventRepo, subManager)
 
             // Start incremental metadata batching for late arrivals
             startMetadataBatching(relayPool)
@@ -196,7 +204,40 @@ class ThreadViewModel : ViewModel() {
         }
     }
 
-    private fun subscribeThreadMetadata(relayPool: RelayPool, eventRepo: EventRepository) {
+    /**
+     * Get the best relay URLs for a pubkey: NIP-65 read relays, falling back to relay hints.
+     */
+    private fun getAuthorRelays(pubkey: String): List<String> {
+        val nip65 = relayListRepoRef?.getReadRelays(pubkey)
+        if (!nip65.isNullOrEmpty()) return nip65
+        val hints = relayHintStoreRef?.getHints(pubkey)
+        if (!hints.isNullOrEmpty()) return hints.toList()
+        return emptyList()
+    }
+
+    /**
+     * Send a subscription to author relays + top scored relays.
+     */
+    private fun sendToEngagementRelays(
+        relayPool: RelayPool, subId: String, filter: Filter, authorPubkey: String?
+    ) {
+        val msg = ClientMessage.req(subId, filter)
+        val sent = mutableSetOf<String>()
+        if (authorPubkey != null) {
+            for (url in getAuthorRelays(authorPubkey)) {
+                if (relayPool.sendToRelayOrEphemeral(url, msg)) sent.add(url)
+            }
+        }
+        for (url in topRelayUrls) {
+            if (url !in sent) relayPool.sendToRelayOrEphemeral(url, msg)
+        }
+    }
+
+    private suspend fun subscribeThreadMetadata(
+        relayPool: RelayPool,
+        eventRepo: EventRepository,
+        subManager: SubscriptionManager
+    ) {
         for (subId in activeMetadataSubs) relayPool.closeOnAllRelays(subId)
         activeMetadataSubs.clear()
 
@@ -212,13 +253,23 @@ class ThreadViewModel : ViewModel() {
         // Track these as already subscribed
         metadataSubscribedIds.addAll(eventIds)
 
-        eventIds.chunked(50).forEachIndexed { index, batch ->
-            val subId = if (index == 0) "thread-reactions" else "thread-reactions-$index"
-            activeMetadataSubs.add(subId)
-            val filter = Filter(kinds = listOf(7, 6, 9735), eTags = batch)
-            relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
-            for (url in topRelayUrls) {
-                relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(subId, filter))
+        val rootAuthorPubkey = _rootEvent.value?.pubkey
+
+        // Phase 1: Root note engagement (high priority) — await EOSE for reliable counts
+        val rootSubId = "thread-reactions"
+        activeMetadataSubs.add(rootSubId)
+        val rootFilter = Filter(kinds = listOf(7, 6, 9735), eTags = listOf(rootId))
+        sendToEngagementRelays(relayPool, rootSubId, rootFilter, rootAuthorPubkey)
+        subManager.awaitEoseWithTimeout(rootSubId, 3_500)
+
+        // Phase 2: Reply engagement (lower priority) — fire-and-forget
+        val replyIds = eventIds.filter { it != rootId }
+        if (replyIds.isNotEmpty()) {
+            replyIds.chunked(50).forEachIndexed { index, batch ->
+                val subId = "thread-reactions-${index + 1}"
+                activeMetadataSubs.add(subId)
+                val filter = Filter(kinds = listOf(7, 6, 9735), eTags = batch)
+                sendToEngagementRelays(relayPool, subId, filter, rootAuthorPubkey)
             }
         }
     }
@@ -244,10 +295,7 @@ class ThreadViewModel : ViewModel() {
                 val subId = "thread-reactions-b$metadataBatchIndex"
                 activeMetadataSubs.add(subId)
                 val filter = Filter(kinds = listOf(7, 6, 9735), eTags = batch)
-                relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
-                for (url in topRelayUrls) {
-                    relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(subId, filter))
-                }
+                sendToEngagementRelays(relayPool, subId, filter, _rootEvent.value?.pubkey)
             }
         }
     }

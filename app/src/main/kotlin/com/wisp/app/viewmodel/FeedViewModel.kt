@@ -767,8 +767,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
         } else if (subscriptionId == "thread-root" || subscriptionId == "thread-replies" ||
                    subscriptionId.startsWith("thread-reactions")) {
-            // ThreadViewModel handles these via its own RelayPool collector — just cache
-            eventRepo.cacheEvent(event)
+            // ThreadViewModel handles these via its own RelayPool collector — skip entirely
             return
         } else if (subscriptionId.startsWith("engage") || subscriptionId.startsWith("user-engage")) {
             when (event.kind) {
@@ -1467,7 +1466,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         val s = signer ?: return
         viewModelScope.launch {
             try {
-                val tags = com.wisp.app.nostr.Nip18.buildRepostTags(event)
+                val hint = outboxRouter.getRelayHint(event.pubkey)
+                val tags = com.wisp.app.nostr.Nip18.buildRepostTags(event, hint)
                 val repostEvent = s.signEvent(kind = 6, content = event.toJson(), tags = tags)
                 val msg = ClientMessage.event(repostEvent)
                 outboxRouter.publishToInbox(msg, event.pubkey)

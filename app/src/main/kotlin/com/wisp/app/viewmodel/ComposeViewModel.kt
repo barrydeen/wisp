@@ -328,8 +328,10 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
 
         val finalContent = if (quoteTo != null) {
-            tags.addAll(Nip18.buildQuoteTags(quoteTo))
-            Nip18.appendNoteUri(content, quoteTo.id)
+            val quoteHint = outboxRouter?.getRelayHint(quoteTo.pubkey) ?: ""
+            tags.addAll(Nip18.buildQuoteTags(quoteTo, quoteHint))
+            val relayHints = if (quoteHint.isNotEmpty()) listOf(quoteHint) else emptyList()
+            Nip18.appendNoteUri(content, quoteTo.id, relayHints, quoteTo.pubkey)
         } else {
             content
         }

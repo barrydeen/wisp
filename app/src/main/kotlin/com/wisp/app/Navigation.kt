@@ -671,7 +671,9 @@ fun WispNavHost() {
                     subManager = feedViewModel.subManager,
                     metadataFetcher = feedViewModel.metadataFetcher,
                     muteRepo = feedViewModel.muteRepo,
-                    topRelayUrls = feedViewModel.getScoredRelays().take(5).map { it.url }
+                    topRelayUrls = feedViewModel.getScoredRelays().take(5).map { it.url },
+                    relayListRepo = feedViewModel.relayListRepo,
+                    relayHintStore = feedViewModel.relayHintStore
                 )
             }
             androidx.compose.runtime.DisposableEffect(Unit) {
