@@ -27,6 +27,7 @@ class RelayLifecycleManager(
     private var reconnectJob: Job? = null
     @Volatile private var started = false
     @Volatile private var lastReconnectMs = 0L
+    @Volatile private var lastReconnectForce = false
 
     companion object {
         private const val TAG = "RelayLifecycleMgr"
@@ -70,9 +71,9 @@ class RelayLifecycleManager(
      */
     fun onAppPause() {
         if (!started) return
+        Log.d("RLC", "[Lifecycle] onAppPause — connectedCount=${relayPool.connectedCount.value}")
         relayPool.appIsActive = false
         relayPool.healthTracker?.closeAllSessions()
-        Log.d(TAG, "App paused — sessions closed")
     }
 
     /**
@@ -83,7 +84,7 @@ class RelayLifecycleManager(
     fun onAppResume(pausedMs: Long) {
         if (!started) return
         val force = pausedMs >= FORCE_THRESHOLD_MS
-        Log.d(TAG, "${if (force) "Long" else "Short"} pause (${pausedMs / 1000}s) — requesting reconnect")
+        Log.d("RLC", "[Lifecycle] onAppResume — paused ${pausedMs/1000}s, force=$force, connectedCount=${relayPool.connectedCount.value}")
         reconnect(force = force)
     }
 
@@ -95,24 +96,37 @@ class RelayLifecycleManager(
     private fun reconnect(force: Boolean) {
         val now = System.currentTimeMillis()
         if (now - lastReconnectMs < DEBOUNCE_MS) {
-            Log.d(TAG, "Reconnect debounced (${now - lastReconnectMs}ms since last)")
-            return
+            // Allow force to upgrade a debounced non-force reconnect.
+            // If the in-flight reconnect was non-force and this one is force,
+            // cancel it and proceed with force. Otherwise, drop as before.
+            if (force && !lastReconnectForce) {
+                Log.d("RLC", "[Lifecycle] upgrading debounced reconnect to force")
+                reconnectJob?.cancel()
+            } else {
+                Log.d("RLC", "[Lifecycle] reconnect debounced (${now - lastReconnectMs}ms since last, force=$force, lastForce=$lastReconnectForce)")
+                return
+            }
         }
         lastReconnectMs = now
+        lastReconnectForce = force
 
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
             if (force) {
-                Log.d(TAG, "Force reconnecting all relays")
+                Log.d("RLC", "[Lifecycle] → forceReconnectAll()")
                 relayPool.forceReconnectAll()
             } else {
-                Log.d(TAG, "Lightweight reconnecting relays")
+                Log.d("RLC", "[Lifecycle] → reconnectAll()")
                 relayPool.reconnectAll()
             }
             val minCount = if (force) 3 else 1
+            Log.d("RLC", "[Lifecycle] awaiting $minCount relays...")
             relayPool.awaitAnyConnected(minCount = minCount, timeoutMs = 5_000)
+            Log.d("RLC", "[Lifecycle] await done — setting appIsActive=true, connectedCount=${relayPool.connectedCount.value}")
             relayPool.appIsActive = true
+            Log.d("RLC", "[Lifecycle] → onReconnected(force=$force)")
             onReconnected(force)
+            Log.d("RLC", "[Lifecycle] onReconnected complete, connectedCount=${relayPool.connectedCount.value}")
         }
     }
 

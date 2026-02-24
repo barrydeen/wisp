@@ -34,6 +34,13 @@ class RelayPool {
     fun getBlockedUrls(): Set<String> = blockedUrls
 
     @Volatile var appIsActive = false
+        set(value) {
+            field = value
+            // Suppress/enable auto-reconnect on all relays based on app state.
+            // When backgrounded, relays that drop shouldn't waste resources retrying —
+            // onAppResume handles reconnection.
+            setReconnectEnabled(value)
+        }
     var healthTracker: RelayHealthTracker? = null
 
     companion object {
@@ -200,6 +207,13 @@ class RelayPool {
         }
     }
 
+    private fun setReconnectEnabled(enabled: Boolean) {
+        for (relay in relays) relay.reconnectEnabled = enabled
+        for (relay in dmRelays) relay.reconnectEnabled = enabled
+        for (relay in ephemeralRelays.values) relay.reconnectEnabled = enabled
+        if (!enabled) Log.d("RLC", "[Pool] auto-reconnect suppressed (app backgrounded)")
+    }
+
     private fun cancelRelayJobs(url: String) {
         relayJobs.remove(url)?.cancel()
     }
@@ -296,19 +310,18 @@ class RelayPool {
         }
         scope.launch(parentJob) {
             relay.connectionState.collect { connected ->
+                Log.d("RLC", "[Pool] connectionState=$connected for ${relay.config.url} | relay.isConnected=${relay.isConnected} appIsActive=$appIsActive")
                 updateConnectedCount()
-                if (appIsActive) {
-                    if (connected) {
-                        healthTracker?.onRelayConnected(relay.config.url)
-                        // Re-send tracked subscriptions after reconnect so data flows immediately.
-                        // Without this, a reconnected relay sits idle until the next manual action.
-                        resyncSubscriptions(relay)
-                    } else {
-                        healthTracker?.closeSession(relay.config.url)
-                    }
+                if (connected) {
+                    // Always resync regardless of appIsActive — relays that connect
+                    // during the awaitAnyConnected window (before appIsActive=true)
+                    // would otherwise miss their subscriptions entirely.
+                    resyncSubscriptions(relay)
+                    if (appIsActive) healthTracker?.onRelayConnected(relay.config.url)
+                } else {
+                    if (appIsActive) healthTracker?.closeSession(relay.config.url)
+                    subscriptionTracker.untrackRelay(relay.config.url)
                 }
-                // Clean up tracker when relay disconnects
-                if (!connected) subscriptionTracker.untrackRelay(relay.config.url)
             }
         }
         collectRelayFailures(relay, parentJob)
@@ -337,7 +350,12 @@ class RelayPool {
         val permanent = relays.count { it.isConnected }
         val dm = dmRelays.count { it.isConnected }
         val ephemeral = ephemeralRelays.values.count { it.isConnected }
-        _connectedCount.value = permanent + dm + ephemeral
+        val total = permanent + dm + ephemeral
+        val prev = _connectedCount.value
+        _connectedCount.value = total
+        if (total != prev) {
+            Log.d("RLC", "[Pool] connectedCount $prev → $total (persistent=$permanent/${relays.size} dm=$dm/${dmRelays.size} ephemeral=$ephemeral/${ephemeralRelays.size}) appIsActive=$appIsActive")
+        }
     }
 
     fun getAllConnectedUrls(): List<String> {
@@ -363,6 +381,7 @@ class RelayPool {
 
     fun sendToReadRelays(message: String) {
         val subId = extractSubId(message)
+        var sentCount = 0
         for (relay in relays) {
             if (relay.config.read) {
                 if (subId != null) {
@@ -371,12 +390,15 @@ class RelayPool {
                     trackSubscription(relay.config.url, subId, message)
                 }
                 relay.send(message)
+                sentCount++
             }
         }
+        if (subId != null) Log.d("RLC", "[Pool] sendToReadRelays sub=$subId → $sentCount relays")
     }
 
     fun sendToAll(message: String) {
         val subId = extractSubId(message)
+        var sentCount = 0
         for (relay in relays) {
             if (subId != null) {
                 if (!subscriptionTracker.hasCapacity(relay.config.url, subId)) continue
@@ -384,17 +406,30 @@ class RelayPool {
                 trackSubscription(relay.config.url, subId, message)
             }
             relay.send(message)
+            sentCount++
         }
+        if (subId != null) Log.d("RLC", "[Pool] sendToAll sub=$subId → $sentCount relays")
     }
 
     fun sendToRelay(url: String, message: String) {
         val subId = extractSubId(message)
         if (subId != null) {
-            if (!subscriptionTracker.hasCapacity(url, subId)) return
+            if (!subscriptionTracker.hasCapacity(url, subId)) {
+                Log.d("RLC", "[Pool] sendToRelay($url) SKIPPED sub=$subId — no capacity")
+                return
+            }
             subscriptionTracker.track(url, subId)
             trackSubscription(url, subId, message)
         }
-        relayIndex[url]?.send(message)
+        val relay = relayIndex[url]
+        if (relay == null) {
+            Log.d("RLC", "[Pool] sendToRelay($url) SKIPPED — not in relayIndex")
+        } else {
+            val sent = relay.send(message)
+            if (subId != null) {
+                Log.d("RLC", "[Pool] sendToRelay($url) sub=$subId sent=$sent connected=${relay.isConnected}")
+            }
+        }
     }
 
     /** Extracts subscription ID from a REQ message: ["REQ","subId",...] */
@@ -435,8 +470,8 @@ class RelayPool {
             }
         }
 
-        // Create ephemeral relay if needed
-        val ephemeral = ephemeralRelays.getOrPut(url) {
+        // Create ephemeral relay if needed — computeIfAbsent is atomic on ConcurrentHashMap
+        val ephemeral = ephemeralRelays.computeIfAbsent(url) {
             val relay = Relay(RelayConfig(url, read = true, write = false), client, scope)
             relay.autoReconnect = false
             wireByteTracking(relay)
@@ -491,13 +526,19 @@ class RelayPool {
      * This ensures data flows immediately instead of the relay sitting idle.
      */
     private fun resyncSubscriptions(relay: Relay) {
-        val subs = activeSubscriptions[relay.config.url] ?: return
-        if (subs.isEmpty()) return
-        val count = subs.size
+        val subs = activeSubscriptions[relay.config.url] ?: run {
+            Log.d("RLC", "[Pool] resync ${relay.config.url}: no tracked subscriptions")
+            return
+        }
+        if (subs.isEmpty()) {
+            Log.d("RLC", "[Pool] resync ${relay.config.url}: 0 subscriptions (empty map)")
+            return
+        }
+        val subIds = subs.keys.toList()
+        Log.d("RLC", "[Pool] resync ${relay.config.url}: sending ${subIds.size} subs: $subIds")
         for ((_, message) in subs) {
             relay.send(message)
         }
-        Log.d("RelayPool", "Re-synced $count subscriptions to ${relay.config.url}")
     }
 
     private fun isRateLimitMessage(message: String): Boolean {
@@ -511,38 +552,48 @@ class RelayPool {
     }
 
     fun reconnectAll(): Int {
+        Log.d("RLC", "[Pool] reconnectAll() START — persistent=${relays.size} dm=${dmRelays.size} ephemeral=${ephemeralRelays.size} activeSubs=${activeSubscriptions.size}")
         appIsActive = false
         healthTracker?.discardAllSessions()
-        var count = 0
-        // Reconnect disconnected persistent relays — clear cooldowns since this is explicit resume
+        // Clear all cooldowns — background failures shouldn't block reconnection
+        relayCooldowns.clear()
+        // Only keep long-lived subscriptions that won't be re-established by onReconnected.
+        // Feed, engagement, loadmore, etc. are transient and will be resent fresh.
+        val keepPrefixes = listOf("dms", "notif")
+        for (relayMap in activeSubscriptions.values) {
+            relayMap.keys.retainAll { subId -> keepPrefixes.any { subId.startsWith(it) } }
+        }
+        // Tear down and reconnect ALL persistent relays unconditionally.
+        // WebSockets can be stale (server-side timeout, NAT rebinding) while
+        // OkHttp hasn't detected it yet — subscriptions sent to zombie sockets
+        // are silently lost. Unlike forceReconnectAll(), we preserve
+        // activeSubscriptions and subscriptionTracker so resync replays them.
         for (relay in relays) {
-            if (!relay.isConnected) {
-                relay.resetBackoff()
-                relayCooldowns.remove(relay.config.url)
-                Log.d("RelayPool", "Reconnecting persistent relay: ${relay.config.url}")
-                relay.connect()
-                count++
-            }
+            relay.resetBackoff()
+            relay.disconnect()
+            relay.connect()
+            relay.reconnectEnabled = true
         }
-        // Reconnect disconnected DM relays
+        // Tear down and reconnect ALL DM relays
         for (relay in dmRelays) {
-            if (!relay.isConnected) {
-                relay.resetBackoff()
-                relayCooldowns.remove(relay.config.url)
-                Log.d("RelayPool", "Reconnecting DM relay: ${relay.config.url}")
-                relay.connect()
-                count++
-            }
+            relay.resetBackoff()
+            relay.disconnect()
+            relay.connect()
+            relay.reconnectEnabled = true
         }
-        // Clean up dead ephemeral relays so they can be recreated fresh
-        val deadEphemerals = ephemeralRelays.filter { !it.value.isConnected }.keys
-        for (url in deadEphemerals) {
-            ephemeralRelays.remove(url)?.disconnect()
-            ephemeralLastUsed.remove(url)
+        // Evict ALL ephemeral relays — they'll be recreated on demand.
+        // Even "connected" ephemerals may be stale and have autoReconnect=false.
+        for ((url, relay) in ephemeralRelays) {
+            relay.disconnect()
             relayIndex.remove(url)
             cancelRelayJobs(url)
+            activeSubscriptions.remove(url)
+            subscriptionTracker.untrackRelay(url)
         }
-        if (count > 0) Log.d("RelayPool", "reconnectAll: $count relays reconnecting")
+        ephemeralRelays.clear()
+        ephemeralLastUsed.clear()
+        val count = relays.size + dmRelays.size
+        Log.d("RLC", "[Pool] reconnectAll() END — reconnecting $count relays, activeSubs remaining=${activeSubscriptions.size}")
         updateConnectedCount()
         return count
     }
@@ -553,7 +604,7 @@ class RelayPool {
      * subscriptions have been silently dropped.
      */
     fun forceReconnectAll() {
-        Log.d("RelayPool", "forceReconnectAll: tearing down all connections")
+        Log.d("RLC", "[Pool] forceReconnectAll() START — persistent=${relays.size} dm=${dmRelays.size} ephemeral=${ephemeralRelays.size}")
         appIsActive = false
         healthTracker?.closeAllSessions()
         // Server-side subscriptions are dead — clear tracker so fresh REQs are sent
@@ -566,12 +617,14 @@ class RelayPool {
             relay.resetBackoff()
             relay.disconnect()
             relay.connect()
+            relay.reconnectEnabled = true
         }
         // Tear down and reconnect DM relays
         for (relay in dmRelays) {
             relay.resetBackoff()
             relay.disconnect()
             relay.connect()
+            relay.reconnectEnabled = true
         }
         // Evict all ephemeral relays — they'll be recreated on demand
         for ((url, relay) in ephemeralRelays) {
@@ -581,6 +634,7 @@ class RelayPool {
         }
         ephemeralRelays.clear()
         ephemeralLastUsed.clear()
+        Log.d("RLC", "[Pool] forceReconnectAll() END — all subs/trackers cleared")
         updateConnectedCount()
     }
 
@@ -589,14 +643,22 @@ class RelayPool {
      * Returns the connected count at the time of resolution.
      */
     suspend fun awaitAnyConnected(minCount: Int = 1, timeoutMs: Long = 10_000): Int {
-        if (_connectedCount.value >= minCount) return _connectedCount.value
+        val current = _connectedCount.value
+        if (current >= minCount) {
+            Log.d("RLC", "[Pool] awaitAnyConnected($minCount) — already at $current, returning immediately")
+            return current
+        }
+        Log.d("RLC", "[Pool] awaitAnyConnected($minCount) — currently $current, waiting up to ${timeoutMs}ms...")
         withTimeoutOrNull(timeoutMs) {
             _connectedCount.first { it >= minCount }
         }
-        return _connectedCount.value
+        val result = _connectedCount.value
+        Log.d("RLC", "[Pool] awaitAnyConnected($minCount) — resolved with $result")
+        return result
     }
 
     fun closeOnAllRelays(subscriptionId: String) {
+        Log.d("RLC", "[Pool] closeOnAllRelays($subscriptionId)")
         subscriptionTracker.untrackAll(subscriptionId)
         for (relayMap in activeSubscriptions.values) {
             relayMap.remove(subscriptionId)
@@ -615,6 +677,8 @@ class RelayPool {
             ephemeralLastUsed.remove(url)
             relayIndex.remove(url)
             cancelRelayJobs(url)
+            activeSubscriptions.remove(url)
+            subscriptionTracker.untrackRelay(url)
         }
         // Clear expired cooldowns
         val expiredCooldowns = relayCooldowns.filter { now >= it.value }.keys

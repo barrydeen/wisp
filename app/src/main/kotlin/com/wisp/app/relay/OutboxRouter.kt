@@ -77,14 +77,18 @@ class OutboxRouter(
         val targetedRelays = mutableSetOf<String>()
         val templateList = templateFilters.toList()
 
-        // Build unified relay → authors map
+        // Build unified relay → authors map, only using relays already in the pool.
+        // Creating ephemeral connections per write-relay URL is too expensive — thousands
+        // of unique URLs from kind 10002 lists across a large follow graph.
+        val poolUrls = relayPool.getRelayUrls().toSet()
+        Log.d("RLC", "[OutboxRouter] poolUrls=${poolUrls.size}, connectedCount=${relayPool.connectedCount.value}")
         val relayToAuthors = mutableMapOf<String, MutableSet<String>>()
         val fallbackAuthors = mutableListOf<String>()
 
         for (author in authors) {
             val writeRelays = relayListRepo.getWriteRelays(author)
             if (writeRelays != null) {
-                val eligible = writeRelays.filter { it !in blockedUrls }
+                val eligible = writeRelays.filter { it !in blockedUrls && it in poolUrls }
                 if (eligible.isNotEmpty()) {
                     for (url in eligible) {
                         relayToAuthors.getOrPut(url) { mutableSetOf() }.add(author)
@@ -93,27 +97,13 @@ class OutboxRouter(
                     fallbackAuthors.add(author)
                 }
             } else {
-                // No kind 10002 relay list — try accumulated hints
-                val hints = relayHintStore?.getHints(author)
-                if (!hints.isNullOrEmpty()) {
-                    val eligible = hints.filter { it !in blockedUrls }
-                    if (eligible.isNotEmpty()) {
-                        for (url in eligible) {
-                            relayToAuthors.getOrPut(url) { mutableSetOf() }.add(author)
-                        }
-                    } else {
-                        fallbackAuthors.add(author)
-                    }
-                } else {
-                    fallbackAuthors.add(author)
-                }
+                fallbackAuthors.add(author)
             }
         }
 
         // Merge fallback authors into each persistent relay's entry
         if (fallbackAuthors.isNotEmpty()) {
-            val persistentUrls = relayPool.getRelayUrls()
-            for (url in persistentUrls) {
+            for (url in poolUrls) {
                 relayToAuthors.getOrPut(url) { mutableSetOf() }.addAll(fallbackAuthors)
             }
         }
@@ -130,9 +120,8 @@ class OutboxRouter(
             }
             val msg = if (allFilters.size == 1) ClientMessage.req(subId, allFilters[0])
             else ClientMessage.req(subId, allFilters)
-            if (relayPool.sendToRelayOrEphemeral(relayUrl, msg)) {
-                targetedRelays.add(relayUrl)
-            }
+            relayPool.sendToRelay(relayUrl, msg)
+            targetedRelays.add(relayUrl)
         }
 
         // Indexer relay safety net: send FULL author list to each indexer relay
@@ -148,15 +137,14 @@ class OutboxRouter(
             else ClientMessage.req(subId, allFilters)
             for (indexerUrl in indexerRelays) {
                 if (indexerUrl in blockedUrls) continue
-                if (relayPool.sendToRelayOrEphemeral(indexerUrl, msg)) {
-                    targetedRelays.add(indexerUrl)
-                }
+                relayPool.sendToRelay(indexerUrl, msg)
+                targetedRelays.add(indexerUrl)
             }
         }
 
-        Log.d("OutboxRouter", "subscribeByAuthors($subId): ${authors.size} authors → " +
-                "${relayToAuthors.size} relays + ${indexerRelays.size} indexers, " +
-                "${fallbackAuthors.size} fallback, ${targetedRelays.size} total targeted")
+        Log.d("RLC", "[OutboxRouter] subscribeByAuthors($subId): ${authors.size} authors → " +
+                "${relayToAuthors.size} pool relays targeted, ${fallbackAuthors.size} fallback authors, " +
+                "${indexerRelays.size} indexers")
 
         return targetedRelays
     }
@@ -205,19 +193,6 @@ class OutboxRouter(
             for (url in writeRelays) {
                 if (relayPool.sendToRelayOrEphemeral(url, msg)) {
                     targetedRelays.add(url)
-                }
-            }
-        }
-
-        // Hint tier: try accumulated relay hints before broadcast fallback
-        if (targetedRelays.isEmpty()) {
-            val hints = relayHintStore?.getHints(pubkey) ?: emptySet()
-            if (hints.isNotEmpty()) {
-                val msg = ClientMessage.req(subId, filter)
-                for (url in hints) {
-                    if (relayPool.sendToRelayOrEphemeral(url, msg)) {
-                        targetedRelays.add(url)
-                    }
                 }
             }
         }

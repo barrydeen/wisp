@@ -31,6 +31,8 @@ class Relay(
     @Volatile var isConnected = false
         private set
     var autoReconnect = true
+    /** Set to false when app is backgrounded to suppress reconnect attempts. */
+    @Volatile var reconnectEnabled = true
     @Volatile var cooldownUntil: Long = 0L
 
     // Connection attempt tracking for automatic backoff
@@ -72,7 +74,7 @@ class Relay(
     private val _messages = MutableSharedFlow<RelayMessage>(extraBufferCapacity = 512)
     val messages: SharedFlow<RelayMessage> = _messages
 
-    private val _connectionState = MutableSharedFlow<Boolean>(extraBufferCapacity = 4)
+    private val _connectionState = MutableSharedFlow<Boolean>(replay = 1, extraBufferCapacity = 4)
     val connectionState: SharedFlow<Boolean> = _connectionState
 
     private val _connectionErrors = MutableSharedFlow<ConsoleLogEntry>(extraBufferCapacity = 16)
@@ -127,9 +129,11 @@ class Relay(
                 Log.w("Relay", "Invalid relay URL: ${config.url}")
                 return
             }
+            val socketId = System.nanoTime() // unique ID for this WebSocket instance
+            Log.d("RLC", "[Relay] connect() creating ws#$socketId for ${config.url}")
             webSocket = client.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
-                    Log.d("Relay", "Connected to ${config.url}")
+                    Log.d("RLC", "[Relay] ws#$socketId onOpen ${config.url} | isConnected was=$isConnected")
                     isConnected = true
                     // Successful connection — reset attempt tracking
                     synchronized(attemptLock) { connectAttempts.clear() }
@@ -149,7 +153,8 @@ class Relay(
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    Log.e("Relay", "Failure on ${config.url}: ${t.message}")
+                    val isCurrent = synchronized(connectLock) { this@Relay.webSocket === webSocket }
+                    Log.e("RLC", "[Relay] ws#$socketId onFailure ${config.url}: ${t.message} | isCurrent=$isCurrent isConnected=$isConnected")
                     synchronized(connectLock) {
                         // Only null the reference if this callback is for the current WebSocket
                         if (this@Relay.webSocket === webSocket) {
@@ -157,32 +162,40 @@ class Relay(
                             this@Relay.webSocket = null
                         }
                     }
-                    _connectionState.tryEmit(false)
-                    _connectionErrors.tryEmit(ConsoleLogEntry(
-                        relayUrl = config.url,
-                        type = ConsoleLogType.CONN_FAILURE,
-                        message = t.message ?: "Unknown error"
-                    ))
-                    _failures.tryEmit(RelayFailure(config.url, response?.code, t.message ?: "Unknown error"))
-                    reconnect()
+                    // Only emit state/errors and reconnect for the current WebSocket.
+                    // Stale callbacks from a replaced socket must not wipe the new socket's state.
+                    if (isCurrent) {
+                        _connectionState.tryEmit(false)
+                        _connectionErrors.tryEmit(ConsoleLogEntry(
+                            relayUrl = config.url,
+                            type = ConsoleLogType.CONN_FAILURE,
+                            message = t.message ?: "Unknown error"
+                        ))
+                        _failures.tryEmit(RelayFailure(config.url, response?.code, t.message ?: "Unknown error"))
+                        reconnect()
+                    }
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    Log.d("Relay", "Closed ${config.url}: $reason")
+                    val isCurrent = synchronized(connectLock) { this@Relay.webSocket === webSocket }
+                    Log.d("RLC", "[Relay] ws#$socketId onClosed ${config.url} code=$code reason=$reason | isCurrent=$isCurrent isConnected=$isConnected")
                     synchronized(connectLock) {
                         if (this@Relay.webSocket === webSocket) {
                             isConnected = false
                             this@Relay.webSocket = null
                         }
                     }
-                    _connectionState.tryEmit(false)
-                    if (code != 1000) {
-                        _connectionErrors.tryEmit(ConsoleLogEntry(
-                            relayUrl = config.url,
-                            type = ConsoleLogType.CONN_CLOSED,
-                            message = "Code $code: $reason"
-                        ))
-                        reconnect()
+                    // Only emit state/errors and reconnect for the current WebSocket.
+                    if (isCurrent) {
+                        _connectionState.tryEmit(false)
+                        if (code != 1000) {
+                            _connectionErrors.tryEmit(ConsoleLogEntry(
+                                relayUrl = config.url,
+                                type = ConsoleLogType.CONN_CLOSED,
+                                message = "Code $code: $reason"
+                            ))
+                            reconnect()
+                        }
                     }
                 }
             })
@@ -233,6 +246,7 @@ class Relay(
         synchronized(connectLock) {
             val ws = webSocket
             val wasConnected = isConnected
+            Log.d("RLC", "[Relay] disconnect() ${config.url} | wasConnected=$wasConnected hasSocket=${ws != null}")
             isConnected = false
             webSocket = null
             pendingReconnect?.cancel(false)
@@ -257,7 +271,7 @@ class Relay(
     @Volatile private var pendingReconnect: ScheduledFuture<*>? = null
 
     private fun reconnect() {
-        if (!autoReconnect) return
+        if (!autoReconnect || !reconnectEnabled) return
         if (scope != null) {
             scope.launch {
                 val now = System.currentTimeMillis()

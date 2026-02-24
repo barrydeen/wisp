@@ -160,13 +160,24 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         relayPool = relayPool,
         scope = viewModelScope,
         onReconnected = { force ->
-            if (force) subscribeFeed() else resumeSubscribeFeed()
-            if (force) fetchRelayListsForFollows()
-            // Always re-establish DM and notification subscriptions on reconnect.
-            // Non-force reconnect can miss resyncSubscriptions due to appIsActive timing,
-            // and force reconnect tears down all subscriptions entirely.
-            val myPubkey = getUserPubkey()
-            if (myPubkey != null) subscribeDmsAndNotifications(myPubkey)
+            Log.d("RLC", "[FeedVM] onReconnected(force=$force) feedType=${_feedType.value} selectedRelay=${_selectedRelay.value}")
+            if (force) {
+                Log.d("RLC", "[FeedVM] → subscribeFeed()")
+                subscribeFeed()
+                fetchRelayListsForFollows()
+                // Force reconnect clears activeSubscriptions, so re-establish everything
+                val myPubkey = getUserPubkey()
+                if (myPubkey != null) {
+                    Log.d("RLC", "[FeedVM] → subscribeDmsAndNotifications()")
+                    subscribeDmsAndNotifications(myPubkey)
+                }
+            } else {
+                Log.d("RLC", "[FeedVM] → resumeSubscribeFeed()")
+                resumeSubscribeFeed()
+                // Non-force: resyncSubscriptions (triggered on relay connect) already
+                // replayed DM and notification subscriptions — no need to send them again.
+            }
+            Log.d("RLC", "[FeedVM] onReconnected complete")
         }
     )
     val socialGraphDb = SocialGraphDb(app)
@@ -202,7 +213,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     private var feedSubId = "feed"
     private var isLoadingMore = false
-    private val activeEngagementSubIds = mutableListOf<String>()
+    private val activeEngagementSubIds = java.util.concurrent.CopyOnWriteArrayList<String>()
     private var eventProcessingJob: Job? = null
     private var metadataSweepJob: Job? = null
     private var ephemeralCleanupJob: Job? = null
@@ -984,12 +995,17 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setFeedType(type: FeedType) {
         val prev = _feedType.value
+        Log.d("RLC", "[FeedVM] setFeedType $prev → $type")
         _feedType.value = type
         applyAuthorFilterForFeedType(type)
         when (type) {
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
                 if (prev == FeedType.LIST || prev == FeedType.RELAY) {
+                    Log.d("RLC", "[FeedVM] switching from $prev to $type — restoring cached feed and resubscribing")
                     eventRepo.clearFeed()
+                    // Restore cached follow feed so notes appear immediately
+                    // while fresh subscription fills in new events
+                    loadCachedFeed()
                     resubscribeFeed()
                 }
                 // Otherwise just a local filter swap (e.g. FOLLOWS <-> EXTENDED_FOLLOWS)
@@ -1098,15 +1114,18 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             // Timeout: if we're still connecting/subscribing after 15s, mark as timed out
-            // and clean up the ephemeral relay to free shared resources
+            // and close the subscription. Only disconnect ephemeral relays — don't nuke
+            // persistent relays from the pool (they're needed for the follow feed).
             launch {
                 delay(15_000)
                 val currentStatus = _relayFeedStatus.value
                 if (currentStatus is RelayFeedStatus.Connecting ||
                     currentStatus is RelayFeedStatus.Subscribing) {
+                    val isPersistent = relayPool.getRelayUrls().contains(url)
+                    Log.d("RLC", "[FeedVM] relay feed TIMEOUT for $url (was $currentStatus, persistent=$isPersistent) — closing sub")
                     _relayFeedStatus.value = RelayFeedStatus.TimedOut
                     relayPool.closeOnAllRelays(feedSubId)
-                    relayPool.disconnectRelay(url)
+                    if (!isPersistent) relayPool.disconnectRelay(url)
                 }
             }
         }
@@ -1198,6 +1217,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Called by Activity lifecycle — delegates to RelayLifecycleManager. */
     fun onAppPause() {
+        Log.d("RLC", "[FeedVM] onAppPause — feedType=${_feedType.value} connectedCount=${relayPool.connectedCount.value}")
         notifRepo.appIsActive = false
         lifecycleManager.onAppPause()
         if (_feedType.value == FeedType.FOLLOWS || _feedType.value == FeedType.EXTENDED_FOLLOWS) {
@@ -1207,6 +1227,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Called by Activity lifecycle — delegates to RelayLifecycleManager. */
     fun onAppResume(pausedMs: Long) {
+        Log.d("RLC", "[FeedVM] onAppResume — paused ${pausedMs/1000}s, feedType=${_feedType.value} connectedCount=${relayPool.connectedCount.value}")
         notifRepo.appIsActive = true
         lifecycleManager.onAppResume(pausedMs)
     }
@@ -1220,12 +1241,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
      * subs, only requests events newer than what we already have.
      */
     private fun resumeSubscribeFeed() {
+        Log.d("RLC", "[FeedVM] resumeSubscribeFeed() feedType=${_feedType.value} connectedCount=${relayPool.connectedCount.value}")
         relayPool.closeOnAllRelays(feedSubId)
         feedEoseJob?.cancel()
 
         // Use newest event timestamp as `since` to avoid re-fetching events we already have
         val newestTimestamp = eventRepo.feed.value.firstOrNull()?.created_at
         val sinceTimestamp = newestTimestamp ?: (System.currentTimeMillis() / 1000 - 60 * 60 * 24)
+        Log.d("RLC", "[FeedVM] resumeSubscribeFeed since=$sinceTimestamp (newest=${newestTimestamp})")
 
         val indexerRelays = getIndexerRelays()
         val excludedUrls = getExcludedRelayUrls()
@@ -1284,10 +1307,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private var feedEoseJob: Job? = null
 
     private fun resubscribeFeed() {
+        Log.d("RLC", "[FeedVM] resubscribeFeed() feedType=${_feedType.value} connectedCount=${relayPool.connectedCount.value}")
         relayPool.closeOnAllRelays(feedSubId)
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
         activeEngagementSubIds.clear()
-        relayPool.clearSeenEvents()
         eventRepo.countNewNotes = false
         feedEoseJob?.cancel()
 
@@ -1295,6 +1318,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         // deterministic results across refreshes. The limit still caps per-relay response
         // size. After EOSE the subscription stays open for live streaming of new events.
         val sinceTimestamp = System.currentTimeMillis() / 1000 - 60 * 60 * 24 // 24 hours ago
+        Log.d("RLC", "[FeedVM] resubscribeFeed: since=$sinceTimestamp (24h ago)")
         val indexerRelays = getIndexerRelays()
         val excludedUrls = getExcludedRelayUrls()
         val targetedRelays: Set<String> = when (_feedType.value) {
@@ -1308,7 +1332,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 } else {
                     listOfNotNull(pubkeyHex) + firstDegree
                 }
-                if (allAuthors.isEmpty()) return
+                if (allAuthors.isEmpty()) {
+                    Log.d("RLC", "[FeedVM] resubscribeFeed: no authors, returning")
+                    return
+                }
+                Log.d("RLC", "[FeedVM] resubscribeFeed: ${allAuthors.size} authors, ${indexerRelays.size} indexers, ${excludedUrls.size} excluded")
                 val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
                 outboxRouter.subscribeByAuthors(
                     feedSubId, allAuthors, notesFilter,
@@ -1346,11 +1374,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
+        Log.d("RLC", "[FeedVM] resubscribeFeed() sent to ${targetedRelays.size} relays, awaiting EOSE...")
         feedEoseJob = viewModelScope.launch {
             // Wait for a majority of relays rather than all — avoids blocking on slow
             // stragglers while still ensuring most notes have arrived.
             val eoseTarget = (targetedRelays.size * 0.65).toInt().coerceIn(1, targetedRelays.size)
+            Log.d("RLC", "[FeedVM] awaiting $eoseTarget/${ targetedRelays.size} EOSEs for feedSubId=$feedSubId")
             subManager.awaitEoseCount(feedSubId, eoseTarget)
+            Log.d("RLC", "[FeedVM] EOSE received, feed loaded")
             _initialLoadDone.value = true
             _initLoadingState.value = InitLoadingState.Done
             onRelayFeedEose()
