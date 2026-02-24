@@ -18,7 +18,9 @@ data class RelayConfig(
     companion object {
         val DEFAULTS = listOf(
             RelayConfig("wss://relay.damus.io", read = true, write = true),
-            RelayConfig("wss://relay.primal.net", read = true, write = true)
+            RelayConfig("wss://relay.primal.net", read = true, write = true),
+            RelayConfig("wss://indexer.coracle.social", read = true, write = false),
+            RelayConfig("wss://relay.nos.social", read = true, write = false)
         )
 
         /** Fallback indexer relays used when the user hasn't configured search relays (kind 10007). */

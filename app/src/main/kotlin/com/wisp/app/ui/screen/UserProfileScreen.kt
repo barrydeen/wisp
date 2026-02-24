@@ -757,7 +757,7 @@ private fun ProfileHeader(
         }
 
         // Followed-by avatars row
-        if (followedBy.isNotEmpty() && !isOwnProfile) {
+        if (followedBy.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             val displayPubkeys = followedBy.take(10)
             val othersCount = followedBy.size - displayPubkeys.size

@@ -130,9 +130,12 @@ class EventRouter(
                     metadataFetcher.addToPendingProfiles(event.pubkey)
                 }
             }
-        } else if (subscriptionId.startsWith("extnet-k3-")) {
+        } else if (subscriptionId.startsWith("extnet-k3")) {
             // Extended network discovery: kind 3 follow lists — route to repo, NOT feed
-            if (event.kind == 3) extendedNetworkRepo.processFollowListEvent(event)
+            if (event.kind == 3) {
+                Log.d("EventRouter", "Routing kind 3 from sub=$subscriptionId pubkey=${event.pubkey.take(8)}")
+                extendedNetworkRepo.processFollowListEvent(event)
+            }
         } else if (subscriptionId.startsWith("extnet-rl-")) {
             // Extended network discovery: relay lists — update relay list cache
             if (event.kind == 10002) relayListRepo.updateFromEvent(event)

@@ -320,8 +320,9 @@ fun WispNavHost() {
                         }
                     } else {
                         feedViewModel.reloadForNewAccount()
-                        // initRelays() is started by the onboarding screen after a
-                        // short delay so heavy relay work doesn't compete with UI animations
+                        // Start relay connections immediately so TCP/TLS handshakes
+                        // run in parallel with the onboarding welcome animation
+                        feedViewModel.initRelays()
                         walletViewModel.refreshState()
                         authViewModel.keyRepo.markOnboardingComplete()
                         navController.navigate(Routes.EXISTING_USER_ONBOARDING) {

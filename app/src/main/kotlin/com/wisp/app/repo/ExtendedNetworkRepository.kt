@@ -151,31 +151,19 @@ class ExtendedNetworkRepository(
             // Group authors by their optimal relay and fire all requests simultaneously.
             _discoveryState.value = DiscoveryState.FetchingFollowLists(0, firstDegree.size)
 
-            val relayGroups = relayScoreBoard.getRelaysForAuthors(firstDegree)
-            val subIds = mutableListOf<String>()
-            var subIndex = 0
-            for ((relayUrl, authors) in relayGroups) {
-                val subId = "extnet-k3-${subIndex++}"
-                subIds.add(subId)
-                val filter = Filter(kinds = listOf(3), authors = authors)
-                if (relayUrl.isEmpty()) {
-                    // Uncovered authors — send to all relays
-                    relayPool.sendToAll(ClientMessage.req(subId, filter))
-                } else {
-                    relayPool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(subId, filter))
-                }
-            }
-            // If scoreboard is empty, fall back to sending everything to all relays
-            if (relayGroups.isEmpty()) {
-                val subId = "extnet-k3-0"
-                subIds.add(subId)
-                val filter = Filter(kinds = listOf(3), authors = firstDegree)
-                relayPool.sendToAll(ClientMessage.req(subId, filter))
-            }
+            // Send a single subscription to top relays instead of per-relay subscriptions.
+            // Per-relay routing created 300+ ephemeral connections and 300+ closeOnAllRelays
+            // calls that blocked the main thread and caused OOM kills.
+            val subId = "extnet-k3"
+            val chunks = firstDegree.chunked(200)
+            val allFilters = chunks.map { chunk -> Filter(kinds = listOf(3), authors = chunk) }
+            val msg = if (allFilters.size == 1) ClientMessage.req(subId, allFilters[0])
+            else ClientMessage.req(subId, allFilters)
+            relayPool.sendToTopRelays(msg, maxRelays = 15)
 
-            // Wait for all with a single 3s timeout, then close everything
+            // Wait with timeout, then close the single subscription
             kotlinx.coroutines.delay(FOLLOW_LIST_TIMEOUT_MS)
-            for (subId in subIds) subManager.closeSubscription(subId)
+            subManager.closeSubscription(subId)
             discoveryTotal = 0
 
             Log.d(TAG, "Fetched ${pendingFollowLists.size} follow lists from ${firstDegree.size} follows")
@@ -184,6 +172,7 @@ class ExtendedNetworkRepository(
             // Write followedBy pairs to SQLite in batches to avoid OOM.
             socialGraphDb.clearAll()
             val relayHints = mutableMapOf<String, MutableSet<String>>()
+            var totalDbRows = 0
             val secondDegreeCount = withContext(Dispatchers.Default) {
                 val counts = mutableMapOf<String, Int>()
                 val batch = mutableListOf<Pair<String, String>>()
@@ -191,29 +180,33 @@ class ExtendedNetworkRepository(
                     val entries = Nip02.parseFollowList(event)
                     for (entry in entries) {
                         val pk = entry.pubkey
-                        if (pk != myPubkey) {
-                            batch.add(pk to event.pubkey)
+                        // Always record followedBy (including for own pubkey)
+                        // so the social graph shows followers-in-network on all profiles.
+                        batch.add(pk to event.pubkey)
 
-                            if (pk !in firstDegreeSet) {
-                                counts[pk] = (counts[pk] ?: 0) + 1
-                                val hint = entry.relayHint?.let { normalizeRelayUrl(it) }
-                                if (hint != null) {
-                                    relayHints.getOrPut(pk) { mutableSetOf() }.add(hint)
-                                }
+                        if (pk != myPubkey && pk !in firstDegreeSet) {
+                            counts[pk] = (counts[pk] ?: 0) + 1
+                            val hint = entry.relayHint?.let { normalizeRelayUrl(it) }
+                            if (hint != null) {
+                                relayHints.getOrPut(pk) { mutableSetOf() }.add(hint)
                             }
                         }
                     }
                     if (batch.size >= 5000) {
+                        totalDbRows += batch.size
                         socialGraphDb.insertBatch(batch)
                         batch.clear()
                     }
                 }
-                if (batch.isNotEmpty()) socialGraphDb.insertBatch(batch)
+                if (batch.isNotEmpty()) {
+                    totalDbRows += batch.size
+                    socialGraphDb.insertBatch(batch)
+                }
                 counts
             }
 
             _discoveryState.value = DiscoveryState.ComputingNetwork(secondDegreeCount.size)
-            Log.d(TAG, "Found ${secondDegreeCount.size} unique 2nd-degree follows")
+            Log.d(TAG, "Social graph: inserted $totalDbRows followedBy rows, ${secondDegreeCount.size} unique 2nd-degree follows")
 
             // Step 3: Filter to qualified (threshold) and exclude muted
             val qualified = withContext(Dispatchers.Default) {
@@ -246,14 +239,14 @@ class ExtendedNetworkRepository(
                 _discoveryState.value = DiscoveryState.FetchingRelayLists(0, missingRelayLists.size)
 
                 for ((i, chunk) in chunks.withIndex()) {
-                    val subId = "extnet-rl-$i"
-                    rlSubIds.add(subId)
+                    val rlSubId = "extnet-rl-$i"
+                    rlSubIds.add(rlSubId)
                     val filter = Filter(kinds = listOf(10002), authors = chunk)
-                    relayPool.sendToAll(ClientMessage.req(subId, filter))
+                    relayPool.sendToTopRelays(ClientMessage.req(rlSubId, filter), maxRelays = 10)
                 }
 
                 kotlinx.coroutines.delay(RELAY_LIST_TIMEOUT_MS)
-                for (subId in rlSubIds) subManager.closeSubscription(subId)
+                for (rlSubId in rlSubIds) subManager.closeSubscription(rlSubId)
 
                 _discoveryState.value = DiscoveryState.FetchingRelayLists(
                     fetched = missingRelayLists.size,

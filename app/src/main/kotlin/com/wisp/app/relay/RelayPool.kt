@@ -59,7 +59,7 @@ class RelayPool {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val subscriptionTracker = SubscriptionTracker()
-    private val seenEvents = LruCache<String, Boolean>(5000)
+    private val seenEvents = LruCache<String, Boolean>(10000)
     private val seenLock = Any()
     @Volatile private var feedEventCounter = 0
     @Volatile private var feedEventDedupCounter = 0

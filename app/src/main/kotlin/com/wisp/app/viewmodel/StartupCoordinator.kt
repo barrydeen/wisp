@@ -39,7 +39,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import kotlin.coroutines.CoroutineContext
 
@@ -274,6 +277,7 @@ class StartupCoordinator(
         startupJob = scope.launch {
             val cachedFollows = contactRepo.getFollowList()
             val isColdStart = cachedFollows.isEmpty() || relayScoreBoard.needsRecompute()
+            val relayCount = relayPool.getRelayUrls().size
 
             val follows: List<String>
 
@@ -290,7 +294,8 @@ class StartupCoordinator(
                 }
 
                 // Phase 1a: Connect + fetch self-data (profile, follow list, relay lists)
-                relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
+                // Use actual relay count to avoid waiting for impossible minCount
+                relayPool.awaitAnyConnected(minCount = minOf(3, relayCount), timeoutMs = 5_000)
                 subscribeSelfData()
                 fetchMissingEmojiSets()
 
@@ -299,7 +304,7 @@ class StartupCoordinator(
                     val profile = myPubkey?.let { profileRepo.get(it) }
                     if (profile != null) {
                         feedSub._initLoadingState.value = InitLoadingState.FoundProfile(profile.displayString, profile.picture)
-                        delay(1200)
+                        delay(400)
                     }
                 }
 
@@ -311,8 +316,8 @@ class StartupCoordinator(
 
                     val subscriptionSent = fetchRelayListsForFollows(includeProfiles = true)
                     if (subscriptionSent) {
-                        val target = (follows.size * 0.9).toInt()
-                        val deadline = System.currentTimeMillis() + 10_000
+                        val target = (follows.size * 0.7).toInt()
+                        val deadline = System.currentTimeMillis() + 7_000
                         while (System.currentTimeMillis() < deadline) {
                             val covered = follows.size - relayListRepo.getMissingPubkeys(follows).size
                             feedSub._initLoadingState.value = InitLoadingState.FindingFriends(covered, follows.size)
@@ -323,7 +328,8 @@ class StartupCoordinator(
                     }
 
                     recomputeAndMergeRelays()
-                    relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
+                    val newRelayCount = relayPool.getRelayUrls().size
+                    relayPool.awaitAnyConnected(minCount = minOf(3, newRelayCount), timeoutMs = 5_000)
                 } else {
                     val scored = relayScoreBoard.getScoredRelays()
                     Log.d("StartupCoord", "init: scoreboard cache valid (${scored.size} relays, ${follows.size} follows), skipping recompute")
@@ -333,7 +339,7 @@ class StartupCoordinator(
                 Log.d("StartupCoord", "init: warm start (${cachedFollows.size} cached follows, scoreboard valid)")
                 feedSub._initLoadingState.value = InitLoadingState.WarmLoading
 
-                relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
+                relayPool.awaitAnyConnected(minCount = minOf(3, relayCount), timeoutMs = 5_000)
                 // Fire-and-forget self-data refresh
                 launch {
                     subscribeSelfData()
@@ -343,43 +349,58 @@ class StartupCoordinator(
                 follows = cachedFollows.map { it.pubkey }
             }
 
-            // Phase 2: Extended network discovery + subscribe feed (common path)
-            val extNetCache = extendedNetworkRepo.cachedNetwork.value
-            val extNetCacheValid = extNetCache != null && !extendedNetworkRepo.isCacheStale(extNetCache)
-            Log.d("StartupCoord", "Phase 2: isColdStart=$isColdStart extNetCacheValid=$extNetCacheValid follows=${follows.size}")
-
-            if (!extNetCacheValid && follows.isNotEmpty()) {
-                val progressJob = launch {
-                    extendedNetworkRepo.discoveryState.collect { ds ->
-                        if (ds is DiscoveryState.FetchingFollowLists && isColdStart) {
-                            feedSub._initLoadingState.value = InitLoadingState.DiscoveringNetwork(ds.fetched, ds.total)
-                        }
-                    }
-                }
-                try {
-                    extendedNetworkRepo.discoverNetwork()
-                } catch (e: Exception) {
-                    Log.e("StartupCoord", "Extended network discovery failed during init", e)
-                }
-                progressJob.cancel()
-            }
-
-            // Expand pool with extended relays
-            val extConfigs = extendedNetworkRepo.getRelayConfigs()
-            if (extConfigs.isNotEmpty()) {
-                if (isColdStart) feedSub._initLoadingState.value = InitLoadingState.ExpandingRelays(extConfigs.size)
-                rebuildRelayPool()
-                val poolSize = relayPool.getRelayUrls().size
-                val targetConnected = poolSize * 3 / 10
-                relayPool.awaitAnyConnected(minCount = targetConnected, timeoutMs = 3_000)
-            }
-
-            // Apply filter and subscribe fresh feed
-            Log.d("StartupCoord", "Phase 2: applying filter and subscribeFeed, feedType=${feedSub.feedType.value}")
+            // Subscribe feed FIRST, then run extended network discovery in the background.
+            // This gets notes on screen faster — extended network expands the feed later.
+            Log.d("StartupCoord", "Subscribing feed, feedType=${feedSub.feedType.value}")
             feedSub.applyAuthorFilterForFeedType(feedSub.feedType.value)
             feedSub._initLoadingState.value = InitLoadingState.Subscribing
             feedSub.subscribeFeed()
-            Log.d("StartupCoord", "Phase 2: subscribeFeed called")
+            Log.d("StartupCoord", "subscribeFeed called, launching extended network in background")
+
+            // Extended network discovery runs in the background — expands pool + resubscribes
+            // feed when done, so new notes from 2nd-degree follows appear seamlessly.
+            val extNetCache = extendedNetworkRepo.cachedNetwork.value
+            val extNetCacheValid = extNetCache != null && !extendedNetworkRepo.isCacheStale(extNetCache)
+            Log.d("StartupCoord", "extNetCacheValid=$extNetCacheValid follows=${follows.size}")
+
+            if (!extNetCacheValid && follows.isNotEmpty()) {
+                launch {
+                    // Wait for recently-added relays to connect before discovery.
+                    // After recomputeAndMergeRelays the pool may have 30+ relays but
+                    // only a handful are connected yet — sendToTopRelays only reaches
+                    // connected relays, so we need to wait.
+                    val poolSize = relayPool.getRelayUrls().size
+                    val targetConnected = minOf(10, poolSize * 3 / 10)
+                    relayPool.awaitAnyConnected(minCount = targetConnected, timeoutMs = 5_000)
+                    Log.d("StartupCoord", "Discovery: awaited connections, connectedCount=${relayPool.connectedCount.value}")
+
+                    val progressJob = launch {
+                        extendedNetworkRepo.discoveryState.collect { ds ->
+                            if (ds is DiscoveryState.FetchingFollowLists && isColdStart) {
+                                feedSub._initLoadingState.value = InitLoadingState.DiscoveringNetwork(ds.fetched, ds.total)
+                            }
+                        }
+                    }
+                    try {
+                        extendedNetworkRepo.discoverNetwork()
+                    } catch (e: Exception) {
+                        Log.e("StartupCoord", "Extended network discovery failed during init", e)
+                    }
+                    progressJob.cancel()
+
+                    // Expand pool with extended relays and resubscribe feed
+                    val extConfigs = extendedNetworkRepo.getRelayConfigs()
+                    if (extConfigs.isNotEmpty()) {
+                        rebuildRelayPool()
+                        val poolSize = relayPool.getRelayUrls().size
+                        val targetConnected = poolSize * 3 / 10
+                        relayPool.awaitAnyConnected(minCount = targetConnected, timeoutMs = 3_000)
+                        feedSub.applyAuthorFilterForFeedType(feedSub.feedType.value)
+                        feedSub.resubscribeFeed()
+                        Log.d("StartupCoord", "Extended network ready — resubscribed feed with ${extConfigs.size} extra relays")
+                    }
+                }
+            }
 
             // Background: fetch relay lists for any new follows (non-blocking)
             if (!relayScoreBoard.needsRecompute()) {
@@ -392,6 +413,12 @@ class StartupCoordinator(
      * Fetches self-data (follow list, relay lists, mutes, etc.) and **awaits** EOSE
      * so the caller has fresh data before proceeding to build the feed.
      * DM and notification subscriptions are fire-and-forget (not feed-blocking).
+     */
+    /**
+     * Fetches self-data (follow list, relay lists, mutes, etc.).
+     * Instead of waiting for full EOSE (up to 15s), we proceed as soon as the
+     * follow list (kind 3) arrives since that's the gate for the next phase.
+     * Remaining self-data continues streaming in the background.
      */
     private suspend fun subscribeSelfData() {
         val myPubkey = getUserPubkey() ?: return
@@ -412,13 +439,42 @@ class StartupCoordinator(
         )
         relayPool.sendToAll(ClientMessage.req("self-data", selfDataFilters))
 
-        // Await EOSE so follow list (kind 3) and relay list (kind 10002) are
-        // available before the caller proceeds to build the feed.
-        subManager.awaitEoseWithTimeout("self-data")
-        subManager.closeSubscription("self-data")
+        // Race: proceed as soon as the follow list arrives (kind 3 → contactRepo update)
+        // OR fall back to EOSE/timeout. The follow list is the critical gate — other
+        // self-data (mutes, bookmarks, emoji) streams in the background.
+        val hadFollowsBefore = contactRepo.getFollowList().isNotEmpty()
+        val gotFollowList = if (hadFollowsBefore) {
+            // Already have cached follows, just wait for EOSE to refresh
+            subManager.awaitEoseWithTimeout("self-data", 8_000)
+        } else {
+            // First login: race between follow list arrival and EOSE
+            withTimeoutOrNull(8_000) {
+                // Wait for either the follow list to appear or EOSE
+                val followJob = launch {
+                    contactRepo.followList.first { it.isNotEmpty() }
+                }
+                val eoseJob = launch {
+                    subManager.awaitEose("self-data")
+                }
+                // Whichever finishes first unblocks us
+                select {
+                    followJob.onJoin {}
+                    eoseJob.onJoin {}
+                }
+                followJob.cancel()
+                eoseJob.cancel()
+            }
+            contactRepo.getFollowList().isNotEmpty()
+        }
+        Log.d("StartupCoord", "subscribeSelfData: gotFollowList=$gotFollowList, follows=${contactRepo.getFollowList().size}")
+
+        // Close subscription in background after a short grace period for remaining data
+        scope.launch {
+            delay(3_000)
+            subManager.closeSubscription("self-data")
+        }
 
         // Cache the user's avatar locally for instant loading screen display.
-        // Re-download if the URL changed (compare with what we had before self-data fetch).
         val profile = profileRepo.get(myPubkey)
         if (profile?.picture != null) {
             val localFile = profileRepo.getLocalAvatar(myPubkey)

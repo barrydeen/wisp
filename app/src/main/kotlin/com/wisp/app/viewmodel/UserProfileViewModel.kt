@@ -1,6 +1,7 @@
 package com.wisp.app.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.ClientMessage
@@ -17,6 +18,7 @@ import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.DiscoveryState
 import com.wisp.app.repo.ExtendedNetworkRepository
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.RelayHintStore
@@ -72,6 +74,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     private val activeFollowProfileSubIds = mutableListOf<String>()
     private var topRelayUrls: List<String> = emptyList()
 
+    private var extendedNetworkRepoRef: ExtendedNetworkRepository? = null
     private var isLoadingMoreNotes = false
     private var isLoadingMoreReplies = false
     // Track oldest event timestamps from the target user (kind 1/6) for pagination.
@@ -108,7 +111,19 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         _profile.value = eventRepo.getProfileData(pubkey)
         _relayHints.value = relayHintStore?.getHints(pubkey) ?: emptySet()
         _isFollowing.value = contactRepo.isFollowing(pubkey)
+        extendedNetworkRepoRef = extendedNetworkRepo
         _followedBy.value = extendedNetworkRepo?.getFollowedBy(pubkey)?.toList() ?: emptyList()
+        Log.d("UserProfileVM", "loadProfile: followedBy=${_followedBy.value.size} for $pubkey, discoveryState=${extendedNetworkRepo?.discoveryState?.value}")
+
+        // If social graph is still being computed, re-query when discovery completes
+        if (_followedBy.value.isEmpty() && extendedNetworkRepo != null) {
+            viewModelScope.launch {
+                extendedNetworkRepo.discoveryState.first { it is DiscoveryState.Complete || it is DiscoveryState.Failed }
+                val result = extendedNetworkRepo.getFollowedBy(pubkey).toList()
+                Log.d("UserProfileVM", "Discovery finished, followedBy=${result.size} for $pubkey")
+                _followedBy.value = result
+            }
+        }
 
         // Close any prior subs (e.g. re-subscribe after relay list discovery)
         closeAllSubs(relayPool)

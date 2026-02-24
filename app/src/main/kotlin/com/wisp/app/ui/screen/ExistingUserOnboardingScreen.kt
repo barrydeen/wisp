@@ -61,12 +61,6 @@ fun ExistingUserOnboardingScreen(
 ) {
     BackHandler { /* disable back during onboarding */ }
 
-    // Start relay discovery after a short delay so the welcome animation renders smoothly
-    LaunchedEffect(Unit) {
-        delay(2000)
-        feedViewModel.initRelays()
-    }
-
     val feed by feedViewModel.feed.collectAsState()
 
     // Ready as soon as we have enough notes to show a useful feed.

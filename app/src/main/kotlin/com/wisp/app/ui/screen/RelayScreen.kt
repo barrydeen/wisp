@@ -137,7 +137,7 @@ fun RelayScreen(
 @Composable
 private fun GeneralRelayList(relays: List<RelayConfig>, viewModel: RelayViewModel) {
     LazyColumn {
-        items(items = relays, key = { it.url }) { relay ->
+        items(items = relays.distinctBy { it.url }, key = { it.url }) { relay ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -178,7 +178,7 @@ private fun GeneralRelayList(relays: List<RelayConfig>, viewModel: RelayViewMode
 @Composable
 private fun SimpleRelayList(urls: List<String>, viewModel: RelayViewModel) {
     LazyColumn {
-        items(items = urls, key = { it }) { url ->
+        items(items = urls.distinct(), key = { it }) { url ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier

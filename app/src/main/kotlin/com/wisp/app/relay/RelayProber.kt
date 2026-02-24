@@ -34,7 +34,7 @@ enum class OnboardingPhase(val display: String) {
 
 object RelayProber {
     private const val TAG = "RelayProber"
-    val BOOTSTRAP = listOf("wss://relay.damus.io", "wss://relay.primal.net")
+    val BOOTSTRAP = listOf("wss://relay.damus.io", "wss://relay.primal.net", "wss://indexer.coracle.social", "wss://relay.nos.social")
     const val HARVEST_LIMIT = 500
     const val MIN_FREQUENCY = 3
     const val TOP_EXCLUDE = 5
