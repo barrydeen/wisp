@@ -510,7 +510,8 @@ fun WispNavHost() {
                     relayListRepo = feedViewModel.relayListRepo,
                     subManager = feedViewModel.subManager,
                     topRelayUrls = feedViewModel.getScoredRelays().take(5).map { it.url },
-                    relayHintStore = feedViewModel.relayHintStore
+                    relayHintStore = feedViewModel.relayHintStore,
+                    extendedNetworkRepo = feedViewModel.extendedNetworkRepo
                 )
             }
             val isBlockedState by feedViewModel.muteRepo.blockedPubkeys.collectAsState()

@@ -17,6 +17,7 @@ import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.ExtendedNetworkRepository
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayListRepository
@@ -55,6 +56,9 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     private val _relayHints = MutableStateFlow<Set<String>>(emptySet())
     val relayHints: StateFlow<Set<String>> = _relayHints
 
+    private val _followedBy = MutableStateFlow<List<String>>(emptyList())
+    val followedBy: StateFlow<List<String>> = _followedBy
+
     private val _followProfileVersion = MutableStateFlow(0)
     val followProfileVersion: StateFlow<Int> = _followProfileVersion
 
@@ -89,7 +93,8 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         relayListRepo: RelayListRepository? = null,
         subManager: SubscriptionManager? = null,
         topRelayUrls: List<String> = emptyList(),
-        relayHintStore: RelayHintStore? = null
+        relayHintStore: RelayHintStore? = null,
+        extendedNetworkRepo: ExtendedNetworkRepository? = null
     ) {
         targetPubkey = pubkey
         eventRepoRef = eventRepo
@@ -103,6 +108,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         _profile.value = eventRepo.getProfileData(pubkey)
         _relayHints.value = relayHintStore?.getHints(pubkey) ?: emptySet()
         _isFollowing.value = contactRepo.isFollowing(pubkey)
+        _followedBy.value = extendedNetworkRepo?.getFollowedBy(pubkey)?.toList() ?: emptyList()
 
         // Close any prior subs (e.g. re-subscribe after relay list discovery)
         closeAllSubs(relayPool)

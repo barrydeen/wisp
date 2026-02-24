@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import android.content.Intent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,6 +57,8 @@ import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.nostr.hexToByteArray
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
@@ -370,6 +373,28 @@ fun PostCard(
             }
         }
 
+        // Top zapper banner
+        if (zapDetails.isNotEmpty()) {
+            val topZap = remember(zapDetails) {
+                zapDetails.maxByOrNull { it.second }
+            }
+            if (topZap != null) {
+                val zapperProfile = eventRepo?.getProfileData(topZap.first)
+                val zapperName = zapperProfile?.displayString
+                    ?: (topZap.first.take(8) + "...")
+                TopZapperBanner(
+                    avatarUrl = zapperProfile?.picture,
+                    name = zapperName,
+                    sats = topZap.second,
+                    message = topZap.third,
+                    onClick = {
+                        val nav = onNavigateToProfileFromDetails ?: onNavigateToProfile
+                        nav?.invoke(topZap.first)
+                    }
+                )
+            }
+        }
+
         Row(verticalAlignment = Alignment.CenterVertically) {
             ActionBar(
                 onReply = onReply,
@@ -437,6 +462,88 @@ fun PostCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
         }
     }
+}
+
+@Composable
+private fun TopZapperBanner(
+    avatarUrl: String?,
+    name: String,
+    sats: Long,
+    message: String,
+    onClick: () -> Unit
+) {
+    val orange = Color(0xFFFF9800)
+    val darkOrange = Color(0xFFE65100)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .border(
+                    width = 1.dp,
+                    color = orange.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(50)
+                )
+                .clickable(onClick = onClick)
+                .padding(start = 8.dp, end = 10.dp, top = 4.dp, bottom = 4.dp)
+        ) {
+            // Bitcoin icon
+            Icon(
+                Icons.Outlined.CurrencyBitcoin,
+                contentDescription = null,
+                tint = orange,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.width(4.dp))
+
+            // Zapper avatar
+            ProfilePicture(
+                url = avatarUrl,
+                size = 18,
+                onClick = onClick
+            )
+            Spacer(Modifier.width(5.dp))
+
+            // Name
+            Text(
+                text = name,
+                style = MaterialTheme.typography.labelMedium,
+                color = orange,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.width(5.dp))
+
+            // Amount
+            Text(
+                text = "\u26A1${formatZapAmount(sats)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = darkOrange
+            )
+
+            // Message (if present)
+            if (message.isNotBlank()) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "\u201C${message}\u201D",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+private fun formatZapAmount(sats: Long): String = when {
+    sats >= 1_000_000 -> String.format("%.1fM", sats / 1_000_000.0)
+    sats >= 1_000 -> String.format("%.1fk", sats / 1_000.0)
+    else -> "$sats"
 }
 
 private val dateTimeFormat = SimpleDateFormat("MMM d, HH:mm", Locale.US)

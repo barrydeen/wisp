@@ -59,7 +59,8 @@ class ExtendedNetworkRepository(
     private val relayPool: RelayPool,
     private val subManager: SubscriptionManager,
     private val relayScoreBoard: RelayScoreBoard,
-    private var pubkeyHex: String?
+    private var pubkeyHex: String?,
+    private val socialGraphDb: SocialGraphDb
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -73,6 +74,7 @@ class ExtendedNetworkRepository(
     private val pendingFollowLists = java.util.concurrent.ConcurrentHashMap<String, NostrEvent>()
     @Volatile private var discoveryTotal = 0
     @Volatile private var discoveryInProgress = false
+
 
     companion object {
         private const val TAG = "ExtendedNetworkRepo"
@@ -178,23 +180,35 @@ class ExtendedNetworkRepository(
 
             Log.d(TAG, "Fetched ${pendingFollowLists.size} follow lists from ${firstDegree.size} follows")
 
-            // Step 2: Parse follow lists, count 2nd-degree appearances, collect relay hints
+            // Step 2: Parse follow lists, count 2nd-degree appearances, collect relay hints.
+            // Write followedBy pairs to SQLite in batches to avoid OOM.
+            socialGraphDb.clearAll()
             val relayHints = mutableMapOf<String, MutableSet<String>>()
             val secondDegreeCount = withContext(Dispatchers.Default) {
                 val counts = mutableMapOf<String, Int>()
+                val batch = mutableListOf<Pair<String, String>>()
                 for ((_, event) in pendingFollowLists) {
                     val entries = Nip02.parseFollowList(event)
                     for (entry in entries) {
                         val pk = entry.pubkey
-                        if (pk != myPubkey && pk !in firstDegreeSet) {
-                            counts[pk] = (counts[pk] ?: 0) + 1
-                            val hint = entry.relayHint?.let { normalizeRelayUrl(it) }
-                            if (hint != null) {
-                                relayHints.getOrPut(pk) { mutableSetOf() }.add(hint)
+                        if (pk != myPubkey) {
+                            batch.add(pk to event.pubkey)
+
+                            if (pk !in firstDegreeSet) {
+                                counts[pk] = (counts[pk] ?: 0) + 1
+                                val hint = entry.relayHint?.let { normalizeRelayUrl(it) }
+                                if (hint != null) {
+                                    relayHints.getOrPut(pk) { mutableSetOf() }.add(hint)
+                                }
                             }
                         }
                     }
+                    if (batch.size >= 5000) {
+                        socialGraphDb.insertBatch(batch)
+                        batch.clear()
+                    }
                 }
+                if (batch.isNotEmpty()) socialGraphDb.insertBatch(batch)
                 counts
             }
 
@@ -385,10 +399,17 @@ class ExtendedNetworkRepository(
         return trimmed.lowercase()
     }
 
+    /**
+     * Returns the set of first-degree follows who follow the given pubkey.
+     */
+    fun getFollowedBy(pubkey: String): Set<String> =
+        socialGraphDb.getFollowers(pubkey).toSet()
+
     fun clear() {
         _cachedNetwork.value = null
         _discoveryState.value = DiscoveryState.Idle
         pendingFollowLists.clear()
+        socialGraphDb.clearAll()
         discoveryTotal = 0
         prefs.edit().clear().apply()
     }
@@ -418,4 +439,5 @@ class ExtendedNetworkRepository(
             Log.e(TAG, "Failed to load cache", e)
         }
     }
+
 }

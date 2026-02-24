@@ -39,6 +39,7 @@ import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.FeedCache
 import com.wisp.app.repo.DiscoveryState
 import com.wisp.app.repo.ExtendedNetworkRepository
+import com.wisp.app.repo.SocialGraphDb
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.ListRepository
@@ -168,8 +169,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             if (myPubkey != null) subscribeDmsAndNotifications(myPubkey)
         }
     )
+    val socialGraphDb = SocialGraphDb(app)
     val extendedNetworkRepo = ExtendedNetworkRepository(
-        app, contactRepo, muteRepo, relayListRepo, relayPool, subManager, relayScoreBoard, pubkeyHex
+        app, contactRepo, muteRepo, relayListRepo, relayPool, subManager, relayScoreBoard, pubkeyHex, socialGraphDb
     )
     val customEmojiRepo = CustomEmojiRepository(app, pubkeyHex)
     val zapPrefs = ZapPreferences(app, pubkeyHex)

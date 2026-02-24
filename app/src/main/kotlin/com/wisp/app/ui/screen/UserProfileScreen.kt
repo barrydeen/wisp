@@ -135,6 +135,7 @@ fun UserProfileScreen(
     val followList by viewModel.followList.collectAsState()
     val relayList by viewModel.relayList.collectAsState()
     val relayHints by viewModel.relayHints.collectAsState()
+    val followedBy by viewModel.followedBy.collectAsState()
     val followProfileVersion by viewModel.followProfileVersion.collectAsState()
     val myFollowList by contactRepo.followList.collectAsState()
 
@@ -310,7 +311,10 @@ fun UserProfileScreen(
                     pubkey = profilePubkey,
                     eventRepo = eventRepo,
                     onNavigateToProfile = onNavigateToProfile,
-                    onSendDm = onSendDm
+                    onSendDm = onSendDm,
+                    followingCount = followList.size,
+                    followedBy = followedBy,
+                    followsYou = !isOwnProfile && userPubkey != null && followList.any { it.pubkey == userPubkey }
                 )
             }
 
@@ -554,7 +558,10 @@ private fun ProfileHeader(
     pubkey: String = "",
     eventRepo: EventRepository? = null,
     onNavigateToProfile: ((String) -> Unit)? = null,
-    onSendDm: (() -> Unit)? = null
+    onSendDm: (() -> Unit)? = null,
+    followingCount: Int = 0,
+    followedBy: List<String> = emptyList(),
+    followsYou: Boolean = false
 ) {
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
 
@@ -623,11 +630,29 @@ private fun ProfileHeader(
             }
         }
 
-        Text(
-            text = profile?.displayString ?: "",
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = profile?.displayString ?: "",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (followsYou) {
+                Text(
+                    text = "Follows you",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            RoundedCornerShape(4.dp)
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+        }
 
         profile?.nip05?.let { nip05 ->
             if (pubkey.isNotEmpty()) nip05Repo?.checkOrFetch(pubkey, nip05)
@@ -688,6 +713,73 @@ private fun ProfileHeader(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+
+        // Following / Followers in your network counts
+        if (followingCount > 0 || followedBy.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (followingCount > 0) {
+                    Text(
+                        text = "$followingCount",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.width(3.dp))
+                    Text(
+                        text = "Following",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (followingCount > 0 && followedBy.isNotEmpty()) {
+                    Spacer(Modifier.width(16.dp))
+                }
+                if (followedBy.isNotEmpty()) {
+                    Text(
+                        text = "${followedBy.size}",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.width(3.dp))
+                    Text(
+                        text = "Followers in your network",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        // Followed-by avatars row
+        if (followedBy.isNotEmpty() && !isOwnProfile) {
+            Spacer(Modifier.height(8.dp))
+            val displayPubkeys = followedBy.take(10)
+            val othersCount = followedBy.size - displayPubkeys.size
+            val avatarSize = 22
+            val overlap = 16
+            val boxWidth = (avatarSize + (displayPubkeys.size - 1) * overlap).dp
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.width(boxWidth).height(avatarSize.dp)) {
+                    displayPubkeys.forEachIndexed { index, pk ->
+                        Box(modifier = Modifier.offset(x = (index * overlap).dp)) {
+                            ProfilePicture(
+                                url = eventRepo?.getProfileData(pk)?.picture,
+                                size = avatarSize,
+                                onClick = { onNavigateToProfile?.invoke(pk) }
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                if (othersCount > 0) {
+                    Text(
+                        text = "+$othersCount others in your network",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 

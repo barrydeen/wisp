@@ -89,6 +89,8 @@ fun LoadingScreen(
     LaunchedEffect(minTimeElapsed, initLoadingState, timedOut, feed.size, initialLoadDone) {
         val initDone = initLoadingState == InitLoadingState.Done
         val feedReady = feed.isNotEmpty()
+        // Don't early-exit while discovery is still running
+        val discoveryBusy = initLoadingState is InitLoadingState.DiscoveringNetwork
         if (timedOut && feedReady) {
             viewModel.markLoadingComplete()
             onReady()
@@ -101,7 +103,7 @@ fun LoadingScreen(
             delay(300)
             viewModel.markLoadingComplete()
             onReady()
-        } else if (minTimeElapsed && feed.size >= 5) {
+        } else if (minTimeElapsed && feed.size >= 5 && !discoveryBusy) {
             // Early exit: enough notes to show a useful feed, don't wait for full EOSE
             viewModel.markLoadingComplete()
             onReady()
@@ -242,7 +244,7 @@ private fun initLoadingProgress(state: InitLoadingState): Float {
         }
         is InitLoadingState.DiscoveringNetwork -> {
             val frac = if (state.total > 0) state.fetched.toFloat() / state.total else 0f
-            0.45f + frac * 0.30f
+            0.45f + frac * 0.35f
         }
         is InitLoadingState.ExpandingRelays -> 0.85f
         is InitLoadingState.WarmLoading -> 0f
