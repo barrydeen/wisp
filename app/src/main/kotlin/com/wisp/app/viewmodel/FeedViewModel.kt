@@ -160,12 +160,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         scope = viewModelScope,
         onReconnected = { force ->
             if (force) subscribeFeed() else resumeSubscribeFeed()
-            if (force) {
-                fetchRelayListsForFollows()
-                // Force reconnect tears down all subscriptions — re-establish DMs and notifications
-                val myPubkey = getUserPubkey()
-                if (myPubkey != null) subscribeDmsAndNotifications(myPubkey)
-            }
+            if (force) fetchRelayListsForFollows()
+            // Always re-establish DM and notification subscriptions on reconnect.
+            // Non-force reconnect can miss resyncSubscriptions due to appIsActive timing,
+            // and force reconnect tears down all subscriptions entirely.
+            val myPubkey = getUserPubkey()
+            if (myPubkey != null) subscribeDmsAndNotifications(myPubkey)
         }
     )
     val extendedNetworkRepo = ExtendedNetworkRepository(
@@ -784,6 +784,16 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                     eventRepo.cacheEvent(event)
                     val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
                     if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
+                }
+            }
+            // Engagement events win the dedup race against "notif" subscription,
+            // so also route notification-eligible events to notifRepo here
+            val myPubkey = getUserPubkey()
+            if (myPubkey != null && event.pubkey != myPubkey &&
+                event.kind in intArrayOf(1, 6, 7, 9735)) {
+                notifRepo.addEvent(event, myPubkey)
+                if (eventRepo.getProfileData(event.pubkey) == null) {
+                    metadataFetcher.addToPendingProfiles(event.pubkey)
                 }
             }
         } else if (subscriptionId.startsWith("extnet-k3-")) {
