@@ -644,6 +644,15 @@ class RelayPool {
 
     fun getEphemeralCount(): Int = ephemeralRelays.size
 
+    fun isRelayConnected(url: String): Boolean = relayIndex[url]?.isConnected == true
+
+    /** Returns remaining cooldown in seconds, or 0 if not on cooldown. */
+    fun getRelayCooldownRemaining(url: String): Int {
+        val until = relayCooldowns[url] ?: return 0
+        val remaining = until - System.currentTimeMillis()
+        return if (remaining > 0) (remaining / 1000).toInt() + 1 else 0
+    }
+
     fun clearSeenEvents() {
         synchronized(seenLock) {
             seenEvents.evictAll()

@@ -70,6 +70,7 @@ import androidx.compose.ui.text.font.FontWeight
 import com.wisp.app.viewmodel.FeedType
 import com.wisp.app.viewmodel.FeedViewModel
 import com.wisp.app.viewmodel.InitLoadingState
+import com.wisp.app.viewmodel.RelayFeedStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -131,6 +132,7 @@ fun FeedScreen(
 
     val newNoteCount by viewModel.newNoteCount.collectAsState()
     val initLoadingState by viewModel.initLoadingState.collectAsState()
+    val relayFeedStatus by viewModel.relayFeedStatus.collectAsState()
     val zapInProgress by viewModel.zapInProgress.collectAsState()
     val listedIds by viewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
     val pinnedIds by viewModel.pinRepo.pinnedIds.collectAsState()
@@ -503,6 +505,7 @@ fun FeedScreen(
                 RelayFeedBar(
                     relayUrl = selectedRelay!!,
                     relayInfoRepo = viewModel.relayInfoRepo,
+                    relayFeedStatus = relayFeedStatus,
                     onViewDetails = { onRelayDetail(selectedRelay!!) }
                 )
             }
@@ -534,6 +537,13 @@ fun FeedScreen(
                                 Text(
                                     "This list is empty",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            feedType == FeedType.RELAY -> {
+                                RelayFeedEmptyState(
+                                    status = relayFeedStatus,
+                                    relayUrl = selectedRelay ?: "",
+                                    onRetry = { viewModel.retryRelayFeed() }
                                 )
                             }
                             initLoadingState != InitLoadingState.Done -> {
@@ -1000,12 +1010,23 @@ private fun NewNotesButton(
 private fun RelayFeedBar(
     relayUrl: String,
     relayInfoRepo: RelayInfoRepository,
+    relayFeedStatus: RelayFeedStatus,
     onViewDetails: () -> Unit
 ) {
     val info = remember(relayUrl) { relayInfoRepo.getInfo(relayUrl) }
     val iconUrl = remember(relayUrl) { relayInfoRepo.getIconUrl(relayUrl) }
     val domain = remember(relayUrl) {
         relayUrl.removePrefix("wss://").removePrefix("ws://").removeSuffix("/")
+    }
+
+    val statusColor = when (relayFeedStatus) {
+        is RelayFeedStatus.Streaming -> androidx.compose.ui.graphics.Color(0xFF4CAF50)
+        is RelayFeedStatus.Connecting, is RelayFeedStatus.Subscribing -> androidx.compose.ui.graphics.Color(0xFFFFC107)
+        is RelayFeedStatus.Disconnected, is RelayFeedStatus.ConnectionFailed,
+        is RelayFeedStatus.TimedOut -> androidx.compose.ui.graphics.Color(0xFFFF5252)
+        is RelayFeedStatus.RateLimited, is RelayFeedStatus.BadRelay,
+        is RelayFeedStatus.Cooldown -> androidx.compose.ui.graphics.Color(0xFFFF9800)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Surface(
@@ -1018,11 +1039,24 @@ private fun RelayFeedBar(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                RelayIcon(
-                    iconUrl = iconUrl,
-                    relayUrl = relayUrl,
-                    size = 28.dp
-                )
+                Box {
+                    RelayIcon(
+                        iconUrl = iconUrl,
+                        relayUrl = relayUrl,
+                        size = 28.dp
+                    )
+                    // Connection status dot overlay
+                    if (relayFeedStatus !is RelayFeedStatus.Idle) {
+                        androidx.compose.foundation.Canvas(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .align(Alignment.BottomEnd)
+                        ) {
+                            drawCircle(color = androidx.compose.ui.graphics.Color.Black, radius = size.minDimension / 2)
+                            drawCircle(color = statusColor, radius = size.minDimension / 2 - 1.dp.toPx())
+                        }
+                    }
+                }
                 Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -1055,6 +1089,130 @@ private fun RelayFeedBar(
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+        }
+    }
+}
+
+@Composable
+private fun RelayFeedEmptyState(
+    status: RelayFeedStatus,
+    relayUrl: String,
+    onRetry: () -> Unit
+) {
+    val domain = remember(relayUrl) {
+        relayUrl.removePrefix("wss://").removePrefix("ws://").removeSuffix("/")
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.padding(horizontal = 32.dp)
+    ) {
+        when (status) {
+            is RelayFeedStatus.Connecting -> {
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Connecting to $domain...",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            is RelayFeedStatus.Subscribing -> {
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Connected. Waiting for events...",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            is RelayFeedStatus.NoEvents -> {
+                Text(
+                    "No events found on this relay",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            is RelayFeedStatus.TimedOut -> {
+                Text(
+                    "Connection timed out",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onRetry) { Text("Retry") }
+            }
+            is RelayFeedStatus.RateLimited -> {
+                Text(
+                    "This relay is rate limiting you",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onRetry) { Text("Retry") }
+            }
+            is RelayFeedStatus.BadRelay -> {
+                Text(
+                    "This relay has been marked unreliable",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    status.reason,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onRetry) { Text("Try anyway") }
+            }
+            is RelayFeedStatus.Cooldown -> {
+                Text(
+                    "Relay on cooldown",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "${status.remainingSeconds}s remaining",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            is RelayFeedStatus.ConnectionFailed -> {
+                Text(
+                    "Connection failed",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    status.message,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onRetry) { Text("Retry") }
+            }
+            is RelayFeedStatus.Disconnected -> {
+                Text(
+                    "Relay disconnected",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onRetry) { Text("Reconnect") }
+            }
+            is RelayFeedStatus.Streaming, is RelayFeedStatus.Idle -> {
+                // Streaming with empty feed shouldn't normally happen, show spinner
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            }
         }
     }
 }

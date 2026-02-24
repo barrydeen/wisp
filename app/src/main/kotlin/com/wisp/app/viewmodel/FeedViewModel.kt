@@ -20,6 +20,7 @@ import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.nostr.RemoteSignerBridge
 import com.wisp.app.nostr.RemoteSigner
 import com.wisp.app.nostr.toHex
+import com.wisp.app.relay.ConsoleLogType
 import com.wisp.app.relay.Relay
 import com.wisp.app.relay.RelayLifecycleManager
 import com.wisp.app.relay.OutboxRouter
@@ -65,11 +66,23 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 import kotlinx.coroutines.withTimeoutOrNull
-import android.content.Context
-import android.content.SharedPreferences
 import java.io.File
 
 enum class FeedType { FOLLOWS, EXTENDED_FOLLOWS, RELAY, LIST }
+
+sealed interface RelayFeedStatus {
+    data object Idle : RelayFeedStatus
+    data object Connecting : RelayFeedStatus
+    data object Subscribing : RelayFeedStatus
+    data object Streaming : RelayFeedStatus
+    data object NoEvents : RelayFeedStatus
+    data object TimedOut : RelayFeedStatus
+    data object RateLimited : RelayFeedStatus
+    data class BadRelay(val reason: String) : RelayFeedStatus
+    data class Cooldown(val remainingSeconds: Int) : RelayFeedStatus
+    data class ConnectionFailed(val message: String) : RelayFeedStatus
+    data object Disconnected : RelayFeedStatus
+}
 
 sealed class InitLoadingState {
     // Cold-start only (skipped when cached):
@@ -159,8 +172,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val customEmojiRepo = CustomEmojiRepository(app, pubkeyHex)
     val zapPrefs = ZapPreferences(app, pubkeyHex)
     private val processingDispatcher = Dispatchers.Default
-    private val feedPrefs: SharedPreferences =
-        app.getSharedPreferences("wisp_feed_${pubkeyHex ?: "anon"}", Context.MODE_PRIVATE)
 
     val feedCache = FeedCache(app, pubkeyHex)
     private var feedCacheSaveJob: Job? = null
@@ -218,16 +229,16 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private val _initLoadingState = MutableStateFlow<InitLoadingState>(InitLoadingState.SearchingProfile)
     val initLoadingState: StateFlow<InitLoadingState> = _initLoadingState
 
-    private val _feedType = MutableStateFlow(
-        feedPrefs.getString("feed_type", null)
-            ?.let { runCatching { FeedType.valueOf(it) }.getOrNull() }
-            ?: FeedType.FOLLOWS
-    )
+    private val _feedType = MutableStateFlow(FeedType.FOLLOWS)
     val feedType: StateFlow<FeedType> = _feedType
 
 
     private val _selectedRelay = MutableStateFlow<String?>(null)
     val selectedRelay: StateFlow<String?> = _selectedRelay
+
+    private val _relayFeedStatus = MutableStateFlow<RelayFeedStatus>(RelayFeedStatus.Idle)
+    val relayFeedStatus: StateFlow<RelayFeedStatus> = _relayFeedStatus
+    private var relayStatusMonitorJob: Job? = null
 
     val selectedList: StateFlow<com.wisp.app.nostr.FollowSet?> = listRepo.selectedList
 
@@ -288,6 +299,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         startupJob?.cancel()
         feedEoseJob?.cancel()
         feedCacheSaveJob?.cancel()
+        relayStatusMonitorJob?.cancel()
+        _relayFeedStatus.value = RelayFeedStatus.Idle
         feedCache.clear()
         relayPool.closeOnAllRelays(feedSubId)
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
@@ -843,6 +856,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 subscriptionId == "feed-backfill"
             if (isFeedSub) {
                 eventRepo.addEvent(event)
+                onRelayFeedEventReceived()
                 if (event.kind == 1) eventRepo.addEventRelay(event.id, relayUrl)
                 if (event.kind == 1) {
                     metadataFetcher.fetchQuotedEvents(event)
@@ -938,7 +952,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun setFeedType(type: FeedType) {
         val prev = _feedType.value
         _feedType.value = type
-        feedPrefs.edit().putString("feed_type", type.name).apply()
         applyAuthorFilterForFeedType(type)
         when (type) {
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
@@ -969,6 +982,134 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             eventRepo.clearFeed()
             resubscribeFeed()
         }
+    }
+
+    /**
+     * Start monitoring the relay feed connection status for the given relay URL.
+     * Watches console log for NOTICE/failures, connection state changes, and EOSE.
+     */
+    private fun startRelayStatusMonitor(url: String) {
+        relayStatusMonitorJob?.cancel()
+
+        // Check pre-conditions before even attempting connection
+        val cooldownRemaining = relayPool.getRelayCooldownRemaining(url)
+        if (cooldownRemaining > 0) {
+            _relayFeedStatus.value = RelayFeedStatus.Cooldown(cooldownRemaining)
+            // Start a countdown job
+            relayStatusMonitorJob = viewModelScope.launch {
+                var remaining = cooldownRemaining
+                while (remaining > 0) {
+                    _relayFeedStatus.value = RelayFeedStatus.Cooldown(remaining)
+                    delay(1000)
+                    remaining = relayPool.getRelayCooldownRemaining(url)
+                }
+                _relayFeedStatus.value = RelayFeedStatus.Idle
+                // Auto-retry after cooldown expires
+                eventRepo.clearFeed()
+                resubscribeFeed()
+            }
+            return
+        }
+
+        if (healthTracker.isBad(url)) {
+            _relayFeedStatus.value = RelayFeedStatus.BadRelay("Marked unreliable by health tracker")
+            return
+        }
+
+        // Set initial status based on current connection state
+        _relayFeedStatus.value = if (relayPool.isRelayConnected(url)) {
+            RelayFeedStatus.Subscribing
+        } else {
+            RelayFeedStatus.Connecting
+        }
+
+        relayStatusMonitorJob = viewModelScope.launch {
+            // Monitor console log for NOTICE/failures targeting this relay
+            launch {
+                relayPool.consoleLog.collectLatest { entries ->
+                    val latest = entries.lastOrNull { it.relayUrl == url } ?: return@collectLatest
+                    val currentStatus = _relayFeedStatus.value
+                    // Only update if we're still in a connecting/subscribing state
+                    if (currentStatus is RelayFeedStatus.Connecting ||
+                        currentStatus is RelayFeedStatus.Subscribing) {
+                        when (latest.type) {
+                            ConsoleLogType.CONN_FAILURE -> {
+                                _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed(
+                                    latest.message ?: "Connection failed"
+                                )
+                            }
+                            ConsoleLogType.NOTICE -> {
+                                val msg = latest.message?.lowercase() ?: ""
+                                if ("rate" in msg || "throttle" in msg || "slow down" in msg || "too many" in msg) {
+                                    _relayFeedStatus.value = RelayFeedStatus.RateLimited
+                                }
+                            }
+                            else -> {}
+                        }
+                    }
+                }
+            }
+
+            // Monitor connection state changes for this specific relay
+            launch {
+                relayPool.connectedCount.collectLatest {
+                    val connected = relayPool.isRelayConnected(url)
+                    val currentStatus = _relayFeedStatus.value
+                    if (connected && currentStatus is RelayFeedStatus.Connecting) {
+                        _relayFeedStatus.value = RelayFeedStatus.Subscribing
+                    } else if (!connected && (currentStatus is RelayFeedStatus.Streaming ||
+                                currentStatus is RelayFeedStatus.Subscribing)) {
+                        _relayFeedStatus.value = RelayFeedStatus.Disconnected
+                    }
+                }
+            }
+
+            // Timeout: if we're still connecting/subscribing after 15s, mark as timed out
+            launch {
+                delay(15_000)
+                val currentStatus = _relayFeedStatus.value
+                if (currentStatus is RelayFeedStatus.Connecting ||
+                    currentStatus is RelayFeedStatus.Subscribing) {
+                    _relayFeedStatus.value = RelayFeedStatus.TimedOut
+                }
+            }
+        }
+    }
+
+    /** Update relay feed status when EOSE arrives or events are received. */
+    private fun onRelayFeedEose() {
+        if (_feedType.value != FeedType.RELAY) return
+        val status = _relayFeedStatus.value
+        if (status is RelayFeedStatus.Connecting || status is RelayFeedStatus.Subscribing) {
+            _relayFeedStatus.value = if (eventRepo.feed.value.isEmpty()) {
+                RelayFeedStatus.NoEvents
+            } else {
+                RelayFeedStatus.Streaming
+            }
+        }
+    }
+
+    /** Mark status as Streaming when events start arriving. */
+    private fun onRelayFeedEventReceived() {
+        if (_feedType.value != FeedType.RELAY) return
+        val status = _relayFeedStatus.value
+        if (status is RelayFeedStatus.Subscribing || status is RelayFeedStatus.Connecting) {
+            _relayFeedStatus.value = RelayFeedStatus.Streaming
+        }
+    }
+
+    /**
+     * Retry connecting to the selected relay feed. Clears cooldowns and bad relay
+     * marking for the selected relay and re-subscribes.
+     */
+    fun retryRelayFeed() {
+        val url = _selectedRelay.value ?: return
+        healthTracker.clearBadRelay(url)
+        // Clear cooldown by removing from the pool's internal map via re-sending
+        // We can't directly access relayCooldowns, but reconnecting handles it
+        eventRepo.clearFeed()
+        _relayFeedStatus.value = RelayFeedStatus.Connecting
+        resubscribeFeed()
     }
 
     fun getRelayUrls(): List<String> = relayPool.getRelayUrls()
@@ -1070,9 +1211,18 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
             FeedType.RELAY -> {
                 val url = _selectedRelay.value ?: return
+                startRelayStatusMonitor(url)
+                val status = _relayFeedStatus.value
+                if (status is RelayFeedStatus.Cooldown || status is RelayFeedStatus.BadRelay) {
+                    return
+                }
                 val filter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
                 val msg = ClientMessage.req(feedSubId, filter)
-                relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
+                val sent = relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
+                if (!sent) {
+                    _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to relay")
+                    return
+                }
                 setOf(url)
             }
             FeedType.LIST -> {
@@ -1089,6 +1239,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
         feedEoseJob = viewModelScope.launch {
             subManager.awaitEoseCount(feedSubId, targetedRelays.size.coerceAtLeast(1))
+            onRelayFeedEose()
             // Re-subscribe engagement for any new events that arrived while paused
             subscribeEngagementForFeed()
         }
@@ -1112,6 +1263,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         val excludedUrls = getExcludedRelayUrls()
         val targetedRelays: Set<String> = when (_feedType.value) {
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
+                relayStatusMonitorJob?.cancel()
+                _relayFeedStatus.value = RelayFeedStatus.Idle
                 val cache = extendedNetworkRepo.cachedNetwork.value
                 val firstDegree = contactRepo.getFollowList().map { it.pubkey }
                 val allAuthors = if (cache != null) {
@@ -1128,12 +1281,24 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
             FeedType.RELAY -> {
                 val url = _selectedRelay.value ?: return
+                startRelayStatusMonitor(url)
+                // If status is Cooldown or BadRelay, don't send the subscription
+                val status = _relayFeedStatus.value
+                if (status is RelayFeedStatus.Cooldown || status is RelayFeedStatus.BadRelay) {
+                    return
+                }
                 val filter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
                 val msg = ClientMessage.req(feedSubId, filter)
-                relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
+                val sent = relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
+                if (!sent) {
+                    _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to relay")
+                    return
+                }
                 setOf(url)
             }
             FeedType.LIST -> {
+                relayStatusMonitorJob?.cancel()
+                _relayFeedStatus.value = RelayFeedStatus.Idle
                 val list = listRepo.selectedList.value ?: return
                 val authors = list.members.toList()
                 if (authors.isEmpty()) return
@@ -1152,6 +1317,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             subManager.awaitEoseCount(feedSubId, eoseTarget)
             _initialLoadDone.value = true
             _initLoadingState.value = InitLoadingState.Done
+            onRelayFeedEose()
 
             eventRepo.countNewNotes = true
             subscribeEngagementForFeed()
