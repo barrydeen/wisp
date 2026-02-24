@@ -54,6 +54,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONObject
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 /**
@@ -516,8 +518,42 @@ private val ogTagRegex = Regex(
 
 private val titleTagRegex = Regex("""<title[^>]*>([^<]+)</title>""", RegexOption.IGNORE_CASE)
 
+private val youtubeRegex = Regex(
+    """(?:https?://)?(?:www\.)?(?:youtube\.com/(?:watch\?.*v=|shorts/|embed/|live/)|youtu\.be/)([a-zA-Z0-9_-]{11})""",
+    RegexOption.IGNORE_CASE
+)
+
+private suspend fun fetchYoutubeOembed(url: String): OgData? = withContext(Dispatchers.IO) {
+    try {
+        val encoded = URLEncoder.encode(url, "UTF-8")
+        val request = Request.Builder()
+            .url("https://www.youtube.com/oembed?url=$encoded&format=json")
+            .build()
+        httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return@withContext null
+            val body = response.body?.string() ?: return@withContext null
+            val json = JSONObject(body)
+            val videoId = youtubeRegex.find(url)?.groupValues?.get(1)
+            OgData(
+                title = json.optString("title").ifEmpty { null },
+                description = json.optString("author_name").ifEmpty { null },
+                image = videoId?.let { "https://img.youtube.com/vi/$it/hqdefault.jpg" }
+                    ?: json.optString("thumbnail_url").ifEmpty { null },
+                siteName = "YouTube"
+            )
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
 private suspend fun fetchOgData(url: String): OgData? = withContext(Dispatchers.IO) {
     ogCache.get(url)?.let { return@withContext it }
+    // YouTube blocks bot User-Agents; use their oEmbed API instead
+    if (youtubeRegex.containsMatchIn(url)) {
+        val yt = fetchYoutubeOembed(url)
+        if (yt != null) { ogCache.put(url, yt); return@withContext yt }
+    }
     try {
         val request = Request.Builder()
             .url(url)

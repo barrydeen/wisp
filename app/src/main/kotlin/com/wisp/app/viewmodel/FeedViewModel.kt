@@ -1083,12 +1083,15 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             // Timeout: if we're still connecting/subscribing after 15s, mark as timed out
+            // and clean up the ephemeral relay to free shared resources
             launch {
                 delay(15_000)
                 val currentStatus = _relayFeedStatus.value
                 if (currentStatus is RelayFeedStatus.Connecting ||
                     currentStatus is RelayFeedStatus.Subscribing) {
                     _relayFeedStatus.value = RelayFeedStatus.TimedOut
+                    relayPool.closeOnAllRelays(feedSubId)
+                    relayPool.disconnectRelay(url)
                 }
             }
         }

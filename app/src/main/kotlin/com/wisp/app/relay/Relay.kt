@@ -15,6 +15,8 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 data class RelayFailure(val relayUrl: String, val httpCode: Int?, val message: String)
@@ -39,7 +41,13 @@ class Relay(
         private const val MAX_ATTEMPTS_IN_WINDOW = 20        // Threshold before backing off
         private const val BACKOFF_COOLDOWN_MS = 5 * 60_000L  // 5 min cooldown when threshold hit
 
+        /** Shared scheduler for non-blocking reconnect delays (avoids blocking OkHttp dispatcher threads). */
+        private val reconnectScheduler = Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "relay-reconnect").apply { isDaemon = true }
+        }
+
         fun createClient(): OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
             .pingInterval(30, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS) // No read timeout for WebSocket
             // Disable WebSocket permessage-deflate compression.
@@ -209,9 +217,20 @@ class Relay(
     }
 
     fun disconnect() {
+        val ws = webSocket
+        val wasConnected = isConnected
         isConnected = false
-        webSocket?.close(1000, "Bye")
         webSocket = null
+        pendingReconnect?.cancel(false)
+        pendingReconnect = null
+        if (ws != null) {
+            if (wasConnected) {
+                ws.close(1000, "Bye")
+            } else {
+                // Force-close sockets stuck mid-handshake — close() can hang on unresponsive relays
+                ws.cancel()
+            }
+        }
     }
 
     /** Reset backoff state — call when user explicitly reconnects */
@@ -219,6 +238,8 @@ class Relay(
         cooldownUntil = 0L
         synchronized(attemptLock) { connectAttempts.clear() }
     }
+
+    @Volatile private var pendingReconnect: ScheduledFuture<*>? = null
 
     private fun reconnect() {
         webSocket = null
@@ -231,15 +252,13 @@ class Relay(
                 if (!isConnected) connect()
             }
         } else {
-            // Fallback for relays created without a scope
-            client.dispatcher.executorService.execute {
-                try {
-                    val now = System.currentTimeMillis()
-                    val sleepMs = maxOf(3000L, cooldownUntil - now)
-                    Thread.sleep(sleepMs)
-                    if (!isConnected) connect()
-                } catch (_: InterruptedException) {}
-            }
+            // Fallback for relays created without a scope — use scheduler instead of
+            // blocking a thread from the shared OkHttp dispatcher pool
+            val now = System.currentTimeMillis()
+            val delayMs = maxOf(3000L, cooldownUntil - now)
+            pendingReconnect = reconnectScheduler.schedule({
+                if (!isConnected) connect()
+            }, delayMs, TimeUnit.MILLISECONDS)
         }
     }
 
