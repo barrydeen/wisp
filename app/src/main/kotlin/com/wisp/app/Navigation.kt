@@ -502,7 +502,8 @@ fun WispNavHost() {
                     relayPool = feedViewModel.relayPool,
                     outboxRouter = feedViewModel.outboxRouter,
                     relayListRepo = feedViewModel.relayListRepo,
-                    subManager = feedViewModel.subManager
+                    subManager = feedViewModel.subManager,
+                    topRelayUrls = feedViewModel.getScoredRelays().take(5).map { it.url }
                 )
             }
             val isBlockedState by feedViewModel.muteRepo.blockedPubkeys.collectAsState()
@@ -662,7 +663,8 @@ fun WispNavHost() {
                     outboxRouter = feedViewModel.outboxRouter,
                     subManager = feedViewModel.subManager,
                     metadataFetcher = feedViewModel.metadataFetcher,
-                    muteRepo = feedViewModel.muteRepo
+                    muteRepo = feedViewModel.muteRepo,
+                    topRelayUrls = feedViewModel.getScoredRelays().take(5).map { it.url }
                 )
             }
             androidx.compose.runtime.DisposableEffect(Unit) {

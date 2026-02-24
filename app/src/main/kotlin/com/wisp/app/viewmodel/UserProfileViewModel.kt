@@ -61,6 +61,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     private var subManagerRef: SubscriptionManager? = null
     private val activeEngagementSubIds = mutableListOf<String>()
     private val activeFollowProfileSubIds = mutableListOf<String>()
+    private var topRelayUrls: List<String> = emptyList()
 
     companion object {
         private val SUB_IDS = setOf("userprofile", "userposts", "userfollows", "userrelays", "followprofiles")
@@ -73,13 +74,15 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         relayPool: RelayPool,
         outboxRouter: OutboxRouter? = null,
         relayListRepo: RelayListRepository? = null,
-        subManager: SubscriptionManager? = null
+        subManager: SubscriptionManager? = null,
+        topRelayUrls: List<String> = emptyList()
     ) {
         targetPubkey = pubkey
         eventRepoRef = eventRepo
         relayPoolRef = relayPool
         outboxRouterRef = outboxRouter
         subManagerRef = subManager
+        this.topRelayUrls = topRelayUrls
         _profile.value = eventRepo.getProfileData(pubkey)
         _isFollowing.value = contactRepo.isFollowing(pubkey)
 
@@ -105,6 +108,12 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
             relayPool.sendToAll(ClientMessage.req("userposts", postsFilter))
             relayPool.sendToAll(ClientMessage.req("userfollows", followFilter))
             relayPool.sendToAll(ClientMessage.req("userrelays", relayFilter))
+        }
+        // Also query top scored relays as safety net
+        for (url in topRelayUrls) {
+            relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("userposts", postsFilter))
+            relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("userprofile", profileFilter))
+            relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("userfollows", followFilter))
         }
 
         // After posts EOSE, subscribe for engagement data
@@ -262,6 +271,19 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                     Filter(kinds = listOf(1), eTags = batch)
                 )
                 relayPool.sendToReadRelays(ClientMessage.req(subId, filters))
+            }
+        }
+        // Also query top scored relays for engagement
+        eventIds.chunked(50).forEachIndexed { index, batch ->
+            val subId = "user-engage-top-$index"
+            activeEngagementSubIds.add(subId)
+            val filters = listOf(
+                Filter(kinds = listOf(7), eTags = batch),
+                Filter(kinds = listOf(9735), eTags = batch),
+                Filter(kinds = listOf(1), eTags = batch)
+            )
+            for (url in topRelayUrls) {
+                relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(subId, filters))
             }
         }
     }

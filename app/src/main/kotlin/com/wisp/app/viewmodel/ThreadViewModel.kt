@@ -37,6 +37,7 @@ class ThreadViewModel : ViewModel() {
     private var muteRepo: MuteRepository? = null
     private val activeMetadataSubs = mutableListOf<String>()
     private var relayPoolRef: RelayPool? = null
+    private var topRelayUrls: List<String> = emptyList()
 
     // Jobs for cleanup
     private var collectorJob: Job? = null
@@ -60,10 +61,12 @@ class ThreadViewModel : ViewModel() {
         outboxRouter: OutboxRouter,
         subManager: SubscriptionManager,
         metadataFetcher: MetadataFetcher,
-        muteRepo: MuteRepository? = null
+        muteRepo: MuteRepository? = null,
+        topRelayUrls: List<String> = emptyList()
     ) {
         this.muteRepo = muteRepo
         this.relayPoolRef = relayPool
+        this.topRelayUrls = topRelayUrls
 
         // Resolve root from cached event (we clicked on it, so it's in cache)
         val cached = eventRepo.getEvent(eventId)
@@ -152,16 +155,21 @@ class ThreadViewModel : ViewModel() {
 
             // Phase 2: Now we (hopefully) have the root — use outbox routing for replies
             val rootEvent = _rootEvent.value
+            val repliesFilter = Filter(kinds = listOf(1), eTags = listOf(rootId))
             if (rootEvent != null) {
                 outboxRouter.subscribeToUserReadRelays(
-                    "thread-replies", rootEvent.pubkey,
-                    Filter(kinds = listOf(1), eTags = listOf(rootId))
+                    "thread-replies", rootEvent.pubkey, repliesFilter
                 )
             } else {
                 // Root still not found — query all relays as fallback
                 relayPool.sendToAll(
-                    ClientMessage.req("thread-replies", Filter(kinds = listOf(1), eTags = listOf(rootId)))
+                    ClientMessage.req("thread-replies", repliesFilter)
                 )
+            }
+            // Also query top scored relays as safety net
+            for (url in topRelayUrls) {
+                relayPool.sendToRelayOrEphemeral(url,
+                    ClientMessage.req("thread-replies", repliesFilter))
             }
 
             // Wait for replies EOSE, then hide spinner
@@ -209,6 +217,9 @@ class ThreadViewModel : ViewModel() {
             activeMetadataSubs.add(subId)
             val filter = Filter(kinds = listOf(7, 6, 9735), eTags = batch)
             relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
+            for (url in topRelayUrls) {
+                relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(subId, filter))
+            }
         }
     }
 
@@ -234,6 +245,9 @@ class ThreadViewModel : ViewModel() {
                 activeMetadataSubs.add(subId)
                 val filter = Filter(kinds = listOf(7, 6, 9735), eTags = batch)
                 relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
+                for (url in topRelayUrls) {
+                    relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(subId, filter))
+                }
             }
         }
     }
