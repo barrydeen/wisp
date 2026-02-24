@@ -24,11 +24,14 @@ class RelayLifecycleManager(
     private val onReconnected: (force: Boolean) -> Unit
 ) {
     private var connectivityJob: Job? = null
+    private var reconnectJob: Job? = null
     @Volatile private var started = false
+    @Volatile private var lastReconnectMs = 0L
 
     companion object {
         private const val TAG = "RelayLifecycleMgr"
         private const val FORCE_THRESHOLD_MS = 30_000L
+        private const val DEBOUNCE_MS = 2_000L
     }
 
     /**
@@ -45,23 +48,11 @@ class RelayLifecycleManager(
                 when (status) {
                     is ConnectivityStatus.Active -> {
                         if (lastNetworkId != null && lastNetworkId != status.networkId) {
-                            // Network transport changed (e.g. WiFi → cellular)
-                            Log.d(TAG, "Network changed ($lastNetworkId → ${status.networkId}), force reconnecting")
-                            relayPool.forceReconnectAll()
-                            launch {
-                                relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
-                                relayPool.appIsActive = true
-                                onReconnected(true)
-                            }
+                            Log.d(TAG, "Network changed ($lastNetworkId → ${status.networkId}), requesting reconnect")
+                            reconnect(force = true)
                         } else if (lastNetworkId == null) {
-                            // Network restored after being lost
-                            Log.d(TAG, "Network restored, reconnecting relays")
-                            relayPool.reconnectAll()
-                            launch {
-                                relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
-                                relayPool.appIsActive = true
-                                onReconnected(false)
-                            }
+                            Log.d(TAG, "Network restored, requesting reconnect")
+                            reconnect(force = false)
                         }
                         lastNetworkId = status.networkId
                     }
@@ -92,14 +83,32 @@ class RelayLifecycleManager(
     fun onAppResume(pausedMs: Long) {
         if (!started) return
         val force = pausedMs >= FORCE_THRESHOLD_MS
-        if (force) {
-            Log.d(TAG, "Long pause (${pausedMs / 1000}s) — force reconnecting all relays")
-            relayPool.forceReconnectAll()
-        } else {
-            Log.d(TAG, "Short pause (${pausedMs / 1000}s) — lightweight reconnect")
-            relayPool.reconnectAll()
+        Log.d(TAG, "${if (force) "Long" else "Short"} pause (${pausedMs / 1000}s) — requesting reconnect")
+        reconnect(force = force)
+    }
+
+    /**
+     * Central reconnect entry point. Debounces rapid calls (e.g. ON_RESUME +
+     * ConnectivityFlow firing within milliseconds of each other) and cancels
+     * any in-flight reconnect job before starting a new one.
+     */
+    private fun reconnect(force: Boolean) {
+        val now = System.currentTimeMillis()
+        if (now - lastReconnectMs < DEBOUNCE_MS) {
+            Log.d(TAG, "Reconnect debounced (${now - lastReconnectMs}ms since last)")
+            return
         }
-        scope.launch {
+        lastReconnectMs = now
+
+        reconnectJob?.cancel()
+        reconnectJob = scope.launch {
+            if (force) {
+                Log.d(TAG, "Force reconnecting all relays")
+                relayPool.forceReconnectAll()
+            } else {
+                Log.d(TAG, "Lightweight reconnecting relays")
+                relayPool.reconnectAll()
+            }
             val minCount = if (force) 3 else 1
             relayPool.awaitAnyConnected(minCount = minCount, timeoutMs = 5_000)
             relayPool.appIsActive = true

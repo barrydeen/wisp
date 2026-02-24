@@ -45,7 +45,7 @@ class RelayScoreBoard(
      * Returns true if the current follow list differs from what was used to build the cache.
      * Callers should call [recompute] when this returns true.
      */
-    fun needsRecompute(): Boolean {
+    @Synchronized fun needsRecompute(): Boolean {
         if (cachedFollowSet.isEmpty()) return true
         val currentFollows = contactRepo.getFollowList().map { it.pubkey }.toSet()
         return currentFollows != cachedFollowSet
@@ -56,7 +56,7 @@ class RelayScoreBoard(
      * [MIN_REDUNDANCY] of their write relays so that a single relay going down
      * doesn't lose that author's notes.
      */
-    fun recompute(excludeRelays: Set<String> = emptySet()) {
+    @Synchronized fun recompute(excludeRelays: Set<String> = emptySet()) {
         val follows = contactRepo.getFollowList().map { it.pubkey }
         if (follows.isEmpty()) {
             scoredRelays = emptyList()
@@ -115,7 +115,7 @@ class RelayScoreBoard(
      * Incrementally add a newly-followed author to the scoreboard.
      * Places them on up to [MIN_REDUNDANCY] of their write relays.
      */
-    fun addAuthor(pubkey: String, excludeRelays: Set<String> = emptySet()) {
+    @Synchronized fun addAuthor(pubkey: String, excludeRelays: Set<String> = emptySet()) {
         if (pubkey in authorToRelays) return // already mapped
         cachedFollowSet = cachedFollowSet + pubkey
 
@@ -157,7 +157,7 @@ class RelayScoreBoard(
     /**
      * Incrementally remove an unfollowed author from the scoreboard.
      */
-    fun removeAuthor(pubkey: String) {
+    @Synchronized fun removeAuthor(pubkey: String) {
         cachedFollowSet = cachedFollowSet - pubkey
         val relays = authorToRelays.remove(pubkey) ?: run {
             saveToPrefs()
@@ -179,7 +179,7 @@ class RelayScoreBoard(
      * kind 10002 relay list. Hints come from p-tag relay URLs and author provenance.
      * When a real relay list arrives via [addAuthor] or [recompute], it overwrites hints.
      */
-    fun addHintRelays(pubkey: String, urls: List<String>) {
+    @Synchronized fun addHintRelays(pubkey: String, urls: List<String>) {
         if (pubkey !in cachedFollowSet) return  // only for followed authors
         if (pubkey in authorToRelays) return     // already has confirmed relay list
         val validUrls = urls.filter { it.startsWith("wss://") }.map { it.trimEnd('/') }
@@ -215,7 +215,7 @@ class RelayScoreBoard(
      * Authors not covered by any scored relay are returned under the empty-string key
      * (caller should fall back to sendToAll for those).
      */
-    fun getRelaysForAuthors(authors: List<String>): Map<String, List<String>> {
+    @Synchronized fun getRelaysForAuthors(authors: List<String>): Map<String, List<String>> {
         if (scoredRelays.isEmpty()) return emptyMap()
 
         val result = mutableMapOf<String, MutableList<String>>()
@@ -239,17 +239,17 @@ class RelayScoreBoard(
         return result
     }
 
-    fun getScoredRelays(): List<ScoredRelay> = scoredRelays
+    @Synchronized fun getScoredRelays(): List<ScoredRelay> = scoredRelays
 
     /** Returns relay URL → number of followed authors that write to it. */
-    fun getCoverageCounts(): Map<String, Int> = relayAuthorsMap.mapValues { it.value.size }
+    @Synchronized fun getCoverageCounts(): Map<String, Int> = relayAuthorsMap.mapValues { it.value.size }
 
-    fun getScoredRelayConfigs(): List<RelayConfig> =
+    @Synchronized fun getScoredRelayConfigs(): List<RelayConfig> =
         scoredRelays.map { RelayConfig(it.url, read = true, write = false) }
 
-    fun hasScoredRelays(): Boolean = scoredRelays.isNotEmpty()
+    @Synchronized fun hasScoredRelays(): Boolean = scoredRelays.isNotEmpty()
 
-    fun clear() {
+    @Synchronized fun clear() {
         scoredRelays = emptyList()
         scoredRelayUrls = emptySet()
         relayAuthorsMap = mutableMapOf()
@@ -259,7 +259,7 @@ class RelayScoreBoard(
         prefs.edit().clear().apply()
     }
 
-    fun reload(pubkeyHex: String?) {
+    @Synchronized fun reload(pubkeyHex: String?) {
         clear()
         prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
         loadFromPrefs()

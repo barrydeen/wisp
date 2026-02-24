@@ -26,7 +26,8 @@ class Relay(
     private val client: OkHttpClient,
     private val scope: CoroutineScope? = null
 ) {
-    private var webSocket: WebSocket? = null
+    @Volatile private var webSocket: WebSocket? = null
+    private val connectLock = Any()
     @Volatile var isConnected = false
         private set
     var autoReconnect = true
@@ -90,90 +91,102 @@ class Relay(
     var onBytesSent: ((url: String, size: Int) -> Unit)? = null
 
     fun connect() {
-        if (isConnected || webSocket != null) return
+        synchronized(connectLock) {
+            if (isConnected || webSocket != null) return
 
-        // Check if we're in a cooldown period
-        val now = System.currentTimeMillis()
-        if (now < cooldownUntil) {
-            Log.d("Relay", "Skipping connect to ${config.url} — cooled down for ${(cooldownUntil - now) / 1000}s more")
-            return
-        }
-
-        // Track this attempt and check for excessive reconnections
-        synchronized(attemptLock) {
-            connectAttempts.add(now)
-            // Prune old attempts outside the window
-            connectAttempts.removeAll { now - it > ATTEMPT_WINDOW_MS }
-            if (connectAttempts.size >= MAX_ATTEMPTS_IN_WINDOW) {
-                cooldownUntil = now + BACKOFF_COOLDOWN_MS
-                connectAttempts.clear()
-                Log.w("Relay", "Too many connection attempts to ${config.url} " +
-                    "(${MAX_ATTEMPTS_IN_WINDOW} in ${ATTEMPT_WINDOW_MS / 1000}s), " +
-                    "backing off for ${BACKOFF_COOLDOWN_MS / 1000 / 60} min")
-                _connectionErrors.tryEmit(ConsoleLogEntry(
-                    relayUrl = config.url,
-                    type = ConsoleLogType.CONN_FAILURE,
-                    message = "Too many reconnect attempts — cooling off for ${BACKOFF_COOLDOWN_MS / 1000 / 60} min"
-                ))
+            // Check if we're in a cooldown period
+            val now = System.currentTimeMillis()
+            if (now < cooldownUntil) {
+                Log.d("Relay", "Skipping connect to ${config.url} — cooled down for ${(cooldownUntil - now) / 1000}s more")
                 return
             }
-        }
 
-        val request = try {
-            Request.Builder().url(config.url).build()
-        } catch (e: IllegalArgumentException) {
-            Log.w("Relay", "Invalid relay URL: ${config.url}")
-            return
-        }
-        webSocket = client.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.d("Relay", "Connected to ${config.url}")
-                isConnected = true
-                // Successful connection — reset attempt tracking
-                synchronized(attemptLock) { connectAttempts.clear() }
-                _connectionState.tryEmit(true)
-                drainPendingMessages(webSocket)
-            }
-
-            override fun onMessage(webSocket: WebSocket, text: String) {
-                onBytesReceived?.invoke(config.url, text.length)
-                val msg = RelayMessage.parse(text) ?: return
-                if (msg is RelayMessage.Auth) {
-                    lastChallenge = msg.challenge
-                    _authChallenges.tryEmit(msg.challenge)
-                } else {
-                    _messages.tryEmit(msg)
-                }
-            }
-
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e("Relay", "Failure on ${config.url}: ${t.message}")
-                isConnected = false
-                _connectionState.tryEmit(false)
-                _connectionErrors.tryEmit(ConsoleLogEntry(
-                    relayUrl = config.url,
-                    type = ConsoleLogType.CONN_FAILURE,
-                    message = t.message ?: "Unknown error"
-                ))
-                _failures.tryEmit(RelayFailure(config.url, response?.code, t.message ?: "Unknown error"))
-                reconnect()
-            }
-
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                Log.d("Relay", "Closed ${config.url}: $reason")
-                isConnected = false
-                this@Relay.webSocket = null
-                _connectionState.tryEmit(false)
-                if (code != 1000) {
+            // Track this attempt and check for excessive reconnections
+            synchronized(attemptLock) {
+                connectAttempts.add(now)
+                // Prune old attempts outside the window
+                connectAttempts.removeAll { now - it > ATTEMPT_WINDOW_MS }
+                if (connectAttempts.size >= MAX_ATTEMPTS_IN_WINDOW) {
+                    cooldownUntil = now + BACKOFF_COOLDOWN_MS
+                    connectAttempts.clear()
+                    Log.w("Relay", "Too many connection attempts to ${config.url} " +
+                        "(${MAX_ATTEMPTS_IN_WINDOW} in ${ATTEMPT_WINDOW_MS / 1000}s), " +
+                        "backing off for ${BACKOFF_COOLDOWN_MS / 1000 / 60} min")
                     _connectionErrors.tryEmit(ConsoleLogEntry(
                         relayUrl = config.url,
-                        type = ConsoleLogType.CONN_CLOSED,
-                        message = "Code $code: $reason"
+                        type = ConsoleLogType.CONN_FAILURE,
+                        message = "Too many reconnect attempts — cooling off for ${BACKOFF_COOLDOWN_MS / 1000 / 60} min"
                     ))
-                    reconnect()
+                    return
                 }
             }
-        })
+
+            val request = try {
+                Request.Builder().url(config.url).build()
+            } catch (e: IllegalArgumentException) {
+                Log.w("Relay", "Invalid relay URL: ${config.url}")
+                return
+            }
+            webSocket = client.newWebSocket(request, object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    Log.d("Relay", "Connected to ${config.url}")
+                    isConnected = true
+                    // Successful connection — reset attempt tracking
+                    synchronized(attemptLock) { connectAttempts.clear() }
+                    _connectionState.tryEmit(true)
+                    drainPendingMessages(webSocket)
+                }
+
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    onBytesReceived?.invoke(config.url, text.length)
+                    val msg = RelayMessage.parse(text) ?: return
+                    if (msg is RelayMessage.Auth) {
+                        lastChallenge = msg.challenge
+                        _authChallenges.tryEmit(msg.challenge)
+                    } else {
+                        _messages.tryEmit(msg)
+                    }
+                }
+
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    Log.e("Relay", "Failure on ${config.url}: ${t.message}")
+                    synchronized(connectLock) {
+                        // Only null the reference if this callback is for the current WebSocket
+                        if (this@Relay.webSocket === webSocket) {
+                            isConnected = false
+                            this@Relay.webSocket = null
+                        }
+                    }
+                    _connectionState.tryEmit(false)
+                    _connectionErrors.tryEmit(ConsoleLogEntry(
+                        relayUrl = config.url,
+                        type = ConsoleLogType.CONN_FAILURE,
+                        message = t.message ?: "Unknown error"
+                    ))
+                    _failures.tryEmit(RelayFailure(config.url, response?.code, t.message ?: "Unknown error"))
+                    reconnect()
+                }
+
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    Log.d("Relay", "Closed ${config.url}: $reason")
+                    synchronized(connectLock) {
+                        if (this@Relay.webSocket === webSocket) {
+                            isConnected = false
+                            this@Relay.webSocket = null
+                        }
+                    }
+                    _connectionState.tryEmit(false)
+                    if (code != 1000) {
+                        _connectionErrors.tryEmit(ConsoleLogEntry(
+                            relayUrl = config.url,
+                            type = ConsoleLogType.CONN_CLOSED,
+                            message = "Code $code: $reason"
+                        ))
+                        reconnect()
+                    }
+                }
+            })
+        }
     }
 
     fun send(message: String): Boolean {
@@ -217,18 +230,20 @@ class Relay(
     }
 
     fun disconnect() {
-        val ws = webSocket
-        val wasConnected = isConnected
-        isConnected = false
-        webSocket = null
-        pendingReconnect?.cancel(false)
-        pendingReconnect = null
-        if (ws != null) {
-            if (wasConnected) {
-                ws.close(1000, "Bye")
-            } else {
-                // Force-close sockets stuck mid-handshake — close() can hang on unresponsive relays
-                ws.cancel()
+        synchronized(connectLock) {
+            val ws = webSocket
+            val wasConnected = isConnected
+            isConnected = false
+            webSocket = null
+            pendingReconnect?.cancel(false)
+            pendingReconnect = null
+            if (ws != null) {
+                if (wasConnected) {
+                    ws.close(1000, "Bye")
+                } else {
+                    // Force-close sockets stuck mid-handshake — close() can hang on unresponsive relays
+                    ws.cancel()
+                }
             }
         }
     }
@@ -242,7 +257,6 @@ class Relay(
     @Volatile private var pendingReconnect: ScheduledFuture<*>? = null
 
     private fun reconnect() {
-        webSocket = null
         if (!autoReconnect) return
         if (scope != null) {
             scope.launch {
