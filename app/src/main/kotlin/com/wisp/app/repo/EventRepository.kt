@@ -1,6 +1,7 @@
 package com.wisp.app.repo
 
 import android.util.LruCache
+import com.wisp.app.nostr.Nip09
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.NostrEvent
@@ -18,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: MuteRepository? = null, val relayHintStore: RelayHintStore? = null) {
     var metadataFetcher: MetadataFetcher? = null
+    var deletedEventsRepo: DeletedEventsRepository? = null
     var currentUserPubkey: String? = null
     private val eventCache = LruCache<String, NostrEvent>(5000)
     private val seenEventIds = ConcurrentHashMap.newKeySet<String>()  // thread-safe dedup that doesn't evict
@@ -163,6 +165,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (!seenEventIds.add(event.id)) return  // atomic dedup across all relay threads
         if (muteRepo?.isBlocked(event.pubkey) == true) return
         if (event.kind == 1 && muteRepo?.containsMutedWord(event.content) == true) return
+        if (deletedEventsRepo?.isDeleted(event.id) == true) return
         eventCache.put(event.id, event)
         relayHintStore?.extractHintsFromTags(event)
 
@@ -201,6 +204,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                             if (!isReply) binaryInsert(inner)
                         }
                     } catch (_: Exception) {}
+                }
+            }
+            5 -> {
+                val deletedIds = Nip09.getDeletedEventIds(event)
+                for (id in deletedIds) {
+                    deletedEventsRepo?.markDeleted(id)
+                    removeEvent(id)
                 }
             }
             7 -> addReaction(event)
@@ -300,6 +310,16 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             }
         }
         _quotedEventVersion.value++
+    }
+
+    fun removeEvent(eventId: String) {
+        eventCache.remove(eventId)
+        synchronized(feedList) {
+            if (feedIds.remove(eventId)) {
+                feedList.removeAll { it.id == eventId }
+            }
+        }
+        feedDirty.trySend(Unit)
     }
 
     fun requestQuotedEvent(eventId: String, relayHints: List<String> = emptyList()) {
@@ -533,23 +553,6 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
 
-    fun seedFromCache(events: List<NostrEvent>) {
-        synchronized(feedList) {
-            for (event in events) {
-                if (feedIds.add(event.id)) {
-                    seenEventIds.add(event.id)
-                    eventCache.put(event.id, event)
-                    feedList.add(event)
-                }
-            }
-            feedList.sortByDescending { it.created_at }
-        }
-        feedDirty.trySend(Unit)
-    }
-
-    fun getFeedSnapshot(): List<NostrEvent> {
-        return synchronized(feedList) { feedList.toList() }
-    }
 
     fun clearFeed() {
         synchronized(feedList) {

@@ -104,6 +104,7 @@ fun PostCard(
     isInList: Boolean = false,
     onPin: () -> Unit = {},
     isPinned: Boolean = false,
+    onDelete: () -> Unit = {},
     onQuotedNoteClick: ((String) -> Unit)? = null,
     noteActions: NoteActions? = null,
     repostDetails: List<String> = emptyList(),
@@ -263,6 +264,13 @@ fun PostCard(
                             onClick = {
                                 menuExpanded = false
                                 onPin()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete") },
+                            onClick = {
+                                menuExpanded = false
+                                onDelete()
                             }
                         )
                     }

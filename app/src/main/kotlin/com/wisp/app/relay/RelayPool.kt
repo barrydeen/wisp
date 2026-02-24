@@ -59,6 +59,8 @@ class RelayPool {
     val subscriptionTracker = SubscriptionTracker()
     private val seenEvents = LruCache<String, Boolean>(5000)
     private val seenLock = Any()
+    @Volatile private var feedEventCounter = 0
+    @Volatile private var feedEventDedupCounter = 0
 
     /** Relay URL → Relay index for O(1) lookup across all pools. */
     private val relayIndex = java.util.concurrent.ConcurrentHashMap<String, Relay>()
@@ -249,11 +251,25 @@ class RelayPool {
                         if (shouldEmit) {
                             _events.tryEmit(msg.event)
                             _relayEvents.tryEmit(RelayEvent(msg.event, relay.config.url, msg.subscriptionId))
+                            if (msg.subscriptionId == "feed") {
+                                val count = ++feedEventCounter
+                                if (count == 1 || count % 50 == 0) {
+                                    Log.d("RLC", "[Pool] feed event #$count: kind=${msg.event.kind} from=${msg.event.pubkey.take(8)} relay=${relay.config.url}")
+                                }
+                            }
+                        } else if (msg.subscriptionId == "feed") {
+                            val count = ++feedEventDedupCounter
+                            if (count == 1 || count % 50 == 0) {
+                                Log.d("RLC", "[Pool] feed event DEDUPED #$count: kind=${msg.event.kind} from=${msg.event.pubkey.take(8)}")
+                            }
                         }
                         if (appIsActive) healthTracker?.onEventReceived(relay.config.url, 0)
                         unsupportedCounts.remove(relay.config.url) // Relay works, clear counter
                     }
                     is RelayMessage.Eose -> {
+                        if (msg.subscriptionId == "feed") {
+                            Log.d("RLC", "[Pool] feed EOSE from ${relay.config.url} (total feed events=$feedEventCounter deduped=$feedEventDedupCounter)")
+                        }
                         _eoseSignals.tryEmit(msg.subscriptionId)
                         unsupportedCounts.remove(relay.config.url) // Relay works, clear counter
                     }
@@ -659,6 +675,11 @@ class RelayPool {
 
     fun closeOnAllRelays(subscriptionId: String) {
         Log.d("RLC", "[Pool] closeOnAllRelays($subscriptionId)")
+        if (subscriptionId == "feed") {
+            Log.d("RLC", "[Pool] closing feed sub — total events=$feedEventCounter deduped=$feedEventDedupCounter")
+            feedEventCounter = 0
+            feedEventDedupCounter = 0
+        }
         subscriptionTracker.untrackAll(subscriptionId)
         for (relayMap in activeSubscriptions.values) {
             relayMap.remove(subscriptionId)

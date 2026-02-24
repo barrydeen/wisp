@@ -21,7 +21,6 @@ import com.wisp.app.repo.DiscoveryState
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.ExtendedNetworkRepository
-import com.wisp.app.repo.FeedCache
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.ListRepository
 import com.wisp.app.repo.MetadataFetcher
@@ -36,7 +35,6 @@ import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.repo.ZapPreferences
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
@@ -76,7 +74,6 @@ class StartupCoordinator(
     private val nip05Repo: Nip05Repository,
     private val nwcRepo: NwcRepository,
     private val dmRepo: DmRepository,
-    private val feedCache: FeedCache,
     private val zapPrefs: ZapPreferences,
     private val lifecycleManager: RelayLifecycleManager,
     private val eventRouter: EventRouter,
@@ -95,42 +92,9 @@ class StartupCoordinator(
     private var followWatcherJob: Job? = null
     private var authCompletedJob: Job? = null
     private var startupJob: Job? = null
-    private var feedCacheSaveJob: Job? = null
 
     var relaysInitialized = false
         private set
-    var hasCachedFeed = false
-        private set
-
-    /**
-     * Attempt to load cached feed from disk. Returns true if cache had content.
-     * Must be called before initRelays() so seeded events dedup against relay events.
-     */
-    fun loadCachedFeed(): Boolean {
-        val ft = feedSub.feedType.value
-        if (ft != FeedType.FOLLOWS && ft != FeedType.EXTENDED_FOLLOWS) return false
-        if (!feedCache.exists()) return false
-        val events = feedCache.load()
-        if (events.isEmpty()) return false
-        val follows = contactRepo.getFollowList().map { it.pubkey }.toSet()
-        val filtered = if (follows.isNotEmpty()) events.filter { it.pubkey in follows } else events
-        if (filtered.isEmpty()) return false
-        eventRepo.seedFromCache(filtered)
-        feedSub.applyAuthorFilterForFeedType(ft)
-        feedSub.markLoadingComplete()
-        feedSub._initialLoadDone.value = true
-        hasCachedFeed = true
-        return true
-    }
-
-    /** Save feed snapshot to disk on IO thread. */
-    fun saveFeedCache() {
-        feedCacheSaveJob?.cancel()
-        feedCacheSaveJob = scope.launch(Dispatchers.IO) {
-            val snapshot = eventRepo.getFeedSnapshot()
-            if (snapshot.isNotEmpty()) feedCache.save(snapshot)
-        }
-    }
 
     fun resetForAccountSwitch() {
         // Cancel all background jobs
@@ -141,9 +105,7 @@ class StartupCoordinator(
         followWatcherJob?.cancel()
         authCompletedJob?.cancel()
         startupJob?.cancel()
-        feedCacheSaveJob?.cancel()
         feedSub.reset()
-        feedCache.clear()
 
         // Stop lifecycle manager and disconnect relays
         lifecycleManager.stop()
@@ -173,7 +135,6 @@ class StartupCoordinator(
 
         // Reset state
         relaysInitialized = false
-        hasCachedFeed = false
     }
 
     fun reloadForNewAccount() {
@@ -198,7 +159,8 @@ class StartupCoordinator(
     }
 
     fun initRelays() {
-        if (relaysInitialized) return
+        Log.d("StartupCoord", "initRelays() called, relaysInitialized=$relaysInitialized")
+        if (relaysInitialized) { Log.d("StartupCoord", "initRelays: already initialized, returning"); return }
         relaysInitialized = true
         relayPool.healthTracker = healthTracker
         relayPool.appIsActive = true
@@ -216,7 +178,6 @@ class StartupCoordinator(
         relayPool.updateDmRelays(keyRepo.getDmRelays())
 
         scope.launch {
-            if (hasCachedFeed) delay(5_000) // defer when feed is already showing
             relayInfoRepo.prefetchAll(initialRelays.map { it.url })
         }
 
@@ -371,97 +332,57 @@ class StartupCoordinator(
                 Log.d("StartupCoord", "init: warm start (${cachedFollows.size} cached follows, scoreboard valid)")
                 feedSub._initLoadingState.value = InitLoadingState.WarmLoading
 
-                if (hasCachedFeed) {
-                    // Don't block — relays will connect in background, feed is already showing
-                    launch {
-                        relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
-                        subscribeSelfData()
-                        fetchMissingEmojiSets()
-                    }
-                } else {
-                    relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
-                    // Fire-and-forget self-data refresh
-                    launch {
-                        subscribeSelfData()
-                        fetchMissingEmojiSets()
-                    }
+                relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
+                // Fire-and-forget self-data refresh
+                launch {
+                    subscribeSelfData()
+                    fetchMissingEmojiSets()
                 }
 
                 follows = cachedFollows.map { it.pubkey }
             }
 
-            // Phase 2: Extended network discovery (common path)
+            // Phase 2: Extended network discovery + subscribe feed (common path)
             val extNetCache = extendedNetworkRepo.cachedNetwork.value
             val extNetCacheValid = extNetCache != null && !extendedNetworkRepo.isCacheStale(extNetCache)
+            Log.d("StartupCoord", "Phase 2: isColdStart=$isColdStart extNetCacheValid=$extNetCacheValid follows=${follows.size}")
 
-            if (hasCachedFeed) {
-                // Feed is already showing from disk cache.
-                // Stagger background work so the UI isn't competing for CPU.
-
-                // Phase A: Wait for at least 1 relay, then subscribe to new events only
-                delay(300) // let Compose finish initial layout
-                relayPool.awaitAnyConnected(minCount = 1, timeoutMs = 5_000)
-                feedSub.applyAuthorFilterForFeedType(feedSub.feedType.value)
-                feedSub.resumeSubscribeFeed()
-
-                // Phase B: Deferred heavy work — self-data, discovery, relay lists
-                launch {
-                    delay(3_000) // let feed subscription settle first
-                    if (!extNetCacheValid && follows.isNotEmpty()) {
-                        try { extendedNetworkRepo.discoverNetwork() } catch (_: Exception) {}
-                        val extConfigs = extendedNetworkRepo.getRelayConfigs()
-                        if (extConfigs.isNotEmpty()) rebuildRelayPool()
-                    }
-                    if (!relayScoreBoard.needsRecompute()) fetchRelayListsForFollows()
-                    saveFeedCache()
-                }
-
-                // Periodic save timer
-                launch {
-                    while (true) {
-                        delay(60_000)
-                        saveFeedCache()
-                    }
-                }
-            } else {
-                if (!extNetCacheValid && follows.isNotEmpty()) {
-                    val progressJob = launch {
-                        extendedNetworkRepo.discoveryState.collect { ds ->
-                            if (ds is DiscoveryState.FetchingFollowLists && isColdStart) {
-                                feedSub._initLoadingState.value = InitLoadingState.DiscoveringNetwork(ds.fetched, ds.total)
-                            }
+            if (!extNetCacheValid && follows.isNotEmpty()) {
+                val progressJob = launch {
+                    extendedNetworkRepo.discoveryState.collect { ds ->
+                        if (ds is DiscoveryState.FetchingFollowLists && isColdStart) {
+                            feedSub._initLoadingState.value = InitLoadingState.DiscoveringNetwork(ds.fetched, ds.total)
                         }
                     }
-                    try {
-                        extendedNetworkRepo.discoverNetwork()
-                    } catch (e: Exception) {
-                        Log.e("StartupCoord", "Extended network discovery failed during init", e)
-                    }
-                    progressJob.cancel()
                 }
-
-                // Expand pool with extended relays
-                val extConfigs = extendedNetworkRepo.getRelayConfigs()
-                if (extConfigs.isNotEmpty()) {
-                    if (isColdStart) feedSub._initLoadingState.value = InitLoadingState.ExpandingRelays(extConfigs.size)
-                    rebuildRelayPool()
-                    val poolSize = relayPool.getRelayUrls().size
-                    val targetConnected = poolSize * 3 / 10
-                    relayPool.awaitAnyConnected(minCount = targetConnected, timeoutMs = 3_000)
+                try {
+                    extendedNetworkRepo.discoverNetwork()
+                } catch (e: Exception) {
+                    Log.e("StartupCoord", "Extended network discovery failed during init", e)
                 }
+                progressJob.cancel()
+            }
 
-                // Apply filter and subscribe
-                feedSub.applyAuthorFilterForFeedType(feedSub.feedType.value)
-                feedSub._initLoadingState.value = InitLoadingState.Subscribing
-                feedSub.subscribeFeed()
+            // Expand pool with extended relays
+            val extConfigs = extendedNetworkRepo.getRelayConfigs()
+            if (extConfigs.isNotEmpty()) {
+                if (isColdStart) feedSub._initLoadingState.value = InitLoadingState.ExpandingRelays(extConfigs.size)
+                rebuildRelayPool()
+                val poolSize = relayPool.getRelayUrls().size
+                val targetConnected = poolSize * 3 / 10
+                relayPool.awaitAnyConnected(minCount = targetConnected, timeoutMs = 3_000)
+            }
 
-                // Don't set Done here — subscribeFeed() is non-blocking.
-                // InitLoadingState.Done is set inside feedEoseJob after EOSE arrives.
+            // Apply filter and subscribe fresh feed
+            Log.d("StartupCoord", "Phase 2: applying filter and subscribeFeed, feedType=${feedSub.feedType.value}")
+            feedSub.applyAuthorFilterForFeedType(feedSub.feedType.value)
+            feedSub._initLoadingState.value = InitLoadingState.Subscribing
+            feedSub.subscribeFeed()
+            Log.d("StartupCoord", "Phase 2: subscribeFeed called")
 
-                // Background: fetch relay lists for any new follows (non-blocking)
-                if (!relayScoreBoard.needsRecompute()) {
-                    fetchRelayListsForFollows()
-                }
+            // Background: fetch relay lists for any new follows (non-blocking)
+            if (!relayScoreBoard.needsRecompute()) {
+                fetchRelayListsForFollows()
             }
         }
     }
@@ -601,9 +522,6 @@ class StartupCoordinator(
         Log.d("RLC", "[Startup] onAppPause — feedType=${feedSub.feedType.value} connectedCount=${relayPool.connectedCount.value}")
         notifRepo.appIsActive = false
         lifecycleManager.onAppPause()
-        if (feedSub.feedType.value == FeedType.FOLLOWS || feedSub.feedType.value == FeedType.EXTENDED_FOLLOWS) {
-            saveFeedCache()
-        }
     }
 
     /** Called by Activity lifecycle — delegates to RelayLifecycleManager. */

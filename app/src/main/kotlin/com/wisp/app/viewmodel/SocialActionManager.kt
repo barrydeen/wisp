@@ -22,6 +22,7 @@ import com.wisp.app.repo.NotificationRepository
 import com.wisp.app.repo.NwcRepository
 import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.CustomEmojiRepository
+import com.wisp.app.repo.DeletedEventsRepository
 import com.wisp.app.repo.ZapSender
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -43,6 +44,7 @@ class SocialActionManager(
     private val notifRepo: NotificationRepository,
     private val dmRepo: DmRepository,
     private val pinRepo: PinRepository,
+    private val deletedEventsRepo: DeletedEventsRepository,
     private val nwcRepo: NwcRepository,
     private val customEmojiRepo: CustomEmojiRepository,
     private val zapSender: ZapSender,
@@ -188,6 +190,19 @@ class SocialActionManager(
         scope.launch {
             val event = s.signEvent(kind = Nip51.KIND_PIN_LIST, content = "", tags = tags)
             relayPool.sendToWriteRelays(ClientMessage.event(event))
+        }
+    }
+
+    fun deleteEvent(eventId: String, kind: Int) {
+        val s = getSigner() ?: return
+        scope.launch {
+            try {
+                val tags = Nip09.buildDeletionTags(eventId, kind)
+                val deletionEvent = s.signEvent(kind = 5, content = "", tags = tags)
+                relayPool.sendToWriteRelays(ClientMessage.event(deletionEvent))
+                deletedEventsRepo.markDeleted(eventId)
+                eventRepo.removeEvent(eventId)
+            } catch (_: Exception) {}
         }
     }
 

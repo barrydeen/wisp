@@ -15,6 +15,7 @@ import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip18
 import com.wisp.app.nostr.Nip19
+import com.wisp.app.nostr.Nip37
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.nostr.toHex
@@ -76,6 +77,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     private var mentionSearchRepo: MentionSearchRepository? = null
     private var eventRepo: EventRepository? = null
     private var initialized = false
+
+    var currentDraftId: String? = null
+        private set
 
     fun init(profileRepo: ProfileRepository, contactRepo: ContactRepository, relayPool: RelayPool, eventRepo: EventRepository? = null) {
         if (initialized) return
@@ -353,6 +357,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 eventRepo?.addReplyCount(rootId, event.id)
             }
         }
+        deleteDraftOnPublish(relayPool, signer)
         _content.value = TextFieldValue()
         savedStateHandle.remove<String>("draft_content")
         _error.value = null
@@ -386,7 +391,73 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         return Triple(bytes, mimeType, ext)
     }
 
+    fun loadDraft(draft: Nip37.Draft) {
+        currentDraftId = draft.dTag
+        val text = draft.content
+        _content.value = TextFieldValue(text, TextRange(text.length))
+        savedStateHandle["draft_content"] = text
+    }
+
+    fun saveDraft(
+        relayPool: RelayPool,
+        replyTo: NostrEvent?,
+        signer: NostrSigner?
+    ) {
+        val text = _content.value.text.trim()
+        if (text.isBlank() || signer == null) return
+
+        val draftId = currentDraftId ?: Nip37.newDraftId()
+        currentDraftId = draftId
+
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            try {
+                val innerTags = mutableListOf<List<String>>()
+                if (replyTo != null) {
+                    innerTags.addAll(Nip10.buildReplyTags(replyTo))
+                }
+                val innerJson = Nip37.serializeDraftContent(
+                    pubkeyHex = signer.pubkeyHex,
+                    innerKind = 1,
+                    content = text,
+                    tags = innerTags
+                )
+                val encrypted = signer.nip44Encrypt(innerJson, signer.pubkeyHex)
+                val wrapperTags = Nip37.buildDraftTags(draftId, 1)
+                val event = signer.signEvent(
+                    kind = Nip37.KIND_DRAFT,
+                    content = encrypted,
+                    tags = wrapperTags
+                )
+                relayPool.sendToWriteRelays(ClientMessage.event(event))
+            } catch (_: Exception) {
+                // Best effort
+            }
+        }
+    }
+
+    fun deleteDraftOnPublish(relayPool: RelayPool, signer: NostrSigner?) {
+        val dTag = currentDraftId ?: return
+        if (signer == null) return
+        currentDraftId = null
+
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            try {
+                val tags = Nip37.buildDraftTags(dTag, 1)
+                val encrypted = signer.nip44Encrypt("", signer.pubkeyHex)
+                val event = signer.signEvent(
+                    kind = Nip37.KIND_DRAFT,
+                    content = encrypted,
+                    tags = tags
+                )
+                relayPool.sendToWriteRelays(ClientMessage.event(event))
+            } catch (_: Exception) {
+                // Best effort
+            }
+        }
+    }
+
     fun clear() {
+        currentDraftId = null
         _content.value = TextFieldValue()
         savedStateHandle.remove<String>("draft_content")
         _error.value = null

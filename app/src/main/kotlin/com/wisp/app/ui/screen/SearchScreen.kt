@@ -67,7 +67,8 @@ fun SearchScreen(
     onBlockUser: (String) -> Unit = {},
     userPubkey: String? = null,
     listedIds: Set<String> = emptySet(),
-    onAddToList: (String) -> Unit = {}
+    onAddToList: (String) -> Unit = {},
+    onDeleteEvent: (String, Int) -> Unit = { _, _ -> }
 ) {
     val query by viewModel.query.collectAsState()
     val users by viewModel.users.collectAsState()
@@ -229,7 +230,8 @@ fun SearchScreen(
                                     onBlockAuthor = { onBlockUser(event.pubkey) },
                                     isOwnEvent = event.pubkey == userPubkey,
                                     onAddToList = { onAddToList(event.id) },
-                                    isInList = event.id in listedIds
+                                    isInList = event.id in listedIds,
+                                    onDelete = { onDeleteEvent(event.id, event.kind) }
                                 )
                             }
                         }

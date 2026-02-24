@@ -22,13 +22,13 @@ import com.wisp.app.repo.BookmarkSetRepository
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.EventRepository
-import com.wisp.app.repo.FeedCache
 import com.wisp.app.repo.ExtendedNetworkRepository
 import com.wisp.app.repo.SocialGraphDb
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.ListRepository
 import com.wisp.app.repo.MetadataFetcher
+import com.wisp.app.repo.DeletedEventsRepository
 import com.wisp.app.repo.MuteRepository
 import com.wisp.app.repo.NotificationRepository
 import com.wisp.app.repo.PinRepository
@@ -111,7 +111,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val muteRepo = MuteRepository(app, pubkeyHex)
     val nip05Repo = Nip05Repository()
     val relayHintStore = RelayHintStore(app)
-    val eventRepo = EventRepository(profileRepo, muteRepo, relayHintStore).also { it.currentUserPubkey = pubkeyHex }
+    val deletedEventsRepo = DeletedEventsRepository(app, pubkeyHex)
+    val eventRepo = EventRepository(profileRepo, muteRepo, relayHintStore).also {
+        it.currentUserPubkey = pubkeyHex
+        it.deletedEventsRepo = deletedEventsRepo
+    }
     val contactRepo = ContactRepository(app, pubkeyHex)
     val listRepo = ListRepository(app, pubkeyHex)
     val dmRepo = DmRepository(app, pubkeyHex)
@@ -130,14 +134,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         relayPool = relayPool,
         scope = viewModelScope,
         onReconnected = { force ->
-            Log.d("RLC", "[FeedVM] onReconnected(force=$force) feedType=${feedSub.feedType.value} selectedRelay=${feedSub.selectedRelay.value}")
+            Log.d("RLC", "[FeedVM] onReconnected(force=$force) feedType=${feedSub.feedType.value} selectedRelay=${feedSub.selectedRelay.value} feedSize=${eventRepo.feed.value.size}")
+            feedSub.subscribeFeed()
             if (force) {
-                feedSub.subscribeFeed()
                 startup.fetchRelayListsForFollows()
                 val myPubkey = getUserPubkey()
                 if (myPubkey != null) startup.subscribeDmsAndNotifications(myPubkey)
-            } else {
-                feedSub.resumeSubscribeFeed()
             }
         }
     )
@@ -148,8 +150,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val customEmojiRepo = CustomEmojiRepository(app, pubkeyHex)
     val zapPrefs = ZapPreferences(app, pubkeyHex)
     private val processingDispatcher = Dispatchers.Default
-
-    val feedCache = FeedCache(app, pubkeyHex)
 
     val metadataFetcher = MetadataFetcher(
         relayPool, outboxRouter, subManager, profileRepo, eventRepo,
@@ -168,8 +168,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val feedSub: FeedSubscriptionManager = FeedSubscriptionManager(
         relayPool, outboxRouter, subManager, eventRepo, contactRepo, listRepo, notifRepo,
         extendedNetworkRepo, keyRepo, healthTracker, metadataFetcher,
-        viewModelScope, processingDispatcher, pubkeyHex,
-        saveFeedCache = { startup.saveFeedCache() }
+        viewModelScope, processingDispatcher, pubkeyHex
     )
 
     val eventRouter: EventRouter = EventRouter(
@@ -184,7 +183,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     val socialActions: SocialActionManager = SocialActionManager(
         relayPool, outboxRouter, eventRepo, contactRepo, muteRepo, notifRepo, dmRepo,
-        pinRepo, nwcRepo, customEmojiRepo, zapSender, viewModelScope,
+        pinRepo, deletedEventsRepo, nwcRepo, customEmojiRepo, zapSender, viewModelScope,
         getSigner = { signer },
         getUserPubkey = { getUserPubkey() }
     )
@@ -201,7 +200,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         listRepo, bookmarkRepo, bookmarkSetRepo, pinRepo, blossomRepo, customEmojiRepo,
         relayListRepo, relayScoreBoard, relayHintStore, healthTracker, keyRepo,
         extendedNetworkRepo, metadataFetcher, profileRepo, relayInfoRepo, nip05Repo,
-        nwcRepo, dmRepo, feedCache, zapPrefs, lifecycleManager, eventRouter, feedSub,
+        nwcRepo, dmRepo, zapPrefs, lifecycleManager, eventRouter, feedSub,
         viewModelScope, processingDispatcher, pubkeyHex,
         getUserPubkey = { getUserPubkey() },
         registerAuthSigner = { registerAuthSigner() },
@@ -229,7 +228,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun markLoadingComplete() = feedSub.markLoadingComplete()
 
     // -- Startup delegates --
-    fun loadCachedFeed(): Boolean = startup.loadCachedFeed()
     fun initRelays() = startup.initRelays()
     fun resetForAccountSwitch() = startup.resetForAccountSwitch()
     fun reloadForNewAccount() = startup.reloadForNewAccount()
@@ -238,7 +236,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshRelays() = startup.refreshRelays()
 
     // -- Feed subscription delegates --
-    fun setFeedType(type: FeedType) = feedSub.setFeedType(type) { startup.loadCachedFeed() }
+    fun setFeedType(type: FeedType) = feedSub.setFeedType(type)
     fun setSelectedRelay(url: String) = feedSub.setSelectedRelay(url)
     fun retryRelayFeed() = feedSub.retryRelayFeed()
     fun loadMore() = feedSub.loadMore()
@@ -293,6 +291,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleReaction(event: NostrEvent, emoji: String) = socialActions.toggleReaction(event, emoji)
     fun sendZap(event: NostrEvent, amountMsats: Long, message: String = "") = socialActions.sendZap(event, amountMsats, message)
     fun togglePin(eventId: String) = socialActions.togglePin(eventId)
+    fun deleteEvent(eventId: String, kind: Int) = socialActions.deleteEvent(eventId, kind)
     fun followAll(pubkeys: Set<String>) = socialActions.followAll(pubkeys)
 
     // -- List CRUD delegates --

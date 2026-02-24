@@ -74,6 +74,7 @@ data class NoteActions(
     val onFollowAuthor: (String) -> Unit = {},
     val onBlockAuthor: (String) -> Unit = {},
     val onPin: (String) -> Unit = {},
+    val onDelete: (String, Int) -> Unit = { _, _ -> },
     val isFollowing: (String) -> Boolean = { false },
     val userPubkey: String? = null,
     val nip05Repo: Nip05Repository? = null,

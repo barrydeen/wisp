@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.Home
@@ -55,6 +56,7 @@ fun WispDrawerContent(
     onMessages: () -> Unit,
     onWallet: () -> Unit,
     onLists: () -> Unit = {},
+    onDrafts: () -> Unit = {},
     onMediaServers: () -> Unit,
     onKeys: () -> Unit = {},
     onSafety: () -> Unit = {},
@@ -170,6 +172,13 @@ fun WispDrawerContent(
             label = { Text("Lists") },
             selected = false,
             onClick = onLists,
+            modifier = Modifier.padding(horizontal = 12.dp)
+        )
+        NavigationDrawerItem(
+            icon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+            label = { Text("Drafts") },
+            selected = false,
+            onClick = onDrafts,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
         var settingsExpanded by remember { mutableStateOf(false) }

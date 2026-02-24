@@ -94,6 +94,7 @@ fun FeedScreen(
     onMediaServers: () -> Unit = {},
     onWallet: () -> Unit = {},
     onLists: () -> Unit = {},
+    onDrafts: () -> Unit = {},
     onSafety: () -> Unit = {},
     onCustomEmojis: () -> Unit = {},
     onConsole: () -> Unit = {},
@@ -156,6 +157,7 @@ fun FeedScreen(
             onFollowAuthor = { pubkey -> viewModel.toggleFollow(pubkey) },
             onBlockAuthor = { pubkey -> viewModel.blockUser(pubkey) },
             onPin = { eventId -> viewModel.togglePin(eventId) },
+            onDelete = { eventId, kind -> viewModel.deleteEvent(eventId, kind) },
             isFollowing = { pubkey -> viewModel.contactRepo.isFollowing(pubkey) },
             userPubkey = userPubkey,
             nip05Repo = viewModel.nip05Repo,
@@ -274,6 +276,10 @@ fun FeedScreen(
                 onLists = {
                     scope.launch { drawerState.close() }
                     onLists()
+                },
+                onDrafts = {
+                    scope.launch { drawerState.close() }
+                    onDrafts()
                 },
                 onMediaServers = {
                     scope.launch { drawerState.close() }
@@ -588,6 +594,7 @@ fun FeedScreen(
                                     onZap = { zapTargetEvent = event },
                                     onAddToList = { onAddToList(event.id) },
                                     onPin = { viewModel.togglePin(event.id) },
+                                    onDelete = { viewModel.deleteEvent(event.id, event.kind) },
                                     onRelayClick = { url ->
                                         viewModel.setSelectedRelay(url)
                                         viewModel.setFeedType(FeedType.RELAY)
@@ -666,6 +673,7 @@ private fun FeedItem(
     onZap: () -> Unit,
     onAddToList: () -> Unit = {},
     onPin: () -> Unit = {},
+    onDelete: () -> Unit = {},
     onRelayClick: (String) -> Unit = {},
     noteActions: NoteActions? = null,
     onManageEmojis: (() -> Unit)? = null
@@ -762,6 +770,7 @@ private fun FeedItem(
         isInList = isInList,
         onPin = onPin,
         isPinned = isPinned,
+        onDelete = onDelete,
         onQuotedNoteClick = onQuotedNoteClick,
         noteActions = noteActions,
         reactionEmojiUrls = eventReactionEmojiUrls,

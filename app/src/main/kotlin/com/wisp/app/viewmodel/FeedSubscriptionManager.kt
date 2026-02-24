@@ -47,8 +47,7 @@ class FeedSubscriptionManager(
     private val metadataFetcher: MetadataFetcher,
     private val scope: CoroutineScope,
     private val processingContext: CoroutineContext,
-    private val pubkeyHex: String?,
-    private val saveFeedCache: () -> Unit
+    private val pubkeyHex: String?
 ) {
     private val _feedType = MutableStateFlow(FeedType.FOLLOWS)
     val feedType: StateFlow<FeedType> = _feedType
@@ -96,18 +95,19 @@ class FeedSubscriptionManager(
         })
     }
 
-    fun setFeedType(type: FeedType, loadCachedFeed: () -> Unit) {
+    fun setFeedType(type: FeedType) {
         val prev = _feedType.value
-        Log.d("RLC", "[FeedSub] setFeedType $prev → $type")
+        Log.d("RLC", "[FeedSub] setFeedType $prev → $type feedSize=${eventRepo.feed.value.size}")
         _feedType.value = type
         applyAuthorFilterForFeedType(type)
         when (type) {
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
                 if (prev == FeedType.LIST || prev == FeedType.RELAY) {
-                    Log.d("RLC", "[FeedSub] switching from $prev to $type — restoring cached feed and resubscribing")
+                    Log.d("RLC", "[FeedSub] switching from $prev to $type — clearing feed and resubscribing")
                     eventRepo.clearFeed()
-                    loadCachedFeed()
                     resubscribeFeed()
+                } else {
+                    Log.d("RLC", "[FeedSub] setFeedType $prev → $type — filter-only switch, no resubscribe needed, feedSize=${eventRepo.feed.value.size}")
                 }
             }
             FeedType.RELAY, FeedType.LIST -> {
@@ -137,72 +137,6 @@ class FeedSubscriptionManager(
         resubscribeFeed()
     }
 
-    /**
-     * Lightweight re-subscribe for app resume: keeps dedup state and existing engagement
-     * subs, only requests events newer than what we already have.
-     */
-    fun resumeSubscribeFeed() {
-        Log.d("RLC", "[FeedSub] resumeSubscribeFeed() feedType=${_feedType.value} connectedCount=${relayPool.connectedCount.value}")
-        relayPool.closeOnAllRelays(feedSubId)
-        feedEoseJob?.cancel()
-
-        val newestTimestamp = eventRepo.feed.value.firstOrNull()?.created_at
-        val sinceTimestamp = newestTimestamp ?: (System.currentTimeMillis() / 1000 - 60 * 60 * 24)
-        Log.d("RLC", "[FeedSub] resumeSubscribeFeed since=$sinceTimestamp (newest=${newestTimestamp})")
-
-        val indexerRelays = getIndexerRelays()
-        val excludedUrls = getExcludedRelayUrls()
-        val targetedRelays: Set<String> = when (_feedType.value) {
-            FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
-                val cache = extendedNetworkRepo.cachedNetwork.value
-                val firstDegree = contactRepo.getFollowList().map { it.pubkey }
-                val allAuthors = if (cache != null) {
-                    (listOfNotNull(pubkeyHex) + firstDegree + cache.qualifiedPubkeys).distinct()
-                } else {
-                    listOfNotNull(pubkeyHex) + firstDegree
-                }
-                if (allAuthors.isEmpty()) return
-                val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                outboxRouter.subscribeByAuthors(
-                    feedSubId, allAuthors, notesFilter,
-                    indexerRelays = indexerRelays, blockedUrls = excludedUrls
-                )
-            }
-            FeedType.RELAY -> {
-                val url = _selectedRelay.value ?: return
-                startRelayStatusMonitor(url)
-                val status = _relayFeedStatus.value
-                if (status is RelayFeedStatus.Cooldown || status is RelayFeedStatus.BadRelay) {
-                    return
-                }
-                val filter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                val msg = ClientMessage.req(feedSubId, filter)
-                val sent = relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
-                if (!sent) {
-                    _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to relay")
-                    return
-                }
-                setOf(url)
-            }
-            FeedType.LIST -> {
-                val list = listRepo.selectedList.value ?: return
-                val authors = list.members.toList()
-                if (authors.isEmpty()) return
-                val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                outboxRouter.subscribeByAuthors(
-                    feedSubId, authors, notesFilter,
-                    indexerRelays = indexerRelays, blockedUrls = excludedUrls
-                )
-            }
-        }
-
-        feedEoseJob = scope.launch {
-            subManager.awaitEoseCount(feedSubId, targetedRelays.size.coerceAtLeast(1))
-            onRelayFeedEose()
-            subscribeEngagementForFeed()
-        }
-    }
-
     fun resubscribeFeed() {
         Log.d("RLC", "[FeedSub] resubscribeFeed() feedType=${_feedType.value} connectedCount=${relayPool.connectedCount.value}")
         relayPool.closeOnAllRelays(feedSubId)
@@ -211,8 +145,13 @@ class FeedSubscriptionManager(
         eventRepo.countNewNotes = false
         feedEoseJob?.cancel()
 
+        // Always request the full 24h window. Relying on newestTimestamp from the current
+        // feed caused a race condition: premature subscribeFeed() calls (from followWatcherJob,
+        // connectivity changes, or lifecycle callbacks) would receive partial events, then the
+        // proper startup subscribeFeed() would use those events' timestamps as `since`, missing
+        // the full window. seenEventIds + feedIds dedup handles re-received events cheaply.
         val sinceTimestamp = System.currentTimeMillis() / 1000 - 60 * 60 * 24
-        Log.d("RLC", "[FeedSub] resubscribeFeed: since=$sinceTimestamp (24h ago)")
+        Log.d("RLC", "[FeedSub] resubscribeFeed: since=$sinceTimestamp (24h window)")
         val indexerRelays = getIndexerRelays()
         val excludedUrls = getExcludedRelayUrls()
         val targetedRelays: Set<String> = when (_feedType.value) {
@@ -267,10 +206,17 @@ class FeedSubscriptionManager(
             }
         }
 
-        Log.d("RLC", "[FeedSub] resubscribeFeed() sent to ${targetedRelays.size} relays, awaiting EOSE...")
+        // Use connected relay count (not total targeted) for the EOSE threshold.
+        // Many pool relays are dead (DNS failures, SSL errors, etc.) and will never
+        // send EOSE. Basing the threshold on total targeted relays (e.g. 38/59) makes
+        // it unreachable, causing the 15s timeout to fire every time with a sparse feed.
+        // Wait for 3 EOSEs or 30% of connected relays, whichever is higher — this is
+        // achievable when a few key relays (damus.io, primal.net) are connected.
+        val connected = relayPool.connectedCount.value
+        Log.d("RLC", "[FeedSub] resubscribeFeed() sent to ${targetedRelays.size} relays (connected=$connected), awaiting EOSE...")
         feedEoseJob = scope.launch {
-            val eoseTarget = (targetedRelays.size * 0.65).toInt().coerceIn(1, targetedRelays.size)
-            Log.d("RLC", "[FeedSub] awaiting $eoseTarget/${targetedRelays.size} EOSEs for feedSubId=$feedSubId")
+            val eoseTarget = maxOf(3, (connected * 0.3).toInt()).coerceIn(1, targetedRelays.size)
+            Log.d("RLC", "[FeedSub] awaiting $eoseTarget/$connected EOSEs for feedSubId=$feedSubId")
             subManager.awaitEoseCount(feedSubId, eoseTarget)
             Log.d("RLC", "[FeedSub] EOSE received, feed loaded")
             _initialLoadDone.value = true
@@ -280,10 +226,6 @@ class FeedSubscriptionManager(
             eventRepo.countNewNotes = true
             subscribeEngagementForFeed()
             subscribeNotifEngagement()
-
-            if (_feedType.value == FeedType.FOLLOWS || _feedType.value == FeedType.EXTENDED_FOLLOWS) {
-                saveFeedCache()
-            }
 
             withContext(processingContext) {
                 metadataFetcher.sweepMissingProfiles()

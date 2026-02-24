@@ -74,6 +74,7 @@ fun ThreadScreen(
     listedIds: Set<String> = emptySet(),
     pinnedIds: Set<String> = emptySet(),
     onTogglePin: (String) -> Unit = {},
+    onDeleteEvent: (String, Int) -> Unit = { _, _ -> },
     onAddToList: (String) -> Unit = {},
     onHashtagClick: ((String) -> Unit)? = null
 ) {
@@ -131,6 +132,7 @@ fun ThreadScreen(
             onFollowAuthor = onToggleFollow,
             onBlockAuthor = onBlockUser,
             onPin = onTogglePin,
+            onDelete = onDeleteEvent,
             isFollowing = { pubkey -> contactRepo.isFollowing(pubkey) },
             userPubkey = userPubkey,
             nip05Repo = nip05Repo,
@@ -213,6 +215,7 @@ fun ThreadScreen(
                             isInList = event.id in listedIds,
                             onPin = { onTogglePin(event.id) },
                             isPinned = event.id in pinnedIds,
+                            onDelete = { onDeleteEvent(event.id, event.kind) },
                             nip05Repo = nip05Repo,
                             onQuotedNoteClick = onQuotedNoteClick,
                             noteActions = noteActions,

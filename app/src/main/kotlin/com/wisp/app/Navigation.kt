@@ -25,6 +25,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.compose.runtime.collectAsState
+import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.RemoteSigner
 import com.wisp.app.repo.SigningMode
@@ -36,6 +37,7 @@ import com.wisp.app.ui.screen.AuthScreen
 import com.wisp.app.ui.screen.ComposeScreen
 import com.wisp.app.ui.screen.DmConversationScreen
 import com.wisp.app.ui.screen.DmListScreen
+import com.wisp.app.ui.screen.DraftsScreen
 import com.wisp.app.ui.screen.FeedScreen
 import com.wisp.app.ui.screen.ProfileEditScreen
 import com.wisp.app.ui.screen.RelayScreen
@@ -71,6 +73,7 @@ import com.wisp.app.viewmodel.ThreadViewModel
 import com.wisp.app.viewmodel.UserProfileViewModel
 import com.wisp.app.viewmodel.NotificationsViewModel
 import com.wisp.app.viewmodel.ConsoleViewModel
+import com.wisp.app.viewmodel.DraftsViewModel
 import com.wisp.app.viewmodel.SearchViewModel
 import com.wisp.app.viewmodel.HashtagFeedViewModel
 import com.wisp.app.viewmodel.OnboardingViewModel
@@ -104,6 +107,7 @@ object Routes {
     const val CUSTOM_EMOJIS = "custom_emojis"
     const val HASHTAG_FEED = "hashtag/{tag}"
     const val EXISTING_USER_ONBOARDING = "onboarding/existing"
+    const val DRAFTS = "drafts"
 }
 
 @Composable
@@ -125,6 +129,7 @@ fun WispNavHost() {
         }
     )
     val notificationsViewModel: NotificationsViewModel = viewModel()
+    val draftsViewModel: DraftsViewModel = viewModel()
     val searchViewModel: SearchViewModel = viewModel()
     val consoleViewModel: ConsoleViewModel = viewModel()
     val onboardingViewModel: OnboardingViewModel = viewModel()
@@ -155,23 +160,16 @@ fun WispNavHost() {
     var scrollToTopTrigger by remember { mutableStateOf(0) }
     var addToListEventId by remember { mutableStateOf<String?>(null) }
 
-    val hasCachedFeed = remember {
-        if (authViewModel.isLoggedIn && authViewModel.keyRepo.isOnboardingComplete()) {
-            feedViewModel.loadCachedFeed()
-        } else false
-    }
-
     val startDestination = rememberSaveable {
         when {
             !authViewModel.isLoggedIn -> Routes.AUTH
             !authViewModel.keyRepo.isOnboardingComplete() -> Routes.ONBOARDING_PROFILE
-            hasCachedFeed -> Routes.FEED
             else -> Routes.LOADING
         }
     }
 
     // Initialize relays when logged in and onboarding is complete
-    if (authViewModel.isLoggedIn && (startDestination == Routes.LOADING || startDestination == Routes.FEED)) {
+    if (authViewModel.isLoggedIn && startDestination == Routes.LOADING) {
         LaunchedEffect(Unit) {
             feedViewModel.initRelays()
         }
@@ -237,19 +235,13 @@ fun WispNavHost() {
     }
 
     // After process death, Navigation restores the last screen but the ViewModel
-    // is fresh (no relay connections, empty feed). Try loading from disk cache first;
-    // only redirect to LOADING if no cache is available.
+    // is fresh (no relay connections, empty feed). Redirect to LOADING to re-fetch.
     val loadingComplete by feedViewModel.loadingScreenComplete.collectAsState()
     if (currentRoute != null && currentRoute !in nonAppRoutes && !loadingComplete) {
-        val cacheRecovered = remember { feedViewModel.loadCachedFeed() }
-        if (cacheRecovered) {
-            LaunchedEffect(Unit) { feedViewModel.initRelays() }
-        } else {
-            LaunchedEffect(Unit) {
-                feedViewModel.initRelays()
-                navController.navigate(Routes.LOADING) {
-                    popUpTo(0) { inclusive = true }
-                }
+        LaunchedEffect(Unit) {
+            feedViewModel.initRelays()
+            navController.navigate(Routes.LOADING) {
+                popUpTo(0) { inclusive = true }
             }
         }
     }
@@ -428,6 +420,9 @@ fun WispNavHost() {
                 onLists = {
                     navController.navigate(Routes.LISTS_HUB)
                 },
+                onDrafts = {
+                    navController.navigate(Routes.DRAFTS)
+                },
                 onSafety = {
                     navController.navigate(Routes.SAFETY)
                 },
@@ -458,6 +453,14 @@ fun WispNavHost() {
         }
 
         composable(Routes.COMPOSE) {
+            // Auto-save draft when leaving compose screen (back button, navigation, etc.)
+            DisposableEffect(Unit) {
+                onDispose {
+                    if (composeViewModel.content.value.text.isNotBlank()) {
+                        composeViewModel.saveDraft(feedViewModel.relayPool, replyTarget, remoteSigner)
+                    }
+                }
+            }
             ComposeScreen(
                 viewModel = composeViewModel,
                 relayPool = feedViewModel.relayPool,
@@ -469,6 +472,49 @@ fun WispNavHost() {
                 profileRepo = feedViewModel.profileRepo,
                 userPubkey = feedViewModel.getUserPubkey(),
                 signer = remoteSigner
+            )
+        }
+
+        composable(Routes.DRAFTS) {
+            LaunchedEffect(Unit) {
+                draftsViewModel.loadDrafts(feedViewModel.relayPool, remoteSigner)
+            }
+            DraftsScreen(
+                viewModel = draftsViewModel,
+                onBack = { navController.popBackStack() },
+                onDraftClick = { draft ->
+                    // Extract reply target from draft tags if present
+                    // Prefer "reply" marker, fall back to "root"
+                    val replyTag = draft.tags
+                        .firstOrNull { it.size >= 4 && it[0] == "e" && it[3] == "reply" }
+                        ?: draft.tags.firstOrNull { it.size >= 4 && it[0] == "e" && it[3] == "root" }
+                    if (replyTag != null) {
+                        val eventId = replyTag[1]
+                        val cached = feedViewModel.eventRepo.getEvent(eventId)
+                        replyTarget = cached ?: run {
+                            // Build a stub event from draft tags so reply context works
+                            val peerPubkey = draft.tags
+                                .firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: ""
+                            NostrEvent(
+                                id = eventId,
+                                pubkey = peerPubkey,
+                                created_at = 0L,
+                                kind = 1,
+                                tags = draft.tags.filter { it.firstOrNull() == "e" },
+                                content = "",
+                                sig = ""
+                            )
+                        }
+                    } else {
+                        replyTarget = null
+                    }
+                    quoteTarget = null
+                    composeViewModel.loadDraft(draft)
+                    navController.navigate(Routes.COMPOSE)
+                },
+                onDeleteDraft = { dTag ->
+                    draftsViewModel.deleteDraft(dTag, feedViewModel.relayPool, remoteSigner)
+                }
             )
         }
 
@@ -579,6 +625,7 @@ fun WispNavHost() {
                 listedIds = profileListedIds,
                 pinnedIds = profilePinnedIds,
                 onTogglePin = { eventId -> feedViewModel.togglePin(eventId) },
+                onDeleteEvent = { eventId, kind -> feedViewModel.deleteEvent(eventId, kind) },
                 onAddNoteToList = { eventId -> addToListEventId = eventId },
                 onSendDm = if (!isOwnProfile) {{ navController.navigate("dm/$pubkey") }} else null,
                 signer = remoteSigner
@@ -623,7 +670,8 @@ fun WispNavHost() {
                 },
                 userPubkey = feedViewModel.getUserPubkey(),
                 listedIds = searchListedIds,
-                onAddToList = { eventId -> addToListEventId = eventId }
+                onAddToList = { eventId -> addToListEventId = eventId },
+                onDeleteEvent = { eventId, kind -> feedViewModel.deleteEvent(eventId, kind) }
             )
         }
 
@@ -769,6 +817,7 @@ fun WispNavHost() {
                 listedIds = threadListedIds,
                 pinnedIds = threadPinnedIds,
                 onTogglePin = { eventId -> feedViewModel.togglePin(eventId) },
+                onDeleteEvent = { eventId, kind -> feedViewModel.deleteEvent(eventId, kind) },
                 onAddToList = { eventId -> addToListEventId = eventId },
                 onHashtagClick = { tag ->
                     navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")

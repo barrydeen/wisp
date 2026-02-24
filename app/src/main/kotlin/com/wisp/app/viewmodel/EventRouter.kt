@@ -1,5 +1,6 @@
 package com.wisp.app.viewmodel
 
+import android.util.Log
 import com.wisp.app.nostr.Blossom
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip30
@@ -145,7 +146,10 @@ class EventRouter(
                     val relays = Nip65.parseRelayList(event)
                     if (relays.isNotEmpty()) {
                         keyRepo.saveRelays(relays)
-                        relayPool.updateRelays(relays)
+                        // Don't call relayPool.updateRelays() here — it would replace
+                        // the full pool (pinned+scored+extended ~150 relays) with just
+                        // the user's ~5-10 NIP-65 relays, destroying active subscriptions.
+                        // The saved list is picked up on next startup by rebuildRelayPool().
                     }
                 }
             }
@@ -220,7 +224,12 @@ class EventRouter(
                 subscriptionId == "loadmore" ||
                 subscriptionId == "feed-backfill"
             if (isFeedSub) {
+                val feedSizeBefore = eventRepo.feed.value.size
                 eventRepo.addEvent(event)
+                val feedSizeAfter = eventRepo.feed.value.size
+                if (feedSizeAfter > feedSizeBefore) {
+                    Log.d("RLC", "[EventRouter] feed event added: kind=${event.kind} from=${event.pubkey.take(8)} feedSize=$feedSizeAfter sub=$subscriptionId")
+                }
                 onRelayFeedEventReceived()
                 if (event.kind == 1) eventRepo.addEventRelay(event.id, relayUrl)
                 if (event.kind == 1) {

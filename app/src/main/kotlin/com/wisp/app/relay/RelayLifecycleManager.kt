@@ -45,21 +45,30 @@ class RelayLifecycleManager(
 
         connectivityJob = scope.launch {
             var lastNetworkId: Long? = null
+            var initialEmission = true
             ConnectivityFlow.observe(context).collect { status ->
                 when (status) {
                     is ConnectivityStatus.Active -> {
-                        if (lastNetworkId != null && lastNetworkId != status.networkId) {
+                        if (initialEmission) {
+                            // Record initial network state without triggering reconnect —
+                            // initRelays() already handles initial relay connections.
+                            Log.d(TAG, "Initial network state: handle=${status.networkId}")
+                            lastNetworkId = status.networkId
+                            initialEmission = false
+                        } else if (lastNetworkId != null && lastNetworkId != status.networkId) {
                             Log.d(TAG, "Network changed ($lastNetworkId → ${status.networkId}), requesting reconnect")
+                            lastNetworkId = status.networkId
                             reconnect(force = true)
                         } else if (lastNetworkId == null) {
                             Log.d(TAG, "Network restored, requesting reconnect")
+                            lastNetworkId = status.networkId
                             reconnect(force = false)
                         }
-                        lastNetworkId = status.networkId
                     }
                     is ConnectivityStatus.Off -> {
                         Log.d(TAG, "Network lost")
                         lastNetworkId = null
+                        initialEmission = false
                     }
                 }
             }

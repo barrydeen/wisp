@@ -188,6 +188,7 @@ private fun HashtagFeedItem(
         nip05Repo = nip05Repo,
         onAddToList = { noteActions.onAddToList(event.id) },
         onPin = { noteActions.onPin(event.id) },
+        onDelete = { noteActions.onDelete(event.id, event.kind) },
         onQuotedNoteClick = noteActions.onNoteClick,
         noteActions = noteActions
     )

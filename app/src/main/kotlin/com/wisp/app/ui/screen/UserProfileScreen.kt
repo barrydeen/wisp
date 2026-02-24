@@ -124,6 +124,7 @@ fun UserProfileScreen(
     listedIds: Set<String> = emptySet(),
     pinnedIds: Set<String> = emptySet(),
     onTogglePin: (String) -> Unit = {},
+    onDeleteEvent: (String, Int) -> Unit = { _, _ -> },
     onAddNoteToList: (String) -> Unit = {},
     onSendDm: (() -> Unit)? = null,
     signer: com.wisp.app.nostr.NostrSigner? = null
@@ -362,6 +363,7 @@ fun UserProfileScreen(
                                 isInList = event.id in listedIds,
                                 onPin = { onTogglePin(event.id) },
                                 isPinned = true,
+                                onDelete = { onDeleteEvent(event.id, event.kind) },
                                 isOwnEvent = event.pubkey == userPubkey
                             )
                         }
@@ -426,7 +428,8 @@ fun UserProfileScreen(
                                 onAddToList = { onAddNoteToList(event.id) },
                                 isInList = event.id in listedIds,
                                 onPin = { onTogglePin(event.id) },
-                                isPinned = event.id in pinnedIds
+                                isPinned = event.id in pinnedIds,
+                                onDelete = { onDeleteEvent(event.id, event.kind) }
                             )
                         }
                         if (rootNotes.isNotEmpty()) {
@@ -490,7 +493,8 @@ fun UserProfileScreen(
                                 onAddToList = { onAddNoteToList(event.id) },
                                 isInList = event.id in listedIds,
                                 onPin = { onTogglePin(event.id) },
-                                isPinned = event.id in pinnedIds
+                                isPinned = event.id in pinnedIds,
+                                onDelete = { onDeleteEvent(event.id, event.kind) }
                             )
                         }
                         item {
