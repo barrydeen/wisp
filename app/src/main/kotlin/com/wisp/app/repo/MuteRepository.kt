@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import com.wisp.app.nostr.MuteList
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.nostr.NostrSigner
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -32,6 +33,26 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
         val muteList = Nip51.parseMuteList(event)
         blockedSet = HashSet(muteList.pubkeys)
         wordSet = HashSet(muteList.words)
+        _blockedPubkeys.value = blockedSet.toSet()
+        _mutedWords.value = wordSet.toSet()
+        lastUpdated = event.created_at
+        saveToPrefs()
+    }
+
+    suspend fun loadFromEvent(event: NostrEvent, signer: NostrSigner) {
+        if (event.kind != Nip51.KIND_MUTE_LIST) return
+        if (event.created_at <= lastUpdated) return
+        val publicMutes = Nip51.parseMuteList(event)
+        val privateMutes = if (event.content.isNotBlank()) {
+            try {
+                val decrypted = signer.nip44Decrypt(event.content, signer.pubkeyHex)
+                Nip51.parsePrivateTags(decrypted)
+            } catch (_: Exception) {
+                MuteList()
+            }
+        } else MuteList()
+        blockedSet = HashSet(publicMutes.pubkeys + privateMutes.pubkeys)
+        wordSet = HashSet(publicMutes.words + privateMutes.words)
         _blockedPubkeys.value = blockedSet.toSet()
         _mutedWords.value = wordSet.toSet()
         lastUpdated = event.created_at

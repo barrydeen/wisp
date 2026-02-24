@@ -1,5 +1,10 @@
 package com.wisp.app.nostr
 
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
+
 data class MuteList(
     val pubkeys: Set<String> = emptySet(),
     val words: Set<String> = emptySet()
@@ -61,6 +66,35 @@ object Nip51 {
             }
         }
         return MuteList(pubkeys, words)
+    }
+
+    fun parsePrivateTags(json: String): MuteList {
+        val pubkeys = mutableSetOf<String>()
+        val words = mutableSetOf<String>()
+        try {
+            val arr = kotlinx.serialization.json.Json.parseToJsonElement(json).jsonArray
+            for (element in arr) {
+                val tag = element.jsonArray
+                if (tag.size < 2) continue
+                when (tag[0].jsonPrimitive.content) {
+                    "p" -> pubkeys.add(tag[1].jsonPrimitive.content)
+                    "word" -> words.add(tag[1].jsonPrimitive.content)
+                }
+            }
+        } catch (_: Exception) {}
+        return MuteList(pubkeys, words)
+    }
+
+    fun buildMuteListContent(blockedPubkeys: Set<String>, mutedWords: Set<String>): String {
+        val arr = buildJsonArray {
+            for (pubkey in blockedPubkeys) {
+                add(buildJsonArray { add(JsonPrimitive("p")); add(JsonPrimitive(pubkey)) })
+            }
+            for (word in mutedWords) {
+                add(buildJsonArray { add(JsonPrimitive("word")); add(JsonPrimitive(word)) })
+            }
+        }
+        return arr.toString()
     }
 
     fun buildMuteListTags(blockedPubkeys: Set<String>, mutedWords: Set<String>): List<List<String>> {

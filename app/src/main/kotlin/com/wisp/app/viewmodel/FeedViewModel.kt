@@ -720,7 +720,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun processRelayEvent(event: NostrEvent, relayUrl: String, subscriptionId: String) {
+    private suspend fun processRelayEvent(event: NostrEvent, relayUrl: String, subscriptionId: String) {
         if (subscriptionId == "notif") {
             if (muteRepo.isBlocked(event.pubkey)) return
             val myPubkey = getUserPubkey()
@@ -840,7 +840,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (event.kind == Nip51.KIND_MUTE_LIST) {
                 val myPubkey = getUserPubkey()
-                if (myPubkey != null && event.pubkey == myPubkey) muteRepo.loadFromEvent(event)
+                val s = signer
+                if (myPubkey != null && event.pubkey == myPubkey) {
+                    if (s != null) muteRepo.loadFromEvent(event, s)
+                    else muteRepo.loadFromEvent(event)
+                }
             }
             if (event.kind == Nip51.KIND_BOOKMARK_LIST) {
                 val myPubkey = getUserPubkey()
@@ -1455,9 +1459,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun publishMuteList() {
         val s = signer ?: return
-        val tags = Nip51.buildMuteListTags(muteRepo.getBlockedPubkeys(), muteRepo.getMutedWords())
         viewModelScope.launch {
-            val event = s.signEvent(kind = Nip51.KIND_MUTE_LIST, content = "", tags = tags)
+            val privateJson = Nip51.buildMuteListContent(muteRepo.getBlockedPubkeys(), muteRepo.getMutedWords())
+            val encrypted = s.nip44Encrypt(privateJson, s.pubkeyHex)
+            val event = s.signEvent(kind = Nip51.KIND_MUTE_LIST, content = encrypted, tags = emptyList())
             relayPool.sendToWriteRelays(ClientMessage.event(event))
         }
     }
