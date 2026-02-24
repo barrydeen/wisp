@@ -28,5 +28,23 @@ data class RelayConfig(
             "wss://relay.damus.io",
             "wss://relay.primal.net"
         )
+
+        private val IP_HOST_REGEX = Regex("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$")
+
+        /**
+         * Returns true if the relay URL is safe to use.
+         * Rejects: tor (.onion), localhost, IP addresses, URLs with ports.
+         */
+        fun isAcceptableUrl(url: String): Boolean {
+            if (!url.startsWith("wss://")) return false
+            val afterScheme = url.removePrefix("wss://")
+            val hostPort = afterScheme.split("/", limit = 2)[0]
+            if (":" in hostPort) return false // has a port
+            val host = hostPort.lowercase()
+            if (host.endsWith(".onion")) return false
+            if (host == "localhost" || host.endsWith(".localhost")) return false
+            if (IP_HOST_REGEX.matches(host)) return false
+            return true
+        }
     }
 }

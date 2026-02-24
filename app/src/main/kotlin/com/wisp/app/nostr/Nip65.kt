@@ -8,6 +8,7 @@ object Nip65 {
         return event.tags.mapNotNull { tag ->
             if (tag.size < 2 || tag[0] != "r") return@mapNotNull null
             val url = tag[1].trim().trimEnd('/')
+            if (!RelayConfig.isAcceptableUrl(url)) return@mapNotNull null
             val marker = tag.getOrNull(2)
             RelayConfig(
                 url = url,

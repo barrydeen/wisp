@@ -9,6 +9,7 @@ import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.Nip65
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrSigner
+import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.relay.RelayScoreBoard
 import com.wisp.app.repo.BlossomRepository
@@ -213,7 +214,7 @@ class EventRouter(
             for (tag in event.tags) {
                 if (tag.size >= 3 && tag[0] == "p") {
                     val url = tag[2].trimEnd('/')
-                    if (url.startsWith("wss://") && !relayListRepo.hasRelayList(tag[1])) {
+                    if (RelayConfig.isAcceptableUrl(url) && !relayListRepo.hasRelayList(tag[1])) {
                         relayScoreBoard.addHintRelays(tag[1], listOf(url))
                     }
                 }

@@ -168,9 +168,10 @@ class StartupCoordinator(
         relayPool.updateBlockedUrls(keyRepo.getBlockedRelays())
         val pinnedRelays = keyRepo.getRelays()
         // Merge pinned relays with cached scored relays immediately so the pool
-        // starts with the full relay set (40-50) instead of just pinned (5).
+        // starts with the full relay set instead of just pinned (5-10).
         // RelayScoreBoard rebuilds from persisted RelayListRepository data on init.
         val pinnedUrls = pinnedRelays.map { it.url }.toSet()
+        relayPool.setPinnedRelays(pinnedUrls)
         val cachedScored = relayScoreBoard.getScoredRelayConfigs()
             .filter { it.url !in pinnedUrls }
         val initialRelays = pinnedRelays + cachedScored
@@ -508,6 +509,7 @@ class StartupCoordinator(
     fun rebuildRelayPool() {
         val pinnedRelays = keyRepo.getRelays()
         val pinnedUrls = pinnedRelays.map { it.url }.toSet()
+        relayPool.setPinnedRelays(pinnedUrls)
         val scoredConfigs = relayScoreBoard.getScoredRelayConfigs()
             .filter { it.url !in pinnedUrls }
         val baseUrls = pinnedUrls + scoredConfigs.map { it.url }.toSet()
@@ -534,6 +536,7 @@ class StartupCoordinator(
     fun refreshRelays() {
         relayPool.updateBlockedUrls(keyRepo.getBlockedRelays())
         val relays = keyRepo.getRelays()
+        relayPool.setPinnedRelays(relays.map { it.url }.toSet())
         relayPool.updateRelays(relays)
         relayPool.updateDmRelays(keyRepo.getDmRelays())
         feedSub.subscribeFeed()

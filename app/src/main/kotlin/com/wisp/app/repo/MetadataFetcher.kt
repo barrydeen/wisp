@@ -243,8 +243,9 @@ class MetadataFetcher(
         if (maxAttempt <= 1) {
             outboxRouter.requestProfiles(subId, pubkeys)
         } else {
+            // Retry: send to top 10 relays instead of all — most profiles are on major relays
             val filter = Filter(kinds = listOf(0), authors = pubkeys, limit = pubkeys.size)
-            relayPool.sendToAll(ClientMessage.req(subId, filter))
+            relayPool.sendToTopRelays(ClientMessage.req(subId, filter), maxRelays = 10)
         }
 
         scope.launch(processingContext) {
@@ -292,7 +293,7 @@ class MetadataFetcher(
                 relayPool.sendToRelayOrEphemeral(url, msg)
             }
         } else {
-            relayPool.sendToAll(msg)
+            relayPool.sendToTopRelays(msg, maxRelays = 10)
         }
 
         scope.launch {

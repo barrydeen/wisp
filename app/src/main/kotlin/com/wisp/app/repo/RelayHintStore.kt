@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import android.util.LruCache
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.relay.RelayConfig
 
 /**
  * Lightweight persistent store of relay hints for any pubkey.
@@ -32,7 +33,7 @@ class RelayHintStore(context: Context) {
 
     /** Add a single relay hint for a pubkey. */
     fun addHint(pubkey: String, relayUrl: String) {
-        if (relayUrl.isBlank() || !relayUrl.startsWith("wss://")) return
+        if (relayUrl.isBlank() || !RelayConfig.isAcceptableUrl(relayUrl)) return
         @Suppress("NAME_SHADOWING")
         val relayUrl = relayUrl.trimEnd('/')
         val hints = cache.get(pubkey)
@@ -49,7 +50,7 @@ class RelayHintStore(context: Context) {
         for (tag in event.tags) {
             if (tag.size >= 3 && tag[0] == "p") {
                 val url = tag[2]
-                if (url.startsWith("wss://")) {
+                if (RelayConfig.isAcceptableUrl(url)) {
                     addHint(tag[1], url)
                 }
             }

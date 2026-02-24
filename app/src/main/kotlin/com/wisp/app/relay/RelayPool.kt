@@ -30,6 +30,7 @@ class RelayPool {
     private val ephemeralRelays = java.util.concurrent.ConcurrentHashMap<String, Relay>()
     private val ephemeralLastUsed = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val relayCooldowns = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    @Volatile private var pinnedRelayUrls = emptySet<String>()
     private var blockedUrls = emptySet<String>()
     fun getBlockedUrls(): Set<String> = blockedUrls
 
@@ -44,8 +45,9 @@ class RelayPool {
     var healthTracker: RelayHealthTracker? = null
 
     companion object {
-        const val MAX_PERSISTENT = 150
+        const val MAX_PERSISTENT = 30
         const val MAX_DM_RELAYS = 10
+        const val MAX_EPHEMERAL = 50
         const val COOLDOWN_DOWN_MS = 10 * 60 * 1000L    // 10 min — 5xx, connection failures (ephemeral only)
         const val COOLDOWN_REJECTED_MS = 1 * 60 * 1000L // 1 min — 4xx like 401/403/429
         const val COOLDOWN_NETWORK_MS = 5_000L           // 5s — DNS/network failures on persistent relays
@@ -427,6 +429,49 @@ class RelayPool {
         if (subId != null) Log.d("RLC", "[Pool] sendToAll sub=$subId → $sentCount relays")
     }
 
+    /** Mark which relay URLs are the user's own pinned relays (from NIP-65). */
+    fun setPinnedRelays(urls: Set<String>) {
+        pinnedRelayUrls = urls
+    }
+
+    fun getPinnedRelayUrls(): Set<String> = pinnedRelayUrls
+
+    /**
+     * Send to only the first [maxRelays] connected relays (prioritizing pinned relays).
+     * Used for metadata fetches where full broadcast is wasteful.
+     */
+    fun sendToTopRelays(message: String, maxRelays: Int = 10) {
+        val subId = extractSubId(message)
+        var sentCount = 0
+        // Send to pinned relays first
+        for (relay in relays) {
+            if (sentCount >= maxRelays) break
+            if (relay.config.url in pinnedRelayUrls && relay.isConnected) {
+                if (subId != null) {
+                    if (!subscriptionTracker.hasCapacity(relay.config.url, subId)) continue
+                    subscriptionTracker.track(relay.config.url, subId)
+                    trackSubscription(relay.config.url, subId, message)
+                }
+                relay.send(message)
+                sentCount++
+            }
+        }
+        // Fill remaining slots with other connected relays
+        for (relay in relays) {
+            if (sentCount >= maxRelays) break
+            if (relay.config.url !in pinnedRelayUrls && relay.isConnected) {
+                if (subId != null) {
+                    if (!subscriptionTracker.hasCapacity(relay.config.url, subId)) continue
+                    subscriptionTracker.track(relay.config.url, subId)
+                    trackSubscription(relay.config.url, subId, message)
+                }
+                relay.send(message)
+                sentCount++
+            }
+        }
+        if (subId != null) Log.d("RLC", "[Pool] sendToTopRelays sub=$subId → $sentCount/$maxRelays relays")
+    }
+
     fun sendToRelay(url: String, message: String) {
         val subId = extractSubId(message)
         if (subId != null) {
@@ -471,7 +516,7 @@ class RelayPool {
     fun sendToRelayOrEphemeral(url: String, message: String, skipBadCheck: Boolean = false): Boolean {
         if (url in blockedUrls) return false
         if (!skipBadCheck && healthTracker?.isBad(url) == true) return false
-        if (!url.startsWith("wss://") && !url.startsWith("ws://")) return false
+        if (!RelayConfig.isAcceptableUrl(url)) return false
 
         // Check cooldown for failed relays
         val cooldownUntil = relayCooldowns[url]
@@ -484,6 +529,12 @@ class RelayPool {
                 existing.send(message)
                 return true
             }
+        }
+
+        // Cap ephemeral relays to prevent connection explosion
+        if (!ephemeralRelays.containsKey(url) && ephemeralRelays.size >= MAX_EPHEMERAL) {
+            Log.d("RLC", "[Pool] sendToRelayOrEphemeral($url) SKIPPED — ephemeral cap ($MAX_EPHEMERAL) reached")
+            return false
         }
 
         // Create ephemeral relay if needed — computeIfAbsent is atomic on ConcurrentHashMap

@@ -176,7 +176,7 @@ object RelayProber {
             val relays = Nip65.parseRelayList(event)
             for (relay in relays) {
                 val url = relay.url.trimEnd('/')
-                if (url.startsWith("wss://")) {
+                if (RelayConfig.isAcceptableUrl(url)) {
                     tally[url] = (tally[url] ?: 0) + 1
                 }
             }

@@ -49,6 +49,30 @@ class OutboxRouter(
     }
 
     /**
+     * Like [sendChunkedToAll] but sends only to top connected relays to avoid broadcast storms.
+     * Used for profile metadata fetches where full-pool broadcast is wasteful.
+     */
+    private fun sendChunkedToTopRelays(
+        subId: String,
+        authors: List<String>,
+        templateFilters: List<Filter>,
+        limitPerAuthor: Boolean = false,
+        maxRelays: Int = 10
+    ) {
+        val chunks = authors.chunked(MAX_AUTHORS_PER_FILTER)
+        val allFilters = mutableListOf<Filter>()
+        for (chunk in chunks) {
+            for (f in templateFilters) {
+                val withAuthors = f.copy(authors = chunk)
+                allFilters.add(if (limitPerAuthor) withAuthors.copy(limit = chunk.size) else withAuthors)
+            }
+        }
+        val msg = if (allFilters.size == 1) ClientMessage.req(subId, allFilters[0])
+        else ClientMessage.req(subId, allFilters)
+        relayPool.sendToTopRelays(msg, maxRelays)
+    }
+
+    /**
      * Subscribe to content from [authors] by routing to each author's write relays.
      * Accepts multiple template filters — each gets `.copy(authors=subset)` per relay group.
      *
@@ -101,9 +125,18 @@ class OutboxRouter(
             }
         }
 
-        // Merge fallback authors into each persistent relay's entry
+        // Merge fallback authors into PINNED relays only (not all pool relays).
+        // Broadcasting to the full pool (30+ relays) for authors without relay lists
+        // causes massive duplication. Pinned relays + indexers provide sufficient coverage.
         if (fallbackAuthors.isNotEmpty()) {
-            for (url in poolUrls) {
+            val pinnedUrls = relayPool.getPinnedRelayUrls()
+            val fallbackTargets = if (pinnedUrls.isNotEmpty()) {
+                poolUrls.filter { it in pinnedUrls }
+            } else {
+                // No pinned relays known — use first 5 pool relays as fallback
+                poolUrls.take(5)
+            }
+            for (url in fallbackTargets) {
                 relayToAuthors.getOrPut(url) { mutableSetOf() }.addAll(fallbackAuthors)
             }
         }
@@ -172,9 +205,9 @@ class OutboxRouter(
             }
         }
 
-        // Fallback: send unknown pubkeys to all general relays (chunked)
+        // Fallback: send unknown pubkeys to top relays (not all — avoids 150-relay broadcast)
         if (unknownPubkeys.isNotEmpty()) {
-            sendChunkedToAll(subId, unknownPubkeys, listOf(
+            sendChunkedToTopRelays(subId, unknownPubkeys, listOf(
                 Filter(kinds = listOf(0))
             ), limitPerAuthor = true)
         }

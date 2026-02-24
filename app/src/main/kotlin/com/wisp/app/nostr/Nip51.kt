@@ -1,5 +1,6 @@
 package com.wisp.app.nostr
 
+import com.wisp.app.relay.RelayConfig
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.jsonArray
@@ -47,7 +48,10 @@ object Nip51 {
 
     fun parseRelaySet(event: NostrEvent): List<String> {
         return event.tags.mapNotNull { tag ->
-            if (tag.size >= 2 && (tag[0] == "relay" || tag[0] == "r")) tag[1].trim().trimEnd('/') else null
+            if (tag.size >= 2 && (tag[0] == "relay" || tag[0] == "r")) {
+                val url = tag[1].trim().trimEnd('/')
+                if (RelayConfig.isAcceptableUrl(url)) url else null
+            } else null
         }
     }
 

@@ -182,7 +182,7 @@ class RelayScoreBoard(
     @Synchronized fun addHintRelays(pubkey: String, urls: List<String>) {
         if (pubkey !in cachedFollowSet) return  // only for followed authors
         if (pubkey in authorToRelays) return     // already has confirmed relay list
-        val validUrls = urls.filter { it.startsWith("wss://") }.map { it.trimEnd('/') }
+        val validUrls = urls.map { it.trimEnd('/') }.filter { RelayConfig.isAcceptableUrl(it) }
         if (validUrls.isEmpty()) return
 
         val hints = hintAuthorRelays.getOrPut(pubkey) { mutableSetOf() }
