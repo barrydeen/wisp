@@ -234,7 +234,7 @@ fun LoadingScreen(
     }
 }
 
-private fun initLoadingProgress(state: InitLoadingState): Float {
+internal fun initLoadingProgress(state: InitLoadingState): Float {
     return when (state) {
         is InitLoadingState.SearchingProfile -> 0.05f
         is InitLoadingState.FoundProfile -> 0.12f
@@ -253,7 +253,7 @@ private fun initLoadingProgress(state: InitLoadingState): Float {
     }
 }
 
-private fun initLoadingText(state: InitLoadingState): String {
+internal fun initLoadingText(state: InitLoadingState): String {
     return when (state) {
         is InitLoadingState.SearchingProfile -> "Searching for your profile..."
         is InitLoadingState.FoundProfile -> ""

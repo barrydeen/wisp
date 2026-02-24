@@ -11,6 +11,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -49,6 +50,7 @@ import com.wisp.app.ui.screen.BookmarkSetScreen
 import com.wisp.app.ui.screen.HashtagFeedScreen
 import com.wisp.app.ui.screen.KeysScreen
 import com.wisp.app.ui.screen.ListScreen
+import com.wisp.app.ui.screen.ExistingUserOnboardingScreen
 import com.wisp.app.ui.screen.LoadingScreen
 import com.wisp.app.ui.screen.ListsHubScreen
 import com.wisp.app.ui.screen.OnboardingScreen
@@ -101,6 +103,7 @@ object Routes {
     const val RELAY_DETAIL = "relay_detail/{relayUrl}"
     const val CUSTOM_EMOJIS = "custom_emojis"
     const val HASHTAG_FEED = "hashtag/{tag}"
+    const val EXISTING_USER_ONBOARDING = "onboarding/existing"
 }
 
 @Composable
@@ -158,11 +161,13 @@ fun WispNavHost() {
         } else false
     }
 
-    val startDestination = when {
-        !authViewModel.isLoggedIn -> Routes.AUTH
-        !authViewModel.keyRepo.isOnboardingComplete() -> Routes.ONBOARDING_PROFILE
-        hasCachedFeed -> Routes.FEED
-        else -> Routes.LOADING
+    val startDestination = rememberSaveable {
+        when {
+            !authViewModel.isLoggedIn -> Routes.AUTH
+            !authViewModel.keyRepo.isOnboardingComplete() -> Routes.ONBOARDING_PROFILE
+            hasCachedFeed -> Routes.FEED
+            else -> Routes.LOADING
+        }
     }
 
     // Initialize relays when logged in and onboarding is complete
@@ -225,7 +230,7 @@ fun WispNavHost() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    val nonAppRoutes = setOf(Routes.AUTH, Routes.LOADING, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS)
+    val nonAppRoutes = setOf(Routes.AUTH, Routes.LOADING, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS, Routes.EXISTING_USER_ONBOARDING)
     val hideBottomBarRoutes = nonAppRoutes
     val showBottomBar by remember(currentRoute) {
         derivedStateOf { currentRoute != null && currentRoute !in hideBottomBarRoutes }
@@ -323,10 +328,11 @@ fun WispNavHost() {
                         }
                     } else {
                         feedViewModel.reloadForNewAccount()
-                        feedViewModel.initRelays()
+                        // initRelays() is started by the onboarding screen after a
+                        // short delay so heavy relay work doesn't compete with UI animations
                         walletViewModel.refreshState()
                         authViewModel.keyRepo.markOnboardingComplete()
-                        navController.navigate(Routes.LOADING) {
+                        navController.navigate(Routes.EXISTING_USER_ONBOARDING) {
                             popUpTo(Routes.AUTH) { inclusive = true }
                         }
                     }
@@ -340,6 +346,17 @@ fun WispNavHost() {
                 onReady = {
                     navController.navigate(Routes.FEED) {
                         popUpTo(Routes.LOADING) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable(Routes.EXISTING_USER_ONBOARDING) {
+            ExistingUserOnboardingScreen(
+                feedViewModel = feedViewModel,
+                onReady = {
+                    navController.navigate(Routes.FEED) {
+                        popUpTo(Routes.EXISTING_USER_ONBOARDING) { inclusive = true }
                     }
                 }
             )

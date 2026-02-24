@@ -4,23 +4,9 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.wisp.app.nostr.Blossom
-import com.wisp.app.nostr.ClientMessage
-import com.wisp.app.nostr.Filter
-import com.wisp.app.nostr.Nip02
-import com.wisp.app.nostr.Nip09
-import com.wisp.app.nostr.Nip10
-import com.wisp.app.nostr.Nip51
-import com.wisp.app.nostr.Nip30
-import com.wisp.app.nostr.Nip57
-import com.wisp.app.nostr.Nip65
 import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrSigner
-import com.wisp.app.nostr.RemoteSignerBridge
-import com.wisp.app.nostr.RemoteSigner
-import com.wisp.app.nostr.toHex
-import com.wisp.app.relay.ConsoleLogType
 import com.wisp.app.relay.Relay
 import com.wisp.app.relay.RelayLifecycleManager
 import com.wisp.app.relay.OutboxRouter
@@ -37,7 +23,6 @@ import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.FeedCache
-import com.wisp.app.repo.DiscoveryState
 import com.wisp.app.repo.ExtendedNetworkRepository
 import com.wisp.app.repo.SocialGraphDb
 import com.wisp.app.repo.Nip05Repository
@@ -56,19 +41,8 @@ import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.repo.ZapSender
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-
-import kotlinx.coroutines.withTimeoutOrNull
-import java.io.File
 
 enum class FeedType { FOLLOWS, EXTENDED_FOLLOWS, RELAY, LIST }
 
@@ -104,23 +78,19 @@ sealed class InitLoadingState {
 }
 
 class FeedViewModel(app: Application) : AndroidViewModel(app) {
-    // KeyRepo first — needed to derive pubkeyHex for all per-account repos
+    // -- Infrastructure --
     val keyRepo = KeyRepository(app)
     private val pubkeyHex: String? = keyRepo.getPubkeyHex()
 
-    // Signer abstraction — null until setSigner() is called (remote mode)
-    // or built lazily from keypair (local mode)
     var signer: NostrSigner? = keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) }
         private set
 
-    /** Set the signer for remote mode. Called from Navigation.kt after bridge is ready. */
     fun setSigner(s: NostrSigner) {
         signer = s
         zapSender.signer = s
         registerAuthSigner()
     }
 
-    /** Register current signer for NIP-42 AUTH. Called from initRelays() and setSigner(). */
     private fun registerAuthSigner() {
         val s = signer ?: return
         relayPool.setAuthSigner { relayUrl, challenge ->
@@ -160,24 +130,15 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         relayPool = relayPool,
         scope = viewModelScope,
         onReconnected = { force ->
-            Log.d("RLC", "[FeedVM] onReconnected(force=$force) feedType=${_feedType.value} selectedRelay=${_selectedRelay.value}")
+            Log.d("RLC", "[FeedVM] onReconnected(force=$force) feedType=${feedSub.feedType.value} selectedRelay=${feedSub.selectedRelay.value}")
             if (force) {
-                Log.d("RLC", "[FeedVM] → subscribeFeed()")
-                subscribeFeed()
-                fetchRelayListsForFollows()
-                // Force reconnect clears activeSubscriptions, so re-establish everything
+                feedSub.subscribeFeed()
+                startup.fetchRelayListsForFollows()
                 val myPubkey = getUserPubkey()
-                if (myPubkey != null) {
-                    Log.d("RLC", "[FeedVM] → subscribeDmsAndNotifications()")
-                    subscribeDmsAndNotifications(myPubkey)
-                }
+                if (myPubkey != null) startup.subscribeDmsAndNotifications(myPubkey)
             } else {
-                Log.d("RLC", "[FeedVM] → resumeSubscribeFeed()")
-                resumeSubscribeFeed()
-                // Non-force: resyncSubscriptions (triggered on relay connect) already
-                // replayed DM and notification subscriptions — no need to send them again.
+                feedSub.resumeSubscribeFeed()
             }
-            Log.d("RLC", "[FeedVM] onReconnected complete")
         }
     )
     val socialGraphDb = SocialGraphDb(app)
@@ -189,7 +150,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private val processingDispatcher = Dispatchers.Default
 
     val feedCache = FeedCache(app, pubkeyHex)
-    private var feedCacheSaveJob: Job? = null
 
     val metadataFetcher = MetadataFetcher(
         relayPool, outboxRouter, subManager, profileRepo, eventRepo,
@@ -201,997 +161,105 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Resolve indexer relays: user's search relays (kind 10007) with default fallback. */
-    private fun getIndexerRelays(): List<String> {
-        val userSearchRelays = keyRepo.getSearchRelays()
-        return userSearchRelays.ifEmpty { RelayConfig.DEFAULT_INDEXER_RELAYS }
-    }
-
-    /** Blocked + bad relay URLs combined for outbox routing exclusion. */
-    private fun getExcludedRelayUrls(): Set<String> =
-        relayPool.getBlockedUrls() + healthTracker.getBadRelays()
-
-    private var feedSubId = "feed"
-    private var isLoadingMore = false
-    private val activeEngagementSubIds = java.util.concurrent.CopyOnWriteArrayList<String>()
-    private var eventProcessingJob: Job? = null
-    private var metadataSweepJob: Job? = null
-    private var ephemeralCleanupJob: Job? = null
-    private var relayListRefreshJob: Job? = null
-    private var followWatcherJob: Job? = null
-    private var authCompletedJob: Job? = null
-    private var startupJob: Job? = null
-
     val nwcRepo = NwcRepository(app, relayPool, pubkeyHex)
     val zapSender = ZapSender(keyRepo, nwcRepo, relayPool, relayListRepo, Relay.createClient())
 
-    private val _zapInProgress = MutableStateFlow<Set<String>>(emptySet())
-    val zapInProgress: StateFlow<Set<String>> = _zapInProgress
+    // -- Manager classes --
+    val feedSub: FeedSubscriptionManager = FeedSubscriptionManager(
+        relayPool, outboxRouter, subManager, eventRepo, contactRepo, listRepo, notifRepo,
+        extendedNetworkRepo, keyRepo, healthTracker, metadataFetcher,
+        viewModelScope, processingDispatcher, pubkeyHex,
+        saveFeedCache = { startup.saveFeedCache() }
+    )
 
-    private val _zapSuccess = MutableSharedFlow<String>(extraBufferCapacity = 8)
-    val zapSuccess: SharedFlow<String> = _zapSuccess
+    val eventRouter: EventRouter = EventRouter(
+        relayPool, eventRepo, contactRepo, muteRepo, notifRepo, listRepo, bookmarkRepo,
+        bookmarkSetRepo, pinRepo, blossomRepo, customEmojiRepo, relayListRepo,
+        relayScoreBoard, relayHintStore, keyRepo, extendedNetworkRepo, metadataFetcher,
+        getUserPubkey = { getUserPubkey() },
+        getSigner = { signer },
+        getFeedSubId = { feedSub.feedSubId },
+        onRelayFeedEventReceived = { feedSub.onRelayFeedEventReceived() }
+    )
 
-    private val _zapError = MutableSharedFlow<String>(extraBufferCapacity = 8)
-    val zapError: SharedFlow<String> = _zapError
+    val socialActions: SocialActionManager = SocialActionManager(
+        relayPool, outboxRouter, eventRepo, contactRepo, muteRepo, notifRepo, dmRepo,
+        pinRepo, nwcRepo, customEmojiRepo, zapSender, viewModelScope,
+        getSigner = { signer },
+        getUserPubkey = { getUserPubkey() }
+    )
 
+    val listCrud: ListCrudManager = ListCrudManager(
+        relayPool, subManager, eventRepo, listRepo, bookmarkSetRepo, customEmojiRepo,
+        metadataFetcher, viewModelScope, processingDispatcher,
+        getSigner = { signer },
+        getUserPubkey = { getUserPubkey() }
+    )
+
+    val startup: StartupCoordinator = StartupCoordinator(
+        relayPool, outboxRouter, subManager, eventRepo, contactRepo, muteRepo, notifRepo,
+        listRepo, bookmarkRepo, bookmarkSetRepo, pinRepo, blossomRepo, customEmojiRepo,
+        relayListRepo, relayScoreBoard, relayHintStore, healthTracker, keyRepo,
+        extendedNetworkRepo, metadataFetcher, profileRepo, relayInfoRepo, nip05Repo,
+        nwcRepo, dmRepo, feedCache, zapPrefs, lifecycleManager, eventRouter, feedSub,
+        viewModelScope, processingDispatcher, pubkeyHex,
+        getUserPubkey = { getUserPubkey() },
+        registerAuthSigner = { registerAuthSigner() },
+        fetchMissingEmojiSets = { listCrud.fetchMissingEmojiSets() }
+    )
+
+    // -- Exposed state --
     val feed: StateFlow<List<NostrEvent>> = eventRepo.feed
     val newNoteCount: StateFlow<Int> = eventRepo.newNoteCount
-
-    private val _initialLoadDone = MutableStateFlow(false)
-    val initialLoadDone: StateFlow<Boolean> = _initialLoadDone
-
-
-    private val _initLoadingState = MutableStateFlow<InitLoadingState>(InitLoadingState.SearchingProfile)
-    val initLoadingState: StateFlow<InitLoadingState> = _initLoadingState
-
-    private val _feedType = MutableStateFlow(FeedType.FOLLOWS)
-    val feedType: StateFlow<FeedType> = _feedType
-
-
-    private val _selectedRelay = MutableStateFlow<String?>(null)
-    val selectedRelay: StateFlow<String?> = _selectedRelay
-
-    private val _relayFeedStatus = MutableStateFlow<RelayFeedStatus>(RelayFeedStatus.Idle)
-    val relayFeedStatus: StateFlow<RelayFeedStatus> = _relayFeedStatus
-    private var relayStatusMonitorJob: Job? = null
-
+    val initialLoadDone: StateFlow<Boolean> = feedSub.initialLoadDone
+    val initLoadingState: StateFlow<InitLoadingState> = feedSub.initLoadingState
+    val feedType: StateFlow<FeedType> = feedSub.feedType
+    val selectedRelay: StateFlow<String?> = feedSub.selectedRelay
+    val relayFeedStatus: StateFlow<RelayFeedStatus> = feedSub.relayFeedStatus
+    val loadingScreenComplete: StateFlow<Boolean> = feedSub.loadingScreenComplete
     val selectedList: StateFlow<com.wisp.app.nostr.FollowSet?> = listRepo.selectedList
+    val zapInProgress: StateFlow<Set<String>> = socialActions.zapInProgress
+    val zapSuccess: SharedFlow<String> = socialActions.zapSuccess
+    val zapError: SharedFlow<String> = socialActions.zapError
 
     fun getUserPubkey(): String? = keyRepo.getPubkeyHex()
-
     fun resetNewNoteCount() = eventRepo.resetNewNoteCount()
-
     fun queueProfileFetch(pubkey: String) = metadataFetcher.queueProfileFetch(pubkey)
     fun forceProfileFetch(pubkey: String) = metadataFetcher.forceProfileFetch(pubkey)
-
-    private var relaysInitialized = false
-    private var hasCachedFeed = false
-
-    /** Set to true once the LoadingScreen has completed and navigated away. */
-    private val _loadingScreenComplete = MutableStateFlow(false)
-    val loadingScreenComplete: StateFlow<Boolean> = _loadingScreenComplete
-
-    fun markLoadingComplete() { _loadingScreenComplete.value = true }
-
-    /**
-     * Attempt to load cached feed from disk. Returns true if cache had content.
-     * Must be called before initRelays() so seeded events dedup against relay events.
-     */
-    fun loadCachedFeed(): Boolean {
-        if (_feedType.value != FeedType.FOLLOWS && _feedType.value != FeedType.EXTENDED_FOLLOWS) return false
-        if (!feedCache.exists()) return false
-        val events = feedCache.load()
-        if (events.isEmpty()) return false
-        // Apply author filter to cached events (in case follow list changed)
-        val follows = contactRepo.getFollowList().map { it.pubkey }.toSet()
-        val filtered = if (follows.isNotEmpty()) events.filter { it.pubkey in follows } else events
-        if (filtered.isEmpty()) return false
-        eventRepo.seedFromCache(filtered)
-        applyAuthorFilterForFeedType(_feedType.value)
-        _loadingScreenComplete.value = true
-        _initialLoadDone.value = true
-        hasCachedFeed = true
-        return true
-    }
-
-    /** Save feed snapshot to disk on IO thread. */
-    private fun saveFeedCache() {
-        feedCacheSaveJob?.cancel()
-        feedCacheSaveJob = viewModelScope.launch(Dispatchers.IO) {
-            val snapshot = eventRepo.getFeedSnapshot()
-            if (snapshot.isNotEmpty()) feedCache.save(snapshot)
-        }
-    }
-
-    fun resetForAccountSwitch() {
-        // Cancel all background jobs
-        eventProcessingJob?.cancel()
-        metadataSweepJob?.cancel()
-        ephemeralCleanupJob?.cancel()
-        relayListRefreshJob?.cancel()
-        followWatcherJob?.cancel()
-        authCompletedJob?.cancel()
-        startupJob?.cancel()
-        feedEoseJob?.cancel()
-        feedCacheSaveJob?.cancel()
-        relayStatusMonitorJob?.cancel()
-        _relayFeedStatus.value = RelayFeedStatus.Idle
-        feedCache.clear()
-        relayPool.closeOnAllRelays(feedSubId)
-        for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
-        activeEngagementSubIds.clear()
-
-        // Stop lifecycle manager and disconnect relays
-        lifecycleManager.stop()
-        relayPool.disconnectAll()
-        nwcRepo.disconnect()
-
-        // Clear all repos
-        metadataFetcher.clear()
-        eventRepo.clearAll()
-        customEmojiRepo.clear()
-        dmRepo.clear()
-        notifRepo.clear()
-        contactRepo.clear()
-        muteRepo.clear()
-        bookmarkRepo.clear()
-        bookmarkSetRepo.clear()
-        pinRepo.clear()
-        listRepo.clear()
-        blossomRepo.clear()
-        extendedNetworkRepo.clear()
-        relayScoreBoard.clear()
-        relayHintStore.clear()
-        healthTracker.clear()
-        relayListRepo.clear()
-        nip05Repo.clear()
-        relayPool.clearSeenEvents()
-
-        // Reset state
-        relaysInitialized = false
-        _loadingScreenComplete.value = false
-        _initialLoadDone.value = false
-        _initLoadingState.value = InitLoadingState.SearchingProfile
-        _selectedRelay.value = null
-        isLoadingMore = false
-        hasCachedFeed = false
-    }
-
-    fun reloadForNewAccount() {
-        val newPubkey = getUserPubkey()
-
-        // Reload per-account prefs for new pubkey
-        eventRepo.currentUserPubkey = newPubkey
-        keyRepo.reloadPrefs(newPubkey)
-        contactRepo.reload(newPubkey)
-        muteRepo.reload(newPubkey)
-        bookmarkRepo.reload(newPubkey)
-        bookmarkSetRepo.reload(newPubkey)
-        pinRepo.reload(newPubkey)
-        listRepo.reload(newPubkey)
-        blossomRepo.reload(newPubkey)
-        nwcRepo.reload(newPubkey)
-        relayScoreBoard.reload(newPubkey)
-        healthTracker.reload(newPubkey)
-        extendedNetworkRepo.reload(newPubkey)
-        customEmojiRepo.reload(newPubkey)
-        zapPrefs.reload(newPubkey)
-    }
-
-    fun initRelays() {
-        if (relaysInitialized) return
-        relaysInitialized = true
-        relayPool.healthTracker = healthTracker
-        relayPool.appIsActive = true
-        healthTracker.onBadRelaysChanged = { recomputeAndMergeRelays() }
-        relayPool.updateBlockedUrls(keyRepo.getBlockedRelays())
-        val pinnedRelays = keyRepo.getRelays()
-        // Merge pinned relays with cached scored relays immediately so the pool
-        // starts with the full relay set (40-50) instead of just pinned (5).
-        // RelayScoreBoard rebuilds from persisted RelayListRepository data on init.
-        val pinnedUrls = pinnedRelays.map { it.url }.toSet()
-        val cachedScored = relayScoreBoard.getScoredRelayConfigs()
-            .filter { it.url !in pinnedUrls }
-        val initialRelays = pinnedRelays + cachedScored
-        relayPool.updateRelays(initialRelays)
-        relayPool.updateDmRelays(keyRepo.getDmRelays())
-
-        viewModelScope.launch {
-            if (hasCachedFeed) delay(5_000) // defer when feed is already showing
-            relayInfoRepo.prefetchAll(initialRelays.map { it.url })
-        }
-
-        // Main event processing loop — runs on Default dispatcher to keep UI thread free
-        eventProcessingJob = viewModelScope.launch(processingDispatcher) {
-            relayPool.relayEvents.collect { (event, relayUrl, subscriptionId) ->
-                processRelayEvent(event, relayUrl, subscriptionId)
-            }
-        }
-
-        // Periodic profile & quote sweep — safety net, not primary fetch mechanism.
-        // Profiles are bootstrapped with relay lists before feed loads.
-        metadataSweepJob = viewModelScope.launch(processingDispatcher) {
-            delay(15_000)
-            metadataFetcher.sweepMissingProfiles()
-            while (true) {
-                delay(60_000)
-                metadataFetcher.sweepMissingProfiles()
-            }
-        }
-
-        // Periodic ephemeral relay cleanup + seen event trimming
-        ephemeralCleanupJob = viewModelScope.launch {
-            while (true) {
-                delay(60_000)
-                relayPool.cleanupEphemeralRelays()
-                eventRepo.trimSeenEvents()
-                relayHintStore.flush()
-            }
-        }
-
-        // Periodic relay list refresh (every 30 minutes)
-        relayListRefreshJob = viewModelScope.launch {
-            while (true) {
-                delay(30 * 60 * 1000L)
-                fetchRelayListsForFollows()
-                delay(15_000)
-                recomputeAndMergeRelays()
-            }
-        }
-
-        // Incrementally update scoreboard when follow list changes, then re-subscribe feed
-        followWatcherJob = viewModelScope.launch {
-            var previousFollows = contactRepo.getFollowList().map { it.pubkey }.toSet()
-            contactRepo.followList.drop(1).collectLatest { entries ->
-                val currentFollows = entries.map { it.pubkey }.toSet()
-                val added = currentFollows - previousFollows
-                val removed = previousFollows - currentFollows
-                previousFollows = currentFollows
-
-                for (pubkey in removed) relayScoreBoard.removeAuthor(pubkey)
-                for (pubkey in added) {
-                    // Fetch relay list for new follow so we can route to them
-                    outboxRouter.requestMissingRelayLists(listOf(pubkey))
-                    delay(500) // brief wait for relay list to arrive
-                    relayScoreBoard.addAuthor(pubkey, excludeRelays = getExcludedRelayUrls())
-                }
-
-                if ((added.isNotEmpty() || removed.isNotEmpty()) &&
-                    (_feedType.value == FeedType.FOLLOWS || _feedType.value == FeedType.EXTENDED_FOLLOWS)) {
-                    rebuildRelayPool()
-                    resubscribeFeed()
-                    applyAuthorFilterForFeedType(_feedType.value)
-                }
-            }
-        }
-
-        // NIP-42 AUTH: sign challenges via signer (local or remote)
-        registerAuthSigner()
-
-        // Re-send DM subscription to relays after AUTH completes
-        authCompletedJob = viewModelScope.launch {
-            relayPool.authCompleted.collect { relayUrl ->
-                val myPubkey = getUserPubkey() ?: return@collect
-                val dmRelayUrls = relayPool.getDmRelayUrls()
-                if (relayUrl in dmRelayUrls || relayUrl in relayPool.getRelayUrls()) {
-                    val dmFilter = Filter(kinds = listOf(1059), pTags = listOf(myPubkey))
-                    relayPool.sendToRelay(relayUrl, ClientMessage.req("dms", dmFilter))
-                }
-            }
-        }
-
-        // Start network-aware lifecycle manager — handles connectivity changes
-        // and works regardless of which screen is active.
-        lifecycleManager.start()
-
-        getUserPubkey()?.let {
-            listRepo.setOwner(it)
-            bookmarkSetRepo.setOwner(it)
-        }
-
-        // Unified startup: cold start shows profile discovery UI, warm start skips to feed.
-        // Cold start = first login or cache invalidated; warm start = returning with valid cache.
-        startupJob = viewModelScope.launch {
-            val cachedFollows = contactRepo.getFollowList()
-            val isColdStart = cachedFollows.isEmpty() || relayScoreBoard.needsRecompute()
-
-            val follows: List<String>
-
-            if (isColdStart) {
-                Log.d("FeedViewModel", "init: cold start (${cachedFollows.size} cached follows, needsRecompute=${relayScoreBoard.needsRecompute()})")
-
-                // Show cached profile immediately if available (e.g. re-login same account)
-                val myPubkey = getUserPubkey()
-                val cachedProfile = myPubkey?.let { profileRepo.get(it) }
-                if (cachedProfile != null) {
-                    _initLoadingState.value = InitLoadingState.FoundProfile(cachedProfile.displayString, cachedProfile.picture)
-                } else {
-                    _initLoadingState.value = InitLoadingState.SearchingProfile
-                }
-
-                // Phase 1a: Connect + fetch self-data (profile, follow list, relay lists)
-                relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
-                subscribeSelfData()
-                fetchMissingEmojiSets()
-
-                // Show profile if we didn't have it cached but now have it from self-data
-                if (cachedProfile == null) {
-                    val profile = myPubkey?.let { profileRepo.get(it) }
-                    if (profile != null) {
-                        _initLoadingState.value = InitLoadingState.FoundProfile(profile.displayString, profile.picture)
-                        delay(1200)
-                    }
-                }
-
-                // Phase 1b: Relay list fetch + compute routing
-                follows = contactRepo.getFollowList().map { it.pubkey }
-
-                if (relayScoreBoard.needsRecompute() && follows.isNotEmpty()) {
-                    _initLoadingState.value = InitLoadingState.FindingFriends(0, follows.size)
-
-                    val subscriptionSent = fetchRelayListsForFollows(includeProfiles = true)
-                    if (subscriptionSent) {
-                        val target = (follows.size * 0.9).toInt()
-                        val deadline = System.currentTimeMillis() + 10_000
-                        while (System.currentTimeMillis() < deadline) {
-                            val covered = follows.size - relayListRepo.getMissingPubkeys(follows).size
-                            _initLoadingState.value = InitLoadingState.FindingFriends(covered, follows.size)
-                            if (covered >= target) break
-                            delay(200)
-                        }
-                        subManager.closeSubscription("relay-lists")
-                    }
-
-                    recomputeAndMergeRelays()
-                    relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
-                } else {
-                    val scored = relayScoreBoard.getScoredRelays()
-                    Log.d("FeedViewModel", "init: scoreboard cache valid (${scored.size} relays, ${follows.size} follows), skipping recompute")
-                }
-            } else {
-                // Warm start: connect + background self-data refresh, no discovery UI
-                Log.d("FeedViewModel", "init: warm start (${cachedFollows.size} cached follows, scoreboard valid)")
-                _initLoadingState.value = InitLoadingState.WarmLoading
-
-                if (hasCachedFeed) {
-                    // Don't block — relays will connect in background, feed is already showing
-                    launch {
-                        relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
-                        subscribeSelfData()
-                        fetchMissingEmojiSets()
-                    }
-                } else {
-                    relayPool.awaitAnyConnected(minCount = 3, timeoutMs = 5_000)
-                    // Fire-and-forget self-data refresh
-                    launch {
-                        subscribeSelfData()
-                        fetchMissingEmojiSets()
-                    }
-                }
-
-                follows = cachedFollows.map { it.pubkey }
-            }
-
-            // Phase 2: Extended network discovery (common path)
-            val extNetCache = extendedNetworkRepo.cachedNetwork.value
-            val extNetCacheValid = extNetCache != null && !extendedNetworkRepo.isCacheStale(extNetCache)
-
-            if (hasCachedFeed) {
-                // Feed is already showing from disk cache.
-                // Stagger background work so the UI isn't competing for CPU.
-
-                // Phase A: Wait for at least 1 relay, then subscribe to new events only
-                delay(300) // let Compose finish initial layout
-                relayPool.awaitAnyConnected(minCount = 1, timeoutMs = 5_000)
-                applyAuthorFilterForFeedType(_feedType.value)
-                resumeSubscribeFeed()
-
-                // Phase B: Deferred heavy work — self-data, discovery, relay lists
-                launch {
-                    delay(3_000) // let feed subscription settle first
-                    if (!extNetCacheValid && follows.isNotEmpty()) {
-                        try { extendedNetworkRepo.discoverNetwork() } catch (_: Exception) {}
-                        val extConfigs = extendedNetworkRepo.getRelayConfigs()
-                        if (extConfigs.isNotEmpty()) rebuildRelayPool()
-                    }
-                    if (!relayScoreBoard.needsRecompute()) fetchRelayListsForFollows()
-                    saveFeedCache()
-                }
-
-                // Periodic save timer
-                launch {
-                    while (true) {
-                        delay(60_000)
-                        saveFeedCache()
-                    }
-                }
-            } else {
-                if (!extNetCacheValid && follows.isNotEmpty()) {
-                    val progressJob = launch {
-                        extendedNetworkRepo.discoveryState.collect { ds ->
-                            if (ds is DiscoveryState.FetchingFollowLists && isColdStart) {
-                                _initLoadingState.value = InitLoadingState.DiscoveringNetwork(ds.fetched, ds.total)
-                            }
-                        }
-                    }
-                    try {
-                        extendedNetworkRepo.discoverNetwork()
-                    } catch (e: Exception) {
-                        Log.e("FeedViewModel", "Extended network discovery failed during init", e)
-                    }
-                    progressJob.cancel()
-                }
-
-                // Expand pool with extended relays
-                val extConfigs = extendedNetworkRepo.getRelayConfigs()
-                if (extConfigs.isNotEmpty()) {
-                    if (isColdStart) _initLoadingState.value = InitLoadingState.ExpandingRelays(extConfigs.size)
-                    rebuildRelayPool()
-                    val poolSize = relayPool.getRelayUrls().size
-                    val targetConnected = poolSize * 3 / 10
-                    relayPool.awaitAnyConnected(minCount = targetConnected, timeoutMs = 3_000)
-                }
-
-                // Apply filter and subscribe
-                applyAuthorFilterForFeedType(_feedType.value)
-                _initLoadingState.value = InitLoadingState.Subscribing
-                subscribeFeed()
-
-                // Don't set Done here — subscribeFeed() is non-blocking.
-                // InitLoadingState.Done is set inside feedEoseJob after EOSE arrives.
-
-                // Background: fetch relay lists for any new follows (non-blocking)
-                if (!relayScoreBoard.needsRecompute()) {
-                    fetchRelayListsForFollows()
-                }
-            }
-        }
-    }
-
-    /**
-     * Fetches self-data (follow list, relay lists, mutes, etc.) and **awaits** EOSE
-     * so the caller has fresh data before proceeding to build the feed.
-     * DM and notification subscriptions are fire-and-forget (not feed-blocking).
-     */
-    private suspend fun subscribeSelfData() {
-        val myPubkey = getUserPubkey() ?: return
-
-        val selfDataFilters = listOf(
-            Filter(kinds = listOf(0), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(3), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(10002), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(10050, 10007, 10006), authors = listOf(myPubkey), limit = 3),
-            Filter(kinds = listOf(Nip51.KIND_MUTE_LIST), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(Nip51.KIND_PIN_LIST), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(Nip51.KIND_BOOKMARK_LIST), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(Blossom.KIND_SERVER_LIST), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(Nip51.KIND_FOLLOW_SET), authors = listOf(myPubkey), limit = 50),
-            Filter(kinds = listOf(Nip51.KIND_BOOKMARK_SET), authors = listOf(myPubkey), limit = 50),
-            Filter(kinds = listOf(Nip30.KIND_USER_EMOJI_LIST), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(Nip30.KIND_EMOJI_SET), authors = listOf(myPubkey), limit = 50)
-        )
-        relayPool.sendToAll(ClientMessage.req("self-data", selfDataFilters))
-
-        // Await EOSE so follow list (kind 3) and relay list (kind 10002) are
-        // available before the caller proceeds to build the feed.
-        subManager.awaitEoseWithTimeout("self-data")
-        subManager.closeSubscription("self-data")
-
-        // Cache the user's avatar locally for instant loading screen display.
-        // Re-download if the URL changed (compare with what we had before self-data fetch).
-        val profile = profileRepo.get(myPubkey)
-        if (profile?.picture != null) {
-            val localFile = profileRepo.getLocalAvatar(myPubkey)
-            val urlFile = File(profileRepo.avatarDir, "${myPubkey}.url")
-            val cachedUrl = if (urlFile.exists()) urlFile.readText() else null
-            if (localFile == null || cachedUrl != profile.picture) {
-                viewModelScope.launch {
-                    profileRepo.cacheAvatar(myPubkey, profile.picture)
-                    urlFile.writeText(profile.picture)
-                }
-            }
-        }
-
-        // DMs and notifications are not feed-blocking — fire and forget
-        subscribeDmsAndNotifications(myPubkey)
-    }
-
-    /**
-     * Subscribe to DMs and notifications. Extracted so it can be re-called on force reconnect
-     * when all relay subscriptions have been torn down.
-     */
-    private fun subscribeDmsAndNotifications(myPubkey: String) {
-        val dmFilter = Filter(kinds = listOf(1059), pTags = listOf(myPubkey))
-        val dmReqMsg = ClientMessage.req("dms", dmFilter)
-        relayPool.sendToAll(dmReqMsg)
-        relayPool.sendToDmRelays(dmReqMsg)
-        viewModelScope.launch {
-            subManager.awaitEoseWithTimeout("dms")
-            Log.d("FeedViewModel", "DM subscription (re)established")
-        }
-
-        val notifFilter = Filter(
-            kinds = listOf(1, 6, 7, 9735),
-            pTags = listOf(myPubkey),
-            limit = 100
-        )
-        val notifReqMsg = ClientMessage.req("notif", notifFilter)
-        relayPool.sendToReadRelays(notifReqMsg)
-
-        // Also send to top scored relays for broader coverage
-        val readUrls = relayPool.getReadRelayUrls().toSet()
-        val topScored = relayScoreBoard.getScoredRelays()
-            .take(5)
-            .map { it.url }
-            .filter { it !in readUrls }
-        for (url in topScored) {
-            relayPool.sendToRelay(url, notifReqMsg)
-        }
-        viewModelScope.launch {
-            subManager.awaitEoseWithTimeout("notif")
-            subscribeNotifEngagement()
-        }
-    }
-
-    private suspend fun processRelayEvent(event: NostrEvent, relayUrl: String, subscriptionId: String) {
-        if (subscriptionId == "notif") {
-            if (muteRepo.isBlocked(event.pubkey)) return
-            val myPubkey = getUserPubkey()
-            if (myPubkey != null) {
-                when (event.kind) {
-                    6 -> eventRepo.addEvent(event)
-                    7, 9735 -> eventRepo.addEvent(event)
-                    1 -> {
-                        eventRepo.cacheEvent(event)
-                        val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
-                        if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
-                    }
-                    else -> eventRepo.cacheEvent(event)
-                }
-                notifRepo.addEvent(event, myPubkey)
-                if (eventRepo.getProfileData(event.pubkey) == null) {
-                    metadataFetcher.addToPendingProfiles(event.pubkey)
-                }
-                if (event.kind == 9735) {
-                    val zapperPubkey = Nip57.getZapperPubkey(event)
-                    if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
-                        metadataFetcher.addToPendingProfiles(zapperPubkey)
-                    }
-                }
-            }
-        } else if (subscriptionId.startsWith("quote-")) {
-            eventRepo.cacheEvent(event)
-            if (event.kind == 1 && eventRepo.getProfileData(event.pubkey) == null) {
-                metadataFetcher.addToPendingProfiles(event.pubkey)
-            }
-        } else if (subscriptionId.startsWith("reply-count-")) {
-            if (event.kind == 1) {
-                eventRepo.cacheEvent(event)
-                val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
-                if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
-            }
-        } else if (subscriptionId.startsWith("zap-count-") || subscriptionId.startsWith("zap-rcpt-")) {
-            if (event.kind == 9735) {
-                eventRepo.addEvent(event)
-                val zapperPubkey = Nip57.getZapperPubkey(event)
-                if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
-                    metadataFetcher.addToPendingProfiles(zapperPubkey)
-                }
-            }
-        } else if (subscriptionId == "thread-root" || subscriptionId == "thread-replies" ||
-                   subscriptionId.startsWith("thread-reactions")) {
-            // ThreadViewModel handles these via its own RelayPool collector — skip entirely
-            return
-        } else if (subscriptionId.startsWith("engage") || subscriptionId.startsWith("user-engage")) {
-            when (event.kind) {
-                7 -> eventRepo.addEvent(event)
-                9735 -> {
-                    eventRepo.addEvent(event)
-                    val zapperPubkey = Nip57.getZapperPubkey(event)
-                    if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
-                        metadataFetcher.addToPendingProfiles(zapperPubkey)
-                    }
-                }
-                1 -> {
-                    eventRepo.cacheEvent(event)
-                    val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
-                    if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
-                }
-            }
-            // Engagement events win the dedup race against "notif" subscription,
-            // so also route notification-eligible events to notifRepo here
-            val myPubkey = getUserPubkey()
-            if (myPubkey != null && event.pubkey != myPubkey &&
-                event.kind in intArrayOf(1, 6, 7, 9735)) {
-                notifRepo.addEvent(event, myPubkey)
-                if (eventRepo.getProfileData(event.pubkey) == null) {
-                    metadataFetcher.addToPendingProfiles(event.pubkey)
-                }
-            }
-        } else if (subscriptionId.startsWith("extnet-k3-")) {
-            // Extended network discovery: kind 3 follow lists — route to repo, NOT feed
-            if (event.kind == 3) extendedNetworkRepo.processFollowListEvent(event)
-        } else if (subscriptionId.startsWith("extnet-rl-")) {
-            // Extended network discovery: relay lists — update relay list cache
-            if (event.kind == 10002) relayListRepo.updateFromEvent(event)
-        } else if (subscriptionId.startsWith("onb-")) {
-            // Onboarding suggestion fetches — only cache kind 0 profiles, don't add to feed
-            if (event.kind == 0) eventRepo.cacheEvent(event)
-        } else {
-            if (event.kind == 10002) {
-                relayListRepo.updateFromEvent(event)
-                val myPubkey = getUserPubkey()
-                if (myPubkey != null && event.pubkey == myPubkey) {
-                    val relays = Nip65.parseRelayList(event)
-                    if (relays.isNotEmpty()) {
-                        keyRepo.saveRelays(relays)
-                        relayPool.updateRelays(relays)
-                    }
-                }
-            }
-            if (event.kind == Nip51.KIND_DM_RELAYS) {
-                val myPubkey = getUserPubkey()
-                if (myPubkey != null && event.pubkey == myPubkey) {
-                    val urls = Nip51.parseRelaySet(event)
-                    keyRepo.saveDmRelays(urls)
-                    relayPool.updateDmRelays(urls)
-                }
-            }
-            if (event.kind == Nip51.KIND_SEARCH_RELAYS) {
-                val myPubkey = getUserPubkey()
-                if (myPubkey != null && event.pubkey == myPubkey) {
-                    keyRepo.saveSearchRelays(Nip51.parseRelaySet(event))
-                }
-            }
-            if (event.kind == Nip51.KIND_BLOCKED_RELAYS) {
-                val myPubkey = getUserPubkey()
-                if (myPubkey != null && event.pubkey == myPubkey) {
-                    val urls = Nip51.parseRelaySet(event)
-                    keyRepo.saveBlockedRelays(urls)
-                    relayPool.updateBlockedUrls(urls)
-                }
-            }
-            if (event.kind == Nip51.KIND_MUTE_LIST) {
-                val myPubkey = getUserPubkey()
-                val s = signer
-                if (myPubkey != null && event.pubkey == myPubkey) {
-                    if (s != null) muteRepo.loadFromEvent(event, s)
-                    else muteRepo.loadFromEvent(event)
-                }
-            }
-            if (event.kind == Nip51.KIND_BOOKMARK_LIST) {
-                val myPubkey = getUserPubkey()
-                if (myPubkey != null && event.pubkey == myPubkey) bookmarkRepo.loadFromEvent(event)
-            }
-            if (event.kind == Nip51.KIND_PIN_LIST) {
-                val myPubkey = getUserPubkey()
-                if (myPubkey != null && event.pubkey == myPubkey) pinRepo.loadFromEvent(event)
-            }
-            if (event.kind == Blossom.KIND_SERVER_LIST) {
-                val myPubkey = getUserPubkey()
-                if (myPubkey != null && event.pubkey == myPubkey) blossomRepo.updateFromEvent(event)
-            }
-            if (event.kind == Nip51.KIND_FOLLOW_SET) listRepo.updateFromEvent(event)
-            if (event.kind == Nip51.KIND_BOOKMARK_SET) bookmarkSetRepo.updateFromEvent(event)
-            if (event.kind == Nip30.KIND_USER_EMOJI_LIST) {
-                val myPubkey = getUserPubkey()
-                if (myPubkey != null && event.pubkey == myPubkey) customEmojiRepo.updateFromEvent(event)
-            }
-            if (event.kind == Nip30.KIND_EMOJI_SET) customEmojiRepo.updateFromEvent(event)
-
-            // Only add to feed for feed-related subscriptions;
-            // other subs (user profile, bookmarks, threads) just cache
-            // Track author provenance and feed hints into scoreboard
-            relayHintStore.addAuthorRelay(event.pubkey, relayUrl)
-            if (!relayListRepo.hasRelayList(event.pubkey)) {
-                relayScoreBoard.addHintRelays(event.pubkey, listOf(relayUrl))
-            }
-            for (tag in event.tags) {
-                if (tag.size >= 3 && tag[0] == "p") {
-                    val url = tag[2].trimEnd('/')
-                    if (url.startsWith("wss://") && !relayListRepo.hasRelayList(tag[1])) {
-                        relayScoreBoard.addHintRelays(tag[1], listOf(url))
-                    }
-                }
-            }
-
-            val isFeedSub = subscriptionId == feedSubId ||
-                subscriptionId == "loadmore" ||
-                subscriptionId == "feed-backfill"
-            if (isFeedSub) {
-                eventRepo.addEvent(event)
-                onRelayFeedEventReceived()
-                if (event.kind == 1) eventRepo.addEventRelay(event.id, relayUrl)
-                if (event.kind == 1) {
-                    metadataFetcher.fetchQuotedEvents(event)
-                    if (eventRepo.getProfileData(event.pubkey) == null) {
-                        metadataFetcher.addToPendingProfiles(event.pubkey)
-                    }
-                }
-                if (event.kind == 6 && event.content.isNotBlank()) {
-                    // Fetch profile for the reposted event's original author
-                    try {
-                        val inner = NostrEvent.fromJson(event.content)
-                        if (eventRepo.getProfileData(inner.pubkey) == null) {
-                            metadataFetcher.addToPendingProfiles(inner.pubkey)
-                        }
-                        metadataFetcher.fetchQuotedEvents(inner)
-                    } catch (_: Exception) {}
-                }
-            } else {
-                eventRepo.cacheEvent(event)
-            }
-            // Always handle follow list updates (from self-data subscription)
-            if (event.kind == 3) {
-                val myPubkey = getUserPubkey()
-                if (myPubkey != null && event.pubkey == myPubkey) contactRepo.updateFromEvent(event)
-            }
-        }
-    }
-
-    /**
-     * Bootstrap follow data: fetch relay lists (kind 10002) AND profiles (kind 0)
-     * for all follows in a single REQ. On cold start this piggybacks profiles onto
-     * the relay-list wait window so avatars are ready before the feed renders.
-     *
-     * @param includeProfiles true on cold start to co-fetch kind 0; false for
-     *                        background refreshes where profiles are already cached.
-     * @return true if a "relay-lists" subscription was sent (callers should await EOSE).
-     */
-    private fun fetchRelayListsForFollows(includeProfiles: Boolean = false): Boolean {
-        val authors = contactRepo.getFollowList().map { it.pubkey }
-        if (authors.isEmpty()) {
-            Log.d("FeedViewModel", "fetchRelayListsForFollows: follow list empty")
-            return false
-        }
-        val sent = if (includeProfiles) {
-            outboxRouter.requestRelayListsAndProfiles(authors, profileRepo) != null
-        } else {
-            outboxRouter.requestMissingRelayLists(authors) != null
-        }
-        Log.d("FeedViewModel", "fetchRelayListsForFollows: ${authors.size} follows, includeProfiles=$includeProfiles, subscription sent=$sent")
-        return sent
-    }
-
-    /**
-     * Poll until [target] of [follows] have relay lists cached, or [timeoutMs] elapses.
-     * Events arrive concurrently from multiple relays on the processing dispatcher,
-     * so we just check coverage periodically rather than counting EOSE signals.
-     */
-    private suspend fun awaitRelayListCoverage(
-        follows: List<String>,
-        target: Int,
-        timeoutMs: Long = 10_000
-    ) {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
-            val covered = follows.size - relayListRepo.getMissingPubkeys(follows).size
-            if (covered >= target) return
-            delay(200)
-        }
-    }
-
-    private fun recomputeAndMergeRelays() {
-        relayScoreBoard.recompute(excludeRelays = getExcludedRelayUrls())
-        if (!relayScoreBoard.hasScoredRelays()) return
-        rebuildRelayPool()
-    }
-
-    /**
-     * Rebuild the persistent relay pool from pinned + scored + extended network relays.
-     * Extended relays are always included so feed type switching is a cheap local filter.
-     */
-    private fun rebuildRelayPool() {
-        val pinnedRelays = keyRepo.getRelays()
-        val pinnedUrls = pinnedRelays.map { it.url }.toSet()
-        val scoredConfigs = relayScoreBoard.getScoredRelayConfigs()
-            .filter { it.url !in pinnedUrls }
-        val baseUrls = pinnedUrls + scoredConfigs.map { it.url }.toSet()
-        val extendedConfigs = extendedNetworkRepo.getRelayConfigs()
-            .filter { it.url !in baseUrls }
-
-        relayPool.updateRelays(pinnedRelays + scoredConfigs + extendedConfigs)
-    }
-
-    fun setFeedType(type: FeedType) {
-        val prev = _feedType.value
-        Log.d("RLC", "[FeedVM] setFeedType $prev → $type")
-        _feedType.value = type
-        applyAuthorFilterForFeedType(type)
-        when (type) {
-            FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
-                if (prev == FeedType.LIST || prev == FeedType.RELAY) {
-                    Log.d("RLC", "[FeedVM] switching from $prev to $type — restoring cached feed and resubscribing")
-                    eventRepo.clearFeed()
-                    // Restore cached follow feed so notes appear immediately
-                    // while fresh subscription fills in new events
-                    loadCachedFeed()
-                    resubscribeFeed()
-                }
-                // Otherwise just a local filter swap (e.g. FOLLOWS <-> EXTENDED_FOLLOWS)
-            }
-            FeedType.RELAY, FeedType.LIST -> {
-                eventRepo.clearFeed()
-                resubscribeFeed()
-            }
-        }
-    }
-
-    private fun applyAuthorFilterForFeedType(type: FeedType) {
-        eventRepo.setAuthorFilter(when (type) {
-            FeedType.FOLLOWS -> contactRepo.getFollowList().map { it.pubkey }.toSet()
-            FeedType.LIST -> listRepo.selectedList.value?.members
-            else -> null  // EXTENDED_FOLLOWS and RELAY show everything
-        })
-    }
-
-    fun setSelectedRelay(url: String) {
-        _selectedRelay.value = url
-        if (_feedType.value == FeedType.RELAY) {
-            eventRepo.clearFeed()
-            resubscribeFeed()
-        }
-    }
-
-    /**
-     * Start monitoring the relay feed connection status for the given relay URL.
-     * Watches console log for NOTICE/failures, connection state changes, and EOSE.
-     */
-    private fun startRelayStatusMonitor(url: String) {
-        relayStatusMonitorJob?.cancel()
-
-        // Check pre-conditions before even attempting connection
-        val cooldownRemaining = relayPool.getRelayCooldownRemaining(url)
-        if (cooldownRemaining > 0) {
-            _relayFeedStatus.value = RelayFeedStatus.Cooldown(cooldownRemaining)
-            // Start a countdown job
-            relayStatusMonitorJob = viewModelScope.launch {
-                var remaining = cooldownRemaining
-                while (remaining > 0) {
-                    _relayFeedStatus.value = RelayFeedStatus.Cooldown(remaining)
-                    delay(1000)
-                    remaining = relayPool.getRelayCooldownRemaining(url)
-                }
-                _relayFeedStatus.value = RelayFeedStatus.Idle
-                // Auto-retry after cooldown expires
-                eventRepo.clearFeed()
-                resubscribeFeed()
-            }
-            return
-        }
-
-        if (healthTracker.isBad(url)) {
-            _relayFeedStatus.value = RelayFeedStatus.BadRelay("Marked unreliable by health tracker")
-            return
-        }
-
-        // Set initial status based on current connection state
-        _relayFeedStatus.value = if (relayPool.isRelayConnected(url)) {
-            RelayFeedStatus.Subscribing
-        } else {
-            RelayFeedStatus.Connecting
-        }
-
-        relayStatusMonitorJob = viewModelScope.launch {
-            // Monitor console log for NOTICE/failures targeting this relay
-            launch {
-                relayPool.consoleLog.collectLatest { entries ->
-                    val latest = entries.lastOrNull { it.relayUrl == url } ?: return@collectLatest
-                    val currentStatus = _relayFeedStatus.value
-                    // Only update if we're still in a connecting/subscribing state
-                    if (currentStatus is RelayFeedStatus.Connecting ||
-                        currentStatus is RelayFeedStatus.Subscribing) {
-                        when (latest.type) {
-                            ConsoleLogType.CONN_FAILURE -> {
-                                _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed(
-                                    latest.message ?: "Connection failed"
-                                )
-                            }
-                            ConsoleLogType.NOTICE -> {
-                                val msg = latest.message?.lowercase() ?: ""
-                                if ("rate" in msg || "throttle" in msg || "slow down" in msg || "too many" in msg) {
-                                    _relayFeedStatus.value = RelayFeedStatus.RateLimited
-                                }
-                            }
-                            else -> {}
-                        }
-                    }
-                }
-            }
-
-            // Monitor connection state changes for this specific relay
-            launch {
-                relayPool.connectedCount.collectLatest {
-                    val connected = relayPool.isRelayConnected(url)
-                    val currentStatus = _relayFeedStatus.value
-                    if (connected && currentStatus is RelayFeedStatus.Connecting) {
-                        _relayFeedStatus.value = RelayFeedStatus.Subscribing
-                    } else if (!connected && (currentStatus is RelayFeedStatus.Streaming ||
-                                currentStatus is RelayFeedStatus.Subscribing)) {
-                        _relayFeedStatus.value = RelayFeedStatus.Disconnected
-                    }
-                }
-            }
-
-            // Timeout: if we're still connecting/subscribing after 15s, mark as timed out
-            // and close the subscription. Only disconnect ephemeral relays — don't nuke
-            // persistent relays from the pool (they're needed for the follow feed).
-            launch {
-                delay(15_000)
-                val currentStatus = _relayFeedStatus.value
-                if (currentStatus is RelayFeedStatus.Connecting ||
-                    currentStatus is RelayFeedStatus.Subscribing) {
-                    val isPersistent = relayPool.getRelayUrls().contains(url)
-                    Log.d("RLC", "[FeedVM] relay feed TIMEOUT for $url (was $currentStatus, persistent=$isPersistent) — closing sub")
-                    _relayFeedStatus.value = RelayFeedStatus.TimedOut
-                    relayPool.closeOnAllRelays(feedSubId)
-                    if (!isPersistent) relayPool.disconnectRelay(url)
-                }
-            }
-        }
-    }
-
-    /** Update relay feed status when EOSE arrives or events are received. */
-    private fun onRelayFeedEose() {
-        if (_feedType.value != FeedType.RELAY) return
-        val status = _relayFeedStatus.value
-        if (status is RelayFeedStatus.Connecting || status is RelayFeedStatus.Subscribing) {
-            _relayFeedStatus.value = if (eventRepo.feed.value.isEmpty()) {
-                RelayFeedStatus.NoEvents
-            } else {
-                RelayFeedStatus.Streaming
-            }
-        }
-    }
-
-    /** Mark status as Streaming when events start arriving. */
-    private fun onRelayFeedEventReceived() {
-        if (_feedType.value != FeedType.RELAY) return
-        val status = _relayFeedStatus.value
-        if (status is RelayFeedStatus.Subscribing || status is RelayFeedStatus.Connecting) {
-            _relayFeedStatus.value = RelayFeedStatus.Streaming
-        }
-    }
-
-    /**
-     * Retry connecting to the selected relay feed. Clears cooldowns and bad relay
-     * marking for the selected relay and re-subscribes.
-     */
-    fun retryRelayFeed() {
-        val url = _selectedRelay.value ?: return
-        healthTracker.clearBadRelay(url)
-        // Clear cooldown by removing from the pool's internal map via re-sending
-        // We can't directly access relayCooldowns, but reconnecting handles it
-        eventRepo.clearFeed()
-        _relayFeedStatus.value = RelayFeedStatus.Connecting
-        resubscribeFeed()
-    }
-
+    fun markLoadingComplete() = feedSub.markLoadingComplete()
+
+    // -- Startup delegates --
+    fun loadCachedFeed(): Boolean = startup.loadCachedFeed()
+    fun initRelays() = startup.initRelays()
+    fun resetForAccountSwitch() = startup.resetForAccountSwitch()
+    fun reloadForNewAccount() = startup.reloadForNewAccount()
+    fun onAppPause() = startup.onAppPause()
+    fun onAppResume(pausedMs: Long) = startup.onAppResume(pausedMs)
+    fun refreshRelays() = startup.refreshRelays()
+
+    // -- Feed subscription delegates --
+    fun setFeedType(type: FeedType) = feedSub.setFeedType(type) { startup.loadCachedFeed() }
+    fun setSelectedRelay(url: String) = feedSub.setSelectedRelay(url)
+    fun retryRelayFeed() = feedSub.retryRelayFeed()
+    fun loadMore() = feedSub.loadMore()
+    fun pauseEngagement() = feedSub.pauseEngagement()
+    fun resumeEngagement() = feedSub.resumeEngagement()
+
+    // -- Relay info delegates --
     fun getRelayUrls(): List<String> = relayPool.getRelayUrls()
-
     fun getScoredRelays(): List<ScoredRelay> = relayScoreBoard.getScoredRelays()
 
-    /**
-     * Returns relay URL → pubkey coverage count for the current feed type.
-     * Combines scoreboard (follows) + extended network counts when applicable.
-     */
     fun getRelayCoverageCounts(): Map<String, Int> {
         val counts = mutableMapOf<String, Int>()
-        // Always include scoreboard counts (covers follows)
         for ((url, count) in relayScoreBoard.getCoverageCounts()) {
             counts[url] = (counts[url] ?: 0) + count
         }
-        // Always include extended network counts (pool is always expanded)
         for ((url, count) in extendedNetworkRepo.getCoverageCounts()) {
             counts[url] = (counts[url] ?: 0) + count
         }
         return counts
     }
 
-    /**
-     * Probe whether a relay is reachable by attempting a WebSocket connection.
-     * Tries wss:// first, then ws://. Returns the working URL or null.
-     */
     suspend fun probeRelay(domain: String): String? {
         val wssUrl = "wss://$domain"
         if (tryConnect(wssUrl)) return wssUrl
@@ -1215,706 +283,39 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Called by Activity lifecycle — delegates to RelayLifecycleManager. */
-    fun onAppPause() {
-        Log.d("RLC", "[FeedVM] onAppPause — feedType=${_feedType.value} connectedCount=${relayPool.connectedCount.value}")
-        notifRepo.appIsActive = false
-        lifecycleManager.onAppPause()
-        if (_feedType.value == FeedType.FOLLOWS || _feedType.value == FeedType.EXTENDED_FOLLOWS) {
-            saveFeedCache()
-        }
-    }
+    // -- Social action delegates --
+    fun toggleFollow(pubkey: String) = socialActions.toggleFollow(pubkey)
+    fun blockUser(pubkey: String) = socialActions.blockUser(pubkey)
+    fun unblockUser(pubkey: String) = socialActions.unblockUser(pubkey)
+    fun updateMutedWords() = socialActions.updateMutedWords()
+    fun sendRepost(event: NostrEvent) = socialActions.sendRepost(event)
+    fun sendReaction(event: NostrEvent, content: String = "+") = socialActions.toggleReaction(event, content)
+    fun toggleReaction(event: NostrEvent, emoji: String) = socialActions.toggleReaction(event, emoji)
+    fun sendZap(event: NostrEvent, amountMsats: Long, message: String = "") = socialActions.sendZap(event, amountMsats, message)
+    fun togglePin(eventId: String) = socialActions.togglePin(eventId)
+    fun followAll(pubkeys: Set<String>) = socialActions.followAll(pubkeys)
 
-    /** Called by Activity lifecycle — delegates to RelayLifecycleManager. */
-    fun onAppResume(pausedMs: Long) {
-        Log.d("RLC", "[FeedVM] onAppResume — paused ${pausedMs/1000}s, feedType=${_feedType.value} connectedCount=${relayPool.connectedCount.value}")
-        notifRepo.appIsActive = true
-        lifecycleManager.onAppResume(pausedMs)
-    }
-
-    private fun subscribeFeed() {
-        resubscribeFeed()
-    }
-
-    /**
-     * Lightweight re-subscribe for app resume: keeps dedup state and existing engagement
-     * subs, only requests events newer than what we already have.
-     */
-    private fun resumeSubscribeFeed() {
-        Log.d("RLC", "[FeedVM] resumeSubscribeFeed() feedType=${_feedType.value} connectedCount=${relayPool.connectedCount.value}")
-        relayPool.closeOnAllRelays(feedSubId)
-        feedEoseJob?.cancel()
-
-        // Use newest event timestamp as `since` to avoid re-fetching events we already have
-        val newestTimestamp = eventRepo.feed.value.firstOrNull()?.created_at
-        val sinceTimestamp = newestTimestamp ?: (System.currentTimeMillis() / 1000 - 60 * 60 * 24)
-        Log.d("RLC", "[FeedVM] resumeSubscribeFeed since=$sinceTimestamp (newest=${newestTimestamp})")
-
-        val indexerRelays = getIndexerRelays()
-        val excludedUrls = getExcludedRelayUrls()
-        val targetedRelays: Set<String> = when (_feedType.value) {
-            FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
-                val cache = extendedNetworkRepo.cachedNetwork.value
-                val firstDegree = contactRepo.getFollowList().map { it.pubkey }
-                val allAuthors = if (cache != null) {
-                    (listOfNotNull(pubkeyHex) + firstDegree + cache.qualifiedPubkeys).distinct()
-                } else {
-                    listOfNotNull(pubkeyHex) + firstDegree
-                }
-                if (allAuthors.isEmpty()) return
-                val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                outboxRouter.subscribeByAuthors(
-                    feedSubId, allAuthors, notesFilter,
-                    indexerRelays = indexerRelays, blockedUrls = excludedUrls
-                )
-            }
-            FeedType.RELAY -> {
-                val url = _selectedRelay.value ?: return
-                startRelayStatusMonitor(url)
-                val status = _relayFeedStatus.value
-                if (status is RelayFeedStatus.Cooldown || status is RelayFeedStatus.BadRelay) {
-                    return
-                }
-                val filter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                val msg = ClientMessage.req(feedSubId, filter)
-                val sent = relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
-                if (!sent) {
-                    _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to relay")
-                    return
-                }
-                setOf(url)
-            }
-            FeedType.LIST -> {
-                val list = listRepo.selectedList.value ?: return
-                val authors = list.members.toList()
-                if (authors.isEmpty()) return
-                val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                outboxRouter.subscribeByAuthors(
-                    feedSubId, authors, notesFilter,
-                    indexerRelays = indexerRelays, blockedUrls = excludedUrls
-                )
-            }
-        }
-
-        feedEoseJob = viewModelScope.launch {
-            subManager.awaitEoseCount(feedSubId, targetedRelays.size.coerceAtLeast(1))
-            onRelayFeedEose()
-            // Re-subscribe engagement for any new events that arrived while paused
-            subscribeEngagementForFeed()
-        }
-    }
-
-    private var feedEoseJob: Job? = null
-
-    private fun resubscribeFeed() {
-        Log.d("RLC", "[FeedVM] resubscribeFeed() feedType=${_feedType.value} connectedCount=${relayPool.connectedCount.value}")
-        relayPool.closeOnAllRelays(feedSubId)
-        for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
-        activeEngagementSubIds.clear()
-        eventRepo.countNewNotes = false
-        feedEoseJob?.cancel()
-
-        // Use a `since` timestamp so every relay queries the same time window, producing
-        // deterministic results across refreshes. The limit still caps per-relay response
-        // size. After EOSE the subscription stays open for live streaming of new events.
-        val sinceTimestamp = System.currentTimeMillis() / 1000 - 60 * 60 * 24 // 24 hours ago
-        Log.d("RLC", "[FeedVM] resubscribeFeed: since=$sinceTimestamp (24h ago)")
-        val indexerRelays = getIndexerRelays()
-        val excludedUrls = getExcludedRelayUrls()
-        val targetedRelays: Set<String> = when (_feedType.value) {
-            FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
-                relayStatusMonitorJob?.cancel()
-                _relayFeedStatus.value = RelayFeedStatus.Idle
-                val cache = extendedNetworkRepo.cachedNetwork.value
-                val firstDegree = contactRepo.getFollowList().map { it.pubkey }
-                val allAuthors = if (cache != null) {
-                    (listOfNotNull(pubkeyHex) + firstDegree + cache.qualifiedPubkeys).distinct()
-                } else {
-                    listOfNotNull(pubkeyHex) + firstDegree
-                }
-                if (allAuthors.isEmpty()) {
-                    Log.d("RLC", "[FeedVM] resubscribeFeed: no authors, returning")
-                    return
-                }
-                Log.d("RLC", "[FeedVM] resubscribeFeed: ${allAuthors.size} authors, ${indexerRelays.size} indexers, ${excludedUrls.size} excluded")
-                val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                outboxRouter.subscribeByAuthors(
-                    feedSubId, allAuthors, notesFilter,
-                    indexerRelays = indexerRelays, blockedUrls = excludedUrls
-                )
-            }
-            FeedType.RELAY -> {
-                val url = _selectedRelay.value ?: return
-                startRelayStatusMonitor(url)
-                // If status is Cooldown or BadRelay, don't send the subscription
-                val status = _relayFeedStatus.value
-                if (status is RelayFeedStatus.Cooldown || status is RelayFeedStatus.BadRelay) {
-                    return
-                }
-                val filter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                val msg = ClientMessage.req(feedSubId, filter)
-                val sent = relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
-                if (!sent) {
-                    _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to relay")
-                    return
-                }
-                setOf(url)
-            }
-            FeedType.LIST -> {
-                relayStatusMonitorJob?.cancel()
-                _relayFeedStatus.value = RelayFeedStatus.Idle
-                val list = listRepo.selectedList.value ?: return
-                val authors = list.members.toList()
-                if (authors.isEmpty()) return
-                val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                outboxRouter.subscribeByAuthors(
-                    feedSubId, authors, notesFilter,
-                    indexerRelays = indexerRelays, blockedUrls = excludedUrls
-                )
-            }
-        }
-
-        Log.d("RLC", "[FeedVM] resubscribeFeed() sent to ${targetedRelays.size} relays, awaiting EOSE...")
-        feedEoseJob = viewModelScope.launch {
-            // Wait for a majority of relays rather than all — avoids blocking on slow
-            // stragglers while still ensuring most notes have arrived.
-            val eoseTarget = (targetedRelays.size * 0.65).toInt().coerceIn(1, targetedRelays.size)
-            Log.d("RLC", "[FeedVM] awaiting $eoseTarget/${ targetedRelays.size} EOSEs for feedSubId=$feedSubId")
-            subManager.awaitEoseCount(feedSubId, eoseTarget)
-            Log.d("RLC", "[FeedVM] EOSE received, feed loaded")
-            _initialLoadDone.value = true
-            _initLoadingState.value = InitLoadingState.Done
-            onRelayFeedEose()
-
-            eventRepo.countNewNotes = true
-            subscribeEngagementForFeed()
-            subscribeNotifEngagement()
-
-            // Save feed to disk after initial load
-            if (_feedType.value == FeedType.FOLLOWS || _feedType.value == FeedType.EXTENDED_FOLLOWS) {
-                saveFeedCache()
-            }
-
-            withContext(processingDispatcher) {
-                metadataFetcher.sweepMissingProfiles()
-            }
-        }
-    }
-
-    private fun subscribeEngagementForFeed() {
-        for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
-        activeEngagementSubIds.clear()
-
-        val feedEvents = eventRepo.feed.value
-        if (feedEvents.isEmpty()) return
-        subscribeEngagementForEvents(feedEvents, "engage")
-    }
-
-    private fun subscribeEngagementForEvents(events: List<NostrEvent>, prefix: String) {
-        // Group event IDs by author so engagement queries go to each author's inbox relays
-        val eventsByAuthor = mutableMapOf<String, MutableList<String>>()
-        for (event in events) {
-            eventsByAuthor.getOrPut(event.pubkey) { mutableListOf() }.add(event.id)
-        }
-        outboxRouter.subscribeEngagementByAuthors(prefix, eventsByAuthor, activeEngagementSubIds)
-    }
-
-    private fun subscribeNotifEngagement() {
-        val eventIds = notifRepo.getAllPostCardEventIds()
-        if (eventIds.isEmpty()) return
-        // Group by author for outbox routing where possible
-        val eventsByAuthor = mutableMapOf<String, MutableList<String>>()
-        for (id in eventIds) {
-            val event = eventRepo.getEvent(id)
-            val author = event?.pubkey ?: "fallback"
-            eventsByAuthor.getOrPut(author) { mutableListOf() }.add(id)
-        }
-        outboxRouter.subscribeEngagementByAuthors("engage-notif", eventsByAuthor, activeEngagementSubIds)
-
-        // Zap receipts are published to the zapper's relays (specified in the zap
-        // request), not necessarily the author's inbox relays. Query our own read
-        // relays separately so the user's own zaps are discovered.
-        val zapSubId = "engage-notif-zap"
-        activeEngagementSubIds.add(zapSubId)
-        relayPool.sendToReadRelays(
-            ClientMessage.req(zapSubId, Filter(kinds = listOf(9735), eTags = eventIds))
-        )
-    }
-
-    /**
-     * Opens a subscription for zap receipts (kind 9735) targeting [eventId].
-     * Kept open for 30s to catch the receipt whenever the LNURL provider publishes it.
-     * Returns the subscription ID so the caller can close it early on failure.
-     */
-    private fun subscribeZapReceipt(eventId: String): String {
-        val subId = "zap-rcpt-${eventId.take(12)}"
-        val filter = Filter(kinds = listOf(9735), eTags = listOf(eventId))
-        relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
-        viewModelScope.launch {
-            kotlinx.coroutines.delay(30_000)
-            relayPool.closeOnAllRelays(subId)
-        }
-        return subId
-    }
-
-    fun toggleFollow(pubkey: String) {
-        val s = signer ?: return
-        val currentList = contactRepo.getFollowList()
-        val newList = if (contactRepo.isFollowing(pubkey)) {
-            Nip02.removeFollow(currentList, pubkey)
-        } else {
-            Nip02.addFollow(currentList, pubkey)
-        }
-        val tags = Nip02.buildFollowTags(newList)
-        viewModelScope.launch {
-            val event = s.signEvent(kind = 3, content = "", tags = tags)
-            relayPool.sendToWriteRelays(ClientMessage.event(event))
-            contactRepo.updateFromEvent(event)
-        }
-    }
-
-    fun blockUser(pubkey: String) {
-        muteRepo.blockUser(pubkey)
-        eventRepo.purgeUser(pubkey)
-        notifRepo.purgeUser(pubkey)
-        dmRepo.purgeUser(pubkey)
-        publishMuteList()
-    }
-
-    fun unblockUser(pubkey: String) {
-        muteRepo.unblockUser(pubkey)
-        publishMuteList()
-    }
-
-    fun updateMutedWords() {
-        publishMuteList()
-    }
-
-    private fun publishMuteList() {
-        val s = signer ?: return
-        viewModelScope.launch {
-            val privateJson = Nip51.buildMuteListContent(muteRepo.getBlockedPubkeys(), muteRepo.getMutedWords())
-            val encrypted = s.nip44Encrypt(privateJson, s.pubkeyHex)
-            val event = s.signEvent(kind = Nip51.KIND_MUTE_LIST, content = encrypted, tags = emptyList())
-            relayPool.sendToWriteRelays(ClientMessage.event(event))
-        }
-    }
-
-    fun sendRepost(event: NostrEvent) {
-        val s = signer ?: return
-        viewModelScope.launch {
-            try {
-                val hint = outboxRouter.getRelayHint(event.pubkey)
-                val tags = com.wisp.app.nostr.Nip18.buildRepostTags(event, hint)
-                val repostEvent = s.signEvent(kind = 6, content = event.toJson(), tags = tags)
-                val msg = ClientMessage.event(repostEvent)
-                outboxRouter.publishToInbox(msg, event.pubkey)
-                eventRepo.markUserRepost(event.id)
-                eventRepo.addEvent(repostEvent)
-            } catch (_: Exception) {}
-        }
-    }
-
-    fun sendReaction(event: NostrEvent, content: String = "+") {
-        toggleReaction(event, content)
-    }
-
-    fun toggleReaction(event: NostrEvent, emoji: String) {
-        val s = signer ?: return
-        val myPubkey = s.pubkeyHex
-        val existingEventId = eventRepo.getUserReactionEventId(event.id, myPubkey, emoji)
-
-        viewModelScope.launch {
-            try {
-                if (existingEventId != null) {
-                    val tags = com.wisp.app.nostr.Nip09.buildDeletionTags(existingEventId, 7)
-                    val deletionEvent = s.signEvent(kind = 5, content = "", tags = tags)
-                    relayPool.sendToWriteRelays(ClientMessage.event(deletionEvent))
-                    eventRepo.removeReaction(event.id, myPubkey, emoji)
-                } else {
-                    val shortcodeMatch = Nip30.shortcodeRegex.matchEntire(emoji)
-                    val tags = if (shortcodeMatch != null) {
-                        val shortcode = shortcodeMatch.groupValues[1]
-                        val url = customEmojiRepo.resolvedEmojis.value[shortcode]
-                        if (url != null) {
-                            com.wisp.app.nostr.Nip25.buildReactionTagsWithEmoji(
-                                event, com.wisp.app.nostr.CustomEmoji(shortcode, url)
-                            )
-                        } else {
-                            com.wisp.app.nostr.Nip25.buildReactionTags(event)
-                        }
-                    } else {
-                        com.wisp.app.nostr.Nip25.buildReactionTags(event)
-                    }
-                    val reactionEvent = s.signEvent(kind = 7, content = emoji, tags = tags)
-                    val msg = ClientMessage.event(reactionEvent)
-                    outboxRouter.publishToInbox(msg, event.pubkey)
-                    eventRepo.addEvent(reactionEvent)
-                }
-            } catch (_: Exception) {}
-        }
-    }
-
-    fun loadMore() {
-        if (isLoadingMore) return
-        isLoadingMore = true
-        val oldest = eventRepo.getOldestTimestamp() ?: run { isLoadingMore = false; return }
-
-        val indexerRelays = getIndexerRelays()
-        val excludedUrls = getExcludedRelayUrls()
-        when (_feedType.value) {
-            FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
-                val cache = extendedNetworkRepo.cachedNetwork.value
-                val firstDegree = contactRepo.getFollowList().map { it.pubkey }
-                val allAuthors = if (cache != null) {
-                    (listOfNotNull(pubkeyHex) + firstDegree + cache.qualifiedPubkeys).distinct()
-                } else {
-                    listOfNotNull(pubkeyHex) + firstDegree
-                }
-                if (allAuthors.isEmpty()) { isLoadingMore = false; return }
-                val templateFilter = Filter(kinds = listOf(1, 6), until = oldest - 1, limit = 50)
-                outboxRouter.subscribeByAuthors(
-                    "loadmore", allAuthors, templateFilter,
-                    indexerRelays = indexerRelays, blockedUrls = excludedUrls
-                )
-            }
-            FeedType.RELAY -> {
-                val url = _selectedRelay.value
-                if (url != null) {
-                    val filter = Filter(kinds = listOf(1, 6), until = oldest - 1, limit = 50)
-                    relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("loadmore", filter), skipBadCheck = true)
-                } else { isLoadingMore = false; return }
-            }
-            FeedType.LIST -> {
-                val list = listRepo.selectedList.value ?: run { isLoadingMore = false; return }
-                val authors = list.members.toList()
-                if (authors.isEmpty()) { isLoadingMore = false; return }
-                val templateFilter = Filter(kinds = listOf(1, 6), until = oldest - 1)
-                outboxRouter.subscribeByAuthors(
-                    "loadmore", authors, templateFilter,
-                    indexerRelays = indexerRelays, blockedUrls = excludedUrls
-                )
-            }
-        }
-
-        viewModelScope.launch {
-            val feedSizeBefore = eventRepo.feed.value.size
-            subManager.awaitEoseWithTimeout("loadmore")
-            subManager.closeSubscription("loadmore")
-
-            // Re-subscribe engagement covering all feed events (including newly loaded ones)
-            if (eventRepo.feed.value.size > feedSizeBefore) {
-                subscribeEngagementForFeed()
-            }
-
-            isLoadingMore = false
-        }
-    }
-
-    fun sendZap(event: NostrEvent, amountMsats: Long, message: String = "") {
-        val profileData = eventRepo.getProfileData(event.pubkey)
-        val lud16 = profileData?.lud16
-        if (lud16.isNullOrBlank()) {
-            _zapError.tryEmit("This user has no lightning address")
-            return
-        }
-        // Reconnect NWC relay if credentials exist but relay disconnected
-        if (nwcRepo.hasConnection() && !nwcRepo.isConnected.value) {
-            nwcRepo.connect()
-        }
-        viewModelScope.launch {
-            _zapInProgress.value = _zapInProgress.value + event.id
-            // Open receipt subscription BEFORE paying so we catch the 9735
-            // even if the LNURL provider publishes it before NWC confirms
-            val receiptSubId = subscribeZapReceipt(event.id)
-            val result = zapSender.sendZap(
-                recipientLud16 = lud16,
-                recipientPubkey = event.pubkey,
-                eventId = event.id,
-                amountMsats = amountMsats,
-                message = message
-            )
-            _zapInProgress.value = _zapInProgress.value - event.id
-            result.fold(
-                onSuccess = {
-                    val myPubkey = getUserPubkey() ?: ""
-                    eventRepo.addOptimisticZap(event.id, myPubkey, amountMsats / 1000, message)
-                    _zapSuccess.tryEmit(event.id)
-                },
-                onFailure = { e ->
-                    _zapError.tryEmit(e.message ?: "Zap failed")
-                    // Close receipt subscription on failure
-                    relayPool.closeOnAllRelays(receiptSubId)
-                }
-            )
-        }
-    }
+    // -- List CRUD delegates --
+    fun createList(name: String) = listCrud.createList(name)
+    fun addToList(dTag: String, pubkey: String) = listCrud.addToList(dTag, pubkey)
+    fun removeFromList(dTag: String, pubkey: String) = listCrud.removeFromList(dTag, pubkey)
+    fun deleteList(dTag: String) = listCrud.deleteList(dTag)
+    fun fetchUserLists(pubkey: String) = listCrud.fetchUserLists(pubkey)
+    fun createBookmarkSet(name: String) = listCrud.createBookmarkSet(name)
+    fun addNoteToBookmarkSet(dTag: String, eventId: String) = listCrud.addNoteToBookmarkSet(dTag, eventId)
+    fun removeNoteFromBookmarkSet(dTag: String, eventId: String) = listCrud.removeNoteFromBookmarkSet(dTag, eventId)
+    fun deleteBookmarkSet(dTag: String) = listCrud.deleteBookmarkSet(dTag)
+    fun fetchBookmarkSetEvents(dTag: String) = listCrud.fetchBookmarkSetEvents(dTag)
+    fun createEmojiSet(name: String, emojis: List<com.wisp.app.nostr.CustomEmoji>) = listCrud.createEmojiSet(name, emojis)
+    fun updateEmojiSet(dTag: String, title: String, emojis: List<com.wisp.app.nostr.CustomEmoji>) = listCrud.updateEmojiSet(dTag, title, emojis)
+    fun deleteEmojiSet(dTag: String) = listCrud.deleteEmojiSet(dTag)
+    fun publishUserEmojiList(emojis: List<com.wisp.app.nostr.CustomEmoji>, setRefs: List<String>) = listCrud.publishUserEmojiList(emojis, setRefs)
+    fun addSetToEmojiList(pubkey: String, dTag: String) = listCrud.addSetToEmojiList(pubkey, dTag)
+    fun removeSetFromEmojiList(pubkey: String, dTag: String) = listCrud.removeSetFromEmojiList(pubkey, dTag)
 
     fun setSelectedList(followSet: com.wisp.app.nostr.FollowSet) {
         listRepo.selectList(followSet)
-        // Pre-fetch relay lists for list members so outbox routing can target their write relays
         outboxRouter.requestMissingRelayLists(followSet.members.toList())
-    }
-
-    fun createList(name: String) {
-        val s = signer ?: return
-        val dTag = name.trim().lowercase().replace(Regex("[^a-z0-9-_]"), "-")
-        val tags = Nip51.buildFollowSetTags(dTag, emptySet())
-        viewModelScope.launch {
-            val event = s.signEvent(kind = Nip51.KIND_FOLLOW_SET, content = "", tags = tags)
-            relayPool.sendToWriteRelays(ClientMessage.event(event))
-            listRepo.updateFromEvent(event)
-        }
-    }
-
-    fun addToList(dTag: String, pubkey: String) {
-        val s = signer ?: return
-        val myPubkey = s.pubkeyHex
-        val existing = listRepo.getList(myPubkey, dTag) ?: return
-        val newMembers = existing.members + pubkey
-        val tags = Nip51.buildFollowSetTags(dTag, newMembers)
-        viewModelScope.launch {
-            val event = s.signEvent(kind = Nip51.KIND_FOLLOW_SET, content = "", tags = tags)
-            relayPool.sendToWriteRelays(ClientMessage.event(event))
-            listRepo.updateFromEvent(event)
-        }
-    }
-
-    fun removeFromList(dTag: String, pubkey: String) {
-        val s = signer ?: return
-        val myPubkey = s.pubkeyHex
-        val existing = listRepo.getList(myPubkey, dTag) ?: return
-        val newMembers = existing.members - pubkey
-        val tags = Nip51.buildFollowSetTags(dTag, newMembers)
-        viewModelScope.launch {
-            val event = s.signEvent(kind = Nip51.KIND_FOLLOW_SET, content = "", tags = tags)
-            relayPool.sendToWriteRelays(ClientMessage.event(event))
-            listRepo.updateFromEvent(event)
-        }
-    }
-
-    fun deleteList(dTag: String) {
-        val s = signer ?: return
-        val myPubkey = s.pubkeyHex
-        val deletionTags = Nip09.buildAddressableDeletionTags(Nip51.KIND_FOLLOW_SET, myPubkey, dTag)
-        viewModelScope.launch {
-            val deleteEvent = s.signEvent(kind = 5, content = "", tags = deletionTags)
-            relayPool.sendToWriteRelays(ClientMessage.event(deleteEvent))
-            listRepo.removeList(myPubkey, dTag)
-        }
-    }
-
-    fun togglePin(eventId: String) {
-        if (pinRepo.isPinned(eventId)) {
-            pinRepo.unpinEvent(eventId)
-        } else {
-            pinRepo.pinEvent(eventId)
-        }
-        publishPinList()
-    }
-
-    private fun publishPinList() {
-        val s = signer ?: return
-        val tags = Nip51.buildPinListTags(pinRepo.getPinnedIds())
-        viewModelScope.launch {
-            val event = s.signEvent(kind = Nip51.KIND_PIN_LIST, content = "", tags = tags)
-            relayPool.sendToWriteRelays(ClientMessage.event(event))
-        }
-    }
-
-    fun followAll(pubkeys: Set<String>) {
-        val s = signer ?: return
-        var currentList = contactRepo.getFollowList()
-        for (pk in pubkeys) {
-            if (!contactRepo.isFollowing(pk)) {
-                currentList = Nip02.addFollow(currentList, pk)
-            }
-        }
-        val tags = Nip02.buildFollowTags(currentList)
-        viewModelScope.launch {
-            val event = s.signEvent(kind = 3, content = "", tags = tags)
-            relayPool.sendToWriteRelays(ClientMessage.event(event))
-            contactRepo.updateFromEvent(event)
-        }
-    }
-
-    fun fetchUserLists(pubkey: String) {
-        val subId = "user-lists-${pubkey.take(8)}"
-        val filter = Filter(kinds = listOf(Nip51.KIND_FOLLOW_SET), authors = listOf(pubkey), limit = 50)
-        relayPool.sendToAll(ClientMessage.req(subId, filter))
-        viewModelScope.launch {
-            subManager.awaitEoseWithTimeout(subId)
-            subManager.closeSubscription(subId)
-        }
-    }
-
-    // -- Bookmark Set (kind 30003) CRUD --
-
-    fun createBookmarkSet(name: String) {
-        val s = signer ?: return
-        val dTag = name.trim().lowercase().replace(Regex("[^a-z0-9-_]"), "-")
-        val tags = Nip51.buildBookmarkSetTags(dTag, emptySet())
-        viewModelScope.launch {
-            val event = s.signEvent(kind = Nip51.KIND_BOOKMARK_SET, content = "", tags = tags)
-            relayPool.sendToWriteRelays(ClientMessage.event(event))
-            bookmarkSetRepo.updateFromEvent(event)
-        }
-    }
-
-    fun addNoteToBookmarkSet(dTag: String, eventId: String) {
-        val s = signer ?: return
-        val myPubkey = s.pubkeyHex
-        val existing = bookmarkSetRepo.getSet(myPubkey, dTag) ?: return
-        val newIds = existing.eventIds + eventId
-        val tags = Nip51.buildBookmarkSetTags(dTag, newIds, existing.coordinates, existing.hashtags)
-        viewModelScope.launch {
-            val event = s.signEvent(kind = Nip51.KIND_BOOKMARK_SET, content = "", tags = tags)
-            relayPool.sendToWriteRelays(ClientMessage.event(event))
-            bookmarkSetRepo.updateFromEvent(event)
-        }
-    }
-
-    fun removeNoteFromBookmarkSet(dTag: String, eventId: String) {
-        val s = signer ?: return
-        val myPubkey = s.pubkeyHex
-        val existing = bookmarkSetRepo.getSet(myPubkey, dTag) ?: return
-        val newIds = existing.eventIds - eventId
-        val tags = Nip51.buildBookmarkSetTags(dTag, newIds, existing.coordinates, existing.hashtags)
-        viewModelScope.launch {
-            val event = s.signEvent(kind = Nip51.KIND_BOOKMARK_SET, content = "", tags = tags)
-            relayPool.sendToWriteRelays(ClientMessage.event(event))
-            bookmarkSetRepo.updateFromEvent(event)
-        }
-    }
-
-    fun deleteBookmarkSet(dTag: String) {
-        val s = signer ?: return
-        val myPubkey = s.pubkeyHex
-        val deletionTags = Nip09.buildAddressableDeletionTags(Nip51.KIND_BOOKMARK_SET, myPubkey, dTag)
-        viewModelScope.launch {
-            val deleteEvent = s.signEvent(kind = 5, content = "", tags = deletionTags)
-            relayPool.sendToWriteRelays(ClientMessage.event(deleteEvent))
-            bookmarkSetRepo.removeSet(myPubkey, dTag)
-        }
-    }
-
-    fun fetchBookmarkSetEvents(dTag: String) {
-        val myPubkey = getUserPubkey() ?: return
-        val set = bookmarkSetRepo.getSet(myPubkey, dTag) ?: return
-        val ids = set.eventIds.toList()
-        if (ids.isEmpty()) return
-        val missing = ids.filter { eventRepo.getEvent(it) == null }
-        if (missing.isEmpty()) return
-        val subId = "fetch-bkset-${dTag.take(8)}"
-        val filter = Filter(ids = missing)
-        relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
-        viewModelScope.launch {
-            subManager.awaitEoseWithTimeout(subId)
-            subManager.closeSubscription(subId)
-            withContext(processingDispatcher) {
-                metadataFetcher.sweepMissingProfiles()
-            }
-        }
-    }
-
-    /**
-     * Pause feed engagement subscriptions to free subscription capacity for thread loading.
-     */
-    fun pauseEngagement() {
-        for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
-        activeEngagementSubIds.clear()
-    }
-
-    /**
-     * Resume engagement subscriptions after returning from a thread.
-     */
-    fun resumeEngagement() {
-        if (activeEngagementSubIds.isEmpty()) {
-            subscribeEngagementForFeed()
-        }
-    }
-
-    // -- Custom Emoji (NIP-30) CRUD --
-
-    fun createEmojiSet(name: String, emojis: List<com.wisp.app.nostr.CustomEmoji>) {
-        val s = signer ?: return
-        val dTag = name.trim().lowercase().replace(Regex("[^a-z0-9-_]"), "-")
-        val tags = Nip30.buildEmojiSetTags(dTag, name.trim(), emojis)
-        viewModelScope.launch {
-            val event = s.signEvent(kind = Nip30.KIND_EMOJI_SET, content = "", tags = tags)
-            relayPool.sendToWriteRelays(ClientMessage.event(event))
-            customEmojiRepo.updateFromEvent(event)
-        }
-    }
-
-    fun updateEmojiSet(dTag: String, title: String, emojis: List<com.wisp.app.nostr.CustomEmoji>) {
-        val s = signer ?: return
-        val tags = Nip30.buildEmojiSetTags(dTag, title, emojis)
-        viewModelScope.launch {
-            val event = s.signEvent(kind = Nip30.KIND_EMOJI_SET, content = "", tags = tags)
-            relayPool.sendToWriteRelays(ClientMessage.event(event))
-            customEmojiRepo.updateFromEvent(event)
-        }
-    }
-
-    fun deleteEmojiSet(dTag: String) {
-        val s = signer ?: return
-        val myPubkey = s.pubkeyHex
-        val deletionTags = com.wisp.app.nostr.Nip09.buildAddressableDeletionTags(Nip30.KIND_EMOJI_SET, myPubkey, dTag)
-        viewModelScope.launch {
-            val deleteEvent = s.signEvent(kind = 5, content = "", tags = deletionTags)
-            relayPool.sendToWriteRelays(ClientMessage.event(deleteEvent))
-        }
-    }
-
-    fun publishUserEmojiList(emojis: List<com.wisp.app.nostr.CustomEmoji>, setRefs: List<String>) {
-        val s = signer ?: return
-        val tags = Nip30.buildUserEmojiListTags(emojis, setRefs)
-        viewModelScope.launch {
-            val event = s.signEvent(kind = Nip30.KIND_USER_EMOJI_LIST, content = "", tags = tags)
-            relayPool.sendToWriteRelays(ClientMessage.event(event))
-            customEmojiRepo.updateFromEvent(event)
-        }
-    }
-
-    fun addSetToEmojiList(pubkey: String, dTag: String) {
-        val current = customEmojiRepo.userEmojiList.value
-        val emojis = current?.emojis ?: emptyList()
-        val refs = current?.setReferences?.toMutableList() ?: mutableListOf()
-        val newRef = Nip30.buildSetReference(pubkey, dTag)
-        if (newRef !in refs) refs.add(newRef)
-        publishUserEmojiList(emojis, refs)
-    }
-
-    fun removeSetFromEmojiList(pubkey: String, dTag: String) {
-        val current = customEmojiRepo.userEmojiList.value
-        val emojis = current?.emojis ?: emptyList()
-        val refs = current?.setReferences?.toMutableList() ?: mutableListOf()
-        refs.remove(Nip30.buildSetReference(pubkey, dTag))
-        publishUserEmojiList(emojis, refs)
-    }
-
-    private fun fetchMissingEmojiSets() {
-        val missing = customEmojiRepo.getMissingSetReferences()
-        if (missing.isEmpty()) return
-        val filters = missing.mapNotNull { ref ->
-            val parsed = Nip30.parseSetReference(ref) ?: return@mapNotNull null
-            Filter(kinds = listOf(Nip30.KIND_EMOJI_SET), authors = listOf(parsed.second), dTags = listOf(parsed.third), limit = 1)
-        }
-        if (filters.isEmpty()) return
-        relayPool.sendToReadRelays(ClientMessage.req("emoji-sets", filters))
-        viewModelScope.launch {
-            subManager.awaitEoseWithTimeout("emoji-sets")
-            subManager.closeSubscription("emoji-sets")
-        }
-    }
-
-    fun refreshRelays() {
-        relayPool.updateBlockedUrls(keyRepo.getBlockedRelays())
-        val relays = keyRepo.getRelays()
-        relayPool.updateRelays(relays)
-        relayPool.updateDmRelays(keyRepo.getDmRelays())
-        subscribeFeed()
     }
 
     override fun onCleared() {
