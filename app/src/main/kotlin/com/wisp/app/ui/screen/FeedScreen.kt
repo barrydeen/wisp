@@ -99,6 +99,7 @@ fun FeedScreen(
     onKeys: () -> Unit = {},
     onAddToList: (String) -> Unit = {},
     onRelayDetail: (String) -> Unit = {},
+    onHashtagClick: ((String) -> Unit)? = null,
     scrollToTopTrigger: Int = 0
 ) {
     val feed by viewModel.feed.collectAsState()
@@ -155,7 +156,8 @@ fun FeedScreen(
             onPin = { eventId -> viewModel.togglePin(eventId) },
             isFollowing = { pubkey -> viewModel.contactRepo.isFollowing(pubkey) },
             userPubkey = userPubkey,
-            nip05Repo = viewModel.nip05Repo
+            nip05Repo = viewModel.nip05Repo,
+            onHashtagClick = onHashtagClick
         )
     }
 

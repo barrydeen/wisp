@@ -46,6 +46,7 @@ import com.wisp.app.ui.screen.ConsoleScreen
 import com.wisp.app.ui.screen.CustomEmojiScreen
 import com.wisp.app.ui.screen.SearchScreen
 import com.wisp.app.ui.screen.BookmarkSetScreen
+import com.wisp.app.ui.screen.HashtagFeedScreen
 import com.wisp.app.ui.screen.KeysScreen
 import com.wisp.app.ui.screen.ListScreen
 import com.wisp.app.ui.screen.LoadingScreen
@@ -69,6 +70,7 @@ import com.wisp.app.viewmodel.UserProfileViewModel
 import com.wisp.app.viewmodel.NotificationsViewModel
 import com.wisp.app.viewmodel.ConsoleViewModel
 import com.wisp.app.viewmodel.SearchViewModel
+import com.wisp.app.viewmodel.HashtagFeedViewModel
 import com.wisp.app.viewmodel.OnboardingViewModel
 import com.wisp.app.viewmodel.WalletViewModel
 import kotlinx.coroutines.launch
@@ -98,6 +100,7 @@ object Routes {
     const val ONBOARDING_SUGGESTIONS = "onboarding/suggestions"
     const val RELAY_DETAIL = "relay_detail/{relayUrl}"
     const val CUSTOM_EMOJIS = "custom_emojis"
+    const val HASHTAG_FEED = "hashtag/{tag}"
 }
 
 @Composable
@@ -430,6 +433,9 @@ fun WispNavHost() {
                 onAddToList = { eventId -> addToListEventId = eventId },
                 onRelayDetail = { url ->
                     navController.navigate("relay_detail/${java.net.URLEncoder.encode(url, "UTF-8")}")
+                },
+                onHashtagClick = { tag ->
+                    navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
                 }
             )
         }
@@ -742,7 +748,66 @@ fun WispNavHost() {
                 listedIds = threadListedIds,
                 pinnedIds = threadPinnedIds,
                 onTogglePin = { eventId -> feedViewModel.togglePin(eventId) },
-                onAddToList = { eventId -> addToListEventId = eventId }
+                onAddToList = { eventId -> addToListEventId = eventId },
+                onHashtagClick = { tag ->
+                    navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
+                }
+            )
+        }
+
+        composable(
+            Routes.HASHTAG_FEED,
+            arguments = listOf(navArgument("tag") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val encodedTag = backStackEntry.arguments?.getString("tag") ?: return@composable
+            val tag = java.net.URLDecoder.decode(encodedTag, "UTF-8")
+            val hashtagFeedViewModel: HashtagFeedViewModel = viewModel()
+            LaunchedEffect(tag) {
+                hashtagFeedViewModel.loadHashtag(
+                    tag = tag,
+                    relayPool = feedViewModel.relayPool,
+                    eventRepo = feedViewModel.eventRepo,
+                    topRelayUrls = feedViewModel.getScoredRelays().take(10).map { it.url }
+                )
+            }
+            val hashtagNoteActions = remember {
+                com.wisp.app.ui.component.NoteActions(
+                    onReply = { event ->
+                        replyTarget = event
+                        quoteTarget = null
+                        composeViewModel.clear()
+                        navController.navigate(Routes.COMPOSE)
+                    },
+                    onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
+                    onRepost = { event -> feedViewModel.sendRepost(event) },
+                    onQuote = { event ->
+                        quoteTarget = event
+                        replyTarget = null
+                        composeViewModel.clear()
+                        navController.navigate(Routes.COMPOSE)
+                    },
+                    onZap = { _ -> },
+                    onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
+                    onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
+                    onAddToList = { eventId -> addToListEventId = eventId },
+                    onFollowAuthor = { pubkey -> feedViewModel.toggleFollow(pubkey) },
+                    onBlockAuthor = { pubkey -> feedViewModel.blockUser(pubkey) },
+                    onPin = { eventId -> feedViewModel.togglePin(eventId) },
+                    isFollowing = { pubkey -> feedViewModel.contactRepo.isFollowing(pubkey) },
+                    userPubkey = feedViewModel.getUserPubkey(),
+                    nip05Repo = feedViewModel.nip05Repo,
+                    onHashtagClick = { clickedTag ->
+                        navController.navigate("hashtag/${java.net.URLEncoder.encode(clickedTag, "UTF-8")}")
+                    }
+                )
+            }
+            HashtagFeedScreen(
+                viewModel = hashtagFeedViewModel,
+                eventRepo = feedViewModel.eventRepo,
+                userPubkey = feedViewModel.getUserPubkey(),
+                noteActions = hashtagNoteActions,
+                nip05Repo = feedViewModel.nip05Repo,
+                onBack = { navController.popBackStack() }
             )
         }
 

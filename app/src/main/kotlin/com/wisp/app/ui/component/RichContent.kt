@@ -75,6 +75,7 @@ data class NoteActions(
     val isFollowing: (String) -> Boolean = { false },
     val userPubkey: String? = null,
     val nip05Repo: Nip05Repository? = null,
+    val onHashtagClick: ((String) -> Unit)? = null,
 )
 
 private sealed interface ContentSegment {
@@ -85,12 +86,13 @@ private sealed interface ContentSegment {
     data class NostrNoteSegment(val eventId: String, val relayHints: List<String> = emptyList()) : ContentSegment
     data class NostrProfileSegment(val pubkey: String) : ContentSegment
     data class CustomEmojiSegment(val shortcode: String, val url: String) : ContentSegment
+    data class HashtagSegment(val tag: String) : ContentSegment
 }
 
 private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp")
 private val videoExtensions = setOf("mp4", "mov", "webm")
 
-private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w)|https?://\S+""", RegexOption.IGNORE_CASE)
+private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w)|https?://\S+|(?<!\w)#([a-zA-Z0-9_][a-zA-Z0-9_-]*)""", RegexOption.IGNORE_CASE)
 
 private val emojiShortcodeRegex = Regex(""":([a-zA-Z0-9_]+):""")
 
@@ -103,7 +105,10 @@ private fun parseContent(content: String, emojiMap: Map<String, String> = emptyM
             segments.add(ContentSegment.TextSegment(content.substring(lastEnd, match.range.first)))
         }
         val token = match.value
-        if (token.startsWith("nostr:")) {
+        val hashtagCapture = match.groupValues.getOrNull(3)
+        if (!hashtagCapture.isNullOrEmpty() && token.startsWith("#")) {
+            segments.add(ContentSegment.HashtagSegment(hashtagCapture))
+        } else if (token.startsWith("nostr:")) {
             when (val decoded = Nip19.decodeNostrUri(token)) {
                 is NostrUriData.NoteRef -> segments.add(ContentSegment.NostrNoteSegment(decoded.eventId, decoded.relays))
                 is NostrUriData.ProfileRef -> segments.add(ContentSegment.NostrProfileSegment(decoded.pubkey))
@@ -174,6 +179,7 @@ fun RichContent(
     eventRepo: EventRepository? = null,
     onProfileClick: ((String) -> Unit)? = null,
     onNoteClick: ((String) -> Unit)? = null,
+    onHashtagClick: ((String) -> Unit)? = null,
     noteActions: NoteActions? = null,
     modifier: Modifier = Modifier
 ) {
@@ -242,6 +248,19 @@ fun RichContent(
                         modifier = Modifier
                             .height(with(LocalDensity.current) { style.fontSize.toDp() * 1.3f })
                             .padding(horizontal = 1.dp)
+                    )
+                }
+                is ContentSegment.HashtagSegment -> {
+                    val effectiveClick = onHashtagClick ?: noteActions?.onHashtagClick
+                    Text(
+                        text = "#${segment.tag}",
+                        style = style,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = if (effectiveClick != null) {
+                            Modifier.clickable { effectiveClick(segment.tag) }
+                        } else Modifier
                     )
                 }
                 is ContentSegment.NostrProfileSegment -> {

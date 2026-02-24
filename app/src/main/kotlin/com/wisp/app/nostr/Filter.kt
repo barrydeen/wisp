@@ -12,6 +12,7 @@ data class Filter(
     val eTags: List<String>? = null,
     val pTags: List<String>? = null,
     val dTags: List<String>? = null,
+    val tTags: List<String>? = null,
     val since: Long? = null,
     val until: Long? = null,
     val limit: Int? = null,
@@ -24,6 +25,7 @@ data class Filter(
         eTags?.let { put("#e", buildJsonArray { it.forEach { e -> add(JsonPrimitive(e)) } }) }
         pTags?.let { put("#p", buildJsonArray { it.forEach { p -> add(JsonPrimitive(p)) } }) }
         dTags?.let { put("#d", buildJsonArray { it.forEach { d -> add(JsonPrimitive(d)) } }) }
+        tTags?.let { put("#t", buildJsonArray { it.forEach { t -> add(JsonPrimitive(t)) } }) }
         since?.let { put("since", JsonPrimitive(it)) }
         until?.let { put("until", JsonPrimitive(it)) }
         limit?.let { put("limit", JsonPrimitive(it)) }

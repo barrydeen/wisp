@@ -59,7 +59,8 @@ fun ThreadScreen(
     listedIds: Set<String> = emptySet(),
     pinnedIds: Set<String> = emptySet(),
     onTogglePin: (String) -> Unit = {},
-    onAddToList: (String) -> Unit = {}
+    onAddToList: (String) -> Unit = {},
+    onHashtagClick: ((String) -> Unit)? = null
 ) {
     val flatThread by viewModel.flatThread.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -95,7 +96,8 @@ fun ThreadScreen(
             onPin = onTogglePin,
             isFollowing = { pubkey -> contactRepo.isFollowing(pubkey) },
             userPubkey = userPubkey,
-            nip05Repo = nip05Repo
+            nip05Repo = nip05Repo,
+            onHashtagClick = onHashtagClick
         )
     }
 
