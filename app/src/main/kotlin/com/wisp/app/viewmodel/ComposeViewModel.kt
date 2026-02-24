@@ -25,6 +25,7 @@ import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.MentionCandidate
 import com.wisp.app.repo.MentionSearchRepository
+import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.ProfileRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -73,11 +74,13 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     private var countdownJob: Job? = null
     private var pendingPublish: (() -> Unit)? = null
     private var mentionSearchRepo: MentionSearchRepository? = null
+    private var eventRepo: EventRepository? = null
     private var initialized = false
 
-    fun init(profileRepo: ProfileRepository, contactRepo: ContactRepository, relayPool: RelayPool) {
+    fun init(profileRepo: ProfileRepository, contactRepo: ContactRepository, relayPool: RelayPool, eventRepo: EventRepository? = null) {
         if (initialized) return
         initialized = true
+        this.eventRepo = eventRepo
         mentionSearchRepo = MentionSearchRepository(profileRepo, contactRepo, relayPool, keyRepo)
         // Forward candidates from search repo
         viewModelScope.launch {
@@ -336,6 +339,17 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             outboxRouter.publishToInbox(msg, replyTo.pubkey)
         } else {
             relayPool.sendToWriteRelays(msg)
+        }
+        // Cache locally so reply appears immediately without waiting for relay echo
+        eventRepo?.cacheEvent(event)
+        if (replyTo != null) {
+            // Increment on direct parent so the PostCard showing replyTo updates
+            eventRepo?.addReplyCount(replyTo.id, event.id)
+            // Also increment on root so the thread root PostCard updates
+            val rootId = Nip10.getRootId(replyTo)
+            if (rootId != null && rootId != replyTo.id) {
+                eventRepo?.addReplyCount(rootId, event.id)
+            }
         }
         _content.value = TextFieldValue()
         savedStateHandle.remove<String>("draft_content")

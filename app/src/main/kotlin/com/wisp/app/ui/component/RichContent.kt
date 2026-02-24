@@ -300,6 +300,7 @@ fun QuotedNote(
         val replyCount = remember(replyCountVersion, eventId) { eventRepo.getReplyCount(eventId) }
         val zapSats = remember(zapVersion, eventId) { eventRepo.getZapSats(eventId) }
         val repostCount = remember(repostVersion, eventId) { eventRepo.getRepostCount(eventId) }
+        val repostPubkeys = remember(repostVersion, eventId) { eventRepo.getReposterPubkeys(eventId) }
         val userEmojis = remember(reactionVersion, eventId, noteActions.userPubkey) {
             noteActions.userPubkey?.let { eventRepo.getUserReactionEmojis(eventId, it) } ?: emptySet()
         }
@@ -337,6 +338,7 @@ fun QuotedNote(
                 eventRepo = eventRepo,
                 reactionDetails = reactionDetails,
                 zapDetails = zapDetails,
+                repostDetails = repostPubkeys,
                 onNavigateToProfileFromDetails = noteActions.onProfileClick,
                 onFollowAuthor = { noteActions.onFollowAuthor(event.pubkey) },
                 onBlockAuthor = { noteActions.onBlockAuthor(event.pubkey) },

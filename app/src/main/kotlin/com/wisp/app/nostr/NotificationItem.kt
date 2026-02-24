@@ -57,4 +57,12 @@ sealed class NotificationGroup {
         val repostedEventId: String,
         override val latestTimestamp: Long
     ) : NotificationGroup()
+
+    data class RepostGroup(
+        override val groupId: String,
+        val repostedEventId: String,
+        val reposters: List<String>, // pubkeys, newest first
+        val repostTimestamps: Map<String, Long>, // pubkey -> created_at
+        override val latestTimestamp: Long
+    ) : NotificationGroup()
 }

@@ -103,6 +103,7 @@ fun PostCard(
     isPinned: Boolean = false,
     onQuotedNoteClick: ((String) -> Unit)? = null,
     noteActions: NoteActions? = null,
+    repostDetails: List<String> = emptyList(),
     reactionEmojiUrls: Map<String, String> = emptyMap(),
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
@@ -124,7 +125,7 @@ fun PostCard(
         if (relayIcons.size <= 5) relayIcons else relayIcons.take(5)
     }
 
-    val hasReactionDetails = reactionDetails.isNotEmpty() || zapDetails.isNotEmpty()
+    val hasReactionDetails = reactionDetails.isNotEmpty() || zapDetails.isNotEmpty() || repostDetails.isNotEmpty()
     val hasDetails = hasReactionDetails || displayIcons.isNotEmpty()
     var expandedDetails by remember { mutableStateOf(false) }
 
@@ -419,6 +420,7 @@ fun PostCard(
                         ReactionDetailsSection(
                             reactionDetails = reactionDetails,
                             zapDetails = zapDetails,
+                            repostDetails = repostDetails,
                             resolveProfile = profileResolver,
                             onProfileClick = navToProfile,
                             reactionEmojiUrls = reactionEmojiUrls

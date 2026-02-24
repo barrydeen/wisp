@@ -26,6 +26,9 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
     val zapReceived: SharedFlow<Unit>
         get() = notifRepo?.zapReceived ?: MutableSharedFlow()
 
+    val notifReceived: SharedFlow<Unit>
+        get() = notifRepo?.notifReceived ?: MutableSharedFlow()
+
     val eventRepository: EventRepository?
         get() = eventRepo
 

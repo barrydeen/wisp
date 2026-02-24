@@ -27,6 +27,7 @@ import androidx.compose.runtime.collectAsState
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.RemoteSigner
 import com.wisp.app.repo.SigningMode
+import com.wisp.app.ui.component.NotifBlipSound
 import com.wisp.app.ui.component.WispBottomBar
 import com.wisp.app.ui.component.ZapDialog
 import com.wisp.app.ui.screen.BlossomServersScreen
@@ -196,7 +197,7 @@ fun WispNavHost() {
 
     // Initialize compose viewmodel with shared repos
     LaunchedEffect(Unit) {
-        composeViewModel.init(feedViewModel.profileRepo, feedViewModel.contactRepo, feedViewModel.relayPool)
+        composeViewModel.init(feedViewModel.profileRepo, feedViewModel.contactRepo, feedViewModel.relayPool, feedViewModel.eventRepo)
     }
 
     // Initialize DM list viewmodel with shared repo
@@ -256,6 +257,14 @@ fun WispNavHost() {
             kotlinx.coroutines.delay(900)
             isZapAnimating = false
         }
+    }
+
+    val notifBlipSound = remember { NotifBlipSound(context) }
+    DisposableEffect(Unit) {
+        onDispose { notifBlipSound.release() }
+    }
+    LaunchedEffect(Unit) {
+        notificationsViewModel.notifReceived.collect { notifBlipSound.play() }
     }
 
     // Add Note to List dialog — shared across all screens
@@ -985,6 +994,10 @@ fun WispNavHost() {
         }
 
         composable(Routes.NOTIFICATIONS) {
+            DisposableEffect(Unit) {
+                feedViewModel.notifRepo.isViewing = true
+                onDispose { feedViewModel.notifRepo.isViewing = false }
+            }
             LaunchedEffect(Unit) {
                 notificationsViewModel.markRead()
             }

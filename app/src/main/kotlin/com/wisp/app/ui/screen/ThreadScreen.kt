@@ -135,6 +135,7 @@ fun ThreadScreen(
                     val reactionDetails = reactionVersion.let { eventRepo.getReactionDetails(event.id) }
                     val zapDetailsList = zapVersion.let { eventRepo.getZapDetails(event.id) }
                     val repostCount = repostVersion.let { eventRepo.getRepostCount(event.id) }
+                    val repostPubkeys = repostVersion.let { eventRepo.getReposterPubkeys(event.id) }
                     val hasUserReposted = repostVersion.let { eventRepo.hasUserReposted(event.id) }
                     val hasUserZapped = zapVersion.let { eventRepo.hasUserZapped(event.id) }
                     val eventReactionEmojiUrls = reactionVersion.let { eventRepo.getReactionEmojiUrls(event.id) }
@@ -161,6 +162,7 @@ fun ThreadScreen(
                         eventRepo = eventRepo,
                         reactionDetails = reactionDetails,
                         zapDetails = zapDetailsList,
+                        repostDetails = repostPubkeys,
                         reactionEmojiUrls = eventReactionEmojiUrls,
                         onNavigateToProfileFromDetails = onProfileClick,
                         onFollowAuthor = { onToggleFollow(event.pubkey) },

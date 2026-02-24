@@ -2,6 +2,8 @@ package com.wisp.app.ui.component
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,7 +14,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,6 +30,7 @@ import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import com.wisp.app.nostr.ProfileData
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StackedAvatarRow(
     pubkeys: List<String>,
@@ -33,39 +39,63 @@ fun StackedAvatarRow(
     modifier: Modifier = Modifier,
     isFollowing: ((String) -> Boolean)? = null,
     highlightFirst: Boolean = false,
-    maxAvatars: Int = 5
+    maxAvatars: Int = 5,
+    onProfileLongPress: ((String) -> Unit)? = null,
+    showAll: Boolean = false
 ) {
-    val displayed = if (pubkeys.size <= maxAvatars) pubkeys else pubkeys.take(maxAvatars)
-    val overflow = pubkeys.size - displayed.size
-
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box {
-            displayed.forEachIndexed { index, pubkey ->
+    if (showAll) {
+        FlowRow(
+            modifier = modifier,
+            horizontalArrangement = Arrangement.spacedBy((-9).dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            pubkeys.forEachIndexed { index, pubkey ->
                 val profile = resolveProfile(pubkey)
                 ProfilePicture(
                     url = profile?.picture,
                     size = 36,
                     showFollowBadge = isFollowing?.invoke(pubkey) ?: false,
                     highlighted = highlightFirst && index == 0,
-                    modifier = Modifier
-                        .zIndex((displayed.size - index).toFloat())
-                        .offset(x = (27 * index).dp)
-                        .clickable { onProfileClick(pubkey) }
+                    onClick = { onProfileClick(pubkey) },
+                    onLongPress = onProfileLongPress?.let { { it(pubkey) } },
+                    modifier = Modifier.zIndex((pubkeys.size - index).toFloat())
                 )
             }
         }
-        // Account for the stacked width
-        Spacer(Modifier.width((27 * (displayed.size - 1) + 36).dp))
-        if (overflow > 0) {
-            Spacer(Modifier.width(4.dp))
-            Text(
-                text = "+$overflow",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+    } else {
+        val displayed = if (pubkeys.size <= maxAvatars) pubkeys else pubkeys.take(maxAvatars)
+        val overflow = pubkeys.size - displayed.size
+
+        Row(
+            modifier = modifier,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box {
+                displayed.forEachIndexed { index, pubkey ->
+                    val profile = resolveProfile(pubkey)
+                    ProfilePicture(
+                        url = profile?.picture,
+                        size = 36,
+                        showFollowBadge = isFollowing?.invoke(pubkey) ?: false,
+                        highlighted = highlightFirst && index == 0,
+                        onClick = { onProfileClick(pubkey) },
+                        onLongPress = onProfileLongPress?.let { { it(pubkey) } },
+                        modifier = Modifier
+                            .zIndex((displayed.size - index).toFloat())
+                            .offset(x = (27 * index).dp)
+                    )
+                }
+            }
+            // Account for the stacked width
+            Spacer(Modifier.width((27 * (displayed.size - 1) + 36).dp))
+            if (overflow > 0) {
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = "+$overflow",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
@@ -114,6 +144,7 @@ fun ZapRow(
 fun ReactionDetailsSection(
     reactionDetails: Map<String, List<String>>,
     zapDetails: List<Triple<String, Long, String>>,
+    repostDetails: List<String> = emptyList(),
     resolveProfile: (String) -> ProfileData?,
     onProfileClick: (String) -> Unit,
     reactionEmojiUrls: Map<String, String> = emptyMap(),
@@ -122,6 +153,7 @@ fun ReactionDetailsSection(
     val sortedZaps = zapDetails.sortedByDescending { it.second }
     val hasZaps = sortedZaps.isNotEmpty()
     val hasReactions = reactionDetails.isNotEmpty()
+    val hasReposts = repostDetails.isNotEmpty()
 
     Column(
         modifier = modifier
@@ -141,7 +173,36 @@ fun ReactionDetailsSection(
             }
         }
 
-        if (hasZaps && hasReactions) {
+        if (hasZaps && (hasReactions || hasReposts)) {
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 6.dp),
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+            )
+        }
+
+        if (hasReposts) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Outlined.Repeat,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = Color(0xFF4CAF50)
+                )
+                Spacer(Modifier.width(8.dp))
+                StackedAvatarRow(
+                    pubkeys = repostDetails,
+                    resolveProfile = resolveProfile,
+                    onProfileClick = onProfileClick
+                )
+            }
+        }
+
+        if (hasReposts && hasReactions) {
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 6.dp),
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)

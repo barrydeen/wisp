@@ -696,6 +696,9 @@ private fun FeedItem(
     val repostCount = remember(repostVersion, event.id) {
         viewModel.eventRepo.getRepostCount(event.id)
     }
+    val repostPubkeys = remember(repostVersion, event.id) {
+        viewModel.eventRepo.getReposterPubkeys(event.id)
+    }
     val hasUserReposted = remember(repostVersion, event.id) {
         viewModel.eventRepo.hasUserReposted(event.id)
     }
@@ -735,6 +738,7 @@ private fun FeedItem(
         repostedBy = repostedByName,
         reactionDetails = reactionDetails,
         zapDetails = zapDetails,
+        repostDetails = repostPubkeys,
         onNavigateToProfileFromDetails = onNavigateToProfile,
         onRelayClick = onRelayClick,
         onFollowAuthor = { viewModel.toggleFollow(event.pubkey) },

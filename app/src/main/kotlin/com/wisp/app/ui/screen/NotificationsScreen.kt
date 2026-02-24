@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -29,6 +30,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -290,12 +292,52 @@ private fun NotificationItem(
         isInList = isInList
     )
 
+    // Show reposter avatars at the top of reaction and repost notifications
+    val repostEventId = when (group) {
+        is NotificationGroup.ReactionGroup -> group.referencedEventId
+        is NotificationGroup.RepostNotification -> group.repostedEventId
+        is NotificationGroup.RepostGroup -> group.repostedEventId
+        else -> null
+    }
+    val reposterPubkeys = remember(repostVersion, repostEventId) {
+        if (repostEventId != null) eventRepo?.getReposterPubkeys(repostEventId) ?: emptyList()
+        else emptyList()
+    }
+    if (reposterPubkeys.isNotEmpty()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 6.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Icon(
+                Icons.Outlined.Repeat,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(24.dp)
+                    .padding(top = 6.dp),
+                tint = Color(0xFF4CAF50)
+            )
+            Spacer(Modifier.width(6.dp))
+            StackedAvatarRow(
+                pubkeys = reposterPubkeys.reversed(),
+                resolveProfile = { viewModel.getProfileData(it) },
+                isFollowing = { viewModel.isFollowing(it) },
+                onProfileClick = onProfileClick,
+                highlightFirst = reposterPubkeys.size > 1,
+                onProfileLongPress = { onFollowToggle(it) },
+                showAll = true
+            )
+        }
+    }
+
     when (group) {
         is NotificationGroup.ReactionGroup -> ReactionGroupRow(
             group = group,
             resolveProfile = { viewModel.getProfileData(it) },
             isFollowing = { viewModel.isFollowing(it) },
             onProfileClick = onProfileClick,
+            onFollowToggle = postCardParams.onFollowToggle,
             postCardParams = postCardParams
         )
         is NotificationGroup.ZapGroup -> ZapGroupRow(
@@ -330,6 +372,14 @@ private fun NotificationItem(
             onProfileClick = onProfileClick,
             postCardParams = postCardParams
         )
+        is NotificationGroup.RepostGroup -> RepostGroupRow(
+            group = group,
+            resolveProfile = { viewModel.getProfileData(it) },
+            isFollowing = { viewModel.isFollowing(it) },
+            onProfileClick = onProfileClick,
+            onFollowToggle = postCardParams.onFollowToggle,
+            postCardParams = postCardParams
+        )
     }
 }
 
@@ -343,6 +393,7 @@ private fun ReactionGroupRow(
     resolveProfile: (String) -> ProfileData?,
     isFollowing: (String) -> Boolean,
     onProfileClick: (String) -> Unit,
+    onFollowToggle: ((String) -> Unit)? = null,
     postCardParams: NotifPostCardParams
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -374,18 +425,21 @@ private fun ReactionGroupRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.Top
                 ) {
                     if (customEmojiUrl != null) {
                         AsyncImage(
                             model = customEmojiUrl,
                             contentDescription = shortcode ?: displayEmoji,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier
+                                .size(24.dp)
+                                .padding(top = 6.dp)
                         )
                     } else {
                         Text(
                             text = displayEmoji,
-                            style = MaterialTheme.typography.bodyLarge
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(top = 4.dp)
                         )
                     }
                     Spacer(Modifier.width(8.dp))
@@ -394,7 +448,9 @@ private fun ReactionGroupRow(
                         resolveProfile = resolveProfile,
                         isFollowing = isFollowing,
                         onProfileClick = onProfileClick,
-                        highlightFirst = pubkeys.size > 1
+                        highlightFirst = pubkeys.size > 1,
+                        onProfileLongPress = onFollowToggle,
+                        showAll = true
                     )
                 }
             }
@@ -658,6 +714,12 @@ private fun MentionNotificationRow(
             )
             Spacer(Modifier.width(4.dp))
             Text(
+                text = "@",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(2.dp))
+            Text(
                 text = "mentioned you",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -714,6 +776,13 @@ private fun RepostNotificationRow(
                 modifier = Modifier.weight(1f)
             )
             Spacer(Modifier.width(4.dp))
+            Icon(
+                Icons.Outlined.Repeat,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(2.dp))
             Text(
                 text = "reposted",
                 style = MaterialTheme.typography.bodySmall,
@@ -728,6 +797,73 @@ private fun RepostNotificationRow(
         }
         ReferencedNotePostCard(
             eventId = item.repostedEventId,
+            params = postCardParams
+        )
+    }
+}
+
+// ── Repost Group (aggregated reposts) ────────────────────────────────────
+
+@Composable
+private fun RepostGroupRow(
+    group: NotificationGroup.RepostGroup,
+    resolveProfile: (String) -> ProfileData?,
+    isFollowing: (String) -> Boolean,
+    onProfileClick: (String) -> Unit,
+    onFollowToggle: ((String) -> Unit)? = null,
+    postCardParams: NotifPostCardParams
+) {
+    val eventRepo = postCardParams.eventRepo
+    // Pull reposter pubkeys from EventRepository — the authoritative source
+    val reposterPubkeys = remember(postCardParams.repostVersion, group.repostedEventId) {
+        eventRepo?.getReposterPubkeys(group.repostedEventId) ?: group.reposters
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = formatNotifTimestamp(group.latestTimestamp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 3.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Icon(
+                    Icons.Outlined.Repeat,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .padding(top = 8.dp),
+                    tint = Color(0xFF4CAF50)
+                )
+                Spacer(Modifier.width(8.dp))
+                StackedAvatarRow(
+                    pubkeys = reposterPubkeys.reversed(),
+                    resolveProfile = resolveProfile,
+                    isFollowing = isFollowing,
+                    onProfileClick = onProfileClick,
+                    highlightFirst = reposterPubkeys.size > 1,
+                    onProfileLongPress = onFollowToggle,
+                    showAll = true
+                )
+            }
+        }
+        ReferencedNotePostCard(
+            eventId = group.repostedEventId,
             params = postCardParams
         )
     }
@@ -809,6 +945,9 @@ private fun ReferencedNotePostCard(
     val repostCount = remember(params.repostVersion, event.id) {
         eventRepo.getRepostCount(event.id)
     }
+    val repostPubkeys = remember(params.repostVersion, event.id) {
+        eventRepo.getReposterPubkeys(event.id)
+    }
     val hasUserReposted = remember(params.repostVersion, event.id) {
         eventRepo.hasUserReposted(event.id)
     }
@@ -846,6 +985,7 @@ private fun ReferencedNotePostCard(
         eventRepo = eventRepo,
         reactionDetails = reactionDetails,
         zapDetails = zapDetails,
+        repostDetails = repostPubkeys,
         reactionEmojiUrls = eventReactionEmojiUrls,
         resolvedEmojis = params.resolvedEmojis,
         unicodeEmojis = params.unicodeEmojis,
@@ -861,6 +1001,7 @@ private fun ReferencedNotePostCard(
         onQuotedNoteClick = params.onNoteClick,
         showDivider = false
     )
+
 }
 
 private val notifDateTimeFormat = SimpleDateFormat("MMM d, HH:mm", Locale.US)

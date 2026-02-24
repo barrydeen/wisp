@@ -157,6 +157,45 @@ private fun DrawScope.drawMiniBolt(
  * SoundPool.load() is async — play() silently fails if called before loading completes.
  * We track the loaded state via setOnLoadCompleteListener.
  */
+class NotifBlipSound(context: Context) {
+    private var pool: SoundPool? = null
+    private var soundId: Int = 0
+    @Volatile private var loaded = false
+
+    init {
+        val resId = context.resources.getIdentifier("notif_blip", "raw", context.packageName)
+        if (resId != 0) {
+            try {
+                val p = SoundPool.Builder()
+                    .setMaxStreams(2)
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                    )
+                    .build()
+                p.setOnLoadCompleteListener { _, _, status ->
+                    if (status == 0) loaded = true
+                }
+                soundId = p.load(context, resId, 1)
+                pool = p
+            } catch (_: Exception) { }
+        }
+    }
+
+    fun play() {
+        if (loaded) {
+            pool?.play(soundId, 0.2f, 0.2f, 1, 0, 1f)
+        }
+    }
+
+    fun release() {
+        pool?.release()
+        pool = null
+    }
+}
+
 private class ZapSound(context: Context) {
     private var pool: SoundPool? = null
     private var soundId: Int = 0

@@ -32,13 +32,21 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
     private val _zapReceived = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val zapReceived: SharedFlow<Unit> = _zapReceived
 
+    @Volatile var appIsActive: Boolean = true
+
+    @Volatile var isViewing: Boolean = false
+
     private var lastReadTimestamp: Long = prefs.getLong(KEY_LAST_READ, 0L)
+
+    private val _notifReceived = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val notifReceived: SharedFlow<Unit> = _notifReceived
 
     fun addEvent(event: NostrEvent, myPubkey: String) {
         if (event.pubkey == myPubkey) return
         if (seenEvents.get(event.id) != null) return
         val hasPTag = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == myPubkey }
-        if (!hasPTag) return
+        // Kind 6 reposts may omit the p-tag; accept if we recognize the reposted event as ours
+        if (!hasPTag && event.kind != 6) return
 
         seenEvents.put(event.id, true)
 
@@ -53,9 +61,17 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
             if (!merged) return
 
             if (event.created_at > lastReadTimestamp) {
-                _hasUnread.value = true
-                if (event.kind == 9735) {
+                if (isViewing) {
+                    lastReadTimestamp = event.created_at
+                    prefs.edit().putLong(KEY_LAST_READ, event.created_at).apply()
+                } else {
+                    _hasUnread.value = true
+                }
+                if (event.kind == 9735 && appIsActive) {
                     _zapReceived.tryEmit(Unit)
+                }
+                if (appIsActive && event.kind != 9735) {
+                    _notifReceived.tryEmit(Unit)
                 }
             }
             rebuildSortedList()
@@ -115,6 +131,14 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
                 }
                 is NotificationGroup.RepostNotification -> {
                     if (group.senderPubkey == pubkey) toRemove.add(key)
+                }
+                is NotificationGroup.RepostGroup -> {
+                    val filtered = group.reposters.filter { it != pubkey }
+                    if (filtered.isEmpty()) toRemove.add(key)
+                    else toUpdate[key] = group.copy(
+                        reposters = filtered,
+                        repostTimestamps = group.repostTimestamps - pubkey
+                    )
                 }
             }
         }
@@ -190,6 +214,39 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
                             zaps = olderZaps,
                             totalSats = olderZaps.sumOf { it.sats },
                             latestTimestamp = olderZaps.maxOf { it.createdAt }
+                        ))
+                    }
+                }
+                is NotificationGroup.RepostGroup -> {
+                    val recentPubkeys = mutableListOf<String>()
+                    val olderPubkeys = mutableListOf<String>()
+                    val recentTimestamps = mutableMapOf<String, Long>()
+                    val olderTimestamps = mutableMapOf<String, Long>()
+
+                    for (pk in group.reposters) {
+                        val ts = group.repostTimestamps[pk] ?: 0L
+                        if (ts >= recentCutoff) {
+                            recentPubkeys.add(pk)
+                            recentTimestamps[pk] = ts
+                        } else {
+                            olderPubkeys.add(pk)
+                            olderTimestamps[pk] = ts
+                        }
+                    }
+
+                    if (recentPubkeys.isNotEmpty()) {
+                        result.add(group.copy(
+                            groupId = "${group.groupId}:recent",
+                            reposters = recentPubkeys,
+                            repostTimestamps = recentTimestamps,
+                            latestTimestamp = recentTimestamps.values.max()
+                        ))
+                    }
+                    if (olderPubkeys.isNotEmpty()) {
+                        result.add(group.copy(
+                            reposters = olderPubkeys,
+                            repostTimestamps = olderTimestamps,
+                            latestTimestamp = olderTimestamps.values.max()
                         ))
                     }
                 }
@@ -316,14 +373,27 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
     private fun mergeRepost(event: NostrEvent): Boolean {
         val repostedId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
             ?: return false
-        val key = "repost:${event.id}"
-        groupMap[key] = NotificationGroup.RepostNotification(
-            groupId = key,
-            senderPubkey = event.pubkey,
-            repostEventId = event.id,
-            repostedEventId = repostedId,
-            latestTimestamp = event.created_at
-        )
+        val key = "reposts:$repostedId"
+        val existing = groupMap[key] as? NotificationGroup.RepostGroup
+
+        if (existing != null) {
+            if (event.pubkey in existing.reposters) return false
+            val updatedTimestamps = existing.repostTimestamps.toMutableMap()
+            updatedTimestamps[event.pubkey] = event.created_at
+            groupMap[key] = existing.copy(
+                reposters = existing.reposters + event.pubkey,
+                repostTimestamps = updatedTimestamps,
+                latestTimestamp = maxOf(existing.latestTimestamp, event.created_at)
+            )
+        } else {
+            groupMap[key] = NotificationGroup.RepostGroup(
+                groupId = key,
+                repostedEventId = repostedId,
+                reposters = listOf(event.pubkey),
+                repostTimestamps = mapOf(event.pubkey to event.created_at),
+                latestTimestamp = event.created_at
+            )
+        }
         return true
     }
 
@@ -337,6 +407,7 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
                 is NotificationGroup.QuoteNotification -> group.quoteEventId
                 is NotificationGroup.MentionNotification -> group.eventId
                 is NotificationGroup.RepostNotification -> group.repostedEventId
+                is NotificationGroup.RepostGroup -> group.repostedEventId
             }
         }.distinct()
     }

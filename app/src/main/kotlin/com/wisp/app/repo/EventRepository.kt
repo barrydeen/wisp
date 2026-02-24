@@ -394,6 +394,19 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun getReplyCount(eventId: String): Int = replyCounts.get(eventId) ?: 0
 
+    /** Returns the current user's most recent reply to [eventId], if cached. */
+    fun getMyReplyTo(eventId: String, myPubkey: String): NostrEvent? {
+        val replyIds = rootReplyIds[eventId] ?: return null
+        var best: NostrEvent? = null
+        for (replyId in replyIds) {
+            val event = eventCache.get(replyId) ?: continue
+            if (event.pubkey == myPubkey && (best == null || event.created_at > best.created_at)) {
+                best = event
+            }
+        }
+        return best
+    }
+
     fun getCachedThreadEvents(rootId: String): List<NostrEvent> {
         val result = mutableListOf<NostrEvent>()
         val visited = mutableSetOf<String>()
@@ -427,6 +440,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     fun getEventRelays(eventId: String): Set<String> = eventRelays.get(eventId) ?: emptySet()
 
     fun getRepostAuthor(eventId: String): String? = repostAuthors.get(eventId)?.firstOrNull()
+
+    fun getReposterPubkeys(eventId: String): List<String> =
+        repostAuthors.get(eventId)?.toList() ?: emptyList()
 
     /** Check if any of the reposters of [eventId] are in the given [pubkeys] set. */
     fun isRepostedByAny(eventId: String, pubkeys: Set<String>): Boolean {

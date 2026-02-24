@@ -685,7 +685,18 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             pTags = listOf(myPubkey),
             limit = 100
         )
-        relayPool.sendToReadRelays(ClientMessage.req("notif", notifFilter))
+        val notifReqMsg = ClientMessage.req("notif", notifFilter)
+        relayPool.sendToReadRelays(notifReqMsg)
+
+        // Also send to top scored relays for broader coverage
+        val readUrls = relayPool.getReadRelayUrls().toSet()
+        val topScored = relayScoreBoard.getScoredRelays()
+            .take(5)
+            .map { it.url }
+            .filter { it !in readUrls }
+        for (url in topScored) {
+            relayPool.sendToRelay(url, notifReqMsg)
+        }
         viewModelScope.launch {
             subManager.awaitEoseWithTimeout("notif")
             subscribeNotifEngagement()
@@ -1010,6 +1021,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Called by Activity lifecycle — delegates to RelayLifecycleManager. */
     fun onAppPause() {
+        notifRepo.appIsActive = false
         lifecycleManager.onAppPause()
         if (_feedType.value == FeedType.FOLLOWS || _feedType.value == FeedType.EXTENDED_FOLLOWS) {
             saveFeedCache()
@@ -1017,7 +1029,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Called by Activity lifecycle — delegates to RelayLifecycleManager. */
-    fun onAppResume(pausedMs: Long) = lifecycleManager.onAppResume(pausedMs)
+    fun onAppResume(pausedMs: Long) {
+        notifRepo.appIsActive = true
+        lifecycleManager.onAppResume(pausedMs)
+    }
 
     private fun subscribeFeed() {
         resubscribeFeed()
