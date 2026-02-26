@@ -16,7 +16,8 @@ data class FollowSet(
     val dTag: String,
     val name: String,
     val members: Set<String>,
-    val createdAt: Long
+    val createdAt: Long,
+    val isPrivate: Boolean = false
 )
 
 data class BookmarkList(
@@ -33,7 +34,8 @@ data class BookmarkSet(
     val eventIds: Set<String>,
     val coordinates: Set<String> = emptySet(),
     val hashtags: Set<String> = emptySet(),
-    val createdAt: Long = 0
+    val createdAt: Long = 0,
+    val isPrivate: Boolean = false
 )
 
 object Nip51 {
@@ -108,19 +110,44 @@ object Nip51 {
         return tags
     }
 
-    fun parseFollowSet(event: NostrEvent): FollowSet? {
+    fun buildPrivateContent(tags: List<List<String>>): String {
+        val arr = buildJsonArray {
+            for (tag in tags) {
+                add(buildJsonArray { for (item in tag) add(JsonPrimitive(item)) })
+            }
+        }
+        return arr.toString()
+    }
+
+    fun parsePrivateTagsGeneric(json: String): List<List<String>> {
+        return try {
+            val arr = kotlinx.serialization.json.Json.parseToJsonElement(json).jsonArray
+            arr.map { element ->
+                element.jsonArray.map { it.jsonPrimitive.content }
+            }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    fun parseFollowSet(event: NostrEvent, decryptedContent: String? = null): FollowSet? {
         if (event.kind != KIND_FOLLOW_SET) return null
         val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: return null
         val members = mutableSetOf<String>()
         for (tag in event.tags) {
             if (tag.size >= 2 && tag[0] == "p") members.add(tag[1])
         }
+        if (decryptedContent != null) {
+            for (tag in parsePrivateTagsGeneric(decryptedContent)) {
+                if (tag.size >= 2 && tag[0] == "p") members.add(tag[1])
+            }
+        }
+        val isPrivate = members.isEmpty() || (event.tags.none { it.size >= 2 && it[0] == "p" } && decryptedContent != null)
         return FollowSet(
             pubkey = event.pubkey,
             dTag = dTag,
             name = dTag,
             members = members,
-            createdAt = event.created_at
+            createdAt = event.created_at,
+            isPrivate = isPrivate
         )
     }
 
@@ -131,7 +158,13 @@ object Nip51 {
         return tags
     }
 
-    fun parseBookmarkSet(event: NostrEvent): BookmarkSet? {
+    fun buildFollowSetPrivate(dTag: String, members: Set<String>): Pair<List<List<String>>, String> {
+        val tags = listOf(listOf("d", dTag))
+        val privateTags = members.map { listOf("p", it) }
+        return Pair(tags, buildPrivateContent(privateTags))
+    }
+
+    fun parseBookmarkSet(event: NostrEvent, decryptedContent: String? = null): BookmarkSet? {
         if (event.kind != KIND_BOOKMARK_SET) return null
         val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: return null
         val eventIds = mutableSetOf<String>()
@@ -145,6 +178,18 @@ object Nip51 {
                 "t" -> hashtags.add(tag[1])
             }
         }
+        val hasPublicItems = eventIds.isNotEmpty() || coordinates.isNotEmpty() || hashtags.isNotEmpty()
+        if (decryptedContent != null) {
+            for (tag in parsePrivateTagsGeneric(decryptedContent)) {
+                if (tag.size < 2) continue
+                when (tag[0]) {
+                    "e" -> eventIds.add(tag[1])
+                    "a" -> coordinates.add(tag[1])
+                    "t" -> hashtags.add(tag[1])
+                }
+            }
+        }
+        val isPrivate = !hasPublicItems && decryptedContent != null
         return BookmarkSet(
             pubkey = event.pubkey,
             dTag = dTag,
@@ -152,7 +197,8 @@ object Nip51 {
             eventIds = eventIds,
             coordinates = coordinates,
             hashtags = hashtags,
-            createdAt = event.created_at
+            createdAt = event.created_at,
+            isPrivate = isPrivate
         )
     }
 
@@ -168,6 +214,20 @@ object Nip51 {
         for (coord in coordinates) tags.add(listOf("a", coord))
         for (tag in hashtags) tags.add(listOf("t", tag))
         return tags
+    }
+
+    fun buildBookmarkSetPrivate(
+        dTag: String,
+        eventIds: Set<String>,
+        coordinates: Set<String> = emptySet(),
+        hashtags: Set<String> = emptySet()
+    ): Pair<List<List<String>>, String> {
+        val tags = listOf(listOf("d", dTag))
+        val privateTags = mutableListOf<List<String>>()
+        for (id in eventIds) privateTags.add(listOf("e", id))
+        for (coord in coordinates) privateTags.add(listOf("a", coord))
+        for (tag in hashtags) privateTags.add(listOf("t", tag))
+        return Pair(tags, buildPrivateContent(privateTags))
     }
 
     fun parseBookmarkList(event: NostrEvent): BookmarkList {

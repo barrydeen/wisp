@@ -645,7 +645,7 @@ fun WispNavHost() {
                 ownLists = feedViewModel.listRepo.ownLists.collectAsState().value,
                 onAddToList = { dTag, pk -> feedViewModel.addToList(dTag, pk) },
                 onRemoveFromList = { dTag, pk -> feedViewModel.removeFromList(dTag, pk) },
-                onCreateList = { name -> feedViewModel.createList(name) },
+                onCreateList = { name, isPrivate -> feedViewModel.createList(name, isPrivate) },
                 profilePubkey = pubkey,
                 relayInfoRepo = feedViewModel.relayInfoRepo,
                 nip05Repo = feedViewModel.nip05Repo,
@@ -1054,8 +1054,8 @@ fun WispNavHost() {
                 onBookmarkSetDetail = { set ->
                     navController.navigate("bookmark_set/${set.pubkey}/${set.dTag}")
                 },
-                onCreateList = { name -> feedViewModel.createList(name) },
-                onCreateBookmarkSet = { name -> feedViewModel.createBookmarkSet(name) },
+                onCreateList = { name, isPrivate -> feedViewModel.createList(name, isPrivate) },
+                onCreateBookmarkSet = { name, isPrivate -> feedViewModel.createBookmarkSet(name, isPrivate) },
                 onDeleteList = { dTag -> feedViewModel.deleteList(dTag) },
                 onDeleteBookmarkSet = { dTag -> feedViewModel.deleteBookmarkSet(dTag) }
             )

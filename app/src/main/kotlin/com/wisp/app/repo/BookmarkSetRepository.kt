@@ -35,8 +35,8 @@ class BookmarkSetRepository(private val context: Context, pubkeyHex: String? = n
         refreshOwnSets()
     }
 
-    fun updateFromEvent(event: NostrEvent) {
-        val set = Nip51.parseBookmarkSet(event) ?: return
+    fun updateFromEvent(event: NostrEvent, decryptedContent: String? = null) {
+        val set = Nip51.parseBookmarkSet(event, decryptedContent) ?: return
         val key = "${event.pubkey}:${set.dTag}"
         val existing = bookmarkSets[key]
         if (existing != null && existing.createdAt >= set.createdAt) return
@@ -85,7 +85,7 @@ class BookmarkSetRepository(private val context: Context, pubkeyHex: String? = n
             SerializableBookmarkSet(
                 it.pubkey, it.dTag, it.name,
                 it.eventIds.toList(), it.coordinates.toList(), it.hashtags.toList(),
-                it.createdAt
+                it.createdAt, it.isPrivate
             )
         }
         prefs.edit().putString("bookmark_sets", json.encodeToString(serializable)).apply()
@@ -99,7 +99,7 @@ class BookmarkSetRepository(private val context: Context, pubkeyHex: String? = n
                 val bs = BookmarkSet(
                     s.pubkey, s.dTag, s.name,
                     s.eventIds.toSet(), s.coordinates.toSet(), s.hashtags.toSet(),
-                    s.createdAt
+                    s.createdAt, s.isPrivate
                 )
                 bookmarkSets["${s.pubkey}:${s.dTag}"] = bs
             }
@@ -114,7 +114,8 @@ class BookmarkSetRepository(private val context: Context, pubkeyHex: String? = n
         val eventIds: List<String>,
         val coordinates: List<String>,
         val hashtags: List<String>,
-        val createdAt: Long
+        val createdAt: Long,
+        val isPrivate: Boolean = false
     )
 
     companion object {

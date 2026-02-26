@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Refresh
@@ -117,7 +118,7 @@ fun UserProfileScreen(
     ownLists: List<FollowSet> = emptyList(),
     onAddToList: ((String, String) -> Unit)? = null,
     onRemoveFromList: ((String, String) -> Unit)? = null,
-    onCreateList: ((String) -> Unit)? = null,
+    onCreateList: ((String, Boolean) -> Unit)? = null,
     profilePubkey: String = "",
     relayInfoRepo: RelayInfoRepository? = null,
     nip05Repo: Nip05Repository? = null,
@@ -945,10 +946,11 @@ private fun AddToListDialog(
     ownLists: List<FollowSet>,
     onAddToList: (String) -> Unit,
     onRemoveFromList: (String) -> Unit,
-    onCreateList: ((String) -> Unit)?,
+    onCreateList: ((String, Boolean) -> Unit)?,
     onDismiss: () -> Unit
 ) {
     var newListName by remember { mutableStateOf("") }
+    var newListPrivate by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -987,6 +989,15 @@ private fun AddToListDialog(
                                 style = MaterialTheme.typography.bodyLarge,
                                 modifier = Modifier.weight(1f)
                             )
+                            if (list.isPrivate) {
+                                androidx.compose.material3.Icon(
+                                    Icons.Outlined.Lock,
+                                    contentDescription = "Private",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                            }
                             Text(
                                 "${list.members.size}",
                                 style = MaterialTheme.typography.bodySmall,
@@ -1011,14 +1022,38 @@ private fun AddToListDialog(
                     TextButton(
                         onClick = {
                             if (newListName.isNotBlank()) {
-                                onCreateList?.invoke(newListName.trim())
+                                onCreateList?.invoke(newListName.trim(), newListPrivate)
                                 newListName = ""
+                                newListPrivate = false
                             }
                         },
                         enabled = newListName.isNotBlank()
                     ) {
                         Text("Create")
                     }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    androidx.compose.material3.Icon(
+                        Icons.Outlined.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "Private",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    androidx.compose.material3.Switch(
+                        checked = newListPrivate,
+                        onCheckedChange = { newListPrivate = it },
+                        modifier = Modifier.height(24.dp)
+                    )
                 }
             }
         },

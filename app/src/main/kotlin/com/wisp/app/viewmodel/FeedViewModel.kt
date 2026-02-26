@@ -295,12 +295,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun followAll(pubkeys: Set<String>) = socialActions.followAll(pubkeys)
 
     // -- List CRUD delegates --
-    fun createList(name: String) = listCrud.createList(name)
+    fun createList(name: String, isPrivate: Boolean = false) = listCrud.createList(name, isPrivate)
     fun addToList(dTag: String, pubkey: String) = listCrud.addToList(dTag, pubkey)
     fun removeFromList(dTag: String, pubkey: String) = listCrud.removeFromList(dTag, pubkey)
     fun deleteList(dTag: String) = listCrud.deleteList(dTag)
     fun fetchUserLists(pubkey: String) = listCrud.fetchUserLists(pubkey)
-    fun createBookmarkSet(name: String) = listCrud.createBookmarkSet(name)
+    fun createBookmarkSet(name: String, isPrivate: Boolean = false) = listCrud.createBookmarkSet(name, isPrivate)
     fun addNoteToBookmarkSet(dTag: String, eventId: String) = listCrud.addNoteToBookmarkSet(dTag, eventId)
     fun removeNoteFromBookmarkSet(dTag: String, eventId: String) = listCrud.removeNoteFromBookmarkSet(dTag, eventId)
     fun deleteBookmarkSet(dTag: String) = listCrud.deleteBookmarkSet(dTag)

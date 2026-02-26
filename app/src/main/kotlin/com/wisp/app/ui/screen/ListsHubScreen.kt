@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material3.AlertDialog
@@ -30,6 +31,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -60,8 +62,8 @@ fun ListsHubScreen(
     onBack: () -> Unit,
     onListDetail: (FollowSet) -> Unit,
     onBookmarkSetDetail: (BookmarkSet) -> Unit,
-    onCreateList: (String) -> Unit,
-    onCreateBookmarkSet: (String) -> Unit,
+    onCreateList: (String, Boolean) -> Unit,
+    onCreateBookmarkSet: (String, Boolean) -> Unit,
     onDeleteList: (String) -> Unit,
     onDeleteBookmarkSet: (String) -> Unit
 ) {
@@ -74,10 +76,10 @@ fun ListsHubScreen(
 
     if (showCreateDialog) {
         CreateListDialog(
-            onConfirm = { name, type ->
+            onConfirm = { name, type, isPrivate ->
                 when (type) {
-                    ListType.PEOPLE -> onCreateList(name)
-                    ListType.NOTES -> onCreateBookmarkSet(name)
+                    ListType.PEOPLE -> onCreateList(name, isPrivate)
+                    ListType.NOTES -> onCreateBookmarkSet(name, isPrivate)
                 }
                 showCreateDialog = false
             },
@@ -269,12 +271,24 @@ private fun FollowSetRow(
         )
         Spacer(Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = followSet.name,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = followSet.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (followSet.isPrivate) {
+                    Spacer(Modifier.width(4.dp))
+                    Icon(
+                        Icons.Outlined.Lock,
+                        contentDescription = "Private list",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 memberAvatars.forEach { url ->
                     ProfilePicture(url = url, size = 20)
@@ -380,12 +394,24 @@ private fun BookmarkSetRow(
         )
         Spacer(Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = bookmarkSet.name,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = bookmarkSet.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (bookmarkSet.isPrivate) {
+                    Spacer(Modifier.width(4.dp))
+                    Icon(
+                        Icons.Outlined.Lock,
+                        contentDescription = "Private list",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
             Text(
                 "${bookmarkSet.eventIds.size} notes",
                 style = MaterialTheme.typography.bodySmall,
@@ -461,11 +487,12 @@ private enum class ListType { PEOPLE, NOTES }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CreateListDialog(
-    onConfirm: (String, ListType) -> Unit,
+    onConfirm: (String, ListType, Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf(ListType.PEOPLE) }
+    var isPrivate by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -502,11 +529,41 @@ private fun CreateListDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        Icons.Outlined.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Private",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = isPrivate,
+                        onCheckedChange = { isPrivate = it }
+                    )
+                }
+                if (isPrivate) {
+                    Text(
+                        "Items will be encrypted. The list name is always visible.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { if (name.isNotBlank()) onConfirm(name.trim(), selectedType) },
+                onClick = { if (name.isNotBlank()) onConfirm(name.trim(), selectedType, isPrivate) },
                 enabled = name.isNotBlank()
             ) { Text("Create") }
         },
