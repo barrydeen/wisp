@@ -35,8 +35,8 @@ class ListRepository(private val context: Context, pubkeyHex: String? = null) {
         refreshOwnLists()
     }
 
-    fun updateFromEvent(event: NostrEvent) {
-        val followSet = Nip51.parseFollowSet(event) ?: return
+    fun updateFromEvent(event: NostrEvent, decryptedContent: String? = null) {
+        val followSet = Nip51.parseFollowSet(event, decryptedContent) ?: return
         val key = "${event.pubkey}:${followSet.dTag}"
         val existing = followSets[key]
         if (existing != null && existing.createdAt >= followSet.createdAt) return
@@ -98,7 +98,7 @@ class ListRepository(private val context: Context, pubkeyHex: String? = null) {
 
     private fun saveToPrefs(lists: List<FollowSet>) {
         val serializable = lists.map {
-            SerializableFollowSet(it.pubkey, it.dTag, it.name, it.members.toList(), it.createdAt)
+            SerializableFollowSet(it.pubkey, it.dTag, it.name, it.members.toList(), it.createdAt, it.isPrivate)
         }
         prefs.edit().putString("follow_sets", json.encodeToString(serializable)).apply()
     }
@@ -108,7 +108,7 @@ class ListRepository(private val context: Context, pubkeyHex: String? = null) {
         try {
             val serializable = json.decodeFromString<List<SerializableFollowSet>>(str)
             for (s in serializable) {
-                val fs = FollowSet(s.pubkey, s.dTag, s.name, s.members.toSet(), s.createdAt)
+                val fs = FollowSet(s.pubkey, s.dTag, s.name, s.members.toSet(), s.createdAt, s.isPrivate)
                 followSets["${s.pubkey}:${s.dTag}"] = fs
             }
         } catch (_: Exception) {}
@@ -120,7 +120,8 @@ class ListRepository(private val context: Context, pubkeyHex: String? = null) {
         val dTag: String,
         val name: String,
         val members: List<String>,
-        val createdAt: Long
+        val createdAt: Long,
+        val isPrivate: Boolean = false
     )
 
     companion object {

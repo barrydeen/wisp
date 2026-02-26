@@ -199,8 +199,22 @@ class EventRouter(
                 val myPubkey = getUserPubkey()
                 if (myPubkey != null && event.pubkey == myPubkey) blossomRepo.updateFromEvent(event)
             }
-            if (event.kind == Nip51.KIND_FOLLOW_SET) listRepo.updateFromEvent(event)
-            if (event.kind == Nip51.KIND_BOOKMARK_SET) bookmarkSetRepo.updateFromEvent(event)
+            if (event.kind == Nip51.KIND_FOLLOW_SET) {
+                val myPubkey = getUserPubkey()
+                val s = getSigner()
+                val decrypted = if (myPubkey != null && s != null && event.pubkey == myPubkey && event.content.isNotBlank()) {
+                    try { s.nip44Decrypt(event.content, myPubkey) } catch (_: Exception) { null }
+                } else null
+                listRepo.updateFromEvent(event, decrypted)
+            }
+            if (event.kind == Nip51.KIND_BOOKMARK_SET) {
+                val myPubkey = getUserPubkey()
+                val s = getSigner()
+                val decrypted = if (myPubkey != null && s != null && event.pubkey == myPubkey && event.content.isNotBlank()) {
+                    try { s.nip44Decrypt(event.content, myPubkey) } catch (_: Exception) { null }
+                } else null
+                bookmarkSetRepo.updateFromEvent(event, decrypted)
+            }
             if (event.kind == Nip30.KIND_USER_EMOJI_LIST) {
                 val myPubkey = getUserPubkey()
                 if (myPubkey != null && event.pubkey == myPubkey) customEmojiRepo.updateFromEvent(event)
