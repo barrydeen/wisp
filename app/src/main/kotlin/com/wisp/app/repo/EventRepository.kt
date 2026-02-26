@@ -58,9 +58,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     val relaySourceVersion: StateFlow<Int> = _relaySourceVersion
 
     // Repost tracking: inner event id -> set of reposter pubkeys
-    private val repostAuthors = LruCache<String, MutableSet<String>>(2000)
-    // Repost count tracking: inner event id -> count
-    private val repostCounts = LruCache<String, Int>(5000)
+    private val repostAuthors = LruCache<String, MutableSet<String>>(5000)
     // Track which events the current user has reposted: eventId -> true
     private val userReposts = LruCache<String, Boolean>(5000)
     private val _repostVersion = MutableStateFlow(0)
@@ -190,8 +188,6 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         val authors = repostAuthors.get(inner.id)
                             ?: mutableSetOf<String>().also { repostAuthors.put(inner.id, it) }
                         authors.add(event.pubkey)
-                        val count = repostCounts.get(inner.id) ?: 0
-                        repostCounts.put(inner.id, count + 1)
                         // Auto-mark if this is the current user's repost
                         if (event.pubkey == currentUserPubkey) {
                             userReposts.put(inner.id, true)
@@ -472,12 +468,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         return authors.any { it in pubkeys }
     }
 
-    fun getRepostCount(eventId: String): Int = repostCounts.get(eventId) ?: 0
+    fun getRepostCount(eventId: String): Int = repostAuthors.get(eventId)?.size ?: 0
 
     fun markUserRepost(eventId: String) {
         userReposts.put(eventId, true)
-        val count = repostCounts.get(eventId) ?: 0
-        repostCounts.put(eventId, count + 1)
+        val authors = repostAuthors.get(eventId)
+            ?: mutableSetOf<String>().also { repostAuthors.put(eventId, it) }
+        if (currentUserPubkey != null) authors.add(currentUserPubkey!!)
         repostDirty = true
         markVersionDirty()
     }
@@ -581,7 +578,6 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         reactionDetails.evictAll()
         reactionEmojiUrls.evictAll()
         zapDetails.evictAll()
-        repostCounts.evictAll()
         userReposts.evictAll()
         userZaps.evictAll()
         countedReactionIds.evictAll()
