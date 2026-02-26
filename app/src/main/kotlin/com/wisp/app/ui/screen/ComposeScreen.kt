@@ -31,8 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -94,7 +93,7 @@ fun ComposeScreen(
     val countdownSeconds by viewModel.countdownSeconds.collectAsState()
     val mentionCandidates by viewModel.mentionCandidates.collectAsState()
     val mentionQuery by viewModel.mentionQuery.collectAsState()
-    val previewVisible by viewModel.previewVisible.collectAsState()
+    val explicit by viewModel.explicit.collectAsState()
     val context = LocalContext.current
 
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
@@ -306,13 +305,13 @@ fun ComposeScreen(
                         Icon(Icons.Outlined.Image, contentDescription = "Attach media")
                     }
 
-                    if (eventRepo != null) {
-                        IconButton(onClick = { viewModel.togglePreview() }) {
-                            Icon(
-                                if (previewVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                contentDescription = if (previewVisible) "Hide Preview" else "Preview"
-                            )
-                        }
+                    IconButton(onClick = { viewModel.toggleExplicit() }) {
+                        Icon(
+                            Icons.Outlined.Warning,
+                            contentDescription = "Mark as explicit",
+                            tint = if (explicit) MaterialTheme.colorScheme.error
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
 
                     if (uploadProgress != null) {
@@ -333,7 +332,7 @@ fun ComposeScreen(
 
                 // Live preview
                 AnimatedVisibility(
-                    visible = previewVisible && !imeVisible && content.text.isNotBlank() && eventRepo != null
+                    visible = !imeVisible && content.text.isNotBlank() && eventRepo != null
                 ) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),

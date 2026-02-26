@@ -68,8 +68,12 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     private val _mentionCandidates = MutableStateFlow<List<MentionCandidate>>(emptyList())
     val mentionCandidates: StateFlow<List<MentionCandidate>> = _mentionCandidates
 
-    private val _previewVisible = MutableStateFlow(false)
-    val previewVisible: StateFlow<Boolean> = _previewVisible
+    private val _explicit = MutableStateFlow(false)
+    val explicit: StateFlow<Boolean> = _explicit
+
+    fun toggleExplicit() {
+        _explicit.value = !_explicit.value
+    }
 
     private var mentionStartIndex: Int = -1
     private var countdownJob: Job? = null
@@ -224,9 +228,6 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         clearMentionState()
     }
 
-    fun togglePreview() {
-        _previewVisible.value = !_previewVisible.value
-    }
 
     fun publish(
         relayPool: RelayPool,
@@ -312,6 +313,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         outboxRouter: OutboxRouter? = null
     ) {
         val tags = mutableListOf<List<String>>()
+        if (_explicit.value) {
+            tags.add(listOf("content-warning", ""))
+        }
         if (replyTo != null) {
             val hint = outboxRouter?.getRelayHint(replyTo.pubkey) ?: ""
             tags.addAll(Nip10.buildReplyTags(replyTo, hint))
@@ -463,7 +467,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _error.value = null
         _uploadedUrls.value = emptyList()
         _uploadProgress.value = null
-        _previewVisible.value = false
+        _explicit.value = false
         clearMentionState()
     }
 }
