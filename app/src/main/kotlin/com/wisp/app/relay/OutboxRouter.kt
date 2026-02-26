@@ -311,12 +311,11 @@ class OutboxRouter(
      * Request kind 10002 relay lists for pubkeys we don't have cached yet.
      * Returns the subscription ID if a request was sent, null otherwise.
      */
-    fun requestMissingRelayLists(pubkeys: List<String>): String? {
+    fun requestMissingRelayLists(pubkeys: List<String>, subId: String = "relay-lists"): String? {
         val missing = relayListRepo.getMissingPubkeys(pubkeys)
         Log.d("OutboxRouter", "requestMissingRelayLists: ${pubkeys.size} total, ${pubkeys.size - missing.size} cached, ${missing.size} missing")
         if (missing.isEmpty()) return null
 
-        val subId = "relay-lists"
         sendChunkedToAll(subId, missing, listOf(Filter(kinds = listOf(10002))))
         return subId
     }
@@ -330,7 +329,8 @@ class OutboxRouter(
      */
     fun requestRelayListsAndProfiles(
         pubkeys: List<String>,
-        profileRepo: com.wisp.app.repo.ProfileRepository
+        profileRepo: com.wisp.app.repo.ProfileRepository,
+        subId: String = "relay-lists"
     ): String? {
         val missingRelayLists = relayListRepo.getMissingPubkeys(pubkeys)
         val missingProfiles = pubkeys.filter { !profileRepo.has(it) }
@@ -340,7 +340,6 @@ class OutboxRouter(
                 "${allMissing.size} unique to fetch")
         if (allMissing.isEmpty()) return null
 
-        val subId = "relay-lists"
         sendChunkedToAll(subId, allMissing, listOf(Filter(kinds = listOf(0, 10002))))
         return subId
     }
@@ -357,7 +356,8 @@ class OutboxRouter(
     fun subscribeEngagementByAuthors(
         prefix: String,
         eventsByAuthor: Map<String, List<String>>,
-        activeSubIds: MutableList<String>
+        activeSubIds: MutableList<String>,
+        safetyNetRelays: List<String> = emptyList()
     ) {
         // Group authors by their read (inbox) relays
         val relayToEventIds = mutableMapOf<String, MutableList<String>>()
@@ -397,6 +397,23 @@ class OutboxRouter(
                 Filter(kinds = listOf(1), eTags = uniqueIds)
             )
             relayPool.sendToReadRelays(ClientMessage.req(prefix, filters))
+        }
+
+        // Safety net: send engagement queries for ALL event IDs to high-coverage relays.
+        // Catches engagement from authors whose inbox relays we don't know.
+        if (safetyNetRelays.isNotEmpty()) {
+            val allEventIds = eventsByAuthor.values.flatten().distinct()
+            if (allEventIds.isNotEmpty()) {
+                val filters = listOf(
+                    Filter(kinds = listOf(7), eTags = allEventIds),
+                    Filter(kinds = listOf(9735), eTags = allEventIds),
+                    Filter(kinds = listOf(1), eTags = allEventIds)
+                )
+                val msg = ClientMessage.req(prefix, filters)
+                for (url in safetyNetRelays) {
+                    relayPool.sendToRelayOrEphemeral(url, msg)
+                }
+            }
         }
     }
 

@@ -167,8 +167,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     // -- Manager classes --
     val feedSub: FeedSubscriptionManager = FeedSubscriptionManager(
         relayPool, outboxRouter, subManager, eventRepo, contactRepo, listRepo, notifRepo,
-        extendedNetworkRepo, keyRepo, healthTracker, metadataFetcher,
-        viewModelScope, processingDispatcher, pubkeyHex
+        extendedNetworkRepo, keyRepo, healthTracker, relayScoreBoard, profileRepo,
+        metadataFetcher, viewModelScope, processingDispatcher, pubkeyHex
     )
 
     val eventRouter: EventRouter = EventRouter(
@@ -314,7 +314,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSelectedList(followSet: com.wisp.app.nostr.FollowSet) {
         listRepo.selectList(followSet)
-        outboxRouter.requestMissingRelayLists(followSet.members.toList())
     }
 
     override fun onCleared() {
