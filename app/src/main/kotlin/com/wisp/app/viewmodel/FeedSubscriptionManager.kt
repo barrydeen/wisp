@@ -9,6 +9,7 @@ import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayHealthTracker
 import com.wisp.app.relay.RelayPool
+import com.wisp.app.relay.RelayScoreBoard
 import com.wisp.app.relay.SubscriptionManager
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
@@ -17,6 +18,7 @@ import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.ListRepository
 import com.wisp.app.repo.MetadataFetcher
 import com.wisp.app.repo.NotificationRepository
+import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.nostr.Nip57
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -44,6 +46,8 @@ class FeedSubscriptionManager(
     private val extendedNetworkRepo: ExtendedNetworkRepository,
     private val keyRepo: KeyRepository,
     private val healthTracker: RelayHealthTracker,
+    private val relayScoreBoard: RelayScoreBoard,
+    private val profileRepo: ProfileRepository,
     private val metadataFetcher: MetadataFetcher,
     private val scope: CoroutineScope,
     private val processingContext: CoroutineContext,
@@ -198,7 +202,48 @@ class FeedSubscriptionManager(
                 val list = listRepo.selectedList.value ?: return
                 val authors = list.members.toList()
                 if (authors.isEmpty()) return
-                val notesFilter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
+
+                // Lists are small (5-50 authors) so use a 7-day window instead of 24h.
+                // Infrequent posters in curated lists would otherwise produce a nearly empty feed.
+                val listSince = System.currentTimeMillis() / 1000 - 60 * 60 * 24 * 7
+
+                // Pre-fetch relay lists + profiles for list members before subscribing.
+                // Without this, authors not in the follow list have no cached kind 10002,
+                // so subscribeByAuthors routes them to fallback (pinned relays only).
+                val prefetchSubId = outboxRouter.requestRelayListsAndProfiles(authors, profileRepo, subId = "list-prefetch")
+                if (prefetchSubId != null) {
+                    // Track in feedEoseJob so repeated resubscribeFeed() calls cancel this.
+                    feedEoseJob = scope.launch {
+                        // Wait for multiple EOSEs — a single EOSE from a fast empty relay
+                        // would make us proceed before relays with actual data respond.
+                        val connected = relayPool.connectedCount.value
+                        val prefetchTarget = maxOf(2, (connected * 0.2).toInt())
+                        Log.d("RLC", "[FeedSub] list prefetch: awaiting $prefetchTarget EOSEs (connected=$connected)")
+                        subManager.awaitEoseCount(prefetchSubId, prefetchTarget, timeoutMs = 5000)
+                        subManager.closeSubscription(prefetchSubId)
+                        Log.d("RLC", "[FeedSub] list relay-list prefetch done, now subscribing feed")
+                        val notesFilter = Filter(kinds = listOf(1, 6), since = listSince)
+                        val targeted = outboxRouter.subscribeByAuthors(
+                            feedSubId, authors, notesFilter,
+                            indexerRelays = indexerRelays, blockedUrls = excludedUrls
+                        )
+                        val feedEoseTarget = maxOf(3, (connected * 0.3).toInt()).coerceIn(1, targeted.size)
+                        Log.d("RLC", "[FeedSub] LIST awaiting $feedEoseTarget/$connected EOSEs")
+                        subManager.awaitEoseCount(feedSubId, feedEoseTarget)
+                        Log.d("RLC", "[FeedSub] LIST EOSE received, feed loaded")
+                        _initialLoadDone.value = true
+                        _initLoadingState.value = InitLoadingState.Done
+                        eventRepo.countNewNotes = true
+                        subscribeEngagementForFeed()
+                        subscribeNotifEngagement()
+                        withContext(processingContext) {
+                            metadataFetcher.sweepMissingProfiles()
+                        }
+                    }
+                    return
+                }
+
+                val notesFilter = Filter(kinds = listOf(1, 6), since = listSince)
                 outboxRouter.subscribeByAuthors(
                     feedSubId, authors, notesFilter,
                     indexerRelays = indexerRelays, blockedUrls = excludedUrls
@@ -267,6 +312,31 @@ class FeedSubscriptionManager(
                 val list = listRepo.selectedList.value ?: run { isLoadingMore = false; return }
                 val authors = list.members.toList()
                 if (authors.isEmpty()) { isLoadingMore = false; return }
+
+                // Ensure relay lists are cached before load-more routing
+                val prefetchSubId = outboxRouter.requestMissingRelayLists(authors, subId = "list-prefetch-more")
+                if (prefetchSubId != null) {
+                    scope.launch {
+                        val connected = relayPool.connectedCount.value
+                        val prefetchTarget = maxOf(2, (connected * 0.2).toInt())
+                        subManager.awaitEoseCount(prefetchSubId, prefetchTarget, timeoutMs = 5000)
+                        subManager.closeSubscription(prefetchSubId)
+                        val templateFilter = Filter(kinds = listOf(1, 6), until = oldest - 1)
+                        outboxRouter.subscribeByAuthors(
+                            "loadmore", authors, templateFilter,
+                            indexerRelays = indexerRelays, blockedUrls = excludedUrls
+                        )
+                        val feedSizeBefore = eventRepo.feed.value.size
+                        subManager.awaitEoseWithTimeout("loadmore")
+                        subManager.closeSubscription("loadmore")
+                        if (eventRepo.feed.value.size > feedSizeBefore) {
+                            subscribeEngagementForFeed()
+                        }
+                        isLoadingMore = false
+                    }
+                    return
+                }
+
                 val templateFilter = Filter(kinds = listOf(1, 6), until = oldest - 1)
                 outboxRouter.subscribeByAuthors(
                     "loadmore", authors, templateFilter,
@@ -422,7 +492,8 @@ class FeedSubscriptionManager(
         for (event in events) {
             eventsByAuthor.getOrPut(event.pubkey) { mutableListOf() }.add(event.id)
         }
-        outboxRouter.subscribeEngagementByAuthors(prefix, eventsByAuthor, activeEngagementSubIds)
+        val safetyNet = relayScoreBoard.getScoredRelays().take(5).map { it.url }
+        outboxRouter.subscribeEngagementByAuthors(prefix, eventsByAuthor, activeEngagementSubIds, safetyNet)
     }
 
     fun subscribeNotifEngagement() {
@@ -434,7 +505,8 @@ class FeedSubscriptionManager(
             val author = event?.pubkey ?: "fallback"
             eventsByAuthor.getOrPut(author) { mutableListOf() }.add(id)
         }
-        outboxRouter.subscribeEngagementByAuthors("engage-notif", eventsByAuthor, activeEngagementSubIds)
+        val safetyNet = relayScoreBoard.getScoredRelays().take(5).map { it.url }
+        outboxRouter.subscribeEngagementByAuthors("engage-notif", eventsByAuthor, activeEngagementSubIds, safetyNet)
 
         val zapSubId = "engage-notif-zap"
         activeEngagementSubIds.add(zapSubId)
