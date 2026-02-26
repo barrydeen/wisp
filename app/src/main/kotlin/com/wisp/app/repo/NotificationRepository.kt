@@ -45,7 +45,7 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
         if (event.pubkey == myPubkey) return
         if (seenEvents.get(event.id) != null) return
         val hasPTag = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == myPubkey }
-        // Kind 6 reposts may omit the p-tag; accept if we recognize the reposted event as ours
+        // Kind 6 reposts may omit the p-tag; callers must pre-filter kind 6 ownership
         if (!hasPTag && event.kind != 6) return
 
         seenEvents.put(event.id, true)

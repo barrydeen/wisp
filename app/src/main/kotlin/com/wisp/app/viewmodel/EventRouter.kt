@@ -106,6 +106,7 @@ class EventRouter(
             return
         } else if (subscriptionId.startsWith("engage") || subscriptionId.startsWith("user-engage")) {
             when (event.kind) {
+                6 -> eventRepo.addEvent(event)
                 7 -> eventRepo.addEvent(event)
                 9735 -> {
                     eventRepo.addEvent(event)
@@ -121,11 +122,19 @@ class EventRouter(
                 }
             }
             // Engagement events win the dedup race against "notif" subscription,
-            // so also route notification-eligible events to notifRepo here
+            // so also route notification-eligible events to notifRepo here.
+            // For kind 6 reposts, only notify if the reposted event is ours
+            // (engagement subs fetch reposts for all viewed posts, not just ours).
             val myPubkey = getUserPubkey()
-            if (myPubkey != null && event.pubkey != myPubkey &&
-                event.kind in intArrayOf(1, 6, 7, 9735)) {
-                notifRepo.addEvent(event, myPubkey)
+            val isNotifEligible = myPubkey != null && event.pubkey != myPubkey &&
+                event.kind in intArrayOf(1, 6, 7, 9735)
+            val isRepostOfOther = event.kind == 6 && run {
+                val repostedId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+                val repostedEvent = repostedId?.let { eventRepo.getEvent(it) }
+                repostedEvent == null || repostedEvent.pubkey != myPubkey
+            }
+            if (isNotifEligible && !isRepostOfOther) {
+                notifRepo.addEvent(event, myPubkey!!)
                 if (eventRepo.getProfileData(event.pubkey) == null) {
                     metadataFetcher.addToPendingProfiles(event.pubkey)
                 }
