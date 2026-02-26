@@ -35,9 +35,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
@@ -196,93 +200,173 @@ fun RichContent(
         )
     }
 
+    // Group segments into inline runs vs block-level items
+    val groups = mutableListOf<Any>() // Either MutableList<ContentSegment> (inline run) or ContentSegment (block)
+    fun isInline(s: ContentSegment) = s is ContentSegment.TextSegment ||
+            s is ContentSegment.HashtagSegment ||
+            s is ContentSegment.NostrProfileSegment ||
+            s is ContentSegment.CustomEmojiSegment
+
+    for (segment in segments) {
+        if (isInline(segment)) {
+            val last = groups.lastOrNull()
+            if (last is MutableList<*>) {
+                @Suppress("UNCHECKED_CAST")
+                (last as MutableList<ContentSegment>).add(segment)
+            } else {
+                groups.add(mutableListOf(segment))
+            }
+        } else {
+            groups.add(segment)
+        }
+    }
+
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val effectiveHashtagClick = onHashtagClick ?: noteActions?.onHashtagClick
+
     Column(modifier = modifier) {
-        for (segment in segments) {
-            when (segment) {
-                is ContentSegment.TextSegment -> {
-                    val trimmed = segment.text.trim()
-                    if (trimmed.isNotEmpty()) {
-                        Text(text = segment.text, style = style, color = color)
+        for (group in groups) {
+            if (group is List<*>) {
+                @Suppress("UNCHECKED_CAST")
+                val inlineSegments = group as List<ContentSegment>
+
+                // Build profile display names for this run
+                val profileNames = mutableMapOf<String, String>()
+                for (seg in inlineSegments) {
+                    if (seg is ContentSegment.NostrProfileSegment) {
+                        val profile = eventRepo?.getProfileData(seg.pubkey)
+                        profileNames[seg.pubkey] = profile?.displayString
+                            ?: "${seg.pubkey.take(8)}...${seg.pubkey.takeLast(4)}"
                     }
                 }
-                is ContentSegment.ImageSegment -> {
-                    AsyncImage(
-                        model = segment.url,
-                        contentDescription = "Image",
-                        contentScale = ContentScale.FillWidth,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { fullScreenImageUrl = segment.url }
-                    )
+
+                // Check if run is only whitespace/empty text
+                val hasContent = inlineSegments.any { seg ->
+                    when (seg) {
+                        is ContentSegment.TextSegment -> seg.text.trim().isNotEmpty()
+                        else -> true
+                    }
                 }
-                is ContentSegment.VideoSegment -> {
-                    InlineVideoPlayer(
-                        url = segment.url,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                    )
-                }
-                is ContentSegment.LinkSegment -> {
-                    LinkPreview(url = segment.url)
-                }
-                is ContentSegment.NostrNoteSegment -> {
-                    if (eventRepo != null) {
-                        QuotedNote(
-                            eventId = segment.eventId,
-                            eventRepo = eventRepo,
-                            relayHints = segment.relayHints,
-                            onNoteClick = onNoteClick,
-                            noteActions = noteActions
+                if (!hasContent) continue
+
+                // Build annotated string for inline segments (skip custom emoji images for now)
+                val hasCustomEmoji = inlineSegments.any { it is ContentSegment.CustomEmojiSegment }
+                if (hasCustomEmoji) {
+                    // Fall back to individual rendering for runs with custom emojis
+                    for (seg in inlineSegments) {
+                        when (seg) {
+                            is ContentSegment.TextSegment -> {
+                                if (seg.text.trim().isNotEmpty()) {
+                                    Text(text = seg.text, style = style, color = color)
+                                }
+                            }
+                            is ContentSegment.CustomEmojiSegment -> {
+                                AsyncImage(
+                                    model = seg.url,
+                                    contentDescription = seg.shortcode,
+                                    modifier = Modifier
+                                        .height(with(LocalDensity.current) { style.fontSize.toDp() * 1.3f })
+                                        .padding(horizontal = 1.dp)
+                                )
+                            }
+                            else -> {}
+                        }
+                    }
+                } else {
+                    data class ClickableRange(val start: Int, val end: Int, val tag: String, val value: String)
+                    val clickableRanges = mutableListOf<ClickableRange>()
+
+                    val annotated = buildAnnotatedString {
+                        for (seg in inlineSegments) {
+                            when (seg) {
+                                is ContentSegment.TextSegment -> {
+                                    withStyle(SpanStyle(color = color)) {
+                                        append(seg.text)
+                                    }
+                                }
+                                is ContentSegment.HashtagSegment -> {
+                                    val start = length
+                                    withStyle(SpanStyle(color = primaryColor)) {
+                                        append("#${seg.tag}")
+                                    }
+                                    clickableRanges.add(ClickableRange(start, length, "hashtag", seg.tag))
+                                }
+                                is ContentSegment.NostrProfileSegment -> {
+                                    val start = length
+                                    val displayName = profileNames[seg.pubkey] ?: seg.pubkey.take(8)
+                                    withStyle(SpanStyle(color = primaryColor)) {
+                                        append("@$displayName")
+                                    }
+                                    clickableRanges.add(ClickableRange(start, length, "profile", seg.pubkey))
+                                }
+                                else -> {}
+                            }
+                        }
+                    }
+
+                    if (clickableRanges.isNotEmpty()) {
+                        ClickableText(
+                            text = annotated,
+                            style = style,
+                            onClick = { offset ->
+                                for (range in clickableRanges) {
+                                    if (offset in range.start until range.end) {
+                                        when (range.tag) {
+                                            "hashtag" -> effectiveHashtagClick?.invoke(range.value)
+                                            "profile" -> onProfileClick?.invoke(range.value)
+                                        }
+                                        break
+                                    }
+                                }
+                            }
                         )
                     } else {
-                        Text(
-                            text = "nostr:${segment.eventId.take(8)}...",
-                            style = style,
-                            color = MaterialTheme.colorScheme.primary
+                        Text(text = annotated, style = style)
+                    }
+                }
+            } else {
+                val segment = group as ContentSegment
+                when (segment) {
+                    is ContentSegment.ImageSegment -> {
+                        AsyncImage(
+                            model = segment.url,
+                            contentDescription = "Image",
+                            contentScale = ContentScale.FillWidth,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { fullScreenImageUrl = segment.url }
                         )
                     }
-                }
-                is ContentSegment.CustomEmojiSegment -> {
-                    AsyncImage(
-                        model = segment.url,
-                        contentDescription = segment.shortcode,
-                        modifier = Modifier
-                            .height(with(LocalDensity.current) { style.fontSize.toDp() * 1.3f })
-                            .padding(horizontal = 1.dp)
-                    )
-                }
-                is ContentSegment.HashtagSegment -> {
-                    val effectiveClick = onHashtagClick ?: noteActions?.onHashtagClick
-                    Text(
-                        text = "#${segment.tag}",
-                        style = style,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = if (effectiveClick != null) {
-                            Modifier.clickable { effectiveClick(segment.tag) }
-                        } else Modifier
-                    )
-                }
-                is ContentSegment.NostrProfileSegment -> {
-                    val profile = eventRepo?.let { repo ->
-                        val version by repo.quotedEventVersion.collectAsState()
-                        remember(segment.pubkey, version) { repo.getProfileData(segment.pubkey) }
+                    is ContentSegment.VideoSegment -> {
+                        InlineVideoPlayer(
+                            url = segment.url,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                        )
                     }
-                    val displayName = profile?.displayString
-                        ?: "${segment.pubkey.take(8)}...${segment.pubkey.takeLast(4)}"
-                    Text(
-                        text = "@$displayName",
-                        style = style,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = if (onProfileClick != null) {
-                            Modifier.clickable { onProfileClick(segment.pubkey) }
-                        } else Modifier
-                    )
+                    is ContentSegment.LinkSegment -> {
+                        LinkPreview(url = segment.url)
+                    }
+                    is ContentSegment.NostrNoteSegment -> {
+                        if (eventRepo != null) {
+                            QuotedNote(
+                                eventId = segment.eventId,
+                                eventRepo = eventRepo,
+                                relayHints = segment.relayHints,
+                                onNoteClick = onNoteClick,
+                                noteActions = noteActions
+                            )
+                        } else {
+                            Text(
+                                text = "nostr:${segment.eventId.take(8)}...",
+                                style = style,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    else -> {}
                 }
             }
         }
