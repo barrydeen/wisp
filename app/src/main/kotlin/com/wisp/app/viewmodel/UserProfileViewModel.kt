@@ -316,6 +316,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                 activeEngagementSubIds.add(subId)
                 val filters = listOf(
                     Filter(kinds = listOf(7), eTags = batch),
+                    Filter(kinds = listOf(6), eTags = batch),
                     Filter(kinds = listOf(9735), eTags = batch),
                     Filter(kinds = listOf(1), eTags = batch)
                 )
@@ -328,6 +329,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
             activeEngagementSubIds.add(subId)
             val filters = listOf(
                 Filter(kinds = listOf(7), eTags = batch),
+                Filter(kinds = listOf(6), eTags = batch),
                 Filter(kinds = listOf(9735), eTags = batch),
                 Filter(kinds = listOf(1), eTags = batch)
             )

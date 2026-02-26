@@ -144,6 +144,7 @@ fun UserProfileScreen(
     val nip05Version by nip05Repo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val reactionVersion by eventRepo?.reactionVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val replyCountVersion by eventRepo?.replyCountVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
+    val repostVersion by eventRepo?.repostVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val zapVersion by eventRepo?.zapVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val relaySourceVersion by eventRepo?.relaySourceVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
 
@@ -376,6 +377,7 @@ fun UserProfileScreen(
                         items(items = rootNotes, key = { it.id }) { event ->
                             val likeCount = reactionVersion.let { eventRepo?.getReactionCount(event.id) ?: 0 }
                             val replyCount = replyCountVersion.let { eventRepo?.getReplyCount(event.id) ?: 0 }
+                            val repostCount = repostVersion.let { eventRepo?.getRepostCount(event.id) ?: 0 }
                             val zapSats = zapVersion.let { eventRepo?.getZapSats(event.id) ?: 0L }
                             val userEmojis = reactionVersion.let { userPubkey?.let { eventRepo?.getUserReactionEmojis(event.id, it) } ?: emptySet() }
                             val reactionDetails = remember(reactionVersion, event.id) {
@@ -411,6 +413,7 @@ fun UserProfileScreen(
                                 hasUserZapped = hasUserZapped,
                                 likeCount = likeCount,
                                 replyCount = replyCount,
+                                repostCount = repostCount,
                                 zapSats = zapSats,
                                 isZapAnimating = event.id in zapAnimatingIds,
                                 isZapInProgress = event.id in zapInProgressIds,
@@ -447,6 +450,7 @@ fun UserProfileScreen(
                         items(items = replies, key = { it.id }) { event ->
                             val likeCount = reactionVersion.let { eventRepo?.getReactionCount(event.id) ?: 0 }
                             val replyCount = replyCountVersion.let { eventRepo?.getReplyCount(event.id) ?: 0 }
+                            val repostCount2 = repostVersion.let { eventRepo?.getRepostCount(event.id) ?: 0 }
                             val zapSats = zapVersion.let { eventRepo?.getZapSats(event.id) ?: 0L }
                             val userEmojis = reactionVersion.let { userPubkey?.let { eventRepo?.getUserReactionEmojis(event.id, it) } ?: emptySet() }
                             val reactionDetails = remember(reactionVersion, event.id) {
@@ -477,6 +481,7 @@ fun UserProfileScreen(
                                 hasUserZapped = hasUserZapped2,
                                 likeCount = likeCount,
                                 replyCount = replyCount,
+                                repostCount = repostCount2,
                                 zapSats = zapSats,
                                 isZapAnimating = event.id in zapAnimatingIds,
                                 isZapInProgress = event.id in zapInProgressIds,
