@@ -305,6 +305,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 markVersionDirty()
             }
         }
+        if (event.kind == 1) {
+            val isReply = event.tags.any { it.size >= 2 && it[0] == "e" }
+            if (!isReply) binaryInsert(event)
+        }
         _quotedEventVersion.value++
     }
 
