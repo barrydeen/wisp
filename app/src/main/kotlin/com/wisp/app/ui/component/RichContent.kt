@@ -35,13 +35,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.text.ClickableText
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
@@ -224,6 +226,7 @@ fun RichContent(
     val primaryColor = MaterialTheme.colorScheme.primary
     val effectiveHashtagClick = onHashtagClick ?: noteActions?.onHashtagClick
 
+    SelectionContainer {
     Column(modifier = modifier) {
         for (group in groups) {
             if (group is List<*>) {
@@ -273,9 +276,6 @@ fun RichContent(
                         }
                     }
                 } else {
-                    data class ClickableRange(val start: Int, val end: Int, val tag: String, val value: String)
-                    val clickableRanges = mutableListOf<ClickableRange>()
-
                     val annotated = buildAnnotatedString {
                         for (seg in inlineSegments) {
                             when (seg) {
@@ -285,44 +285,36 @@ fun RichContent(
                                     }
                                 }
                                 is ContentSegment.HashtagSegment -> {
-                                    val start = length
-                                    withStyle(SpanStyle(color = primaryColor)) {
-                                        append("#${seg.tag}")
+                                    val tag = seg.tag
+                                    withLink(
+                                        LinkAnnotation.Clickable("hashtag") {
+                                            effectiveHashtagClick?.invoke(tag)
+                                        }
+                                    ) {
+                                        withStyle(SpanStyle(color = primaryColor)) {
+                                            append("#${seg.tag}")
+                                        }
                                     }
-                                    clickableRanges.add(ClickableRange(start, length, "hashtag", seg.tag))
                                 }
                                 is ContentSegment.NostrProfileSegment -> {
-                                    val start = length
+                                    val pubkey = seg.pubkey
                                     val displayName = profileNames[seg.pubkey] ?: seg.pubkey.take(8)
-                                    withStyle(SpanStyle(color = primaryColor)) {
-                                        append("@$displayName")
+                                    withLink(
+                                        LinkAnnotation.Clickable("profile") {
+                                            onProfileClick?.invoke(pubkey)
+                                        }
+                                    ) {
+                                        withStyle(SpanStyle(color = primaryColor)) {
+                                            append("@$displayName")
+                                        }
                                     }
-                                    clickableRanges.add(ClickableRange(start, length, "profile", seg.pubkey))
                                 }
                                 else -> {}
                             }
                         }
                     }
 
-                    if (clickableRanges.isNotEmpty()) {
-                        ClickableText(
-                            text = annotated,
-                            style = style,
-                            onClick = { offset ->
-                                for (range in clickableRanges) {
-                                    if (offset in range.start until range.end) {
-                                        when (range.tag) {
-                                            "hashtag" -> effectiveHashtagClick?.invoke(range.value)
-                                            "profile" -> onProfileClick?.invoke(range.value)
-                                        }
-                                        break
-                                    }
-                                }
-                            }
-                        )
-                    } else {
-                        Text(text = annotated, style = style)
-                    }
+                    Text(text = annotated, style = style)
                 }
             } else {
                 val segment = group as ContentSegment
@@ -370,6 +362,7 @@ fun RichContent(
                 }
             }
         }
+    }
     }
 }
 
