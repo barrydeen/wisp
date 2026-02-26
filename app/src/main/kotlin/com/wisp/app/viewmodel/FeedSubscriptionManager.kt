@@ -93,7 +93,10 @@ class FeedSubscriptionManager(
 
     fun applyAuthorFilterForFeedType(type: FeedType) {
         eventRepo.setAuthorFilter(when (type) {
-            FeedType.FOLLOWS -> contactRepo.getFollowList().map { it.pubkey }.toSet()
+            FeedType.FOLLOWS -> {
+                val follows = contactRepo.getFollowList().map { it.pubkey }.toSet()
+                if (pubkeyHex != null) follows + pubkeyHex else follows
+            }
             FeedType.LIST -> listRepo.selectedList.value?.members
             else -> null  // EXTENDED_FOLLOWS and RELAY show everything
         })
