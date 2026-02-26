@@ -9,6 +9,7 @@ import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip17
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.NostrSigner
+import com.wisp.app.nostr.SignerCancelledException
 import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.RelayPool
@@ -34,6 +35,9 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
     private val _sending = MutableStateFlow(false)
     val sending: StateFlow<Boolean> = _sending
 
+    private val _sendError = MutableStateFlow<String?>(null)
+    val sendError: StateFlow<String?> = _sendError
+
     private var peerPubkey: String = ""
     private var dmRepo: DmRepository? = null
     private var relayListRepo: RelayListRepository? = null
@@ -53,6 +57,10 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateMessageText(value: String) {
         _messageText.value = value
+    }
+
+    fun clearSendError() {
+        _sendError.value = null
     }
 
     /**
@@ -119,6 +127,7 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
         // Remote signer mode: use signer, no keypair needed
         if (signer != null) {
             _messageText.value = ""
+            _sendError.value = null
             _sending.value = true
             viewModelScope.launch(Dispatchers.Default) {
                 try {
@@ -161,6 +170,9 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                     )
                     dmRepo?.addMessage(dmMsg, peerPubkey)
                     dmRepo?.markGiftWrapSeen(selfWrap.id, dmMsg.id)
+                } catch (e: SignerCancelledException) {
+                    _messageText.value = text
+                    _sendError.value = "Signing cancelled"
                 } catch (_: Exception) {
                 } finally {
                     _sending.value = false

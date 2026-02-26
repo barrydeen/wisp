@@ -49,12 +49,16 @@ class LocalSigner(
     }
 }
 
-// --- NIP-55 Remote Signer (Content Resolver) ---
+// --- NIP-55 Remote Signer (Content Resolver + Intent Fallback) ---
+
+class SignerRejectedException(message: String) : Exception(message)
+class SignerCancelledException(message: String) : Exception(message)
 
 /**
- * Delegates all signing/encryption to an external signer app via NIP-55 content resolver.
- * After permissions are granted during login, all operations run silently in the background
- * without launching the signer's UI.
+ * Delegates all signing/encryption to an external signer app via NIP-55.
+ * Tries the ContentResolver (silent mode) first. If the signer returns no cursor
+ * (permissions not granted / "always ask" mode), falls back to intent-based signing
+ * which launches the signer's approval UI via [SignerIntentBridge].
  */
 class RemoteSigner(
     override val pubkeyHex: String,
@@ -67,32 +71,41 @@ class RemoteSigner(
     override suspend fun signEvent(kind: Int, content: String, tags: List<List<String>>, createdAt: Long): NostrEvent {
         val unsigned = NostrEvent.createUnsigned(pubkeyHex, kind, content, tags, createdAt)
         val eventJson = unsigned.toJson()
-        return querySignEvent(eventJson, unsigned)
+
+        // Try silent ContentResolver first
+        val crResult = tryContentResolverSign(eventJson, unsigned)
+        if (crResult != null) return crResult
+
+        // Fall back to intent-based signing
+        return signEventViaIntent(eventJson, unsigned)
     }
 
     override suspend fun nip44Encrypt(plaintext: String, peerPubkeyHex: String): String {
-        return queryContentResolver("NIP44_ENCRYPT", plaintext, peerPubkeyHex)
+        return tryContentResolver("NIP44_ENCRYPT", plaintext, peerPubkeyHex)
+            ?: nip44ViaIntent("nip44_encrypt", plaintext, peerPubkeyHex)
     }
 
     override suspend fun nip44Decrypt(ciphertext: String, peerPubkeyHex: String): String {
-        return queryContentResolver("NIP44_DECRYPT", ciphertext, peerPubkeyHex)
+        return tryContentResolver("NIP44_DECRYPT", ciphertext, peerPubkeyHex)
+            ?: nip44ViaIntent("nip44_decrypt", ciphertext, peerPubkeyHex)
     }
 
-    private suspend fun querySignEvent(
+    // --- ContentResolver (silent mode) ---
+
+    private suspend fun tryContentResolverSign(
         eventJson: String,
         unsigned: NostrEvent
-    ): NostrEvent = withContext(Dispatchers.IO) {
+    ): NostrEvent? = withContext(Dispatchers.IO) {
         val uri = Uri.parse("content://${signerPackage}.SIGN_EVENT")
         val projection = arrayOf(eventJson, "", npub)
-        android.util.Log.d("RemoteSigner", "querySignEvent: uri=$uri, npub=$npub, kind=${unsigned.kind}")
+        android.util.Log.d("RemoteSigner", "tryContentResolverSign: uri=$uri, npub=$npub, kind=${unsigned.kind}")
         val cursor = contentResolver.query(uri, projection, null, null, null)
-            ?: throw Exception("Signer ($signerPackage) returned no cursor for SIGN_EVENT kind=${unsigned.kind}")
+            ?: return@withContext null // no cursor → need intent fallback
 
         cursor.use {
-            if (!it.moveToFirst()) throw Exception("Signer returned empty cursor for SIGN_EVENT")
-            if (it.getColumnIndex("rejected") >= 0) throw Exception("Signer rejected SIGN_EVENT")
+            if (!it.moveToFirst()) return@withContext null
+            if (it.getColumnIndex("rejected") >= 0) return@withContext null
 
-            // Prefer full signed event from "event" column
             val eventIdx = it.getColumnIndex("event")
             if (eventIdx >= 0) {
                 val signedJson = it.getString(eventIdx)
@@ -101,43 +114,88 @@ class RemoteSigner(
                 }
             }
 
-            // Fallback: apply signature to our unsigned event
             val sig = it.getString(it.getColumnIndex("signature"))
                 ?: it.getString(it.getColumnIndex("result"))
-                ?: throw Exception("Signer returned no signature")
+                ?: return@withContext null
             return@withContext unsigned.withSignature(sig)
         }
     }
 
-    private suspend fun queryContentResolver(
+    private suspend fun tryContentResolver(
         method: String,
         data: String,
         peerPubkey: String = ""
-    ): String = withContext(Dispatchers.IO) {
+    ): String? = withContext(Dispatchers.IO) {
         val uri = Uri.parse("content://${signerPackage}.$method")
         val projection = arrayOf(data, peerPubkey, npub)
-        android.util.Log.d("RemoteSigner", "query: uri=$uri, method=$method")
+        android.util.Log.d("RemoteSigner", "tryContentResolver: uri=$uri, method=$method")
         val cursor = contentResolver.query(uri, projection, null, null, null)
-            ?: throw Exception("Signer ($signerPackage) returned no cursor for $method")
+            ?: return@withContext null
 
         cursor.use {
-            if (!it.moveToFirst()) throw Exception("Signer returned empty cursor for $method")
-            if (it.getColumnIndex("rejected") >= 0) throw Exception("Signer rejected $method")
+            if (!it.moveToFirst()) return@withContext null
+            if (it.getColumnIndex("rejected") >= 0) return@withContext null
 
             val resIdx = it.getColumnIndex("result")
-            if (resIdx >= 0) {
-                return@withContext it.getString(resIdx)
-                    ?: throw Exception("Signer returned null result for $method")
-            }
+            if (resIdx >= 0) return@withContext it.getString(resIdx)
 
             val sigIdx = it.getColumnIndex("signature")
-            if (sigIdx >= 0) {
-                return@withContext it.getString(sigIdx)
-                    ?: throw Exception("Signer returned null signature")
-            }
+            if (sigIdx >= 0) return@withContext it.getString(sigIdx)
 
             return@withContext it.getString(0)
-                ?: throw Exception("Signer returned null in column 0 for $method")
+        }
+    }
+
+    // --- Intent fallback (launches signer UI) ---
+
+    private suspend fun signEventViaIntent(
+        eventJson: String,
+        unsigned: NostrEvent
+    ): NostrEvent {
+        val intent = buildSignerIntent("nostrsigner:$eventJson", "sign_event") {
+            putExtra("id", unsigned.id)
+        }
+        android.util.Log.d("RemoteSigner", "signEventViaIntent: kind=${unsigned.kind}")
+        return when (val result = SignerIntentBridge.requestSign(intent)) {
+            is SignResult.Success -> {
+                if (!result.event.isNullOrBlank()) {
+                    NostrEvent.fromJson(result.event)
+                } else {
+                    unsigned.withSignature(result.result)
+                }
+            }
+            is SignResult.Rejected -> throw SignerRejectedException("Signer rejected SIGN_EVENT kind=${unsigned.kind}")
+            is SignResult.Cancelled -> throw SignerCancelledException("Signing cancelled by user")
+        }
+    }
+
+    private suspend fun nip44ViaIntent(
+        type: String,
+        data: String,
+        peerPubkeyHex: String
+    ): String {
+        val intent = buildSignerIntent("nostrsigner:$data", type) {
+            putExtra("pubkey", peerPubkeyHex)
+        }
+        android.util.Log.d("RemoteSigner", "nip44ViaIntent: type=$type")
+        return when (val result = SignerIntentBridge.requestSign(intent)) {
+            is SignResult.Success -> result.result
+            is SignResult.Rejected -> throw SignerRejectedException("Signer rejected $type")
+            is SignResult.Cancelled -> throw SignerCancelledException("$type cancelled by user")
+        }
+    }
+
+    private inline fun buildSignerIntent(
+        uriString: String,
+        type: String,
+        extras: Intent.() -> Unit = {}
+    ): Intent {
+        return Intent(Intent.ACTION_VIEW, Uri.parse(uriString)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            `package` = signerPackage
+            putExtra("type", type)
+            putExtra("current_user", npub)
+            extras()
         }
     }
 }
