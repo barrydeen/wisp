@@ -82,6 +82,9 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     // so we track the user's own event timestamps separately.
     private var oldestNoteTimestamp: Long = Long.MAX_VALUE
     private var oldestReplyTimestamp: Long = Long.MAX_VALUE
+    private var latestProfileTimestamp: Long = 0
+    private var latestFollowListTimestamp: Long = 0
+    private var latestRelayListTimestamp: Long = 0
 
     companion object {
         private val SUB_IDS = setOf("userprofile", "userposts", "userfollows", "userrelays", "followprofiles")
@@ -108,6 +111,9 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         this.topRelayUrls = topRelayUrls
         oldestNoteTimestamp = Long.MAX_VALUE
         oldestReplyTimestamp = Long.MAX_VALUE
+        latestProfileTimestamp = 0
+        latestFollowListTimestamp = 0
+        latestRelayListTimestamp = 0
         _profile.value = eventRepo.getProfileData(pubkey)
         _relayHints.value = relayHintStore?.getHints(pubkey) ?: emptySet()
         _isFollowing.value = contactRepo.isFollowing(pubkey)
@@ -196,8 +202,11 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                 if (event.pubkey == pubkey) {
                     when (event.kind) {
                         0 -> {
-                            eventRepo.cacheEvent(event)
-                            _profile.value = eventRepo.getProfileData(pubkey)
+                            if (event.created_at > latestProfileTimestamp) {
+                                latestProfileTimestamp = event.created_at
+                                eventRepo.cacheEvent(event)
+                                _profile.value = eventRepo.getProfileData(pubkey)
+                            }
                         }
                         1 -> {
                             eventRepo.cacheEvent(event)
@@ -238,6 +247,8 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                             }
                         }
                         3 -> {
+                            if (event.created_at <= latestFollowListTimestamp) return@collect
+                            latestFollowListTimestamp = event.created_at
                             val follows = Nip02.parseFollowList(event)
                             _followList.value = follows
                             // Request profiles for followed users we haven't cached
@@ -275,6 +286,8 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                             }
                         }
                         10002 -> {
+                            if (event.created_at <= latestRelayListTimestamp) return@collect
+                            latestRelayListTimestamp = event.created_at
                             _relayList.value = Nip65.parseRelayList(event)
                             // Re-subscribe now that we know the user's write relays
                             outboxRouterRef?.let { router ->
