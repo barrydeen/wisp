@@ -90,7 +90,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     // Track which events the current user has zapped: eventId -> true
     private val userZaps = LruCache<String, Boolean>(5000)
     // Events where we optimistically added the user's own zap (to avoid double-counting receipts)
-    private val optimisticZaps = HashSet<String>()
+    private val optimisticZaps = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     // Debouncing: coalesce rapid-fire feed list and version updates
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -489,6 +489,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
      * without waiting for the 9735 receipt from relays.
      */
     fun addOptimisticZap(eventId: String, zapperPubkey: String, sats: Long, message: String = "") {
+        // If the 9735 receipt already arrived and was counted, skip the optimistic add
+        // to avoid double-counting (receipt can beat the NWC confirmation)
+        if (userZaps.get(eventId) == true) return
         userZaps.put(eventId, true)
         optimisticZaps.add(eventId)
         addZapSats(eventId, sats)
