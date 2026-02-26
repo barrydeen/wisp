@@ -698,6 +698,7 @@ private fun ProfileHeader(
                 content = about,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
+                plainLinks = true,
                 eventRepo = eventRepo,
                 onProfileClick = onNavigateToProfile
             )

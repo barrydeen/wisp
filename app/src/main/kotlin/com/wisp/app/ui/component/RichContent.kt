@@ -101,7 +101,7 @@ private sealed interface ContentSegment {
 private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp")
 private val videoExtensions = setOf("mp4", "mov", "webm")
 
-private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w)|https?://\S+|(?<!\w)#([a-zA-Z0-9_][a-zA-Z0-9_-]*)""", RegexOption.IGNORE_CASE)
+private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w)|https?://\S+|(?<!\w)([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|net|org|io|dev|app|pro|ai|co|me|info|xyz|cc|tv|to|gg|sh|im|is|it|rs|ly|site|online|store|tech|cloud|social|world|earth|space|lol|wtf|family|life|art|design|blog|news|live|video|media|chat|games|money|finance|agency|studio|build|run|codes|systems|network|zone|pub|blue|limo|fyi|wiki|page|link|click|exchange|markets|fun|club|today)(?:/\S*)?)(?!\w)|(?<!\w)#([a-zA-Z0-9_][a-zA-Z0-9_-]*)""", RegexOption.IGNORE_CASE)
 
 private val emojiShortcodeRegex = Regex(""":([a-zA-Z0-9_]+):""")
 
@@ -114,9 +114,18 @@ private fun parseContent(content: String, emojiMap: Map<String, String> = emptyM
             segments.add(ContentSegment.TextSegment(content.substring(lastEnd, match.range.first)))
         }
         val token = match.value
-        val hashtagCapture = match.groupValues.getOrNull(3)
+        val bareDomainCapture = match.groupValues.getOrNull(3)
+        val hashtagCapture = match.groupValues.getOrNull(4)
         if (!hashtagCapture.isNullOrEmpty() && token.startsWith("#")) {
             segments.add(ContentSegment.HashtagSegment(hashtagCapture))
+        } else if (!bareDomainCapture.isNullOrEmpty() && !token.startsWith("http")) {
+            val url = "https://$bareDomainCapture"
+            val ext = url.substringAfterLast('.').substringBefore('?').lowercase()
+            when {
+                ext in imageExtensions -> segments.add(ContentSegment.ImageSegment(url))
+                ext in videoExtensions -> segments.add(ContentSegment.VideoSegment(url))
+                else -> segments.add(ContentSegment.LinkSegment(url))
+            }
         } else if (token.startsWith("nostr:")) {
             when (val decoded = Nip19.decodeNostrUri(token)) {
                 is NostrUriData.NoteRef -> segments.add(ContentSegment.NostrNoteSegment(decoded.eventId, decoded.relays))
@@ -185,6 +194,7 @@ fun RichContent(
     style: TextStyle = MaterialTheme.typography.bodyLarge,
     color: Color = MaterialTheme.colorScheme.onSurface,
     emojiMap: Map<String, String> = emptyMap(),
+    plainLinks: Boolean = false,
     eventRepo: EventRepository? = null,
     onProfileClick: ((String) -> Unit)? = null,
     onNoteClick: ((String) -> Unit)? = null,
@@ -207,7 +217,8 @@ fun RichContent(
     fun isInline(s: ContentSegment) = s is ContentSegment.TextSegment ||
             s is ContentSegment.HashtagSegment ||
             s is ContentSegment.NostrProfileSegment ||
-            s is ContentSegment.CustomEmojiSegment
+            s is ContentSegment.CustomEmojiSegment ||
+            (plainLinks && s is ContentSegment.LinkSegment)
 
     for (segment in segments) {
         if (isInline(segment)) {
@@ -224,6 +235,7 @@ fun RichContent(
     }
 
     val primaryColor = MaterialTheme.colorScheme.primary
+    val uriHandler = LocalUriHandler.current
     val effectiveHashtagClick = onHashtagClick ?: noteActions?.onHashtagClick
 
     SelectionContainer {
@@ -306,6 +318,19 @@ fun RichContent(
                                     ) {
                                         withStyle(SpanStyle(color = primaryColor)) {
                                             append("@$displayName")
+                                        }
+                                    }
+                                }
+                                is ContentSegment.LinkSegment -> {
+                                    val linkUrl = seg.url
+                                    val displayUrl = linkUrl.removePrefix("https://").removePrefix("http://")
+                                    withLink(
+                                        LinkAnnotation.Clickable("url") {
+                                            uriHandler.openUri(linkUrl)
+                                        }
+                                    ) {
+                                        withStyle(SpanStyle(color = primaryColor)) {
+                                            append(displayUrl)
                                         }
                                     }
                                 }
