@@ -35,6 +35,8 @@ import com.wisp.app.nostr.RemoteSigner
 import com.wisp.app.nostr.SignerIntentBridge
 import com.wisp.app.nostr.SignResult
 import com.wisp.app.repo.SigningMode
+import android.content.Context
+import androidx.compose.runtime.rememberUpdatedState
 import com.wisp.app.ui.component.NotifBlipSound
 import com.wisp.app.ui.component.WispBottomBar
 import com.wisp.app.ui.component.ZapDialog
@@ -289,12 +291,17 @@ fun WispNavHost() {
         }
     }
 
+    val notifPrefs = remember { context.getSharedPreferences("wisp_settings", Context.MODE_PRIVATE) }
+    var notifSoundEnabled by rememberSaveable { mutableStateOf(notifPrefs.getBoolean("notif_sound_enabled", true)) }
     val notifBlipSound = remember { NotifBlipSound(context) }
     DisposableEffect(Unit) {
         onDispose { notifBlipSound.release() }
     }
+    val currentNotifSoundEnabled by rememberUpdatedState(notifSoundEnabled)
     LaunchedEffect(Unit) {
-        notificationsViewModel.notifReceived.collect { notifBlipSound.play() }
+        notificationsViewModel.notifReceived.collect {
+            if (currentNotifSoundEnabled) notifBlipSound.play()
+        }
     }
 
     // Add Note to List dialog — shared across all screens
@@ -1202,6 +1209,11 @@ fun WispNavHost() {
                 viewModel = notificationsViewModel,
                 scrollToTopTrigger = scrollToTopTrigger,
                 userPubkey = feedViewModel.getUserPubkey(),
+                notifSoundEnabled = notifSoundEnabled,
+                onToggleNotifSound = {
+                    notifSoundEnabled = !notifSoundEnabled
+                    notifPrefs.edit().putBoolean("notif_sound_enabled", notifSoundEnabled).apply()
+                },
                 onBack = { navController.popBackStack() },
                 onNoteClick = { eventId ->
                     navController.navigate("thread/$eventId")
