@@ -803,6 +803,7 @@ fun WispNavHost() {
                 viewModel = threadViewModel,
                 eventRepo = feedViewModel.eventRepo,
                 contactRepo = feedViewModel.contactRepo,
+                relayInfoRepo = feedViewModel.relayInfoRepo,
                 nip05Repo = feedViewModel.nip05Repo,
                 userPubkey = feedViewModel.getUserPubkey(),
                 onBack = { navController.popBackStack() },

@@ -112,11 +112,12 @@ class ThreadViewModel : ViewModel() {
 
         // Direct RelayPool collection — no dependency on FeedViewModel
         collectorJob = viewModelScope.launch {
-            relayPool.relayEvents.collect { (event, _, subscriptionId) ->
+            relayPool.relayEvents.collect { (event, relayUrl, subscriptionId) ->
                 if (subscriptionId != "thread-root" && subscriptionId != "thread-replies") return@collect
                 if (event.kind != 1) return@collect
 
                 eventRepo.cacheEvent(event)
+                eventRepo.addEventRelay(event.id, relayUrl)
 
                 val isNew = event.id !in threadEvents
                 threadEvents[event.id] = event
