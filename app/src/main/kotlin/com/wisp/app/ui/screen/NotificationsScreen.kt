@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -61,6 +63,8 @@ fun NotificationsScreen(
     viewModel: NotificationsViewModel,
     scrollToTopTrigger: Int = 0,
     userPubkey: String? = null,
+    notifSoundEnabled: Boolean = true,
+    onToggleNotifSound: () -> Unit = {},
     onBack: () -> Unit = {},
     onNoteClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
@@ -102,6 +106,14 @@ fun NotificationsScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onToggleNotifSound) {
+                        Icon(
+                            if (notifSoundEnabled) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
+                            contentDescription = if (notifSoundEnabled) "Mute notifications" else "Unmute notifications"
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

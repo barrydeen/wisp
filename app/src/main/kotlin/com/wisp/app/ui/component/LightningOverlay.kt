@@ -170,7 +170,7 @@ class NotifBlipSound(context: Context) {
                     .setMaxStreams(2)
                     .setAudioAttributes(
                         AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                            .setUsage(AudioAttributes.USAGE_GAME)
                             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                             .build()
                     )
