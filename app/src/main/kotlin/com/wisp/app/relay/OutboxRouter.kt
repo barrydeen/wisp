@@ -382,6 +382,7 @@ class OutboxRouter(
             val uniqueIds = eventIds.distinct()
             val filters = listOf(
                 Filter(kinds = listOf(7), eTags = uniqueIds),
+                Filter(kinds = listOf(6), eTags = uniqueIds),
                 Filter(kinds = listOf(9735), eTags = uniqueIds),
                 Filter(kinds = listOf(1), eTags = uniqueIds)
             )
@@ -393,6 +394,7 @@ class OutboxRouter(
             val uniqueIds = fallbackEventIds.distinct()
             val filters = listOf(
                 Filter(kinds = listOf(7), eTags = uniqueIds),
+                Filter(kinds = listOf(6), eTags = uniqueIds),
                 Filter(kinds = listOf(9735), eTags = uniqueIds),
                 Filter(kinds = listOf(1), eTags = uniqueIds)
             )
@@ -406,6 +408,7 @@ class OutboxRouter(
             if (allEventIds.isNotEmpty()) {
                 val filters = listOf(
                     Filter(kinds = listOf(7), eTags = allEventIds),
+                    Filter(kinds = listOf(6), eTags = allEventIds),
                     Filter(kinds = listOf(9735), eTags = allEventIds),
                     Filter(kinds = listOf(1), eTags = allEventIds)
                 )
