@@ -59,6 +59,7 @@ dependencies {
     implementation(libs.security.crypto)
     implementation(libs.bouncycastle)
     implementation(libs.media3.exoplayer)
+    implementation(libs.media3.exoplayer.hls)
     implementation(libs.media3.ui)
     implementation(libs.biometric)
     implementation(libs.splashscreen)
