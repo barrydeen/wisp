@@ -135,32 +135,41 @@ object Nip51 {
         for (tag in event.tags) {
             if (tag.size >= 2 && tag[0] == "p") members.add(tag[1])
         }
+        // Check public tags for title
+        var title = event.tags.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1)
         if (decryptedContent != null) {
             for (tag in parsePrivateTagsGeneric(decryptedContent)) {
-                if (tag.size >= 2 && tag[0] == "p") members.add(tag[1])
+                if (tag.size < 2) continue
+                when (tag[0]) {
+                    "p" -> members.add(tag[1])
+                    "title" -> if (title == null) title = tag[1]
+                }
             }
         }
         val isPrivate = members.isEmpty() || (event.tags.none { it.size >= 2 && it[0] == "p" } && decryptedContent != null)
         return FollowSet(
             pubkey = event.pubkey,
             dTag = dTag,
-            name = dTag,
+            name = title ?: dTag,
             members = members,
             createdAt = event.created_at,
             isPrivate = isPrivate
         )
     }
 
-    fun buildFollowSetTags(dTag: String, members: Set<String>): List<List<String>> {
+    fun buildFollowSetTags(dTag: String, members: Set<String>, title: String? = null): List<List<String>> {
         val tags = mutableListOf<List<String>>()
         tags.add(listOf("d", dTag))
+        if (title != null) tags.add(listOf("title", title))
         for (pubkey in members) tags.add(listOf("p", pubkey))
         return tags
     }
 
-    fun buildFollowSetPrivate(dTag: String, members: Set<String>): Pair<List<List<String>>, String> {
+    fun buildFollowSetPrivate(dTag: String, members: Set<String>, title: String? = null): Pair<List<List<String>>, String> {
         val tags = listOf(listOf("d", dTag))
-        val privateTags = members.map { listOf("p", it) }
+        val privateTags = mutableListOf<List<String>>()
+        if (title != null) privateTags.add(listOf("title", title))
+        for (pubkey in members) privateTags.add(listOf("p", pubkey))
         return Pair(tags, buildPrivateContent(privateTags))
     }
 
@@ -170,6 +179,7 @@ object Nip51 {
         val eventIds = mutableSetOf<String>()
         val coordinates = mutableSetOf<String>()
         val hashtags = mutableSetOf<String>()
+        var title = event.tags.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1)
         for (tag in event.tags) {
             if (tag.size < 2) continue
             when (tag[0]) {
@@ -186,6 +196,7 @@ object Nip51 {
                     "e" -> eventIds.add(tag[1])
                     "a" -> coordinates.add(tag[1])
                     "t" -> hashtags.add(tag[1])
+                    "title" -> if (title == null) title = tag[1]
                 }
             }
         }
@@ -193,7 +204,7 @@ object Nip51 {
         return BookmarkSet(
             pubkey = event.pubkey,
             dTag = dTag,
-            name = dTag,
+            name = title ?: dTag,
             eventIds = eventIds,
             coordinates = coordinates,
             hashtags = hashtags,
@@ -206,10 +217,12 @@ object Nip51 {
         dTag: String,
         eventIds: Set<String>,
         coordinates: Set<String> = emptySet(),
-        hashtags: Set<String> = emptySet()
+        hashtags: Set<String> = emptySet(),
+        title: String? = null
     ): List<List<String>> {
         val tags = mutableListOf<List<String>>()
         tags.add(listOf("d", dTag))
+        if (title != null) tags.add(listOf("title", title))
         for (id in eventIds) tags.add(listOf("e", id))
         for (coord in coordinates) tags.add(listOf("a", coord))
         for (tag in hashtags) tags.add(listOf("t", tag))
@@ -220,10 +233,12 @@ object Nip51 {
         dTag: String,
         eventIds: Set<String>,
         coordinates: Set<String> = emptySet(),
-        hashtags: Set<String> = emptySet()
+        hashtags: Set<String> = emptySet(),
+        title: String? = null
     ): Pair<List<List<String>>, String> {
         val tags = listOf(listOf("d", dTag))
         val privateTags = mutableListOf<List<String>>()
+        if (title != null) privateTags.add(listOf("title", title))
         for (id in eventIds) privateTags.add(listOf("e", id))
         for (coord in coordinates) privateTags.add(listOf("a", coord))
         for (tag in hashtags) privateTags.add(listOf("t", tag))
