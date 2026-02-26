@@ -4,7 +4,6 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.relay.Relay
@@ -82,7 +81,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val keyRepo = KeyRepository(app)
     private val pubkeyHex: String? = keyRepo.getPubkeyHex()
 
-    var signer: NostrSigner? = keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) }
+    var signer: NostrSigner? = null
         private set
 
     fun setSigner(s: NostrSigner) {

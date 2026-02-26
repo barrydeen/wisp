@@ -11,7 +11,6 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Keys
-import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip18
 import com.wisp.app.nostr.Nip19
@@ -244,7 +243,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             return
         }
 
-        val s = signer ?: keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) }
+        val s = signer
         if (s == null) {
             _error.value = "Not logged in"
             return
