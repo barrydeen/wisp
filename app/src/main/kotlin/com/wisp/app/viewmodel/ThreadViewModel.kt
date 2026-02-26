@@ -42,6 +42,7 @@ class ThreadViewModel : ViewModel() {
     private var topRelayUrls: List<String> = emptyList()
     private var relayListRepoRef: RelayListRepository? = null
     private var relayHintStoreRef: RelayHintStore? = null
+    private var currentUserPubkey: String? = null
 
     // Jobs for cleanup
     private var collectorJob: Job? = null
@@ -75,6 +76,7 @@ class ThreadViewModel : ViewModel() {
         this.topRelayUrls = topRelayUrls
         this.relayListRepoRef = relayListRepo
         this.relayHintStoreRef = relayHintStore
+        this.currentUserPubkey = eventRepo.currentUserPubkey
 
         // Resolve root from cached event (we clicked on it, so it's in cache)
         val cached = eventRepo.getEvent(eventId)
@@ -327,8 +329,17 @@ class ThreadViewModel : ViewModel() {
             parentToChildren.getOrPut(parentId) { mutableListOf() }.add(event)
         }
 
+        val myPubkey = currentUserPubkey
         for (children in parentToChildren.values) {
-            children.sortBy { it.created_at }
+            children.sortWith(Comparator { a, b ->
+                val aIsOwn = myPubkey != null && a.pubkey == myPubkey
+                val bIsOwn = myPubkey != null && b.pubkey == myPubkey
+                if (aIsOwn != bIsOwn) {
+                    if (aIsOwn) -1 else 1
+                } else {
+                    a.created_at.compareTo(b.created_at)
+                }
+            })
         }
 
         val result = mutableListOf<Pair<NostrEvent, Int>>()
