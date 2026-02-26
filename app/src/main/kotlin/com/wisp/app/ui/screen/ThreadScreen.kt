@@ -44,6 +44,7 @@ import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
+import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.viewmodel.ThreadViewModel
@@ -56,6 +57,7 @@ fun ThreadScreen(
     viewModel: ThreadViewModel,
     eventRepo: EventRepository,
     contactRepo: ContactRepository,
+    relayInfoRepo: RelayInfoRepository? = null,
     nip05Repo: Nip05Repository? = null,
     userPubkey: String?,
     onBack: () -> Unit,
@@ -116,6 +118,7 @@ fun ThreadScreen(
     val zapVersion by eventRepo.zapVersion.collectAsState()
     val replyCountVersion by eventRepo.replyCountVersion.collectAsState()
     val repostVersion by eventRepo.repostVersion.collectAsState()
+    val relaySourceVersion by eventRepo.relaySourceVersion.collectAsState()
     val nip05Version by nip05Repo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val followList by contactRepo.followList.collectAsState()
 
@@ -181,6 +184,11 @@ fun ThreadScreen(
                         val hasUserReposted = repostVersion.let { eventRepo.hasUserReposted(event.id) }
                         val hasUserZapped = zapVersion.let { eventRepo.hasUserZapped(event.id) }
                         val eventReactionEmojiUrls = reactionVersion.let { eventRepo.getReactionEmojiUrls(event.id) }
+                        val relayIcons = remember(relaySourceVersion, event.id) {
+                            eventRepo.getEventRelays(event.id).map { url ->
+                                url to relayInfoRepo?.getIconUrl(url)
+                            }
+                        }
                         PostCard(
                             event = event,
                             profile = profileData,
@@ -206,6 +214,7 @@ fun ThreadScreen(
                             zapDetails = zapDetailsList,
                             repostDetails = repostPubkeys,
                             reactionEmojiUrls = eventReactionEmojiUrls,
+                            relayIcons = relayIcons,
                             onNavigateToProfileFromDetails = onProfileClick,
                             onFollowAuthor = { onToggleFollow(event.pubkey) },
                             onBlockAuthor = { onBlockUser(event.pubkey) },

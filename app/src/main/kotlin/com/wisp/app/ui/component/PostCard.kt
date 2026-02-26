@@ -130,7 +130,6 @@ fun PostCard(
     }
 
     val hasReactionDetails = reactionDetails.isNotEmpty() || zapDetails.isNotEmpty() || repostDetails.isNotEmpty()
-    val hasDetails = hasReactionDetails || displayIcons.isNotEmpty()
     var expandedDetails by remember { mutableStateOf(false) }
 
     Column(
@@ -427,42 +426,38 @@ fun PostCard(
                 onManageEmojis = onManageEmojis,
                 modifier = Modifier.weight(1f)
             )
-            if (hasDetails) {
-                Icon(
-                    imageVector = if (expandedDetails) Icons.Filled.KeyboardArrowUp
-                        else Icons.Filled.KeyboardArrowDown,
-                    contentDescription = if (expandedDetails) "Collapse details" else "Expand details",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .size(20.dp)
-                        .clickable { expandedDetails = !expandedDetails }
-                )
-            }
+            Icon(
+                imageVector = if (expandedDetails) Icons.Filled.KeyboardArrowUp
+                    else Icons.Filled.KeyboardArrowDown,
+                contentDescription = if (expandedDetails) "Collapse details" else "Expand details",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .size(20.dp)
+                    .clickable { expandedDetails = !expandedDetails }
+            )
         }
-        if (hasDetails) {
-            AnimatedVisibility(
-                visible = expandedDetails,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                val profileResolver: (String) -> ProfileData? = { pubkey ->
-                    eventRepo?.getProfileData(pubkey)
+        AnimatedVisibility(
+            visible = expandedDetails,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            val profileResolver: (String) -> ProfileData? = { pubkey ->
+                eventRepo?.getProfileData(pubkey)
+            }
+            val navToProfile = onNavigateToProfileFromDetails ?: onNavigateToProfile ?: {}
+            Column {
+                if (hasReactionDetails) {
+                    ReactionDetailsSection(
+                        reactionDetails = reactionDetails,
+                        zapDetails = zapDetails,
+                        repostDetails = repostDetails,
+                        resolveProfile = profileResolver,
+                        onProfileClick = navToProfile,
+                        reactionEmojiUrls = reactionEmojiUrls
+                    )
                 }
-                val navToProfile = onNavigateToProfileFromDetails ?: onNavigateToProfile ?: {}
-                Column {
-                    if (hasReactionDetails) {
-                        ReactionDetailsSection(
-                            reactionDetails = reactionDetails,
-                            zapDetails = zapDetails,
-                            repostDetails = repostDetails,
-                            resolveProfile = profileResolver,
-                            onProfileClick = navToProfile,
-                            reactionEmojiUrls = reactionEmojiUrls
-                        )
-                    }
-                    if (displayIcons.isNotEmpty()) {
-                        SeenOnSection(relayIcons = displayIcons, onRelayClick = onRelayClick)
-                    }
+                if (displayIcons.isNotEmpty()) {
+                    SeenOnSection(relayIcons = displayIcons, onRelayClick = onRelayClick)
                 }
             }
         }
