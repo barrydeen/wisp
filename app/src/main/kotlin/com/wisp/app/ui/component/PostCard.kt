@@ -476,7 +476,6 @@ private fun TopZapperBanner(
     onClick: () -> Unit
 ) {
     val orange = Color(0xFFFF9800)
-    val darkOrange = Color(0xFFE65100)
 
     Row(
         modifier = Modifier
@@ -494,15 +493,6 @@ private fun TopZapperBanner(
                 .clickable(onClick = onClick)
                 .padding(start = 8.dp, end = 10.dp, top = 4.dp, bottom = 4.dp)
         ) {
-            // Bitcoin icon
-            Icon(
-                Icons.Outlined.CurrencyBitcoin,
-                contentDescription = null,
-                tint = orange,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(Modifier.width(4.dp))
-
             // Zapper avatar
             ProfilePicture(
                 url = avatarUrl,
@@ -511,21 +501,19 @@ private fun TopZapperBanner(
             )
             Spacer(Modifier.width(5.dp))
 
-            // Name
-            Text(
-                text = name,
-                style = MaterialTheme.typography.labelMedium,
-                color = orange,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+            // Bitcoin icon
+            Icon(
+                Icons.Outlined.CurrencyBitcoin,
+                contentDescription = null,
+                tint = orange,
+                modifier = Modifier.size(16.dp)
             )
-            Spacer(Modifier.width(5.dp))
 
             // Amount
             Text(
-                text = "\u26A1${formatZapAmount(sats)}",
+                text = formatZapAmount(sats),
                 style = MaterialTheme.typography.labelSmall,
-                color = darkOrange
+                color = orange
             )
 
             // Message (if present)
