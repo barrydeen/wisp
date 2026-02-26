@@ -3,6 +3,7 @@ package com.wisp.app.nostr
 sealed class NostrUriData {
     data class NoteRef(val eventId: String, val relays: List<String> = emptyList(), val author: String? = null) : NostrUriData()
     data class ProfileRef(val pubkey: String, val relays: List<String> = emptyList()) : NostrUriData()
+    data class AddressRef(val dTag: String, val relays: List<String> = emptyList(), val author: String? = null, val kind: Int? = null) : NostrUriData()
 }
 
 object Nip19 {
@@ -100,6 +101,41 @@ object Nip19 {
         return NostrUriData.NoteRef(eventId, relays, author)
     }
 
+    fun naddrDecode(bech32: String): NostrUriData.AddressRef {
+        val (hrp, data) = bech32Decode(bech32)
+        require(hrp == "naddr") { "Expected naddr, got $hrp" }
+        return parseTlvAddress(data)
+    }
+
+    private fun parseTlvAddress(data: ByteArray): NostrUriData.AddressRef {
+        var dTag: String? = null
+        val relays = mutableListOf<String>()
+        var author: String? = null
+        var kind: Int? = null
+        var i = 0
+        while (i + 1 < data.size) {
+            val type = data[i].toInt() and 0xFF
+            val length = data[i + 1].toInt() and 0xFF
+            i += 2
+            if (i + length > data.size) break
+            val value = data.copyOfRange(i, i + length)
+            when (type) {
+                0x00 -> dTag = value.toString(Charsets.UTF_8)
+                0x01 -> relays.add(value.toString(Charsets.UTF_8))
+                0x02 -> if (value.size == 32) author = value.toHex()
+                0x03 -> if (value.size == 4) {
+                    kind = ((value[0].toInt() and 0xFF) shl 24) or
+                            ((value[1].toInt() and 0xFF) shl 16) or
+                            ((value[2].toInt() and 0xFF) shl 8) or
+                            (value[3].toInt() and 0xFF)
+                }
+            }
+            i += length
+        }
+        requireNotNull(dTag) { "naddr missing d-tag" }
+        return NostrUriData.AddressRef(dTag, relays, author, kind)
+    }
+
     private fun parseTlvProfile(data: ByteArray): NostrUriData.ProfileRef {
         var pubkey: String? = null
         val relays = mutableListOf<String>()
@@ -128,6 +164,7 @@ object Nip19 {
                 bech32.startsWith("nevent1") -> neventDecode(bech32)
                 bech32.startsWith("npub1") -> NostrUriData.ProfileRef(npubDecode(bech32).toHex())
                 bech32.startsWith("nprofile1") -> nprofileDecode(bech32)
+                bech32.startsWith("naddr1") -> naddrDecode(bech32)
                 else -> null
             }
         } catch (_: Exception) {

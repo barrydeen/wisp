@@ -65,6 +65,10 @@ class MetadataFetcher(
     private var onDemandQuoteBatchJob: Job? = null
     private var onDemandQuoteBatchCounter = 0
 
+    // Addressable event fetching
+    private val inFlightAddressables = mutableSetOf<String>()
+    private var addressableBatchCounter = 0
+
     /** Returns URLs of the top relays by author coverage for quote lookups. Set by FeedViewModel. */
     var quoteRelayProvider: (() -> List<String>)? = null
 
@@ -188,6 +192,35 @@ class MetadataFetcher(
                     delay(300)
                     synchronized(pendingOnDemandQuotes) { flushOnDemandQuoteBatch() }
                 }
+            }
+        }
+    }
+
+    fun requestAddressableEvent(kind: Int, author: String, dTag: String, relayHints: List<String> = emptyList()) {
+        val coordKey = "$kind:$author:$dTag"
+        synchronized(pendingOnDemandQuotes) {
+            if (coordKey in inFlightAddressables) return
+            inFlightAddressables.add(coordKey)
+        }
+        val subId = "addr-${addressableBatchCounter++}"
+        val filter = Filter(kinds = listOf(kind), authors = listOf(author), dTags = listOf(dTag), limit = 1)
+        val msg = ClientMessage.req(subId, filter)
+
+        val topRelays = quoteRelayProvider?.invoke() ?: emptyList()
+        val targetUrls = (topRelays + relayHints).distinct()
+        if (targetUrls.isNotEmpty()) {
+            for (url in targetUrls) {
+                relayPool.sendToRelayOrEphemeral(url, msg)
+            }
+        } else {
+            relayPool.sendToTopRelays(msg, maxRelays = 10)
+        }
+
+        scope.launch(processingContext) {
+            subManager.awaitEoseWithTimeout(subId)
+            subManager.closeSubscription(subId)
+            synchronized(pendingOnDemandQuotes) {
+                inFlightAddressables.remove(coordKey)
             }
         }
     }

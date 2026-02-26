@@ -376,6 +376,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 when (val data = Nip19.decodeNostrUri("nostr:$bech32")) {
                     is com.wisp.app.nostr.NostrUriData.ProfileRef -> pubkeys.add(data.pubkey)
                     is com.wisp.app.nostr.NostrUriData.NoteRef -> eventIds.add(data.eventId)
+                    is com.wisp.app.nostr.NostrUriData.AddressRef -> {}
                     null -> {}
                 }
             } catch (_: Exception) {}
