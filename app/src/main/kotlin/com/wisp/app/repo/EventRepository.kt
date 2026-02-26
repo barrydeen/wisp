@@ -326,6 +326,17 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         metadataFetcher?.requestQuotedEvent(eventId, relayHints)
     }
 
+    fun requestAddressableEvent(kind: Int, author: String, dTag: String, relayHints: List<String> = emptyList()) {
+        metadataFetcher?.requestAddressableEvent(kind, author, dTag, relayHints)
+    }
+
+    fun findAddressableEvent(kind: Int, author: String, dTag: String): NostrEvent? {
+        return eventCache.snapshot().values.firstOrNull { event ->
+            event.kind == kind && event.pubkey == author &&
+                event.tags.any { it.size >= 2 && it[0] == "d" && it[1] == dTag }
+        }
+    }
+
     fun getEvent(id: String): NostrEvent? = eventCache.get(id)
 
     fun getProfileData(pubkey: String): ProfileData? = profileRepo?.get(pubkey)

@@ -94,6 +94,7 @@ private sealed interface ContentSegment {
     data class LinkSegment(val url: String) : ContentSegment
     data class NostrNoteSegment(val eventId: String, val relayHints: List<String> = emptyList()) : ContentSegment
     data class NostrProfileSegment(val pubkey: String) : ContentSegment
+    data class NostrAddressableSegment(val dTag: String, val relays: List<String>, val author: String?, val kind: Int?) : ContentSegment
     data class CustomEmojiSegment(val shortcode: String, val url: String) : ContentSegment
     data class HashtagSegment(val tag: String) : ContentSegment
 }
@@ -101,7 +102,7 @@ private sealed interface ContentSegment {
 private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp")
 private val videoExtensions = setOf("mp4", "mov", "webm")
 
-private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w)|https?://\S+|(?<!\w)([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|net|org|io|dev|app|pro|ai|co|me|info|xyz|cc|tv|to|gg|sh|im|is|it|rs|ly|site|online|store|tech|cloud|social|world|earth|space|lol|wtf|family|life|art|design|blog|news|live|video|media|chat|games|money|finance|agency|studio|build|run|codes|systems|network|zone|pub|blue|limo|fyi|wiki|page|link|click|exchange|markets|fun|club|today)(?:/\S*)?)(?!\w)|(?<!\w)#([a-zA-Z0-9_][a-zA-Z0-9_-]*)""", RegexOption.IGNORE_CASE)
+private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w)|https?://\S+|(?<!\w)([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|net|org|io|dev|app|pro|ai|co|me|info|xyz|cc|tv|to|gg|sh|im|is|it|rs|ly|site|online|store|tech|cloud|social|world|earth|space|lol|wtf|family|life|art|design|blog|news|live|video|media|chat|games|money|finance|agency|studio|build|run|codes|systems|network|zone|pub|blue|limo|fyi|wiki|page|link|click|exchange|markets|fun|club|today)(?:/\S*)?)(?!\w)|(?<!\w)#([a-zA-Z0-9_][a-zA-Z0-9_-]*)""", RegexOption.IGNORE_CASE)
 
 private val emojiShortcodeRegex = Regex(""":([a-zA-Z0-9_]+):""")
 
@@ -130,6 +131,7 @@ private fun parseContent(content: String, emojiMap: Map<String, String> = emptyM
             when (val decoded = Nip19.decodeNostrUri(token)) {
                 is NostrUriData.NoteRef -> segments.add(ContentSegment.NostrNoteSegment(decoded.eventId, decoded.relays))
                 is NostrUriData.ProfileRef -> segments.add(ContentSegment.NostrProfileSegment(decoded.pubkey))
+                is NostrUriData.AddressRef -> segments.add(ContentSegment.NostrAddressableSegment(decoded.dTag, decoded.relays, decoded.author, decoded.kind))
                 null -> segments.add(ContentSegment.TextSegment(token))
             }
         } else if (token.startsWith("npub1", ignoreCase = true)) {
@@ -383,6 +385,46 @@ fun RichContent(
                             )
                         }
                     }
+                    is ContentSegment.NostrAddressableSegment -> {
+                        val kind = segment.kind
+                        when {
+                            kind == 1 || kind == 0 -> {
+                                if (eventRepo != null && segment.author != null) {
+                                    QuotedAddressableNote(
+                                        kind = kind,
+                                        dTag = segment.dTag,
+                                        author = segment.author,
+                                        relayHints = segment.relays,
+                                        eventRepo = eventRepo,
+                                        onNoteClick = onNoteClick,
+                                        onProfileClick = onProfileClick,
+                                        noteActions = noteActions,
+                                        style = style
+                                    )
+                                } else {
+                                    Text(
+                                        text = "nostr:${segment.dTag.take(12)}...",
+                                        style = style,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            kind == 30311 -> {
+                                if (eventRepo != null && segment.author != null) {
+                                    LiveStreamCard(
+                                        dTag = segment.dTag,
+                                        author = segment.author,
+                                        relayHints = segment.relays,
+                                        eventRepo = eventRepo,
+                                        onProfileClick = onProfileClick
+                                    )
+                                } else {
+                                    UnsupportedKindBadge(kind = kind, style = style)
+                                }
+                            }
+                            else -> UnsupportedKindBadge(kind = kind, style = style)
+                        }
+                    }
                     else -> {}
                 }
             }
@@ -546,6 +588,231 @@ fun QuotedNote(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuotedAddressableNote(
+    kind: Int,
+    dTag: String,
+    author: String,
+    relayHints: List<String>,
+    eventRepo: EventRepository,
+    onNoteClick: ((String) -> Unit)?,
+    onProfileClick: ((String) -> Unit)?,
+    noteActions: NoteActions?,
+    style: TextStyle
+) {
+    val version by eventRepo.quotedEventVersion.collectAsState()
+    val event = remember(kind, author, dTag, version) {
+        eventRepo.findAddressableEvent(kind, author, dTag)
+    }
+
+    LaunchedEffect(kind, author, dTag) {
+        if (eventRepo.findAddressableEvent(kind, author, dTag) == null) {
+            eventRepo.requestAddressableEvent(kind, author, dTag, relayHints)
+        }
+    }
+
+    if (event != null) {
+        QuotedNote(
+            eventId = event.id,
+            eventRepo = eventRepo,
+            onNoteClick = onNoteClick,
+            noteActions = noteActions
+        )
+    } else {
+        // Loading state
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(14.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .width(14.dp)
+                        .height(14.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Loading note...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun UnsupportedKindBadge(kind: Int?, style: TextStyle) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        Text(
+            text = if (kind != null) "Unsupported event kind: $kind" else "Unsupported event kind",
+            style = style,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(14.dp)
+        )
+    }
+}
+
+@Composable
+private fun LiveStreamCard(
+    dTag: String,
+    author: String,
+    relayHints: List<String>,
+    eventRepo: EventRepository,
+    onProfileClick: ((String) -> Unit)?
+) {
+    val version by eventRepo.quotedEventVersion.collectAsState()
+    val event = remember(author, dTag, version) {
+        eventRepo.findAddressableEvent(30311, author, dTag)
+    }
+    val profile = remember(author, version) { eventRepo.getProfileData(author) }
+
+    LaunchedEffect(author, dTag) {
+        if (eventRepo.findAddressableEvent(30311, author, dTag) == null) {
+            eventRepo.requestAddressableEvent(30311, author, dTag, relayHints)
+        }
+    }
+
+    val title = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) }
+    val summary = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "summary" }?.get(1) }
+    val image = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1) }
+    val status = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "status" }?.get(1) }
+    val streamUrl = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "streaming" }?.get(1) }
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        if (event == null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(14.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.width(14.dp).height(14.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Loading stream...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            Column {
+                if (streamUrl != null) {
+                    InlineVideoPlayer(
+                        url = streamUrl,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                    )
+                } else if (image != null) {
+                    AsyncImage(
+                        model = image,
+                        contentDescription = title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 180.dp)
+                            .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                    )
+                }
+                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (status == "live") {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFFE53935),
+                                modifier = Modifier.padding(end = 8.dp)
+                            ) {
+                                Text(
+                                    text = "LIVE",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        } else if (status == "ended") {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier.padding(end = 8.dp)
+                            ) {
+                                Text(
+                                    text = "ENDED",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = title ?: "Live Stream",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    if (!summary.isNullOrBlank()) {
+                        Text(
+                            text = summary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 6.dp)
+                    ) {
+                        ProfilePicture(url = profile?.picture, size = 20)
+                        Spacer(Modifier.width(6.dp))
+                        val displayName = profile?.displayString
+                            ?: "${author.take(8)}...${author.takeLast(4)}"
+                        Text(
+                            text = displayName,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = if (onProfileClick != null) {
+                                Modifier.clickable { onProfileClick(author) }
+                            } else Modifier
+                        )
+                    }
+                }
             }
         }
     }
