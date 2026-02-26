@@ -24,10 +24,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.RemoteSigner
+import com.wisp.app.nostr.SignerIntentBridge
+import com.wisp.app.nostr.SignResult
 import com.wisp.app.repo.SigningMode
 import com.wisp.app.ui.component.NotifBlipSound
 import com.wisp.app.ui.component.WispBottomBar
@@ -153,6 +158,27 @@ fun WispNavHost() {
     // Push signer into FeedViewModel when it becomes available
     LaunchedEffect(remoteSigner) {
         remoteSigner?.let { feedViewModel.setSigner(it) }
+    }
+
+    // NIP-55 intent-based signing fallback — launches signer UI when ContentResolver fails
+    val signerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { activityResult ->
+        if (activityResult.resultCode == Activity.RESULT_OK) {
+            val data = activityResult.data
+            val signature = data?.getStringExtra("signature") ?: data?.getStringExtra("result") ?: ""
+            val event = data?.getStringExtra("event")
+            SignerIntentBridge.deliverResult(SignResult.Success(signature, event))
+        } else {
+            SignerIntentBridge.deliverResult(SignResult.Cancelled)
+        }
+    }
+
+    val pendingSignRequest by SignerIntentBridge.pendingRequest.collectAsState()
+    LaunchedEffect(pendingSignRequest) {
+        pendingSignRequest?.let { request ->
+            signerLauncher.launch(request.intent)
+        }
     }
 
     var replyTarget by remember { mutableStateOf<NostrEvent?>(null) }

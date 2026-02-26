@@ -1,5 +1,6 @@
 package com.wisp.app.ui.screen
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -56,6 +57,7 @@ fun DmConversationScreen(
     val messages by viewModel.messages.collectAsState()
     val messageText by viewModel.messageText.collectAsState()
     val sending by viewModel.sending.collectAsState()
+    val sendError by viewModel.sendError.collectAsState()
     val listState = rememberLazyListState()
 
     // Auto-scroll to bottom when new messages arrive
@@ -110,6 +112,23 @@ fun DmConversationScreen(
                         relayIcons = icons
                     )
                 }
+            }
+
+            // Error banner for signing failures
+            AnimatedVisibility(visible = sendError != null) {
+                Text(
+                    text = sendError ?: "",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+            }
+
+            // Clear error when user starts typing again
+            LaunchedEffect(messageText) {
+                if (messageText.isNotBlank()) viewModel.clearSendError()
             }
 
             // Message input
