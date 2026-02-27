@@ -723,6 +723,7 @@ fun WispNavHost(
                 viewModel = searchViewModel,
                 relayPool = feedViewModel.relayPool,
                 eventRepo = feedViewModel.eventRepo,
+                profileRepo = feedViewModel.profileRepo,
                 muteRepo = feedViewModel.muteRepo,
                 contactRepo = feedViewModel.contactRepo,
                 extendedNetworkCache = extNetCache,
