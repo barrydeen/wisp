@@ -1,6 +1,7 @@
 package com.wisp.app.ui.screen
 
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -241,7 +242,10 @@ fun NotificationsScreen(
                     .padding(padding)
             ) {
                 item(key = "summary_24h") {
-                    DailySummaryBar(summary = summary)
+                    DailySummaryBar(
+                        summary = summary,
+                        onFilterSelect = { viewModel.setFilter(it) }
+                    )
                 }
                 if (recentNotifs.isNotEmpty()) {
                     item(key = "header_recent") {
@@ -339,7 +343,7 @@ private fun SectionHeader(title: String) {
 // ── Daily Summary Bar ──────────────────────────────────────────────────
 
 @Composable
-private fun DailySummaryBar(summary: NotificationSummary) {
+private fun DailySummaryBar(summary: NotificationSummary, onFilterSelect: (NotificationFilter) -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth()
@@ -356,18 +360,24 @@ private fun DailySummaryBar(summary: NotificationSummary) {
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            SummaryStat(Icons.Outlined.ChatBubbleOutline, summary.replyCount.toString())
-            SummaryStat(Icons.Outlined.FavoriteBorder, summary.reactionCount.toString())
-            SummaryStat(Icons.Outlined.CurrencyBitcoin, formatSatsCompact(summary.zapSats))
-            SummaryStat(Icons.Outlined.Repeat, summary.repostCount.toString())
-            SummaryStat(Icons.Outlined.AlternateEmail, (summary.mentionCount + summary.quoteCount).toString())
+            SummaryStat(Icons.Outlined.ChatBubbleOutline, summary.replyCount.toString()) { onFilterSelect(NotificationFilter.REPLIES) }
+            SummaryStat(Icons.Outlined.FavoriteBorder, summary.reactionCount.toString()) { onFilterSelect(NotificationFilter.REACTIONS) }
+            SummaryStat(Icons.Outlined.CurrencyBitcoin, formatSatsCompact(summary.zapSats)) { onFilterSelect(NotificationFilter.ZAPS) }
+            SummaryStat(Icons.Outlined.Repeat, summary.repostCount.toString()) { onFilterSelect(NotificationFilter.REPOSTS) }
+            SummaryStat(Icons.Outlined.AlternateEmail, (summary.mentionCount + summary.quoteCount).toString()) { onFilterSelect(NotificationFilter.MENTIONS) }
         }
     }
 }
 
 @Composable
-private fun SummaryStat(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun SummaryStat(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 2.dp)
+    ) {
         Icon(
             icon,
             contentDescription = null,
