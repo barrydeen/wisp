@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -72,6 +73,7 @@ fun WispDrawerContent(
     onDrafts: () -> Unit = {},
     onMediaServers: () -> Unit,
     onKeys: () -> Unit = {},
+    onSocialGraph: () -> Unit = {},
     onSafety: () -> Unit = {},
     onCustomEmojis: () -> Unit = {},
     onConsole: () -> Unit = {},
@@ -267,6 +269,13 @@ fun WispDrawerContent(
                     label = { Text("Safety") },
                     selected = false,
                     onClick = onSafety,
+                    modifier = Modifier.padding(start = 36.dp, end = 12.dp)
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Outlined.Hub, contentDescription = null) },
+                    label = { Text("Social Graph") },
+                    selected = false,
+                    onClick = onSocialGraph,
                     modifier = Modifier.padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
