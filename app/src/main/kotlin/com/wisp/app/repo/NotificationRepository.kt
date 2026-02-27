@@ -38,6 +38,8 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
 
     @Volatile var appIsActive: Boolean = true
 
+    @Volatile var notifInitialized: Boolean = false
+
     @Volatile var isViewing: Boolean = false
 
     private var lastReadTimestamp: Long = prefs.getLong(KEY_LAST_READ, 0L)
@@ -73,10 +75,10 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
                 } else {
                     _hasUnread.value = true
                 }
-                if (event.kind == 9735 && appIsActive) {
+                if (event.kind == 9735 && appIsActive && notifInitialized) {
                     _zapReceived.tryEmit(Unit)
                 }
-                if (appIsActive && event.kind != 9735) {
+                if (appIsActive && notifInitialized && event.kind != 9735) {
                     _notifReceived.tryEmit(Unit)
                 }
             }
@@ -100,6 +102,7 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
             _notifications.value = emptyList()
             _summary24h.value = NotificationSummary()
             _hasUnread.value = false
+            notifInitialized = false
         }
         prefs.edit().clear().apply()
     }

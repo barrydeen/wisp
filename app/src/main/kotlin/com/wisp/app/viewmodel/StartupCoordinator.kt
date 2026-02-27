@@ -497,6 +497,7 @@ class StartupCoordinator(
      * when all relay subscriptions have been torn down.
      */
     fun subscribeDmsAndNotifications(myPubkey: String) {
+        notifRepo.notifInitialized = false
         val dmFilter = Filter(kinds = listOf(1059), pTags = listOf(myPubkey))
         val dmReqMsg = ClientMessage.req("dms", dmFilter)
         relayPool.sendToAll(dmReqMsg)
@@ -525,6 +526,7 @@ class StartupCoordinator(
         }
         scope.launch {
             subManager.awaitEoseWithTimeout("notif")
+            notifRepo.notifInitialized = true
             feedSub.subscribeNotifEngagement()
         }
     }
