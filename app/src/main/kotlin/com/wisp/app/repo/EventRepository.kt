@@ -574,6 +574,15 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
 
 
+    fun searchNotes(query: String, limit: Int = 50): List<NostrEvent> {
+        if (query.isBlank()) return emptyList()
+        val lowerQuery = query.lowercase()
+        return eventCache.snapshot().values
+            .filter { it.kind == 1 && it.content.lowercase().contains(lowerQuery) }
+            .sortedByDescending { it.created_at }
+            .take(limit)
+    }
+
     fun clearFeed() {
         synchronized(feedList) {
             feedList.clear()

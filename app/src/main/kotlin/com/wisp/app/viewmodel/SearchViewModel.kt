@@ -13,11 +13,17 @@ import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.MuteRepository
+import com.wisp.app.repo.ProfileRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+enum class SearchTab { MY_DEVICE, RELAYS }
+enum class LocalFilter { PEOPLE, NOTES }
 
 class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
@@ -25,6 +31,21 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query
 
+    // Tab and filter state
+    private val _selectedTab = MutableStateFlow(SearchTab.MY_DEVICE)
+    val selectedTab: StateFlow<SearchTab> = _selectedTab
+
+    private val _localFilter = MutableStateFlow(LocalFilter.PEOPLE)
+    val localFilter: StateFlow<LocalFilter> = _localFilter
+
+    // Local search results
+    private val _localUsers = MutableStateFlow<List<ProfileData>>(emptyList())
+    val localUsers: StateFlow<List<ProfileData>> = _localUsers
+
+    private val _localNotes = MutableStateFlow<List<NostrEvent>>(emptyList())
+    val localNotes: StateFlow<List<NostrEvent>> = _localNotes
+
+    // Relay search results
     private val _users = MutableStateFlow<List<ProfileData>>(emptyList())
     val users: StateFlow<List<ProfileData>> = _users
 
@@ -38,14 +59,44 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     val isSearching: StateFlow<Boolean> = _isSearching
 
     private var searchJob: Job? = null
+    private var localSearchJob: Job? = null
     private var relayPool: RelayPool? = null
 
     private val userSubId = "search-users"
     private val noteSubId = "search-notes"
     private val listSubId = "search-lists"
 
-    fun updateQuery(newQuery: String) {
+    fun selectTab(tab: SearchTab) {
+        _selectedTab.value = tab
+    }
+
+    fun selectLocalFilter(filter: LocalFilter) {
+        _localFilter.value = filter
+    }
+
+    fun updateQuery(newQuery: String, profileRepo: ProfileRepository? = null, eventRepo: EventRepository? = null) {
         _query.value = newQuery
+        if (profileRepo != null && eventRepo != null) {
+            searchLocal(newQuery, profileRepo, eventRepo)
+        }
+    }
+
+    private fun searchLocal(query: String, profileRepo: ProfileRepository, eventRepo: EventRepository) {
+        localSearchJob?.cancel()
+        if (query.isBlank()) {
+            _localUsers.value = emptyList()
+            _localNotes.value = emptyList()
+            return
+        }
+        localSearchJob = viewModelScope.launch {
+            delay(150) // debounce
+            withContext(Dispatchers.Default) {
+                val users = profileRepo.search(query, limit = 50)
+                val notes = eventRepo.searchNotes(query, limit = 50)
+                _localUsers.value = users
+                _localNotes.value = notes
+            }
+        }
     }
 
     fun search(query: String, relayPool: RelayPool, eventRepo: EventRepository, muteRepo: MuteRepository? = null) {
@@ -156,11 +207,14 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clear() {
         searchJob?.cancel()
+        localSearchJob?.cancel()
         relayPool?.let { closeSubscriptions(it) }
         _query.value = ""
         _users.value = emptyList()
         _notes.value = emptyList()
         _lists.value = emptyList()
+        _localUsers.value = emptyList()
+        _localNotes.value = emptyList()
         _isSearching.value = false
     }
 
