@@ -56,6 +56,7 @@ import com.wisp.app.ui.screen.UserProfileScreen
 import com.wisp.app.ui.screen.ConsoleScreen
 import com.wisp.app.ui.screen.CustomEmojiScreen
 import com.wisp.app.ui.screen.SearchScreen
+import com.wisp.app.ui.screen.SocialGraphScreen
 import com.wisp.app.ui.screen.BookmarkSetScreen
 import com.wisp.app.ui.screen.HashtagFeedScreen
 import com.wisp.app.ui.screen.KeysScreen
@@ -116,6 +117,7 @@ object Routes {
     const val HASHTAG_FEED = "hashtag/{tag}"
     const val EXISTING_USER_ONBOARDING = "onboarding/existing"
     const val DRAFTS = "drafts"
+    const val SOCIAL_GRAPH = "social_graph"
 }
 
 @Composable
@@ -516,6 +518,9 @@ fun WispNavHost(
                         launchSingleTop = true
                         restoreState = true
                     }
+                },
+                onSocialGraph = {
+                    navController.navigate(Routes.SOCIAL_GRAPH)
                 },
                 onCustomEmojis = {
                     navController.navigate(Routes.CUSTOM_EMOJIS)
@@ -1012,6 +1017,15 @@ fun WispNavHost(
             consoleViewModel.init(feedViewModel.relayPool)
             ConsoleScreen(
                 viewModel = consoleViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.SOCIAL_GRAPH) {
+            SocialGraphScreen(
+                extendedNetworkRepo = feedViewModel.extendedNetworkRepo,
+                profileRepo = feedViewModel.profileRepo,
+                userPubkey = feedViewModel.getUserPubkey(),
                 onBack = { navController.popBackStack() }
             )
         }

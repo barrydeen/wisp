@@ -110,6 +110,12 @@ class ExtendedNetworkRepository(
         }
     }
 
+    fun resetDiscoveryState() {
+        if (!discoveryInProgress) {
+            _discoveryState.value = DiscoveryState.Idle
+        }
+    }
+
     fun isNetworkReady(): Boolean {
         val cache = _cachedNetwork.value ?: return false
         return !isCacheStale(cache)

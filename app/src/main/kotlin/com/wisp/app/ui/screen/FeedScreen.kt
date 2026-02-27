@@ -102,6 +102,7 @@ fun FeedScreen(
     onWallet: () -> Unit = {},
     onLists: () -> Unit = {},
     onDrafts: () -> Unit = {},
+    onSocialGraph: () -> Unit = {},
     onSafety: () -> Unit = {},
     onCustomEmojis: () -> Unit = {},
     onConsole: () -> Unit = {},
@@ -309,6 +310,10 @@ fun FeedScreen(
                 onMediaServers = {
                     scope.launch { drawerState.close() }
                     onMediaServers()
+                },
+                onSocialGraph = {
+                    scope.launch { drawerState.close() }
+                    onSocialGraph()
                 },
                 onSafety = {
                     scope.launch { drawerState.close() }
