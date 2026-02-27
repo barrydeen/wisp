@@ -502,6 +502,24 @@ class FeedSubscriptionManager(
     fun subscribeNotifEngagement() {
         val eventIds = notifRepo.getAllPostCardEventIds()
         if (eventIds.isEmpty()) return
+
+        // Fetch any missing referenced events from our own relays first.
+        // Notifications reference the user's own notes (reactions, zaps, reposts
+        // all point at our events). These live on relays we're already connected
+        // to, so a simple ids filter to our write+read relays is fast & reliable
+        // — no need for the generic on-demand quote path.
+        val missingIds = eventIds.filter { eventRepo.getEvent(it) == null }
+        if (missingIds.isNotEmpty()) {
+            val subId = "notif-self-events"
+            val msg = ClientMessage.req(subId, Filter(ids = missingIds))
+            relayPool.sendToWriteRelays(msg)
+            relayPool.sendToReadRelays(msg)
+            scope.launch {
+                subManager.awaitEoseWithTimeout(subId, timeoutMs = 8_000)
+                subManager.closeSubscription(subId)
+            }
+        }
+
         val eventsByAuthor = mutableMapOf<String, MutableList<String>>()
         for (id in eventIds) {
             val event = eventRepo.getEvent(id)

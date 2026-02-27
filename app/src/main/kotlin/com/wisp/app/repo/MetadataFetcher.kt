@@ -196,6 +196,22 @@ class MetadataFetcher(
         }
     }
 
+    /**
+     * Fetch an event expected to live on our own write/read relays.
+     * Sends a single-event REQ directly — no batching or ephemeral connections needed.
+     */
+    fun requestOwnEvent(eventId: String) {
+        if (eventRepo.getEvent(eventId) != null) return
+        val subId = "own-${onDemandQuoteBatchCounter++}"
+        val msg = ClientMessage.req(subId, Filter(ids = listOf(eventId)))
+        relayPool.sendToWriteRelays(msg)
+        relayPool.sendToReadRelays(msg)
+        scope.launch {
+            subManager.awaitEoseWithTimeout(subId, timeoutMs = 5_000)
+            subManager.closeSubscription(subId)
+        }
+    }
+
     fun requestAddressableEvent(kind: Int, author: String, dTag: String, relayHints: List<String> = emptyList()) {
         val coordKey = "$kind:$author:$dTag"
         synchronized(pendingOnDemandQuotes) {

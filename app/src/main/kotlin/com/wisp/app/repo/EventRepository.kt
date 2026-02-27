@@ -326,6 +326,11 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         metadataFetcher?.requestQuotedEvent(eventId, relayHints)
     }
 
+    /** Fetch an event expected to live on our own write/read relays (e.g. our own note). */
+    fun requestOwnEvent(eventId: String) {
+        metadataFetcher?.requestOwnEvent(eventId)
+    }
+
     fun requestAddressableEvent(kind: Int, author: String, dTag: String, relayHints: List<String> = emptyList()) {
         metadataFetcher?.requestAddressableEvent(kind, author, dTag, relayHints)
     }
