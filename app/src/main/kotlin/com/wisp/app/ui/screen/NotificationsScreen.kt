@@ -1086,7 +1086,7 @@ private fun ReferencedNotePostCard(
 
     LaunchedEffect(eventId) {
         if (eventRepo.getEvent(eventId) == null) {
-            eventRepo.requestQuotedEvent(eventId)
+            eventRepo.requestOwnEvent(eventId)
         }
     }
 
