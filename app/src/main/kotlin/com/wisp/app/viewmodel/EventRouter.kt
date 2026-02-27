@@ -27,6 +27,7 @@ import com.wisp.app.repo.NotificationRepository
 import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayListRepository
+import com.wisp.app.repo.RelaySetRepository
 
 /**
  * Routes incoming relay events to the appropriate repositories based on subscription ID.
@@ -45,6 +46,7 @@ class EventRouter(
     private val blossomRepo: BlossomRepository,
     private val customEmojiRepo: CustomEmojiRepository,
     private val relayListRepo: RelayListRepository,
+    private val relaySetRepo: RelaySetRepository,
     private val relayScoreBoard: RelayScoreBoard,
     private val relayHintStore: RelayHintStore,
     private val keyRepo: KeyRepository,
@@ -223,6 +225,15 @@ class EventRouter(
                     try { s.nip44Decrypt(event.content, myPubkey) } catch (_: Exception) { null }
                 } else null
                 bookmarkSetRepo.updateFromEvent(event, decrypted)
+            }
+            if (event.kind == Nip51.KIND_RELAY_SET) {
+                relaySetRepo.updateRelaySetFromEvent(event)
+            }
+            if (event.kind == Nip51.KIND_FAVORITE_RELAYS) {
+                val myPubkey = getUserPubkey()
+                if (myPubkey != null && event.pubkey == myPubkey) {
+                    relaySetRepo.updateFavoriteRelaysFromEvent(event)
+                }
             }
             if (event.kind == Nip30.KIND_USER_EMOJI_LIST) {
                 val myPubkey = getUserPubkey()

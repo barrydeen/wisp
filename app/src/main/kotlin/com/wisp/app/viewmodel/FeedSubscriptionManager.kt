@@ -20,6 +20,7 @@ import com.wisp.app.repo.MetadataFetcher
 import com.wisp.app.repo.NotificationRepository
 import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.nostr.Nip57
+import com.wisp.app.nostr.RelaySet
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -58,6 +59,9 @@ class FeedSubscriptionManager(
 
     private val _selectedRelay = MutableStateFlow<String?>(null)
     val selectedRelay: StateFlow<String?> = _selectedRelay
+
+    private val _selectedRelaySet = MutableStateFlow<RelaySet?>(null)
+    val selectedRelaySet: StateFlow<RelaySet?> = _selectedRelaySet
 
     private val _relayFeedStatus = MutableStateFlow<RelayFeedStatus>(RelayFeedStatus.Idle)
     val relayFeedStatus: StateFlow<RelayFeedStatus> = _relayFeedStatus
@@ -125,7 +129,17 @@ class FeedSubscriptionManager(
     }
 
     fun setSelectedRelay(url: String) {
+        _selectedRelaySet.value = null
         _selectedRelay.value = url
+        if (_feedType.value == FeedType.RELAY) {
+            eventRepo.clearFeed()
+            resubscribeFeed()
+        }
+    }
+
+    fun setSelectedRelaySet(relaySet: RelaySet) {
+        _selectedRelaySet.value = relaySet
+        _selectedRelay.value = null
         if (_feedType.value == FeedType.RELAY) {
             eventRepo.clearFeed()
             resubscribeFeed()
@@ -184,20 +198,43 @@ class FeedSubscriptionManager(
                 )
             }
             FeedType.RELAY -> {
-                val url = _selectedRelay.value ?: return
-                startRelayStatusMonitor(url)
-                val status = _relayFeedStatus.value
-                if (status is RelayFeedStatus.Cooldown || status is RelayFeedStatus.BadRelay) {
-                    return
+                // Clear seen events so relays can re-send events we've already seen
+                // from other feeds (e.g. FOLLOWS). Without this, seenEvents dedup in
+                // RelayPool drops events and the relay feed appears empty.
+                relayPool.clearSeenEvents()
+                val relaySet = _selectedRelaySet.value
+                if (relaySet != null) {
+                    // Combined relay set feed — subscribe to all relays in the set
+                    relayStatusMonitorJob?.cancel()
+                    _relayFeedStatus.value = RelayFeedStatus.Subscribing
+                    val filter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
+                    val msg = ClientMessage.req(feedSubId, filter)
+                    val sentUrls = mutableSetOf<String>()
+                    for (setUrl in relaySet.relays) {
+                        val sent = relayPool.sendToRelayOrEphemeral(setUrl, msg, skipBadCheck = true)
+                        if (sent) sentUrls.add(setUrl)
+                    }
+                    if (sentUrls.isEmpty()) {
+                        _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to any relay in set")
+                        return
+                    }
+                    sentUrls
+                } else {
+                    val url = _selectedRelay.value ?: return
+                    startRelayStatusMonitor(url)
+                    val status = _relayFeedStatus.value
+                    if (status is RelayFeedStatus.Cooldown || status is RelayFeedStatus.BadRelay) {
+                        return
+                    }
+                    val filter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
+                    val msg = ClientMessage.req(feedSubId, filter)
+                    val sent = relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
+                    if (!sent) {
+                        _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to relay")
+                        return
+                    }
+                    setOf(url)
                 }
-                val filter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                val msg = ClientMessage.req(feedSubId, filter)
-                val sent = relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
-                if (!sent) {
-                    _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to relay")
-                    return
-                }
-                setOf(url)
             }
             FeedType.LIST -> {
                 relayStatusMonitorJob?.cancel()
@@ -305,11 +342,20 @@ class FeedSubscriptionManager(
                 )
             }
             FeedType.RELAY -> {
-                val url = _selectedRelay.value
-                if (url != null) {
+                val relaySet = _selectedRelaySet.value
+                if (relaySet != null) {
                     val filter = Filter(kinds = listOf(1, 6), until = oldest - 1, limit = 50)
-                    relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("loadmore", filter), skipBadCheck = true)
-                } else { isLoadingMore = false; return }
+                    val msg = ClientMessage.req("loadmore", filter)
+                    for (setUrl in relaySet.relays) {
+                        relayPool.sendToRelayOrEphemeral(setUrl, msg, skipBadCheck = true)
+                    }
+                } else {
+                    val url = _selectedRelay.value
+                    if (url != null) {
+                        val filter = Filter(kinds = listOf(1, 6), until = oldest - 1, limit = 50)
+                        relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("loadmore", filter), skipBadCheck = true)
+                    } else { isLoadingMore = false; return }
+                }
             }
             FeedType.LIST -> {
                 val list = listRepo.selectedList.value ?: run { isLoadingMore = false; return }
@@ -564,6 +610,7 @@ class FeedSubscriptionManager(
         _initialLoadDone.value = false
         _initLoadingState.value = InitLoadingState.SearchingProfile
         _selectedRelay.value = null
+        _selectedRelaySet.value = null
         isLoadingMore = false
     }
 }
