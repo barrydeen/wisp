@@ -108,7 +108,7 @@ fun UserProfileScreen(
     onNoteClick: (NostrEvent) -> Unit = {},
     onQuotedNoteClick: ((String) -> Unit)? = null,
     onReact: (NostrEvent, String) -> Unit = { _, _ -> },
-    onZap: (NostrEvent, Long, String) -> Unit = { _, _, _ -> },
+    onZap: (NostrEvent, Long, String, Boolean) -> Unit = { _, _, _, _ -> },
     userPubkey: String? = null,
     isWalletConnected: Boolean = false,
     onWallet: () -> Unit = {},
@@ -170,10 +170,10 @@ fun UserProfileScreen(
         ZapDialog(
             isWalletConnected = isWalletConnected,
             onDismiss = { zapTargetEvent = null },
-            onZap = { amountMsats, message ->
+            onZap = { amountMsats, message, isAnonymous ->
                 val event = zapTargetEvent ?: return@ZapDialog
                 zapTargetEvent = null
-                onZap(event, amountMsats, message)
+                onZap(event, amountMsats, message, isAnonymous)
             },
             onGoToWallet = onWallet
         )

@@ -290,7 +290,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun sendRepost(event: NostrEvent) = socialActions.sendRepost(event)
     fun sendReaction(event: NostrEvent, content: String = "+") = socialActions.toggleReaction(event, content)
     fun toggleReaction(event: NostrEvent, emoji: String) = socialActions.toggleReaction(event, emoji)
-    fun sendZap(event: NostrEvent, amountMsats: Long, message: String = "") = socialActions.sendZap(event, amountMsats, message)
+    fun sendZap(event: NostrEvent, amountMsats: Long, message: String = "", isAnonymous: Boolean = false) = socialActions.sendZap(event, amountMsats, message, isAnonymous)
     fun togglePin(eventId: String) = socialActions.togglePin(eventId)
     fun deleteEvent(eventId: String, kind: Int) = socialActions.deleteEvent(eventId, kind)
     fun followAll(pubkeys: Set<String>) = socialActions.followAll(pubkeys)

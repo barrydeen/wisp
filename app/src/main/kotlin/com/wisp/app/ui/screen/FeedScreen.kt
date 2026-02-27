@@ -234,10 +234,10 @@ fun FeedScreen(
         ZapDialog(
             isWalletConnected = isWalletConnected,
             onDismiss = { zapTargetEvent = null },
-            onZap = { amountMsats, message ->
+            onZap = { amountMsats, message, isAnonymous ->
                 val event = zapTargetEvent ?: return@ZapDialog
                 zapTargetEvent = null
-                viewModel.sendZap(event, amountMsats, message)
+                viewModel.sendZap(event, amountMsats, message, isAnonymous)
             },
             onGoToWallet = onWallet
         )

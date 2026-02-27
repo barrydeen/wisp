@@ -222,7 +222,7 @@ class SocialActionManager(
         return subId
     }
 
-    fun sendZap(event: NostrEvent, amountMsats: Long, message: String = "") {
+    fun sendZap(event: NostrEvent, amountMsats: Long, message: String = "", isAnonymous: Boolean = false) {
         val profileData = eventRepo.getProfileData(event.pubkey)
         val lud16 = profileData?.lud16
         if (lud16.isNullOrBlank()) {
@@ -243,12 +243,13 @@ class SocialActionManager(
                 recipientPubkey = event.pubkey,
                 eventId = event.id,
                 amountMsats = amountMsats,
-                message = message
+                message = message,
+                isAnonymous = isAnonymous
             )
             _zapInProgress.value = _zapInProgress.value - event.id
             result.fold(
                 onSuccess = {
-                    val myPubkey = getUserPubkey() ?: ""
+                    val myPubkey = if (isAnonymous) "" else (getUserPubkey() ?: "")
                     eventRepo.addOptimisticZap(event.id, myPubkey, amountMsats / 1000, message)
                     _zapSuccess.tryEmit(event.id)
                 },

@@ -692,7 +692,7 @@ fun WispNavHost(
                 onNoteClick = { event -> navController.navigate("thread/${event.id}") },
                 onQuotedNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                 onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
-                onZap = { event, amountMsats, message -> feedViewModel.sendZap(event, amountMsats, message) },
+                onZap = { event, amountMsats, message, isAnonymous -> feedViewModel.sendZap(event, amountMsats, message, isAnonymous) },
                 userPubkey = feedViewModel.getUserPubkey(),
                 isWalletConnected = feedViewModel.nwcRepo.hasConnection(),
                 onWallet = { navController.navigate(Routes.WALLET) },
@@ -849,10 +849,10 @@ fun WispNavHost(
                 ZapDialog(
                     isWalletConnected = isNwcConnected,
                     onDismiss = { threadZapTarget = null },
-                    onZap = { amountMsats, message ->
+                    onZap = { amountMsats, message, isAnonymous ->
                         val event = threadZapTarget ?: return@ZapDialog
                         threadZapTarget = null
-                        feedViewModel.sendZap(event, amountMsats, message)
+                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) }
                 )
@@ -1245,10 +1245,10 @@ fun WispNavHost(
                 ZapDialog(
                     isWalletConnected = isNwcConnected,
                     onDismiss = { notifZapTarget = null },
-                    onZap = { amountMsats, message ->
+                    onZap = { amountMsats, message, isAnonymous ->
                         val event = notifZapTarget ?: return@ZapDialog
                         notifZapTarget = null
-                        feedViewModel.sendZap(event, amountMsats, message)
+                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) }
                 )

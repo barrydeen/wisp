@@ -1,5 +1,6 @@
 package com.wisp.app.repo
 
+import com.wisp.app.nostr.Keys
 import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.relay.RelayPool
@@ -19,7 +20,8 @@ class ZapSender(
         recipientPubkey: String,
         eventId: String?,
         amountMsats: Long,
-        message: String = ""
+        message: String = "",
+        isAnonymous: Boolean = false
     ): Result<Unit> {
         // 1. LNURL discovery
         val payInfo = Nip57.resolveLud16(recipientLud16, httpClient)
@@ -41,30 +43,44 @@ class ZapSender(
         val relayUrls = (recipientRelays + ourRelays).distinct().take(5)
             .ifEmpty { relayPool.getRelayUrls().take(3) }
 
-        val s = signer
-        val keypair = keyRepo.getKeypair()
+        val zapRequest = if (isAnonymous) {
+            val throwaway = Keys.generate()
+            Nip57.buildZapRequest(
+                senderPrivkey = throwaway.privkey,
+                senderPubkey = throwaway.pubkey,
+                recipientPubkey = recipientPubkey,
+                eventId = eventId,
+                amountMsats = amountMsats,
+                relayUrls = relayUrls,
+                lnurl = recipientLud16,
+                message = message
+            )
+        } else {
+            val s = signer
+            val keypair = keyRepo.getKeypair()
 
-        val zapRequest = when {
-            s != null -> Nip57.buildZapRequestWithSigner(
-                signer = s,
-                recipientPubkey = recipientPubkey,
-                eventId = eventId,
-                amountMsats = amountMsats,
-                relayUrls = relayUrls,
-                lnurl = recipientLud16,
-                message = message
-            )
-            keypair != null -> Nip57.buildZapRequest(
-                senderPrivkey = keypair.privkey,
-                senderPubkey = keypair.pubkey,
-                recipientPubkey = recipientPubkey,
-                eventId = eventId,
-                amountMsats = amountMsats,
-                relayUrls = relayUrls,
-                lnurl = recipientLud16,
-                message = message
-            )
-            else -> return Result.failure(Exception("No signer or keypair available"))
+            when {
+                s != null -> Nip57.buildZapRequestWithSigner(
+                    signer = s,
+                    recipientPubkey = recipientPubkey,
+                    eventId = eventId,
+                    amountMsats = amountMsats,
+                    relayUrls = relayUrls,
+                    lnurl = recipientLud16,
+                    message = message
+                )
+                keypair != null -> Nip57.buildZapRequest(
+                    senderPrivkey = keypair.privkey,
+                    senderPubkey = keypair.pubkey,
+                    recipientPubkey = recipientPubkey,
+                    eventId = eventId,
+                    amountMsats = amountMsats,
+                    relayUrls = relayUrls,
+                    lnurl = recipientLud16,
+                    message = message
+                )
+                else -> return Result.failure(Exception("No signer or keypair available"))
+            }
         }
 
         // 3. Fetch invoice from LNURL callback
