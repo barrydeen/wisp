@@ -44,3 +44,7 @@
 # kmp-tor
 -keep class io.matthewnelson.kmp.tor.** { *; }
 -dontwarn io.matthewnelson.kmp.tor.**
+
+# java.lang.management (not available on Android)
+-dontwarn java.lang.management.ManagementFactory
+-dontwarn java.lang.management.RuntimeMXBean
