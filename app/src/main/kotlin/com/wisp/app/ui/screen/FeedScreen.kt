@@ -634,7 +634,7 @@ fun FeedScreen(
                             count = newNoteCount,
                             onClick = {
                                 scope.launch {
-                                    listState.animateScrollToItem(0)
+                                    listState.scrollToItem(0)
                                     viewModel.resetNewNoteCount()
                                 }
                             },
