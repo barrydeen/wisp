@@ -10,7 +10,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.util.concurrent.TimeUnit
 
 data class RelayInfo(
     val name: String?,
@@ -36,10 +35,11 @@ data class RelayInfo(
 
 object Nip11 {
     private val json = Json { ignoreUnknownKeys = true }
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .build()
+    private val httpClient
+        get() = com.wisp.app.relay.HttpClientFactory.createHttpClient(
+            connectTimeoutSeconds = 10,
+            readTimeoutSeconds = 10
+        )
 
     suspend fun fetchRelayInfo(url: String, httpClient: OkHttpClient? = null): RelayInfo? {
         val client = httpClient ?: this.httpClient

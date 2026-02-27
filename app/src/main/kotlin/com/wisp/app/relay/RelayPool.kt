@@ -24,7 +24,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 data class RelayEvent(val event: NostrEvent, val relayUrl: String, val subscriptionId: String)
 
 class RelayPool {
-    private val client: OkHttpClient = Relay.createClient()
+    private var client: OkHttpClient = Relay.createClient()
     private val relays = CopyOnWriteArrayList<Relay>()
     private val dmRelays = CopyOnWriteArrayList<Relay>()
     private val ephemeralRelays = java.util.concurrent.ConcurrentHashMap<String, Relay>()
@@ -793,6 +793,20 @@ class RelayPool {
         synchronized(seenLock) {
             seenEvents.evictAll()
         }
+    }
+
+    /**
+     * Rebuild the OkHttpClient (e.g. after Tor toggle) and reconnect all relays.
+     */
+    fun swapClientAndReconnect() {
+        val savedConfigs = relays.map { it.config }.toList()
+        val savedDmUrls = dmRelays.map { it.config.url }.toList()
+        Log.d("RLC", "[Pool] swapClientAndReconnect — persistent=${savedConfigs.size} dm=${savedDmUrls.size}")
+
+        disconnectAll()
+        client = HttpClientFactory.createRelayClient()
+        updateRelays(savedConfigs)
+        updateDmRelays(savedDmUrls)
     }
 
     fun disconnectAll() {

@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.Bolt11
 import com.wisp.app.nostr.Nip47
 import com.wisp.app.nostr.Nip57
-import com.wisp.app.relay.Relay
 import com.wisp.app.repo.NwcRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -83,7 +82,7 @@ class WalletViewModel(val nwcRepo: NwcRepository) : ViewModel() {
     private var connectJob: Job? = null
     private var statusCollectJob: Job? = null
     private var connectionMonitorJob: Job? = null
-    private val httpClient by lazy { Relay.createClient() }
+    private val httpClient get() = com.wisp.app.relay.HttpClientFactory.createRelayClient()
 
     init {
         // Connection only happens when the wallet tab is opened (here) or

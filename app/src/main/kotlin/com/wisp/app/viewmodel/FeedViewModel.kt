@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrSigner
+import com.wisp.app.relay.HttpClientFactory
 import com.wisp.app.relay.Relay
 import com.wisp.app.relay.RelayLifecycleManager
 import com.wisp.app.relay.OutboxRouter
@@ -161,7 +162,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     val nwcRepo = NwcRepository(app, relayPool, pubkeyHex)
-    val zapSender = ZapSender(keyRepo, nwcRepo, relayPool, relayListRepo, Relay.createClient())
+    val zapSender = ZapSender(keyRepo, nwcRepo, relayPool, relayListRepo, HttpClientFactory.createRelayClient())
 
     // -- Manager classes --
     val feedSub: FeedSubscriptionManager = FeedSubscriptionManager(
@@ -266,7 +267,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun tryConnect(url: String): Boolean {
-        val client = Relay.createClient()
+        val client = HttpClientFactory.createRelayClient()
         val relay = Relay(RelayConfig(url, read = true, write = false), client)
         relay.autoReconnect = false
         return try {

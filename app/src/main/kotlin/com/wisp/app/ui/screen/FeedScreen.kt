@@ -80,6 +80,9 @@ fun FeedScreen(
     viewModel: FeedViewModel,
     isDarkTheme: Boolean = true,
     onToggleTheme: () -> Unit = {},
+    isTorEnabled: Boolean = false,
+    torStatus: com.wisp.app.relay.TorStatus = com.wisp.app.relay.TorStatus.DISABLED,
+    onToggleTor: (Boolean) -> Unit = {},
     onCompose: () -> Unit,
     onReply: (NostrEvent) -> Unit,
     onRelays: () -> Unit,
@@ -258,6 +261,9 @@ fun FeedScreen(
                 pubkey = userPubkey,
                 isDarkTheme = isDarkTheme,
                 onToggleTheme = onToggleTheme,
+                isTorEnabled = isTorEnabled,
+                torStatus = torStatus,
+                onToggleTor = onToggleTor,
                 onProfile = {
                     scope.launch { drawerState.close() }
                     onProfileEdit()

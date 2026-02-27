@@ -18,7 +18,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
-import java.util.concurrent.TimeUnit
 
 data class ProbeResult(val url: String, val passed: Boolean, val latencyMs: Long, val reason: String)
 
@@ -99,10 +98,7 @@ object RelayProber {
     }
 
     private suspend fun harvestRelayLists(onFirstEvent: () -> Unit = {}): List<NostrEvent> {
-        val client = OkHttpClient.Builder()
-            .pingInterval(30, TimeUnit.SECONDS)
-            .readTimeout(0, TimeUnit.MILLISECONDS)
-            .build()
+        val client = HttpClientFactory.createRelayClient()
 
         val events = mutableListOf<NostrEvent>()
 
@@ -198,16 +194,12 @@ object RelayProber {
         keypair: Keys.Keypair,
         onProbing: (String) -> Unit
     ): List<ProbeResult> = coroutineScope {
-        val nip11Client = OkHttpClient.Builder()
-            .connectTimeout(NIP11_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .readTimeout(NIP11_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .build()
+        val nip11Client = HttpClientFactory.createHttpClient(
+            connectTimeoutSeconds = NIP11_TIMEOUT_MS / 1000,
+            readTimeoutSeconds = NIP11_TIMEOUT_MS / 1000
+        )
 
-        val wsClient = OkHttpClient.Builder()
-            .pingInterval(30, TimeUnit.SECONDS)
-            .readTimeout(0, TimeUnit.MILLISECONDS)
-            .connectTimeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .build()
+        val wsClient = HttpClientFactory.createRelayClient()
 
         val results = candidates.map { url ->
             async(Dispatchers.IO) {

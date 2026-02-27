@@ -8,9 +8,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import okhttp3.OkHttpClient
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
 
 enum class Nip05Status {
     UNKNOWN,
@@ -31,11 +29,11 @@ class Nip05Repository {
     private val _version = MutableStateFlow(0)
     val version: StateFlow<Int> = _version
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .build()
+    private val httpClient
+        get() = com.wisp.app.relay.HttpClientFactory.createHttpClient(
+            connectTimeoutSeconds = 5,
+            readTimeoutSeconds = 10
+        )
 
     fun clear() {
         statusCache.clear()
