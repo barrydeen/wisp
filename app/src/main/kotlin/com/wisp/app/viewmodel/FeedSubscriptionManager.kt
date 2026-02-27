@@ -487,16 +487,25 @@ class FeedSubscriptionManager(
 
         val feedEvents = eventRepo.feed.value
         if (feedEvents.isEmpty()) return
-        subscribeEngagementForEvents(feedEvents, "engage")
-    }
 
-    private fun subscribeEngagementForEvents(events: List<NostrEvent>, prefix: String) {
         val eventsByAuthor = mutableMapOf<String, MutableList<String>>()
-        for (event in events) {
+        for (event in feedEvents) {
             eventsByAuthor.getOrPut(event.pubkey) { mutableListOf() }.add(event.id)
         }
         val safetyNet = relayScoreBoard.getScoredRelays().take(5).map { it.url }
-        outboxRouter.subscribeEngagementByAuthors(prefix, eventsByAuthor, activeEngagementSubIds, safetyNet)
+        val relayCount = outboxRouter.subscribeEngagementByAuthors("engage", eventsByAuthor, activeEngagementSubIds, safetyNet)
+
+        // Await EOSE from a threshold of inbox relays so engagement counts populate
+        // before the user sees the feed. Without this, engagement is fire-and-forget
+        // and most counts show zero.
+        if (relayCount > 0) {
+            scope.launch {
+                val eoseTarget = maxOf(3, (relayCount * 0.3).toInt()).coerceIn(1, relayCount)
+                Log.d("RLC", "[FeedSub] awaiting $eoseTarget/$relayCount EOSEs for engagement")
+                subManager.awaitEoseCount("engage", eoseTarget, timeoutMs = 4_000)
+                Log.d("RLC", "[FeedSub] safety net engagement EOSE received")
+            }
+        }
     }
 
     fun subscribeNotifEngagement() {
@@ -514,12 +523,19 @@ class FeedSubscriptionManager(
             val msg = ClientMessage.req(subId, Filter(ids = missingIds))
             relayPool.sendToWriteRelays(msg)
             relayPool.sendToReadRelays(msg)
+            // Await EOSE before building author map — without this, getEvent() returns
+            // null for most IDs, routing engagement queries to fallback instead of inbox relays.
             scope.launch {
                 subManager.awaitEoseWithTimeout(subId, timeoutMs = 8_000)
                 subManager.closeSubscription(subId)
+                subscribeNotifEngagementInner(eventIds)
             }
+        } else {
+            subscribeNotifEngagementInner(eventIds)
         }
+    }
 
+    private fun subscribeNotifEngagementInner(eventIds: List<String>) {
         val eventsByAuthor = mutableMapOf<String, MutableList<String>>()
         for (id in eventIds) {
             val event = eventRepo.getEvent(id)

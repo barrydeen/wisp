@@ -353,12 +353,18 @@ class OutboxRouter(
      * @param eventsByAuthor Map of authorPubkey -> list of eventIds authored by them
      * @param activeSubIds Mutable list to track created subscription IDs for later cleanup
      */
+    /**
+     * Returns the number of unique relays the subscription was sent to,
+     * so callers can compute a meaningful EOSE count target.
+     */
     fun subscribeEngagementByAuthors(
         prefix: String,
         eventsByAuthor: Map<String, List<String>>,
         activeSubIds: MutableList<String>,
         safetyNetRelays: List<String> = emptyList()
-    ) {
+    ): Int {
+        val targetedRelays = mutableSetOf<String>()
+
         // Group authors by their read (inbox) relays
         val relayToEventIds = mutableMapOf<String, MutableList<String>>()
         val fallbackEventIds = mutableListOf<String>()
@@ -380,25 +386,17 @@ class OutboxRouter(
 
         for ((relayUrl, eventIds) in relayToEventIds) {
             val uniqueIds = eventIds.distinct()
-            val filters = listOf(
-                Filter(kinds = listOf(7), eTags = uniqueIds),
-                Filter(kinds = listOf(6), eTags = uniqueIds),
-                Filter(kinds = listOf(9735), eTags = uniqueIds),
-                Filter(kinds = listOf(1), eTags = uniqueIds)
-            )
-            relayPool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(prefix, filters))
+            val filter = Filter(kinds = listOf(1, 6, 7, 9735), eTags = uniqueIds, limit = 500)
+            if (relayPool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(prefix, filter))) {
+                targetedRelays.add(relayUrl)
+            }
         }
 
         // Fallback: authors without known relay lists → send to our read relays
         if (fallbackEventIds.isNotEmpty()) {
             val uniqueIds = fallbackEventIds.distinct()
-            val filters = listOf(
-                Filter(kinds = listOf(7), eTags = uniqueIds),
-                Filter(kinds = listOf(6), eTags = uniqueIds),
-                Filter(kinds = listOf(9735), eTags = uniqueIds),
-                Filter(kinds = listOf(1), eTags = uniqueIds)
-            )
-            relayPool.sendToReadRelays(ClientMessage.req(prefix, filters))
+            val filter = Filter(kinds = listOf(1, 6, 7, 9735), eTags = uniqueIds, limit = 500)
+            relayPool.sendToReadRelays(ClientMessage.req(prefix, filter))
         }
 
         // Safety net: send engagement queries for ALL event IDs to high-coverage relays.
@@ -406,18 +404,17 @@ class OutboxRouter(
         if (safetyNetRelays.isNotEmpty()) {
             val allEventIds = eventsByAuthor.values.flatten().distinct()
             if (allEventIds.isNotEmpty()) {
-                val filters = listOf(
-                    Filter(kinds = listOf(7), eTags = allEventIds),
-                    Filter(kinds = listOf(6), eTags = allEventIds),
-                    Filter(kinds = listOf(9735), eTags = allEventIds),
-                    Filter(kinds = listOf(1), eTags = allEventIds)
-                )
-                val msg = ClientMessage.req(prefix, filters)
+                val filter = Filter(kinds = listOf(1, 6, 7, 9735), eTags = allEventIds, limit = 500)
+                val msg = ClientMessage.req(prefix, filter)
                 for (url in safetyNetRelays) {
-                    relayPool.sendToRelayOrEphemeral(url, msg)
+                    if (relayPool.sendToRelayOrEphemeral(url, msg)) {
+                        targetedRelays.add(url)
+                    }
                 }
             }
         }
+
+        return targetedRelays.size
     }
 
     private fun groupAuthorsByWriteRelay(authors: List<String>): Map<String, List<String>> {
