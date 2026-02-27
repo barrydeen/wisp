@@ -8,6 +8,7 @@ import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip02
 import com.wisp.app.nostr.Nip10
+import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.Nip65
 import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.NostrEvent
@@ -55,6 +56,9 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     private val _relayList = MutableStateFlow<List<RelayConfig>>(emptyList())
     val relayList: StateFlow<List<RelayConfig>> = _relayList
 
+    private val _pinnedNoteIds = MutableStateFlow<Set<String>>(emptySet())
+    val pinnedNoteIds: StateFlow<Set<String>> = _pinnedNoteIds
+
     private val _relayHints = MutableStateFlow<Set<String>>(emptySet())
     val relayHints: StateFlow<Set<String>> = _relayHints
 
@@ -87,7 +91,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     private var latestRelayListTimestamp: Long = 0
 
     companion object {
-        private val SUB_IDS = setOf("userprofile", "userposts", "userfollows", "userrelays", "followprofiles")
+        private val SUB_IDS = setOf("userprofile", "userposts", "userfollows", "userrelays", "userpins", "followprofiles")
     }
 
     fun loadProfile(
@@ -142,17 +146,20 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         val postsFilter = Filter(kinds = listOf(1, 6), authors = listOf(pubkey), limit = 50)
         val followFilter = Filter(kinds = listOf(3), authors = listOf(pubkey), limit = 1)
         val relayFilter = Filter(kinds = listOf(10002), authors = listOf(pubkey), limit = 1)
+        val pinFilter = Filter(kinds = listOf(10001), authors = listOf(pubkey), limit = 1)
 
         if (outboxRouter != null) {
             outboxRouter.subscribeToUserWriteRelays("userprofile", pubkey, profileFilter)
             outboxRouter.subscribeToUserWriteRelays("userposts", pubkey, postsFilter)
             outboxRouter.subscribeToUserWriteRelays("userfollows", pubkey, followFilter)
             outboxRouter.subscribeToUserWriteRelays("userrelays", pubkey, relayFilter)
+            outboxRouter.subscribeToUserWriteRelays("userpins", pubkey, pinFilter)
         } else {
             relayPool.sendToAll(ClientMessage.req("userprofile", profileFilter))
             relayPool.sendToAll(ClientMessage.req("userposts", postsFilter))
             relayPool.sendToAll(ClientMessage.req("userfollows", followFilter))
             relayPool.sendToAll(ClientMessage.req("userrelays", relayFilter))
+            relayPool.sendToAll(ClientMessage.req("userpins", pinFilter))
         }
         // Also query top scored relays as safety net
         for (url in topRelayUrls) {
@@ -284,6 +291,9 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                                     activeFollowProfileSubIds.clear()
                                 }
                             }
+                        }
+                        10001 -> {
+                            _pinnedNoteIds.value = Nip51.parsePinList(event)
                         }
                         10002 -> {
                             if (event.created_at <= latestRelayListTimestamp) return@collect

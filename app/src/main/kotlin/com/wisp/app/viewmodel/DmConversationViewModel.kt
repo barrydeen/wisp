@@ -38,15 +38,39 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
     private val _sendError = MutableStateFlow<String?>(null)
     val sendError: StateFlow<String?> = _sendError
 
+    private val _peerDmRelays = MutableStateFlow<List<String>>(emptyList())
+    val peerDmRelays: StateFlow<List<String>> = _peerDmRelays
+
+    private val _userDmRelays = MutableStateFlow<List<String>>(emptyList())
+    val userDmRelays: StateFlow<List<String>> = _userDmRelays
+
     private var peerPubkey: String = ""
     private var dmRepo: DmRepository? = null
     private var relayListRepo: RelayListRepository? = null
 
-    fun init(peerPubkeyHex: String, dmRepository: DmRepository, relayListRepository: RelayListRepository? = null) {
+    fun init(peerPubkeyHex: String, dmRepository: DmRepository, relayListRepository: RelayListRepository? = null, relayPool: RelayPool? = null) {
         peerPubkey = peerPubkeyHex
         dmRepo = dmRepository
         relayListRepo = relayListRepository
         _messages.value = dmRepository.getConversation(peerPubkeyHex)
+
+        // Expose user's own DM relays
+        if (relayPool != null) {
+            _userDmRelays.value = relayPool.getDmRelayUrls()
+        }
+
+        // Fetch peer's DM relays
+        if (relayPool != null) {
+            viewModelScope.launch {
+                val cached = dmRepository.getCachedDmRelays(peerPubkeyHex)
+                if (cached != null) {
+                    _peerDmRelays.value = cached
+                } else {
+                    val fetched = fetchRecipientDmRelays(relayPool)
+                    _peerDmRelays.value = fetched
+                }
+            }
+        }
 
         viewModelScope.launch {
             dmRepository.conversationList.collect {

@@ -28,6 +28,8 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -60,6 +63,7 @@ import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NotificationGroup
 import com.wisp.app.nostr.NotificationSummary
 import com.wisp.app.nostr.ProfileData
+import kotlinx.coroutines.flow.SharedFlow
 import com.wisp.app.nostr.ZapEntry
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
@@ -97,7 +101,8 @@ fun NotificationsScreen(
     isInList: (String) -> Boolean = { false },
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
-    onManageEmojis: (() -> Unit)? = null
+    onManageEmojis: (() -> Unit)? = null,
+    zapError: SharedFlow<String>? = null
 ) {
     val notifications by viewModel.filteredNotifications.collectAsState()
     val currentFilter by viewModel.filter.collectAsState()
@@ -105,6 +110,25 @@ fun NotificationsScreen(
     val eventRepo = viewModel.eventRepository
     val listState = rememberLazyListState()
     var showFilterDropdown by remember { mutableStateOf(false) }
+    var zapErrorMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        zapError?.collect { error ->
+            zapErrorMessage = error
+        }
+    }
+
+    if (zapErrorMessage != null) {
+        AlertDialog(
+            onDismissRequest = { zapErrorMessage = null },
+            title = { Text("Zap Failed") },
+            text = { Text(zapErrorMessage ?: "") },
+            confirmButton = {
+                TextButton(onClick = { zapErrorMessage = null }) { Text("OK") }
+            }
+        )
+    }
+
     LaunchedEffect(scrollToTopTrigger) {
         if (scrollToTopTrigger > 0) listState.scrollToItem(0)
     }
@@ -1054,7 +1078,12 @@ private fun ReferencedNotePostCard(
         }
     }
 
-    if (event == null) return
+    if (event == null) {
+        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+        }
+        return
+    }
 
     val profile = remember(params.profileVersion, event.pubkey) {
         eventRepo.getProfileData(event.pubkey)
