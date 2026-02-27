@@ -515,7 +515,7 @@ class StartupCoordinator(
      * when all relay subscriptions have been torn down.
      */
     fun subscribeDmsAndNotifications(myPubkey: String) {
-        notifRepo.notifInitialized = false
+        notifRepo.soundEligibleAfter = System.currentTimeMillis() / 1000
         val dmFilter = Filter(kinds = listOf(1059), pTags = listOf(myPubkey))
         val dmReqMsg = ClientMessage.req("dms", dmFilter)
         relayPool.sendToAll(dmReqMsg)
@@ -555,7 +555,6 @@ class StartupCoordinator(
 
         scope.launch {
             subManager.awaitEoseWithTimeout("notif")
-            notifRepo.notifInitialized = true
             // Wait for self-notes to arrive before engagement so referenced events are cached
             subManager.awaitEoseWithTimeout("self-notes", timeoutMs = 5_000)
             subManager.closeSubscription("self-notes")
