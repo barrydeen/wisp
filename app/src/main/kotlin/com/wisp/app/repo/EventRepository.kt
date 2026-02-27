@@ -59,6 +59,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     // Repost tracking: inner event id -> set of reposter pubkeys
     private val repostAuthors = LruCache<String, MutableSet<String>>(5000)
+    // Feed sort time override: eventId -> effective sort timestamp (e.g. repost time)
+    private val feedSortTime = LruCache<String, Long>(5000)
     // Track which events the current user has reposted: eventId -> true
     private val userReposts = LruCache<String, Boolean>(5000)
     private val _repostVersion = MutableStateFlow(0)
@@ -197,7 +199,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         if (seenEventIds.add(inner.id)) {
                             eventCache.put(inner.id, inner)
                             val isReply = inner.tags.any { it.size >= 2 && it[0] == "e" }
-                            if (!isReply) binaryInsert(inner)
+                            if (!isReply) {
+                                feedSortTime.put(inner.id, event.created_at)
+                                binaryInsert(inner, sortTime = event.created_at)
+                            }
                         }
                     } catch (_: Exception) {}
                 }
@@ -277,14 +282,17 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         markVersionDirty()
     }
 
-    private fun binaryInsert(event: NostrEvent) {
+    private fun effectiveSortTime(event: NostrEvent): Long =
+        feedSortTime.get(event.id) ?: event.created_at
+
+    private fun binaryInsert(event: NostrEvent, sortTime: Long = event.created_at) {
         synchronized(feedList) {
             if (!feedIds.add(event.id)) return  // already in feed
             var low = 0
             var high = feedList.size
             while (low < high) {
                 val mid = (low + high) / 2
-                if (feedList[mid].created_at > event.created_at) low = mid + 1 else high = mid
+                if (effectiveSortTime(feedList[mid]) > sortTime) low = mid + 1 else high = mid
             }
             feedList.add(low, event)
         }
@@ -538,8 +546,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         // Return oldest from the filtered feed so loadMore pages correctly
         val filter = _authorFilter.value
         return synchronized(feedList) {
-            if (filter == null) feedList.lastOrNull()?.created_at
-            else feedList.lastOrNull { it.pubkey in filter || isRepostedByAny(it.id, filter) }?.created_at
+            if (filter == null) feedList.lastOrNull()?.let { effectiveSortTime(it) }
+            else feedList.lastOrNull { it.pubkey in filter || isRepostedByAny(it.id, filter) }?.let { effectiveSortTime(it) }
         }
     }
 
@@ -590,6 +598,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         }
         eventCache.evictAll()
         seenEventIds.clear()
+        feedSortTime.evictAll()
         _feed.value = emptyList()
         _newNoteCount.value = 0
         countNewNotes = false
