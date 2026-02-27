@@ -38,7 +38,8 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
 
     @Volatile var appIsActive: Boolean = true
 
-    @Volatile var notifInitialized: Boolean = false
+    /** Only play sounds for events created after this timestamp (app start time). */
+    @Volatile var soundEligibleAfter: Long = System.currentTimeMillis() / 1000
 
     @Volatile var isViewing: Boolean = false
 
@@ -75,11 +76,12 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
                 } else {
                     _hasUnread.value = true
                 }
-                if (event.kind == 9735 && appIsActive && notifInitialized) {
-                    _zapReceived.tryEmit(Unit)
-                }
-                if (appIsActive && notifInitialized && event.kind != 9735) {
-                    _notifReceived.tryEmit(Unit)
+                if (event.created_at >= soundEligibleAfter && appIsActive) {
+                    if (event.kind == 9735) {
+                        _zapReceived.tryEmit(Unit)
+                    } else {
+                        _notifReceived.tryEmit(Unit)
+                    }
                 }
             }
             rebuildSortedList()
@@ -102,7 +104,7 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
             _notifications.value = emptyList()
             _summary24h.value = NotificationSummary()
             _hasUnread.value = false
-            notifInitialized = false
+            soundEligibleAfter = System.currentTimeMillis() / 1000
         }
         prefs.edit().clear().apply()
     }
