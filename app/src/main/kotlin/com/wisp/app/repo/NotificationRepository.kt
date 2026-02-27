@@ -8,6 +8,7 @@ import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NotificationGroup
+import com.wisp.app.nostr.NotificationSummary
 import com.wisp.app.nostr.ZapEntry
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +26,9 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
 
     private val _notifications = MutableStateFlow<List<NotificationGroup>>(emptyList())
     val notifications: StateFlow<List<NotificationGroup>> = _notifications
+
+    private val _summary24h = MutableStateFlow(NotificationSummary())
+    val summary24h: StateFlow<NotificationSummary> = _summary24h
 
     private val _hasUnread = MutableStateFlow(false)
     val hasUnread: StateFlow<Boolean> = _hasUnread
@@ -92,6 +96,7 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
             seenEvents.evictAll()
             groupMap.clear()
             _notifications.value = emptyList()
+            _summary24h.value = NotificationSummary()
             _hasUnread.value = false
         }
         prefs.edit().clear().apply()
@@ -256,6 +261,65 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
 
         val sorted = result.sortedByDescending { it.latestTimestamp }
         _notifications.value = if (sorted.size > 200) sorted.take(200) else sorted
+
+        // Compute 24h summary from raw groupMap (not the split result)
+        val summaryCutoff = now - SUMMARY_WINDOW_SECONDS
+        var replyCount = 0
+        var reactionCount = 0
+        var zapCount = 0
+        var zapSats = 0L
+        var repostCount = 0
+        var mentionCount = 0
+        var quoteCount = 0
+
+        for (group in groupMap.values) {
+            when (group) {
+                is NotificationGroup.ReactionGroup -> {
+                    for ((_, pubkeys) in group.reactions) {
+                        for (pk in pubkeys) {
+                            val ts = group.reactionTimestamps[pk] ?: 0L
+                            if (ts >= summaryCutoff) reactionCount++
+                        }
+                    }
+                }
+                is NotificationGroup.ZapGroup -> {
+                    for (zap in group.zaps) {
+                        if (zap.createdAt >= summaryCutoff) {
+                            zapCount++
+                            zapSats += zap.sats
+                        }
+                    }
+                }
+                is NotificationGroup.ReplyNotification -> {
+                    if (group.latestTimestamp >= summaryCutoff) replyCount++
+                }
+                is NotificationGroup.QuoteNotification -> {
+                    if (group.latestTimestamp >= summaryCutoff) quoteCount++
+                }
+                is NotificationGroup.MentionNotification -> {
+                    if (group.latestTimestamp >= summaryCutoff) mentionCount++
+                }
+                is NotificationGroup.RepostNotification -> {
+                    if (group.latestTimestamp >= summaryCutoff) repostCount++
+                }
+                is NotificationGroup.RepostGroup -> {
+                    for (pk in group.reposters) {
+                        val ts = group.repostTimestamps[pk] ?: 0L
+                        if (ts >= summaryCutoff) repostCount++
+                    }
+                }
+            }
+        }
+
+        _summary24h.value = NotificationSummary(
+            replyCount = replyCount,
+            reactionCount = reactionCount,
+            zapCount = zapCount,
+            zapSats = zapSats,
+            repostCount = repostCount,
+            mentionCount = mentionCount,
+            quoteCount = quoteCount
+        )
     }
 
     private fun mergeReaction(event: NostrEvent): Boolean {
@@ -415,5 +479,6 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
     companion object {
         private const val KEY_LAST_READ = "last_read_timestamp"
         private const val RECENT_WINDOW_SECONDS = 600L // 10 minutes
+        private const val SUMMARY_WINDOW_SECONDS = 86400L // 24 hours
     }
 }

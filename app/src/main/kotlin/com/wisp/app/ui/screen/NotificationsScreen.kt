@@ -1,6 +1,8 @@
 package com.wisp.app.ui.screen
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,21 +10,33 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.outlined.AlternateEmail
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -30,28 +44,29 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.BorderStroke
+import coil3.compose.AsyncImage
+import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NotificationGroup
+import com.wisp.app.nostr.NotificationSummary
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.nostr.ZapEntry
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Surface
-import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
-import com.wisp.app.nostr.Nip30
 import com.wisp.app.ui.component.StackedAvatarRow
+import com.wisp.app.viewmodel.NotificationFilter
 import com.wisp.app.viewmodel.NotificationsViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -84,9 +99,12 @@ fun NotificationsScreen(
     unicodeEmojis: List<String> = emptyList(),
     onManageEmojis: (() -> Unit)? = null
 ) {
-    val notifications by viewModel.notifications.collectAsState()
+    val notifications by viewModel.filteredNotifications.collectAsState()
+    val currentFilter by viewModel.filter.collectAsState()
+    val summary by viewModel.summary24h.collectAsState()
     val eventRepo = viewModel.eventRepository
     val listState = rememberLazyListState()
+    var showFilterDropdown by remember { mutableStateOf(false) }
     LaunchedEffect(scrollToTopTrigger) {
         if (scrollToTopTrigger > 0) listState.scrollToItem(0)
     }
@@ -102,7 +120,56 @@ fun NotificationsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Notifications") },
+                title = {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box {
+                            Surface(
+                                onClick = { showFilterDropdown = true },
+                                shape = RoundedCornerShape(20.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        currentFilter.label,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.widthIn(max = 160.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Icon(
+                                        Icons.Default.ArrowDropDown,
+                                        contentDescription = "Filter notifications",
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            DropdownMenu(
+                                expanded = showFilterDropdown,
+                                onDismissRequest = { showFilterDropdown = false }
+                            ) {
+                                NotificationFilter.entries.forEach { filterOption ->
+                                    DropdownMenuItem(
+                                        text = { Text(filterOption.label) },
+                                        onClick = {
+                                            showFilterDropdown = false
+                                            viewModel.setFilter(filterOption)
+                                        },
+                                        trailingIcon = if (currentFilter == filterOption) {{
+                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        }} else null
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -149,6 +216,9 @@ fun NotificationsScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
+                item(key = "summary_24h") {
+                    DailySummaryBar(summary = summary)
+                }
                 if (recentNotifs.isNotEmpty()) {
                     item(key = "header_recent") {
                         SectionHeader("Recent")
@@ -240,6 +310,59 @@ private fun SectionHeader(title: String) {
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 10.dp)
     )
+}
+
+// ── Daily Summary Bar ──────────────────────────────────────────────────
+
+@Composable
+private fun DailySummaryBar(summary: NotificationSummary) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "24h",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            SummaryStat(Icons.Outlined.ChatBubbleOutline, summary.replyCount.toString())
+            SummaryStat(Icons.Outlined.FavoriteBorder, summary.reactionCount.toString())
+            SummaryStat(Icons.Outlined.CurrencyBitcoin, formatSatsCompact(summary.zapSats))
+            SummaryStat(Icons.Outlined.Repeat, summary.repostCount.toString())
+            SummaryStat(Icons.Outlined.AlternateEmail, (summary.mentionCount + summary.quoteCount).toString())
+        }
+    }
+}
+
+@Composable
+private fun SummaryStat(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun formatSatsCompact(sats: Long): String = when {
+    sats >= 1_000_000 -> "${sats / 1_000_000}M"
+    sats >= 1_000 -> "${sats / 1_000}K"
+    else -> sats.toString()
 }
 
 // ── Notification Item Router ────────────────────────────────────────────

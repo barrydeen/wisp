@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.NotificationGroup
+import com.wisp.app.nostr.NotificationSummary
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
@@ -13,7 +14,17 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+
+enum class NotificationFilter(val label: String) {
+    ALL("All"),
+    REPLIES("Replies"),
+    REACTIONS("Reactions"),
+    ZAPS("Zaps"),
+    REPOSTS("Reposts"),
+    MENTIONS("Mentions")
+}
 
 class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -35,6 +46,15 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
     val contactRepository: ContactRepository?
         get() = contactRepo
 
+    val summary24h: StateFlow<NotificationSummary>
+        get() = notifRepo?.summary24h ?: MutableStateFlow(NotificationSummary())
+
+    private val _filter = MutableStateFlow(NotificationFilter.ALL)
+    val filter: StateFlow<NotificationFilter> = _filter
+
+    private val _filteredNotifications = MutableStateFlow<List<NotificationGroup>>(emptyList())
+    val filteredNotifications: StateFlow<List<NotificationGroup>> = _filteredNotifications
+
     private var notifRepo: NotificationRepository? = null
     private var eventRepo: EventRepository? = null
     private var contactRepo: ContactRepository? = null
@@ -44,6 +64,7 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
         eventRepo = eventRepository
         contactRepo = contactRepository
         startPeriodicRefresh()
+        startFilterCombine()
     }
 
     private fun startPeriodicRefresh() {
@@ -53,6 +74,29 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
                 notifRepo?.refreshSplits()
             }
         }
+    }
+
+    private fun startFilterCombine() {
+        viewModelScope.launch {
+            combine(notifications, _filter) { notifs, filterType ->
+                when (filterType) {
+                    NotificationFilter.ALL -> notifs
+                    NotificationFilter.REPLIES -> notifs.filterIsInstance<NotificationGroup.ReplyNotification>()
+                    NotificationFilter.REACTIONS -> notifs.filterIsInstance<NotificationGroup.ReactionGroup>()
+                    NotificationFilter.ZAPS -> notifs.filterIsInstance<NotificationGroup.ZapGroup>()
+                    NotificationFilter.REPOSTS -> notifs.filter {
+                        it is NotificationGroup.RepostNotification || it is NotificationGroup.RepostGroup
+                    }
+                    NotificationFilter.MENTIONS -> notifs.filter {
+                        it is NotificationGroup.MentionNotification || it is NotificationGroup.QuoteNotification
+                    }
+                }
+            }.collect { _filteredNotifications.value = it }
+        }
+    }
+
+    fun setFilter(filter: NotificationFilter) {
+        _filter.value = filter
     }
 
     fun isFollowing(pubkey: String): Boolean {

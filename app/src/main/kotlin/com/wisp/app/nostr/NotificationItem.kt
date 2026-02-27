@@ -1,5 +1,15 @@
 package com.wisp.app.nostr
 
+data class NotificationSummary(
+    val replyCount: Int = 0,
+    val reactionCount: Int = 0,
+    val zapCount: Int = 0,
+    val zapSats: Long = 0,
+    val repostCount: Int = 0,
+    val mentionCount: Int = 0,
+    val quoteCount: Int = 0
+)
+
 data class ZapEntry(
     val pubkey: String,
     val sats: Long,
