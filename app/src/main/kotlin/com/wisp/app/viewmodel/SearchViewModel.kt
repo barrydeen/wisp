@@ -9,6 +9,7 @@ import com.wisp.app.nostr.FollowSet
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
+import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.KeyRepository
@@ -58,6 +59,15 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching
 
+    // Search relay selection
+    private val _searchRelays = MutableStateFlow(
+        keyRepo.getSearchRelays().ifEmpty { DEFAULT_SEARCH_RELAYS }
+    )
+    val searchRelays: StateFlow<List<String>> = _searchRelays
+
+    private val _selectedRelay = MutableStateFlow<String?>(null)
+    val selectedRelay: StateFlow<String?> = _selectedRelay
+
     private var searchJob: Job? = null
     private var localSearchJob: Job? = null
     private var relayPool: RelayPool? = null
@@ -72,6 +82,29 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectLocalFilter(filter: LocalFilter) {
         _localFilter.value = filter
+    }
+
+    fun selectRelay(url: String?) {
+        _selectedRelay.value = url
+    }
+
+    fun addSearchRelay(url: String): Boolean {
+        val trimmed = url.trim().trimEnd('/')
+        if (!RelayConfig.isAcceptableUrl(trimmed)) return false
+        if (trimmed in _searchRelays.value) return false
+        val updated = _searchRelays.value + trimmed
+        keyRepo.saveSearchRelays(updated)
+        _searchRelays.value = updated
+        return true
+    }
+
+    fun removeSearchRelay(url: String) {
+        val updated = _searchRelays.value - url
+        keyRepo.saveSearchRelays(updated)
+        _searchRelays.value = updated
+        if (_selectedRelay.value == url) {
+            _selectedRelay.value = null
+        }
     }
 
     fun updateQuery(newQuery: String, profileRepo: ProfileRepository? = null, eventRepo: EventRepository? = null) {
@@ -126,9 +159,10 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         val noteReq = ClientMessage.req(noteSubId, noteFilter)
         val listReq = ClientMessage.req(listSubId, listFilter)
 
-        val searchRelays = keyRepo.getSearchRelays().ifEmpty { DEFAULT_SEARCH_RELAYS }
+        val selected = _selectedRelay.value
+        val relaysToQuery = if (selected != null) listOf(selected) else _searchRelays.value
 
-        for (url in searchRelays) {
+        for (url in relaysToQuery) {
             relayPool.sendToRelayOrEphemeral(url, userReq)
             relayPool.sendToRelayOrEphemeral(url, noteReq)
             relayPool.sendToRelayOrEphemeral(url, listReq)
