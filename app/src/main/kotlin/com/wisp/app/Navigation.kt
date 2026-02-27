@@ -663,7 +663,7 @@ fun WispNavHost(
             }
             val isBlockedState by feedViewModel.muteRepo.blockedPubkeys.collectAsState()
             val profileListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
-            val profilePinnedIds by feedViewModel.pinRepo.pinnedIds.collectAsState()
+            val profilePinnedIds by if (isOwnProfile) feedViewModel.pinRepo.pinnedIds.collectAsState() else userProfileViewModel.pinnedNoteIds.collectAsState()
             val profileZapInProgress by feedViewModel.zapInProgress.collectAsState()
             UserProfileScreen(
                 viewModel = userProfileViewModel,
@@ -787,18 +787,22 @@ fun WispNavHost(
             val pubkey = backStackEntry.arguments?.getString("pubkey") ?: return@composable
             val dmConvoViewModel: DmConversationViewModel = viewModel()
             LaunchedEffect(pubkey) {
-                dmConvoViewModel.init(pubkey, feedViewModel.dmRepo, feedViewModel.relayListRepo)
+                dmConvoViewModel.init(pubkey, feedViewModel.dmRepo, feedViewModel.relayListRepo, feedViewModel.relayPool)
             }
             val peerProfile = feedViewModel.eventRepo.getProfileData(pubkey)
             val userPubkey = feedViewModel.getUserPubkey()
+            val userProfile = userPubkey?.let { feedViewModel.eventRepo.getProfileData(it) }
             DmConversationScreen(
                 viewModel = dmConvoViewModel,
                 relayPool = feedViewModel.relayPool,
                 peerProfile = peerProfile,
+                userProfile = userProfile,
                 userPubkey = userPubkey,
                 eventRepo = feedViewModel.eventRepo,
                 relayInfoRepo = feedViewModel.relayInfoRepo,
                 onBack = { navController.popBackStack() },
+                onProfileClick = { pk -> navController.navigate("profile/$pk") },
+                peerPubkey = pubkey,
                 signer = activeSigner
             )
         }
@@ -1294,7 +1298,8 @@ fun WispNavHost(
                 isInList = { it in notifListedIds },
                 resolvedEmojis = notifResolvedEmojis,
                 unicodeEmojis = notifUnicodeEmojis,
-                onManageEmojis = { navController.navigate(Routes.CUSTOM_EMOJIS) }
+                onManageEmojis = { navController.navigate(Routes.CUSTOM_EMOJIS) },
+                zapError = feedViewModel.zapError
             )
         }
     }
