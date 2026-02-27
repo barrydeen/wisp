@@ -47,14 +47,16 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
 
     fun addEvent(event: NostrEvent, myPubkey: String) {
         if (event.pubkey == myPubkey) return
-        if (seenEvents.get(event.id) != null) return
         val hasPTag = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == myPubkey }
         // Kind 6 reposts may omit the p-tag; callers must pre-filter kind 6 ownership
         if (!hasPTag && event.kind != 6) return
 
-        seenEvents.put(event.id, true)
-
         synchronized(lock) {
+            // Atomic check-then-put inside lock to prevent race when the same
+            // event arrives from multiple relays concurrently (e.g. user-engage
+            // subscriptions bypass RelayPool dedup).
+            if (seenEvents.get(event.id) != null) return
+            seenEvents.put(event.id, true)
             val merged = when (event.kind) {
                 6 -> mergeRepost(event)
                 7 -> mergeReaction(event)
