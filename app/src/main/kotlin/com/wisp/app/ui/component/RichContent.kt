@@ -58,11 +58,9 @@ import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.net.URLEncoder
-import java.util.concurrent.TimeUnit
 
 /**
  * Bundles event-generic action callbacks so quoted notes can render
@@ -873,13 +871,11 @@ private data class OgData(
 
 private val ogCache = LruCache<String, OgData>(200)
 
-private val httpClient by lazy {
-    OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .build()
-}
+private val httpClient
+    get() = com.wisp.app.relay.HttpClientFactory.createHttpClient(
+        connectTimeoutSeconds = 5,
+        readTimeoutSeconds = 5
+    )
 
 private val ogTagRegex = Regex(
     """<meta[^>]+property\s*=\s*["']og:(\w+)["'][^>]+content\s*=\s*["']([^"']*)["'][^>]*/?>|<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:(\w+)["'][^>]*/?>""",

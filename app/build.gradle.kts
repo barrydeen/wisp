@@ -33,6 +33,10 @@ android {
         jvmTarget = "17"
     }
 
+    packaging {
+        jniLibs.useLegacyPackaging = true
+    }
+
     buildFeatures {
         compose = true
     }
@@ -64,4 +68,6 @@ dependencies {
     implementation(libs.biometric)
     implementation(libs.splashscreen)
     implementation(libs.zxing.core)
+    implementation(libs.kmp.tor.runtime)
+    implementation(libs.kmp.tor.resource.exec)
 }

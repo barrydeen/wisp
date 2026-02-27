@@ -40,3 +40,7 @@
 
 # ZXing
 -keep class com.google.zxing.** { *; }
+
+# kmp-tor
+-keep class io.matthewnelson.kmp.tor.** { *; }
+-dontwarn io.matthewnelson.kmp.tor.**

@@ -12,10 +12,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.util.concurrent.TimeUnit
 
 class BlossomRepository(private val context: Context, pubkeyHex: String? = null) {
     private var prefs: SharedPreferences =
@@ -26,11 +24,12 @@ class BlossomRepository(private val context: Context, pubkeyHex: String? = null)
     private val _servers = MutableStateFlow(loadServers())
     val servers: StateFlow<List<String>> = _servers
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .build()
+    private val httpClient
+        get() = com.wisp.app.relay.HttpClientFactory.createHttpClient(
+            connectTimeoutSeconds = 30,
+            readTimeoutSeconds = 60,
+            writeTimeoutSeconds = 60
+        )
 
     fun updateFromEvent(event: NostrEvent) {
         if (event.kind != Blossom.KIND_SERVER_LIST) return
