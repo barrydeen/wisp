@@ -22,6 +22,8 @@ import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
@@ -50,6 +52,8 @@ import com.wisp.app.nostr.ProfileData
 fun WispDrawerContent(
     profile: ProfileData?,
     pubkey: String?,
+    isDarkTheme: Boolean = true,
+    onToggleTheme: () -> Unit = {},
     onProfile: () -> Unit,
     onFeed: () -> Unit,
     onSearch: () -> Unit,
@@ -80,6 +84,14 @@ fun WispDrawerContent(
             ) {
                 ProfilePicture(url = profile?.picture, size = 64)
                 Spacer(modifier = Modifier.weight(1f))
+                IconButton(onClick = onToggleTheme) {
+                    Icon(
+                        if (isDarkTheme) Icons.Outlined.DarkMode else Icons.Outlined.LightMode,
+                        contentDescription = "Toggle theme",
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 IconButton(onClick = { showQrDialog = true }) {
                     Icon(
                         Icons.Outlined.QrCode2,

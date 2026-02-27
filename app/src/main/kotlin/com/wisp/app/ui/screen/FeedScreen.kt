@@ -78,6 +78,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun FeedScreen(
     viewModel: FeedViewModel,
+    isDarkTheme: Boolean = true,
+    onToggleTheme: () -> Unit = {},
     onCompose: () -> Unit,
     onReply: (NostrEvent) -> Unit,
     onRelays: () -> Unit,
@@ -254,6 +256,8 @@ fun FeedScreen(
             WispDrawerContent(
                 profile = userProfile,
                 pubkey = userPubkey,
+                isDarkTheme = isDarkTheme,
+                onToggleTheme = onToggleTheme,
                 onProfile = {
                     scope.launch { drawerState.close() }
                     onProfileEdit()

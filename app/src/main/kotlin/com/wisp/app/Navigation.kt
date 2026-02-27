@@ -117,7 +117,10 @@ object Routes {
 }
 
 @Composable
-fun WispNavHost() {
+fun WispNavHost(
+    isDarkTheme: Boolean = true,
+    onToggleTheme: () -> Unit = {}
+) {
     val navController = rememberNavController()
     val authViewModel: AuthViewModel = viewModel()
     val feedViewModel: FeedViewModel = viewModel()
@@ -388,6 +391,8 @@ fun WispNavHost() {
         composable(Routes.FEED) {
             FeedScreen(
                 viewModel = feedViewModel,
+                isDarkTheme = isDarkTheme,
+                onToggleTheme = onToggleTheme,
                 scrollToTopTrigger = scrollToTopTrigger,
                 onCompose = {
                     replyTarget = null
