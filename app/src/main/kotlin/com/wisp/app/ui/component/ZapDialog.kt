@@ -46,6 +46,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -87,7 +89,7 @@ private val BoltGlow = Color(0x40FFD700)
 fun ZapDialog(
     isWalletConnected: Boolean,
     onDismiss: () -> Unit,
-    onZap: (amountMsats: Long, message: String) -> Unit,
+    onZap: (amountMsats: Long, message: String, isAnonymous: Boolean) -> Unit,
     onGoToWallet: () -> Unit
 ) {
     if (!isWalletConnected) {
@@ -116,6 +118,7 @@ fun ZapDialog(
     var isCustom by remember { mutableStateOf(false) }
     var customAmount by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
+    var isAnonymous by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var editMode by remember { mutableStateOf(false) }
 
@@ -338,7 +341,30 @@ fun ZapDialog(
                         )
                     }
 
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(Modifier.height(16.dp))
+
+                    // Anonymous toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Anonymous",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Switch(
+                            checked = isAnonymous,
+                            onCheckedChange = { isAnonymous = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = LightningOrange,
+                                checkedTrackColor = LightningOrange.copy(alpha = 0.5f)
+                            )
+                        )
+                    }
+
+                    Spacer(Modifier.height(16.dp))
 
                     // Action buttons
                     Row(
@@ -354,7 +380,7 @@ fun ZapDialog(
 
                         Button(
                             onClick = {
-                                onZap(effectiveAmount * 1000, effectiveMessage.ifEmpty { message })
+                                onZap(effectiveAmount * 1000, effectiveMessage.ifEmpty { message }, isAnonymous)
                             },
                             enabled = effectiveAmount > 0,
                             modifier = Modifier.weight(2f),
