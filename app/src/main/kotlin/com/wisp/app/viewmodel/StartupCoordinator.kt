@@ -94,6 +94,7 @@ class StartupCoordinator(
     private var relayListRefreshJob: Job? = null
     private var followWatcherJob: Job? = null
     private var authCompletedJob: Job? = null
+    private var notifRefreshJob: Job? = null
     private var startupJob: Job? = null
 
     var relaysInitialized = false
@@ -107,6 +108,7 @@ class StartupCoordinator(
         relayListRefreshJob?.cancel()
         followWatcherJob?.cancel()
         authCompletedJob?.cancel()
+        notifRefreshJob?.cancel()
         startupJob?.cancel()
         feedSub.reset()
 
@@ -210,6 +212,16 @@ class StartupCoordinator(
                 relayPool.cleanupEphemeralRelays()
                 eventRepo.trimSeenEvents()
                 relayHintStore.flush()
+            }
+        }
+
+        // Periodic DM + notification subscription refresh (every 3 minutes)
+        // Relays can silently drop subscriptions server-side while the WebSocket stays alive.
+        notifRefreshJob = scope.launch {
+            while (true) {
+                delay(3 * 60 * 1000L)
+                val pk = pubkeyHex ?: continue
+                subscribeDmsAndNotifications(pk)
             }
         }
 
@@ -587,6 +599,11 @@ class StartupCoordinator(
         Log.d("RLC", "[Startup] onAppResume — paused ${pausedMs/1000}s, feedType=${feedSub.feedType.value} connectedCount=${relayPool.connectedCount.value}")
         notifRepo.appIsActive = true
         lifecycleManager.onAppResume(pausedMs)
+    }
+
+    fun refreshDmsAndNotifications() {
+        val pk = pubkeyHex ?: return
+        subscribeDmsAndNotifications(pk)
     }
 
     fun refreshRelays() {

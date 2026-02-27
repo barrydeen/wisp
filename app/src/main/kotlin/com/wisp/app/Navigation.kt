@@ -761,6 +761,7 @@ fun WispNavHost(
 
         composable(Routes.DM_LIST) {
             LaunchedEffect(Unit) {
+                feedViewModel.refreshDmsAndNotifications()
                 // Decrypt pending gift wraps when signer is available
                 activeSigner?.let { dmListViewModel.decryptPending(it) }
                 dmListViewModel.markDmsRead()
@@ -1219,6 +1220,7 @@ fun WispNavHost(
                 onDispose { feedViewModel.notifRepo.isViewing = false }
             }
             LaunchedEffect(Unit) {
+                feedViewModel.refreshDmsAndNotifications()
                 notificationsViewModel.markRead()
             }
             var notifZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
