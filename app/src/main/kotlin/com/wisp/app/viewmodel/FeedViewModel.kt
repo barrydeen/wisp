@@ -234,6 +234,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun onAppPause() = startup.onAppPause()
     fun onAppResume(pausedMs: Long) = startup.onAppResume(pausedMs)
     fun refreshRelays() = startup.refreshRelays()
+    fun refreshDmsAndNotifications() = startup.refreshDmsAndNotifications()
 
     // -- Feed subscription delegates --
     fun setFeedType(type: FeedType) = feedSub.setFeedType(type)
