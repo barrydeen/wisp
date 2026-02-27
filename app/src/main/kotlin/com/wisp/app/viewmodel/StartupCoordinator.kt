@@ -40,10 +40,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.selects.select
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import kotlin.coroutines.CoroutineContext
 
@@ -198,13 +195,19 @@ class StartupCoordinator(
             }
         }
 
-        // Periodic profile & quote sweep — safety net, not primary fetch mechanism.
-        // Profiles are bootstrapped with relay lists before feed loads.
+        // Profile sweep — eager burst at startup for fast profile coverage,
+        // then relaxed periodic sweep as a safety net.
         metadataSweepJob = scope.launch(processingContext) {
-            delay(15_000)
+            // Eager: sweep at 3s, 8s, 15s after startup
+            delay(3_000)
             metadataFetcher.sweepMissingProfiles()
+            delay(5_000)  // t=8s
+            metadataFetcher.sweepMissingProfiles()
+            delay(7_000)  // t=15s
+            metadataFetcher.sweepMissingProfiles()
+            // Relax — by now profiles should be loaded
             while (true) {
-                delay(60_000)
+                delay(120_000)
                 metadataFetcher.sweepMissingProfiles()
             }
         }
@@ -457,33 +460,13 @@ class StartupCoordinator(
         )
         relayPool.sendToAll(ClientMessage.req("self-data", selfDataFilters))
 
-        // Race: proceed as soon as the follow list arrives (kind 3 → contactRepo update)
-        // OR fall back to EOSE/timeout. The follow list is the critical gate — other
-        // self-data (mutes, bookmarks, emoji) streams in the background.
-        val hadFollowsBefore = contactRepo.getFollowList().isNotEmpty()
-        val gotFollowList = if (hadFollowsBefore) {
-            // Already have cached follows, just wait for EOSE to refresh
-            subManager.awaitEoseWithTimeout("self-data", 8_000)
-        } else {
-            // First login: race between follow list arrival and EOSE
-            withTimeoutOrNull(8_000) {
-                // Wait for either the follow list to appear or EOSE
-                val followJob = launch {
-                    contactRepo.followList.first { it.isNotEmpty() }
-                }
-                val eoseJob = launch {
-                    subManager.awaitEose("self-data")
-                }
-                // Whichever finishes first unblocks us
-                select {
-                    followJob.onJoin {}
-                    eoseJob.onJoin {}
-                }
-                followJob.cancel()
-                eoseJob.cancel()
-            }
-            contactRepo.getFollowList().isNotEmpty()
-        }
+        // Wait for multiple relays to EOSE so we get the newest kind 3 (follow list).
+        // contactRepo.updateFromEvent already keeps the newest by created_at, so collecting
+        // from several relays ensures we don't proceed with a stale follow list from
+        // a single fast relay.
+        val eoseCount = subManager.awaitEoseCount("self-data", expectedCount = 3, timeoutMs = 4_000)
+        val gotFollowList = contactRepo.getFollowList().isNotEmpty()
+        Log.d("StartupCoord", "subscribeSelfData: eoseCount=$eoseCount")
         Log.d("StartupCoord", "subscribeSelfData: gotFollowList=$gotFollowList, follows=${contactRepo.getFollowList().size}")
 
         // Close subscription in background after a short grace period for remaining data
