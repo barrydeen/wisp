@@ -83,6 +83,12 @@ class EventRouter(
                     }
                 }
             }
+        } else if (subscriptionId == "self-notes") {
+            eventRepo.cacheEvent(event)
+            if (event.kind == 1) {
+                val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
+                if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
+            }
         } else if (subscriptionId.startsWith("quote-")) {
             eventRepo.cacheEvent(event)
             if (event.kind == 1 && eventRepo.getProfileData(event.pubkey) == null) {
