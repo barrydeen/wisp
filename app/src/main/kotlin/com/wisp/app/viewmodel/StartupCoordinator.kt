@@ -542,9 +542,23 @@ class StartupCoordinator(
         for (url in topScored) {
             relayPool.sendToRelay(url, notifReqMsg)
         }
+
+        // Fetch the user's own recent notes upfront so notification referenced events
+        // (reactions, zaps, reposts all point at our events) are in cache before
+        // engagement subscriptions start.
+        val selfNotesMsg = ClientMessage.req(
+            "self-notes",
+            Filter(kinds = listOf(1), authors = listOf(myPubkey), limit = 200)
+        )
+        relayPool.sendToWriteRelays(selfNotesMsg)
+        relayPool.sendToReadRelays(selfNotesMsg)
+
         scope.launch {
             subManager.awaitEoseWithTimeout("notif")
             notifRepo.notifInitialized = true
+            // Wait for self-notes to arrive before engagement so referenced events are cached
+            subManager.awaitEoseWithTimeout("self-notes", timeoutMs = 5_000)
+            subManager.closeSubscription("self-notes")
             feedSub.subscribeNotifEngagement()
         }
     }
