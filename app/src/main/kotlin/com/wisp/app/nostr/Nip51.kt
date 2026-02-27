@@ -38,6 +38,14 @@ data class BookmarkSet(
     val isPrivate: Boolean = false
 )
 
+data class RelaySet(
+    val pubkey: String,
+    val dTag: String,
+    val name: String,
+    val relays: Set<String>,
+    val createdAt: Long
+)
+
 object Nip51 {
     const val KIND_BLOCKED_RELAYS = 10006
     const val KIND_SEARCH_RELAYS = 10007
@@ -45,7 +53,9 @@ object Nip51 {
     const val KIND_PIN_LIST = 10001
     const val KIND_BOOKMARK_LIST = 10003
     const val KIND_DM_RELAYS = 10050
+    const val KIND_FAVORITE_RELAYS = 10012
     const val KIND_FOLLOW_SET = 30000
+    const val KIND_RELAY_SET = 30002
     const val KIND_BOOKMARK_SET = 30003
 
     fun parseRelaySet(event: NostrEvent): List<String> {
@@ -59,6 +69,38 @@ object Nip51 {
 
     fun buildRelaySetTags(urls: List<String>): List<List<String>> {
         return urls.map { listOf("relay", it) }
+    }
+
+    fun parseRelaySetNamed(event: NostrEvent): RelaySet? {
+        if (event.kind != KIND_RELAY_SET) return null
+        val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: return null
+        val relays = mutableSetOf<String>()
+        var title: String? = null
+        for (tag in event.tags) {
+            if (tag.size < 2) continue
+            when (tag[0]) {
+                "relay", "r" -> {
+                    val url = tag[1].trim().trimEnd('/')
+                    if (RelayConfig.isAcceptableUrl(url)) relays.add(url)
+                }
+                "title" -> title = tag[1]
+            }
+        }
+        return RelaySet(
+            pubkey = event.pubkey,
+            dTag = dTag,
+            name = title ?: dTag,
+            relays = relays,
+            createdAt = event.created_at
+        )
+    }
+
+    fun buildRelaySetNamedTags(dTag: String, relays: Set<String>, title: String? = null): List<List<String>> {
+        val tags = mutableListOf<List<String>>()
+        tags.add(listOf("d", dTag))
+        if (title != null) tags.add(listOf("title", title))
+        for (url in relays) tags.add(listOf("relay", url))
+        return tags
     }
 
     fun parseMuteList(event: NostrEvent): MuteList {

@@ -33,6 +33,7 @@ import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.repo.RelayListRepository
+import com.wisp.app.repo.RelaySetRepository
 import com.wisp.app.repo.ZapPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -62,6 +63,7 @@ class StartupCoordinator(
     private val listRepo: ListRepository,
     private val bookmarkRepo: BookmarkRepository,
     private val bookmarkSetRepo: BookmarkSetRepository,
+    private val relaySetRepo: RelaySetRepository,
     private val pinRepo: PinRepository,
     private val blossomRepo: BlossomRepository,
     private val customEmojiRepo: CustomEmojiRepository,
@@ -127,6 +129,7 @@ class StartupCoordinator(
         muteRepo.clear()
         bookmarkRepo.clear()
         bookmarkSetRepo.clear()
+        relaySetRepo.clear()
         pinRepo.clear()
         listRepo.clear()
         blossomRepo.clear()
@@ -152,6 +155,7 @@ class StartupCoordinator(
         muteRepo.reload(newPubkey)
         bookmarkRepo.reload(newPubkey)
         bookmarkSetRepo.reload(newPubkey)
+        relaySetRepo.reload(newPubkey)
         pinRepo.reload(newPubkey)
         listRepo.reload(newPubkey)
         blossomRepo.reload(newPubkey)
@@ -282,6 +286,7 @@ class StartupCoordinator(
         getUserPubkey()?.let {
             listRepo.setOwner(it)
             bookmarkSetRepo.setOwner(it)
+            relaySetRepo.setOwner(it)
         }
 
         // Unified startup: cold start shows profile discovery UI, warm start skips to feed.
@@ -439,13 +444,14 @@ class StartupCoordinator(
             Filter(kinds = listOf(0), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(3), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(10002), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(10050, 10007, 10006), authors = listOf(myPubkey), limit = 3),
+            Filter(kinds = listOf(10050, 10007, 10006, Nip51.KIND_FAVORITE_RELAYS), authors = listOf(myPubkey), limit = 4),
             Filter(kinds = listOf(Nip51.KIND_MUTE_LIST), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Nip51.KIND_PIN_LIST), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Nip51.KIND_BOOKMARK_LIST), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Blossom.KIND_SERVER_LIST), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Nip51.KIND_FOLLOW_SET), authors = listOf(myPubkey), limit = 50),
             Filter(kinds = listOf(Nip51.KIND_BOOKMARK_SET), authors = listOf(myPubkey), limit = 50),
+            Filter(kinds = listOf(Nip51.KIND_RELAY_SET), authors = listOf(myPubkey), limit = 50),
             Filter(kinds = listOf(Nip30.KIND_USER_EMOJI_LIST), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Nip30.KIND_EMOJI_SET), authors = listOf(myPubkey), limit = 50)
         )

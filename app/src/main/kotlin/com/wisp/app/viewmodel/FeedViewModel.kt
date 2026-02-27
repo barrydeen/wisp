@@ -39,10 +39,15 @@ import com.wisp.app.repo.ZapPreferences
 import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.repo.RelayListRepository
+import com.wisp.app.repo.RelaySetRepository
 import com.wisp.app.repo.ZapSender
 import kotlinx.coroutines.Dispatchers
+import com.wisp.app.nostr.ClientMessage
+import com.wisp.app.nostr.Nip51
+import com.wisp.app.nostr.RelaySet
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 enum class FeedType { FOLLOWS, EXTENDED_FOLLOWS, RELAY, LIST }
 
@@ -123,6 +128,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val relayListRepo = RelayListRepository(app)
     val bookmarkRepo = BookmarkRepository(app, pubkeyHex)
     val bookmarkSetRepo = BookmarkSetRepository(app, pubkeyHex)
+    val relaySetRepo = RelaySetRepository(app, pubkeyHex)
     val pinRepo = PinRepository(app, pubkeyHex)
     val blossomRepo = BlossomRepository(app, pubkeyHex)
     val relayInfoRepo = RelayInfoRepository()
@@ -173,7 +179,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     val eventRouter: EventRouter = EventRouter(
         relayPool, eventRepo, contactRepo, muteRepo, notifRepo, listRepo, bookmarkRepo,
-        bookmarkSetRepo, pinRepo, blossomRepo, customEmojiRepo, relayListRepo,
+        bookmarkSetRepo, pinRepo, blossomRepo, customEmojiRepo, relayListRepo, relaySetRepo,
         relayScoreBoard, relayHintStore, keyRepo, extendedNetworkRepo, metadataFetcher,
         getUserPubkey = { getUserPubkey() },
         getSigner = { signer },
@@ -197,7 +203,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     val startup: StartupCoordinator = StartupCoordinator(
         relayPool, outboxRouter, subManager, eventRepo, contactRepo, muteRepo, notifRepo,
-        listRepo, bookmarkRepo, bookmarkSetRepo, pinRepo, blossomRepo, customEmojiRepo,
+        listRepo, bookmarkRepo, bookmarkSetRepo, relaySetRepo, pinRepo, blossomRepo, customEmojiRepo,
         relayListRepo, relayScoreBoard, relayHintStore, healthTracker, keyRepo,
         extendedNetworkRepo, metadataFetcher, profileRepo, relayInfoRepo, nip05Repo,
         nwcRepo, dmRepo, zapPrefs, lifecycleManager, eventRouter, feedSub,
@@ -214,6 +220,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val initLoadingState: StateFlow<InitLoadingState> = feedSub.initLoadingState
     val feedType: StateFlow<FeedType> = feedSub.feedType
     val selectedRelay: StateFlow<String?> = feedSub.selectedRelay
+    val selectedRelaySet: StateFlow<RelaySet?> = feedSub.selectedRelaySet
     val relayFeedStatus: StateFlow<RelayFeedStatus> = feedSub.relayFeedStatus
     val loadingScreenComplete: StateFlow<Boolean> = feedSub.loadingScreenComplete
     val selectedList: StateFlow<com.wisp.app.nostr.FollowSet?> = listRepo.selectedList
@@ -315,6 +322,60 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSelectedList(followSet: com.wisp.app.nostr.FollowSet) {
         listRepo.selectList(followSet)
+    }
+
+    // -- Relay set delegates --
+    fun setSelectedRelaySet(relaySet: RelaySet) = feedSub.setSelectedRelaySet(relaySet)
+
+    fun toggleFavoriteRelay(url: String) {
+        val isFav = relaySetRepo.isFavorite(url)
+        val updated = if (isFav) relaySetRepo.removeFavorite(url) else relaySetRepo.addFavorite(url)
+        publishFavoriteRelays(updated)
+    }
+
+    fun addRelayToSet(url: String, dTag: String) {
+        val updated = relaySetRepo.addRelayToSet(url, dTag) ?: return
+        publishRelaySet(updated)
+    }
+
+    fun removeRelayFromSet(url: String, dTag: String) {
+        val updated = relaySetRepo.removeRelayFromSet(url, dTag) ?: return
+        publishRelaySet(updated)
+    }
+
+    fun createRelaySet(name: String, relays: Set<String> = emptySet()) {
+        val set = relaySetRepo.createRelaySet(name, relays) ?: return
+        publishRelaySet(set)
+    }
+
+    fun removeRelaySet(dTag: String) {
+        relaySetRepo.removeRelaySet(dTag)
+    }
+
+    private fun publishFavoriteRelays(urls: List<String>) {
+        val s = signer ?: return
+        viewModelScope.launch {
+            val tags = Nip51.buildRelaySetTags(urls)
+            val event = s.signEvent(
+                kind = Nip51.KIND_FAVORITE_RELAYS,
+                content = "",
+                tags = tags
+            )
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+        }
+    }
+
+    private fun publishRelaySet(relaySet: RelaySet) {
+        val s = signer ?: return
+        viewModelScope.launch {
+            val tags = Nip51.buildRelaySetNamedTags(relaySet.dTag, relaySet.relays, relaySet.name)
+            val event = s.signEvent(
+                kind = Nip51.KIND_RELAY_SET,
+                content = "",
+                tags = tags
+            )
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+        }
     }
 
     override fun onCleared() {

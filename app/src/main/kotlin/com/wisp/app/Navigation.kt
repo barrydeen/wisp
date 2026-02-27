@@ -1033,14 +1033,23 @@ fun WispNavHost(
                     feedViewModel.forceProfileFetch(operatorPubkey)
                 }
             }
+            val favoriteRelays by feedViewModel.relaySetRepo.favoriteRelays.collectAsState()
+            val relaySets by feedViewModel.relaySetRepo.ownRelaySets.collectAsState()
             RelayDetailScreen(
                 relayUrl = relayUrl,
                 relayInfoRepo = feedViewModel.relayInfoRepo,
                 healthTracker = feedViewModel.healthTracker,
                 consoleEntries = consoleLog,
                 operatorProfile = operatorProfile,
+                isFavorite = relayUrl in favoriteRelays,
+                relaySets = relaySets,
                 onBack = { navController.popBackStack() },
-                onOperatorClick = if (operatorPubkey != null) {{ navController.navigate("profile/$operatorPubkey") }} else null
+                onOperatorClick = if (operatorPubkey != null) {{ navController.navigate("profile/$operatorPubkey") }} else null,
+                onToggleFavorite = { feedViewModel.toggleFavoriteRelay(relayUrl) },
+                onAddToRelaySet = { dTag -> feedViewModel.addRelayToSet(relayUrl, dTag) },
+                onCreateRelaySet = { name ->
+                    feedViewModel.createRelaySet(name, setOf(relayUrl))
+                }
             )
         }
 
