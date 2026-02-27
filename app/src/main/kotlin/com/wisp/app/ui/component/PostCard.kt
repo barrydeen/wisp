@@ -333,7 +333,8 @@ fun PostCard(
                             val maxPx = with(density) { collapsedMaxHeight.toPx() }
                             contentExceedsMax = coordinates.size.height >= maxPx.toInt()
                         }
-                    }
+                    },
+                contentAlignment = Alignment.TopStart
             ) {
                 val emojiMap = remember(event.id) { Nip30.parseEmojiTags(event) }
                 RichContent(

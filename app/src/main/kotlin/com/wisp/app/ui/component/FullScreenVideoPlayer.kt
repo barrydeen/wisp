@@ -1,10 +1,8 @@
 package com.wisp.app.ui.component
 
+import android.net.Uri
+import androidx.annotation.OptIn
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,75 +17,67 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import coil3.compose.AsyncImage
+import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import com.wisp.app.R
 import com.wisp.app.util.MediaDownloader
 import kotlinx.coroutines.launch
 
+@OptIn(UnstableApi::class)
 @Composable
-fun FullScreenImageViewer(
-    imageUrl: String,
+fun FullScreenVideoPlayer(
+    videoUrl: String,
     onDismiss: () -> Unit
 ) {
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        var scale by remember { mutableFloatStateOf(1f) }
-        var offset by remember { mutableStateOf(Offset.Zero) }
-
-        val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
-            scale = (scale * zoomChange).coerceIn(0.5f, 5f)
-            offset = if (scale > 1f) offset + panChange else Offset.Zero
-        }
-
         val context = LocalContext.current
         val clipboardManager = LocalClipboardManager.current
         val scope = rememberCoroutineScope()
+
+        val exoPlayer = remember(videoUrl) {
+            ExoPlayer.Builder(context).build().apply {
+                setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl)))
+                prepare()
+                playWhenReady = true
+            }
+        }
+
+        DisposableEffect(videoUrl) {
+            onDispose { exoPlayer.release() }
+        }
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = { if (scale <= 1f) onDismiss() }
-                ),
-            contentAlignment = Alignment.Center
         ) {
-            AsyncImage(
-                model = imageUrl,
-                contentDescription = "Full screen image",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer(
-                        scaleX = scale,
-                        scaleY = scale,
-                        translationX = offset.x,
-                        translationY = offset.y
-                    )
-                    .transformable(state = transformableState)
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        player = exoPlayer
+                        useController = true
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
             )
 
             Row(
@@ -101,7 +91,7 @@ fun FullScreenImageViewer(
                 )
 
                 IconButton(
-                    onClick = { scope.launch { MediaDownloader.downloadMedia(context, imageUrl) } },
+                    onClick = { scope.launch { MediaDownloader.downloadMedia(context, videoUrl) } },
                     colors = buttonColors,
                     modifier = Modifier.size(40.dp)
                 ) {
@@ -112,7 +102,7 @@ fun FullScreenImageViewer(
                 }
                 Spacer(Modifier.width(8.dp))
                 IconButton(
-                    onClick = { clipboardManager.setText(AnnotatedString(imageUrl)) },
+                    onClick = { clipboardManager.setText(AnnotatedString(videoUrl)) },
                     colors = buttonColors,
                     modifier = Modifier.size(40.dp)
                 ) {
