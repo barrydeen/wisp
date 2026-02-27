@@ -4,7 +4,10 @@ import android.net.Uri
 import android.util.LruCache
 import androidx.annotation.OptIn
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,9 +16,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -26,15 +35,19 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -50,13 +63,16 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
+import com.wisp.app.R
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.toHex
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrUriData
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
+import com.wisp.app.util.MediaDownloader
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
@@ -204,11 +220,19 @@ fun RichContent(
 ) {
     val segments = parseContent(content.trimEnd('\n', '\r'), emojiMap)
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
+    var fullScreenVideoUrl by remember { mutableStateOf<String?>(null) }
 
     if (fullScreenImageUrl != null) {
         FullScreenImageViewer(
             imageUrl = fullScreenImageUrl!!,
             onDismiss = { fullScreenImageUrl = null }
+        )
+    }
+
+    if (fullScreenVideoUrl != null) {
+        FullScreenVideoPlayer(
+            videoUrl = fullScreenVideoUrl!!,
+            onDismiss = { fullScreenVideoUrl = null }
         )
     }
 
@@ -345,22 +369,15 @@ fun RichContent(
                 val segment = group as ContentSegment
                 when (segment) {
                     is ContentSegment.ImageSegment -> {
-                        AsyncImage(
-                            model = segment.url,
-                            contentDescription = "Image",
-                            contentScale = ContentScale.FillWidth,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable { fullScreenImageUrl = segment.url }
+                        ImageWithContextMenu(
+                            url = segment.url,
+                            onFullScreen = { fullScreenImageUrl = segment.url }
                         )
                     }
                     is ContentSegment.VideoSegment -> {
-                        InlineVideoPlayer(
+                        InlineVideoPlayerWithFullscreen(
                             url = segment.url,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                            onFullScreen = { fullScreenVideoUrl = segment.url }
                         )
                     }
                     is ContentSegment.LinkSegment -> {
@@ -832,6 +849,80 @@ private fun formatQuotedTimestamp(epoch: Long): String {
     }
 }
 
+
+@kotlin.OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ImageWithContextMenu(url: String, onFullScreen: () -> Unit) {
+    var showMenu by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+
+    Box {
+        AsyncImage(
+            model = url,
+            contentDescription = "Image",
+            contentScale = ContentScale.FillWidth,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .combinedClickable(
+                    onClick = onFullScreen,
+                    onLongClick = { showMenu = true }
+                )
+        )
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("Copy URL") },
+                onClick = {
+                    clipboardManager.setText(AnnotatedString(url))
+                    showMenu = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Download") },
+                onClick = {
+                    showMenu = false
+                    scope.launch { MediaDownloader.downloadMedia(context, url) }
+                }
+            )
+        }
+    }
+}
+
+@OptIn(UnstableApi::class)
+@Composable
+private fun InlineVideoPlayerWithFullscreen(url: String, onFullScreen: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+    ) {
+        InlineVideoPlayer(
+            url = url,
+            modifier = Modifier.fillMaxWidth()
+        )
+        IconButton(
+            onClick = onFullScreen,
+            colors = IconButtonDefaults.iconButtonColors(
+                containerColor = Color.Black.copy(alpha = 0.5f),
+                contentColor = Color.White
+            ),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(8.dp)
+                .size(36.dp)
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_fullscreen),
+                contentDescription = "Fullscreen"
+            )
+        }
+    }
+}
 
 @OptIn(UnstableApi::class)
 @Composable
