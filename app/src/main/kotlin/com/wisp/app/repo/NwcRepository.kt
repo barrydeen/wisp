@@ -47,6 +47,9 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected
 
+    /** True once encryption is negotiated and the response subscription is active. */
+    private val _isReady = MutableStateFlow(false)
+
     /** Granular status updates emitted during connect flow */
     private val _statusLog = MutableSharedFlow<String>(extraBufferCapacity = 32)
     val statusLog: SharedFlow<String> = _statusLog
@@ -68,6 +71,7 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         encPrefs.edit().remove("nwc_uri").apply()
         _balance.value = null
         _isConnected.value = false
+        _isReady.value = false
     }
 
     fun reload(pubkeyHex: String?) {
@@ -114,27 +118,35 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
             }
         }
 
-        // Track relay connection state, fetch info event, and set up subscription
+        // Track relay connection state and signal immediately; negotiate + subscribe in background
         newScope.launch {
             r.connectionState.collect { connected ->
+                _isConnected.value = connected
                 if (connected) {
                     emitStatus("Relay connected")
 
-                    // Negotiate encryption before subscribing for responses
-                    negotiateEncryption(r, conn)
+                    // Run negotiation and subscription setup without blocking
+                    // the connection state collector — this prevents the 5s
+                    // negotiation timeout from delaying _isConnected and racing
+                    // with the ViewModel's 10s connect timeout.
+                    launch {
+                        negotiateEncryption(r, conn)
 
-                    // Subscribe for NWC response events (no since filter —
-                    // responses are matched by event ID so stale ones are harmlessly
-                    // dropped, and some relays apply since to live events which can
-                    // filter out responses when there's clock skew with the wallet service)
-                    val filter = Filter(
-                        kinds = listOf(23195),
-                        pTags = listOf(conn.clientPubkey.toHex())
-                    )
-                    r.send(ClientMessage.req("nwc-responses", filter))
-                    emitStatus("Subscribed for responses")
+                        // Subscribe for NWC response events (no since filter —
+                        // responses are matched by event ID so stale ones are harmlessly
+                        // dropped, and some relays apply since to live events which can
+                        // filter out responses when there's clock skew with the wallet service)
+                        val filter = Filter(
+                            kinds = listOf(23195),
+                            pTags = listOf(conn.clientPubkey.toHex())
+                        )
+                        r.send(ClientMessage.req("nwc-responses", filter))
+                        emitStatus("Subscribed for responses")
+                        _isReady.value = true
+                    }
+                } else {
+                    _isReady.value = false
                 }
-                _isConnected.value = connected
             }
         }
 
@@ -210,12 +222,12 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
     ): Result<Nip47.NwcResponse> {
         val conn = connection ?: return Result.failure(Exception("Not connected"))
         val r = relay ?: return Result.failure(Exception("No relay"))
-        if (!_isConnected.value) {
-            emitStatus("Waiting for relay connection...")
-            val connected = withTimeoutOrNull(10_000) { _isConnected.first { it } }
-            if (connected == null) {
-                emitStatus("Relay connection timed out")
-                return Result.failure(Exception("Relay not connected"))
+        if (!_isReady.value) {
+            emitStatus("Waiting for wallet relay to be ready...")
+            val ready = withTimeoutOrNull(15_000) { _isReady.first { it } }
+            if (ready == null) {
+                emitStatus("Wallet relay not ready (timed out)")
+                return Result.failure(Exception("Wallet relay not ready"))
             }
         }
 
@@ -277,6 +289,7 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         relay?.disconnect()
         relay = null
         connection = null
+        _isReady.value = false
         _isConnected.value = false
     }
 
