@@ -142,10 +142,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         onReconnected = { force ->
             Log.d("RLC", "[FeedVM] onReconnected(force=$force) feedType=${feedSub.feedType.value} selectedRelay=${feedSub.selectedRelay.value} feedSize=${eventRepo.feed.value.size}")
             feedSub.subscribeFeed()
+            val myPubkey = getUserPubkey()
+            if (myPubkey != null) startup.subscribeDmsAndNotifications(myPubkey)
             if (force) {
                 startup.fetchRelayListsForFollows()
-                val myPubkey = getUserPubkey()
-                if (myPubkey != null) startup.subscribeDmsAndNotifications(myPubkey)
             }
         }
     )
