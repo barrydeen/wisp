@@ -198,11 +198,25 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         }
                         repostDirty = true
                         markVersionDirty()
+                        val isReply = inner.tags.any { it.size >= 2 && it[0] == "e" }
                         if (seenEventIds.add(inner.id)) {
                             eventCache.put(inner.id, inner)
-                            val isReply = inner.tags.any { it.size >= 2 && it[0] == "e" }
                             if (!isReply) {
                                 feedSortTime.put(inner.id, event.created_at)
+                                binaryInsert(inner, sortTime = event.created_at, fromFeed = true)
+                            }
+                        } else if (!isReply) {
+                            // Already seen — update sort time if repost is newer so it surfaces to top
+                            val prevTime = feedSortTime.get(inner.id) ?: inner.created_at
+                            if (event.created_at > prevTime) {
+                                feedSortTime.put(inner.id, event.created_at)
+                                synchronized(feedList) {
+                                    val idx = feedList.indexOfFirst { it.id == inner.id }
+                                    if (idx >= 0) {
+                                        feedList.removeAt(idx)
+                                        feedIds.remove(inner.id)
+                                    }
+                                }
                                 binaryInsert(inner, sortTime = event.created_at, fromFeed = true)
                             }
                         }
