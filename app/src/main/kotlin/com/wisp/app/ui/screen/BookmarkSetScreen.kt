@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import com.wisp.app.nostr.BookmarkSet
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.TranslationRepository
 import com.wisp.app.ui.component.PostCard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -48,10 +49,12 @@ fun BookmarkSetScreen(
     onProfileClick: (String) -> Unit = {},
     onRemoveFromSet: ((String) -> Unit)? = null,
     onToggleFollow: (String) -> Unit = {},
-    onBlockUser: (String) -> Unit = {}
+    onBlockUser: (String) -> Unit = {},
+    translationRepo: TranslationRepository? = null
 ) {
     val profileVersion by eventRepo.profileVersion.collectAsState()
     val reactionVersion by eventRepo.reactionVersion.collectAsState()
+    val translationVersion by translationRepo?.version?.collectAsState() ?: remember { mutableStateOf(0) }
 
     val events = remember(bookmarkSet?.eventIds, profileVersion) {
         bookmarkSet?.eventIds?.mapNotNull { id -> eventRepo.getEvent(id) }
@@ -124,6 +127,9 @@ fun BookmarkSetScreen(
                     val userEmojis = reactionVersion.let {
                         userPubkey?.let { eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet()
                     }
+                    val translationState = remember(translationVersion, event.id) {
+                        translationRepo?.getState(event.id) ?: com.wisp.app.repo.TranslationState()
+                    }
                     PostCard(
                         event = event,
                         profile = profile,
@@ -138,7 +144,9 @@ fun BookmarkSetScreen(
                         eventRepo = eventRepo,
                         onFollowAuthor = { onToggleFollow(event.pubkey) },
                         onBlockAuthor = { onBlockUser(event.pubkey) },
-                        isOwnEvent = event.pubkey == userPubkey
+                        isOwnEvent = event.pubkey == userPubkey,
+                        translationState = translationState,
+                        onTranslate = { translationRepo?.translate(event.id, event.content) }
                     )
                 }
             }

@@ -38,6 +38,7 @@ import com.wisp.app.repo.CustomEmojiRepository
 import com.wisp.app.repo.ZapPreferences
 import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayInfoRepository
+import com.wisp.app.repo.TranslationRepository
 import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.repo.RelaySetRepository
 import com.wisp.app.repo.ZapSender
@@ -154,6 +155,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         app, contactRepo, muteRepo, relayListRepo, relayPool, subManager, relayScoreBoard, pubkeyHex, socialGraphDb
     )
     val customEmojiRepo = CustomEmojiRepository(app, pubkeyHex)
+    val translationRepo = TranslationRepository()
     val zapPrefs = ZapPreferences(app, pubkeyHex)
     private val processingDispatcher = Dispatchers.Default
 
@@ -231,6 +233,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     fun getUserPubkey(): String? = keyRepo.getPubkeyHex()
     fun resetNewNoteCount() = eventRepo.resetNewNoteCount()
+    fun translateEvent(eventId: String, content: String) = translationRepo.translate(eventId, content)
     fun queueProfileFetch(pubkey: String) = metadataFetcher.queueProfileFetch(pubkey)
     fun forceProfileFetch(pubkey: String) = metadataFetcher.forceProfileFetch(pubkey)
     fun markLoadingComplete() = feedSub.markLoadingComplete()

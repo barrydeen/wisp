@@ -71,6 +71,7 @@ import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.Nip05Status
 import com.wisp.app.repo.RelayInfoRepository
+import com.wisp.app.repo.TranslationRepository
 import com.wisp.app.ui.component.FollowButton
 import com.wisp.app.ui.component.FullScreenImageViewer
 import com.wisp.app.ui.component.PostCard
@@ -128,7 +129,8 @@ fun UserProfileScreen(
     onDeleteEvent: (String, Int) -> Unit = { _, _ -> },
     onAddNoteToList: (String) -> Unit = {},
     onSendDm: (() -> Unit)? = null,
-    signer: com.wisp.app.nostr.NostrSigner? = null
+    signer: com.wisp.app.nostr.NostrSigner? = null,
+    translationRepo: TranslationRepository? = null
 ) {
     val profile by viewModel.profile.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()
@@ -146,6 +148,7 @@ fun UserProfileScreen(
     val replyCountVersion by eventRepo?.replyCountVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val repostVersion by eventRepo?.repostVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val zapVersion by eventRepo?.zapVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
+    val translationVersion by translationRepo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val relaySourceVersion by eventRepo?.relaySourceVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
 
     var zapTargetEvent by remember { mutableStateOf<NostrEvent?>(null) }
@@ -352,6 +355,9 @@ fun UserProfileScreen(
                         }
                         items(items = pinnedEvents, key = { "pinned-${it.id}" }) { event ->
                             val eventProfile = eventRepo?.getProfileData(event.pubkey)
+                            val pinnedTranslationState = remember(translationVersion, event.id) {
+                                translationRepo?.getState(event.id) ?: com.wisp.app.repo.TranslationState()
+                            }
                             PostCard(
                                 event = event,
                                 profile = eventProfile,
@@ -366,7 +372,9 @@ fun UserProfileScreen(
                                 onPin = { onTogglePin(event.id) },
                                 isPinned = true,
                                 onDelete = { onDeleteEvent(event.id, event.kind) },
-                                isOwnEvent = event.pubkey == userPubkey
+                                isOwnEvent = event.pubkey == userPubkey,
+                                translationState = pinnedTranslationState,
+                                onTranslate = { translationRepo?.translate(event.id, event.content) }
                             )
                         }
                     }
@@ -399,6 +407,9 @@ fun UserProfileScreen(
                             val hasUserReposted = eventRepo?.hasUserReposted(event.id) == true
                             val hasUserZapped = zapVersion.let { eventRepo?.hasUserZapped(event.id) == true }
                             val eventReactionEmojiUrls = reactionVersion.let { eventRepo?.getReactionEmojiUrls(event.id) ?: emptyMap() }
+                            val rootTranslationState = remember(translationVersion, event.id) {
+                                translationRepo?.getState(event.id) ?: com.wisp.app.repo.TranslationState()
+                            }
                             PostCard(
                                 event = event,
                                 profile = if (repostPubkey != null) eventRepo?.getProfileData(event.pubkey) else profile,
@@ -433,7 +444,9 @@ fun UserProfileScreen(
                                 isInList = event.id in listedIds,
                                 onPin = { onTogglePin(event.id) },
                                 isPinned = event.id in pinnedIds,
-                                onDelete = { onDeleteEvent(event.id, event.kind) }
+                                onDelete = { onDeleteEvent(event.id, event.kind) },
+                                translationState = rootTranslationState,
+                                onTranslate = { translationRepo?.translate(event.id, event.content) }
                             )
                         }
                         if (rootNotes.isNotEmpty()) {
@@ -467,6 +480,9 @@ fun UserProfileScreen(
                             val hasUserReposted2 = eventRepo?.hasUserReposted(event.id) == true
                             val hasUserZapped2 = zapVersion.let { eventRepo?.hasUserZapped(event.id) == true }
                             val eventReactionEmojiUrls2 = reactionVersion.let { eventRepo?.getReactionEmojiUrls(event.id) ?: emptyMap() }
+                            val replyTranslationState = remember(translationVersion, event.id) {
+                                translationRepo?.getState(event.id) ?: com.wisp.app.repo.TranslationState()
+                            }
                             PostCard(
                                 event = event,
                                 profile = profile,
@@ -500,7 +516,9 @@ fun UserProfileScreen(
                                 isInList = event.id in listedIds,
                                 onPin = { onTogglePin(event.id) },
                                 isPinned = event.id in pinnedIds,
-                                onDelete = { onDeleteEvent(event.id, event.kind) }
+                                onDelete = { onDeleteEvent(event.id, event.kind) },
+                                translationState = replyTranslationState,
+                                onTranslate = { translationRepo?.translate(event.id, event.content) }
                             )
                         }
                         item {

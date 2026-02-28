@@ -125,6 +125,7 @@ fun FeedScreen(
     val followList by viewModel.contactRepo.followList.collectAsState()
     val profileVersion by viewModel.eventRepo.profileVersion.collectAsState()
     val nip05Version by viewModel.nip05Repo.version.collectAsState()
+    val translationVersion by viewModel.translationRepo.version.collectAsState()
     val connectedCount by viewModel.relayPool.connectedCount.collectAsState()
     val listState = rememberLazyListState()
     LaunchedEffect(scrollToTopTrigger) {
@@ -648,7 +649,8 @@ fun FeedScreen(
                                         viewModel.setFeedType(FeedType.RELAY)
                                     },
                                     noteActions = noteActions,
-                                    onManageEmojis = onCustomEmojis
+                                    onManageEmojis = onCustomEmojis,
+                                    translationVersion = translationVersion
                                 )
                             }
                             if (initialLoadDone) {
@@ -724,7 +726,8 @@ private fun FeedItem(
     onDelete: () -> Unit = {},
     onRelayClick: (String) -> Unit = {},
     noteActions: NoteActions? = null,
-    onManageEmojis: (() -> Unit)? = null
+    onManageEmojis: (() -> Unit)? = null,
+    translationVersion: Int = 0
 ) {
     val profileData = remember(profileVersion, event.pubkey) {
         viewModel.eventRepo.getProfileData(event.pubkey)
@@ -781,6 +784,9 @@ private fun FeedItem(
     val eventReactionEmojiUrls = remember(reactionVersion, event.id) {
         viewModel.eventRepo.getReactionEmojiUrls(event.id)
     }
+    val translationState = remember(translationVersion, event.id) {
+        viewModel.translationRepo.getState(event.id)
+    }
     PostCard(
         event = event,
         profile = profileData,
@@ -824,7 +830,9 @@ private fun FeedItem(
         reactionEmojiUrls = eventReactionEmojiUrls,
         resolvedEmojis = resolvedEmojis,
         unicodeEmojis = unicodeEmojis,
-        onManageEmojis = onManageEmojis
+        onManageEmojis = onManageEmojis,
+        translationState = translationState,
+        onTranslate = { viewModel.translateEvent(event.id, event.content) }
     )
 }
 

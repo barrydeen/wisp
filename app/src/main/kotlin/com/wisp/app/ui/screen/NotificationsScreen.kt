@@ -50,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -70,6 +71,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import com.wisp.app.nostr.ZapEntry
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
+import com.wisp.app.repo.TranslationRepository
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.StackedAvatarRow
@@ -106,7 +108,8 @@ fun NotificationsScreen(
     unicodeEmojis: List<String> = emptyList(),
     onManageEmojis: (() -> Unit)? = null,
     zapError: SharedFlow<String>? = null,
-    onRefresh: () -> Unit = {}
+    onRefresh: () -> Unit = {},
+    translationRepo: TranslationRepository? = null
 ) {
     val notifications by viewModel.filteredNotifications.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -289,7 +292,8 @@ fun NotificationsScreen(
                             isInList = isInList,
                             resolvedEmojis = resolvedEmojis,
                             unicodeEmojis = unicodeEmojis,
-                            onManageEmojis = onManageEmojis
+                            onManageEmojis = onManageEmojis,
+                            translationRepo = translationRepo
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
                     }
@@ -326,7 +330,8 @@ fun NotificationsScreen(
                             isInList = isInList,
                             resolvedEmojis = resolvedEmojis,
                             unicodeEmojis = unicodeEmojis,
-                            onManageEmojis = onManageEmojis
+                            onManageEmojis = onManageEmojis,
+                            translationRepo = translationRepo
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
                     }
@@ -440,7 +445,8 @@ private fun NotificationItem(
     isInList: (String) -> Boolean,
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
-    onManageEmojis: (() -> Unit)? = null
+    onManageEmojis: (() -> Unit)? = null,
+    translationRepo: TranslationRepository? = null
 ) {
     // Shared PostCard params for rendering referenced notes with full action bar
     val postCardParams = NotifPostCardParams(
@@ -469,7 +475,8 @@ private fun NotificationItem(
         nip05Repo = nip05Repo,
         isZapAnimating = isZapAnimating,
         isZapInProgress = isZapInProgress,
-        isInList = isInList
+        isInList = isInList,
+        translationRepo = translationRepo
     )
 
     // Show reposter avatars at the top of reaction and repost notifications
@@ -1077,7 +1084,8 @@ private data class NotifPostCardParams(
     val nip05Repo: Nip05Repository?,
     val isZapAnimating: (String) -> Boolean,
     val isZapInProgress: (String) -> Boolean,
-    val isInList: (String) -> Boolean
+    val isInList: (String) -> Boolean,
+    val translationRepo: TranslationRepository? = null
 )
 
 // ── Referenced Note PostCard ────────────────────────────────────────────
@@ -1146,6 +1154,10 @@ private fun ReferencedNotePostCard(
     val eventReactionEmojiUrls = remember(params.reactionVersion, event.id) {
         eventRepo.getReactionEmojiUrls(event.id)
     }
+    val translationVersion by params.translationRepo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
+    val translationState = remember(translationVersion, event.id) {
+        params.translationRepo?.getState(event.id) ?: com.wisp.app.repo.TranslationState()
+    }
 
     PostCard(
         event = event,
@@ -1184,6 +1196,8 @@ private fun ReferencedNotePostCard(
         onAddToList = { params.onAddToList(event.id) },
         isInList = params.isInList(event.id),
         onQuotedNoteClick = params.onNoteClick,
+        translationState = translationState,
+        onTranslate = { params.translationRepo?.translate(event.id, event.content) },
         showDivider = false
     )
 

@@ -61,6 +61,7 @@ import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.ExtendedNetworkCache
 import com.wisp.app.repo.MuteRepository
 import com.wisp.app.repo.ProfileRepository
+import com.wisp.app.repo.TranslationRepository
 import com.wisp.app.ui.component.FollowButton
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
@@ -89,7 +90,8 @@ fun SearchScreen(
     userPubkey: String? = null,
     listedIds: Set<String> = emptySet(),
     onAddToList: (String) -> Unit = {},
-    onDeleteEvent: (String, Int) -> Unit = { _, _ -> }
+    onDeleteEvent: (String, Int) -> Unit = { _, _ -> },
+    translationRepo: TranslationRepository? = null
 ) {
     val query by viewModel.query.collectAsState()
     val selectedTab by viewModel.selectedTab.collectAsState()
@@ -161,7 +163,8 @@ fun SearchScreen(
                     userPubkey = userPubkey,
                     listedIds = listedIds,
                     onAddToList = onAddToList,
-                    onDeleteEvent = onDeleteEvent
+                    onDeleteEvent = onDeleteEvent,
+                    translationRepo = translationRepo
                 )
 
                 SearchTab.RELAYS -> RelaysTab(
@@ -192,7 +195,8 @@ fun SearchScreen(
                     userPubkey = userPubkey,
                     listedIds = listedIds,
                     onAddToList = onAddToList,
-                    onDeleteEvent = onDeleteEvent
+                    onDeleteEvent = onDeleteEvent,
+                    translationRepo = translationRepo
                 )
             }
         }
@@ -219,7 +223,8 @@ private fun MyDeviceTab(
     userPubkey: String?,
     listedIds: Set<String>,
     onAddToList: (String) -> Unit,
-    onDeleteEvent: (String, Int) -> Unit
+    onDeleteEvent: (String, Int) -> Unit,
+    translationRepo: TranslationRepository? = null
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         // Search bar
@@ -272,9 +277,13 @@ private fun MyDeviceTab(
             }
 
             localFilter == LocalFilter.NOTES -> {
+                val translationVersion by translationRepo?.version?.collectAsState() ?: remember { androidx.compose.runtime.mutableIntStateOf(0) }
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(localNotes, key = { it.id }) { event ->
                         val profile = eventRepo.getProfileData(event.pubkey)
+                        val translationState = remember(translationVersion, event.id) {
+                            translationRepo?.getState(event.id) ?: com.wisp.app.repo.TranslationState()
+                        }
                         PostCard(
                             event = event,
                             profile = profile,
@@ -290,7 +299,9 @@ private fun MyDeviceTab(
                             isOwnEvent = event.pubkey == userPubkey,
                             onAddToList = { onAddToList(event.id) },
                             isInList = event.id in listedIds,
-                            onDelete = { onDeleteEvent(event.id, event.kind) }
+                            onDelete = { onDeleteEvent(event.id, event.kind) },
+                            translationState = translationState,
+                            onTranslate = { translationRepo?.translate(event.id, event.content) }
                         )
                     }
                 }
@@ -329,7 +340,8 @@ private fun RelaysTab(
     userPubkey: String?,
     listedIds: Set<String>,
     onAddToList: (String) -> Unit,
-    onDeleteEvent: (String, Int) -> Unit
+    onDeleteEvent: (String, Int) -> Unit,
+    translationRepo: TranslationRepository? = null
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         // Relay selector
@@ -384,6 +396,7 @@ private fun RelaysTab(
         }
 
         else -> {
+            val relayTranslationVersion by translationRepo?.version?.collectAsState() ?: remember { androidx.compose.runtime.mutableIntStateOf(0) }
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 if (localFilter == LocalFilter.PEOPLE) {
                     val sortedUsers = users.sortedByDescending {
@@ -423,6 +436,9 @@ private fun RelaysTab(
 
                     items(notes, key = { it.id }) { event ->
                         val profile = eventRepo.getProfileData(event.pubkey)
+                        val translationState = remember(relayTranslationVersion, event.id) {
+                            translationRepo?.getState(event.id) ?: com.wisp.app.repo.TranslationState()
+                        }
                         PostCard(
                             event = event,
                             profile = profile,
@@ -438,7 +454,9 @@ private fun RelaysTab(
                             isOwnEvent = event.pubkey == userPubkey,
                             onAddToList = { onAddToList(event.id) },
                             isInList = event.id in listedIds,
-                            onDelete = { onDeleteEvent(event.id, event.kind) }
+                            onDelete = { onDeleteEvent(event.id, event.kind) },
+                            translationState = translationState,
+                            onTranslate = { translationRepo?.translate(event.id, event.content) }
                         )
                     }
                 }
