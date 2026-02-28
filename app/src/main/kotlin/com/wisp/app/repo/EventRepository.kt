@@ -217,9 +217,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             7 -> addReaction(event)
             9735 -> {
                 val targetId = Nip57.getZappedEventId(event) ?: return
-                // Per-target dedup — evicts alongside the zap count cache
-                val dedupSet = countedZapIds.get(targetId)
-                    ?: mutableSetOf<String>().also { countedZapIds.put(targetId, it) }
+                // Per-target dedup — atomic get-or-create under lock to prevent
+                // concurrent threads from creating separate sets for the same target
+                val dedupSet = synchronized(countedZapIds) {
+                    countedZapIds.get(targetId)
+                        ?: mutableSetOf<String>().also { countedZapIds.put(targetId, it) }
+                }
                 synchronized(dedupSet) { if (!dedupSet.add(event.id)) return }
                 val sats = Nip57.getZapAmountSats(event)
                 if (sats > 0) {
