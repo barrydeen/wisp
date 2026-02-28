@@ -65,6 +65,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -97,6 +98,11 @@ fun WalletScreen(
 ) {
     val walletState by viewModel.walletState.collectAsState()
     val currentPage by viewModel.currentPage.collectAsState()
+
+    // Always refresh wallet state when this screen appears
+    LaunchedEffect(Unit) {
+        viewModel.refreshState()
+    }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
