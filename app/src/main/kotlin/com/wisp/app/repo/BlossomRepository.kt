@@ -84,13 +84,19 @@ class BlossomRepository(private val context: Context, pubkeyHex: String? = null)
         val mediaType = mimeType.toMediaType()
         val body = fileBytes.toRequestBody(mediaType)
 
-        // Always read fresh from SharedPreferences so we pick up changes from BlossomServersViewModel
+        // Build ordered server list with Primal as final fallback
         val serverList = loadServers()
+        val candidates = (serverList + Blossom.DEFAULT_SERVER).distinct()
 
-        // Upload to the first (preferred) server only
-        val server = serverList.first()
-        val result = uploadToServer(server, body, authHeader, mimeType)
-        return@withContext result
+        var lastException: Exception? = null
+        for (server in candidates) {
+            try {
+                return@withContext uploadToServer(server, body, authHeader, mimeType)
+            } catch (e: Exception) {
+                lastException = e
+            }
+        }
+        throw lastException ?: Exception("Upload failed: no servers available")
     }
 
     private fun uploadToServer(
