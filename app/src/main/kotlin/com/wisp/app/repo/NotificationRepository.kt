@@ -23,6 +23,7 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
 
     private val lock = Any()
     private val groupMap = mutableMapOf<String, NotificationGroup>()
+    private val zapEventIdsByGroup = mutableMapOf<String, MutableSet<String>>()
 
     private val _notifications = MutableStateFlow<List<NotificationGroup>>(emptyList())
     val notifications: StateFlow<List<NotificationGroup>> = _notifications
@@ -101,6 +102,7 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
         synchronized(lock) {
             seenEvents.evictAll()
             groupMap.clear()
+            zapEventIdsByGroup.clear()
             _notifications.value = emptyList()
             _summary24h.value = NotificationSummary()
             _hasUnread.value = false
@@ -375,6 +377,10 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
         val zapperPubkey = Nip57.getZapperPubkey(event) ?: return false
         val referencedId = Nip57.getZappedEventId(event) ?: return false
         val key = "zaps:$referencedId"
+        // Secondary dedup: guard against LRU eviction in seenEvents allowing
+        // the same 9735 event to be re-processed on periodic refresh cycles.
+        val zapEventIds = zapEventIdsByGroup.getOrPut(key) { mutableSetOf() }
+        if (!zapEventIds.add(event.id)) return false
         val message = Nip57.getZapMessage(event)
         val entry = ZapEntry(pubkey = zapperPubkey, sats = amount, message = message, createdAt = event.created_at)
         val existing = groupMap[key] as? NotificationGroup.ZapGroup
