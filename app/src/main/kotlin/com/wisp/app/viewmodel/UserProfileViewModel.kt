@@ -50,6 +50,9 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     private val _repostAuthors = mutableMapOf<String, String>()
     val repostAuthors: Map<String, String> get() = _repostAuthors
 
+    // Track repost sort time: inner event id -> repost wrapper created_at
+    private val _repostSortTime = mutableMapOf<String, Long>()
+
     private val _followList = MutableStateFlow<List<Nip02.FollowEntry>>(emptyList())
     val followList: StateFlow<List<Nip02.FollowEntry>> = _followList
 
@@ -222,7 +225,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                                 val current = _rootNotes.value.toMutableList()
                                 if (current.none { it.id == event.id }) {
                                     current.add(event)
-                                    current.sortByDescending { it.created_at }
+                                    current.sortByDescending { _repostSortTime[it.id] ?: it.created_at }
                                     _rootNotes.value = current
                                 }
                             } else {
@@ -244,12 +247,12 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                                     val inner = NostrEvent.fromJson(event.content)
                                     eventRepo.cacheEvent(inner)
                                     _repostAuthors[inner.id] = event.pubkey
+                                    _repostSortTime[inner.id] = event.created_at
                                     val current = _rootNotes.value.toMutableList()
-                                    if (current.none { it.id == inner.id }) {
-                                        current.add(inner)
-                                        current.sortByDescending { it.created_at }
-                                        _rootNotes.value = current
-                                    }
+                                    current.removeAll { it.id == inner.id }
+                                    current.add(inner)
+                                    current.sortByDescending { _repostSortTime[it.id] ?: it.created_at }
+                                    _rootNotes.value = current
                                 } catch (_: Exception) {}
                             }
                         }

@@ -680,6 +680,15 @@ fun WispNavHost(
                     composeViewModel.clear()
                     navController.navigate(Routes.COMPOSE)
                 },
+                onRepost = { event ->
+                    feedViewModel.sendRepost(event)
+                },
+                onQuote = { event ->
+                    quoteTarget = event
+                    replyTarget = null
+                    composeViewModel.clear()
+                    navController.navigate(Routes.COMPOSE)
+                },
                 eventRepo = feedViewModel.eventRepo,
                 onNavigateToProfile = { pubkey -> navController.navigate("profile/$pubkey") },
                 onToggleFollow = { pubkey -> feedViewModel.toggleFollow(pubkey) },
