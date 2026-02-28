@@ -88,6 +88,11 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         }
         connection = conn
 
+        // Reset state so ViewModel sees fresh false→true transitions and
+        // sendRequest() properly waits for negotiation/subscription setup
+        _isConnected.value = false
+        _isReady.value = false
+
         // Disconnect old relay if any
         relay?.disconnect()
 
