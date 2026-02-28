@@ -28,6 +28,7 @@ import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.repo.RelaySetRepository
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Routes incoming relay events to the appropriate repositories based on subscription ID.
@@ -57,6 +58,22 @@ class EventRouter(
     private val getFeedSubId: () -> String,
     private val onRelayFeedEventReceived: () -> Unit
 ) {
+    // Track newest created_at per (pubkey, kind) to prevent stale overwrites
+    // when the same self-data event arrives from multiple relays.
+    private val selfDataTimestamps = ConcurrentHashMap<String, Long>()
+
+    private fun isNewestSelfData(event: NostrEvent): Boolean {
+        val key = "${event.pubkey}:${event.kind}"
+        val existing = selfDataTimestamps[key]
+        if (existing != null && event.created_at <= existing) return false
+        selfDataTimestamps[key] = event.created_at
+        return true
+    }
+
+    fun clearSelfDataTimestamps() {
+        selfDataTimestamps.clear()
+    }
+
     suspend fun processRelayEvent(event: NostrEvent, relayUrl: String, subscriptionId: String) {
         if (subscriptionId == "notif") {
             if (muteRepo.isBlocked(event.pubkey)) return
@@ -165,7 +182,7 @@ class EventRouter(
             if (event.kind == 10002) {
                 relayListRepo.updateFromEvent(event)
                 val myPubkey = getUserPubkey()
-                if (myPubkey != null && event.pubkey == myPubkey) {
+                if (myPubkey != null && event.pubkey == myPubkey && isNewestSelfData(event)) {
                     val relays = Nip65.parseRelayList(event)
                     if (relays.isNotEmpty()) {
                         keyRepo.saveRelays(relays)
@@ -178,7 +195,7 @@ class EventRouter(
             }
             if (event.kind == Nip51.KIND_DM_RELAYS) {
                 val myPubkey = getUserPubkey()
-                if (myPubkey != null && event.pubkey == myPubkey) {
+                if (myPubkey != null && event.pubkey == myPubkey && isNewestSelfData(event)) {
                     val urls = Nip51.parseRelaySet(event)
                     keyRepo.saveDmRelays(urls)
                     relayPool.updateDmRelays(urls)
@@ -186,13 +203,13 @@ class EventRouter(
             }
             if (event.kind == Nip51.KIND_SEARCH_RELAYS) {
                 val myPubkey = getUserPubkey()
-                if (myPubkey != null && event.pubkey == myPubkey) {
+                if (myPubkey != null && event.pubkey == myPubkey && isNewestSelfData(event)) {
                     keyRepo.saveSearchRelays(Nip51.parseRelaySet(event))
                 }
             }
             if (event.kind == Nip51.KIND_BLOCKED_RELAYS) {
                 val myPubkey = getUserPubkey()
-                if (myPubkey != null && event.pubkey == myPubkey) {
+                if (myPubkey != null && event.pubkey == myPubkey && isNewestSelfData(event)) {
                     val urls = Nip51.parseRelaySet(event)
                     keyRepo.saveBlockedRelays(urls)
                     relayPool.updateBlockedUrls(urls)
@@ -216,7 +233,7 @@ class EventRouter(
             }
             if (event.kind == Blossom.KIND_SERVER_LIST) {
                 val myPubkey = getUserPubkey()
-                if (myPubkey != null && event.pubkey == myPubkey) blossomRepo.updateFromEvent(event)
+                if (myPubkey != null && event.pubkey == myPubkey && isNewestSelfData(event)) blossomRepo.updateFromEvent(event)
             }
             if (event.kind == Nip51.KIND_FOLLOW_SET) {
                 val myPubkey = getUserPubkey()

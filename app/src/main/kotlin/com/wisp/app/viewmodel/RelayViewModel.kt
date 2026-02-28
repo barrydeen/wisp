@@ -24,17 +24,15 @@ class RelayViewModel(app: Application) : AndroidViewModel(app) {
     private val _selectedTab = MutableStateFlow(RelaySetType.GENERAL)
     val selectedTab: StateFlow<RelaySetType> = _selectedTab
 
-    private val _relays = MutableStateFlow(keyRepo.getRelays())
-    val relays: StateFlow<List<RelayConfig>> = _relays
+    val relays: StateFlow<List<RelayConfig>> = keyRepo.relaysFlow
+    val dmRelays: StateFlow<List<String>> = keyRepo.dmRelaysFlow
+    val searchRelays: StateFlow<List<String>> = keyRepo.searchRelaysFlow
+    val blockedRelays: StateFlow<List<String>> = keyRepo.blockedRelaysFlow
 
-    private val _dmRelays = MutableStateFlow(keyRepo.getDmRelays())
-    val dmRelays: StateFlow<List<String>> = _dmRelays
-
-    private val _searchRelays = MutableStateFlow(keyRepo.getSearchRelays())
-    val searchRelays: StateFlow<List<String>> = _searchRelays
-
-    private val _blockedRelays = MutableStateFlow(keyRepo.getBlockedRelays())
-    val blockedRelays: StateFlow<List<String>> = _blockedRelays
+    /** Re-point prefs at the current user's file so flows pick up their relay data. */
+    fun reload() {
+        keyRepo.reloadPrefs(keyRepo.getPubkeyHex())
+    }
 
     private val _newRelayUrl = MutableStateFlow("")
     val newRelayUrl: StateFlow<String> = _newRelayUrl
@@ -54,27 +52,20 @@ class RelayViewModel(app: Application) : AndroidViewModel(app) {
 
         when (_selectedTab.value) {
             RelaySetType.GENERAL -> {
-                if (_relays.value.any { it.url == url }) return false
-                val updated = _relays.value + RelayConfig(url)
-                _relays.value = updated
-                keyRepo.saveRelays(updated)
+                if (relays.value.any { it.url == url }) return false
+                keyRepo.saveRelays(relays.value + RelayConfig(url))
             }
             RelaySetType.DM -> {
-                if (url in _dmRelays.value) return false
-                val updated = _dmRelays.value + url
-                _dmRelays.value = updated
-                keyRepo.saveDmRelays(updated)
+                if (url in dmRelays.value) return false
+                keyRepo.saveDmRelays(dmRelays.value + url)
             }
             RelaySetType.SEARCH -> {
-                if (url in _searchRelays.value) return false
-                val updated = _searchRelays.value + url
-                _searchRelays.value = updated
-                keyRepo.saveSearchRelays(updated)
+                if (url in searchRelays.value) return false
+                keyRepo.saveSearchRelays(searchRelays.value + url)
             }
             RelaySetType.BLOCKED -> {
-                if (url in _blockedRelays.value) return false
-                val updated = _blockedRelays.value + url
-                _blockedRelays.value = updated
+                if (url in blockedRelays.value) return false
+                val updated = blockedRelays.value + url
                 keyRepo.saveBlockedRelays(updated)
                 relayPool?.updateBlockedUrls(updated)
             }
@@ -86,23 +77,16 @@ class RelayViewModel(app: Application) : AndroidViewModel(app) {
     fun removeRelay(url: String) {
         when (_selectedTab.value) {
             RelaySetType.GENERAL -> {
-                val updated = _relays.value.filter { it.url != url }
-                _relays.value = updated
-                keyRepo.saveRelays(updated)
+                keyRepo.saveRelays(relays.value.filter { it.url != url })
             }
             RelaySetType.DM -> {
-                val updated = _dmRelays.value.filter { it != url }
-                _dmRelays.value = updated
-                keyRepo.saveDmRelays(updated)
+                keyRepo.saveDmRelays(dmRelays.value.filter { it != url })
             }
             RelaySetType.SEARCH -> {
-                val updated = _searchRelays.value.filter { it != url }
-                _searchRelays.value = updated
-                keyRepo.saveSearchRelays(updated)
+                keyRepo.saveSearchRelays(searchRelays.value.filter { it != url })
             }
             RelaySetType.BLOCKED -> {
-                val updated = _blockedRelays.value.filter { it != url }
-                _blockedRelays.value = updated
+                val updated = blockedRelays.value.filter { it != url }
                 keyRepo.saveBlockedRelays(updated)
                 relayPool?.updateBlockedUrls(updated)
             }
@@ -110,18 +94,16 @@ class RelayViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleRead(url: String) {
-        val updated = _relays.value.map {
+        val updated = relays.value.map {
             if (it.url == url) it.copy(read = !it.read) else it
         }
-        _relays.value = updated
         keyRepo.saveRelays(updated)
     }
 
     fun toggleWrite(url: String) {
-        val updated = _relays.value.map {
+        val updated = relays.value.map {
             if (it.url == url) it.copy(write = !it.write) else it
         }
-        _relays.value = updated
         keyRepo.saveRelays(updated)
     }
 
@@ -134,19 +116,19 @@ class RelayViewModel(app: Application) : AndroidViewModel(app) {
 
             when (tab) {
                 RelaySetType.GENERAL -> {
-                    tags = Nip65.buildRelayTags(_relays.value)
+                    tags = Nip65.buildRelayTags(relays.value)
                     kind = tab.eventKind
                 }
                 RelaySetType.DM -> {
-                    tags = Nip51.buildRelaySetTags(_dmRelays.value)
+                    tags = Nip51.buildRelaySetTags(dmRelays.value)
                     kind = tab.eventKind
                 }
                 RelaySetType.SEARCH -> {
-                    tags = Nip51.buildRelaySetTags(_searchRelays.value)
+                    tags = Nip51.buildRelaySetTags(searchRelays.value)
                     kind = tab.eventKind
                 }
                 RelaySetType.BLOCKED -> {
-                    tags = Nip51.buildRelaySetTags(_blockedRelays.value)
+                    tags = Nip51.buildRelaySetTags(blockedRelays.value)
                     kind = tab.eventKind
                 }
             }

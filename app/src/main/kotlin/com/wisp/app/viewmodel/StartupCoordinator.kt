@@ -7,6 +7,7 @@ import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.relay.OutboxRouter
+import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayHealthTracker
 import com.wisp.app.relay.RelayLifecycleManager
 import com.wisp.app.relay.RelayPool
@@ -137,6 +138,7 @@ class StartupCoordinator(
         relayListRepo.clear()
         nip05Repo.clear()
         relayPool.clearSeenEvents()
+        eventRouter.clearSelfDataTimestamps()
 
         // Reset state
         relaysInitialized = false
@@ -458,13 +460,19 @@ class StartupCoordinator(
             Filter(kinds = listOf(Nip30.KIND_USER_EMOJI_LIST), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Nip30.KIND_EMOJI_SET), authors = listOf(myPubkey), limit = 50)
         )
-        relayPool.sendToAll(ClientMessage.req("self-data", selfDataFilters))
+        // Send to all indexer relays (ephemeral if not already connected) —
+        // these are the most reliable sources for user metadata on first launch.
+        val indexerRelays = RelayConfig.DEFAULT_INDEXER_RELAYS
+        val reqMsg = ClientMessage.req("self-data", selfDataFilters)
+        for (url in indexerRelays) {
+            relayPool.sendToRelayOrEphemeral(url, reqMsg)
+        }
 
-        // Wait for multiple relays to EOSE so we get the newest kind 3 (follow list).
+        // Wait for indexer relays to EOSE so we get the newest kind 3 (follow list).
         // contactRepo.updateFromEvent already keeps the newest by created_at, so collecting
         // from several relays ensures we don't proceed with a stale follow list from
         // a single fast relay.
-        val eoseCount = subManager.awaitEoseCount("self-data", expectedCount = 3, timeoutMs = 4_000)
+        val eoseCount = subManager.awaitEoseCount("self-data", expectedCount = indexerRelays.size, timeoutMs = 4_000)
         val gotFollowList = contactRepo.getFollowList().isNotEmpty()
         Log.d("StartupCoord", "subscribeSelfData: eoseCount=$eoseCount")
         Log.d("StartupCoord", "subscribeSelfData: gotFollowList=$gotFollowList, follows=${contactRepo.getFollowList().size}")

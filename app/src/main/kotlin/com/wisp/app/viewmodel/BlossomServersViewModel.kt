@@ -31,6 +31,11 @@ class BlossomServersViewModel(app: Application) : AndroidViewModel(app) {
     private val _published = MutableStateFlow(false)
     val published: StateFlow<Boolean> = _published
 
+    /** Re-point prefs at the current user's file so flows pick up their server data. */
+    fun reload() {
+        blossomRepo.reload(keyRepo.getPubkeyHex())
+    }
+
     fun refreshServers() {
         blossomRepo.refreshFromPrefs()
     }
