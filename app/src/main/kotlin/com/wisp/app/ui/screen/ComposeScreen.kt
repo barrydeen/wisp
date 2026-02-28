@@ -8,7 +8,21 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.content.MediaType
+import androidx.compose.foundation.content.ReceiveContentListener
+import androidx.compose.foundation.content.TransferableContent
+import androidx.compose.foundation.content.consume
+import androidx.compose.foundation.content.contentReceiver
+import androidx.compose.foundation.content.hasMediaType
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,7 +54,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -71,7 +85,7 @@ import com.wisp.app.ui.component.RichContent
 import com.wisp.app.viewmodel.ComposeViewModel
 import androidx.compose.foundation.border
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ComposeScreen(
     viewModel: ComposeViewModel,
@@ -251,16 +265,69 @@ fun ComposeScreen(
                     }
                 }
 
-                // Text field with visual transformation
-                OutlinedTextField(
-                    value = content,
-                    onValueChange = { viewModel.updateContent(it) },
-                    label = { Text("What's on your mind?") },
-                    visualTransformation = visualTransformation,
+                // Text field with GIF keyboard support via BasicTextField(TextFieldState)
+                val textFieldState = remember { TextFieldState(content.text) }
+                val interactionSource = remember { MutableInteractionSource() }
+                val enabled = !publishing && countdownSeconds == null
+
+                // Sync ViewModel → TextFieldState (for programmatic updates: upload URL, mention select, etc.)
+                LaunchedEffect(content) {
+                    if (textFieldState.text.toString() != content.text) {
+                        textFieldState.edit {
+                            replace(0, length, content.text)
+                            selection = content.selection
+                        }
+                    }
+                }
+
+                // Sync TextFieldState → ViewModel (for user typing)
+                LaunchedEffect(textFieldState) {
+                    snapshotFlow {
+                        textFieldState.text.toString() to textFieldState.selection
+                    }.collect { (text, selection) ->
+                        if (text != content.text) {
+                            viewModel.updateContent(TextFieldValue(text, selection))
+                        }
+                    }
+                }
+
+                BasicTextField(
+                    state = textFieldState,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(160.dp),
-                    enabled = !publishing && countdownSeconds == null
+                        .height(160.dp)
+                        .contentReceiver(object : ReceiveContentListener {
+                            override fun onReceive(
+                                transferableContent: TransferableContent
+                            ): TransferableContent? {
+                                if (!transferableContent.hasMediaType(MediaType.Image)) {
+                                    return transferableContent
+                                }
+                                val clipData = transferableContent.clipEntry.clipData
+                                val uris = (0 until clipData.itemCount)
+                                    .mapNotNull { i -> clipData.getItemAt(i).uri }
+                                if (uris.isNotEmpty()) {
+                                    viewModel.uploadMedia(uris, context.contentResolver, signer)
+                                }
+                                return transferableContent.consume { item -> item.uri != null }
+                            }
+                        }),
+                    enabled = enabled,
+                    lineLimits = TextFieldLineLimits.MultiLine(),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    decorator = { innerTextField ->
+                        OutlinedTextFieldDefaults.DecorationBox(
+                            value = textFieldState.text.toString(),
+                            innerTextField = innerTextField,
+                            enabled = enabled,
+                            singleLine = false,
+                            visualTransformation = visualTransformation,
+                            interactionSource = interactionSource,
+                            label = { Text("What's on your mind?") }
+                        )
+                    }
                 )
 
                 // Media previews
@@ -477,3 +544,4 @@ private fun MentionCandidateRow(
         }
     }
 }
+
