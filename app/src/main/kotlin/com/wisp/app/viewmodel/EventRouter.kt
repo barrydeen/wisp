@@ -63,6 +63,7 @@ class EventRouter(
             val myPubkey = getUserPubkey()
             if (myPubkey != null) {
                 when (event.kind) {
+                    5 -> eventRepo.addEvent(event)
                     6 -> eventRepo.addEvent(event)
                     7, 9735 -> eventRepo.addEvent(event)
                     1 -> {
@@ -114,6 +115,7 @@ class EventRouter(
             return
         } else if (subscriptionId.startsWith("engage") || subscriptionId.startsWith("user-engage")) {
             when (event.kind) {
+                5 -> eventRepo.addEvent(event)
                 6 -> eventRepo.addEvent(event)
                 7 -> eventRepo.addEvent(event)
                 9735 -> {

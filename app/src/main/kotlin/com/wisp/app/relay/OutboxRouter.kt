@@ -386,7 +386,7 @@ class OutboxRouter(
 
         for ((relayUrl, eventIds) in relayToEventIds) {
             val uniqueIds = eventIds.distinct()
-            val filter = Filter(kinds = listOf(1, 6, 7, 9735), eTags = uniqueIds, limit = 500)
+            val filter = Filter(kinds = listOf(1, 5, 6, 7, 9735), eTags = uniqueIds, limit = 500)
             if (relayPool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(prefix, filter))) {
                 targetedRelays.add(relayUrl)
             }
@@ -395,7 +395,7 @@ class OutboxRouter(
         // Fallback: authors without known relay lists → send to our read relays
         if (fallbackEventIds.isNotEmpty()) {
             val uniqueIds = fallbackEventIds.distinct()
-            val filter = Filter(kinds = listOf(1, 6, 7, 9735), eTags = uniqueIds, limit = 500)
+            val filter = Filter(kinds = listOf(1, 5, 6, 7, 9735), eTags = uniqueIds, limit = 500)
             relayPool.sendToReadRelays(ClientMessage.req(prefix, filter))
         }
 
@@ -404,7 +404,7 @@ class OutboxRouter(
         if (safetyNetRelays.isNotEmpty()) {
             val allEventIds = eventsByAuthor.values.flatten().distinct()
             if (allEventIds.isNotEmpty()) {
-                val filter = Filter(kinds = listOf(1, 6, 7, 9735), eTags = allEventIds, limit = 500)
+                val filter = Filter(kinds = listOf(1, 5, 6, 7, 9735), eTags = allEventIds, limit = 500)
                 val msg = ClientMessage.req(prefix, filter)
                 for (url in safetyNetRelays) {
                     if (relayPool.sendToRelayOrEphemeral(url, msg)) {

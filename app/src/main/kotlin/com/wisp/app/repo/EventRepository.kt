@@ -210,8 +210,11 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             5 -> {
                 val deletedIds = Nip09.getDeletedEventIds(event)
                 for (id in deletedIds) {
-                    deletedEventsRepo?.markDeleted(id)
-                    removeEvent(id)
+                    val target = eventCache.get(id)
+                    if (target == null || target.pubkey == event.pubkey) {
+                        deletedEventsRepo?.markDeleted(id)
+                        removeEvent(id)
+                    }
                 }
             }
             7 -> addReaction(event)
