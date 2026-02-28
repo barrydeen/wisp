@@ -45,6 +45,7 @@ import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.RelayInfoRepository
+import com.wisp.app.repo.TranslationRepository
 import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.viewmodel.ThreadViewModel
@@ -78,7 +79,8 @@ fun ThreadScreen(
     onTogglePin: (String) -> Unit = {},
     onDeleteEvent: (String, Int) -> Unit = { _, _ -> },
     onAddToList: (String) -> Unit = {},
-    onHashtagClick: ((String) -> Unit)? = null
+    onHashtagClick: ((String) -> Unit)? = null,
+    translationRepo: TranslationRepository? = null
 ) {
     val flatThread by viewModel.flatThread.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -120,6 +122,7 @@ fun ThreadScreen(
     val repostVersion by eventRepo.repostVersion.collectAsState()
     val relaySourceVersion by eventRepo.relaySourceVersion.collectAsState()
     val nip05Version by nip05Repo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
+    val translationVersion by translationRepo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val followList by contactRepo.followList.collectAsState()
 
     val noteActions = remember(userPubkey) {
@@ -189,6 +192,9 @@ fun ThreadScreen(
                                 url to relayInfoRepo?.getIconUrl(url)
                             }
                         }
+                        val translationState = remember(translationVersion, event.id) {
+                            translationRepo?.getState(event.id) ?: com.wisp.app.repo.TranslationState()
+                        }
                         PostCard(
                             event = event,
                             profile = profileData,
@@ -228,6 +234,8 @@ fun ThreadScreen(
                             nip05Repo = nip05Repo,
                             onQuotedNoteClick = onQuotedNoteClick,
                             noteActions = noteActions,
+                            translationState = translationState,
+                            onTranslate = { translationRepo?.translate(event.id, event.content) },
                             modifier = Modifier.padding(start = (min(depth, 4) * 24).dp)
                         )
                     }

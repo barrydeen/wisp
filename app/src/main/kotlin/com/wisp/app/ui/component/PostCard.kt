@@ -60,9 +60,13 @@ import com.wisp.app.nostr.hexToByteArray
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import com.wisp.app.nostr.Nip30
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material3.CircularProgressIndicator
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.Nip05Status
+import com.wisp.app.repo.TranslationState
+import com.wisp.app.repo.TranslationStatus
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -112,6 +116,8 @@ fun PostCard(
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
     onManageEmojis: (() -> Unit)? = null,
+    translationState: TranslationState = TranslationState(),
+    onTranslate: () -> Unit = {},
     modifier: Modifier = Modifier,
     showDivider: Boolean = true
 ) {
@@ -131,6 +137,7 @@ fun PostCard(
 
     val hasReactionDetails = reactionDetails.isNotEmpty() || zapDetails.isNotEmpty() || repostDetails.isNotEmpty()
     var expandedDetails by remember { mutableStateOf(false) }
+    var showTranslation by remember { mutableStateOf(true) }
 
     Column(
         modifier = modifier
@@ -310,6 +317,30 @@ fun PostCard(
                             clipboardManager.setText(AnnotatedString(event.toJson()))
                         }
                     )
+                    val translating = translationState.status == TranslationStatus.IDENTIFYING_LANGUAGE ||
+                        translationState.status == TranslationStatus.DOWNLOADING_MODEL ||
+                        translationState.status == TranslationStatus.TRANSLATING
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                when {
+                                    translationState.status == TranslationStatus.DONE && showTranslation -> "Show Original"
+                                    translationState.status == TranslationStatus.DONE && !showTranslation -> "Show Translation"
+                                    translationState.status == TranslationStatus.SAME_LANGUAGE -> "Same Language"
+                                    else -> "Translate"
+                                }
+                            )
+                        },
+                        enabled = !translating && translationState.status != TranslationStatus.SAME_LANGUAGE,
+                        onClick = {
+                            menuExpanded = false
+                            if (translationState.status == TranslationStatus.DONE) {
+                                showTranslation = !showTranslation
+                            } else {
+                                onTranslate()
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -379,6 +410,70 @@ fun PostCard(
                     color = MaterialTheme.colorScheme.primary
                 )
             }
+        }
+
+        // Inline translation display
+        when (translationState.status) {
+            TranslationStatus.IDENTIFYING_LANGUAGE,
+            TranslationStatus.DOWNLOADING_MODEL,
+            TranslationStatus.TRANSLATING -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(vertical = 4.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 1.5.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = when (translationState.status) {
+                            TranslationStatus.IDENTIFYING_LANGUAGE -> "Detecting language..."
+                            TranslationStatus.DOWNLOADING_MODEL -> "Downloading language model..."
+                            else -> "Translating..."
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            TranslationStatus.DONE -> {
+                if (showTranslation) {
+                    Column(modifier = Modifier.padding(top = 4.dp)) {
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                            thickness = 0.5.dp
+                        )
+                        Text(
+                            text = "Translated from ${translationState.sourceLanguage}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                        )
+                        val emojiMap = remember(event.id) { Nip30.parseEmojiTags(event) }
+                        RichContent(
+                            content = translationState.translatedText,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            emojiMap = emojiMap,
+                            eventRepo = eventRepo,
+                            onProfileClick = onNavigateToProfile,
+                            onNoteClick = onQuotedNoteClick,
+                            noteActions = noteActions
+                        )
+                    }
+                }
+            }
+            TranslationStatus.ERROR -> {
+                Text(
+                    text = translationState.errorMessage,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+            else -> {}
         }
 
         // Top zapper banner

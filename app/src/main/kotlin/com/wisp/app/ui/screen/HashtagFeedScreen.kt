@@ -30,6 +30,7 @@ import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
+import com.wisp.app.repo.TranslationRepository
 import com.wisp.app.viewmodel.HashtagFeedViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -40,6 +41,7 @@ fun HashtagFeedScreen(
     userPubkey: String?,
     noteActions: NoteActions,
     nip05Repo: Nip05Repository? = null,
+    translationRepo: TranslationRepository? = null,
     onBack: () -> Unit
 ) {
     val hashtag by viewModel.hashtag.collectAsState()
@@ -99,7 +101,8 @@ fun HashtagFeedScreen(
                         zapVersion = zapVersion,
                         repostVersion = repostVersion,
                         noteActions = noteActions,
-                        nip05Repo = nip05Repo
+                        nip05Repo = nip05Repo,
+                        translationRepo = translationRepo
                     )
                 }
             }
@@ -118,7 +121,8 @@ private fun HashtagFeedItem(
     zapVersion: Int,
     repostVersion: Int,
     noteActions: NoteActions,
-    nip05Repo: Nip05Repository? = null
+    nip05Repo: Nip05Repository? = null,
+    translationRepo: TranslationRepository? = null
 ) {
     val profile = remember(profileVersion, event.pubkey) {
         eventRepo.getProfileData(event.pubkey)
@@ -156,6 +160,10 @@ private fun HashtagFeedItem(
     val reactionEmojiUrls = remember(reactionVersion, event.id) {
         eventRepo.getReactionEmojiUrls(event.id)
     }
+    val translationVersion by translationRepo?.version?.collectAsState() ?: remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val translationState = remember(translationVersion, event.id) {
+        translationRepo?.getState(event.id) ?: com.wisp.app.repo.TranslationState()
+    }
 
     PostCard(
         event = event,
@@ -190,6 +198,8 @@ private fun HashtagFeedItem(
         onPin = { noteActions.onPin(event.id) },
         onDelete = { noteActions.onDelete(event.id, event.kind) },
         onQuotedNoteClick = noteActions.onNoteClick,
-        noteActions = noteActions
+        noteActions = noteActions,
+        translationState = translationState,
+        onTranslate = { translationRepo?.translate(event.id, event.content) }
     )
 }

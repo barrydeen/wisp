@@ -70,4 +70,7 @@ dependencies {
     implementation(libs.zxing.core)
     implementation(libs.kmp.tor.runtime)
     implementation(libs.kmp.tor.resource.exec)
+    implementation(libs.mlkit.translate)
+    implementation(libs.mlkit.language.id)
+    implementation(libs.kotlinx.coroutines.play.services)
 }

@@ -717,7 +717,8 @@ fun WispNavHost(
                 onDeleteEvent = { eventId, kind -> feedViewModel.deleteEvent(eventId, kind) },
                 onAddNoteToList = { eventId -> addToListEventId = eventId },
                 onSendDm = if (!isOwnProfile) {{ navController.navigate("dm/$pubkey") }} else null,
-                signer = activeSigner
+                signer = activeSigner,
+                translationRepo = feedViewModel.translationRepo
             )
         }
 
@@ -761,7 +762,8 @@ fun WispNavHost(
                 userPubkey = feedViewModel.getUserPubkey(),
                 listedIds = searchListedIds,
                 onAddToList = { eventId -> addToListEventId = eventId },
-                onDeleteEvent = { eventId, kind -> feedViewModel.deleteEvent(eventId, kind) }
+                onDeleteEvent = { eventId, kind -> feedViewModel.deleteEvent(eventId, kind) },
+                translationRepo = feedViewModel.translationRepo
             )
         }
 
@@ -915,7 +917,8 @@ fun WispNavHost(
                 onAddToList = { eventId -> addToListEventId = eventId },
                 onHashtagClick = { tag ->
                     navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
-                }
+                },
+                translationRepo = feedViewModel.translationRepo
             )
         }
 
@@ -971,6 +974,7 @@ fun WispNavHost(
                 userPubkey = feedViewModel.getUserPubkey(),
                 noteActions = hashtagNoteActions,
                 nip05Repo = feedViewModel.nip05Repo,
+                translationRepo = feedViewModel.translationRepo,
                 onBack = { navController.popBackStack() }
             )
         }
@@ -1189,7 +1193,8 @@ fun WispNavHost(
                     feedViewModel.removeNoteFromBookmarkSet(dTag, eventId)
                 } else null,
                 onToggleFollow = { pubkey -> feedViewModel.toggleFollow(pubkey) },
-                onBlockUser = { pubkey -> feedViewModel.blockUser(pubkey) }
+                onBlockUser = { pubkey -> feedViewModel.blockUser(pubkey) },
+                translationRepo = feedViewModel.translationRepo
             )
         }
 
@@ -1326,7 +1331,8 @@ fun WispNavHost(
                 unicodeEmojis = notifUnicodeEmojis,
                 onManageEmojis = { navController.navigate(Routes.CUSTOM_EMOJIS) },
                 zapError = feedViewModel.zapError,
-                onRefresh = { feedViewModel.refreshDmsAndNotifications() }
+                onRefresh = { feedViewModel.refreshDmsAndNotifications() },
+                translationRepo = feedViewModel.translationRepo
             )
         }
     }
