@@ -187,6 +187,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 if (event.content.isNotBlank()) {
                     try {
                         val inner = fromJson(event.content)
+                        if (muteRepo?.isBlocked(inner.pubkey) == true) return
+                        if (muteRepo?.containsMutedWord(inner.content) == true) return
                         val authors = repostAuthors.get(inner.id)
                             ?: mutableSetOf<String>().also { repostAuthors.put(inner.id, it) }
                         authors.add(event.pubkey)
