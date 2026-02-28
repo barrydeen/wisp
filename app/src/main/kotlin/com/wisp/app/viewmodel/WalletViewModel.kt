@@ -125,7 +125,7 @@ class WalletViewModel(val nwcRepo: NwcRepository) : ViewModel() {
         _connectionString.value = value
     }
 
-    fun connectWallet(uri: String = _connectionString.value) {
+    fun connectWallet(uri: String = _connectionString.value, silent: Boolean = false) {
         val trimmed = uri.trim()
         if (trimmed.isEmpty()) return
 
@@ -136,7 +136,7 @@ class WalletViewModel(val nwcRepo: NwcRepository) : ViewModel() {
         }
 
         _statusLines.value = emptyList()
-        _walletState.value = WalletState.Connecting
+        if (!silent) _walletState.value = WalletState.Connecting
         nwcRepo.saveConnectionString(trimmed)
         _connectionString.value = trimmed
 
@@ -155,7 +155,7 @@ class WalletViewModel(val nwcRepo: NwcRepository) : ViewModel() {
             val connected = kotlinx.coroutines.withTimeoutOrNull(10_000) {
                 nwcRepo.isConnected.first { it }
             }
-            if (connected == null && _walletState.value is WalletState.Connecting) {
+            if (connected == null && _walletState.value !is WalletState.Connected) {
                 _statusLines.value = _statusLines.value + "Connection timed out (10s)"
                 _walletState.value = WalletState.Error("Connection timed out")
             }
@@ -165,7 +165,7 @@ class WalletViewModel(val nwcRepo: NwcRepository) : ViewModel() {
         connectionMonitorJob?.cancel()
         connectionMonitorJob = viewModelScope.launch {
             nwcRepo.isConnected.collect { connected ->
-                if (connected && _walletState.value !is WalletState.Connected) {
+                if (connected) {
                     val result = nwcRepo.fetchBalance()
                     result.fold(
                         onSuccess = { balanceMsats ->
@@ -175,9 +175,11 @@ class WalletViewModel(val nwcRepo: NwcRepository) : ViewModel() {
                             _walletState.value = WalletState.Error(e.message ?: "Failed to fetch balance")
                         }
                     )
-                } else if (!connected && _walletState.value is WalletState.Connected) {
-                    _walletState.value = WalletState.Connecting
                 }
+                // Note: we intentionally do NOT set state back to Connecting when
+                // the relay disconnects. The balance display stays visible with the
+                // last known value. refreshState() (called on screen entry) will
+                // reconnect and fetch a fresh balance as needed.
             }
         }
     }
@@ -209,16 +211,24 @@ class WalletViewModel(val nwcRepo: NwcRepository) : ViewModel() {
     }
 
     fun refreshState() {
-        if (nwcRepo.hasConnection()) {
-            if (nwcRepo.isConnected.value) {
-                refreshBalance()
-            } else {
-                _walletState.value = WalletState.Connecting
-                connectWallet(nwcRepo.getConnectionString() ?: "")
-            }
-        } else {
+        if (!nwcRepo.hasConnection()) {
             _walletState.value = WalletState.NotConnected
             _connectionString.value = ""
+            return
+        }
+
+        if (nwcRepo.isConnected.value) {
+            // Relay is connected — just refresh the balance. Keep the current
+            // state visible (no flash to Connecting).
+            refreshBalance()
+        } else if (_walletState.value is WalletState.Connected) {
+            // Was previously connected but relay dropped — reconnect silently
+            // while keeping the last known balance visible. The monitor will
+            // update to Connected once balance is fetched.
+            connectWallet(nwcRepo.getConnectionString() ?: "", silent = true)
+        } else {
+            // No prior connected state — full connect flow with Connecting UI.
+            connectWallet(nwcRepo.getConnectionString() ?: "")
         }
     }
 
