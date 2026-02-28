@@ -867,6 +867,8 @@ fun WispNavHost(
             }
             val threadListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
             val threadPinnedIds by feedViewModel.pinRepo.pinnedIds.collectAsState()
+            val threadResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
+            val threadUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
             ThreadScreen(
                 viewModel = threadViewModel,
                 eventRepo = feedViewModel.eventRepo,
@@ -918,7 +920,10 @@ fun WispNavHost(
                 onHashtagClick = { tag ->
                     navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
                 },
-                translationRepo = feedViewModel.translationRepo
+                translationRepo = feedViewModel.translationRepo,
+                resolvedEmojis = threadResolvedEmojis,
+                unicodeEmojis = threadUnicodeEmojis,
+                onManageEmojis = { navController.navigate(Routes.CUSTOM_EMOJIS) }
             )
         }
 

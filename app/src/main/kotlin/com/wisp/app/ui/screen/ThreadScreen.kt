@@ -80,7 +80,10 @@ fun ThreadScreen(
     onDeleteEvent: (String, Int) -> Unit = { _, _ -> },
     onAddToList: (String) -> Unit = {},
     onHashtagClick: ((String) -> Unit)? = null,
-    translationRepo: TranslationRepository? = null
+    translationRepo: TranslationRepository? = null,
+    resolvedEmojis: Map<String, String> = emptyMap(),
+    unicodeEmojis: List<String> = emptyList(),
+    onManageEmojis: (() -> Unit)? = null
 ) {
     val flatThread by viewModel.flatThread.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -220,6 +223,9 @@ fun ThreadScreen(
                             zapDetails = zapDetailsList,
                             repostDetails = repostPubkeys,
                             reactionEmojiUrls = eventReactionEmojiUrls,
+                            resolvedEmojis = resolvedEmojis,
+                            unicodeEmojis = unicodeEmojis,
+                            onManageEmojis = onManageEmojis,
                             relayIcons = relayIcons,
                             onNavigateToProfileFromDetails = onProfileClick,
                             onFollowAuthor = { onToggleFollow(event.pubkey) },
