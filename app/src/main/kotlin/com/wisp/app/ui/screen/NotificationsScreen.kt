@@ -35,6 +35,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -104,9 +105,11 @@ fun NotificationsScreen(
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
     onManageEmojis: (() -> Unit)? = null,
-    zapError: SharedFlow<String>? = null
+    zapError: SharedFlow<String>? = null,
+    onRefresh: () -> Unit = {}
 ) {
     val notifications by viewModel.filteredNotifications.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val currentFilter by viewModel.filter.collectAsState()
     val summary by viewModel.summary24h.collectAsState()
     val eventRepo = viewModel.eventRepository
@@ -216,11 +219,17 @@ fun NotificationsScreen(
             )
         }
     ) { padding ->
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = { viewModel.refresh(onRefresh) },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
         if (notifications.isEmpty()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
                     .padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -241,7 +250,6 @@ fun NotificationsScreen(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
             ) {
                 item(key = "summary_24h") {
                     DailySummaryBar(
@@ -325,6 +333,7 @@ fun NotificationsScreen(
                 }
             }
         }
+        } // PullToRefreshBox
     }
 }
 

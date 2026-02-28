@@ -221,6 +221,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val feedType: StateFlow<FeedType> = feedSub.feedType
     val selectedRelay: StateFlow<String?> = feedSub.selectedRelay
     val selectedRelaySet: StateFlow<RelaySet?> = feedSub.selectedRelaySet
+    val isRefreshing: StateFlow<Boolean> = feedSub.isRefreshing
     val relayFeedStatus: StateFlow<RelayFeedStatus> = feedSub.relayFeedStatus
     val loadingScreenComplete: StateFlow<Boolean> = feedSub.loadingScreenComplete
     val selectedList: StateFlow<com.wisp.app.nostr.FollowSet?> = listRepo.selectedList
@@ -246,6 +247,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     // -- Feed subscription delegates --
     fun setFeedType(type: FeedType) = feedSub.setFeedType(type)
     fun setSelectedRelay(url: String) = feedSub.setSelectedRelay(url)
+    fun refreshFeed() = feedSub.refreshFeed()
     fun retryRelayFeed() = feedSub.retryRelayFeed()
     fun loadMore() = feedSub.loadMore()
     fun pauseEngagement() = feedSub.pauseEngagement()

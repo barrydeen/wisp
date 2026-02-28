@@ -1325,7 +1325,8 @@ fun WispNavHost(
                 resolvedEmojis = notifResolvedEmojis,
                 unicodeEmojis = notifUnicodeEmojis,
                 onManageEmojis = { navController.navigate(Routes.CUSTOM_EMOJIS) },
-                zapError = feedViewModel.zapError
+                zapError = feedViewModel.zapError,
+                onRefresh = { feedViewModel.refreshDmsAndNotifications() }
             )
         }
     }

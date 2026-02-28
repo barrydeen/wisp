@@ -49,6 +49,9 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
     val summary24h: StateFlow<NotificationSummary>
         get() = notifRepo?.summary24h ?: MutableStateFlow(NotificationSummary())
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing
+
     private val _filter = MutableStateFlow(NotificationFilter.ALL)
     val filter: StateFlow<NotificationFilter> = _filter
 
@@ -101,6 +104,15 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun isFollowing(pubkey: String): Boolean {
         return contactRepo?.isFollowing(pubkey) ?: false
+    }
+
+    fun refresh(onRefresh: () -> Unit) {
+        _isRefreshing.value = true
+        onRefresh()
+        viewModelScope.launch {
+            delay(3000)
+            _isRefreshing.value = false
+        }
     }
 
     fun markRead() {

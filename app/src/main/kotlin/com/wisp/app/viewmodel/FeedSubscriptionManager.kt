@@ -66,6 +66,9 @@ class FeedSubscriptionManager(
     private val _relayFeedStatus = MutableStateFlow<RelayFeedStatus>(RelayFeedStatus.Idle)
     val relayFeedStatus: StateFlow<RelayFeedStatus> = _relayFeedStatus
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing
+
     val _initialLoadDone = MutableStateFlow(false)
     val initialLoadDone: StateFlow<Boolean> = _initialLoadDone
 
@@ -156,6 +159,19 @@ class FeedSubscriptionManager(
 
     fun subscribeFeed() {
         resubscribeFeed()
+    }
+
+    fun refreshFeed() {
+        _isRefreshing.value = true
+        eventRepo.clearFeed()
+        resubscribeFeed()
+        scope.launch {
+            // Don't wait for full EOSE — just show the spinner briefly so the
+            // user gets tactile feedback that the refresh fired. Events will
+            // stream in as relays respond.
+            delay(3000)
+            _isRefreshing.value = false
+        }
     }
 
     fun resubscribeFeed() {
