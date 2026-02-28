@@ -9,6 +9,8 @@ import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.RelayConfig
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 
@@ -31,6 +33,35 @@ class KeyRepository(private val context: Context) {
         context.getSharedPreferences(prefsName(getPubkeyHex()), Context.MODE_PRIVATE)
 
     private val json = Json { ignoreUnknownKeys = true }
+
+    // Observable flows so UI (RelayViewModel) sees updates immediately.
+    // SharedPreferences instances are cached per file name within the same process,
+    // so the listener fires for writes from ANY KeyRepository instance (e.g. EventRouter's).
+    private val _relays = MutableStateFlow(loadRelays())
+    val relaysFlow: StateFlow<List<RelayConfig>> = _relays
+
+    private val _dmRelays = MutableStateFlow(loadDmRelays())
+    val dmRelaysFlow: StateFlow<List<String>> = _dmRelays
+
+    private val _searchRelays = MutableStateFlow(loadSearchRelays())
+    val searchRelaysFlow: StateFlow<List<String>> = _searchRelays
+
+    private val _blockedRelays = MutableStateFlow(loadBlockedRelays())
+    val blockedRelaysFlow: StateFlow<List<String>> = _blockedRelays
+
+    // Strong reference to prevent GC — listener syncs flows when prefs change from any instance
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            "relays" -> _relays.value = loadRelays()
+            "dm_relays" -> _dmRelays.value = loadDmRelays()
+            "search_relays" -> _searchRelays.value = loadSearchRelays()
+            "blocked_relays" -> _blockedRelays.value = loadBlockedRelays()
+        }
+    }
+
+    init {
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+    }
 
     fun saveKeypair(keypair: Keys.Keypair) {
         encPrefs.edit()
@@ -79,14 +110,23 @@ class KeyRepository(private val context: Context) {
     }
 
     fun reloadPrefs(pubkeyHex: String?) {
+        prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        _relays.value = loadRelays()
+        _dmRelays.value = loadDmRelays()
+        _searchRelays.value = loadSearchRelays()
+        _blockedRelays.value = loadBlockedRelays()
     }
 
     fun saveRelays(relays: List<RelayConfig>) {
         prefs.edit().putString("relays", json.encodeToString(relays)).apply()
+        _relays.value = relays
     }
 
-    fun getRelays(): List<RelayConfig> {
+    fun getRelays(): List<RelayConfig> = _relays.value
+
+    private fun loadRelays(): List<RelayConfig> {
         val str = prefs.getString("relays", null) ?: return RelayConfig.DEFAULTS
         return try {
             json.decodeFromString<List<RelayConfig>>(str)
@@ -97,27 +137,36 @@ class KeyRepository(private val context: Context) {
 
     fun saveDmRelays(urls: List<String>) {
         prefs.edit().putString("dm_relays", json.encodeToString(urls)).apply()
+        _dmRelays.value = urls
     }
 
-    fun getDmRelays(): List<String> {
+    fun getDmRelays(): List<String> = _dmRelays.value
+
+    private fun loadDmRelays(): List<String> {
         val str = prefs.getString("dm_relays", null) ?: return emptyList()
         return try { json.decodeFromString(str) } catch (_: Exception) { emptyList() }
     }
 
     fun saveSearchRelays(urls: List<String>) {
         prefs.edit().putString("search_relays", json.encodeToString(urls)).apply()
+        _searchRelays.value = urls
     }
 
-    fun getSearchRelays(): List<String> {
+    fun getSearchRelays(): List<String> = _searchRelays.value
+
+    private fun loadSearchRelays(): List<String> {
         val str = prefs.getString("search_relays", null) ?: return emptyList()
         return try { json.decodeFromString(str) } catch (_: Exception) { emptyList() }
     }
 
     fun saveBlockedRelays(urls: List<String>) {
         prefs.edit().putString("blocked_relays", json.encodeToString(urls)).apply()
+        _blockedRelays.value = urls
     }
 
-    fun getBlockedRelays(): List<String> {
+    fun getBlockedRelays(): List<String> = _blockedRelays.value
+
+    private fun loadBlockedRelays(): List<String> {
         val str = prefs.getString("blocked_relays", null) ?: return emptyList()
         return try { json.decodeFromString(str) } catch (_: Exception) { emptyList() }
     }

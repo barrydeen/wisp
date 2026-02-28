@@ -24,6 +24,15 @@ class BlossomRepository(private val context: Context, pubkeyHex: String? = null)
     private val _servers = MutableStateFlow(loadServers())
     val servers: StateFlow<List<String>> = _servers
 
+    // Strong reference to prevent GC — syncs flow when prefs change from any instance
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "blossom_servers") _servers.value = loadServers()
+    }
+
+    init {
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+    }
+
     private val httpClient
         get() = com.wisp.app.relay.HttpClientFactory.createHttpClient(
             connectTimeoutSeconds = 30,
@@ -50,7 +59,9 @@ class BlossomRepository(private val context: Context, pubkeyHex: String? = null)
 
     fun reload(pubkeyHex: String?) {
         clear()
+        prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
         _servers.value = loadServers()
     }
 
