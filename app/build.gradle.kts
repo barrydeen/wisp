@@ -13,8 +13,8 @@ android {
         applicationId = "com.wisp.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "0.2.1"
     }
 
     buildTypes {
