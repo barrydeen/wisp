@@ -180,7 +180,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             1 -> {
                 // Only show root notes in feed, not replies
                 val isReply = event.tags.any { it.size >= 2 && it[0] == "e" }
-                if (!isReply) binaryInsert(event)
+                if (!isReply) binaryInsert(event, fromFeed = true)
             }
             6 -> {
                 // Repost: parse embedded event from content and insert it into the feed
@@ -201,7 +201,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                             val isReply = inner.tags.any { it.size >= 2 && it[0] == "e" }
                             if (!isReply) {
                                 feedSortTime.put(inner.id, event.created_at)
-                                binaryInsert(inner, sortTime = event.created_at)
+                                binaryInsert(inner, sortTime = event.created_at, fromFeed = true)
                             }
                         }
                     } catch (_: Exception) {}
@@ -288,7 +288,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private fun effectiveSortTime(event: NostrEvent): Long =
         feedSortTime.get(event.id) ?: event.created_at
 
-    private fun binaryInsert(event: NostrEvent, sortTime: Long = event.created_at) {
+    private fun binaryInsert(event: NostrEvent, sortTime: Long = event.created_at, fromFeed: Boolean = false) {
         synchronized(feedList) {
             if (!feedIds.add(event.id)) return  // already in feed
             var low = 0
@@ -300,8 +300,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             feedList.add(low, event)
         }
         feedInserted.trySend(Unit)  // coalesced emission via 50ms settle window
-        val filter = _authorFilter.value
-        if (countNewNotes && (filter == null || event.pubkey in filter || isRepostedByAny(event.id, filter))) _newNoteCount.value++
+        if (fromFeed && countNewNotes) {
+            val filter = _authorFilter.value
+            if (filter == null || event.pubkey in filter || isRepostedByAny(event.id, filter)) _newNoteCount.value++
+        }
     }
 
     fun cacheEvent(event: NostrEvent) {
