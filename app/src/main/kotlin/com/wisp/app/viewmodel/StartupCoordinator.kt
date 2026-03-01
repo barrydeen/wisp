@@ -519,7 +519,7 @@ class StartupCoordinator(
         val notifFilter = Filter(
             kinds = listOf(1, 6, 7, 9735),
             pTags = listOf(myPubkey),
-            limit = 100
+            limit = 300
         )
         val notifReqMsg = ClientMessage.req("notif", notifFilter)
         relayPool.sendToReadRelays(notifReqMsg)
@@ -549,6 +549,28 @@ class StartupCoordinator(
             // Wait for self-notes to arrive before engagement so referenced events are cached
             subManager.awaitEoseWithTimeout("self-notes", timeoutMs = 5_000)
             subManager.closeSubscription("self-notes")
+
+            // Subscribe for replies via e-tags on our own posts.
+            // Catches replies where the replier's client omits the p-tag.
+            val myEventIds = eventRepo.getRecentEventIdsByAuthor(myPubkey, limit = 50)
+            if (myEventIds.isNotEmpty()) {
+                val replyReqMsg = ClientMessage.req(
+                    "notif-replies-etag",
+                    Filter(kinds = listOf(1), eTags = myEventIds, limit = 50)
+                )
+                relayPool.sendToReadRelays(replyReqMsg)
+                val readUrls2 = relayPool.getReadRelayUrls().toSet()
+                val topScored2 = relayScoreBoard.getScoredRelays()
+                    .take(5)
+                    .map { it.url }
+                    .filter { it !in readUrls2 }
+                for (url in topScored2) {
+                    relayPool.sendToRelay(url, replyReqMsg)
+                }
+                subManager.awaitEoseWithTimeout("notif-replies-etag", timeoutMs = 5_000)
+                subManager.closeSubscription("notif-replies-etag")
+            }
+
             feedSub.subscribeNotifEngagement()
         }
     }
