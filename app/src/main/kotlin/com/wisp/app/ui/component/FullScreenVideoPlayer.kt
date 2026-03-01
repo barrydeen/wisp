@@ -31,6 +31,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import android.app.Activity
+import android.content.ContextWrapper
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -63,6 +68,18 @@ fun FullScreenVideoPlayer(
 
         DisposableEffect(videoUrl) {
             onDispose { exoPlayer.release() }
+        }
+
+        DisposableEffect(Unit) {
+            val activity = context.findActivity() ?: return@DisposableEffect onDispose {}
+            val window = activity.window
+            val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+            insetsController.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            insetsController.hide(WindowInsetsCompat.Type.systemBars())
+            onDispose {
+                insetsController.show(WindowInsetsCompat.Type.systemBars())
+            }
         }
 
         Box(
@@ -119,4 +136,13 @@ fun FullScreenVideoPlayer(
             }
         }
     }
+}
+
+private fun android.content.Context.findActivity(): Activity? {
+    var ctx = this
+    while (ctx is ContextWrapper) {
+        if (ctx is Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    return null
 }
