@@ -367,8 +367,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             return 0
         }
         relayPool.trackPublish(event.id, sentCount)
-        // Cache locally so reply appears immediately without waiting for relay echo
-        eventRepo?.cacheEvent(event)
+        // Insert into feed so the note appears immediately without waiting for relay echo
+        eventRepo?.addEvent(event)
         if (replyTo != null) {
             // Increment on direct parent so the PostCard showing replyTo updates
             eventRepo?.addReplyCount(replyTo.id, event.id)
