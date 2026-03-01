@@ -266,8 +266,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         pendingPublish = {
             viewModelScope.launch {
                 try {
-                    publishNote(content, signer, relayPool, replyTo, quoteTo, outboxRouter)
-                    _uploadedUrls.value = emptyList()
+                    val sentCount = publishNote(content, signer, relayPool, replyTo, quoteTo, outboxRouter)
+                    if (sentCount == 0) return@launch
                     onSuccess()
                 } catch (e: Exception) {
                     _error.value = "Failed to publish: ${e.message}"
@@ -303,6 +303,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         pendingPublish = null
     }
 
+    /** Publishes a note and stores the event ID. Returns the number of relays sent to (0 = failure). */
     private suspend fun publishNote(
         content: String,
         signer: NostrSigner,
@@ -310,7 +311,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         replyTo: NostrEvent?,
         quoteTo: NostrEvent? = null,
         outboxRouter: OutboxRouter? = null
-    ) {
+    ): Int {
         val tags = mutableListOf<List<String>>()
         if (_explicit.value) {
             tags.add(listOf("content-warning", ""))
@@ -344,11 +345,17 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
         val event = signer.signEvent(kind = 1, content = finalContent, tags = tags)
         val msg = ClientMessage.event(event)
-        if (replyTo != null && outboxRouter != null) {
+        val sentCount = if (replyTo != null && outboxRouter != null) {
             outboxRouter.publishToInbox(msg, replyTo.pubkey)
         } else {
             relayPool.sendToWriteRelays(msg)
         }
+        if (sentCount == 0) {
+            _error.value = "No relays connected — note was not published"
+            _publishing.value = false
+            return 0
+        }
+        relayPool.trackPublish(event.id, sentCount)
         // Cache locally so reply appears immediately without waiting for relay echo
         eventRepo?.cacheEvent(event)
         if (replyTo != null) {
@@ -363,8 +370,10 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         deleteDraftOnPublish(relayPool, signer)
         _content.value = TextFieldValue()
         savedStateHandle.remove<String>("draft_content")
+        _uploadedUrls.value = emptyList()
         _error.value = null
         _publishing.value = false
+        return sentCount
     }
 
     private fun extractNostrRefs(content: String): Pair<Set<String>, Set<String>> {
