@@ -679,6 +679,7 @@ fun WispNavHost(
                 onBack = { navController.popBackStack() },
                 onReply = { event ->
                     replyTarget = event
+                    quoteTarget = null
                     composeViewModel.clear()
                     navController.navigate(Routes.COMPOSE)
                 },
@@ -755,6 +756,7 @@ fun WispNavHost(
                 },
                 onReply = { event ->
                     replyTarget = event
+                    quoteTarget = null
                     composeViewModel.clear()
                     navController.navigate(Routes.COMPOSE)
                 },
@@ -890,6 +892,7 @@ fun WispNavHost(
                 onBack = { navController.popBackStack() },
                 onReply = { event ->
                     replyTarget = event
+                    quoteTarget = null
                     composeViewModel.clear()
                     navController.navigate(Routes.COMPOSE)
                 },
@@ -1210,6 +1213,7 @@ fun WispNavHost(
                 onQuotedNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                 onReply = { event ->
                     replyTarget = event
+                    quoteTarget = null
                     composeViewModel.clear()
                     navController.navigate(Routes.COMPOSE)
                 },
@@ -1332,6 +1336,7 @@ fun WispNavHost(
                 },
                 onReply = { event ->
                     replyTarget = event
+                    quoteTarget = null
                     composeViewModel.clear()
                     navController.navigate(Routes.COMPOSE)
                 },
