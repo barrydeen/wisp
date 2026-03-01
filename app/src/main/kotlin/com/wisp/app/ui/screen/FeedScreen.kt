@@ -172,7 +172,11 @@ fun FeedScreen(
             isFollowing = { pubkey -> viewModel.contactRepo.isFollowing(pubkey) },
             userPubkey = userPubkey,
             nip05Repo = viewModel.nip05Repo,
-            onHashtagClick = onHashtagClick
+            onHashtagClick = onHashtagClick,
+            onRelayClick = { url ->
+                viewModel.setSelectedRelay(url)
+                viewModel.setFeedType(FeedType.RELAY)
+            }
         )
     }
 

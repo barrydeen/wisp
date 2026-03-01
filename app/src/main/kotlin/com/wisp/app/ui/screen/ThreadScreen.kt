@@ -80,6 +80,7 @@ fun ThreadScreen(
     onDeleteEvent: (String, Int) -> Unit = { _, _ -> },
     onAddToList: (String) -> Unit = {},
     onHashtagClick: ((String) -> Unit)? = null,
+    onRelayClick: ((String) -> Unit)? = null,
     translationRepo: TranslationRepository? = null,
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
@@ -145,7 +146,8 @@ fun ThreadScreen(
             isFollowing = { pubkey -> contactRepo.isFollowing(pubkey) },
             userPubkey = userPubkey,
             nip05Repo = nip05Repo,
-            onHashtagClick = onHashtagClick
+            onHashtagClick = onHashtagClick,
+            onRelayClick = onRelayClick
         )
     }
 

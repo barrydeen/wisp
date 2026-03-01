@@ -931,6 +931,11 @@ fun WispNavHost(
                 onHashtagClick = { tag ->
                     navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
                 },
+                onRelayClick = { url ->
+                    feedViewModel.setSelectedRelay(url)
+                    feedViewModel.setFeedType(FeedType.RELAY)
+                    navController.popBackStack(Routes.FEED, inclusive = false)
+                },
                 translationRepo = feedViewModel.translationRepo,
                 resolvedEmojis = threadResolvedEmojis,
                 unicodeEmojis = threadUnicodeEmojis,
@@ -981,6 +986,11 @@ fun WispNavHost(
                     nip05Repo = feedViewModel.nip05Repo,
                     onHashtagClick = { clickedTag ->
                         navController.navigate("hashtag/${java.net.URLEncoder.encode(clickedTag, "UTF-8")}")
+                    },
+                    onRelayClick = { url ->
+                        feedViewModel.setSelectedRelay(url)
+                        feedViewModel.setFeedType(FeedType.RELAY)
+                        navController.popBackStack(Routes.FEED, inclusive = false)
                     }
                 )
             }
