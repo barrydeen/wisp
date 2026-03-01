@@ -416,6 +416,39 @@ class RelayPool {
     }
 
     /**
+     * Triggers connect() on any disconnected write relays and waits briefly
+     * for at least one to become connected. Returns the number of connected
+     * write relays after the wait.
+     */
+    suspend fun ensureWriteRelaysConnected(timeoutMs: Long = 5000): Int {
+        val writeRelays = relays.filter { it.config.write }
+        val alreadyConnected = writeRelays.count { it.isConnected }
+        if (alreadyConnected > 0) return alreadyConnected
+
+        Log.d("RLC", "[Pool] ensureWriteRelaysConnected — 0/${writeRelays.size} connected, triggering reconnect")
+        for (relay in writeRelays) {
+            if (!relay.isConnected) {
+                relay.resetBackoff()
+                relay.connect()
+            }
+        }
+
+        // Poll briefly for a write relay to connect
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val connected = writeRelays.count { it.isConnected }
+            if (connected > 0) {
+                Log.d("RLC", "[Pool] ensureWriteRelaysConnected — $connected write relay(s) now connected")
+                return connected
+            }
+            delay(200)
+        }
+        val final = writeRelays.count { it.isConnected }
+        Log.d("RLC", "[Pool] ensureWriteRelaysConnected — timed out, $final write relay(s) connected")
+        return final
+    }
+
+    /**
      * Start tracking OK responses for a published event.
      * Updates [broadcastState] as relays respond, then auto-clears after all respond or timeout.
      */

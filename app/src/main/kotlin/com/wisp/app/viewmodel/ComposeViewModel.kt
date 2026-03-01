@@ -345,10 +345,21 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
         val event = signer.signEvent(kind = 1, content = finalContent, tags = tags)
         val msg = ClientMessage.event(event)
-        val sentCount = if (replyTo != null && outboxRouter != null) {
+        var sentCount = if (replyTo != null && outboxRouter != null) {
             outboxRouter.publishToInbox(msg, replyTo.pubkey)
         } else {
             relayPool.sendToWriteRelays(msg)
+        }
+        // If no relays were reachable, try reconnecting write relays and retry once
+        if (sentCount == 0) {
+            val reconnected = relayPool.ensureWriteRelaysConnected()
+            if (reconnected > 0) {
+                sentCount = if (replyTo != null && outboxRouter != null) {
+                    outboxRouter.publishToInbox(msg, replyTo.pubkey)
+                } else {
+                    relayPool.sendToWriteRelays(msg)
+                }
+            }
         }
         if (sentCount == 0) {
             _error.value = "No relays connected — note was not published"
