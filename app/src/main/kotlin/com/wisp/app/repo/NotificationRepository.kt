@@ -49,11 +49,12 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
     private val _notifReceived = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val notifReceived: SharedFlow<Unit> = _notifReceived
 
-    fun addEvent(event: NostrEvent, myPubkey: String) {
+    fun addEvent(event: NostrEvent, myPubkey: String, replyToMyEvent: Boolean = false) {
         if (event.pubkey == myPubkey) return
         val hasPTag = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == myPubkey }
-        // Kind 6 reposts may omit the p-tag; callers must pre-filter kind 6 ownership
-        if (!hasPTag && event.kind != 6) return
+        // Kind 6 reposts may omit the p-tag; callers must pre-filter kind 6 ownership.
+        // replyToMyEvent bypasses p-tag check for kind 1 replies found via e-tag subscription.
+        if (!hasPTag && event.kind != 6 && !(replyToMyEvent && event.kind == 1)) return
 
         synchronized(lock) {
             // Atomic check-then-put inside lock to prevent race when the same

@@ -325,6 +325,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         }
     }
 
+    fun getRecentEventIdsByAuthor(pubkey: String, limit: Int = 50): List<String> {
+        return eventCache.snapshot().values
+            .filter { it.kind == 1 && it.pubkey == pubkey }
+            .sortedByDescending { it.created_at }
+            .take(limit)
+            .map { it.id }
+    }
+
     fun cacheEvent(event: NostrEvent) {
         if (eventCache.get(event.id) != null) return  // already cached
         seenEventIds.add(event.id)
