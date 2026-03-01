@@ -56,6 +56,7 @@ class EventRouter(
     private val getUserPubkey: () -> String?,
     private val getSigner: () -> NostrSigner?,
     private val getFeedSubId: () -> String,
+    private val getRelayFeedSubId: () -> String,
     private val onRelayFeedEventReceived: () -> Unit
 ) {
     // Track newest created_at per (pubkey, kind) to prevent stale overwrites
@@ -295,16 +296,15 @@ class EventRouter(
             }
 
             val feedSubId = getFeedSubId()
+            val relayFeedSubId = getRelayFeedSubId()
             val isFeedSub = subscriptionId == feedSubId ||
                 subscriptionId == "loadmore" ||
                 subscriptionId == "feed-backfill"
-            if (isFeedSub) {
-                val feedSizeBefore = eventRepo.feed.value.size
-                eventRepo.addEvent(event)
-                val feedSizeAfter = eventRepo.feed.value.size
-                if (feedSizeAfter > feedSizeBefore) {
-                    Log.d("RLC", "[EventRouter] feed event added: kind=${event.kind} from=${event.pubkey.take(8)} feedSize=$feedSizeAfter sub=$subscriptionId")
-                }
+            val isRelayFeedSub = subscriptionId == relayFeedSubId ||
+                subscriptionId == "relay-loadmore"
+            if (isRelayFeedSub) {
+                eventRepo.cacheEvent(event)
+                eventRepo.addRelayFeedEvent(event)
                 onRelayFeedEventReceived()
                 if (event.kind == 1) eventRepo.addEventRelay(event.id, relayUrl)
                 if (event.kind == 1) {
@@ -314,7 +314,24 @@ class EventRouter(
                     }
                 }
                 if (event.kind == 6 && event.content.isNotBlank()) {
-                    // Fetch profile for the reposted event's original author
+                    try {
+                        val inner = NostrEvent.fromJson(event.content)
+                        if (eventRepo.getProfileData(inner.pubkey) == null) {
+                            metadataFetcher.addToPendingProfiles(inner.pubkey)
+                        }
+                        metadataFetcher.fetchQuotedEvents(inner)
+                    } catch (_: Exception) {}
+                }
+            } else if (isFeedSub) {
+                eventRepo.addEvent(event)
+                if (event.kind == 1) eventRepo.addEventRelay(event.id, relayUrl)
+                if (event.kind == 1) {
+                    metadataFetcher.fetchQuotedEvents(event)
+                    if (eventRepo.getProfileData(event.pubkey) == null) {
+                        metadataFetcher.addToPendingProfiles(event.pubkey)
+                    }
+                }
+                if (event.kind == 6 && event.content.isNotBlank()) {
                     try {
                         val inner = NostrEvent.fromJson(event.content)
                         if (eventRepo.getProfileData(inner.pubkey) == null) {

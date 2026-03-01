@@ -263,13 +263,13 @@ class RelayPool {
                         if (shouldEmit) {
                             _events.tryEmit(msg.event)
                             _relayEvents.tryEmit(RelayEvent(msg.event, relay.config.url, msg.subscriptionId))
-                            if (msg.subscriptionId == "feed") {
+                            if (msg.subscriptionId.startsWith("feed")) {
                                 val count = ++feedEventCounter
                                 if (count == 1 || count % 50 == 0) {
                                     Log.d("RLC", "[Pool] feed event #$count: kind=${msg.event.kind} from=${msg.event.pubkey.take(8)} relay=${relay.config.url}")
                                 }
                             }
-                        } else if (msg.subscriptionId == "feed") {
+                        } else if (msg.subscriptionId.startsWith("feed")) {
                             val count = ++feedEventDedupCounter
                             if (count == 1 || count % 50 == 0) {
                                 Log.d("RLC", "[Pool] feed event DEDUPED #$count: kind=${msg.event.kind} from=${msg.event.pubkey.take(8)}")
@@ -279,7 +279,7 @@ class RelayPool {
                         unsupportedCounts.remove(relay.config.url) // Relay works, clear counter
                     }
                     is RelayMessage.Eose -> {
-                        if (msg.subscriptionId == "feed") {
+                        if (msg.subscriptionId.startsWith("feed")) {
                             Log.d("RLC", "[Pool] feed EOSE from ${relay.config.url} (total feed events=$feedEventCounter deduped=$feedEventDedupCounter)")
                         }
                         _eoseSignals.tryEmit(msg.subscriptionId)
@@ -613,7 +613,9 @@ class RelayPool {
         }
 
         // Create ephemeral relay if needed — computeIfAbsent is atomic on ConcurrentHashMap
+        var isNew = false
         val ephemeral = ephemeralRelays.computeIfAbsent(url) {
+            isNew = true
             val relay = Relay(RelayConfig(url, read = true, write = false), client, scope)
             relay.autoReconnect = false
             wireByteTracking(relay)
@@ -629,8 +631,8 @@ class RelayPool {
             trackSubscription(url, subId, message)
         }
         ephemeralLastUsed[url] = System.currentTimeMillis()
-        ephemeral.send(message)
-        return true
+        val sent = ephemeral.send(message)
+        return sent || isNew  // new relays will drain queue on connect
     }
 
     private fun cooldownForFailure(httpCode: Int?): Long {
@@ -801,7 +803,7 @@ class RelayPool {
 
     fun closeOnAllRelays(subscriptionId: String) {
         Log.d("RLC", "[Pool] closeOnAllRelays($subscriptionId)")
-        if (subscriptionId == "feed") {
+        if (subscriptionId.startsWith("feed")) {
             Log.d("RLC", "[Pool] closing feed sub — total events=$feedEventCounter deduped=$feedEventDedupCounter")
             feedEventCounter = 0
             feedEventDedupCounter = 0
@@ -856,6 +858,11 @@ class RelayPool {
     fun getEphemeralCount(): Int = ephemeralRelays.size
 
     fun isRelayConnected(url: String): Boolean = relayIndex[url]?.isConnected == true
+
+    /** Clear cooldown for a specific relay so it can be retried immediately. */
+    fun clearCooldown(url: String) {
+        relayCooldowns.remove(url)
+    }
 
     /** Returns remaining cooldown in seconds, or 0 if not on cooldown. */
     fun getRelayCooldownRemaining(url: String): Int {

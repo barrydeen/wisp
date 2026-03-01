@@ -29,6 +29,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val _feed = MutableStateFlow<List<NostrEvent>>(emptyList())
     val feed: StateFlow<List<NostrEvent>> = _feed
 
+    // Isolated relay feed state — completely separate from the main feed pipeline
+    private val relayFeedList = mutableListOf<NostrEvent>()
+    private val relayFeedIds = HashSet<String>()
+    private val _relayFeed = MutableStateFlow<List<NostrEvent>>(emptyList())
+    val relayFeed: StateFlow<List<NostrEvent>> = _relayFeed
+
     // Author filter: null = show all, non-null = only show events from these pubkeys
     private val _authorFilter = MutableStateFlow<Set<String>?>(null)
 
@@ -96,6 +102,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val feedDirty = Channel<Unit>(Channel.CONFLATED)
     private val feedInserted = Channel<Unit>(Channel.CONFLATED)
+    private val relayFeedInserted = Channel<Unit>(Channel.CONFLATED)
     private val versionDirty = Channel<Unit>(Channel.CONFLATED)
 
     init {
@@ -111,6 +118,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 _feed.value = if (filter == null) raw else raw.filter {
                     it.pubkey in filter || isRepostedByAny(it.id, filter)
                 }
+            }
+        }
+        // Relay feed emission — same 50ms settle pattern but for isolated relay feed
+        scope.launch {
+            for (signal in relayFeedInserted) {
+                delay(50)
+                _relayFeed.value = synchronized(relayFeedList) { relayFeedList.toList() }
             }
         }
         // Immediate emission channel — used for explicit flushes (purge, filter change, etc.)
@@ -345,10 +359,6 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 markVersionDirty()
             }
         }
-        if (event.kind == 1) {
-            val isReply = event.tags.any { it.size >= 2 && it[0] == "e" }
-            if (!isReply) binaryInsert(event)
-        }
         _quotedEventVersion.value++
     }
 
@@ -357,6 +367,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         synchronized(feedList) {
             if (feedIds.remove(eventId)) {
                 feedList.removeAll { it.id == eventId }
+            }
+        }
+        synchronized(relayFeedList) {
+            if (relayFeedIds.remove(eventId)) {
+                relayFeedList.removeAll { it.id == eventId }
+                _relayFeed.value = relayFeedList.toList()
             }
         }
         feedDirty.trySend(Unit)
@@ -595,6 +611,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             feedList.removeAll { it.pubkey == pubkey }
             removed.forEach { feedIds.remove(it.id) }
         }
+        synchronized(relayFeedList) {
+            val removed = relayFeedList.filter { it.pubkey == pubkey }
+            relayFeedList.removeAll { it.pubkey == pubkey }
+            removed.forEach { relayFeedIds.remove(it.id) }
+            if (removed.isNotEmpty()) _relayFeed.value = relayFeedList.toList()
+        }
         // Evict from eventCache so blocked content doesn't appear in threads/quotes
         val snapshot = eventCache.snapshot()
         for ((id, event) in snapshot) {
@@ -625,22 +647,103 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             .take(limit)
     }
 
-    fun clearFeed() {
+    /**
+     * Clear only the display state (feedList, feedIds, feedSortTime) without touching
+     * seenEventIds or eventCache. This preserves dedup state so in-flight events from
+     * non-feed subscriptions are still rejected on feed switch.
+     */
+    fun resetFeedDisplay() {
         synchronized(feedList) {
             feedList.clear()
             feedIds.clear()
         }
-        eventCache.evictAll()
-        seenEventIds.clear()
         feedSortTime.evictAll()
         _feed.value = emptyList()
         _newNoteCount.value = 0
         countNewNotes = false
     }
 
+    // -- Isolated relay feed methods --
+
+    fun addRelayFeedEvent(event: NostrEvent) {
+        if (muteRepo?.isBlocked(event.pubkey) == true) return
+        if (deletedEventsRepo?.isDeleted(event.id) == true) return
+
+        when (event.kind) {
+            1 -> {
+                val isReply = event.tags.any { it.size >= 2 && it[0] == "e" }
+                if (!isReply) {
+                    eventCache.put(event.id, event)
+                    relayHintStore?.extractHintsFromTags(event)
+                    relayFeedBinaryInsert(event)
+                }
+            }
+            6 -> {
+                if (event.content.isNotBlank()) {
+                    try {
+                        val inner = NostrEvent.fromJson(event.content)
+                        if (muteRepo?.isBlocked(inner.pubkey) == true) return
+                        if (muteRepo?.containsMutedWord(inner.content) == true) return
+                        // Track repost metadata for badges
+                        val authors = repostAuthors.get(inner.id)
+                            ?: mutableSetOf<String>().also { repostAuthors.put(inner.id, it) }
+                        authors.add(event.pubkey)
+                        if (event.pubkey == currentUserPubkey) {
+                            userReposts.put(inner.id, true)
+                        }
+                        repostDirty = true
+                        markVersionDirty()
+                        val isReply = inner.tags.any { it.size >= 2 && it[0] == "e" }
+                        if (!isReply) {
+                            eventCache.put(inner.id, inner)
+                            relayHintStore?.extractHintsFromTags(inner)
+                            feedSortTime.put(inner.id, event.created_at)
+                            relayFeedBinaryInsert(inner, sortTime = event.created_at)
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
+    private fun relayFeedBinaryInsert(event: NostrEvent, sortTime: Long = event.created_at) {
+        synchronized(relayFeedList) {
+            if (!relayFeedIds.add(event.id)) return  // already in relay feed
+            var low = 0
+            var high = relayFeedList.size
+            while (low < high) {
+                val mid = (low + high) / 2
+                if (effectiveSortTime(relayFeedList[mid]) > sortTime) low = mid + 1 else high = mid
+            }
+            relayFeedList.add(low, event)
+        }
+        relayFeedInserted.trySend(Unit)
+    }
+
+    fun clearRelayFeed() {
+        synchronized(relayFeedList) {
+            relayFeedList.clear()
+            relayFeedIds.clear()
+        }
+        _relayFeed.value = emptyList()
+    }
+
+    fun getOldestRelayFeedTimestamp(): Long? {
+        return synchronized(relayFeedList) {
+            relayFeedList.lastOrNull()?.let { effectiveSortTime(it) }
+        }
+    }
+
+    fun clearFeed() {
+        resetFeedDisplay()
+        eventCache.evictAll()
+        seenEventIds.clear()
+    }
+
     fun clearAll() {
         _authorFilter.value = null
         clearFeed()
+        clearRelayFeed()
         replyCounts.evictAll()
         zapSats.evictAll()
         eventRelays.evictAll()

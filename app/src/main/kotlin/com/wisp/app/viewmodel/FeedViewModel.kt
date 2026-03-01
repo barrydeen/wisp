@@ -46,8 +46,11 @@ import kotlinx.coroutines.Dispatchers
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.RelaySet
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 enum class FeedType { FOLLOWS, EXTENDED_FOLLOWS, RELAY, LIST }
@@ -186,6 +189,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         getUserPubkey = { getUserPubkey() },
         getSigner = { signer },
         getFeedSubId = { feedSub.feedSubId },
+        getRelayFeedSubId = { feedSub.relayFeedSubId },
         onRelayFeedEventReceived = { feedSub.onRelayFeedEventReceived() }
     )
 
@@ -216,7 +220,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     )
 
     // -- Exposed state --
-    val feed: StateFlow<List<NostrEvent>> = eventRepo.feed
+    val feed: StateFlow<List<NostrEvent>> = combine(
+        feedSub.feedType, eventRepo.feed, eventRepo.relayFeed
+    ) { type, main, relay ->
+        if (type == FeedType.RELAY) relay else main
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val newNoteCount: StateFlow<Int> = eventRepo.newNoteCount
     val initialLoadDone: StateFlow<Boolean> = feedSub.initialLoadDone
     val initLoadingState: StateFlow<InitLoadingState> = feedSub.initLoadingState

@@ -54,6 +54,13 @@ class FeedSubscriptionManager(
     private val processingContext: CoroutineContext,
     private val pubkeyHex: String?
 ) {
+    init {
+        // Relay feed subs bypass RelayPool's seen-event dedup so events already
+        // received by the main feed subscription can still appear in relay feeds.
+        relayPool.registerDedupBypass("relay-feed-")
+        relayPool.registerDedupBypass("relay-loadmore")
+    }
+
     private val _feedType = MutableStateFlow(FeedType.FOLLOWS)
     val feedType: StateFlow<FeedType> = _feedType
 
@@ -79,10 +86,15 @@ class FeedSubscriptionManager(
     private val _loadingScreenComplete = MutableStateFlow(false)
     val loadingScreenComplete: StateFlow<Boolean> = _loadingScreenComplete
 
+    private var feedGeneration = 0
     var feedSubId = "feed"
+        private set
+    private var relayFeedGeneration = 0
+    var relayFeedSubId = "relay-feed"
         private set
     val activeEngagementSubIds = java.util.concurrent.CopyOnWriteArrayList<String>()
     private var feedEoseJob: Job? = null
+    private var relayFeedEoseJob: Job? = null
     private var relayStatusMonitorJob: Job? = null
     private var isLoadingMore = false
 
@@ -114,18 +126,29 @@ class FeedSubscriptionManager(
         Log.d("RLC", "[FeedSub] setFeedType $prev → $type feedSize=${eventRepo.feed.value.size}")
         _feedType.value = type
         applyAuthorFilterForFeedType(type)
+
+        // Tear down relay feed when leaving RELAY mode
+        if (prev == FeedType.RELAY && type != FeedType.RELAY) {
+            unsubscribeRelayFeed()
+        }
+
         when (type) {
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
-                if (prev == FeedType.LIST || prev == FeedType.RELAY) {
+                if (prev == FeedType.LIST) {
                     Log.d("RLC", "[FeedSub] switching from $prev to $type — clearing feed and resubscribing")
-                    eventRepo.clearFeed()
+                    eventRepo.resetFeedDisplay()
                     resubscribeFeed()
                 } else {
+                    // Switching from RELAY or between FOLLOWS/EXTENDED — main feed still running
                     Log.d("RLC", "[FeedSub] setFeedType $prev → $type — filter-only switch, no resubscribe needed, feedSize=${eventRepo.feed.value.size}")
                 }
             }
-            FeedType.RELAY, FeedType.LIST -> {
-                eventRepo.clearFeed()
+            FeedType.RELAY -> {
+                eventRepo.clearRelayFeed()
+                subscribeRelayFeed()
+            }
+            FeedType.LIST -> {
+                eventRepo.resetFeedDisplay()
                 resubscribeFeed()
             }
         }
@@ -135,8 +158,8 @@ class FeedSubscriptionManager(
         _selectedRelaySet.value = null
         _selectedRelay.value = url
         if (_feedType.value == FeedType.RELAY) {
-            eventRepo.clearFeed()
-            resubscribeFeed()
+            eventRepo.clearRelayFeed()
+            subscribeRelayFeed()
         }
     }
 
@@ -144,31 +167,38 @@ class FeedSubscriptionManager(
         _selectedRelaySet.value = relaySet
         _selectedRelay.value = null
         if (_feedType.value == FeedType.RELAY) {
-            eventRepo.clearFeed()
-            resubscribeFeed()
+            eventRepo.clearRelayFeed()
+            subscribeRelayFeed()
         }
     }
 
     fun retryRelayFeed() {
         val url = _selectedRelay.value ?: return
         healthTracker.clearBadRelay(url)
-        eventRepo.clearFeed()
+        relayPool.clearCooldown(url)
+        eventRepo.clearRelayFeed()
         _relayFeedStatus.value = RelayFeedStatus.Connecting
-        resubscribeFeed()
+        subscribeRelayFeed()
     }
 
     fun subscribeFeed() {
         resubscribeFeed()
+        if (_feedType.value == FeedType.RELAY) {
+            eventRepo.clearRelayFeed()
+            subscribeRelayFeed()
+        }
     }
 
     fun refreshFeed() {
         _isRefreshing.value = true
-        eventRepo.clearFeed()
-        resubscribeFeed()
+        if (_feedType.value == FeedType.RELAY) {
+            eventRepo.clearRelayFeed()
+            subscribeRelayFeed()
+        } else {
+            eventRepo.resetFeedDisplay()
+            resubscribeFeed()
+        }
         scope.launch {
-            // Don't wait for full EOSE — just show the spinner briefly so the
-            // user gets tactile feedback that the refresh fired. Events will
-            // stream in as relays respond.
             delay(3000)
             _isRefreshing.value = false
         }
@@ -176,7 +206,11 @@ class FeedSubscriptionManager(
 
     fun resubscribeFeed() {
         Log.d("RLC", "[FeedSub] resubscribeFeed() feedType=${_feedType.value} connectedCount=${relayPool.connectedCount.value}")
-        relayPool.closeOnAllRelays(feedSubId)
+        val oldSubId = feedSubId
+        feedGeneration++
+        feedSubId = "feed-$feedGeneration"
+        Log.d("RLC", "[FeedSub] feed generation $feedGeneration: $oldSubId → $feedSubId")
+        relayPool.closeOnAllRelays(oldSubId)
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
         activeEngagementSubIds.clear()
         eventRepo.countNewNotes = false
@@ -193,8 +227,6 @@ class FeedSubscriptionManager(
         val excludedUrls = getExcludedRelayUrls()
         val targetedRelays: Set<String> = when (_feedType.value) {
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
-                relayStatusMonitorJob?.cancel()
-                _relayFeedStatus.value = RelayFeedStatus.Idle
                 val cache = extendedNetworkRepo.cachedNetwork.value
                 val firstDegree = contactRepo.getFollowList().map { it.pubkey }
                 val allAuthors = if (cache != null) {
@@ -214,43 +246,9 @@ class FeedSubscriptionManager(
                 )
             }
             FeedType.RELAY -> {
-                // Clear seen events so relays can re-send events we've already seen
-                // from other feeds (e.g. FOLLOWS). Without this, seenEvents dedup in
-                // RelayPool drops events and the relay feed appears empty.
-                relayPool.clearSeenEvents()
-                val relaySet = _selectedRelaySet.value
-                if (relaySet != null) {
-                    // Combined relay set feed — subscribe to all relays in the set
-                    relayStatusMonitorJob?.cancel()
-                    _relayFeedStatus.value = RelayFeedStatus.Subscribing
-                    val filter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                    val msg = ClientMessage.req(feedSubId, filter)
-                    val sentUrls = mutableSetOf<String>()
-                    for (setUrl in relaySet.relays) {
-                        val sent = relayPool.sendToRelayOrEphemeral(setUrl, msg, skipBadCheck = true)
-                        if (sent) sentUrls.add(setUrl)
-                    }
-                    if (sentUrls.isEmpty()) {
-                        _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to any relay in set")
-                        return
-                    }
-                    sentUrls
-                } else {
-                    val url = _selectedRelay.value ?: return
-                    startRelayStatusMonitor(url)
-                    val status = _relayFeedStatus.value
-                    if (status is RelayFeedStatus.Cooldown || status is RelayFeedStatus.BadRelay) {
-                        return
-                    }
-                    val filter = Filter(kinds = listOf(1, 6), since = sinceTimestamp)
-                    val msg = ClientMessage.req(feedSubId, filter)
-                    val sent = relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
-                    if (!sent) {
-                        _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to relay")
-                        return
-                    }
-                    setOf(url)
-                }
+                // RELAY feeds use subscribeRelayFeed() — should not reach here
+                Log.w("RLC", "[FeedSub] resubscribeFeed() called for RELAY type, skipping")
+                return
             }
             FeedType.LIST -> {
                 relayStatusMonitorJob?.cancel()
@@ -337,12 +335,12 @@ class FeedSubscriptionManager(
     fun loadMore() {
         if (isLoadingMore) return
         isLoadingMore = true
-        val oldest = eventRepo.getOldestTimestamp() ?: run { isLoadingMore = false; return }
 
         val indexerRelays = getIndexerRelays()
         val excludedUrls = getExcludedRelayUrls()
         when (_feedType.value) {
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
+                val oldest = eventRepo.getOldestTimestamp() ?: run { isLoadingMore = false; return }
                 val cache = extendedNetworkRepo.cachedNetwork.value
                 val firstDegree = contactRepo.getFollowList().map { it.pubkey }
                 val allAuthors = if (cache != null) {
@@ -358,10 +356,11 @@ class FeedSubscriptionManager(
                 )
             }
             FeedType.RELAY -> {
+                val oldest = eventRepo.getOldestRelayFeedTimestamp() ?: run { isLoadingMore = false; return }
                 val relaySet = _selectedRelaySet.value
                 if (relaySet != null) {
                     val filter = Filter(kinds = listOf(1, 6), until = oldest - 1, limit = 50)
-                    val msg = ClientMessage.req("loadmore", filter)
+                    val msg = ClientMessage.req("relay-loadmore", filter)
                     for (setUrl in relaySet.relays) {
                         relayPool.sendToRelayOrEphemeral(setUrl, msg, skipBadCheck = true)
                     }
@@ -369,11 +368,12 @@ class FeedSubscriptionManager(
                     val url = _selectedRelay.value
                     if (url != null) {
                         val filter = Filter(kinds = listOf(1, 6), until = oldest - 1, limit = 50)
-                        relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("loadmore", filter), skipBadCheck = true)
+                        relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("relay-loadmore", filter), skipBadCheck = true)
                     } else { isLoadingMore = false; return }
                 }
             }
             FeedType.LIST -> {
+                val oldest = eventRepo.getOldestTimestamp() ?: run { isLoadingMore = false; return }
                 val list = listRepo.selectedList.value ?: run { isLoadingMore = false; return }
                 val authors = list.members.toList()
                 if (authors.isEmpty()) { isLoadingMore = false; return }
@@ -410,12 +410,22 @@ class FeedSubscriptionManager(
             }
         }
 
+        val loadMoreSubId = if (_feedType.value == FeedType.RELAY) "relay-loadmore" else "loadmore"
         scope.launch {
-            val feedSizeBefore = eventRepo.feed.value.size
-            subManager.awaitEoseWithTimeout("loadmore")
-            subManager.closeSubscription("loadmore")
+            val feedSizeBefore = if (_feedType.value == FeedType.RELAY) {
+                eventRepo.relayFeed.value.size
+            } else {
+                eventRepo.feed.value.size
+            }
+            subManager.awaitEoseWithTimeout(loadMoreSubId)
+            subManager.closeSubscription(loadMoreSubId)
 
-            if (eventRepo.feed.value.size > feedSizeBefore) {
+            val feedSizeAfter = if (_feedType.value == FeedType.RELAY) {
+                eventRepo.relayFeed.value.size
+            } else {
+                eventRepo.feed.value.size
+            }
+            if (feedSizeAfter > feedSizeBefore) {
                 subscribeEngagementForFeed()
             }
 
@@ -434,6 +444,76 @@ class FeedSubscriptionManager(
         }
     }
 
+    // -- Isolated relay feed subscription --
+
+    private fun subscribeRelayFeed() {
+        Log.d("RLC", "[FeedSub] subscribeRelayFeed()")
+        val oldSubId = relayFeedSubId
+        relayFeedGeneration++
+        relayFeedSubId = "relay-feed-$relayFeedGeneration"
+        relayPool.closeOnAllRelays(oldSubId)
+        relayFeedEoseJob?.cancel()
+
+        // Always request the latest 100 notes per relay — no since timestamp.
+        // Using a since timestamp caused empty feeds on switch because RelayPool's
+        // seen-event dedup interacts with the shared timestamp state.
+        val relaySet = _selectedRelaySet.value
+        if (relaySet != null) {
+            relayStatusMonitorJob?.cancel()
+            _relayFeedStatus.value = RelayFeedStatus.Subscribing
+            val filter = Filter(kinds = listOf(1, 6), limit = 100)
+            val msg = ClientMessage.req(relayFeedSubId, filter)
+            val sentUrls = mutableSetOf<String>()
+            for (setUrl in relaySet.relays) {
+                val sent = relayPool.sendToRelayOrEphemeral(setUrl, msg, skipBadCheck = true)
+                if (sent) sentUrls.add(setUrl)
+            }
+            if (sentUrls.isEmpty()) {
+                _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to any relay in set")
+                return
+            }
+            relayFeedEoseJob = scope.launch {
+                val eoseTarget = maxOf(1, (sentUrls.size * 0.3).toInt()).coerceIn(1, sentUrls.size)
+                subManager.awaitEoseCount(relayFeedSubId, eoseTarget)
+                onRelayFeedEose()
+                subscribeEngagementForFeed()
+                withContext(processingContext) {
+                    metadataFetcher.sweepMissingProfiles()
+                }
+            }
+        } else {
+            val url = _selectedRelay.value ?: return
+            startRelayStatusMonitor(url)
+            val status = _relayFeedStatus.value
+            if (status is RelayFeedStatus.Cooldown || status is RelayFeedStatus.BadRelay) {
+                return
+            }
+            val filter = Filter(kinds = listOf(1, 6), limit = 100)
+            val msg = ClientMessage.req(relayFeedSubId, filter)
+            val sent = relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
+            if (!sent) {
+                _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to relay")
+                return
+            }
+            relayFeedEoseJob = scope.launch {
+                subManager.awaitEoseCount(relayFeedSubId, 1)
+                onRelayFeedEose()
+                subscribeEngagementForFeed()
+                withContext(processingContext) {
+                    metadataFetcher.sweepMissingProfiles()
+                }
+            }
+        }
+    }
+
+    private fun unsubscribeRelayFeed() {
+        relayFeedEoseJob?.cancel()
+        relayStatusMonitorJob?.cancel()
+        relayPool.closeOnAllRelays(relayFeedSubId)
+        eventRepo.clearRelayFeed()
+        _relayFeedStatus.value = RelayFeedStatus.Idle
+    }
+
     // -- Relay status monitoring --
 
     private fun startRelayStatusMonitor(url: String) {
@@ -450,8 +530,8 @@ class FeedSubscriptionManager(
                     remaining = relayPool.getRelayCooldownRemaining(url)
                 }
                 _relayFeedStatus.value = RelayFeedStatus.Idle
-                eventRepo.clearFeed()
-                resubscribeFeed()
+                eventRepo.clearRelayFeed()
+                subscribeRelayFeed()
             }
             return
         }
@@ -469,8 +549,17 @@ class FeedSubscriptionManager(
 
         relayStatusMonitorJob = scope.launch {
             launch {
+                // Track the current console log size so we only react to NEW entries,
+                // not stale CONN_FAILURE entries from previous connection attempts.
+                var baselineSize = relayPool.consoleLog.value.size
                 relayPool.consoleLog.collectLatest { entries ->
-                    val latest = entries.lastOrNull { it.relayUrl == url } ?: return@collectLatest
+                    if (entries.size <= baselineSize) {
+                        baselineSize = entries.size
+                        return@collectLatest
+                    }
+                    // Only check entries added since the monitor started
+                    val newEntries = entries.subList(baselineSize, entries.size)
+                    val latest = newEntries.lastOrNull { it.relayUrl == url } ?: return@collectLatest
                     val currentStatus = _relayFeedStatus.value
                     if (currentStatus is RelayFeedStatus.Connecting ||
                         currentStatus is RelayFeedStatus.Subscribing) {
@@ -505,15 +594,25 @@ class FeedSubscriptionManager(
                 }
             }
 
+            // Two-phase timeout: connection (10s) then data (15s)
             launch {
-                delay(15_000)
-                val currentStatus = _relayFeedStatus.value
-                if (currentStatus is RelayFeedStatus.Connecting ||
-                    currentStatus is RelayFeedStatus.Subscribing) {
+                // Phase 1 — Connection timeout
+                delay(10_000)
+                if (_relayFeedStatus.value is RelayFeedStatus.Connecting) {
                     val isPersistent = relayPool.getRelayUrls().contains(url)
-                    Log.d("RLC", "[FeedSub] relay feed TIMEOUT for $url (was $currentStatus, persistent=$isPersistent) — closing sub")
+                    Log.d("RLC", "[FeedSub] relay feed CONNECTION TIMEOUT for $url (persistent=$isPersistent) — closing sub")
+                    _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Connection timed out")
+                    relayPool.closeOnAllRelays(relayFeedSubId)
+                    if (!isPersistent) relayPool.disconnectRelay(url)
+                    return@launch
+                }
+                // Phase 2 — Data timeout (15s after connection phase)
+                delay(15_000)
+                if (_relayFeedStatus.value is RelayFeedStatus.Subscribing) {
+                    val isPersistent = relayPool.getRelayUrls().contains(url)
+                    Log.d("RLC", "[FeedSub] relay feed DATA TIMEOUT for $url (persistent=$isPersistent) — closing sub")
                     _relayFeedStatus.value = RelayFeedStatus.TimedOut
-                    relayPool.closeOnAllRelays(feedSubId)
+                    relayPool.closeOnAllRelays(relayFeedSubId)
                     if (!isPersistent) relayPool.disconnectRelay(url)
                 }
             }
@@ -524,7 +623,7 @@ class FeedSubscriptionManager(
         if (_feedType.value != FeedType.RELAY) return
         val status = _relayFeedStatus.value
         if (status is RelayFeedStatus.Connecting || status is RelayFeedStatus.Subscribing) {
-            _relayFeedStatus.value = if (eventRepo.feed.value.isEmpty()) {
+            _relayFeedStatus.value = if (eventRepo.relayFeed.value.isEmpty()) {
                 RelayFeedStatus.NoEvents
             } else {
                 RelayFeedStatus.Streaming
@@ -547,7 +646,7 @@ class FeedSubscriptionManager(
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
         activeEngagementSubIds.clear()
 
-        val feedEvents = eventRepo.feed.value
+        val feedEvents = if (_feedType.value == FeedType.RELAY) eventRepo.relayFeed.value else eventRepo.feed.value
         if (feedEvents.isEmpty()) return
 
         val eventsByAuthor = mutableMapOf<String, MutableList<String>>()
@@ -599,8 +698,7 @@ class FeedSubscriptionManager(
     /** Reset state for account switch. */
     fun reset() {
         feedEoseJob?.cancel()
-        relayStatusMonitorJob?.cancel()
-        _relayFeedStatus.value = RelayFeedStatus.Idle
+        unsubscribeRelayFeed()
         relayPool.closeOnAllRelays(feedSubId)
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
         activeEngagementSubIds.clear()
