@@ -121,18 +121,12 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
                 is NotificationGroup.ReactionGroup -> {
                     val filtered = group.reactions.mapValues { (_, pks) -> pks.filter { it != pubkey } }
                         .filter { it.value.isNotEmpty() }
-                    if (filtered.isEmpty()) toRemove.add(key)
+                    val filteredZaps = group.zapEntries.filter { it.pubkey != pubkey }
+                    if (filtered.isEmpty() && filteredZaps.isEmpty()) toRemove.add(key)
                     else toUpdate[key] = group.copy(
                         reactions = filtered,
-                        reactionTimestamps = group.reactionTimestamps - pubkey
-                    )
-                }
-                is NotificationGroup.ZapGroup -> {
-                    val filtered = group.zaps.filter { it.pubkey != pubkey }
-                    if (filtered.isEmpty()) toRemove.add(key)
-                    else toUpdate[key] = group.copy(
-                        zaps = filtered,
-                        totalSats = filtered.sumOf { it.sats }
+                        reactionTimestamps = group.reactionTimestamps - pubkey,
+                        zapEntries = filteredZaps
                     )
                 }
                 is NotificationGroup.ReplyNotification -> {
@@ -143,17 +137,6 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
                 }
                 is NotificationGroup.MentionNotification -> {
                     if (group.senderPubkey == pubkey) toRemove.add(key)
-                }
-                is NotificationGroup.RepostNotification -> {
-                    if (group.senderPubkey == pubkey) toRemove.add(key)
-                }
-                is NotificationGroup.RepostGroup -> {
-                    val filtered = group.reposters.filter { it != pubkey }
-                    if (filtered.isEmpty()) toRemove.add(key)
-                    else toUpdate[key] = group.copy(
-                        reposters = filtered,
-                        repostTimestamps = group.repostTimestamps - pubkey
-                    )
                 }
             }
         }
@@ -196,72 +179,32 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
                         }
                     }
 
-                    if (recentReactions.isNotEmpty()) {
+                    val recentZaps = group.zapEntries.filter { it.createdAt >= recentCutoff }
+                    val olderZaps = group.zapEntries.filter { it.createdAt < recentCutoff }
+
+                    if (recentReactions.isNotEmpty() || recentZaps.isNotEmpty()) {
+                        val ts = maxOf(
+                            recentTimestamps.values.maxOrNull() ?: 0L,
+                            recentZaps.maxOfOrNull { it.createdAt } ?: 0L
+                        )
                         result.add(group.copy(
                             groupId = "${group.groupId}:recent",
                             reactions = recentReactions,
                             reactionTimestamps = recentTimestamps,
-                            latestTimestamp = recentTimestamps.values.max()
+                            zapEntries = recentZaps,
+                            latestTimestamp = ts
                         ))
                     }
-                    if (olderReactions.isNotEmpty()) {
+                    if (olderReactions.isNotEmpty() || olderZaps.isNotEmpty()) {
+                        val ts = maxOf(
+                            olderTimestamps.values.maxOrNull() ?: 0L,
+                            olderZaps.maxOfOrNull { it.createdAt } ?: 0L
+                        )
                         result.add(group.copy(
                             reactions = olderReactions,
                             reactionTimestamps = olderTimestamps,
-                            latestTimestamp = olderTimestamps.values.max()
-                        ))
-                    }
-                }
-                is NotificationGroup.ZapGroup -> {
-                    val recentZaps = group.zaps.filter { it.createdAt >= recentCutoff }
-                    val olderZaps = group.zaps.filter { it.createdAt < recentCutoff }
-
-                    if (recentZaps.isNotEmpty()) {
-                        result.add(group.copy(
-                            groupId = "${group.groupId}:recent",
-                            zaps = recentZaps,
-                            totalSats = recentZaps.sumOf { it.sats },
-                            latestTimestamp = recentZaps.maxOf { it.createdAt }
-                        ))
-                    }
-                    if (olderZaps.isNotEmpty()) {
-                        result.add(group.copy(
-                            zaps = olderZaps,
-                            totalSats = olderZaps.sumOf { it.sats },
-                            latestTimestamp = olderZaps.maxOf { it.createdAt }
-                        ))
-                    }
-                }
-                is NotificationGroup.RepostGroup -> {
-                    val recentPubkeys = mutableListOf<String>()
-                    val olderPubkeys = mutableListOf<String>()
-                    val recentTimestamps = mutableMapOf<String, Long>()
-                    val olderTimestamps = mutableMapOf<String, Long>()
-
-                    for (pk in group.reposters) {
-                        val ts = group.repostTimestamps[pk] ?: 0L
-                        if (ts >= recentCutoff) {
-                            recentPubkeys.add(pk)
-                            recentTimestamps[pk] = ts
-                        } else {
-                            olderPubkeys.add(pk)
-                            olderTimestamps[pk] = ts
-                        }
-                    }
-
-                    if (recentPubkeys.isNotEmpty()) {
-                        result.add(group.copy(
-                            groupId = "${group.groupId}:recent",
-                            reposters = recentPubkeys,
-                            repostTimestamps = recentTimestamps,
-                            latestTimestamp = recentTimestamps.values.max()
-                        ))
-                    }
-                    if (olderPubkeys.isNotEmpty()) {
-                        result.add(group.copy(
-                            reposters = olderPubkeys,
-                            repostTimestamps = olderTimestamps,
-                            latestTimestamp = olderTimestamps.values.max()
+                            zapEntries = olderZaps,
+                            latestTimestamp = ts
                         ))
                     }
                 }
@@ -285,15 +228,19 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
         for (group in groupMap.values) {
             when (group) {
                 is NotificationGroup.ReactionGroup -> {
-                    for ((_, pubkeys) in group.reactions) {
+                    for ((emoji, pubkeys) in group.reactions) {
                         for (pk in pubkeys) {
                             val ts = group.reactionTimestamps[pk] ?: 0L
-                            if (ts >= summaryCutoff) reactionCount++
+                            if (ts >= summaryCutoff) {
+                                when (emoji) {
+                                    NotificationGroup.REPOST_EMOJI -> repostCount++
+                                    NotificationGroup.ZAP_EMOJI -> {} // counted via zapEntries below
+                                    else -> reactionCount++
+                                }
+                            }
                         }
                     }
-                }
-                is NotificationGroup.ZapGroup -> {
-                    for (zap in group.zaps) {
+                    for (zap in group.zapEntries) {
                         if (zap.createdAt >= summaryCutoff) {
                             zapCount++
                             zapSats += zap.sats
@@ -308,15 +255,6 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
                 }
                 is NotificationGroup.MentionNotification -> {
                     if (group.latestTimestamp >= summaryCutoff) mentionCount++
-                }
-                is NotificationGroup.RepostNotification -> {
-                    if (group.latestTimestamp >= summaryCutoff) repostCount++
-                }
-                is NotificationGroup.RepostGroup -> {
-                    for (pk in group.reposters) {
-                        val ts = group.repostTimestamps[pk] ?: 0L
-                        if (ts >= summaryCutoff) repostCount++
-                    }
                 }
             }
         }
@@ -377,27 +315,37 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
         if (amount <= 0) return false
         val zapperPubkey = Nip57.getZapperPubkey(event) ?: return false
         val referencedId = Nip57.getZappedEventId(event) ?: return false
-        val key = "zaps:$referencedId"
+        val key = "reactions:$referencedId"
         // Secondary dedup: guard against LRU eviction in seenEvents allowing
         // the same 9735 event to be re-processed on periodic refresh cycles.
         val zapEventIds = zapEventIdsByGroup.getOrPut(key) { mutableSetOf() }
         if (!zapEventIds.add(event.id)) return false
         val message = Nip57.getZapMessage(event)
         val entry = ZapEntry(pubkey = zapperPubkey, sats = amount, message = message, createdAt = event.created_at)
-        val existing = groupMap[key] as? NotificationGroup.ZapGroup
+        val emoji = NotificationGroup.ZAP_EMOJI
+        val existing = groupMap[key] as? NotificationGroup.ReactionGroup
 
         if (existing != null) {
+            val currentPubkeys = existing.reactions[emoji] ?: emptyList()
+            val updatedReactions = existing.reactions.toMutableMap()
+            if (zapperPubkey !in currentPubkeys) {
+                updatedReactions[emoji] = currentPubkeys + zapperPubkey
+            }
+            val updatedTimestamps = existing.reactionTimestamps.toMutableMap()
+            updatedTimestamps[zapperPubkey] = event.created_at
             groupMap[key] = existing.copy(
-                zaps = existing.zaps + entry,
-                totalSats = existing.totalSats + amount,
+                reactions = updatedReactions,
+                reactionTimestamps = updatedTimestamps,
+                zapEntries = existing.zapEntries + entry,
                 latestTimestamp = maxOf(existing.latestTimestamp, event.created_at)
             )
         } else {
-            groupMap[key] = NotificationGroup.ZapGroup(
+            groupMap[key] = NotificationGroup.ReactionGroup(
                 groupId = key,
                 referencedEventId = referencedId,
-                zaps = listOf(entry),
-                totalSats = amount,
+                reactions = mapOf(emoji to listOf(zapperPubkey)),
+                reactionTimestamps = mapOf(zapperPubkey to event.created_at),
+                zapEntries = listOf(entry),
                 latestTimestamp = event.created_at
             )
         }
@@ -451,24 +399,28 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
     private fun mergeRepost(event: NostrEvent): Boolean {
         val repostedId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
             ?: return false
-        val key = "reposts:$repostedId"
-        val existing = groupMap[key] as? NotificationGroup.RepostGroup
+        val key = "reactions:$repostedId"
+        val emoji = NotificationGroup.REPOST_EMOJI
+        val existing = groupMap[key] as? NotificationGroup.ReactionGroup
 
         if (existing != null) {
-            if (event.pubkey in existing.reposters) return false
-            val updatedTimestamps = existing.repostTimestamps.toMutableMap()
+            val currentPubkeys = existing.reactions[emoji] ?: emptyList()
+            if (event.pubkey in currentPubkeys) return false
+            val updatedReactions = existing.reactions.toMutableMap()
+            updatedReactions[emoji] = currentPubkeys + event.pubkey
+            val updatedTimestamps = existing.reactionTimestamps.toMutableMap()
             updatedTimestamps[event.pubkey] = event.created_at
             groupMap[key] = existing.copy(
-                reposters = existing.reposters + event.pubkey,
-                repostTimestamps = updatedTimestamps,
+                reactions = updatedReactions,
+                reactionTimestamps = updatedTimestamps,
                 latestTimestamp = maxOf(existing.latestTimestamp, event.created_at)
             )
         } else {
-            groupMap[key] = NotificationGroup.RepostGroup(
+            groupMap[key] = NotificationGroup.ReactionGroup(
                 groupId = key,
-                repostedEventId = repostedId,
-                reposters = listOf(event.pubkey),
-                repostTimestamps = mapOf(event.pubkey to event.created_at),
+                referencedEventId = repostedId,
+                reactions = mapOf(emoji to listOf(event.pubkey)),
+                reactionTimestamps = mapOf(event.pubkey to event.created_at),
                 latestTimestamp = event.created_at
             )
         }
@@ -480,12 +432,9 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
         groupMap.values.map { group ->
             when (group) {
                 is NotificationGroup.ReactionGroup -> group.referencedEventId
-                is NotificationGroup.ZapGroup -> group.referencedEventId
                 is NotificationGroup.ReplyNotification -> group.replyEventId
                 is NotificationGroup.QuoteNotification -> group.quoteEventId
                 is NotificationGroup.MentionNotification -> group.eventId
-                is NotificationGroup.RepostNotification -> group.repostedEventId
-                is NotificationGroup.RepostGroup -> group.repostedEventId
             }
         }.distinct()
     }

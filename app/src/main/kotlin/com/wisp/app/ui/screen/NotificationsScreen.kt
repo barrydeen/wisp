@@ -479,45 +479,6 @@ private fun NotificationItem(
         translationRepo = translationRepo
     )
 
-    // Show reposter avatars at the top of reaction and repost notifications
-    val repostEventId = when (group) {
-        is NotificationGroup.ReactionGroup -> group.referencedEventId
-        is NotificationGroup.RepostNotification -> group.repostedEventId
-        is NotificationGroup.RepostGroup -> group.repostedEventId
-        else -> null
-    }
-    val reposterPubkeys = remember(repostVersion, repostEventId) {
-        if (repostEventId != null) eventRepo?.getReposterPubkeys(repostEventId) ?: emptyList()
-        else emptyList()
-    }
-    if (reposterPubkeys.isNotEmpty()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 6.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            Icon(
-                Icons.Outlined.Repeat,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(24.dp)
-                    .padding(top = 6.dp),
-                tint = Color(0xFF4CAF50)
-            )
-            Spacer(Modifier.width(6.dp))
-            StackedAvatarRow(
-                pubkeys = reposterPubkeys.reversed(),
-                resolveProfile = { viewModel.getProfileData(it) },
-                isFollowing = { viewModel.isFollowing(it) },
-                onProfileClick = onProfileClick,
-                highlightFirst = reposterPubkeys.size > 1,
-                onProfileLongPress = { onFollowToggle(it) },
-                showAll = true
-            )
-        }
-    }
-
     when (group) {
         is NotificationGroup.ReactionGroup -> ReactionGroupRow(
             group = group,
@@ -525,13 +486,6 @@ private fun NotificationItem(
             isFollowing = { viewModel.isFollowing(it) },
             onProfileClick = onProfileClick,
             onFollowToggle = postCardParams.onFollowToggle,
-            postCardParams = postCardParams
-        )
-        is NotificationGroup.ZapGroup -> ZapGroupRow(
-            group = group,
-            resolveProfile = { viewModel.getProfileData(it) },
-            isFollowing = { viewModel.isFollowing(it) },
-            onProfileClick = onProfileClick,
             postCardParams = postCardParams
         )
         is NotificationGroup.ReplyNotification -> ReplyPostCard(
@@ -550,21 +504,6 @@ private fun NotificationItem(
             resolveProfile = { viewModel.getProfileData(it) },
             isFollowing = viewModel.isFollowing(group.senderPubkey),
             onProfileClick = onProfileClick,
-            postCardParams = postCardParams
-        )
-        is NotificationGroup.RepostNotification -> RepostNotificationRow(
-            item = group,
-            resolveProfile = { viewModel.getProfileData(it) },
-            isFollowing = viewModel.isFollowing(group.senderPubkey),
-            onProfileClick = onProfileClick,
-            postCardParams = postCardParams
-        )
-        is NotificationGroup.RepostGroup -> RepostGroupRow(
-            group = group,
-            resolveProfile = { viewModel.getProfileData(it) },
-            isFollowing = { viewModel.isFollowing(it) },
-            onProfileClick = onProfileClick,
-            onFollowToggle = postCardParams.onFollowToggle,
             postCardParams = postCardParams
         )
     }
@@ -602,8 +541,59 @@ private fun ReactionGroupRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            // Zap rows (most recent first)
+            if (group.zapEntries.isNotEmpty()) {
+                val sortedZaps = remember(group.zapEntries) { group.zapEntries.sortedByDescending { it.createdAt } }
+                sortedZaps.forEachIndexed { index, zap ->
+                    ZapEntryRow(
+                        zap = zap,
+                        profile = resolveProfile(zap.pubkey),
+                        showFollowBadge = isFollowing(zap.pubkey),
+                        highlighted = index == 0 && sortedZaps.size > 1,
+                        onProfileClick = onProfileClick
+                    )
+                }
+            }
+            // Repost row (from EventRepository for older splits, from reactions map for recent)
+            val isRecentSplit = group.groupId.endsWith(":recent")
+            val repostPubkeys = if (isRecentSplit) {
+                group.reactions[NotificationGroup.REPOST_EMOJI] ?: emptyList()
+            } else {
+                val eventRepo = postCardParams.eventRepo
+                remember(postCardParams.repostVersion, group.referencedEventId) {
+                    eventRepo?.getReposterPubkeys(group.referencedEventId) ?: emptyList()
+                }
+            }
+            if (repostPubkeys.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        Icons.Outlined.Repeat,
+                        contentDescription = "reposted",
+                        modifier = Modifier
+                            .size(24.dp)
+                            .padding(top = 6.dp),
+                        tint = Color(0xFF4CAF50)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    StackedAvatarRow(
+                        pubkeys = repostPubkeys.reversed(),
+                        resolveProfile = resolveProfile,
+                        isFollowing = isFollowing,
+                        onProfileClick = onProfileClick,
+                        highlightFirst = repostPubkeys.size > 1,
+                        onProfileLongPress = onFollowToggle,
+                        showAll = true
+                    )
+                }
+            }
             // Each emoji row: <emoji> <avatars> (newest reactor first)
             group.reactions.forEach { (emoji, pubkeys) ->
+                if (emoji == NotificationGroup.REPOST_EMOJI || emoji == NotificationGroup.ZAP_EMOJI) return@forEach
                 val displayEmoji = if (emoji == "+") "\u2764\uFE0F" else emoji
                 val shortcode = Nip30.shortcodeRegex.matchEntire(displayEmoji)?.groupValues?.get(1)
                 val customEmojiUrl = group.emojiUrls[displayEmoji]
@@ -640,59 +630,6 @@ private fun ReactionGroupRow(
                         showAll = true
                     )
                 }
-            }
-        }
-        // Referenced note as full PostCard
-        ReferencedNotePostCard(
-            eventId = group.referencedEventId,
-            params = postCardParams
-        )
-    }
-}
-
-// ── Zap Group ───────────────────────────────────────────────────────────
-// Each zap on its own row (most recent first): <zap icon> <amount> <avatar> <message>
-// Then the referenced note rendered as a full PostCard with action bar.
-
-@Composable
-private fun ZapGroupRow(
-    group: NotificationGroup.ZapGroup,
-    resolveProfile: (String) -> ProfileData?,
-    isFollowing: (String) -> Boolean,
-    onProfileClick: (String) -> Unit,
-    postCardParams: NotifPostCardParams
-) {
-    val sortedZaps = remember(group.zaps) { group.zaps.sortedByDescending { it.createdAt } }
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // Zap summary header
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            // Header with timestamp
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = formatNotifTimestamp(group.latestTimestamp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Spacer(Modifier.height(4.dp))
-            // Each zap row: <zap icon> <amount> <avatar> <name> <message>
-            sortedZaps.forEachIndexed { index, zap ->
-                ZapEntryRow(
-                    zap = zap,
-                    profile = resolveProfile(zap.pubkey),
-                    showFollowBadge = isFollowing(zap.pubkey),
-                    highlighted = index == 0 && sortedZaps.size > 1,
-                    onProfileClick = onProfileClick
-                )
             }
         }
         // Referenced note as full PostCard
@@ -921,136 +858,6 @@ private fun MentionNotificationRow(
         // Mention event as full PostCard
         ReferencedNotePostCard(
             eventId = item.eventId,
-            params = postCardParams
-        )
-    }
-}
-
-// ── Repost Notification ──────────────────────────────────────────────────
-
-@Composable
-private fun RepostNotificationRow(
-    item: NotificationGroup.RepostNotification,
-    resolveProfile: (String) -> ProfileData?,
-    isFollowing: Boolean,
-    onProfileClick: (String) -> Unit,
-    postCardParams: NotifPostCardParams
-) {
-    val profile = resolveProfile(item.senderPubkey)
-    val displayName = profile?.displayString
-        ?: item.senderPubkey.take(8) + "..." + item.senderPubkey.takeLast(4)
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            ProfilePicture(
-                url = profile?.picture,
-                size = 34,
-                showFollowBadge = isFollowing,
-                modifier = Modifier.clickable { onProfileClick(item.senderPubkey) }
-            )
-            Spacer(Modifier.width(10.dp))
-            Text(
-                text = displayName,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            Spacer(Modifier.width(4.dp))
-            Icon(
-                Icons.Outlined.Repeat,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.width(2.dp))
-            Text(
-                text = "reposted",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = formatNotifTimestamp(item.latestTimestamp),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        ReferencedNotePostCard(
-            eventId = item.repostedEventId,
-            params = postCardParams
-        )
-    }
-}
-
-// ── Repost Group (aggregated reposts) ────────────────────────────────────
-
-@Composable
-private fun RepostGroupRow(
-    group: NotificationGroup.RepostGroup,
-    resolveProfile: (String) -> ProfileData?,
-    isFollowing: (String) -> Boolean,
-    onProfileClick: (String) -> Unit,
-    onFollowToggle: ((String) -> Unit)? = null,
-    postCardParams: NotifPostCardParams
-) {
-    val eventRepo = postCardParams.eventRepo
-    // Pull reposter pubkeys from EventRepository — the authoritative source
-    val reposterPubkeys = remember(postCardParams.repostVersion, group.repostedEventId) {
-        eventRepo?.getReposterPubkeys(group.repostedEventId) ?: group.reposters
-    }
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = formatNotifTimestamp(group.latestTimestamp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 3.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                Icon(
-                    Icons.Outlined.Repeat,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(20.dp)
-                        .padding(top = 8.dp),
-                    tint = Color(0xFF4CAF50)
-                )
-                Spacer(Modifier.width(8.dp))
-                StackedAvatarRow(
-                    pubkeys = reposterPubkeys.reversed(),
-                    resolveProfile = resolveProfile,
-                    isFollowing = isFollowing,
-                    onProfileClick = onProfileClick,
-                    highlightFirst = reposterPubkeys.size > 1,
-                    onProfileLongPress = onFollowToggle,
-                    showAll = true
-                )
-            }
-        }
-        ReferencedNotePostCard(
-            eventId = group.repostedEventId,
             params = postCardParams
         )
     }

@@ -86,9 +86,13 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
                     NotificationFilter.ALL -> notifs
                     NotificationFilter.REPLIES -> notifs.filterIsInstance<NotificationGroup.ReplyNotification>()
                     NotificationFilter.REACTIONS -> notifs.filterIsInstance<NotificationGroup.ReactionGroup>()
-                    NotificationFilter.ZAPS -> notifs.filterIsInstance<NotificationGroup.ZapGroup>()
+                    NotificationFilter.ZAPS -> notifs.filter {
+                        it is NotificationGroup.ReactionGroup &&
+                            NotificationGroup.ZAP_EMOJI in it.reactions
+                    }
                     NotificationFilter.REPOSTS -> notifs.filter {
-                        it is NotificationGroup.RepostNotification || it is NotificationGroup.RepostGroup
+                        it is NotificationGroup.ReactionGroup &&
+                            NotificationGroup.REPOST_EMOJI in it.reactions
                     }
                     NotificationFilter.MENTIONS -> notifs.filter {
                         it is NotificationGroup.MentionNotification || it is NotificationGroup.QuoteNotification
