@@ -271,14 +271,15 @@ class OutboxRouter(
      * Publish an event to own write relays AND the target user's read (inbox) relays.
      * Used for replies, reactions, and reposts so they reach the intended recipient.
      */
-    fun publishToInbox(eventMsg: String, targetPubkey: String) {
-        relayPool.sendToWriteRelays(eventMsg)
+    fun publishToInbox(eventMsg: String, targetPubkey: String): Int {
+        var sentCount = relayPool.sendToWriteRelays(eventMsg)
         val readRelays = relayListRepo.getReadRelays(targetPubkey)
         if (readRelays != null) {
             for (url in readRelays) {
-                relayPool.sendToRelayOrEphemeral(url, eventMsg)
+                if (relayPool.sendToRelayOrEphemeral(url, eventMsg)) sentCount++
             }
         }
+        return sentCount
     }
 
     /**

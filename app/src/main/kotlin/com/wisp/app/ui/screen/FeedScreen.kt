@@ -1,6 +1,8 @@
 package com.wisp.app.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
@@ -70,6 +72,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.text.font.FontWeight
 import com.wisp.app.nostr.RelaySet
+import com.wisp.app.relay.BroadcastState
 import com.wisp.app.viewmodel.FeedType
 import com.wisp.app.viewmodel.FeedViewModel
 import com.wisp.app.viewmodel.InitLoadingState
@@ -1639,6 +1642,49 @@ private fun RelayFeedEmptyState(
             is RelayFeedStatus.Streaming, is RelayFeedStatus.Idle -> {
                 // Streaming with empty feed shouldn't normally happen, show spinner
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
+
+@Composable
+fun BroadcastStatusBar(
+    broadcastState: BroadcastState?,
+    modifier: Modifier = Modifier
+) {
+    AnimatedVisibility(
+        visible = broadcastState != null,
+        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+        modifier = modifier
+    ) {
+        val state = broadcastState ?: return@AnimatedVisibility
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            shadowElevation = 2.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (state.accepted < state.sent) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 1.5.dp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(
+                    text = if (state.accepted < state.sent) {
+                        "Broadcasting (${state.accepted}/${state.sent})"
+                    } else {
+                        "Published to ${state.accepted} relay${if (state.accepted != 1) "s" else ""}"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

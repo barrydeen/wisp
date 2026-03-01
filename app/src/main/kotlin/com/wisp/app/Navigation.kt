@@ -1,8 +1,12 @@
 package com.wisp.app
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import com.wisp.app.ui.screen.BroadcastStatusBar
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -385,10 +389,12 @@ fun WispNavHost(
         }
     ) { innerPadding ->
 
+    val broadcastState by feedViewModel.relayPool.broadcastState.collectAsState()
+
+    Box(modifier = Modifier.padding(innerPadding)) {
     NavHost(
         navController = navController,
-        startDestination = startDestination,
-        modifier = Modifier.padding(innerPadding)
+        startDestination = startDestination
     ) {
         composable(Routes.AUTH) {
             AuthScreen(
@@ -1364,6 +1370,14 @@ fun WispNavHost(
             )
         }
     }
+
+    BroadcastStatusBar(
+        broadcastState = broadcastState,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = 16.dp)
+    )
+    } // Box
 
     } // Scaffold
 }

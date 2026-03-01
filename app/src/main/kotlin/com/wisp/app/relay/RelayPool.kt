@@ -10,10 +10,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -22,6 +24,8 @@ import okhttp3.OkHttpClient
 import java.util.concurrent.CopyOnWriteArrayList
 
 data class RelayEvent(val event: NostrEvent, val relayUrl: String, val subscriptionId: String)
+data class PublishResult(val relayUrl: String, val eventId: String, val accepted: Boolean, val message: String)
+data class BroadcastState(val accepted: Int, val sent: Int)
 
 class RelayPool {
     private var client: OkHttpClient = Relay.createClient()
@@ -109,6 +113,12 @@ class RelayPool {
     private val _authCompleted = MutableSharedFlow<String>(extraBufferCapacity = 16)
     /** Emits the relay URL after successful NIP-42 AUTH. */
     val authCompleted: SharedFlow<String> = _authCompleted
+
+    private val _publishResults = MutableSharedFlow<PublishResult>(extraBufferCapacity = 64)
+    val publishResults: SharedFlow<PublishResult> = _publishResults
+
+    private val _broadcastState = MutableStateFlow<BroadcastState?>(null)
+    val broadcastState: StateFlow<BroadcastState?> = _broadcastState
 
     private val _consoleLog = MutableStateFlow<List<ConsoleLogEntry>>(emptyList())
     val consoleLog: StateFlow<List<ConsoleLogEntry>> = _consoleLog
@@ -276,6 +286,12 @@ class RelayPool {
                         unsupportedCounts.remove(relay.config.url) // Relay works, clear counter
                     }
                     is RelayMessage.Ok -> {
+                        _publishResults.tryEmit(PublishResult(
+                            relayUrl = relay.config.url,
+                            eventId = msg.eventId,
+                            accepted = msg.accepted,
+                            message = msg.message
+                        ))
                         if (!msg.accepted) {
                             addConsoleEntry(ConsoleLogEntry(
                                 relayUrl = relay.config.url,
@@ -387,13 +403,39 @@ class RelayPool {
         return urls
     }
 
-    fun sendToWriteRelays(message: String) {
+    fun sendToWriteRelays(message: String): Int {
         val isEvent = message.startsWith("[\"EVENT\"")
+        var sentCount = 0
         for (relay in relays) {
             if (relay.config.write) {
-                relay.send(message)
+                if (relay.send(message)) sentCount++
                 if (isEvent && appIsActive) healthTracker?.onEventSent(relay.config.url, message.length)
             }
+        }
+        return sentCount
+    }
+
+    /**
+     * Start tracking OK responses for a published event.
+     * Updates [broadcastState] as relays respond, then auto-clears after all respond or timeout.
+     */
+    fun trackPublish(eventId: String, sentCount: Int) {
+        _broadcastState.value = BroadcastState(accepted = 0, sent = sentCount)
+        scope.launch {
+            var accepted = 0
+            var received = 0
+            withTimeoutOrNull(5000L) {
+                _publishResults
+                    .filter { it.eventId == eventId }
+                    .collect {
+                        if (it.accepted) accepted++
+                        received++
+                        _broadcastState.value = BroadcastState(accepted = accepted, sent = sentCount)
+                        if (received >= sentCount) return@collect
+                    }
+            }
+            delay(1500)
+            _broadcastState.value = null
         }
     }
 
