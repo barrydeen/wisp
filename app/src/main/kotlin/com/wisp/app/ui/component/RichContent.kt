@@ -99,6 +99,7 @@ data class NoteActions(
     val userPubkey: String? = null,
     val nip05Repo: Nip05Repository? = null,
     val onHashtagClick: ((String) -> Unit)? = null,
+    val onRelayClick: ((String) -> Unit)? = null,
 )
 
 private sealed interface ContentSegment {
@@ -106,6 +107,7 @@ private sealed interface ContentSegment {
     data class ImageSegment(val url: String) : ContentSegment
     data class VideoSegment(val url: String) : ContentSegment
     data class LinkSegment(val url: String) : ContentSegment
+    data class InlineLinkSegment(val url: String) : ContentSegment
     data class NostrNoteSegment(val eventId: String, val relayHints: List<String> = emptyList()) : ContentSegment
     data class NostrProfileSegment(val pubkey: String) : ContentSegment
     data class NostrAddressableSegment(val dTag: String, val relays: List<String>, val author: String?, val kind: Int?) : ContentSegment
@@ -116,9 +118,25 @@ private sealed interface ContentSegment {
 private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp")
 private val videoExtensions = setOf("mp4", "mov", "webm")
 
-private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w)|https?://\S+|(?<!\w)([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|net|org|io|dev|app|pro|ai|co|me|info|xyz|cc|tv|to|gg|sh|im|is|it|rs|ly|site|online|store|tech|cloud|social|world|earth|space|lol|wtf|family|life|art|design|blog|news|live|video|media|chat|games|money|finance|agency|studio|build|run|codes|systems|network|zone|pub|blue|limo|fyi|wiki|page|link|click|exchange|markets|fun|club|today)(?:/\S*)?)(?!\w)|(?<!\w)#([a-zA-Z0-9_][a-zA-Z0-9_-]*)""", RegexOption.IGNORE_CASE)
+private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w)|(?:https?|wss?)://\S+|(?<!\w)([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|net|org|io|dev|app|pro|ai|co|me|info|xyz|cc|tv|to|gg|sh|im|is|it|rs|ly|site|online|store|tech|cloud|social|world|earth|space|lol|wtf|family|life|art|design|blog|news|live|video|media|chat|games|money|finance|agency|studio|build|run|codes|systems|network|zone|pub|blue|limo|fyi|wiki|page|link|click|exchange|markets|fun|club|today)(?:/\S*)?)(?!\w)|(?<!\w)#([a-zA-Z0-9_][a-zA-Z0-9_-]*)""", RegexOption.IGNORE_CASE)
 
 private val emojiShortcodeRegex = Regex(""":([a-zA-Z0-9_]+):""")
+
+private fun isStandaloneUrl(content: String, matchRange: IntRange): Boolean {
+    // Look back: only whitespace between previous newline (or start) and match start
+    val before = content.substring(0, matchRange.first)
+    val lineStart = before.lastIndexOf('\n') + 1
+    val prefix = before.substring(lineStart)
+    if (prefix.isNotBlank()) return false
+
+    // Look forward: only whitespace between match end and next newline (or end)
+    val after = content.substring(matchRange.last + 1)
+    val lineEnd = after.indexOf('\n')
+    val suffix = if (lineEnd == -1) after else after.substring(0, lineEnd)
+    if (suffix.isNotBlank()) return false
+
+    return true
+}
 
 private fun parseContent(content: String, emojiMap: Map<String, String> = emptyMap()): List<ContentSegment> {
     val segments = mutableListOf<ContentSegment>()
@@ -157,11 +175,14 @@ private fun parseContent(content: String, emojiMap: Map<String, String> = emptyM
             }
         } else {
             val url = token.trimEnd('.', ',', ')', ']', ';', ':', '!', '?')
+            val isWebSocket = url.startsWith("wss://") || url.startsWith("ws://")
             val ext = url.substringAfterLast('.').substringBefore('?').lowercase()
             when {
                 ext in imageExtensions -> segments.add(ContentSegment.ImageSegment(url))
                 ext in videoExtensions -> segments.add(ContentSegment.VideoSegment(url))
-                else -> segments.add(ContentSegment.LinkSegment(url))
+                isWebSocket -> segments.add(ContentSegment.InlineLinkSegment(url))
+                isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
+                else -> segments.add(ContentSegment.InlineLinkSegment(url))
             }
         }
         lastEnd = match.range.last + 1
@@ -242,6 +263,7 @@ fun RichContent(
             s is ContentSegment.HashtagSegment ||
             s is ContentSegment.NostrProfileSegment ||
             s is ContentSegment.CustomEmojiSegment ||
+            s is ContentSegment.InlineLinkSegment ||
             (plainLinks && s is ContentSegment.LinkSegment)
 
     for (segment in segments) {
@@ -261,6 +283,7 @@ fun RichContent(
     val primaryColor = MaterialTheme.colorScheme.primary
     val uriHandler = LocalUriHandler.current
     val effectiveHashtagClick = onHashtagClick ?: noteActions?.onHashtagClick
+    val effectiveRelayClick = noteActions?.onRelayClick
 
     SelectionContainer {
     Column(modifier = modifier) {
@@ -351,6 +374,26 @@ fun RichContent(
                                     withLink(
                                         LinkAnnotation.Clickable("url") {
                                             uriHandler.openUri(linkUrl)
+                                        }
+                                    ) {
+                                        withStyle(SpanStyle(color = primaryColor)) {
+                                            append(displayUrl)
+                                        }
+                                    }
+                                }
+                                is ContentSegment.InlineLinkSegment -> {
+                                    val linkUrl = seg.url
+                                    val isRelay = linkUrl.startsWith("wss://") || linkUrl.startsWith("ws://")
+                                    val displayUrl = linkUrl
+                                        .removePrefix("https://")
+                                        .removePrefix("http://")
+                                    withLink(
+                                        LinkAnnotation.Clickable("url") {
+                                            if (isRelay) {
+                                                effectiveRelayClick?.invoke(linkUrl)
+                                            } else {
+                                                uriHandler.openUri(linkUrl)
+                                            }
                                         }
                                     ) {
                                         withStyle(SpanStyle(color = primaryColor)) {
