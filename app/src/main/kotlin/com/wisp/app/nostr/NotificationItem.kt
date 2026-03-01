@@ -21,20 +21,20 @@ sealed class NotificationGroup {
     abstract val groupId: String
     abstract val latestTimestamp: Long
 
+    companion object {
+        /** Sentinel key used in ReactionGroup.reactions to represent reposts. */
+        const val REPOST_EMOJI = "__repost__"
+        /** Sentinel key used in ReactionGroup.reactions to represent zaps. */
+        const val ZAP_EMOJI = "__zap__"
+    }
+
     data class ReactionGroup(
         override val groupId: String,
         val referencedEventId: String,
         val reactions: Map<String, List<String>>, // emoji -> list of pubkeys
         val reactionTimestamps: Map<String, Long> = emptyMap(), // pubkey -> created_at
         val emojiUrls: Map<String, String> = emptyMap(), // ":shortcode:" -> url for custom emojis
-        override val latestTimestamp: Long
-    ) : NotificationGroup()
-
-    data class ZapGroup(
-        override val groupId: String,
-        val referencedEventId: String,
-        val zaps: List<ZapEntry>,
-        val totalSats: Long,
+        val zapEntries: List<ZapEntry> = emptyList(),
         override val latestTimestamp: Long
     ) : NotificationGroup()
 
@@ -60,19 +60,4 @@ sealed class NotificationGroup {
         override val latestTimestamp: Long
     ) : NotificationGroup()
 
-    data class RepostNotification(
-        override val groupId: String,
-        val senderPubkey: String,
-        val repostEventId: String,
-        val repostedEventId: String,
-        override val latestTimestamp: Long
-    ) : NotificationGroup()
-
-    data class RepostGroup(
-        override val groupId: String,
-        val repostedEventId: String,
-        val reposters: List<String>, // pubkeys, newest first
-        val repostTimestamps: Map<String, Long>, // pubkey -> created_at
-        override val latestTimestamp: Long
-    ) : NotificationGroup()
 }
