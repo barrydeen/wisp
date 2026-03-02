@@ -563,32 +563,45 @@ class StartupCoordinator(
             subManager.awaitEoseWithTimeout("self-notes", timeoutMs = 5_000)
             subManager.closeSubscription("self-notes")
 
-            // Subscribe for replies via e-tags on our own posts.
-            // Catches replies where the replier's client omits the p-tag.
-            val myEventIds = eventRepo.getRecentEventIdsByAuthor(myPubkey, limit = 100)
-            if (myEventIds.isNotEmpty()) {
-                val replyReqMsg = ClientMessage.req(
-                    "notif-replies-etag",
-                    Filter(kinds = listOf(1), eTags = myEventIds, limit = 200)
-                )
-                relayPool.sendToReadRelays(replyReqMsg)
-                // Replies often land on the relay where the original note was posted
-                val readUrls2 = relayPool.getReadRelayUrls().toSet()
-                val writeNotInRead = relayPool.getWriteRelayUrls().filter { it !in readUrls2 }
-                for (url in writeNotInRead) {
-                    relayPool.sendToRelay(url, replyReqMsg)
-                }
-                val topScored2 = relayScoreBoard.getScoredRelays()
-                    .take(5)
-                    .map { it.url }
-                    .filter { it !in readUrls2 && it !in writeNotInRead.toSet() }
-                for (url in topScored2) {
-                    relayPool.sendToRelay(url, replyReqMsg)
-                }
-                subManager.awaitEoseWithTimeout("notif-replies-etag", timeoutMs = 5_000)
-            }
+            refreshNotifRepliesEtag(myPubkey)
 
             feedSub.subscribeNotifEngagement()
+        }
+    }
+
+    /**
+     * Subscribe for replies via e-tags on our own posts.
+     * Catches replies where the replier's client omits the p-tag.
+     * Extracted so it can be re-called after publishing a note without
+     * re-running the full DM/notification setup.
+     */
+    fun refreshNotifRepliesEtag(myPubkey: String? = pubkeyHex) {
+        val pk = myPubkey ?: return
+        val myEventIds = eventRepo.getRecentEventIdsByAuthor(pk, limit = 100)
+        if (myEventIds.isEmpty()) return
+
+        val filters = myEventIds.chunked(OutboxRouter.MAX_ETAGS_PER_FILTER).map { chunk ->
+            Filter(kinds = listOf(1), eTags = chunk, limit = 200)
+        }
+        val replyReqMsg = if (filters.size == 1) ClientMessage.req("notif-replies-etag", filters[0])
+        else ClientMessage.req("notif-replies-etag", filters)
+
+        relayPool.sendToReadRelays(replyReqMsg)
+        // Replies often land on the relay where the original note was posted
+        val readUrls2 = relayPool.getReadRelayUrls().toSet()
+        val writeNotInRead = relayPool.getWriteRelayUrls().filter { it !in readUrls2 }
+        for (url in writeNotInRead) {
+            relayPool.sendToRelay(url, replyReqMsg)
+        }
+        val topScored2 = relayScoreBoard.getScoredRelays()
+            .take(5)
+            .map { it.url }
+            .filter { it !in readUrls2 && it !in writeNotInRead.toSet() }
+        for (url in topScored2) {
+            relayPool.sendToRelay(url, replyReqMsg)
+        }
+        scope.launch {
+            subManager.awaitEoseWithTimeout("notif-replies-etag", timeoutMs = 5_000)
         }
     }
 

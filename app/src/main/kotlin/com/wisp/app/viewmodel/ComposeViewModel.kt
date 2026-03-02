@@ -238,7 +238,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         quoteTo: NostrEvent? = null,
         onSuccess: () -> Unit = {},
         outboxRouter: OutboxRouter? = null,
-        signer: NostrSigner? = null
+        signer: NostrSigner? = null,
+        onNotePublished: (() -> Unit)? = null
     ) {
         val text = _content.value.text.trim()
 
@@ -254,7 +255,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
 
         _publishing.value = true
-        startCountdown(text, s, relayPool, replyTo, quoteTo, outboxRouter, onSuccess)
+        startCountdown(text, s, relayPool, replyTo, quoteTo, outboxRouter, onSuccess, onNotePublished)
     }
 
     private fun startCountdown(
@@ -264,7 +265,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         replyTo: NostrEvent?,
         quoteTo: NostrEvent?,
         outboxRouter: OutboxRouter?,
-        onSuccess: () -> Unit
+        onSuccess: () -> Unit,
+        onNotePublished: (() -> Unit)? = null
     ) {
         countdownJob?.cancel()
         pendingPublish = {
@@ -272,6 +274,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 try {
                     val sentCount = publishNote(content, signer, relayPool, replyTo, quoteTo, outboxRouter)
                     if (sentCount == 0) return@launch
+                    onNotePublished?.invoke()
                     onSuccess()
                 } catch (e: Exception) {
                     _error.value = "Failed to publish: ${e.message}"

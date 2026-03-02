@@ -572,7 +572,8 @@ fun WispNavHost(
                 eventRepo = feedViewModel.eventRepo,
                 profileRepo = feedViewModel.profileRepo,
                 userPubkey = feedViewModel.getUserPubkey(),
-                signer = activeSigner
+                signer = activeSigner,
+                onNotePublished = { feedViewModel.refreshNotifRepliesEtag() }
             )
         }
 

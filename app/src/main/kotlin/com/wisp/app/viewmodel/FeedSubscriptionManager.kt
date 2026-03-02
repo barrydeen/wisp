@@ -690,9 +690,12 @@ class FeedSubscriptionManager(
 
         val zapSubId = "engage-notif-zap"
         activeEngagementSubIds.add(zapSubId)
-        relayPool.sendToReadRelays(
-            ClientMessage.req(zapSubId, Filter(kinds = listOf(9735), eTags = eventIds))
-        )
+        val zapFilters = eventIds.chunked(OutboxRouter.MAX_ETAGS_PER_FILTER).map { chunk ->
+            Filter(kinds = listOf(9735), eTags = chunk)
+        }
+        val zapMsg = if (zapFilters.size == 1) ClientMessage.req(zapSubId, zapFilters[0])
+        else ClientMessage.req(zapSubId, zapFilters)
+        relayPool.sendToReadRelays(zapMsg)
     }
 
     /** Reset state for account switch. */

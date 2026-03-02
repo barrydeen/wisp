@@ -17,6 +17,12 @@ class OutboxRouter(
          * their limit. Keeping author lists ≤200 per REQ avoids "total filter items too large".
          */
         private const val MAX_AUTHORS_PER_FILTER = 200
+
+        /**
+         * Maximum number of e-tags per filter. Relays reject REQs when total filter items
+         * exceed their limit. Chunking e-tags into multi-filter REQs avoids silent rejections.
+         */
+        const val MAX_ETAGS_PER_FILTER = 150
     }
 
     /**
@@ -387,8 +393,12 @@ class OutboxRouter(
 
         for ((relayUrl, eventIds) in relayToEventIds) {
             val uniqueIds = eventIds.distinct()
-            val filter = Filter(kinds = listOf(1, 5, 6, 7, 9735), eTags = uniqueIds, limit = 500)
-            if (relayPool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(prefix, filter))) {
+            val filters = uniqueIds.chunked(MAX_ETAGS_PER_FILTER).map { chunk ->
+                Filter(kinds = listOf(1, 5, 6, 7, 9735), eTags = chunk, limit = 500)
+            }
+            val msg = if (filters.size == 1) ClientMessage.req(prefix, filters[0])
+            else ClientMessage.req(prefix, filters)
+            if (relayPool.sendToRelayOrEphemeral(relayUrl, msg)) {
                 targetedRelays.add(relayUrl)
             }
         }
@@ -396,8 +406,12 @@ class OutboxRouter(
         // Fallback: authors without known relay lists → send to our read relays
         if (fallbackEventIds.isNotEmpty()) {
             val uniqueIds = fallbackEventIds.distinct()
-            val filter = Filter(kinds = listOf(1, 5, 6, 7, 9735), eTags = uniqueIds, limit = 500)
-            relayPool.sendToReadRelays(ClientMessage.req(prefix, filter))
+            val filters = uniqueIds.chunked(MAX_ETAGS_PER_FILTER).map { chunk ->
+                Filter(kinds = listOf(1, 5, 6, 7, 9735), eTags = chunk, limit = 500)
+            }
+            val msg = if (filters.size == 1) ClientMessage.req(prefix, filters[0])
+            else ClientMessage.req(prefix, filters)
+            relayPool.sendToReadRelays(msg)
         }
 
         // Safety net: send engagement queries for ALL event IDs to high-coverage relays.
@@ -405,8 +419,11 @@ class OutboxRouter(
         if (safetyNetRelays.isNotEmpty()) {
             val allEventIds = eventsByAuthor.values.flatten().distinct()
             if (allEventIds.isNotEmpty()) {
-                val filter = Filter(kinds = listOf(1, 5, 6, 7, 9735), eTags = allEventIds, limit = 500)
-                val msg = ClientMessage.req(prefix, filter)
+                val filters = allEventIds.chunked(MAX_ETAGS_PER_FILTER).map { chunk ->
+                    Filter(kinds = listOf(1, 5, 6, 7, 9735), eTags = chunk, limit = 500)
+                }
+                val msg = if (filters.size == 1) ClientMessage.req(prefix, filters[0])
+                else ClientMessage.req(prefix, filters)
                 for (url in safetyNetRelays) {
                     if (relayPool.sendToRelayOrEphemeral(url, msg)) {
                         targetedRelays.add(url)

@@ -141,7 +141,7 @@ class MetadataFetcher(
     fun addToPendingReplyCounts(eventId: String) {
         synchronized(pendingReplyCountIds) {
             pendingReplyCountIds.add(eventId)
-            val shouldFlushNow = pendingReplyCountIds.size >= 200
+            val shouldFlushNow = pendingReplyCountIds.size >= 150
             if (shouldFlushNow) {
                 replyCountBatchJob?.cancel()
                 flushReplyCountBatch()
@@ -157,7 +157,7 @@ class MetadataFetcher(
     fun addToPendingZapCounts(eventId: String) {
         synchronized(pendingZapCountIds) {
             pendingZapCountIds.add(eventId)
-            val shouldFlushNow = pendingZapCountIds.size >= 200
+            val shouldFlushNow = pendingZapCountIds.size >= 150
             if (shouldFlushNow) {
                 zapCountBatchJob?.cancel()
                 flushZapCountBatch()

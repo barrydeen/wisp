@@ -100,7 +100,8 @@ fun ComposeScreen(
     eventRepo: EventRepository? = null,
     profileRepo: ProfileRepository? = null,
     userPubkey: String? = null,
-    signer: com.wisp.app.nostr.NostrSigner? = null
+    signer: com.wisp.app.nostr.NostrSigner? = null,
+    onNotePublished: (() -> Unit)? = null
 ) {
     val content by viewModel.content.collectAsState()
     val publishing by viewModel.publishing.collectAsState()
@@ -522,7 +523,8 @@ fun ComposeScreen(
                                 quoteTo = quoteTo,
                                 onSuccess = { onBack() },
                                 outboxRouter = outboxRouter,
-                                signer = signer
+                                signer = signer,
+                                onNotePublished = onNotePublished
                             )
                         },
                         enabled = !publishing,
