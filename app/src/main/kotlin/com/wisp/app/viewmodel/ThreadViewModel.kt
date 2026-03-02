@@ -127,6 +127,7 @@ class ThreadViewModel : ViewModel() {
                 eventRepo.cacheEvent(event)
                 eventRepo.addEventRelay(event.id, relayUrl)
 
+                if (Nip10.isStandaloneQuote(event)) return@collect
                 val isNew = event.id !in threadEvents
                 threadEvents[event.id] = event
                 if (event.id == rootId) {
@@ -332,6 +333,7 @@ class ThreadViewModel : ViewModel() {
         for (event in threadEvents.values) {
             if (event.id == rootId) continue
             if (muteRepo?.isBlocked(event.pubkey) == true) continue
+            if (Nip10.isStandaloneQuote(event)) continue
             var parentId = Nip10.getReplyTarget(event) ?: rootId
             if (parentId != rootId && parentId !in threadEvents) {
                 parentId = rootId

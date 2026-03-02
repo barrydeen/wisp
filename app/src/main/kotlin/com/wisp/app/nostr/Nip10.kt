@@ -31,6 +31,19 @@ object Nip10 {
         return eTags.firstOrNull()?.get(1)
     }
 
+    /**
+     * Returns true if the event is a standalone quote (has a `q` tag but no marked
+     * `e` tags with root/reply markers). These should not appear in thread views.
+     */
+    fun isStandaloneQuote(event: NostrEvent): Boolean {
+        val hasQTag = event.tags.any { it.size >= 2 && it[0] == "q" }
+        if (!hasQTag) return false
+        val hasMarkedETag = event.tags.any {
+            it.size >= 4 && it[0] == "e" && (it[3] == "root" || it[3] == "reply")
+        }
+        return !hasMarkedETag
+    }
+
     fun buildReplyTags(replyTo: NostrEvent, relayHint: String = ""): List<List<String>> {
         val tags = mutableListOf<List<String>>()
 

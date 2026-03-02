@@ -600,8 +600,19 @@ class StartupCoordinator(
         for (url in topScored2) {
             relayPool.sendToRelay(url, replyReqMsg)
         }
+        // Also subscribe for quotes of our posts via #q tags
+        val quoteFilters = myEventIds.chunked(OutboxRouter.MAX_ETAGS_PER_FILTER).map { chunk ->
+            Filter(kinds = listOf(1), qTags = chunk, limit = 200)
+        }
+        val quoteReqMsg = if (quoteFilters.size == 1) ClientMessage.req("notif-quotes-qtag", quoteFilters[0])
+        else ClientMessage.req("notif-quotes-qtag", quoteFilters)
+        relayPool.sendToReadRelays(quoteReqMsg)
+        for (url in writeNotInRead) relayPool.sendToRelay(url, quoteReqMsg)
+        for (url in topScored2) relayPool.sendToRelay(url, quoteReqMsg)
+
         scope.launch {
             subManager.awaitEoseWithTimeout("notif-replies-etag", timeoutMs = 5_000)
+            subManager.awaitEoseWithTimeout("notif-quotes-qtag", timeoutMs = 5_000)
         }
     }
 

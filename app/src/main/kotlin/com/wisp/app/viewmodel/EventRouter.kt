@@ -114,6 +114,16 @@ class EventRouter(
                     metadataFetcher.addToPendingProfiles(event.pubkey)
                 }
             }
+        } else if (subscriptionId == "notif-quotes-qtag") {
+            if (muteRepo.isBlocked(event.pubkey)) return
+            val myPubkey = getUserPubkey()
+            if (myPubkey != null && event.kind == 1) {
+                eventRepo.cacheEvent(event)
+                notifRepo.addEvent(event, myPubkey)
+                if (eventRepo.getProfileData(event.pubkey) == null) {
+                    metadataFetcher.addToPendingProfiles(event.pubkey)
+                }
+            }
         } else if (subscriptionId == "self-notes") {
             eventRepo.cacheEvent(event)
             if (event.kind == 1) {
