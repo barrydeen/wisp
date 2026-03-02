@@ -411,6 +411,7 @@ fun WispNavHost(
                         feedViewModel.reloadForNewAccount()
                         relayViewModel.reload()
                         blossomServersViewModel.reload()
+                        composeViewModel.reloadBlossomRepo()
                         // Start relay connections immediately so TCP/TLS handshakes
                         // run in parallel with the onboarding welcome animation
                         feedViewModel.initRelays()
@@ -1279,6 +1280,7 @@ fun WispNavHost(
                     feedViewModel.reloadForNewAccount()
                     relayViewModel.reload()
                     blossomServersViewModel.reload()
+                    composeViewModel.reloadBlossomRepo()
                     feedViewModel.initRelays()
                     walletViewModel.refreshState()
                     navController.navigate(Routes.LOADING) {

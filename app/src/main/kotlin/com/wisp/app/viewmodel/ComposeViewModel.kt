@@ -41,6 +41,10 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     private val keyRepo = KeyRepository(app)
     val blossomRepo = BlossomRepository(app, keyRepo.getPubkeyHex())
 
+    fun reloadBlossomRepo() {
+        blossomRepo.reload(keyRepo.getPubkeyHex())
+    }
+
     private val _content = MutableStateFlow(
         TextFieldValue(savedStateHandle.get<String>("draft_content") ?: "")
     )
