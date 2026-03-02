@@ -177,7 +177,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun addEvent(event: NostrEvent) {
         if (!seenEventIds.add(event.id)) return  // atomic dedup across all relay threads
-        if (event.created_at > System.currentTimeMillis() / 1000) return  // reject future-dated notes
+        if (event.created_at > System.currentTimeMillis() / 1000 + 30) return  // reject future-dated notes (30s grace for clock skew)
         if (muteRepo?.isBlocked(event.pubkey) == true) return
         if (event.kind == 1 && muteRepo?.containsMutedWord(event.content) == true) return
         if (deletedEventsRepo?.isDeleted(event.id) == true) return
@@ -670,7 +670,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     // -- Isolated relay feed methods --
 
     fun addRelayFeedEvent(event: NostrEvent) {
-        if (event.created_at > System.currentTimeMillis() / 1000) return  // reject future-dated notes
+        if (event.created_at > System.currentTimeMillis() / 1000 + 30) return  // reject future-dated notes (30s grace for clock skew)
         if (muteRepo?.isBlocked(event.pubkey) == true) return
         if (deletedEventsRepo?.isDeleted(event.id) == true) return
 
