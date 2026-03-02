@@ -20,6 +20,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -67,6 +68,7 @@ dependencies {
     implementation(libs.media3.ui)
     implementation(libs.biometric)
     implementation(libs.splashscreen)
+    implementation(libs.profileinstaller)
     implementation(libs.zxing.core)
     implementation(libs.kmp.tor.runtime)
     implementation(libs.kmp.tor.resource.exec)

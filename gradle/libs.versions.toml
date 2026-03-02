@@ -11,6 +11,7 @@ bouncycastle = "1.78.1"
 media3 = "1.5.1"
 biometric = "1.1.0"
 coroutines = "1.9.0"
+profileinstaller = "1.4.1"
 splashscreen = "1.0.1"
 zxing = "3.5.3"
 kmp-tor = "2.0.0"
@@ -45,6 +46,7 @@ media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", versi
 media3-exoplayer-hls = { group = "androidx.media3", name = "media3-exoplayer-hls", version.ref = "media3" }
 media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
 biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
+profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "profileinstaller" }
 splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashscreen" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 kmp-tor-runtime = { group = "io.matthewnelson.kmp-tor", name = "runtime", version.ref = "kmp-tor" }

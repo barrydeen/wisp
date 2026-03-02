@@ -1,0 +1,13 @@
+HSPLcom/wisp/app/MainActivity;->**(**)**
+HSPLcom/wisp/app/MainActivityKt;->**(**)**
+
+HSPLcom/wisp/app/viewmodel/**;->**(**)**
+HSPLcom/wisp/app/repo/**;->**(**)**
+HSPLcom/wisp/app/relay/**;->**(**)**
+HSPLcom/wisp/app/nostr/**;->**(**)**
+
+HSPLcom/wisp/app/ui/screen/FeedScreenKt;->**(**)**
+HSPLcom/wisp/app/ui/screen/AuthScreenKt;->**(**)**
+HSPLcom/wisp/app/ui/screen/LoadingScreenKt;->**(**)**
+HSPLcom/wisp/app/ui/component/**;->**(**)**
+HSPLcom/wisp/app/ui/navigation/**;->**(**)**
