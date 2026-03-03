@@ -41,6 +41,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
@@ -477,12 +478,11 @@ class StartupCoordinator(
 
         // EOSE and events travel on separate SharedFlows, so the kind 3 event may still
         // be buffered in relayEvents waiting for the processing loop on Dispatchers.Default.
-        // Poll briefly to let it catch up before the caller reads the follow list.
-        if (contactRepo.getFollowList().isEmpty() && eoseCount > 0) {
-            withTimeoutOrNull(2_000) {
-                while (contactRepo.getFollowList().isEmpty()) {
-                    delay(50)
-                }
+        // Wait reactively for the follow list to arrive rather than polling — this handles
+        // both slow event processing and cases where EOSE times out but events still arrive.
+        if (contactRepo.getFollowList().isEmpty()) {
+            withTimeoutOrNull(5_000) {
+                contactRepo.followList.first { it.isNotEmpty() }
             }
         }
 
