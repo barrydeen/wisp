@@ -4,6 +4,7 @@ import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.CustomEmoji
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip02
+import com.wisp.app.nostr.Nip13
 import com.wisp.app.nostr.Nip25
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip51
@@ -23,8 +24,11 @@ import com.wisp.app.repo.NwcRepository
 import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.CustomEmojiRepository
 import com.wisp.app.repo.DeletedEventsRepository
+import com.wisp.app.repo.PowPreferences
 import com.wisp.app.repo.ZapSender
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -48,6 +52,7 @@ class SocialActionManager(
     private val nwcRepo: NwcRepository,
     private val customEmojiRepo: CustomEmojiRepository,
     private val zapSender: ZapSender,
+    private val powPrefs: PowPreferences,
     private val scope: CoroutineScope,
     private val getSigner: () -> NostrSigner?,
     private val getUserPubkey: () -> String?
@@ -153,7 +158,7 @@ class SocialActionManager(
                     eventRepo.removeReaction(event.id, myPubkey, emoji)
                 } else {
                     val shortcodeMatch = Nip30.shortcodeRegex.matchEntire(emoji)
-                    val tags = if (shortcodeMatch != null) {
+                    var tags: List<List<String>> = if (shortcodeMatch != null) {
                         val shortcode = shortcodeMatch.groupValues[1]
                         val url = customEmojiRepo.resolvedEmojis.value[shortcode]
                         if (url != null) {
@@ -166,7 +171,27 @@ class SocialActionManager(
                     } else {
                         Nip25.buildReactionTags(event)
                     }
-                    val reactionEvent = s.signEvent(kind = 7, content = emoji, tags = tags)
+
+                    val createdAt: Long
+                    if (powPrefs.isReactionPowEnabled()) {
+                        val pinned = System.currentTimeMillis() / 1000
+                        val result = withContext(Dispatchers.Default) {
+                            Nip13.mine(
+                                pubkeyHex = myPubkey,
+                                kind = 7,
+                                content = emoji,
+                                tags = tags,
+                                targetDifficulty = powPrefs.getReactionDifficulty(),
+                                createdAt = pinned
+                            )
+                        }
+                        tags = result.tags
+                        createdAt = result.createdAt
+                    } else {
+                        createdAt = System.currentTimeMillis() / 1000
+                    }
+
+                    val reactionEvent = s.signEvent(kind = 7, content = emoji, tags = tags, createdAt = createdAt)
                     val msg = ClientMessage.event(reactionEvent)
                     outboxRouter.publishToInbox(msg, event.pubkey)
                     eventRepo.addEvent(reactionEvent)

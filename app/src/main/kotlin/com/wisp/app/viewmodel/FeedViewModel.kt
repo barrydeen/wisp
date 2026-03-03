@@ -35,6 +35,7 @@ import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.repo.NwcRepository
 import com.wisp.app.repo.CustomEmojiRepository
+import com.wisp.app.repo.PowPreferences
 import com.wisp.app.repo.ZapPreferences
 import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayInfoRepository
@@ -160,6 +161,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val customEmojiRepo = CustomEmojiRepository(app, pubkeyHex)
     val translationRepo = TranslationRepository()
     val zapPrefs = ZapPreferences(app, pubkeyHex)
+    val powPrefs = PowPreferences(app)
     private val processingDispatcher = Dispatchers.Default
 
     val metadataFetcher = MetadataFetcher(
@@ -174,6 +176,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     val nwcRepo = NwcRepository(app, relayPool, pubkeyHex)
     val zapSender = ZapSender(keyRepo, nwcRepo, relayPool, relayListRepo, HttpClientFactory.createRelayClient())
+    val powManager = PowManager(powPrefs, relayPool, outboxRouter, eventRepo, viewModelScope)
 
     // -- Manager classes --
     val feedSub: FeedSubscriptionManager = FeedSubscriptionManager(
@@ -195,7 +198,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     val socialActions: SocialActionManager = SocialActionManager(
         relayPool, outboxRouter, eventRepo, contactRepo, muteRepo, notifRepo, dmRepo,
-        pinRepo, deletedEventsRepo, nwcRepo, customEmojiRepo, zapSender, viewModelScope,
+        pinRepo, deletedEventsRepo, nwcRepo, customEmojiRepo, zapSender, powPrefs, viewModelScope,
         getSigner = { signer },
         getUserPubkey = { getUserPubkey() }
     )

@@ -77,7 +77,9 @@ import com.wisp.app.relay.BroadcastState
 import com.wisp.app.viewmodel.FeedType
 import com.wisp.app.viewmodel.FeedViewModel
 import com.wisp.app.viewmodel.InitLoadingState
+import com.wisp.app.viewmodel.PowStatus
 import com.wisp.app.viewmodel.RelayFeedStatus
+import androidx.compose.material.icons.filled.Close
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -112,6 +114,7 @@ fun FeedScreen(
     onCustomEmojis: () -> Unit = {},
     onConsole: () -> Unit = {},
     onKeys: () -> Unit = {},
+    onPowSettings: () -> Unit = {},
     onAddToList: (String) -> Unit = {},
     onRelayDetail: (String) -> Unit = {},
     onHashtagClick: ((String) -> Unit)? = null,
@@ -338,6 +341,10 @@ fun FeedScreen(
                 onKeys = {
                     scope.launch { drawerState.close() }
                     onKeys()
+                },
+                onPowSettings = {
+                    scope.launch { drawerState.close() }
+                    onPowSettings()
                 },
                 onConsole = {
                     scope.launch { drawerState.close() }
@@ -1658,15 +1665,19 @@ private fun RelayFeedEmptyState(
 @Composable
 fun BroadcastStatusBar(
     broadcastState: BroadcastState?,
+    powStatus: PowStatus = PowStatus.Idle,
+    onCancelMining: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val showPow = powStatus !is PowStatus.Idle
+    val showBroadcast = broadcastState != null && !showPow
+
     AnimatedVisibility(
-        visible = broadcastState != null,
+        visible = showPow || showBroadcast,
         enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
         exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
         modifier = modifier
     ) {
-        val state = broadcastState ?: return@AnimatedVisibility
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,
@@ -1676,23 +1687,70 @@ fun BroadcastStatusBar(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (state.accepted < state.sent) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
-                        strokeWidth = 1.5.dp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.width(8.dp))
+                when (powStatus) {
+                    is PowStatus.Mining -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 1.5.dp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "Mining PoW (${powStatus.attempts / 1000}k)...",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (onCancelMining != null) {
+                            Spacer(Modifier.width(8.dp))
+                            IconButton(
+                                onClick = onCancelMining,
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Cancel mining",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    is PowStatus.Done -> {
+                        Text(
+                            text = powStatus.message,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    is PowStatus.Failed -> {
+                        Text(
+                            text = powStatus.message,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    is PowStatus.Idle -> {
+                        // Show broadcast state
+                        val state = broadcastState ?: return@Row
+                        if (state.accepted < state.sent) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 1.5.dp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(
+                            text = if (state.accepted < state.sent) {
+                                "Broadcasting (${state.accepted}/${state.sent})"
+                            } else {
+                                "Published to ${state.accepted} relay${if (state.accepted != 1) "s" else ""}"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-                Text(
-                    text = if (state.accepted < state.sent) {
-                        "Broadcasting (${state.accepted}/${state.sent})"
-                    } else {
-                        "Published to ${state.accepted} relay${if (state.accepted != 1) "s" else ""}"
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }

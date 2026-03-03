@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
@@ -75,6 +76,7 @@ fun WispDrawerContent(
     onKeys: () -> Unit = {},
     onSocialGraph: () -> Unit = {},
     onSafety: () -> Unit = {},
+    onPowSettings: () -> Unit = {},
     onCustomEmojis: () -> Unit = {},
     onConsole: () -> Unit = {},
     onRelaySettings: () -> Unit,
@@ -269,6 +271,13 @@ fun WispDrawerContent(
                     label = { Text("Safety") },
                     selected = false,
                     onClick = onSafety,
+                    modifier = Modifier.padding(start = 36.dp, end = 12.dp)
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Outlined.Shield, contentDescription = null) },
+                    label = { Text("Proof of Work") },
+                    selected = false,
+                    onClick = onPowSettings,
                     modifier = Modifier.padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
