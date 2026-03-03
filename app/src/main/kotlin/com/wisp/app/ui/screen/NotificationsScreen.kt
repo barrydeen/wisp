@@ -53,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -139,8 +140,12 @@ fun NotificationsScreen(
         )
     }
 
+    var handledScrollTrigger by rememberSaveable { mutableStateOf(scrollToTopTrigger) }
     LaunchedEffect(scrollToTopTrigger) {
-        if (scrollToTopTrigger > 0) listState.scrollToItem(0)
+        if (scrollToTopTrigger != handledScrollTrigger) {
+            handledScrollTrigger = scrollToTopTrigger
+            listState.scrollToItem(0)
+        }
     }
 
     // Version flows for cache invalidation on reply PostCards
