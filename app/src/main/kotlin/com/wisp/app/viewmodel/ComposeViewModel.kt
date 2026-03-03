@@ -356,8 +356,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             }
         }
         val existingEventIds = tags.filter { it.firstOrNull() == "e" }.map { it[1] }.toSet()
+        val quoteEventId = quoteTo?.id
         for (eventId in mentionedEventIds) {
-            if (eventId !in existingEventIds) {
+            if (eventId !in existingEventIds && eventId != quoteEventId) {
                 tags.add(listOf("e", eventId, "", "mention"))
             }
         }
