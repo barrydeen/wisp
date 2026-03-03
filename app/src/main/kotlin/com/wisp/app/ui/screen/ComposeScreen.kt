@@ -88,6 +88,9 @@ import com.wisp.app.ui.component.MentionVisualTransformation
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
 import com.wisp.app.viewmodel.ComposeViewModel
+import com.wisp.app.viewmodel.PowManager
+import com.wisp.app.viewmodel.PowStatus
+import com.wisp.app.repo.PowPreferences
 import androidx.compose.foundation.border
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -103,7 +106,9 @@ fun ComposeScreen(
     profileRepo: ProfileRepository? = null,
     userPubkey: String? = null,
     signer: com.wisp.app.nostr.NostrSigner? = null,
-    onNotePublished: (() -> Unit)? = null
+    onNotePublished: (() -> Unit)? = null,
+    powManager: PowManager? = null,
+    powPrefs: PowPreferences? = null
 ) {
     val content by viewModel.content.collectAsState()
     val publishing by viewModel.publishing.collectAsState()
@@ -115,8 +120,8 @@ fun ComposeScreen(
     val mentionQuery by viewModel.mentionQuery.collectAsState()
     val explicit by viewModel.explicit.collectAsState()
     val powEnabled by viewModel.powEnabled.collectAsState()
-    val powDifficulty by viewModel.powDifficulty.collectAsState()
-    val miningProgress by viewModel.miningProgress.collectAsState()
+    val powStatus = powManager?.status?.collectAsState()?.value ?: PowStatus.Idle
+    val isMiningBusy = powStatus is PowStatus.Mining
     val context = LocalContext.current
 
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
@@ -391,7 +396,7 @@ fun ComposeScreen(
                         )
                     }
 
-                    IconButton(onClick = { viewModel.togglePow() }) {
+                    IconButton(onClick = { powPrefs?.let { viewModel.togglePow(it) } }) {
                         Icon(
                             Icons.Outlined.Shield,
                             contentDescription = "Proof of Work",
@@ -449,12 +454,13 @@ fun ComposeScreen(
                     }
                 }
 
-                // PoW settings banner
+                // PoW enabled banner
                 AnimatedVisibility(
                     visible = powEnabled,
                     enter = expandVertically() + fadeIn(),
                     exit = shrinkVertically() + fadeOut()
                 ) {
+                    val difficulty = powPrefs?.getNoteDifficulty() ?: 16
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = Color(0xFFFF9800).copy(alpha = 0.12f),
@@ -475,54 +481,11 @@ fun ComposeScreen(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = "PoW: $powDifficulty bits",
+                                text = "PoW: $difficulty bits (mined in background)",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = orange,
-                                modifier = Modifier.weight(1f)
+                                color = orange
                             )
-                            IconButton(
-                                onClick = { viewModel.setPowDifficulty(powDifficulty - 1) },
-                                enabled = powDifficulty > 16,
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Text(
-                                    "\u2212",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = orange
-                                )
-                            }
-                            IconButton(
-                                onClick = { viewModel.setPowDifficulty(powDifficulty + 1) },
-                                enabled = powDifficulty < 32,
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Text(
-                                    "+",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = orange
-                                )
-                            }
                         }
-                    }
-                }
-
-                // Mining progress
-                if (miningProgress != null) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = miningProgress ?: "",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
 
@@ -615,13 +578,20 @@ fun ComposeScreen(
                                 onSuccess = { onBack() },
                                 outboxRouter = outboxRouter,
                                 signer = signer,
-                                onNotePublished = onNotePublished
+                                onNotePublished = onNotePublished,
+                                powManager = powManager
                             )
                         },
-                        enabled = !publishing,
+                        enabled = !publishing && !isMiningBusy,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(if (publishing) "Publishing..." else "Publish")
+                        Text(
+                            when {
+                                isMiningBusy -> "Mining in progress..."
+                                publishing -> "Publishing..."
+                                else -> "Publish"
+                            }
+                        )
                     }
                 }
             }

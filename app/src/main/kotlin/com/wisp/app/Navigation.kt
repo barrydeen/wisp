@@ -68,6 +68,7 @@ import com.wisp.app.ui.screen.ListScreen
 import com.wisp.app.ui.screen.ExistingUserOnboardingScreen
 import com.wisp.app.ui.screen.LoadingScreen
 import com.wisp.app.ui.screen.ListsHubScreen
+import com.wisp.app.ui.screen.PowSettingsScreen
 import com.wisp.app.ui.screen.OnboardingScreen
 import com.wisp.app.ui.component.AddNoteToListDialog
 import com.wisp.app.ui.screen.OnboardingSuggestionsScreen
@@ -90,6 +91,7 @@ import com.wisp.app.viewmodel.DraftsViewModel
 import com.wisp.app.viewmodel.SearchViewModel
 import com.wisp.app.viewmodel.HashtagFeedViewModel
 import com.wisp.app.viewmodel.OnboardingViewModel
+import com.wisp.app.viewmodel.PowStatus
 import com.wisp.app.viewmodel.WalletViewModel
 import kotlinx.coroutines.launch
 
@@ -122,6 +124,7 @@ object Routes {
     const val EXISTING_USER_ONBOARDING = "onboarding/existing"
     const val DRAFTS = "drafts"
     const val SOCIAL_GRAPH = "social_graph"
+    const val POW_SETTINGS = "pow_settings"
 }
 
 @Composable
@@ -390,6 +393,7 @@ fun WispNavHost(
     ) { innerPadding ->
 
     val broadcastState by feedViewModel.relayPool.broadcastState.collectAsState()
+    val powStatus by feedViewModel.powManager.status.collectAsState()
 
     Box(modifier = Modifier.padding(innerPadding)) {
     NavHost(
@@ -543,6 +547,9 @@ fun WispNavHost(
                 onKeys = {
                     navController.navigate(Routes.KEYS)
                 },
+                onPowSettings = {
+                    navController.navigate(Routes.POW_SETTINGS)
+                },
                 onAddToList = { eventId -> addToListEventId = eventId },
                 onRelayDetail = { url ->
                     navController.navigate("relay_detail/${java.net.URLEncoder.encode(url, "UTF-8")}")
@@ -554,6 +561,10 @@ fun WispNavHost(
         }
 
         composable(Routes.COMPOSE) {
+            // Initialize PoW toggle from persisted preferences
+            LaunchedEffect(Unit) {
+                composeViewModel.initPowState(feedViewModel.powPrefs.isNotePowEnabled())
+            }
             // Auto-save draft when leaving compose screen (back button, navigation, etc.)
             DisposableEffect(Unit) {
                 onDispose {
@@ -573,7 +584,9 @@ fun WispNavHost(
                 profileRepo = feedViewModel.profileRepo,
                 userPubkey = feedViewModel.getUserPubkey(),
                 signer = activeSigner,
-                onNotePublished = { feedViewModel.refreshNotifRepliesEtag() }
+                onNotePublished = { feedViewModel.refreshNotifRepliesEtag() },
+                powManager = feedViewModel.powManager,
+                powPrefs = feedViewModel.powPrefs
             )
         }
 
@@ -1039,6 +1052,13 @@ fun WispNavHost(
             )
         }
 
+        composable(Routes.POW_SETTINGS) {
+            PowSettingsScreen(
+                powPrefs = feedViewModel.powPrefs,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         composable(Routes.CUSTOM_EMOJIS) {
             val emojiUploadScope = androidx.compose.runtime.rememberCoroutineScope()
             CustomEmojiScreen(
@@ -1410,6 +1430,8 @@ fun WispNavHost(
 
     BroadcastStatusBar(
         broadcastState = broadcastState,
+        powStatus = powStatus,
+        onCancelMining = { feedViewModel.powManager.cancel() },
         modifier = Modifier
             .align(Alignment.BottomCenter)
             .padding(bottom = 16.dp)

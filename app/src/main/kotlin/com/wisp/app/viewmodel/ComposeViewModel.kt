@@ -12,7 +12,6 @@ import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Keys
 import com.wisp.app.nostr.Nip10
-import com.wisp.app.nostr.Nip13
 import com.wisp.app.nostr.Nip18
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.Nip37
@@ -34,7 +33,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 private val NOSTR_URI_REGEX = Regex("nostr:(npub1[a-z0-9]{58}|nprofile1[a-z0-9]+|note1[a-z0-9]{58}|nevent1[a-z0-9]+)")
 // Matches bare bech32 IDs not already preceded by "nostr:"
@@ -84,18 +82,14 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     private val _powEnabled = MutableStateFlow(false)
     val powEnabled: StateFlow<Boolean> = _powEnabled
 
-    private val _powDifficulty = MutableStateFlow(21)
-    val powDifficulty: StateFlow<Int> = _powDifficulty
-
-    private val _miningProgress = MutableStateFlow<String?>(null)
-    val miningProgress: StateFlow<String?> = _miningProgress
-
-    fun togglePow() {
-        _powEnabled.value = !_powEnabled.value
+    fun initPowState(enabled: Boolean) {
+        _powEnabled.value = enabled
     }
 
-    fun setPowDifficulty(bits: Int) {
-        _powDifficulty.value = bits.coerceIn(16, 32)
+    fun togglePow(powPrefs: com.wisp.app.repo.PowPreferences) {
+        val newValue = !_powEnabled.value
+        _powEnabled.value = newValue
+        powPrefs.setNotePowEnabled(newValue)
     }
 
     private var mentionStartIndex: Int = -1
@@ -259,7 +253,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         onSuccess: () -> Unit = {},
         outboxRouter: OutboxRouter? = null,
         signer: NostrSigner? = null,
-        onNotePublished: (() -> Unit)? = null
+        onNotePublished: (() -> Unit)? = null,
+        powManager: PowManager? = null
     ) {
         val text = _content.value.text.trim()
 
@@ -275,7 +270,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
 
         _publishing.value = true
-        startCountdown(text, s, relayPool, replyTo, quoteTo, outboxRouter, onSuccess, onNotePublished)
+        startCountdown(text, s, relayPool, replyTo, quoteTo, outboxRouter, onSuccess, onNotePublished, powManager)
     }
 
     private fun startCountdown(
@@ -286,13 +281,14 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         quoteTo: NostrEvent?,
         outboxRouter: OutboxRouter?,
         onSuccess: () -> Unit,
-        onNotePublished: (() -> Unit)? = null
+        onNotePublished: (() -> Unit)? = null,
+        powManager: PowManager? = null
     ) {
         countdownJob?.cancel()
         pendingPublish = {
             viewModelScope.launch {
                 try {
-                    val sentCount = publishNote(content, signer, relayPool, replyTo, quoteTo, outboxRouter)
+                    val sentCount = publishNote(content, signer, relayPool, replyTo, quoteTo, outboxRouter, powManager)
                     if (sentCount == 0) return@launch
                     onNotePublished?.invoke()
                     onSuccess()
@@ -330,14 +326,15 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         pendingPublish = null
     }
 
-    /** Publishes a note and stores the event ID. Returns the number of relays sent to (0 = failure). */
+    /** Publishes a note and stores the event ID. Returns the number of relays sent to (0 = failure, -1 = handed to PowManager). */
     private suspend fun publishNote(
         content: String,
         signer: NostrSigner,
         relayPool: RelayPool,
         replyTo: NostrEvent?,
         quoteTo: NostrEvent? = null,
-        outboxRouter: OutboxRouter? = null
+        outboxRouter: OutboxRouter? = null,
+        powManager: PowManager? = null
     ): Int {
         val tags = mutableListOf<List<String>>()
         if (_explicit.value) {
@@ -372,42 +369,35 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             content
         }
 
-        // Mine proof of work if enabled
-        val finalTags: List<List<String>>
-        val finalCreatedAt: Long?
-        if (_powEnabled.value) {
-            val difficulty = _powDifficulty.value
-            val createdAt = System.currentTimeMillis() / 1000
-            _miningProgress.value = "Mining PoW ($difficulty bits)..."
-            try {
-                val result = withContext(Dispatchers.Default) {
-                    Nip13.mine(
-                        pubkeyHex = signer.pubkeyHex,
-                        kind = 1,
-                        content = finalContent,
-                        tags = tags,
-                        targetDifficulty = difficulty,
-                        createdAt = createdAt,
-                        onProgress = { attempts ->
-                            _miningProgress.value = "Mining PoW... ${attempts / 1000}k attempts"
+        // Hand off to PowManager for background mining if PoW enabled
+        if (_powEnabled.value && powManager != null) {
+            val replyPubkey = replyTo?.pubkey
+            powManager.submitNote(
+                signer = signer,
+                content = finalContent,
+                tags = tags,
+                kind = 1,
+                replyToPubkey = replyPubkey,
+                onPublished = {
+                    if (replyTo != null) {
+                        eventRepo?.addReplyCount(replyTo.id, "pow-pending")
+                        val rootId = Nip10.getRootId(replyTo)
+                        if (rootId != null && rootId != replyTo.id) {
+                            eventRepo?.addReplyCount(rootId, "pow-pending")
                         }
-                    )
+                    }
                 }
-                finalTags = result.tags
-                finalCreatedAt = result.createdAt
-            } finally {
-                _miningProgress.value = null
-            }
-        } else {
-            finalTags = tags
-            finalCreatedAt = null
+            )
+            deleteDraftOnPublish(relayPool, signer)
+            _content.value = TextFieldValue()
+            savedStateHandle.remove<String>("draft_content")
+            _uploadedUrls.value = emptyList()
+            _error.value = null
+            _publishing.value = false
+            return -1
         }
 
-        val event = if (finalCreatedAt != null) {
-            signer.signEvent(kind = 1, content = finalContent, tags = finalTags, createdAt = finalCreatedAt)
-        } else {
-            signer.signEvent(kind = 1, content = finalContent, tags = finalTags)
-        }
+        val event = signer.signEvent(kind = 1, content = finalContent, tags = tags)
         val msg = ClientMessage.event(event)
         var sentCount = if (replyTo != null && outboxRouter != null) {
             outboxRouter.publishToInbox(msg, replyTo.pubkey)
@@ -553,7 +543,6 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _uploadProgress.value = null
         _explicit.value = false
         _powEnabled.value = false
-        _miningProgress.value = null
         clearMentionState()
     }
 }
