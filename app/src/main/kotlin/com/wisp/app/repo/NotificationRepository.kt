@@ -15,7 +15,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
-class NotificationRepository(context: Context, pubkeyHex: String?) {
+class NotificationRepository(
+    context: Context,
+    pubkeyHex: String?,
+    private val muteRepo: MuteRepository? = null,
+    private val eventRepo: EventRepository? = null
+) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("wisp_notif_${pubkeyHex ?: "anon"}", Context.MODE_PRIVATE)
 
@@ -62,6 +67,10 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
             // subscriptions bypass RelayPool dedup).
             if (seenEvents.get(event.id) != null) return
             seenEvents.put(event.id, true)
+
+            val threadRoot = resolveThreadRoot(event)
+            if (threadRoot != null && muteRepo?.isThreadMuted(threadRoot) == true) return
+
             val merged = when (event.kind) {
                 6 -> mergeRepost(event)
                 7 -> mergeReaction(event)
@@ -437,6 +446,55 @@ class NotificationRepository(context: Context, pubkeyHex: String?) {
                 is NotificationGroup.MentionNotification -> group.eventId
             }
         }.distinct()
+    }
+
+    fun purgeThread(rootEventId: String) = synchronized(lock) {
+        val toRemove = mutableListOf<String>()
+        for ((key, group) in groupMap) {
+            val root = when (group) {
+                is NotificationGroup.ReactionGroup -> {
+                    val referenced = eventRepo?.getEvent(group.referencedEventId)
+                    if (referenced != null) Nip10.getRootId(referenced) ?: referenced.id
+                    else group.referencedEventId
+                }
+                is NotificationGroup.ReplyNotification -> {
+                    val referenced = eventRepo?.getEvent(group.referencedEventId ?: group.replyEventId)
+                    if (referenced != null) Nip10.getRootId(referenced) ?: referenced.id
+                    else group.referencedEventId ?: group.replyEventId
+                }
+                is NotificationGroup.QuoteNotification -> null
+                is NotificationGroup.MentionNotification -> null
+            }
+            if (root == rootEventId) toRemove.add(key)
+        }
+        if (toRemove.isNotEmpty()) {
+            toRemove.forEach { groupMap.remove(it) }
+            rebuildSortedList()
+        }
+    }
+
+    private fun resolveThreadRoot(event: NostrEvent): String? {
+        return when (event.kind) {
+            1 -> Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
+            7 -> {
+                val refId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+                    ?: return null
+                val refEvent = eventRepo?.getEvent(refId)
+                if (refEvent != null) Nip10.getRootId(refEvent) ?: refId else refId
+            }
+            6 -> {
+                val refId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+                    ?: return null
+                val refEvent = eventRepo?.getEvent(refId)
+                if (refEvent != null) Nip10.getRootId(refEvent) ?: refId else refId
+            }
+            9735 -> {
+                val refId = Nip57.getZappedEventId(event) ?: return null
+                val refEvent = eventRepo?.getEvent(refId)
+                if (refEvent != null) Nip10.getRootId(refEvent) ?: refId else refId
+            }
+            else -> null
+        }
     }
 
     companion object {

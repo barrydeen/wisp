@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.BorderStroke
 import coil3.compose.AsyncImage
+import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NotificationGroup
@@ -99,6 +100,7 @@ fun NotificationsScreen(
     onZap: (NostrEvent) -> Unit = {},
     onFollowToggle: (String) -> Unit = {},
     onBlockUser: (String) -> Unit = {},
+    onMuteThread: (String) -> Unit = {},
     onAddToList: (String) -> Unit = {},
     nip05Repo: Nip05Repository? = null,
     isZapAnimating: (String) -> Boolean = { false },
@@ -285,6 +287,7 @@ fun NotificationsScreen(
                             onZap = onZap,
                             onFollowToggle = onFollowToggle,
                             onBlockUser = onBlockUser,
+                            onMuteThread = onMuteThread,
                             onAddToList = onAddToList,
                             nip05Repo = nip05Repo,
                             isZapAnimating = isZapAnimating,
@@ -323,6 +326,7 @@ fun NotificationsScreen(
                             onZap = onZap,
                             onFollowToggle = onFollowToggle,
                             onBlockUser = onBlockUser,
+                            onMuteThread = onMuteThread,
                             onAddToList = onAddToList,
                             nip05Repo = nip05Repo,
                             isZapAnimating = isZapAnimating,
@@ -438,6 +442,7 @@ private fun NotificationItem(
     onZap: (NostrEvent) -> Unit,
     onFollowToggle: (String) -> Unit,
     onBlockUser: (String) -> Unit,
+    onMuteThread: (String) -> Unit = {},
     onAddToList: (String) -> Unit = {},
     nip05Repo: Nip05Repository?,
     isZapAnimating: (String) -> Boolean,
@@ -471,6 +476,7 @@ private fun NotificationItem(
         onZap = onZap,
         onFollowToggle = onFollowToggle,
         onBlockUser = onBlockUser,
+        onMuteThread = onMuteThread,
         onAddToList = onAddToList,
         nip05Repo = nip05Repo,
         isZapAnimating = isZapAnimating,
@@ -887,6 +893,7 @@ private data class NotifPostCardParams(
     val onZap: (NostrEvent) -> Unit,
     val onFollowToggle: (String) -> Unit,
     val onBlockUser: (String) -> Unit,
+    val onMuteThread: (String) -> Unit = {},
     val onAddToList: (String) -> Unit,
     val nip05Repo: Nip05Repository?,
     val isZapAnimating: (String) -> Boolean,
@@ -997,6 +1004,10 @@ private fun ReferencedNotePostCard(
         onNavigateToProfileFromDetails = params.onProfileClick,
         onFollowAuthor = { params.onFollowToggle(event.pubkey) },
         onBlockAuthor = { params.onBlockUser(event.pubkey) },
+        onMuteThread = {
+            val rootId = Nip10.getRootId(event) ?: event.id
+            params.onMuteThread(rootId)
+        },
         isFollowingAuthor = followingAuthor,
         isOwnEvent = event.pubkey == params.userPubkey,
         nip05Repo = params.nip05Repo,

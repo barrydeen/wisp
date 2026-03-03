@@ -111,6 +111,11 @@ class SocialActionManager(
         publishMuteList()
     }
 
+    fun muteThread(rootEventId: String) {
+        muteRepo.muteThread(rootEventId)
+        notifRepo.purgeThread(rootEventId)
+    }
+
     fun updateMutedWords() {
         publishMuteList()
     }

@@ -121,6 +121,7 @@ fun PostCard(
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
     onOpenEmojiLibrary: (() -> Unit)? = null,
+    onMuteThread: (() -> Unit)? = null,
     translationState: TranslationState = TranslationState(),
     onTranslate: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -321,6 +322,15 @@ fun PostCard(
                             onClick = {
                                 menuExpanded = false
                                 onBlockAuthor()
+                            }
+                        )
+                    }
+                    if (onMuteThread != null) {
+                        DropdownMenuItem(
+                            text = { Text("Mute Thread") },
+                            onClick = {
+                                menuExpanded = false
+                                onMuteThread()
                             }
                         )
                     }

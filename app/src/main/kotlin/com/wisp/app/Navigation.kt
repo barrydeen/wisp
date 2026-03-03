@@ -1403,6 +1403,7 @@ fun WispNavHost(
                 onZap = { event -> notifZapTarget = event },
                 onFollowToggle = { pubkey -> feedViewModel.toggleFollow(pubkey) },
                 onBlockUser = { pubkey -> feedViewModel.blockUser(pubkey) },
+                onMuteThread = { rootEventId -> feedViewModel.muteThread(rootEventId) },
                 onAddToList = { eventId -> addToListEventId = eventId },
                 nip05Repo = feedViewModel.nip05Repo,
                 isZapAnimating = { it in notifZapAnimatingIds },

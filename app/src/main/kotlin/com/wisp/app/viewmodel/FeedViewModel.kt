@@ -129,7 +129,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val contactRepo = ContactRepository(app, pubkeyHex)
     val listRepo = ListRepository(app, pubkeyHex)
     val dmRepo = DmRepository(app, pubkeyHex)
-    val notifRepo = NotificationRepository(app, pubkeyHex)
+    val notifRepo = NotificationRepository(app, pubkeyHex, muteRepo, eventRepo)
     val relayListRepo = RelayListRepository(app)
     val bookmarkRepo = BookmarkRepository(app, pubkeyHex)
     val bookmarkSetRepo = BookmarkSetRepository(app, pubkeyHex)
@@ -318,6 +318,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun togglePin(eventId: String) = socialActions.togglePin(eventId)
     fun deleteEvent(eventId: String, kind: Int) = socialActions.deleteEvent(eventId, kind)
     fun followAll(pubkeys: Set<String>) = socialActions.followAll(pubkeys)
+    fun muteThread(rootEventId: String) = socialActions.muteThread(rootEventId)
 
     // -- List CRUD delegates --
     fun createList(name: String, isPrivate: Boolean = false) = listCrud.createList(name, isPrivate)

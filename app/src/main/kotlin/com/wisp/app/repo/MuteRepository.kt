@@ -19,8 +19,12 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
     private val _mutedWords = MutableStateFlow<Set<String>>(emptySet())
     val mutedWords: StateFlow<Set<String>> = _mutedWords
 
+    private val _mutedThreads = MutableStateFlow<Set<String>>(emptySet())
+    val mutedThreads: StateFlow<Set<String>> = _mutedThreads
+
     private var blockedSet = HashSet<String>()
     private var wordSet = HashSet<String>()
+    private var threadSet = HashSet<String>()
     private var lastUpdated: Long = 0
 
     init {
@@ -91,6 +95,20 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
         return wordSet.any { lower.contains(it) }
     }
 
+    fun muteThread(rootEventId: String) {
+        threadSet.add(rootEventId)
+        _mutedThreads.value = threadSet.toSet()
+        saveToPrefs()
+    }
+
+    fun unmuteThread(rootEventId: String) {
+        threadSet.remove(rootEventId)
+        _mutedThreads.value = threadSet.toSet()
+        saveToPrefs()
+    }
+
+    fun isThreadMuted(rootEventId: String): Boolean = threadSet.contains(rootEventId)
+
     fun getBlockedPubkeys(): Set<String> = blockedSet.toSet()
 
     fun getMutedWords(): Set<String> = wordSet.toSet()
@@ -98,8 +116,10 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
     fun clear() {
         _blockedPubkeys.value = emptySet()
         _mutedWords.value = emptySet()
+        _mutedThreads.value = emptySet()
         blockedSet = HashSet()
         wordSet = HashSet()
+        threadSet = HashSet()
         lastUpdated = 0
         prefs.edit().clear().apply()
     }
@@ -114,6 +134,7 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
         prefs.edit()
             .putStringSet("blocked_pubkeys", blockedSet.toSet())
             .putStringSet("muted_words", wordSet.toSet())
+            .putStringSet("muted_threads", threadSet.toSet())
             .putLong("mute_updated", lastUpdated)
             .apply()
     }
@@ -129,6 +150,11 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
         if (words != null) {
             wordSet = HashSet(words)
             _mutedWords.value = wordSet.toSet()
+        }
+        val threads = prefs.getStringSet("muted_threads", null)
+        if (threads != null) {
+            threadSet = HashSet(threads)
+            _mutedThreads.value = threadSet.toSet()
         }
     }
 
