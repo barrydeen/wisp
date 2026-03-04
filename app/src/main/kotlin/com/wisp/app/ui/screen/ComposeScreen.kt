@@ -92,6 +92,11 @@ import com.wisp.app.viewmodel.PowManager
 import com.wisp.app.viewmodel.PowStatus
 import com.wisp.app.repo.PowPreferences
 import androidx.compose.foundation.border
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.animation.animateContentSize
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -186,37 +191,62 @@ fun ComposeScreen(
                     .padding(top = 16.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                // Reply context
+                // Reply context (expandable)
                 replyTo?.let {
                     val replyProfile = profileRepo?.get(it.pubkey)
                     val replyAuthorName = replyProfile?.displayString
                         ?: "${it.pubkey.take(8)}..."
-                    Row(
-                        modifier = Modifier.padding(bottom = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    var replyExpanded by remember { mutableStateOf(false) }
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                            .clickable { replyExpanded = !replyExpanded }
                     ) {
-                        ProfilePicture(url = replyProfile?.picture, size = 24)
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = "Replying to ",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = replyAuthorName,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    if (it.content.isNotBlank()) {
-                        Text(
-                            text = it.content.take(140) + if (it.content.length > 140) "..." else "",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            modifier = Modifier.padding(bottom = 12.dp)
-                        )
+                        Column(
+                            modifier = Modifier
+                                .animateContentSize()
+                                .padding(12.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                ProfilePicture(url = replyProfile?.picture, size = 24)
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = "Replying to ",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = replyAuthorName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(
+                                    imageVector = if (replyExpanded) Icons.Filled.KeyboardArrowUp
+                                        else Icons.Filled.KeyboardArrowDown,
+                                    contentDescription = if (replyExpanded) "Collapse" else "Expand",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            if (it.content.isNotBlank()) {
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    text = if (replyExpanded) it.content
+                                        else it.content.take(140) + if (it.content.length > 140) "..." else "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = if (replyExpanded) Int.MAX_VALUE else 2
+                                )
+                            }
+                        }
                     }
                 }
 

@@ -294,7 +294,7 @@ class FeedSubscriptionManager(
                         Log.d("RLC", "[FeedSub] LIST EOSE received, feed loaded")
                         _initialLoadDone.value = true
                         _initLoadingState.value = InitLoadingState.Done
-                        eventRepo.countNewNotes = true
+                        eventRepo.enableNewNoteCounting()
                         subscribeEngagementForFeed()
                         subscribeNotifEngagement()
                         withContext(processingContext) {
@@ -329,7 +329,7 @@ class FeedSubscriptionManager(
             _initLoadingState.value = InitLoadingState.Done
             onRelayFeedEose()
 
-            eventRepo.countNewNotes = true
+            eventRepo.enableNewNoteCounting()
             subscribeEngagementForFeed()
             subscribeNotifEngagement()
 

@@ -41,6 +41,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val _newNoteCount = MutableStateFlow(0)
     val newNoteCount: StateFlow<Int> = _newNoteCount
     var countNewNotes = false
+    private var newNotesCutoff: Long = Long.MAX_VALUE
 
     private val _profileVersion = MutableStateFlow(0)
     val profileVersion: StateFlow<Int> = _profileVersion
@@ -334,7 +335,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             feedList.add(low, event)
         }
         feedInserted.trySend(Unit)  // coalesced emission via 50ms settle window
-        if (fromFeed && countNewNotes) {
+        if (fromFeed && countNewNotes && sortTime > newNotesCutoff) {
             val filter = _authorFilter.value
             if (filter == null || event.pubkey in filter || isRepostedByAny(event.id, filter)) _newNoteCount.value++
         }
@@ -608,6 +609,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         _newNoteCount.value = 0
     }
 
+    fun enableNewNoteCounting() {
+        newNotesCutoff = synchronized(feedList) {
+            feedList.firstOrNull()?.let { effectiveSortTime(it) } ?: (System.currentTimeMillis() / 1000)
+        }
+        countNewNotes = true
+    }
+
     fun purgeUser(pubkey: String) {
         synchronized(feedList) {
             val removed = feedList.filter { it.pubkey == pubkey }
@@ -665,6 +673,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         _feed.value = emptyList()
         _newNoteCount.value = 0
         countNewNotes = false
+        newNotesCutoff = Long.MAX_VALUE
     }
 
     // -- Isolated relay feed methods --
