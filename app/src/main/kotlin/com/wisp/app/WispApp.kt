@@ -4,6 +4,7 @@ import android.app.Application
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.gif.AnimatedImageDecoder
+import coil3.memory.MemoryCache
 import coil3.video.VideoFrameDecoder
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
@@ -28,6 +29,11 @@ class WispApp : Application(), SingletonImageLoader.Factory {
                 add(AnimatedImageDecoder.Factory())
                 add(VideoFrameDecoder.Factory())
                 add(OkHttpNetworkFetcherFactory(callFactory = { torAwareCallFactory }))
+            }
+            .memoryCache {
+                MemoryCache.Builder()
+                    .maxSizePercent(context, percent = 0.15)
+                    .build()
             }
             .crossfade(true)
             .build()
