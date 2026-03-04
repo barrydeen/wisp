@@ -303,15 +303,6 @@ fun WispNavHost(
         notificationsViewModel.init(feedViewModel.notifRepo, feedViewModel.eventRepo, feedViewModel.contactRepo)
     }
 
-    // Process incoming gift wraps for DMs
-    LaunchedEffect(Unit) {
-        feedViewModel.relayPool.relayEvents.collect { relayEvent ->
-            if (relayEvent.event.kind == 1059) {
-                dmListViewModel.processGiftWrap(relayEvent.event, relayEvent.relayUrl)
-            }
-        }
-    }
-
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
@@ -891,6 +882,7 @@ fun WispNavHost(
                 relayInfoRepo = feedViewModel.relayInfoRepo,
                 onBack = { navController.popBackStack() },
                 onProfileClick = { pk -> navController.navigate("profile/$pk") },
+                onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                 peerPubkey = pubkey,
                 signer = activeSigner
             )

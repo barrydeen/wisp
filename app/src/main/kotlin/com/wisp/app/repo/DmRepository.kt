@@ -9,20 +9,23 @@ import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.wipe
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.util.concurrent.ConcurrentHashMap
 
 class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
     private val prefs: SharedPreferences? =
         context?.getSharedPreferences("wisp_dm_${pubkeyHex ?: "anon"}", Context.MODE_PRIVATE)
     private var lastReadDmTimestamp: Long = prefs?.getLong("last_read_dm", 0L) ?: 0L
     private val lock = Any()
-    private val conversations = LruCache<String, MutableList<DmMessage>>(100)
+    // No LRU eviction — DM conversations must never be silently dropped since there's no
+    // persistence layer to recover them from, and seenEvents dedup blocks re-delivery.
+    private val conversations = ConcurrentHashMap<String, MutableList<DmMessage>>()
     private val conversationKeyCache = object : LruCache<String, ByteArray>(200) {
         override fun entryRemoved(evicted: Boolean, key: String?, oldValue: ByteArray?, newValue: ByteArray?) {
             oldValue?.wipe()
         }
     }
     // Maps giftWrapId → messageId so we can merge relay URLs on duplicate receipt
-    private val seenGiftWraps = LruCache<String, String>(2000)
+    private val seenGiftWraps = ConcurrentHashMap<String, String>()
     private val dmRelayCache = LruCache<String, List<String>>(200)
 
     // Pending gift wraps for remote signer mode (stored raw, decrypted on demand)
@@ -94,8 +97,7 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
         _hasUnreadDms.value = false
         // Persist the latest message timestamp so we don't show stale indicators on relaunch
         val latestTimestamp = synchronized(lock) {
-            val snapshot = conversations.snapshot()
-            snapshot.values.flatMap { it }.maxOfOrNull { it.createdAt } ?: 0L
+            conversations.values.flatMap { it }.maxOfOrNull { it.createdAt } ?: 0L
         }
         if (latestTimestamp > lastReadDmTimestamp) {
             lastReadDmTimestamp = latestTimestamp
@@ -139,9 +141,9 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
 
     fun clear() {
         synchronized(lock) {
-            conversations.evictAll()
+            conversations.clear()
             conversationKeyCache.evictAll()
-            seenGiftWraps.evictAll()
+            seenGiftWraps.clear()
             dmRelayCache.evictAll()
         }
         synchronized(pendingLock) {
@@ -154,8 +156,7 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
 
     private fun updateConversationList() {
         val list = synchronized(lock) {
-            val snapshot = conversations.snapshot()
-            snapshot.map { (peer, messages) ->
+            conversations.map { (peer, messages) ->
                 DmConversation(
                     peerPubkey = peer,
                     messages = messages.toList(),

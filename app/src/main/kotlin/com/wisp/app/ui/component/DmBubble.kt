@@ -31,6 +31,8 @@ fun DmBubble(
     isSent: Boolean,
     eventRepo: EventRepository? = null,
     relayIcons: List<Pair<String, String?>> = emptyList(),
+    onProfileClick: ((String) -> Unit)? = null,
+    onNoteClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -62,7 +64,9 @@ fun DmBubble(
                     style = MaterialTheme.typography.bodyMedium,
                     color = textColor,
                     linkColor = textColor,
-                    eventRepo = eventRepo
+                    eventRepo = eventRepo,
+                    onProfileClick = onProfileClick,
+                    onNoteClick = onNoteClick
                 )
                 Row(
                     verticalAlignment = Alignment.CenterVertically

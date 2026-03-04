@@ -2,13 +2,16 @@ package com.wisp.app.viewmodel
 
 import android.util.Log
 import com.wisp.app.nostr.Blossom
+import com.wisp.app.nostr.DmMessage
 import com.wisp.app.nostr.Nip10
+import com.wisp.app.nostr.Nip17
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.Nip65
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrSigner
+import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.relay.RelayScoreBoard
@@ -17,6 +20,7 @@ import com.wisp.app.repo.BookmarkRepository
 import com.wisp.app.repo.BookmarkSetRepository
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.CustomEmojiRepository
+import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.ExtendedNetworkRepository
 import com.wisp.app.repo.KeyRepository
@@ -28,6 +32,7 @@ import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.repo.RelaySetRepository
+import com.wisp.app.repo.SigningMode
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -51,6 +56,7 @@ class EventRouter(
     private val relayScoreBoard: RelayScoreBoard,
     private val relayHintStore: RelayHintStore,
     private val keyRepo: KeyRepository,
+    private val dmRepo: DmRepository,
     private val extendedNetworkRepo: ExtendedNetworkRepository,
     private val metadataFetcher: MetadataFetcher,
     private val getUserPubkey: () -> String?,
@@ -76,6 +82,10 @@ class EventRouter(
     }
 
     suspend fun processRelayEvent(event: NostrEvent, relayUrl: String, subscriptionId: String) {
+        if (subscriptionId == "dms") {
+            if (event.kind == 1059) processGiftWrap(event, relayUrl)
+            return
+        }
         if (subscriptionId == "notif") {
             if (muteRepo.isBlocked(event.pubkey)) return
             val myPubkey = getUserPubkey()
@@ -360,5 +370,41 @@ class EventRouter(
                 if (myPubkey != null && event.pubkey == myPubkey) contactRepo.updateFromEvent(event)
             }
         }
+    }
+
+    private fun processGiftWrap(event: NostrEvent, relayUrl: String) {
+        // Remote signer mode: store raw gift wraps, decrypt later when user views DMs
+        if (keyRepo.getSigningMode() == SigningMode.REMOTE) {
+            dmRepo.addPendingGiftWrap(event, relayUrl)
+            return
+        }
+
+        val keypair = keyRepo.getKeypair() ?: return
+        val myPubkey = keypair.pubkey.toHex()
+
+        val rumor = try {
+            Nip17.unwrapGiftWrap(keypair.privkey, event)
+        } catch (e: Exception) {
+            Log.w("EventRouter", "Failed to unwrap gift wrap ${event.id}: ${e.message}")
+            null
+        } ?: return
+
+        val peerPubkey = if (rumor.pubkey == myPubkey) {
+            rumor.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: return
+        } else {
+            rumor.pubkey
+        }
+
+        if (muteRepo.isBlocked(peerPubkey)) return
+
+        val msg = DmMessage(
+            id = "${event.id}:${rumor.createdAt}",
+            senderPubkey = rumor.pubkey,
+            content = rumor.content,
+            createdAt = rumor.createdAt,
+            giftWrapId = event.id,
+            relayUrls = if (relayUrl.isNotEmpty()) setOf(relayUrl) else emptySet()
+        )
+        dmRepo.addMessage(msg, peerPubkey)
     }
 }

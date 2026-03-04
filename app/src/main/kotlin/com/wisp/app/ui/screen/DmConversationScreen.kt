@@ -72,6 +72,7 @@ fun DmConversationScreen(
     relayInfoRepo: RelayInfoRepository? = null,
     onBack: () -> Unit,
     onProfileClick: ((String) -> Unit)? = null,
+    onNoteClick: ((String) -> Unit)? = null,
     peerPubkey: String? = null,
     signer: NostrSigner? = null
 ) {
@@ -246,7 +247,9 @@ fun DmConversationScreen(
                             timestamp = msg.createdAt,
                             isSent = msg.senderPubkey == userPubkey,
                             eventRepo = eventRepo,
-                            relayIcons = icons
+                            relayIcons = icons,
+                            onProfileClick = onProfileClick,
+                            onNoteClick = onNoteClick
                         )
                     }
                 }

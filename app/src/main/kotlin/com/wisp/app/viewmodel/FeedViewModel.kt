@@ -189,7 +189,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val eventRouter: EventRouter = EventRouter(
         relayPool, eventRepo, contactRepo, muteRepo, notifRepo, listRepo, bookmarkRepo,
         bookmarkSetRepo, pinRepo, blossomRepo, customEmojiRepo, relayListRepo, relaySetRepo,
-        relayScoreBoard, relayHintStore, keyRepo, extendedNetworkRepo, metadataFetcher,
+        relayScoreBoard, relayHintStore, keyRepo, dmRepo, extendedNetworkRepo, metadataFetcher,
         getUserPubkey = { getUserPubkey() },
         getSigner = { signer },
         getFeedSubId = { feedSub.feedSubId },
