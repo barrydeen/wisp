@@ -419,6 +419,7 @@ fun WispNavHost(
                     hasUnreadNotifications = hasUnreadNotifications,
                     isZapAnimating = isZapAnimating,
                     isReplyAnimating = isReplyAnimating,
+                    notifSoundEnabled = notifSoundEnabled,
                     onTabSelected = { tab ->
                         if (currentRoute == tab.route) {
                             scrollToTopTrigger++

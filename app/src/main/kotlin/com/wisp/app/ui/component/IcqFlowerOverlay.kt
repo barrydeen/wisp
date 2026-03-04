@@ -34,7 +34,8 @@ import kotlin.math.sin
 @Composable
 fun IcqFlowerBurstEffect(
     isActive: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    soundEnabled: Boolean = true
 ) {
     val context = LocalContext.current
     val replySound = remember { ReplySound(context) }
@@ -53,7 +54,7 @@ fun IcqFlowerBurstEffect(
         if (!isActive) return@LaunchedEffect
 
         petalCount = (6..8).random()
-        replySound.play()
+        if (soundEnabled) replySound.play()
 
         progress.snapTo(0f)
         rotation.snapTo(0f)

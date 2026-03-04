@@ -34,7 +34,8 @@ import kotlin.random.Random
 @Composable
 fun ZapBurstEffect(
     isActive: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    soundEnabled: Boolean = true
 ) {
     val context = LocalContext.current
     val zapSound = remember { ZapSound(context) }
@@ -52,7 +53,7 @@ fun ZapBurstEffect(
         if (!isActive) return@LaunchedEffect
 
         bolts = generateMiniBolts()
-        zapSound.play()
+        if (soundEnabled) zapSound.play()
 
         progress.snapTo(0f)
         progress.animateTo(1f, animationSpec = tween(800, easing = LinearEasing))

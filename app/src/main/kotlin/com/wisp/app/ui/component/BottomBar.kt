@@ -51,6 +51,7 @@ fun WispBottomBar(
     hasUnreadNotifications: Boolean,
     isZapAnimating: Boolean = false,
     isReplyAnimating: Boolean = false,
+    notifSoundEnabled: Boolean = true,
     onTabSelected: (BottomTab) -> Unit
 ) {
     NavigationBar {
@@ -111,11 +112,13 @@ fun WispBottomBar(
                                 }
                             ZapBurstEffect(
                                 isActive = isZapAnimating,
-                                modifier = zeroFootprintModifier
+                                modifier = zeroFootprintModifier,
+                                soundEnabled = notifSoundEnabled
                             )
                             IcqFlowerBurstEffect(
                                 isActive = isReplyAnimating,
-                                modifier = zeroFootprintModifier
+                                modifier = zeroFootprintModifier,
+                                soundEnabled = notifSoundEnabled
                             )
                         }
                     }
