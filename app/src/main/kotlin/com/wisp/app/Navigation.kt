@@ -71,6 +71,7 @@ import com.wisp.app.ui.screen.ListsHubScreen
 import com.wisp.app.ui.screen.PowSettingsScreen
 import com.wisp.app.ui.screen.OnboardingScreen
 import com.wisp.app.ui.component.AddNoteToListDialog
+import com.wisp.app.ui.component.CrashReportDialog
 import com.wisp.app.ui.screen.OnboardingSuggestionsScreen
 import com.wisp.app.ui.screen.RelayDetailScreen
 import com.wisp.app.ui.screen.WalletScreen
@@ -364,6 +365,26 @@ fun WispNavHost(
         notificationsViewModel.notifReceived.collect {
             if (currentNotifSoundEnabled) notifBlipSound.play()
         }
+    }
+
+    // Crash report dialog — check on launch if a crash log exists
+    var showCrashDialog by remember { mutableStateOf(CrashHandler.hasCrashLog(context)) }
+    if (showCrashDialog) {
+        val crashLog = remember { CrashHandler.getCrashLog(context) }
+        CrashReportDialog(
+            crashLog = crashLog,
+            onSend = {
+                showCrashDialog = false
+                CrashHandler.clearCrashLog(context)
+                kotlinx.coroutines.MainScope().launch(kotlinx.coroutines.Dispatchers.Default) {
+                    CrashHandler.sendCrashDm(authViewModel.keyRepo, feedViewModel.relayPool, crashLog)
+                }
+            },
+            onDismiss = {
+                showCrashDialog = false
+                CrashHandler.clearCrashLog(context)
+            }
+        )
     }
 
     // Add Note to List dialog — shared across all screens

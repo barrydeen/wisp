@@ -45,10 +45,14 @@ import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -95,7 +99,21 @@ fun WispDrawerContent(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                ProfilePicture(url = profile?.picture, size = 64)
+                var crashTapCount by remember { mutableIntStateOf(0) }
+                LaunchedEffect(crashTapCount) {
+                    if (crashTapCount > 0) {
+                        delay(2000)
+                        crashTapCount = 0
+                    }
+                }
+                Box(modifier = Modifier.clickable {
+                    crashTapCount++
+                    if (crashTapCount >= 7) {
+                        throw RuntimeException("Test crash")
+                    }
+                }) {
+                    ProfilePicture(url = profile?.picture, size = 64)
+                }
                 Spacer(modifier = Modifier.weight(1f))
                 IconButton(onClick = { onToggleTor(!isTorEnabled) }) {
                     Box(contentAlignment = Alignment.Center) {

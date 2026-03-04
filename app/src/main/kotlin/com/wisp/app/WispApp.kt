@@ -15,6 +15,7 @@ class WispApp : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+        CrashHandler.install(this)
         TorManager.initialize(this)
     }
 
