@@ -19,10 +19,7 @@ class WispApp : Application(), SingletonImageLoader.Factory {
 
     override fun newImageLoader(context: android.content.Context): ImageLoader {
         val torAwareCallFactory = Call.Factory { request ->
-            HttpClientFactory.createHttpClient(
-                connectTimeoutSeconds = 10,
-                readTimeoutSeconds = 30
-            ).newCall(request)
+            HttpClientFactory.getImageClient().newCall(request)
         }
         return ImageLoader.Builder(context)
             .components {

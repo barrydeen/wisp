@@ -54,6 +54,22 @@ object HttpClientFactory {
         return builder.build()
     }
 
+    private var imageClient: OkHttpClient? = null
+    private var imageClientBuiltWithTor: Boolean = false
+
+    fun getImageClient(): OkHttpClient {
+        val torNow = TorManager.isEnabled()
+        val client = imageClient
+        if (client != null && imageClientBuiltWithTor == torNow) return client
+        return createHttpClient(
+            connectTimeoutSeconds = 10,
+            readTimeoutSeconds = 30
+        ).also {
+            imageClient = it
+            imageClientBuiltWithTor = torNow
+        }
+    }
+
     fun createHttpClient(
         connectTimeoutSeconds: Long = 10,
         readTimeoutSeconds: Long = 10,
