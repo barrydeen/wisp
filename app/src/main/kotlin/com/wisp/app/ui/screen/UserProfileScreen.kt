@@ -639,7 +639,7 @@ fun UserProfileScreen(
                             item {
                                 SectionLabel("Relay List (NIP-65)")
                             }
-                            items(items = relayList, key = { it.url }) { relay ->
+                            items(items = relayList.distinctBy { it.url }, key = { it.url }) { relay ->
                                 RelayRow(relay)
                             }
                         }
