@@ -21,7 +21,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     var metadataFetcher: MetadataFetcher? = null
     var deletedEventsRepo: DeletedEventsRepository? = null
     var currentUserPubkey: String? = null
-    private val eventCache = LruCache<String, NostrEvent>(5000)
+    private val eventCache = LruCache<String, NostrEvent>(15000)
     private val seenEventIds = ConcurrentHashMap.newKeySet<String>()  // thread-safe dedup that doesn't evict
     private val feedList = mutableListOf<NostrEvent>()
     private val feedIds = HashSet<String>()  // O(1) dedup that doesn't evict like LruCache
@@ -50,52 +50,52 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     val quotedEventVersion: StateFlow<Int> = _quotedEventVersion
 
     // Reply count tracking
-    private val replyCounts = LruCache<String, Int>(5000)
+    private val replyCounts = LruCache<String, Int>(15000)
     private val _replyCountVersion = MutableStateFlow(0)
     val replyCountVersion: StateFlow<Int> = _replyCountVersion
 
     // Zap tracking
-    private val zapSats = LruCache<String, Long>(5000)
+    private val zapSats = LruCache<String, Long>(15000)
     private val _zapVersion = MutableStateFlow(0)
     val zapVersion: StateFlow<Int> = _zapVersion
 
     // Relay provenance tracking: eventId -> set of relay URLs
-    private val eventRelays = LruCache<String, MutableSet<String>>(5000)
+    private val eventRelays = LruCache<String, MutableSet<String>>(15000)
     private val _relaySourceVersion = MutableStateFlow(0)
     val relaySourceVersion: StateFlow<Int> = _relaySourceVersion
 
     // Repost tracking: inner event id -> set of reposter pubkeys
-    private val repostAuthors = LruCache<String, MutableSet<String>>(5000)
+    private val repostAuthors = LruCache<String, MutableSet<String>>(15000)
     // Feed sort time override: eventId -> effective sort timestamp (e.g. repost time)
-    private val feedSortTime = LruCache<String, Long>(5000)
+    private val feedSortTime = LruCache<String, Long>(15000)
     // Track which events the current user has reposted: eventId -> true
-    private val userReposts = LruCache<String, Boolean>(5000)
+    private val userReposts = LruCache<String, Boolean>(15000)
     private val _repostVersion = MutableStateFlow(0)
     val repostVersion: StateFlow<Int> = _repostVersion
 
     // Reaction tracking: eventId -> map of emoji -> count
-    private val reactionCounts = LruCache<String, ConcurrentHashMap<String, Int>>(5000)
+    private val reactionCounts = LruCache<String, ConcurrentHashMap<String, Int>>(15000)
     // Track which events the current user has reacted to: "eventId:pubkey" -> (emoji -> reactionEventId)
-    private val userReactions = LruCache<String, ConcurrentHashMap<String, String>>(5000)
+    private val userReactions = LruCache<String, ConcurrentHashMap<String, String>>(15000)
     private val _reactionVersion = MutableStateFlow(0)
     val reactionVersion: StateFlow<Int> = _reactionVersion
     // Per-target-event dedup sets — evict with the same lifecycle as their count caches
-    private val countedReactionIds = LruCache<String, MutableSet<String>>(5000)
-    private val countedZapIds = LruCache<String, MutableSet<String>>(5000)
+    private val countedReactionIds = LruCache<String, MutableSet<String>>(15000)
+    private val countedZapIds = LruCache<String, MutableSet<String>>(15000)
     // Reply dedup: track individual reply event IDs to prevent double-counting
     private val countedReplyIds = ConcurrentHashMap.newKeySet<String>()
     // Reply index: rootEventId -> set of reply event IDs (for thread cache seeding)
     private val rootReplyIds = ConcurrentHashMap<String, MutableSet<String>>()
 
     // Detailed reaction tracking: eventId -> (emoji -> list of reactor pubkeys)
-    private val reactionDetails = LruCache<String, ConcurrentHashMap<String, MutableList<String>>>(5000)
+    private val reactionDetails = LruCache<String, ConcurrentHashMap<String, MutableList<String>>>(15000)
     // Custom emoji URL tracking for reactions: target eventId -> (":shortcode:" -> url)
-    private val reactionEmojiUrls = LruCache<String, MutableMap<String, String>>(5000)
+    private val reactionEmojiUrls = LruCache<String, MutableMap<String, String>>(15000)
 
     // Detailed zap tracking: eventId -> synchronized list of (zapper pubkey, sats, message)
-    private val zapDetails = LruCache<String, MutableList<Triple<String, Long, String>>>(5000)
+    private val zapDetails = LruCache<String, MutableList<Triple<String, Long, String>>>(15000)
     // Track which events the current user has zapped: eventId -> true
-    private val userZaps = LruCache<String, Boolean>(5000)
+    private val userZaps = LruCache<String, Boolean>(15000)
     // Events where we optimistically added the user's own zap (to avoid double-counting receipts)
     private val optimisticZaps = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
@@ -182,7 +182,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (muteRepo?.isBlocked(event.pubkey) == true) return
         if (event.kind == 1 && muteRepo?.containsMutedWord(event.content) == true) return
         if (deletedEventsRepo?.isDeleted(event.id) == true) return
-        eventCache.put(event.id, event)
+        // Engagement events (reactions, zap receipts, reposts) are only needed for their
+        // side effects (counts, details, etc.) — skip eventCache to avoid evicting the
+        // kind 0/1 events that screens actually navigate to.
+        if (event.kind != 7 && event.kind != 9735 && event.kind != 6) {
+            eventCache.put(event.id, event)
+        }
         relayHintStore?.extractHintsFromTags(event)
 
         when (event.kind) {
@@ -312,10 +317,16 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         val pubkeys = details.getOrPut(emoji) { java.util.Collections.synchronizedList(mutableListOf()) }
         synchronized(pubkeys) { if (event.pubkey !in pubkeys) pubkeys.add(event.pubkey) }
 
-        val key = "${targetEventId}:${event.pubkey}"
-        val emojiMap = userReactions.get(key)
-            ?: ConcurrentHashMap<String, String>().also { userReactions.put(key, it) }
-        emojiMap[emoji] = event.id
+        // Only track the current user's reactions — other users' reactions are in
+        // reactionDetails already.  Storing every reactor would fill the 5000-entry LRU,
+        // evicting the current user's entries and losing highlight state while counts
+        // (keyed by eventId alone) remain correct.
+        if (event.pubkey == currentUserPubkey) {
+            val key = "${targetEventId}:${event.pubkey}"
+            val emojiMap = userReactions.get(key)
+                ?: ConcurrentHashMap<String, String>().also { userReactions.put(key, it) }
+            emojiMap[emoji] = event.id
+        }
         reactionDirty = true
         markVersionDirty()
     }
