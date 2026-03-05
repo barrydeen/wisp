@@ -33,6 +33,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -244,6 +245,7 @@ fun RichContent(
     val segments = remember(content, emojiMap) { parseContent(content.trimEnd('\n', '\r'), emojiMap) }
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
     var fullScreenVideoUrl by remember { mutableStateOf<String?>(null) }
+    var fullScreenVideoPositionMs by remember { mutableLongStateOf(0L) }
 
     if (fullScreenImageUrl != null) {
         FullScreenImageViewer(
@@ -255,6 +257,7 @@ fun RichContent(
     if (fullScreenVideoUrl != null) {
         FullScreenVideoPlayer(
             videoUrl = fullScreenVideoUrl!!,
+            startPositionMs = fullScreenVideoPositionMs,
             onDismiss = { fullScreenVideoUrl = null }
         )
     }
@@ -424,7 +427,10 @@ fun RichContent(
                     is ContentSegment.VideoSegment -> {
                         InlineVideoPlayerWithFullscreen(
                             url = segment.url,
-                            onFullScreen = { fullScreenVideoUrl = segment.url }
+                            onFullScreen = { positionMs ->
+                                fullScreenVideoPositionMs = positionMs
+                                fullScreenVideoUrl = segment.url
+                            }
                         )
                     }
                     is ContentSegment.LinkSegment -> {
@@ -942,18 +948,42 @@ private fun ImageWithContextMenu(url: String, onFullScreen: () -> Unit) {
 
 @OptIn(UnstableApi::class)
 @Composable
-private fun InlineVideoPlayerWithFullscreen(url: String, onFullScreen: () -> Unit) {
+private fun InlineVideoPlayerWithFullscreen(url: String, onFullScreen: (positionMs: Long) -> Unit) {
+    val context = LocalContext.current
+    val exoPlayer = remember(url) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(Uri.parse(url)))
+            prepare()
+            playWhenReady = false
+        }
+    }
+
+    DisposableEffect(url) {
+        onDispose { exoPlayer.release() }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
     ) {
-        InlineVideoPlayer(
-            url = url,
-            modifier = Modifier.fillMaxWidth()
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    player = exoPlayer
+                    useController = true
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
         )
         IconButton(
-            onClick = onFullScreen,
+            onClick = {
+                val position = exoPlayer.currentPosition
+                exoPlayer.pause()
+                onFullScreen(position)
+            },
             colors = IconButtonDefaults.iconButtonColors(
                 containerColor = Color.Black.copy(alpha = 0.5f),
                 contentColor = Color.White
