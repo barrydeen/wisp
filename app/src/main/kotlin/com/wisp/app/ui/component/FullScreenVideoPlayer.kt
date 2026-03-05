@@ -48,6 +48,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun FullScreenVideoPlayer(
     videoUrl: String,
+    startPositionMs: Long = 0L,
     onDismiss: () -> Unit
 ) {
     Dialog(
@@ -62,6 +63,7 @@ fun FullScreenVideoPlayer(
             ExoPlayer.Builder(context).build().apply {
                 setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl)))
                 prepare()
+                seekTo(startPositionMs)
                 playWhenReady = true
             }
         }
