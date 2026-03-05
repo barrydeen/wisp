@@ -17,11 +17,18 @@ object Nip65 {
                 write = marker == null || marker == "write"
             )
         }
-        val onionRelays = result.filter { RelayConfig.isOnionUrl(it.url) }
+        val deduped = result.groupBy { it.url }.map { (url, configs) ->
+            RelayConfig(
+                url = url,
+                read = configs.any { it.read },
+                write = configs.any { it.write }
+            )
+        }
+        val onionRelays = deduped.filter { RelayConfig.isOnionUrl(it.url) }
         if (onionRelays.isNotEmpty()) {
             Log.d("TorRelay", "[Nip65] parseRelayList: pubkey=${event.pubkey.take(8)}… has ${onionRelays.size} .onion relay(s): ${onionRelays.map { it.url }}")
         }
-        return result
+        return deduped
     }
 
     fun buildRelayTags(relays: List<RelayConfig>): List<List<String>> {
