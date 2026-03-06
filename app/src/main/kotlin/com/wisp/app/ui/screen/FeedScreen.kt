@@ -5,6 +5,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -162,6 +164,7 @@ fun FeedScreen(
     val userProfile = profileVersion.let { userPubkey?.let { viewModel.eventRepo.getProfileData(it) } }
 
     val newNoteCount by viewModel.newNoteCount.collectAsState()
+    val newNotesButtonHidden by viewModel.newNotesButtonHidden.collectAsState()
     val initLoadingState by viewModel.initLoadingState.collectAsState()
     val relayFeedStatus by viewModel.relayFeedStatus.collectAsState()
     val zapInProgress by viewModel.zapInProgress.collectAsState()
@@ -390,6 +393,11 @@ fun FeedScreen(
                 onRelaySettings = {
                     scope.launch { drawerState.close() }
                     onRelays()
+                },
+                newNotesButtonHidden = newNotesButtonHidden,
+                onToggleNewNotesButton = {
+                    if (newNotesButtonHidden) viewModel.showNewNotesButton()
+                    else viewModel.hideNewNotesButton(permanent = true)
                 },
                 onLogout = {
                     scope.launch { drawerState.close() }
@@ -739,7 +747,7 @@ fun FeedScreen(
                         }
 
                         NewNotesButton(
-                            visible = newNoteCount > 0 && !isAtTop,
+                            visible = newNoteCount > 0 && !isAtTop && !newNotesButtonHidden,
                             count = newNoteCount,
                             onClick = {
                                 scope.launch {
@@ -747,6 +755,7 @@ fun FeedScreen(
                                     viewModel.resetNewNoteCount()
                                 }
                             },
+                            onHide = { permanent -> viewModel.hideNewNotesButton(permanent) },
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .padding(top = 8.dp)
@@ -1312,39 +1321,68 @@ private fun ListPickerDialog(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NewNotesButton(
     visible: Boolean,
     count: Int,
     onClick: () -> Unit,
+    onHide: (permanent: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+
     androidx.compose.animation.AnimatedVisibility(
         visible = visible,
         enter = slideInVertically { -it },
         exit = slideOutVertically { -it },
         modifier = modifier
     ) {
-        Surface(
-            onClick = onClick,
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            shadowElevation = 4.dp
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.KeyboardArrowUp,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
+        Box {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shadowElevation = 4.dp,
+                modifier = Modifier.combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { showMenu = true }
                 )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    "$count new notes",
-                    style = MaterialTheme.typography.labelMedium
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.KeyboardArrowUp,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "$count new notes",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Hide until app restart") },
+                    onClick = {
+                        showMenu = false
+                        onHide(false)
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Hide forever") },
+                    onClick = {
+                        showMenu = false
+                        onHide(true)
+                    }
                 )
             }
         }
