@@ -50,6 +50,8 @@ import kotlinx.coroutines.Dispatchers
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.RelaySet
+import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -236,6 +238,26 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         if (type == FeedType.RELAY) relay else main
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val newNoteCount: StateFlow<Int> = eventRepo.newNoteCount
+
+    // -- New notes button visibility --
+    private val settingsPrefs = app.getSharedPreferences("wisp_settings", Context.MODE_PRIVATE)
+    private val _newNotesButtonHidden = MutableStateFlow(
+        settingsPrefs.getBoolean("new_notes_button_hidden", false)
+    )
+    val newNotesButtonHidden: StateFlow<Boolean> = _newNotesButtonHidden
+
+    fun hideNewNotesButton(permanent: Boolean) {
+        _newNotesButtonHidden.value = true
+        if (permanent) {
+            settingsPrefs.edit().putBoolean("new_notes_button_hidden", true).apply()
+        }
+    }
+
+    fun showNewNotesButton() {
+        _newNotesButtonHidden.value = false
+        settingsPrefs.edit().putBoolean("new_notes_button_hidden", false).apply()
+    }
+
     val initialLoadDone: StateFlow<Boolean> = feedSub.initialLoadDone
     val initLoadingState: StateFlow<InitLoadingState> = feedSub.initLoadingState
     val feedType: StateFlow<FeedType> = feedSub.feedType
