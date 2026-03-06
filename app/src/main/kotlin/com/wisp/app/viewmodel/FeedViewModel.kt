@@ -363,10 +363,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         if (missing.isEmpty()) return
         val subId = "fetch-bookmarks"
         val filter = com.wisp.app.nostr.Filter(ids = missing)
-        relayPool.sendToReadRelays(com.wisp.app.nostr.ClientMessage.req(subId, filter))
+        relayPool.sendToTopRelays(com.wisp.app.nostr.ClientMessage.req(subId, filter))
         viewModelScope.launch {
             subManager.awaitEoseWithTimeout(subId)
             subManager.closeSubscription(subId)
+            eventRepo.bumpEventCacheVersion()
             kotlinx.coroutines.withContext(processingDispatcher) {
                 metadataFetcher.sweepMissingProfiles()
             }

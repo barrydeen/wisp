@@ -45,10 +45,10 @@ class RelayHintStore(context: Context) {
     /** Record that an author publishes on this relay (event was delivered from it). */
     fun addAuthorRelay(pubkey: String, relayUrl: String) = addHint(pubkey, relayUrl)
 
-    /** Scan p-tags for relay URL hints at index 2. */
+    /** Scan p-tags and e-tags for relay URL hints at index 2. */
     fun extractHintsFromTags(event: NostrEvent) {
         for (tag in event.tags) {
-            if (tag.size >= 3 && tag[0] == "p") {
+            if (tag.size >= 3 && (tag[0] == "p" || tag[0] == "e")) {
                 val url = tag[2]
                 if (RelayConfig.isValidUrl(url)) {
                     addHint(tag[1], url)

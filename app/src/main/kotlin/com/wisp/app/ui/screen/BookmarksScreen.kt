@@ -46,9 +46,10 @@ fun BookmarksScreen(
 ) {
     val profileVersion by eventRepo.profileVersion.collectAsState()
     val reactionVersion by eventRepo.reactionVersion.collectAsState()
+    val eventCacheVersion by eventRepo.eventCacheVersion.collectAsState()
     val translationVersion by translationRepo?.version?.collectAsState() ?: remember { mutableStateOf(0) }
 
-    val events = remember(bookmarkedIds, profileVersion) {
+    val events = remember(bookmarkedIds, profileVersion, eventCacheVersion) {
         bookmarkedIds.mapNotNull { id -> eventRepo.getEvent(id) }
             .sortedByDescending { it.created_at }
     }

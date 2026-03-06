@@ -51,6 +51,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val _quotedEventVersion = MutableStateFlow(0)
     val quotedEventVersion: StateFlow<Int> = _quotedEventVersion
 
+    private val _eventCacheVersion = MutableStateFlow(0)
+    val eventCacheVersion: StateFlow<Int> = _eventCacheVersion
+
     // Reply count tracking
     private val replyCounts = LruCache<String, Int>(15000)
     private val _replyCountVersion = MutableStateFlow(0)
@@ -418,6 +421,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun getEvent(id: String): NostrEvent? = eventCache.get(id)
+
+    fun bumpEventCacheVersion() { _eventCacheVersion.value++ }
 
     fun getProfileData(pubkey: String): ProfileData? = profileRepo?.get(pubkey)
 

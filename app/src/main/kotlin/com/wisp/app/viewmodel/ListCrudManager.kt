@@ -223,10 +223,11 @@ class ListCrudManager(
         if (missing.isEmpty()) return
         val subId = "fetch-bkset-${dTag.take(8)}"
         val filter = Filter(ids = missing)
-        relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
+        relayPool.sendToTopRelays(ClientMessage.req(subId, filter))
         scope.launch {
             subManager.awaitEoseWithTimeout(subId)
             subManager.closeSubscription(subId)
+            eventRepo.bumpEventCacheVersion()
             withContext(processingContext) {
                 metadataFetcher.sweepMissingProfiles()
             }

@@ -35,6 +35,7 @@ sealed class NotificationGroup {
         val reactionTimestamps: Map<String, Long> = emptyMap(), // pubkey -> created_at
         val emojiUrls: Map<String, String> = emptyMap(), // ":shortcode:" -> url for custom emojis
         val zapEntries: List<ZapEntry> = emptyList(),
+        val relayHints: List<String> = emptyList(), // relay hints for referencedEventId
         override val latestTimestamp: Long
     ) : NotificationGroup()
 
@@ -43,6 +44,7 @@ sealed class NotificationGroup {
         val senderPubkey: String,
         val replyEventId: String,
         val referencedEventId: String?,
+        val referencedEventHints: List<String> = emptyList(), // relay hints for referencedEventId
         override val latestTimestamp: Long
     ) : NotificationGroup()
 
@@ -50,6 +52,7 @@ sealed class NotificationGroup {
         override val groupId: String,
         val senderPubkey: String,
         val quoteEventId: String,
+        val relayHints: List<String> = emptyList(), // relay hints for quoteEventId
         override val latestTimestamp: Long
     ) : NotificationGroup()
 
@@ -57,6 +60,7 @@ sealed class NotificationGroup {
         override val groupId: String,
         val senderPubkey: String,
         val eventId: String,
+        val relayHints: List<String> = emptyList(), // relay hints for eventId
         override val latestTimestamp: Long
     ) : NotificationGroup()
 

@@ -212,6 +212,12 @@ class EventRouter(
         } else if (subscriptionId.startsWith("onb-")) {
             // Onboarding suggestion fetches — only cache kind 0 profiles, don't add to feed
             if (event.kind == 0) eventRepo.cacheEvent(event)
+        } else if (subscriptionId.startsWith("fetch-bkset-") || subscriptionId == "fetch-bookmarks") {
+            // Bookmark/list event fetches — cache the notes so screens can display them
+            eventRepo.cacheEvent(event)
+            if (eventRepo.getProfileData(event.pubkey) == null) {
+                metadataFetcher.addToPendingProfiles(event.pubkey)
+            }
         } else {
             if (event.kind == 10002) {
                 relayListRepo.updateFromEvent(event)
