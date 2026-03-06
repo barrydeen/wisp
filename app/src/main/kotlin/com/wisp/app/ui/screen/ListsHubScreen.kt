@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.BookmarkSet
 import com.wisp.app.nostr.FollowSet
+import com.wisp.app.repo.BookmarkRepository
 import com.wisp.app.repo.BookmarkSetRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.ListRepository
@@ -58,10 +59,12 @@ import com.wisp.app.ui.component.ProfilePicture
 fun ListsHubScreen(
     listRepo: ListRepository,
     bookmarkSetRepo: BookmarkSetRepository,
+    bookmarkRepo: BookmarkRepository,
     eventRepo: EventRepository,
     onBack: () -> Unit,
     onListDetail: (FollowSet) -> Unit,
     onBookmarkSetDetail: (BookmarkSet) -> Unit,
+    onBookmarksClick: () -> Unit,
     onCreateList: (String, Boolean) -> Unit,
     onCreateBookmarkSet: (String, Boolean) -> Unit,
     onDeleteList: (String) -> Unit,
@@ -69,6 +72,7 @@ fun ListsHubScreen(
 ) {
     val ownLists by listRepo.ownLists.collectAsState()
     val ownSets by bookmarkSetRepo.ownSets.collectAsState()
+    val bookmarkedIds by bookmarkRepo.bookmarkedIds.collectAsState()
     val profileVersion by eventRepo.profileVersion.collectAsState()
 
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -185,6 +189,36 @@ fun ListsHubScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)
                 )
+            }
+
+            // Global bookmarks row
+            item(key = "global-bookmarks") {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onBookmarksClick)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.BookmarkBorder,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Bookmarks",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            "${bookmarkedIds.size} notes",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
 
             if (notesLists.isEmpty()) {

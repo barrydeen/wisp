@@ -63,6 +63,7 @@ import com.wisp.app.ui.screen.CustomEmojiScreen
 import com.wisp.app.ui.screen.SearchScreen
 import com.wisp.app.ui.screen.SocialGraphScreen
 import com.wisp.app.ui.screen.BookmarkSetScreen
+import com.wisp.app.ui.screen.BookmarksScreen
 import com.wisp.app.ui.screen.HashtagFeedScreen
 import com.wisp.app.ui.screen.KeysScreen
 import com.wisp.app.ui.screen.ListScreen
@@ -116,6 +117,7 @@ object Routes {
     const val KEYS = "keys"
     const val LIST_DETAIL = "list/{pubkey}/{dTag}"
     const val LISTS_HUB = "lists"
+    const val BOOKMARKS = "bookmarks"
     const val BOOKMARK_SET_DETAIL = "bookmark_set/{pubkey}/{dTag}"
     const val LOADING = "loading"
     const val ONBOARDING_PROFILE = "onboarding/profile"
@@ -389,9 +391,12 @@ fun WispNavHost(
     // Add Note to List dialog — shared across all screens
     if (addToListEventId != null) {
         val ownSets by feedViewModel.bookmarkSetRepo.ownSets.collectAsState()
+        val bookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
         AddNoteToListDialog(
             eventId = addToListEventId!!,
             bookmarkSets = ownSets,
+            isBookmarked = addToListEventId!! in bookmarkedIds,
+            onToggleBookmark = { eventId -> feedViewModel.toggleBookmark(eventId) },
             onAddToSet = { dTag, eventId -> feedViewModel.addNoteToBookmarkSet(dTag, eventId) },
             onRemoveFromSet = { dTag, eventId -> feedViewModel.removeNoteFromBookmarkSet(dTag, eventId) },
             onCreateSet = { name -> feedViewModel.createBookmarkSet(name) },
@@ -727,7 +732,9 @@ fun WispNavHost(
                 )
             }
             val isBlockedState by feedViewModel.muteRepo.blockedPubkeys.collectAsState()
-            val profileListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
+            val profileSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
+            val profileBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
+            val profileListedIds = remember(profileSetListedIds, profileBookmarkedIds) { profileSetListedIds + profileBookmarkedIds }
             val profilePinnedIds by if (isOwnProfile) feedViewModel.pinRepo.pinnedIds.collectAsState() else userProfileViewModel.pinnedNoteIds.collectAsState()
             val profileZapInProgress by feedViewModel.zapInProgress.collectAsState()
             UserProfileScreen(
@@ -793,7 +800,9 @@ fun WispNavHost(
         }
 
         composable(Routes.SEARCH) {
-            val searchListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
+            val searchSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
+            val searchBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
+            val searchListedIds = remember(searchSetListedIds, searchBookmarkedIds) { searchSetListedIds + searchBookmarkedIds }
             val extNetCache by feedViewModel.extendedNetworkRepo.cachedNetwork.collectAsState()
             SearchScreen(
                 viewModel = searchViewModel,
@@ -938,7 +947,9 @@ fun WispNavHost(
                     onGoToWallet = { navController.navigate(Routes.WALLET) }
                 )
             }
-            val threadListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
+            val threadSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
+            val threadBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
+            val threadListedIds = remember(threadSetListedIds, threadBookmarkedIds) { threadSetListedIds + threadBookmarkedIds }
             val threadPinnedIds by feedViewModel.pinRepo.pinnedIds.collectAsState()
             val threadResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
             val threadUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
@@ -1248,6 +1259,7 @@ fun WispNavHost(
             ListsHubScreen(
                 listRepo = feedViewModel.listRepo,
                 bookmarkSetRepo = feedViewModel.bookmarkSetRepo,
+                bookmarkRepo = feedViewModel.bookmarkRepo,
                 eventRepo = feedViewModel.eventRepo,
                 onBack = { navController.popBackStack() },
                 onListDetail = { list ->
@@ -1256,10 +1268,40 @@ fun WispNavHost(
                 onBookmarkSetDetail = { set ->
                     navController.navigate("bookmark_set/${set.pubkey}/${set.dTag}")
                 },
+                onBookmarksClick = { navController.navigate(Routes.BOOKMARKS) },
                 onCreateList = { name, isPrivate -> feedViewModel.createList(name, isPrivate) },
                 onCreateBookmarkSet = { name, isPrivate -> feedViewModel.createBookmarkSet(name, isPrivate) },
                 onDeleteList = { dTag -> feedViewModel.deleteList(dTag) },
                 onDeleteBookmarkSet = { dTag -> feedViewModel.deleteBookmarkSet(dTag) }
+            )
+        }
+
+        composable(Routes.BOOKMARKS) {
+            val bookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
+
+            LaunchedEffect(Unit) {
+                feedViewModel.fetchBookmarkEvents()
+            }
+
+            BookmarksScreen(
+                bookmarkedIds = bookmarkedIds,
+                eventRepo = feedViewModel.eventRepo,
+                userPubkey = feedViewModel.getUserPubkey(),
+                onBack = { navController.popBackStack() },
+                onNoteClick = { event -> navController.navigate("thread/${event.id}") },
+                onQuotedNoteClick = { eventId -> navController.navigate("thread/$eventId") },
+                onReply = { event ->
+                    replyTarget = event
+                    quoteTarget = null
+                    composeViewModel.clear()
+                    navController.navigate(Routes.COMPOSE)
+                },
+                onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
+                onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
+                onRemoveBookmark = { eventId -> feedViewModel.removeBookmark(eventId) },
+                onToggleFollow = { pubkey -> feedViewModel.toggleFollow(pubkey) },
+                onBlockUser = { pubkey -> feedViewModel.blockUser(pubkey) },
+                translationRepo = feedViewModel.translationRepo
             )
         }
 
@@ -1379,7 +1421,9 @@ fun WispNavHost(
             var notifZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
             val notifZapInProgress by feedViewModel.zapInProgress.collectAsState()
             var notifZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
-            val notifListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
+            val notifSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
+            val notifBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
+            val notifListedIds = remember(notifSetListedIds, notifBookmarkedIds) { notifSetListedIds + notifBookmarkedIds }
             val isNwcConnected = feedViewModel.nwcRepo.hasConnection()
             var showNotifEmojiLibrary by remember { mutableStateOf(false) }
 

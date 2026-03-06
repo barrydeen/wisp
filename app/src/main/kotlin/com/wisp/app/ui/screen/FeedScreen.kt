@@ -165,7 +165,9 @@ fun FeedScreen(
     val initLoadingState by viewModel.initLoadingState.collectAsState()
     val relayFeedStatus by viewModel.relayFeedStatus.collectAsState()
     val zapInProgress by viewModel.zapInProgress.collectAsState()
-    val listedIds by viewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
+    val setListedIds by viewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
+    val bookmarkedIds by viewModel.bookmarkRepo.bookmarkedIds.collectAsState()
+    val listedIds = remember(setListedIds, bookmarkedIds) { setListedIds + bookmarkedIds }
     val pinnedIds by viewModel.pinRepo.pinnedIds.collectAsState()
 
     var zapTargetEvent by remember { mutableStateOf<NostrEvent?>(null) }

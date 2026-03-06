@@ -28,6 +28,8 @@ import com.wisp.app.nostr.BookmarkSet
 fun AddNoteToListDialog(
     eventId: String,
     bookmarkSets: List<BookmarkSet>,
+    isBookmarked: Boolean = false,
+    onToggleBookmark: ((String) -> Unit)? = null,
     onAddToSet: (dTag: String, eventId: String) -> Unit,
     onRemoveFromSet: (dTag: String, eventId: String) -> Unit,
     onCreateSet: (name: String) -> Unit,
@@ -40,44 +42,58 @@ fun AddNoteToListDialog(
         title = { Text("Add to List") },
         text = {
             Column {
-                if (bookmarkSets.isEmpty()) {
-                    Text(
-                        "No note lists yet. Create one below.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                } else {
-                    bookmarkSets.forEach { set ->
-                        val isInSet = eventId in set.eventIds
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    if (isInSet) onRemoveFromSet(set.dTag, eventId)
-                                    else onAddToSet(set.dTag, eventId)
-                                }
-                                .padding(vertical = 8.dp)
-                        ) {
-                            Checkbox(
-                                checked = isInSet,
-                                onCheckedChange = {
-                                    if (isInSet) onRemoveFromSet(set.dTag, eventId)
-                                    else onAddToSet(set.dTag, eventId)
-                                }
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                set.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                "${set.eventIds.size}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                // Global Bookmarks row
+                if (onToggleBookmark != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onToggleBookmark(eventId) }
+                            .padding(vertical = 8.dp)
+                    ) {
+                        Checkbox(
+                            checked = isBookmarked,
+                            onCheckedChange = { onToggleBookmark(eventId) }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Bookmarks",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                bookmarkSets.forEach { set ->
+                    val isInSet = eventId in set.eventIds
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (isInSet) onRemoveFromSet(set.dTag, eventId)
+                                else onAddToSet(set.dTag, eventId)
+                            }
+                            .padding(vertical = 8.dp)
+                    ) {
+                        Checkbox(
+                            checked = isInSet,
+                            onCheckedChange = {
+                                if (isInSet) onRemoveFromSet(set.dTag, eventId)
+                                else onAddToSet(set.dTag, eventId)
+                            }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            set.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            "${set.eventIds.size}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
                 Spacer(Modifier.height(12.dp))

@@ -355,6 +355,55 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun removeNoteFromBookmarkSet(dTag: String, eventId: String) = listCrud.removeNoteFromBookmarkSet(dTag, eventId)
     fun deleteBookmarkSet(dTag: String) = listCrud.deleteBookmarkSet(dTag)
     fun fetchBookmarkSetEvents(dTag: String) = listCrud.fetchBookmarkSetEvents(dTag)
+
+    fun fetchBookmarkEvents() {
+        val ids = bookmarkRepo.getBookmarkedIds().toList()
+        if (ids.isEmpty()) return
+        val missing = ids.filter { eventRepo.getEvent(it) == null }
+        if (missing.isEmpty()) return
+        val subId = "fetch-bookmarks"
+        val filter = com.wisp.app.nostr.Filter(ids = missing)
+        relayPool.sendToReadRelays(com.wisp.app.nostr.ClientMessage.req(subId, filter))
+        viewModelScope.launch {
+            subManager.awaitEoseWithTimeout(subId)
+            subManager.closeSubscription(subId)
+            kotlinx.coroutines.withContext(processingDispatcher) {
+                metadataFetcher.sweepMissingProfiles()
+            }
+        }
+    }
+
+    fun toggleBookmark(eventId: String) {
+        val s = signer ?: return
+        if (bookmarkRepo.isBookmarked(eventId)) {
+            bookmarkRepo.removeBookmark(eventId)
+        } else {
+            bookmarkRepo.addBookmark(eventId)
+        }
+        publishBookmarkList(s)
+    }
+
+    fun removeBookmark(eventId: String) {
+        val s = signer ?: return
+        bookmarkRepo.removeBookmark(eventId)
+        publishBookmarkList(s)
+    }
+
+    private fun publishBookmarkList(s: com.wisp.app.nostr.NostrSigner) {
+        val tags = com.wisp.app.nostr.Nip51.buildBookmarkListTags(
+            bookmarkRepo.getBookmarkedIds(),
+            bookmarkRepo.getCoordinates(),
+            bookmarkRepo.getHashtags()
+        )
+        viewModelScope.launch {
+            val event = s.signEvent(
+                kind = com.wisp.app.nostr.Nip51.KIND_BOOKMARK_LIST,
+                content = "",
+                tags = tags
+            )
+            relayPool.sendToWriteRelays(com.wisp.app.nostr.ClientMessage.event(event))
+        }
+    }
     fun createEmojiSet(name: String, emojis: List<com.wisp.app.nostr.CustomEmoji>) = listCrud.createEmojiSet(name, emojis)
     fun updateEmojiSet(dTag: String, title: String, emojis: List<com.wisp.app.nostr.CustomEmoji>) = listCrud.updateEmojiSet(dTag, title, emojis)
     fun deleteEmojiSet(dTag: String) = listCrud.deleteEmojiSet(dTag)
