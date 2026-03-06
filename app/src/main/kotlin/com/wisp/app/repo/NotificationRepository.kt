@@ -289,8 +289,9 @@ class NotificationRepository(
 
     private fun mergeReaction(event: NostrEvent): Boolean {
         val emoji = event.content.ifBlank { "❤️" }
-        val referencedId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
-            ?: return false
+        val eTag = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" } ?: return false
+        val referencedId = eTag[1]
+        val eTagHint = eTag.getOrNull(2)?.takeIf { it.startsWith("wss://") || it.startsWith("ws://") }
         val key = "reactions:$referencedId"
         val existing = groupMap[key] as? NotificationGroup.ReactionGroup
 
@@ -321,6 +322,7 @@ class NotificationRepository(
                 reactions = mapOf(emoji to listOf(event.pubkey)),
                 reactionTimestamps = mapOf(event.pubkey to event.created_at),
                 emojiUrls = emojiUrls,
+                relayHints = listOfNotNull(eTagHint),
                 latestTimestamp = event.created_at
             )
         }
@@ -331,7 +333,9 @@ class NotificationRepository(
         val amount = Nip57.getZapAmountSats(event)
         if (amount <= 0) return false
         val zapperPubkey = Nip57.getZapperPubkey(event) ?: return false
-        val referencedId = Nip57.getZappedEventId(event) ?: return false
+        val zapETag = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" } ?: return false
+        val referencedId = zapETag[1]
+        val zapHint = zapETag.getOrNull(2)?.takeIf { it.startsWith("wss://") || it.startsWith("ws://") }
         val key = "reactions:$referencedId"
         // Secondary dedup: guard against LRU eviction in seenEvents allowing
         // the same 9735 event to be re-processed on periodic refresh cycles.
@@ -363,6 +367,7 @@ class NotificationRepository(
                 reactions = mapOf(emoji to listOf(zapperPubkey)),
                 reactionTimestamps = mapOf(zapperPubkey to event.created_at),
                 zapEntries = listOf(entry),
+                relayHints = listOfNotNull(zapHint),
                 latestTimestamp = event.created_at
             )
         }
@@ -373,19 +378,21 @@ class NotificationRepository(
         val quotedId = event.tags.firstOrNull { it.size >= 2 && it[0] == "q" }?.get(1)
         if (quotedId != null) return mergeQuote(event, quotedId)
 
-        val replyTarget = Nip10.getReplyTarget(event)
-        if (replyTarget != null) return mergeReply(event, replyTarget)
+        val replyResult = Nip10.getReplyTargetWithHint(event)
+        if (replyResult != null) return mergeReply(event, replyResult.first, replyResult.second)
 
         return mergeMention(event)
     }
 
-    private fun mergeReply(event: NostrEvent, replyTarget: String): Boolean {
+    private fun mergeReply(event: NostrEvent, replyTarget: String, replyTargetHint: String?): Boolean {
         val key = "reply:${event.id}"
+        val hints = listOfNotNull(replyTargetHint)
         groupMap[key] = NotificationGroup.ReplyNotification(
             groupId = key,
             senderPubkey = event.pubkey,
             replyEventId = event.id,
             referencedEventId = replyTarget,
+            referencedEventHints = hints,
             latestTimestamp = event.created_at
         )
         return true
@@ -393,10 +400,13 @@ class NotificationRepository(
 
     private fun mergeQuote(event: NostrEvent, quotedEventId: String): Boolean {
         val key = "quote:${event.id}"
+        val qTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "q" && it[1] == quotedEventId }
+        val hint = qTag?.getOrNull(2)?.takeIf { it.startsWith("wss://") || it.startsWith("ws://") }
         groupMap[key] = NotificationGroup.QuoteNotification(
             groupId = key,
             senderPubkey = event.pubkey,
             quoteEventId = event.id,
+            relayHints = listOfNotNull(hint),
             latestTimestamp = event.created_at
         )
         return true
@@ -414,8 +424,9 @@ class NotificationRepository(
     }
 
     private fun mergeRepost(event: NostrEvent): Boolean {
-        val repostedId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
-            ?: return false
+        val eTag = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" } ?: return false
+        val repostedId = eTag[1]
+        val eTagHint = eTag.getOrNull(2)?.takeIf { it.startsWith("wss://") || it.startsWith("ws://") }
         val key = "reactions:$repostedId"
         val emoji = NotificationGroup.REPOST_EMOJI
         val existing = groupMap[key] as? NotificationGroup.ReactionGroup
@@ -438,6 +449,7 @@ class NotificationRepository(
                 referencedEventId = repostedId,
                 reactions = mapOf(emoji to listOf(event.pubkey)),
                 reactionTimestamps = mapOf(event.pubkey to event.created_at),
+                relayHints = listOfNotNull(eTagHint),
                 latestTimestamp = event.created_at
             )
         }

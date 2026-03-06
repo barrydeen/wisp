@@ -11,24 +11,62 @@ object Nip10 {
      * Returns the event ID this event directly replies to.
      * Checks "reply" marker first, then "root", then falls back to last e-tag (legacy).
      */
-    fun getReplyTarget(event: NostrEvent): String? {
+    fun getReplyTarget(event: NostrEvent): String? =
+        getReplyTargetWithHint(event)?.first
+
+    /**
+     * Returns the reply target event ID paired with its relay hint (if present).
+     */
+    fun getReplyTargetWithHint(event: NostrEvent): Pair<String, String?>? {
         val eTags = event.tags.filter { it.size >= 2 && it[0] == "e" }
         // Prefer marked reply tag
-        eTags.firstOrNull { it.size >= 4 && it[3] == "reply" }?.let { return it[1] }
+        eTags.firstOrNull { it.size >= 4 && it[3] == "reply" }?.let {
+            return it[1] to it.getOrNull(2)?.takeIf { url -> url.startsWith("wss://") || url.startsWith("ws://") }
+        }
         // Fall back to root marker (direct reply to root)
-        eTags.firstOrNull { it.size >= 4 && it[3] == "root" }?.let { return it[1] }
+        eTags.firstOrNull { it.size >= 4 && it[3] == "root" }?.let {
+            return it[1] to it.getOrNull(2)?.takeIf { url -> url.startsWith("wss://") || url.startsWith("ws://") }
+        }
         // Legacy: last e-tag is the reply target
-        return eTags.lastOrNull()?.get(1)
+        return eTags.lastOrNull()?.let {
+            it[1] to it.getOrNull(2)?.takeIf { url -> url.startsWith("wss://") || url.startsWith("ws://") }
+        }
     }
 
     /**
      * Returns the root event ID of the thread.
      * Checks "root" marker first, falls back to first e-tag (legacy).
      */
-    fun getRootId(event: NostrEvent): String? {
+    fun getRootId(event: NostrEvent): String? =
+        getRootIdWithHint(event)?.first
+
+    /**
+     * Returns the root event ID paired with its relay hint (if present).
+     */
+    fun getRootIdWithHint(event: NostrEvent): Pair<String, String?>? {
         val eTags = event.tags.filter { it.size >= 2 && it[0] == "e" }
-        eTags.firstOrNull { it.size >= 4 && it[3] == "root" }?.let { return it[1] }
-        return eTags.firstOrNull()?.get(1)
+        eTags.firstOrNull { it.size >= 4 && it[3] == "root" }?.let {
+            return it[1] to it.getOrNull(2)?.takeIf { url -> url.startsWith("wss://") || url.startsWith("ws://") }
+        }
+        return eTags.firstOrNull()?.let {
+            it[1] to it.getOrNull(2)?.takeIf { url -> url.startsWith("wss://") || url.startsWith("ws://") }
+        }
+    }
+
+    /**
+     * Extracts all relay hints from e-tags of an event, keyed by event ID.
+     */
+    fun extractETagRelayHints(event: NostrEvent): Map<String, String> {
+        val hints = mutableMapOf<String, String>()
+        for (tag in event.tags) {
+            if (tag.size >= 3 && tag[0] == "e") {
+                val url = tag[2]
+                if (url.startsWith("wss://") || url.startsWith("ws://")) {
+                    hints[tag[1]] = url
+                }
+            }
+        }
+        return hints
     }
 
     /**

@@ -646,7 +646,8 @@ private fun ReactionGroupRow(
         // Referenced note as full PostCard
         ReferencedNotePostCard(
             eventId = group.referencedEventId,
-            params = postCardParams
+            params = postCardParams,
+            relayHints = group.relayHints
         )
     }
 }
@@ -739,7 +740,8 @@ private fun ReplyPostCard(
         ) {
             ReferencedNotePostCard(
                 eventId = item.referencedEventId,
-                params = postCardParams
+                params = postCardParams,
+                relayHints = item.referencedEventHints
             )
         }
     }
@@ -805,7 +807,8 @@ private fun QuoteNotificationRow(
         // Quote event as full PostCard
         ReferencedNotePostCard(
             eventId = item.quoteEventId,
-            params = postCardParams
+            params = postCardParams,
+            relayHints = item.relayHints
         )
     }
 }
@@ -869,7 +872,8 @@ private fun MentionNotificationRow(
         // Mention event as full PostCard
         ReferencedNotePostCard(
             eventId = item.eventId,
-            params = postCardParams
+            params = postCardParams,
+            relayHints = item.relayHints
         )
     }
 }
@@ -913,7 +917,8 @@ private data class NotifPostCardParams(
 @Composable
 private fun ReferencedNotePostCard(
     eventId: String,
-    params: NotifPostCardParams
+    params: NotifPostCardParams,
+    relayHints: List<String> = emptyList()
 ) {
     val eventRepo = params.eventRepo ?: return
 
@@ -922,7 +927,7 @@ private fun ReferencedNotePostCard(
 
     LaunchedEffect(eventId) {
         if (eventRepo.getEvent(eventId) == null) {
-            eventRepo.requestQuotedEvent(eventId)
+            eventRepo.requestQuotedEvent(eventId, relayHints)
         }
     }
 
