@@ -95,7 +95,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     // Detailed reaction tracking: eventId -> (emoji -> list of reactor pubkeys)
     private val reactionDetails = LruCache<String, ConcurrentHashMap<String, MutableList<String>>>(15000)
     // Custom emoji URL tracking for reactions: target eventId -> (":shortcode:" -> url)
-    private val reactionEmojiUrls = LruCache<String, MutableMap<String, String>>(15000)
+    private val reactionEmojiUrls = LruCache<String, ConcurrentHashMap<String, String>>(15000)
 
     // Detailed zap tracking: eventId -> synchronized list of (zapper pubkey, sats, message)
     private val zapDetails = LruCache<String, MutableList<Triple<String, Long, String>>>(15000)
@@ -307,7 +307,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         val emojiTags = Nip30.parseEmojiTags(event)
         if (emojiTags.isNotEmpty()) {
             val urlMap = reactionEmojiUrls.get(targetEventId)
-                ?: mutableMapOf<String, String>().also { reactionEmojiUrls.put(targetEventId, it) }
+                ?: ConcurrentHashMap<String, String>().also { reactionEmojiUrls.put(targetEventId, it) }
             for ((shortcode, url) in emojiTags) {
                 urlMap[":$shortcode:"] = url
             }
