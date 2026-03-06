@@ -147,6 +147,10 @@ fun FeedScreen(
     }
     val userPubkey = viewModel.getUserPubkey()
     val selectedList by viewModel.selectedList.collectAsState()
+    // Instantly jump to top whenever feed type, selected list, or selected relay changes
+    LaunchedEffect(feedType, selectedList, selectedRelay, selectedRelaySet) {
+        listState.scrollToItem(0)
+    }
     val ownLists by viewModel.listRepo.ownLists.collectAsState()
     var showRelayPicker by remember { mutableStateOf(false) }
     var showListPicker by remember { mutableStateOf(false) }

@@ -697,6 +697,34 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         newNotesCutoff = Long.MAX_VALUE
     }
 
+    /**
+     * Rebuild the feed display from eventCache. Used when switching feed types
+     * (e.g. LIST → FOLLOWS) where resetFeedDisplay() cleared feedList/feedIds
+     * but seenEventIds still contains all previously seen events — causing
+     * relay-resent events to be silently deduped by addEvent().
+     *
+     * Scans eventCache for kind 1 root notes, re-inserts them via binaryInsert,
+     * then emits the filtered feed. The optional [sinceTimestamp] limits which
+     * events are re-inserted (defaults to 24h).
+     */
+    fun rebuildFeedFromCache(sinceTimestamp: Long = System.currentTimeMillis() / 1000 - 60 * 60 * 24) {
+        val snapshot = eventCache.snapshot()
+        var inserted = 0
+        for ((_, event) in snapshot) {
+            if (event.kind != 1) continue
+            if (event.created_at < sinceTimestamp) continue
+            if (muteRepo?.isBlocked(event.pubkey) == true) continue
+            if (deletedEventsRepo?.isDeleted(event.id) == true) continue
+            val isReply = event.tags.any { it.size >= 2 && it[0] == "e" }
+            if (isReply) continue
+            val sortTime = feedSortTime.get(event.id) ?: event.created_at
+            binaryInsert(event, sortTime = sortTime)
+            inserted++
+        }
+        rebuildFilteredFeed()
+        android.util.Log.d("RLC", "[EventRepo] rebuildFeedFromCache: $inserted events re-inserted from cache (since=$sinceTimestamp)")
+    }
+
     // -- Isolated relay feed methods --
 
     fun addRelayFeedEvent(event: NostrEvent) {

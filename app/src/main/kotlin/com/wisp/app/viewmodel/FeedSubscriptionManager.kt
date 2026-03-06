@@ -135,8 +135,9 @@ class FeedSubscriptionManager(
         when (type) {
             FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
                 if (prev == FeedType.LIST) {
-                    Log.d("RLC", "[FeedSub] switching from $prev to $type — clearing feed and resubscribing")
+                    Log.d("RLC", "[FeedSub] switching from $prev to $type — rebuilding feed from cache and resubscribing")
                     eventRepo.resetFeedDisplay()
+                    eventRepo.rebuildFeedFromCache()
                     resubscribeFeed()
                 } else {
                     // Switching from RELAY or between FOLLOWS/EXTENDED — main feed still running
@@ -156,6 +157,9 @@ class FeedSubscriptionManager(
             }
             FeedType.LIST -> {
                 eventRepo.resetFeedDisplay()
+                // Lists use a 7-day window, so rebuild cache with matching range
+                val listSince = System.currentTimeMillis() / 1000 - 60 * 60 * 24 * 7
+                eventRepo.rebuildFeedFromCache(sinceTimestamp = listSince)
                 resubscribeFeed()
             }
         }
