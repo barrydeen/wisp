@@ -22,6 +22,8 @@ import com.wisp.app.repo.BookmarkRepository
 import com.wisp.app.repo.BookmarkSetRepository
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.DmRepository
+import com.wisp.app.db.EventPersistence
+import com.wisp.app.db.WispObjectBox
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.ExtendedNetworkRepository
 import com.wisp.app.repo.SocialGraphDb
@@ -123,9 +125,13 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val nip05Repo = Nip05Repository()
     val relayHintStore = RelayHintStore(app)
     val deletedEventsRepo = DeletedEventsRepository(app, pubkeyHex)
+    val eventPersistence: EventPersistence? = if (WispObjectBox.isInitialized) {
+        EventPersistence(pubkeyHex)
+    } else null
     val eventRepo = EventRepository(profileRepo, muteRepo, relayHintStore).also {
         it.currentUserPubkey = pubkeyHex
         it.deletedEventsRepo = deletedEventsRepo
+        it.eventPersistence = eventPersistence
     }
     val contactRepo = ContactRepository(app, pubkeyHex)
     val listRepo = ListRepository(app, pubkeyHex)
@@ -212,7 +218,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     )
 
     val startup: StartupCoordinator = StartupCoordinator(
-        relayPool, outboxRouter, subManager, eventRepo, contactRepo, muteRepo, notifRepo,
+        relayPool, outboxRouter, subManager, eventRepo, eventPersistence, contactRepo, muteRepo, notifRepo,
         listRepo, bookmarkRepo, bookmarkSetRepo, relaySetRepo, pinRepo, blossomRepo, customEmojiRepo,
         relayListRepo, relayScoreBoard, relayHintStore, healthTracker, keyRepo,
         extendedNetworkRepo, metadataFetcher, profileRepo, relayInfoRepo, nip05Repo,

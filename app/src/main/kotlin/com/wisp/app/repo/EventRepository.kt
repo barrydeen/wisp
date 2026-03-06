@@ -15,12 +15,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import com.wisp.app.db.EventPersistence
 import java.util.concurrent.ConcurrentHashMap
 
 class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: MuteRepository? = null, val relayHintStore: RelayHintStore? = null) {
     var metadataFetcher: MetadataFetcher? = null
     var deletedEventsRepo: DeletedEventsRepository? = null
     var currentUserPubkey: String? = null
+    var eventPersistence: EventPersistence? = null
     private val eventCache = LruCache<String, NostrEvent>(5000)
     private val seenEventIds = ConcurrentHashMap.newKeySet<String>()  // thread-safe dedup that doesn't evict
     private val feedList = mutableListOf<NostrEvent>()
@@ -183,6 +185,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (event.kind == 1 && muteRepo?.containsMutedWord(event.content) == true) return
         if (deletedEventsRepo?.isDeleted(event.id) == true) return
         eventCache.put(event.id, event)
+        eventPersistence?.persistEvent(event)
         relayHintStore?.extractHintsFromTags(event)
 
         when (event.kind) {
@@ -355,6 +358,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (eventCache.get(event.id) != null) return  // already cached
         seenEventIds.add(event.id)
         eventCache.put(event.id, event)
+        eventPersistence?.persistEvent(event)
         relayHintStore?.extractHintsFromTags(event)
         if (event.kind == 0) {
             val updated = profileRepo?.updateFromEvent(event)
@@ -651,12 +655,18 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun searchNotes(query: String, limit: Int = 50): List<NostrEvent> {
         if (query.isBlank()) return emptyList()
-        return eventCache.snapshot().values
+        // Search LRU cache first
+        val cacheResults = eventCache.snapshot().values
             .asSequence()
             .filter { it.kind == 1 && it.content.contains(query, ignoreCase = true) }
             .sortedByDescending { it.created_at }
             .take(limit)
             .toList()
+        // Merge with ObjectBox results for cross-session search
+        val dbResults = eventPersistence?.searchNotes(query, limit) ?: emptyList()
+        val seenIds = cacheResults.mapTo(HashSet()) { it.id }
+        val merged = cacheResults + dbResults.filter { it.id !in seenIds }
+        return merged.sortedByDescending { it.created_at }.take(limit)
     }
 
     /**

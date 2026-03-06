@@ -6,6 +6,7 @@ import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip51
+import com.wisp.app.db.EventPersistence
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayHealthTracker
@@ -57,6 +58,7 @@ class StartupCoordinator(
     private val outboxRouter: OutboxRouter,
     private val subManager: SubscriptionManager,
     private val eventRepo: EventRepository,
+    private val eventPersistence: EventPersistence?,
     private val contactRepo: ContactRepository,
     private val muteRepo: MuteRepository,
     private val notifRepo: NotificationRepository,
@@ -172,6 +174,12 @@ class StartupCoordinator(
         Log.d("StartupCoord", "initRelays() called, relaysInitialized=$relaysInitialized")
         if (relaysInitialized) { Log.d("StartupCoord", "initRelays: already initialized, returning"); return }
         relaysInitialized = true
+
+        // Prune old events from ObjectBox in background
+        eventPersistence?.let { persistence ->
+            scope.launch(processingContext) { persistence.prune() }
+        }
+
         relayPool.healthTracker = healthTracker
         relayPool.appIsActive = true
         healthTracker.onBadRelaysChanged = { recomputeAndMergeRelays() }

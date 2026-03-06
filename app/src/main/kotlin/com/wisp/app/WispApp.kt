@@ -8,6 +8,7 @@ import coil3.memory.MemoryCache
 import coil3.video.VideoFrameDecoder
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import com.wisp.app.db.WispObjectBox
 import com.wisp.app.relay.HttpClientFactory
 import com.wisp.app.relay.TorManager
 import okhttp3.Call
@@ -17,6 +18,7 @@ class WispApp : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         CrashHandler.install(this)
+        WispObjectBox.init(this)
         TorManager.initialize(this)
     }
 

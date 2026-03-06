@@ -49,6 +49,11 @@
 -keep class com.google.mlkit.** { *; }
 -dontwarn com.google.mlkit.**
 
+# ObjectBox
+-keep class io.objectbox.** { *; }
+-dontwarn io.objectbox.**
+-keep class com.wisp.app.db.** { *; }
+
 # java.lang.management (not available on Android)
 -dontwarn java.lang.management.ManagementFactory
 -dontwarn java.lang.management.RuntimeMXBean
