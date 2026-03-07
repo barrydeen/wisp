@@ -47,6 +47,7 @@ class ListCrudManager(
             scope.launch {
                 val encrypted = s.nip44Encrypt(plaintext, s.pubkeyHex)
                 val event = s.signEvent(kind = Nip51.KIND_FOLLOW_SET, content = encrypted, tags = tags)
+                eventRepo.cacheEvent(event)
                 relayPool.sendToWriteRelays(ClientMessage.event(event))
                 listRepo.updateFromEvent(event, plaintext)
             }
@@ -54,6 +55,7 @@ class ListCrudManager(
             val tags = Nip51.buildFollowSetTags(dTag, emptySet(), title = title)
             scope.launch {
                 val event = s.signEvent(kind = Nip51.KIND_FOLLOW_SET, content = "", tags = tags)
+                eventRepo.cacheEvent(event)
                 relayPool.sendToWriteRelays(ClientMessage.event(event))
                 listRepo.updateFromEvent(event)
             }
@@ -71,6 +73,7 @@ class ListCrudManager(
             scope.launch {
                 val encrypted = s.nip44Encrypt(plaintext, myPubkey)
                 val event = s.signEvent(kind = Nip51.KIND_FOLLOW_SET, content = encrypted, tags = tags)
+                eventRepo.cacheEvent(event)
                 relayPool.sendToWriteRelays(ClientMessage.event(event))
                 listRepo.updateFromEvent(event, plaintext)
             }
@@ -78,6 +81,7 @@ class ListCrudManager(
             val tags = Nip51.buildFollowSetTags(dTag, newMembers, title = title)
             scope.launch {
                 val event = s.signEvent(kind = Nip51.KIND_FOLLOW_SET, content = "", tags = tags)
+                eventRepo.cacheEvent(event)
                 relayPool.sendToWriteRelays(ClientMessage.event(event))
                 listRepo.updateFromEvent(event)
             }
@@ -96,6 +100,7 @@ class ListCrudManager(
                 val hasContent = newMembers.isNotEmpty() || title != null
                 val encrypted = if (hasContent) s.nip44Encrypt(plaintext, myPubkey) else ""
                 val event = s.signEvent(kind = Nip51.KIND_FOLLOW_SET, content = encrypted, tags = tags)
+                eventRepo.cacheEvent(event)
                 relayPool.sendToWriteRelays(ClientMessage.event(event))
                 listRepo.updateFromEvent(event, if (hasContent) plaintext else "[]")
             }
@@ -103,6 +108,7 @@ class ListCrudManager(
             val tags = Nip51.buildFollowSetTags(dTag, newMembers, title = title)
             scope.launch {
                 val event = s.signEvent(kind = Nip51.KIND_FOLLOW_SET, content = "", tags = tags)
+                eventRepo.cacheEvent(event)
                 relayPool.sendToWriteRelays(ClientMessage.event(event))
                 listRepo.updateFromEvent(event)
             }
@@ -141,6 +147,7 @@ class ListCrudManager(
             scope.launch {
                 val encrypted = s.nip44Encrypt(plaintext, s.pubkeyHex)
                 val event = s.signEvent(kind = Nip51.KIND_BOOKMARK_SET, content = encrypted, tags = tags)
+                eventRepo.cacheEvent(event)
                 relayPool.sendToWriteRelays(ClientMessage.event(event))
                 bookmarkSetRepo.updateFromEvent(event, plaintext)
             }
@@ -148,6 +155,7 @@ class ListCrudManager(
             val tags = Nip51.buildBookmarkSetTags(dTag, emptySet(), title = title)
             scope.launch {
                 val event = s.signEvent(kind = Nip51.KIND_BOOKMARK_SET, content = "", tags = tags)
+                eventRepo.cacheEvent(event)
                 relayPool.sendToWriteRelays(ClientMessage.event(event))
                 bookmarkSetRepo.updateFromEvent(event)
             }
@@ -160,18 +168,21 @@ class ListCrudManager(
         val existing = bookmarkSetRepo.getSet(myPubkey, dTag) ?: return
         val newIds = existing.eventIds + eventId
         val title = existing.name.takeIf { it != existing.dTag }
+        val hints = eventRepo.getRelayHintsForEvents(newIds)
         if (existing.isPrivate) {
-            val (tags, plaintext) = Nip51.buildBookmarkSetPrivate(dTag, newIds, existing.coordinates, existing.hashtags, title = title)
+            val (tags, plaintext) = Nip51.buildBookmarkSetPrivate(dTag, newIds, existing.coordinates, existing.hashtags, title = title, relayHints = hints)
             scope.launch {
                 val encrypted = s.nip44Encrypt(plaintext, myPubkey)
                 val event = s.signEvent(kind = Nip51.KIND_BOOKMARK_SET, content = encrypted, tags = tags)
+                eventRepo.cacheEvent(event)
                 relayPool.sendToWriteRelays(ClientMessage.event(event))
                 bookmarkSetRepo.updateFromEvent(event, plaintext)
             }
         } else {
-            val tags = Nip51.buildBookmarkSetTags(dTag, newIds, existing.coordinates, existing.hashtags, title = title)
+            val tags = Nip51.buildBookmarkSetTags(dTag, newIds, existing.coordinates, existing.hashtags, title = title, relayHints = hints)
             scope.launch {
                 val event = s.signEvent(kind = Nip51.KIND_BOOKMARK_SET, content = "", tags = tags)
+                eventRepo.cacheEvent(event)
                 relayPool.sendToWriteRelays(ClientMessage.event(event))
                 bookmarkSetRepo.updateFromEvent(event)
             }
@@ -184,19 +195,22 @@ class ListCrudManager(
         val existing = bookmarkSetRepo.getSet(myPubkey, dTag) ?: return
         val newIds = existing.eventIds - eventId
         val title = existing.name.takeIf { it != existing.dTag }
+        val hints = eventRepo.getRelayHintsForEvents(newIds)
         if (existing.isPrivate) {
-            val (tags, plaintext) = Nip51.buildBookmarkSetPrivate(dTag, newIds, existing.coordinates, existing.hashtags, title = title)
+            val (tags, plaintext) = Nip51.buildBookmarkSetPrivate(dTag, newIds, existing.coordinates, existing.hashtags, title = title, relayHints = hints)
             scope.launch {
                 val hasContent = newIds.isNotEmpty() || existing.coordinates.isNotEmpty() || existing.hashtags.isNotEmpty() || title != null
                 val encrypted = if (hasContent) s.nip44Encrypt(plaintext, myPubkey) else ""
                 val event = s.signEvent(kind = Nip51.KIND_BOOKMARK_SET, content = encrypted, tags = tags)
+                eventRepo.cacheEvent(event)
                 relayPool.sendToWriteRelays(ClientMessage.event(event))
                 bookmarkSetRepo.updateFromEvent(event, if (hasContent) plaintext else "[]")
             }
         } else {
-            val tags = Nip51.buildBookmarkSetTags(dTag, newIds, existing.coordinates, existing.hashtags, title = title)
+            val tags = Nip51.buildBookmarkSetTags(dTag, newIds, existing.coordinates, existing.hashtags, title = title, relayHints = hints)
             scope.launch {
                 val event = s.signEvent(kind = Nip51.KIND_BOOKMARK_SET, content = "", tags = tags)
+                eventRepo.cacheEvent(event)
                 relayPool.sendToWriteRelays(ClientMessage.event(event))
                 bookmarkSetRepo.updateFromEvent(event)
             }

@@ -260,12 +260,16 @@ object Nip51 {
         eventIds: Set<String>,
         coordinates: Set<String> = emptySet(),
         hashtags: Set<String> = emptySet(),
-        title: String? = null
+        title: String? = null,
+        relayHints: Map<String, String> = emptyMap()
     ): List<List<String>> {
         val tags = mutableListOf<List<String>>()
         tags.add(listOf("d", dTag))
         if (title != null) tags.add(listOf("title", title))
-        for (id in eventIds) tags.add(listOf("e", id))
+        for (id in eventIds) {
+            val hint = relayHints[id]
+            if (hint != null) tags.add(listOf("e", id, hint)) else tags.add(listOf("e", id))
+        }
         for (coord in coordinates) tags.add(listOf("a", coord))
         for (tag in hashtags) tags.add(listOf("t", tag))
         return tags
@@ -276,12 +280,16 @@ object Nip51 {
         eventIds: Set<String>,
         coordinates: Set<String> = emptySet(),
         hashtags: Set<String> = emptySet(),
-        title: String? = null
+        title: String? = null,
+        relayHints: Map<String, String> = emptyMap()
     ): Pair<List<List<String>>, String> {
         val tags = listOf(listOf("d", dTag))
         val privateTags = mutableListOf<List<String>>()
         if (title != null) privateTags.add(listOf("title", title))
-        for (id in eventIds) privateTags.add(listOf("e", id))
+        for (id in eventIds) {
+            val hint = relayHints[id]
+            if (hint != null) privateTags.add(listOf("e", id, hint)) else privateTags.add(listOf("e", id))
+        }
         for (coord in coordinates) privateTags.add(listOf("a", coord))
         for (tag in hashtags) privateTags.add(listOf("t", tag))
         return Pair(tags, buildPrivateContent(privateTags))
@@ -302,9 +310,12 @@ object Nip51 {
         return BookmarkList(eventIds, coordinates, hashtags, event.created_at)
     }
 
-    fun buildBookmarkListTags(eventIds: Set<String>, coordinates: Set<String> = emptySet(), hashtags: Set<String> = emptySet()): List<List<String>> {
+    fun buildBookmarkListTags(eventIds: Set<String>, coordinates: Set<String> = emptySet(), hashtags: Set<String> = emptySet(), relayHints: Map<String, String> = emptyMap()): List<List<String>> {
         val tags = mutableListOf<List<String>>()
-        for (id in eventIds) tags.add(listOf("e", id))
+        for (id in eventIds) {
+            val hint = relayHints[id]
+            if (hint != null) tags.add(listOf("e", id, hint)) else tags.add(listOf("e", id))
+        }
         for (coord in coordinates) tags.add(listOf("a", coord))
         for (tag in hashtags) tags.add(listOf("t", tag))
         return tags
@@ -316,7 +327,10 @@ object Nip51 {
         }.toSet()
     }
 
-    fun buildPinListTags(eventIds: Set<String>): List<List<String>> {
-        return eventIds.map { listOf("e", it) }
+    fun buildPinListTags(eventIds: Set<String>, relayHints: Map<String, String> = emptyMap()): List<List<String>> {
+        return eventIds.map { id ->
+            val hint = relayHints[id]
+            if (hint != null) listOf("e", id, hint) else listOf("e", id)
+        }
     }
 }

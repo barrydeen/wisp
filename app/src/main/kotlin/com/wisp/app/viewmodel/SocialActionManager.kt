@@ -216,7 +216,9 @@ class SocialActionManager(
 
     private fun publishPinList() {
         val s = getSigner() ?: return
-        val tags = Nip51.buildPinListTags(pinRepo.getPinnedIds())
+        val ids = pinRepo.getPinnedIds()
+        val hints = eventRepo.getRelayHintsForEvents(ids)
+        val tags = Nip51.buildPinListTags(ids, relayHints = hints)
         scope.launch {
             val event = s.signEvent(kind = Nip51.KIND_PIN_LIST, content = "", tags = tags)
             relayPool.sendToWriteRelays(ClientMessage.event(event))

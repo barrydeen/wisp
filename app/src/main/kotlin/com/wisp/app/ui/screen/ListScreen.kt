@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.FollowSet
 import com.wisp.app.nostr.Nip19
+import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.toHex
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
@@ -68,6 +69,7 @@ fun ListScreen(
     contactRepo: ContactRepository? = null
 ) {
     val profileVersion by eventRepo.profileVersion.collectAsState()
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     var showPickerDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showFollowAllConfirm by remember { mutableStateOf(false) }
@@ -140,33 +142,44 @@ fun ListScreen(
                             Icon(Icons.Default.Add, "Add Members")
                         }
                     }
-                    if (isOwnList || (!isOwnList && onFollowAll != null)) {
-                        Box {
-                            IconButton(onClick = { menuExpanded = true }) {
-                                Icon(Icons.Default.MoreVert, "More options")
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, "More options")
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false }
+                        ) {
+                            if (!isOwnList && onFollowAll != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Follow All Members") },
+                                    onClick = {
+                                        menuExpanded = false
+                                        showFollowAllConfirm = true
+                                    }
+                                )
                             }
-                            DropdownMenu(
-                                expanded = menuExpanded,
-                                onDismissRequest = { menuExpanded = false }
-                            ) {
-                                if (!isOwnList && onFollowAll != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Follow All Members") },
-                                        onClick = {
-                                            menuExpanded = false
-                                            showFollowAllConfirm = true
+                            if (followSet != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Copy List JSON") },
+                                    onClick = {
+                                        menuExpanded = false
+                                        val event = eventRepo.findAddressableEvent(Nip51.KIND_FOLLOW_SET, followSet.pubkey, followSet.dTag)
+                                        val json = event?.toJson() ?: ""
+                                        if (json.isNotEmpty()) {
+                                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(json))
                                         }
-                                    )
-                                }
-                                if (isOwnList && onDeleteList != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Delete List", color = MaterialTheme.colorScheme.error) },
-                                        onClick = {
-                                            menuExpanded = false
-                                            showDeleteConfirm = true
-                                        }
-                                    )
-                                }
+                                    }
+                                )
+                            }
+                            if (isOwnList && onDeleteList != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Delete List", color = MaterialTheme.colorScheme.error) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        showDeleteConfirm = true
+                                    }
+                                )
                             }
                         }
                     }

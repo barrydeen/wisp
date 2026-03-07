@@ -111,7 +111,7 @@ internal sealed interface ContentSegment {
     data class LinkSegment(val url: String) : ContentSegment
     data class InlineLinkSegment(val url: String) : ContentSegment
     data class NostrNoteSegment(val eventId: String, val relayHints: List<String> = emptyList()) : ContentSegment
-    data class NostrProfileSegment(val pubkey: String) : ContentSegment
+    data class NostrProfileSegment(val pubkey: String, val relayHints: List<String> = emptyList()) : ContentSegment
     data class NostrAddressableSegment(val dTag: String, val relays: List<String>, val author: String?, val kind: Int?) : ContentSegment
     data class CustomEmojiSegment(val shortcode: String, val url: String) : ContentSegment
     data class HashtagSegment(val tag: String) : ContentSegment
@@ -164,7 +164,7 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
         } else if (token.startsWith("nostr:")) {
             when (val decoded = Nip19.decodeNostrUri(token)) {
                 is NostrUriData.NoteRef -> segments.add(ContentSegment.NostrNoteSegment(decoded.eventId, decoded.relays))
-                is NostrUriData.ProfileRef -> segments.add(ContentSegment.NostrProfileSegment(decoded.pubkey))
+                is NostrUriData.ProfileRef -> segments.add(ContentSegment.NostrProfileSegment(decoded.pubkey, decoded.relays))
                 is NostrUriData.AddressRef -> segments.add(ContentSegment.NostrAddressableSegment(decoded.dTag, decoded.relays, decoded.author, decoded.kind))
                 null -> segments.add(ContentSegment.TextSegment(token))
             }
@@ -243,6 +243,7 @@ fun RichContent(
     modifier: Modifier = Modifier
 ) {
     val segments = remember(content, emojiMap) { parseContent(content.trimEnd('\n', '\r'), emojiMap) }
+    val profileVer = eventRepo?.profileVersion?.collectAsState()?.value ?: 0
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
     var fullScreenVideoUrl by remember { mutableStateOf<String?>(null) }
     var fullScreenVideoPositionMs by remember { mutableLongStateOf(0L) }
@@ -300,12 +301,24 @@ fun RichContent(
                 val inlineSegments = group as List<ContentSegment>
 
                 // Build profile display names for this run
-                val profileNames = mutableMapOf<String, String>()
-                for (seg in inlineSegments) {
-                    if (seg is ContentSegment.NostrProfileSegment) {
-                        val profile = eventRepo?.getProfileData(seg.pubkey)
-                        profileNames[seg.pubkey] = profile?.displayString
-                            ?: "${seg.pubkey.take(8)}...${seg.pubkey.takeLast(4)}"
+                val profilePubkeys = inlineSegments
+                    .filterIsInstance<ContentSegment.NostrProfileSegment>()
+                    .map { it.pubkey }
+                val profileNames = remember(profilePubkeys, profileVer) {
+                    val names = mutableMapOf<String, String>()
+                    for (pubkey in profilePubkeys) {
+                        val profile = eventRepo?.getProfileData(pubkey)
+                        names[pubkey] = profile?.displayString
+                            ?: "${pubkey.take(8)}...${pubkey.takeLast(4)}"
+                    }
+                    names
+                }
+                // Queue fetches for any missing profiles
+                LaunchedEffect(profilePubkeys) {
+                    for (seg in inlineSegments) {
+                        if (seg is ContentSegment.NostrProfileSegment) {
+                            eventRepo?.requestProfileIfMissing(seg.pubkey, seg.relayHints)
+                        }
                     }
                 }
 

@@ -426,6 +426,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun getProfileData(pubkey: String): ProfileData? = profileRepo?.get(pubkey)
 
+    fun requestProfileIfMissing(pubkey: String, relayHints: List<String> = emptyList()) {
+        metadataFetcher?.addToPendingProfiles(pubkey, relayHints)
+    }
+
     fun getReactionCount(eventId: String): Int {
         return reactionCounts.get(eventId)?.values?.sum() ?: 0
     }
@@ -556,6 +560,22 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun getEventRelays(eventId: String): Set<String> = eventRelays.get(eventId) ?: emptySet()
+
+    fun getRelayHintsForEvents(eventIds: Set<String>): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        for (id in eventIds) {
+            val relay = getEventRelays(id).firstOrNull()
+            if (relay != null) {
+                result[id] = relay
+            } else {
+                // Fall back to author's known relays from RelayHintStore
+                val event = eventCache.get(id) ?: continue
+                val authorHint = relayHintStore?.getHints(event.pubkey)?.firstOrNull()
+                if (authorHint != null) result[id] = authorHint
+            }
+        }
+        return result
+    }
 
     fun getRepostAuthor(eventId: String): String? = repostAuthors.get(eventId)?.firstOrNull()
 

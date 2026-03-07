@@ -234,6 +234,7 @@ fun ListsHubScreen(
                 items(notesLists, key = { "n:${it.pubkey}:${it.dTag}" }) { bookmarkSet ->
                     BookmarkSetRow(
                         bookmarkSet = bookmarkSet,
+                        eventRepo = eventRepo,
                         onClick = { onBookmarkSetDetail(bookmarkSet) },
                         onDelete = {
                             deleteConfirmation = DeleteTarget.Notes(bookmarkSet.dTag, bookmarkSet.name)
@@ -271,21 +272,10 @@ private fun FollowSetRow(
 
     if (showJsonDialog) {
         val jsonText = remember(followSet) {
-            buildString {
-                appendLine("{")
-                appendLine("  \"kind\": 30000,")
-                appendLine("  \"pubkey\": \"${followSet.pubkey}\",")
-                appendLine("  \"d_tag\": \"${followSet.dTag}\",")
-                appendLine("  \"name\": \"${followSet.name}\",")
-                appendLine("  \"members\": [")
-                followSet.members.forEachIndexed { i, pk ->
-                    val comma = if (i < followSet.members.size - 1) "," else ""
-                    appendLine("    \"$pk\"$comma")
-                }
-                appendLine("  ],")
-                appendLine("  \"created_at\": ${followSet.createdAt}")
-                append("}")
-            }
+            val event = eventRepo.findAddressableEvent(
+                com.wisp.app.nostr.Nip51.KIND_FOLLOW_SET, followSet.pubkey, followSet.dTag
+            )
+            event?.toJson() ?: "Event not found in cache"
         }
         JsonViewDialog(json = jsonText, onDismiss = { showJsonDialog = false })
     }
@@ -369,6 +359,7 @@ private fun FollowSetRow(
 @Composable
 private fun BookmarkSetRow(
     bookmarkSet: BookmarkSet,
+    eventRepo: EventRepository,
     onClick: () -> Unit,
     onDelete: () -> Unit,
     onViewJson: () -> Unit
@@ -378,37 +369,10 @@ private fun BookmarkSetRow(
 
     if (showJsonDialog) {
         val jsonText = remember(bookmarkSet) {
-            buildString {
-                appendLine("{")
-                appendLine("  \"kind\": 30003,")
-                appendLine("  \"pubkey\": \"${bookmarkSet.pubkey}\",")
-                appendLine("  \"d_tag\": \"${bookmarkSet.dTag}\",")
-                appendLine("  \"name\": \"${bookmarkSet.name}\",")
-                appendLine("  \"event_ids\": [")
-                bookmarkSet.eventIds.forEachIndexed { i, id ->
-                    val comma = if (i < bookmarkSet.eventIds.size - 1) "," else ""
-                    appendLine("    \"$id\"$comma")
-                }
-                appendLine("  ],")
-                if (bookmarkSet.coordinates.isNotEmpty()) {
-                    appendLine("  \"coordinates\": [")
-                    bookmarkSet.coordinates.forEachIndexed { i, c ->
-                        val comma = if (i < bookmarkSet.coordinates.size - 1) "," else ""
-                        appendLine("    \"$c\"$comma")
-                    }
-                    appendLine("  ],")
-                }
-                if (bookmarkSet.hashtags.isNotEmpty()) {
-                    appendLine("  \"hashtags\": [")
-                    bookmarkSet.hashtags.forEachIndexed { i, t ->
-                        val comma = if (i < bookmarkSet.hashtags.size - 1) "," else ""
-                        appendLine("    \"$t\"$comma")
-                    }
-                    appendLine("  ],")
-                }
-                appendLine("  \"created_at\": ${bookmarkSet.createdAt}")
-                append("}")
-            }
+            val event = eventRepo.findAddressableEvent(
+                com.wisp.app.nostr.Nip51.KIND_BOOKMARK_SET, bookmarkSet.pubkey, bookmarkSet.dTag
+            )
+            event?.toJson() ?: "Event not found in cache"
         }
         JsonViewDialog(json = jsonText, onDismiss = { showJsonDialog = false })
     }

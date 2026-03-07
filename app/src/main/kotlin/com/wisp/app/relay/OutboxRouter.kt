@@ -233,13 +233,23 @@ class OutboxRouter(
             }
         }
 
-        // Fallback: send unknown pubkeys to top relays (not all — avoids 150-relay broadcast)
+        // Fallback: send unknown pubkeys to top relays + profile indexers
         if (unknownPubkeys.isNotEmpty()) {
             sendChunkedToTopRelays(subId, unknownPubkeys, listOf(
                 Filter(kinds = listOf(0))
             ), limitPerAuthor = true)
+            // Also query profile-specialized relays via ephemeral connections
+            val chunks = unknownPubkeys.chunked(MAX_AUTHORS_PER_FILTER)
+            for (chunk in chunks) {
+                val f = Filter(kinds = listOf(0), authors = chunk, limit = chunk.size)
+                val msg = ClientMessage.req(subId, f)
+                for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+                    relayPool.sendToRelayOrEphemeral(url, msg)
+                }
+            }
         }
     }
+
 
     /**
      * Subscribe to a specific user's content via their write relays.

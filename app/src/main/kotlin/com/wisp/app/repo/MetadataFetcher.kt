@@ -28,6 +28,7 @@ class MetadataFetcher(
 ) {
     // Batched profile fetching
     private val pendingProfilePubkeys = mutableSetOf<String>()
+    private val pendingProfileRelayHints = mutableMapOf<String, List<String>>()
     private val inFlightProfiles = mutableSetOf<String>() // currently being fetched, prevents re-queueing
     private var profileBatchJob: Job? = null
     private var metaBatchCounter = 0
@@ -79,6 +80,7 @@ class MetadataFetcher(
         onDemandQuoteBatchJob?.cancel()
         synchronized(pendingProfilePubkeys) {
             pendingProfilePubkeys.clear()
+            pendingProfileRelayHints.clear()
             inFlightProfiles.clear()
         }
         synchronized(pendingReplyCountIds) { pendingReplyCountIds.clear() }
@@ -113,7 +115,7 @@ class MetadataFetcher(
         addToPendingProfiles(pubkey)
     }
 
-    fun addToPendingProfiles(pubkey: String) {
+    fun addToPendingProfiles(pubkey: String, relayHints: List<String> = emptyList()) {
         synchronized(pendingProfilePubkeys) {
             if (profileRepo.has(pubkey)) return
             if (pubkey in exhaustedProfiles) return
@@ -125,6 +127,7 @@ class MetadataFetcher(
             }
             if (pubkey in pendingProfilePubkeys) return
             pendingProfilePubkeys.add(pubkey)
+            if (relayHints.isNotEmpty()) pendingProfileRelayHints[pubkey] = relayHints
             val shouldFlushNow = pendingProfilePubkeys.size >= 200
             if (shouldFlushNow) {
                 profileBatchJob?.cancel()
@@ -284,7 +287,9 @@ class MetadataFetcher(
         if (pendingProfilePubkeys.isEmpty()) return
         val subId = "meta-batch-${metaBatchCounter++}"
         val pubkeys = pendingProfilePubkeys.toList()
+        val relayHints = pendingProfileRelayHints.toMap()
         pendingProfilePubkeys.clear()
+        pendingProfileRelayHints.clear()
         inFlightProfiles.addAll(pubkeys)
 
         pubkeys.forEach { profileAttempts[it] = (profileAttempts[it] ?: 0) + 1 }
@@ -296,6 +301,17 @@ class MetadataFetcher(
             // Retry: send to top 10 relays instead of all — most profiles are on major relays
             val filter = Filter(kinds = listOf(0), authors = pubkeys, limit = pubkeys.size)
             relayPool.sendToTopRelays(ClientMessage.req(subId, filter), maxRelays = 10)
+        }
+
+        // Also send to any relay hints from nprofile references
+        val hintUrls = relayHints.values.flatten().distinct()
+        if (hintUrls.isNotEmpty()) {
+            val hintPubkeys = relayHints.keys.toList()
+            val filter = Filter(kinds = listOf(0), authors = hintPubkeys, limit = hintPubkeys.size)
+            val msg = ClientMessage.req(subId, filter)
+            for (url in hintUrls) {
+                relayPool.sendToRelayOrEphemeral(url, msg)
+            }
         }
 
         scope.launch(processingContext) {

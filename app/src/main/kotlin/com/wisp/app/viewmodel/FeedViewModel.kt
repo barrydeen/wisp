@@ -413,10 +413,13 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun publishBookmarkList(s: com.wisp.app.nostr.NostrSigner) {
+        val ids = bookmarkRepo.getBookmarkedIds()
+        val hints = eventRepo.getRelayHintsForEvents(ids)
         val tags = com.wisp.app.nostr.Nip51.buildBookmarkListTags(
-            bookmarkRepo.getBookmarkedIds(),
+            ids,
             bookmarkRepo.getCoordinates(),
-            bookmarkRepo.getHashtags()
+            bookmarkRepo.getHashtags(),
+            relayHints = hints
         )
         viewModelScope.launch {
             val event = s.signEvent(
@@ -424,6 +427,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 content = "",
                 tags = tags
             )
+            eventRepo.cacheEvent(event)
             relayPool.sendToWriteRelays(com.wisp.app.nostr.ClientMessage.event(event))
         }
     }
