@@ -250,14 +250,11 @@ class Relay(
             webSocket = null
             pendingReconnect?.cancel(false)
             pendingReconnect = null
-            if (ws != null) {
-                if (wasConnected) {
-                    ws.close(1000, "Bye")
-                } else {
-                    // Force-close sockets stuck mid-handshake — close() can hang on unresponsive relays
-                    ws.cancel()
-                }
-            }
+            // Always cancel() for immediate TCP teardown. Graceful close(1000) leaves
+            // OkHttp's reader thread alive waiting for the server's close frame — if we
+            // reconnect immediately (e.g. forceReconnectAll), the stale reader can crash
+            // with ArrayIndexOutOfBoundsException in Okio's buffer (size=0, byteCount=8192).
+            ws?.cancel()
         }
     }
 
