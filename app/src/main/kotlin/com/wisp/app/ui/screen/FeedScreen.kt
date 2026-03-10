@@ -118,6 +118,7 @@ fun FeedScreen(
     onSafety: () -> Unit = {},
     onCustomEmojis: () -> Unit = {},
     onConsole: () -> Unit = {},
+    onRelayHealth: () -> Unit = {},
     onKeys: () -> Unit = {},
     onPowSettings: () -> Unit = {},
     onInterfaceSettings: () -> Unit = {},
@@ -407,6 +408,10 @@ fun FeedScreen(
                 onConsole = {
                     scope.launch { drawerState.close() }
                     onConsole()
+                },
+                onRelayHealth = {
+                    scope.launch { drawerState.close() }
+                    onRelayHealth()
                 },
                 onRelaySettings = {
                     scope.launch { drawerState.close() }

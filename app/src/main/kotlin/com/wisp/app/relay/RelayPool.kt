@@ -895,6 +895,16 @@ class RelayPool {
 
     fun getEphemeralCount(): Int = ephemeralRelays.size
 
+    fun getEphemeralRelayUrls(): List<String> = ephemeralRelays.keys.toList()
+
+    fun getAllRelayUrls(): List<String> {
+        val urls = mutableListOf<String>()
+        urls.addAll(relays.map { it.config.url })
+        urls.addAll(dmRelays.map { it.config.url })
+        urls.addAll(ephemeralRelays.keys)
+        return urls
+    }
+
     fun isRelayConnected(url: String): Boolean = relayIndex[url]?.isConnected == true
 
     /** Clear cooldown for a specific relay so it can be retried immediately. */
