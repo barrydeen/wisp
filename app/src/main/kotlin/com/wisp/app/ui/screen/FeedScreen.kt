@@ -150,9 +150,26 @@ fun FeedScreen(
     }
     val userPubkey = viewModel.getUserPubkey()
     val selectedList by viewModel.selectedList.collectAsState()
-    // Instantly jump to top whenever feed type, selected list, or selected relay changes
+    // Jump to top only when feed type, selected list, or selected relay actually changes
+    // (not on recomposition after back-navigation from thread/compose)
+    var prevFeedType by rememberSaveable { mutableStateOf(feedType.name) }
+    var prevSelectedList by rememberSaveable { mutableStateOf(selectedList) }
+    var prevSelectedRelay by rememberSaveable { mutableStateOf(selectedRelay) }
+    var prevSelectedRelaySet by rememberSaveable { mutableStateOf(selectedRelaySet?.name) }
+
     LaunchedEffect(feedType, selectedList, selectedRelay, selectedRelaySet) {
-        listState.scrollToItem(0)
+        val feedTypeChanged = feedType.name != prevFeedType
+        val listChanged = selectedList != prevSelectedList
+        val relayChanged = selectedRelay != prevSelectedRelay
+        val relaySetChanged = selectedRelaySet?.name != prevSelectedRelaySet
+
+        if (feedTypeChanged || listChanged || relayChanged || relaySetChanged) {
+            prevFeedType = feedType.name
+            prevSelectedList = selectedList
+            prevSelectedRelay = selectedRelay
+            prevSelectedRelaySet = selectedRelaySet?.name
+            listState.scrollToItem(0)
+        }
     }
     val ownLists by viewModel.listRepo.ownLists.collectAsState()
     var showRelayPicker by remember { mutableStateOf(false) }
