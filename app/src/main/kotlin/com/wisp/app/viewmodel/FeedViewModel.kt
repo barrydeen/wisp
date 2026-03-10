@@ -228,7 +228,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope, processingDispatcher, pubkeyHex,
         getUserPubkey = { getUserPubkey() },
         registerAuthSigner = { registerAuthSigner() },
-        fetchMissingEmojiSets = { listCrud.fetchMissingEmojiSets() }
+        fetchMissingEmojiSets = { listCrud.fetchMissingEmojiSets() },
+        getSigner = { signer }
     )
 
     // -- Exposed state --

@@ -12,6 +12,7 @@ import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.nostr.SignerCancelledException
 import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.nostr.toHex
+import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.KeyRepository
@@ -59,14 +60,16 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
             _userDmRelays.value = relayPool.getDmRelayUrls()
         }
 
-        // Fetch peer's DM relays
+        // Fetch peer's DM relays — show cached immediately, always refresh from indexers
         if (relayPool != null) {
             viewModelScope.launch {
                 val cached = dmRepository.getCachedDmRelays(peerPubkeyHex)
                 if (cached != null) {
                     _peerDmRelays.value = cached
-                } else {
-                    val fetched = fetchRecipientDmRelays(relayPool)
+                }
+                // Always fetch fresh relays from indexers to ensure we have the latest
+                val fetched = fetchRecipientDmRelays(relayPool, forceRefresh = true)
+                if (fetched.isNotEmpty()) {
                     _peerDmRelays.value = fetched
                 }
             }
@@ -88,30 +91,43 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Fetch recipient's kind 10050 DM relays, with cache-first strategy.
+     * Fetch recipient's kind 10050 DM relays from indexer relays.
+     * When [forceRefresh] is false, returns cached relays if available.
+     * When true, always queries indexer relays for the freshest relay set.
      */
-    private suspend fun fetchRecipientDmRelays(relayPool: RelayPool): List<String> {
+    private suspend fun fetchRecipientDmRelays(relayPool: RelayPool, forceRefresh: Boolean = false): List<String> {
         val repo = dmRepo ?: return emptyList()
 
-        // Cache hit
-        repo.getCachedDmRelays(peerPubkey)?.let { return it }
+        // Cache hit (skip when forcing a refresh)
+        if (!forceRefresh) {
+            repo.getCachedDmRelays(peerPubkey)?.let { return it }
+        }
 
-        // Send REQ for kind 10050 to all connected relays
+        // Send REQ for kind 10050 to indexer relays (most likely to have relay metadata)
         val subId = "dm_relay_${peerPubkey.take(8)}"
         val filter = Filter(
             kinds = listOf(Nip51.KIND_DM_RELAYS),
             authors = listOf(peerPubkey),
             limit = 1
         )
-        relayPool.sendToAll(ClientMessage.req(subId, filter))
+        val reqMsg = ClientMessage.req(subId, filter)
+        for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+            relayPool.sendToRelayOrEphemeral(url, reqMsg, skipBadCheck = true)
+        }
+        // Also broadcast to connected relays for additional coverage
+        relayPool.sendToAll(reqMsg)
 
-        // Wait up to 3s for a matching event
-        val result = withTimeoutOrNull(3000L) {
+        // Wait up to 4s for a matching event
+        val result = withTimeoutOrNull(4000L) {
             relayPool.relayEvents.first { it.subscriptionId == subId }
         }
 
         // Close subscription
-        relayPool.sendToAll(ClientMessage.close(subId))
+        val closeMsg = ClientMessage.close(subId)
+        for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+            relayPool.sendToRelay(url, closeMsg)
+        }
+        relayPool.sendToAll(closeMsg)
 
         if (result != null) {
             val urls = Nip51.parseRelaySet(result.event)

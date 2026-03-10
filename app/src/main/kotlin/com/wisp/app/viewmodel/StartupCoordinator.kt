@@ -37,6 +37,7 @@ import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.repo.RelaySetRepository
 import com.wisp.app.repo.ZapPreferences
+import com.wisp.app.nostr.NostrSigner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -90,7 +91,8 @@ class StartupCoordinator(
     private val pubkeyHex: String?,
     private val getUserPubkey: () -> String?,
     private val registerAuthSigner: () -> Unit,
-    private val fetchMissingEmojiSets: () -> Unit
+    private val fetchMissingEmojiSets: () -> Unit,
+    private val getSigner: () -> NostrSigner?
 ) {
     private var eventProcessingJob: Job? = null
     private var metadataSweepJob: Job? = null
@@ -487,8 +489,37 @@ class StartupCoordinator(
             }
         }
 
+        // Apply default DM relays if the user has none set (e.g. new account or never configured)
+        applyDefaultDmRelaysIfEmpty(myPubkey)
+
         // DMs and notifications are not feed-blocking — fire and forget
         subscribeDmsAndNotifications(myPubkey)
+    }
+
+    /**
+     * If the user has no DM relays after fetching self-data, apply defaults and broadcast.
+     */
+    private fun applyDefaultDmRelaysIfEmpty(myPubkey: String) {
+        if (keyRepo.getDmRelays().isNotEmpty()) return
+
+        val defaults = RelayConfig.DEFAULT_DM_RELAYS
+        keyRepo.saveDmRelays(defaults)
+        relayPool.updateDmRelays(defaults)
+        Log.d("StartupCoord", "Applied default DM relays: $defaults")
+
+        // Publish kind 10050 so other clients and relays know our DM relays
+        val s = getSigner() ?: return
+        scope.launch {
+            val tags = Nip51.buildRelaySetTags(defaults)
+            val event = s.signEvent(kind = Nip51.KIND_DM_RELAYS, content = "", tags = tags)
+            val msg = ClientMessage.event(event)
+            relayPool.sendToWriteRelays(msg)
+            relayPool.sendToDmRelays(msg)
+            for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+                relayPool.sendToRelayOrEphemeral(url, msg)
+            }
+            Log.d("StartupCoord", "Published default DM relay list (kind ${Nip51.KIND_DM_RELAYS})")
+        }
     }
 
     /**
