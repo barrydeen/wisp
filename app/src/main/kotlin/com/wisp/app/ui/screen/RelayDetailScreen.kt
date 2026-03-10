@@ -748,20 +748,20 @@ private fun ConsoleEntryItem(entry: ConsoleLogEntry) {
 
 // -- Formatting Helpers --
 
-private fun formatNumber(n: Long): String = when {
+internal fun formatNumber(n: Long): String = when {
     n >= 1_000_000 -> String.format("%.1fM", n / 1_000_000.0)
     n >= 1_000 -> String.format("%.1fK", n / 1_000.0)
     else -> n.toString()
 }
 
-private fun formatBytes(bytes: Long): String = when {
+internal fun formatBytes(bytes: Long): String = when {
     bytes >= 1_073_741_824 -> String.format("%.1f GB", bytes / 1_073_741_824.0)
     bytes >= 1_048_576 -> String.format("%.1f MB", bytes / 1_048_576.0)
     bytes >= 1024 -> String.format("%.1f KB", bytes / 1024.0)
     else -> "$bytes B"
 }
 
-private fun formatDuration(ms: Long): String {
+internal fun formatDuration(ms: Long): String {
     val totalSeconds = ms / 1000
     val hours = totalSeconds / 3600
     val minutes = (totalSeconds % 3600) / 60

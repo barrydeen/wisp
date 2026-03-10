@@ -68,6 +68,8 @@ class RelayHealthTracker(
     private val lifetimeStats = mutableMapOf<String, RelayStats>()
     /** URL → timestamp when marked bad. Entries expire after [BAD_RELAY_EXPIRY_MS]. */
     private val _badRelays = mutableMapOf<String, Long>()
+    /** URL → human-readable reason why the relay was marked bad. */
+    private val _badRelayReasons = mutableMapOf<String, String>()
 
     var onBadRelaysChanged: (() -> Unit)? = null
 
@@ -178,6 +180,7 @@ class RelayHealthTracker(
         val markedAt = _badRelays[url] ?: return false
         if (System.currentTimeMillis() - markedAt > BAD_RELAY_EXPIRY_MS) {
             _badRelays.remove(url)
+            _badRelayReasons.remove(url)
             sessionHistory.remove(url)
             Log.d(TAG, "Bad relay expired, giving second chance: $url")
             return false
@@ -190,6 +193,7 @@ class RelayHealthTracker(
         val expired = _badRelays.filter { now - it.value > BAD_RELAY_EXPIRY_MS }.keys
         for (url in expired) {
             _badRelays.remove(url)
+            _badRelayReasons.remove(url)
             sessionHistory.remove(url)
             Log.d(TAG, "Bad relay expired: $url")
         }
@@ -198,6 +202,7 @@ class RelayHealthTracker(
 
     fun clearBadRelay(url: String) {
         if (_badRelays.remove(url) != null) {
+            _badRelayReasons.remove(url)
             sessionHistory.remove(url)
             saveToPrefs()
             onBadRelaysChanged?.invoke()
@@ -209,6 +214,7 @@ class RelayHealthTracker(
         if (_badRelays.isNotEmpty()) {
             val count = _badRelays.size
             _badRelays.clear()
+            _badRelayReasons.clear()
             sessionHistory.clear()
             saveToPrefs()
             onBadRelaysChanged?.invoke()
@@ -220,13 +226,48 @@ class RelayHealthTracker(
 
     fun getAllStats(): Map<String, RelayStats> = lifetimeStats.toMap()
 
+    fun getBadRelayReason(url: String): String? = _badRelayReasons[url]
+
+    // -- Session history exposure --
+
+    data class SessionSummary(
+        val eventsReceived: Int,
+        val hadMidSessionFailure: Boolean,
+        val hadRateLimit: Boolean,
+        val durationMs: Long
+    )
+
+    data class ActiveSessionInfo(
+        val eventsReceived: Int,
+        val durationMs: Long
+    )
+
+    @Synchronized
+    fun getSessionHistory(url: String): List<SessionSummary> {
+        return sessionHistory[url]?.map {
+            SessionSummary(it.eventsReceived, it.hadMidSessionFailure, it.hadRateLimit, it.durationMs)
+        } ?: emptyList()
+    }
+
+    @Synchronized
+    fun getActiveSession(url: String): ActiveSessionInfo? {
+        val session = activeSessions[url] ?: return null
+        return ActiveSessionInfo(
+            eventsReceived = session.eventsReceived,
+            durationMs = System.currentTimeMillis() - session.startedAt
+        )
+    }
+
+    fun getAllTrackedUrls(): Set<String> = lifetimeStats.keys.toSet()
+
     // -- Account management --
 
     fun clear() {
         activeSessions.clear()
         sessionHistory.clear()
         lifetimeStats.clear()
-        _badRelays.clear()  // Map.clear()
+        _badRelays.clear()
+        _badRelayReasons.clear()
         prefs.edit().clear().apply()
     }
 
@@ -290,6 +331,11 @@ class RelayHealthTracker(
 
         if (isBadNow && !wasBad) {
             _badRelays[url] = System.currentTimeMillis()
+            val reasons = mutableListOf<String>()
+            if (zeroEventSessions >= BAD_ZERO_EVENT_SESSIONS) reasons.add("$zeroEventSessions/${history.size} sessions received 0 events")
+            if (disconnectSessions >= BAD_DISCONNECT_SESSIONS) reasons.add("$disconnectSessions/${history.size} sessions disconnected mid-session")
+            if (rateLimitSessions >= BAD_RATE_LIMIT_SESSIONS) reasons.add("$rateLimitSessions/${history.size} sessions hit rate limits")
+            _badRelayReasons[url] = reasons.joinToString("; ")
             Log.w(TAG, "Relay marked BAD: $url (zero=$zeroEventSessions, disconnects=$disconnectSessions, rateLimit=$rateLimitSessions)")
         }
     }

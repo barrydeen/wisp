@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Settings
@@ -84,6 +85,7 @@ fun WispDrawerContent(
     onPowSettings: () -> Unit = {},
     onCustomEmojis: () -> Unit = {},
     onConsole: () -> Unit = {},
+    onRelayHealth: () -> Unit = {},
     onRelaySettings: () -> Unit,
     onInterfaceSettings: () -> Unit = {},
     onLogout: () -> Unit
@@ -319,6 +321,13 @@ fun WispDrawerContent(
                     label = { Text("Custom Emojis") },
                     selected = false,
                     onClick = onCustomEmojis,
+                    modifier = Modifier.padding(start = 36.dp, end = 12.dp)
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null) },
+                    label = { Text("Relay Health") },
+                    selected = false,
+                    onClick = onRelayHealth,
                     modifier = Modifier.padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(

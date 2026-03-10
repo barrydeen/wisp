@@ -59,6 +59,7 @@ import com.wisp.app.ui.screen.NotificationsScreen
 import com.wisp.app.ui.screen.SafetyScreen
 import com.wisp.app.ui.screen.UserProfileScreen
 import com.wisp.app.ui.screen.ConsoleScreen
+import com.wisp.app.ui.screen.RelayHealthScreen
 import com.wisp.app.ui.screen.CustomEmojiScreen
 import com.wisp.app.ui.screen.SearchScreen
 import com.wisp.app.ui.screen.SocialGraphScreen
@@ -91,6 +92,7 @@ import com.wisp.app.viewmodel.ThreadViewModel
 import com.wisp.app.viewmodel.UserProfileViewModel
 import com.wisp.app.viewmodel.NotificationsViewModel
 import com.wisp.app.viewmodel.ConsoleViewModel
+import com.wisp.app.viewmodel.RelayHealthViewModel
 import com.wisp.app.viewmodel.DraftsViewModel
 import com.wisp.app.viewmodel.SearchViewModel
 import com.wisp.app.viewmodel.HashtagFeedViewModel
@@ -131,6 +133,7 @@ object Routes {
     const val SOCIAL_GRAPH = "social_graph"
     const val POW_SETTINGS = "pow_settings"
     const val INTERFACE_SETTINGS = "interface_settings"
+    const val RELAY_HEALTH = "relay_health"
 }
 
 @Composable
@@ -161,6 +164,7 @@ fun WispNavHost(
     val draftsViewModel: DraftsViewModel = viewModel()
     val searchViewModel: SearchViewModel = viewModel()
     val consoleViewModel: ConsoleViewModel = viewModel()
+    val relayHealthViewModel: RelayHealthViewModel = viewModel()
     val onboardingViewModel: OnboardingViewModel = viewModel()
 
     relayViewModel.relayPool = feedViewModel.relayPool
@@ -587,6 +591,9 @@ fun WispNavHost(
                 },
                 onConsole = {
                     navController.navigate(Routes.CONSOLE)
+                },
+                onRelayHealth = {
+                    navController.navigate(Routes.RELAY_HEALTH)
                 },
                 onKeys = {
                     navController.navigate(Routes.KEYS)
@@ -1157,6 +1164,23 @@ fun WispNavHost(
             ConsoleScreen(
                 viewModel = consoleViewModel,
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.RELAY_HEALTH) {
+            relayHealthViewModel.init(
+                feedViewModel.relayPool,
+                feedViewModel.healthTracker,
+                feedViewModel.relayInfoRepo,
+                feedViewModel.eventRepo,
+                feedViewModel.relayScoreBoard
+            )
+            RelayHealthScreen(
+                viewModel = relayHealthViewModel,
+                onBack = { navController.popBackStack() },
+                onRelayDetail = { url ->
+                    navController.navigate("relay_detail/${java.net.URLEncoder.encode(url, "UTF-8")}")
+                }
             )
         }
 
