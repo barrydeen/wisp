@@ -127,6 +127,7 @@ fun UserProfileScreen(
     zapError: SharedFlow<String>? = null,
     zapInProgressIds: Set<String> = emptySet(),
     canPrivateZap: Boolean = false,
+    fetchDmRelays: (suspend (String) -> Boolean)? = null,
     ownLists: List<FollowSet> = emptyList(),
     onAddToList: ((String, String) -> Unit)? = null,
     onRemoveFromList: ((String, String) -> Unit)? = null,
@@ -182,6 +183,14 @@ fun UserProfileScreen(
     }
 
     if (zapTargetEvent != null) {
+        val zapRecipient = zapTargetEvent!!.pubkey
+        var resolvedCanPrivateZap by remember(zapRecipient) { mutableStateOf(canPrivateZap) }
+        if (!canPrivateZap && fetchDmRelays != null) {
+            LaunchedEffect(zapRecipient) {
+                val result = fetchDmRelays(zapRecipient)
+                if (result) resolvedCanPrivateZap = true
+            }
+        }
         ZapDialog(
             isWalletConnected = isWalletConnected,
             onDismiss = { zapTargetEvent = null },
@@ -191,7 +200,7 @@ fun UserProfileScreen(
                 onZap(event, amountMsats, message, isAnonymous, isPrivate)
             },
             onGoToWallet = onWallet,
-            canPrivateZap = canPrivateZap
+            canPrivateZap = resolvedCanPrivateZap
         )
     }
 

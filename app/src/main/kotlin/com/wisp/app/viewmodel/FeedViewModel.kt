@@ -51,13 +51,16 @@ import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.RelaySet
 import android.content.Context
+import com.wisp.app.nostr.Filter
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class FeedType { FOLLOWS, EXTENDED_FOLLOWS, RELAY, LIST }
 
@@ -495,6 +498,42 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             )
             relayPool.sendToWriteRelays(ClientMessage.event(event))
         }
+    }
+
+    /**
+     * Fetch DM relays (kind 10050) for a pubkey if not already cached.
+     * Returns true if the pubkey has DM relays (from cache or fresh fetch).
+     */
+    suspend fun fetchDmRelaysIfMissing(pubkey: String): Boolean {
+        if (relayListRepo.hasDmRelays(pubkey)) return true
+
+        val subId = "zap_dm_relay_${pubkey.take(8)}"
+        val filter = Filter(
+            kinds = listOf(Nip51.KIND_DM_RELAYS),
+            authors = listOf(pubkey),
+            limit = 1
+        )
+        val reqMsg = ClientMessage.req(subId, filter)
+        for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+            relayPool.sendToRelayOrEphemeral(url, reqMsg, skipBadCheck = true)
+        }
+        relayPool.sendToAll(reqMsg)
+
+        val result = withTimeoutOrNull(4000L) {
+            relayPool.relayEvents.first { it.subscriptionId == subId }
+        }
+
+        val closeMsg = ClientMessage.close(subId)
+        for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+            relayPool.sendToRelay(url, closeMsg)
+        }
+        relayPool.sendToAll(closeMsg)
+
+        if (result != null) {
+            relayListRepo.updateDmRelaysFromEvent(result.event)
+        }
+
+        return relayListRepo.hasDmRelays(pubkey)
     }
 
     override fun onCleared() {

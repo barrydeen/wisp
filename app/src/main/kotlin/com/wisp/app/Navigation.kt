@@ -812,6 +812,7 @@ fun WispNavHost(
                 zapError = feedViewModel.zapError,
                 zapInProgressIds = profileZapInProgress,
                 canPrivateZap = feedViewModel.relayPool.hasDmRelays() && feedViewModel.relayListRepo.hasDmRelays(pubkey),
+                fetchDmRelays = { pk -> feedViewModel.fetchDmRelaysIfMissing(pk) && feedViewModel.relayPool.hasDmRelays() },
                 ownLists = feedViewModel.listRepo.ownLists.collectAsState().value,
                 onAddToList = { dTag, pk -> feedViewModel.addToList(dTag, pk) },
                 onRemoveFromList = { dTag, pk -> feedViewModel.removeFromList(dTag, pk) },
@@ -971,6 +972,15 @@ fun WispNavHost(
 
             if (threadZapTarget != null) {
                 val threadZapRecipient = threadZapTarget!!.pubkey
+                val threadUserHasDmRelays = feedViewModel.relayPool.hasDmRelays()
+                var threadRecipientHasDmRelays by remember(threadZapRecipient) {
+                    mutableStateOf(feedViewModel.relayListRepo.hasDmRelays(threadZapRecipient))
+                }
+                if (threadUserHasDmRelays && !threadRecipientHasDmRelays) {
+                    LaunchedEffect(threadZapRecipient) {
+                        threadRecipientHasDmRelays = feedViewModel.fetchDmRelaysIfMissing(threadZapRecipient)
+                    }
+                }
                 ZapDialog(
                     isWalletConnected = isNwcConnected,
                     onDismiss = { threadZapTarget = null },
@@ -980,7 +990,7 @@ fun WispNavHost(
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
-                    canPrivateZap = feedViewModel.relayPool.hasDmRelays() && feedViewModel.relayListRepo.hasDmRelays(threadZapRecipient)
+                    canPrivateZap = threadUserHasDmRelays && threadRecipientHasDmRelays
                 )
             }
             val threadSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
@@ -1184,6 +1194,15 @@ fun WispNavHost(
 
             if (articleZapTarget != null) {
                 val zapRecipient = articleZapTarget!!.pubkey
+                val articleUserHasDmRelays = feedViewModel.relayPool.hasDmRelays()
+                var articleRecipientHasDmRelays by remember(zapRecipient) {
+                    mutableStateOf(feedViewModel.relayListRepo.hasDmRelays(zapRecipient))
+                }
+                if (articleUserHasDmRelays && !articleRecipientHasDmRelays) {
+                    LaunchedEffect(zapRecipient) {
+                        articleRecipientHasDmRelays = feedViewModel.fetchDmRelaysIfMissing(zapRecipient)
+                    }
+                }
                 ZapDialog(
                     isWalletConnected = isNwcConnected,
                     onDismiss = { articleZapTarget = null },
@@ -1193,7 +1212,7 @@ fun WispNavHost(
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
-                    canPrivateZap = feedViewModel.relayPool.hasDmRelays() && feedViewModel.relayListRepo.hasDmRelays(zapRecipient)
+                    canPrivateZap = articleUserHasDmRelays && articleRecipientHasDmRelays
                 )
             }
 
@@ -1653,6 +1672,15 @@ fun WispNavHost(
 
             if (notifZapTarget != null) {
                 val notifZapRecipient = notifZapTarget!!.pubkey
+                val notifUserHasDmRelays = feedViewModel.relayPool.hasDmRelays()
+                var notifRecipientHasDmRelays by remember(notifZapRecipient) {
+                    mutableStateOf(feedViewModel.relayListRepo.hasDmRelays(notifZapRecipient))
+                }
+                if (notifUserHasDmRelays && !notifRecipientHasDmRelays) {
+                    LaunchedEffect(notifZapRecipient) {
+                        notifRecipientHasDmRelays = feedViewModel.fetchDmRelaysIfMissing(notifZapRecipient)
+                    }
+                }
                 ZapDialog(
                     isWalletConnected = isNwcConnected,
                     onDismiss = { notifZapTarget = null },
@@ -1662,7 +1690,7 @@ fun WispNavHost(
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
-                    canPrivateZap = feedViewModel.relayPool.hasDmRelays() && feedViewModel.relayListRepo.hasDmRelays(notifZapRecipient)
+                    canPrivateZap = notifUserHasDmRelays && notifRecipientHasDmRelays
                 )
             }
 
