@@ -63,6 +63,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -106,6 +107,7 @@ fun ComposeScreen(
     replyTo: NostrEvent?,
     quoteTo: NostrEvent? = null,
     onBack: () -> Unit,
+    onSaveDraft: () -> Unit = {},
     outboxRouter: com.wisp.app.relay.OutboxRouter? = null,
     eventRepo: EventRepository? = null,
     profileRepo: ProfileRepository? = null,
@@ -405,7 +407,10 @@ fun ComposeScreen(
 
                 // Attach row with preview toggle
                 Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     IconButton(
                         onClick = {
                             photoPickerLauncher.launch(
@@ -448,6 +453,16 @@ fun ComposeScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+
+                    Spacer(Modifier.weight(1f))
+
+                    if (content.text.isNotBlank()) {
+                        TextButton(
+                            onClick = onSaveDraft
+                        ) {
+                            Text("Save draft")
+                        }
                     }
                 }
 

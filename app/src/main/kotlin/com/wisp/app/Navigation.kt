@@ -648,6 +648,10 @@ fun WispNavHost(
                 replyTo = replyTarget,
                 quoteTo = quoteTarget,
                 onBack = { navController.popBackStack() },
+                onSaveDraft = {
+                    composeViewModel.saveDraft(feedViewModel.relayPool, replyTarget, activeSigner)
+                    navController.popBackStack()
+                },
                 outboxRouter = feedViewModel.outboxRouter,
                 eventRepo = feedViewModel.eventRepo,
                 profileRepo = feedViewModel.profileRepo,
