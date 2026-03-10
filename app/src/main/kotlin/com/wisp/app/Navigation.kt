@@ -64,6 +64,7 @@ import com.wisp.app.ui.screen.CustomEmojiScreen
 import com.wisp.app.ui.screen.SearchScreen
 import com.wisp.app.ui.screen.SocialGraphScreen
 import com.wisp.app.ui.screen.BookmarkSetScreen
+import com.wisp.app.ui.screen.ArticleScreen
 import com.wisp.app.ui.screen.BookmarksScreen
 import com.wisp.app.ui.screen.HashtagFeedScreen
 import com.wisp.app.ui.screen.KeysScreen
@@ -80,6 +81,7 @@ import com.wisp.app.ui.screen.OnboardingSuggestionsScreen
 import com.wisp.app.ui.screen.RelayDetailScreen
 import com.wisp.app.ui.screen.WalletScreen
 import com.wisp.app.viewmodel.BlossomServersViewModel
+import com.wisp.app.viewmodel.ArticleViewModel
 import com.wisp.app.viewmodel.AuthViewModel
 import com.wisp.app.viewmodel.ComposeViewModel
 import com.wisp.app.viewmodel.DmConversationViewModel
@@ -134,6 +136,7 @@ object Routes {
     const val POW_SETTINGS = "pow_settings"
     const val INTERFACE_SETTINGS = "interface_settings"
     const val RELAY_HEALTH = "relay_health"
+    const val ARTICLE = "article/{kind}/{author}/{dTag}"
 }
 
 @Composable
@@ -610,6 +613,9 @@ fun WispNavHost(
                 },
                 onHashtagClick = { tag ->
                     navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
+                },
+                onArticleClick = { kind, author, dTag ->
+                    navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
                 }
             )
         }
@@ -1028,6 +1034,9 @@ fun WispNavHost(
                     feedViewModel.setFeedType(FeedType.RELAY)
                     navController.popBackStack(Routes.FEED, inclusive = false)
                 },
+                onArticleClick = { kind, author, dTag ->
+                    navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
+                },
                 translationRepo = feedViewModel.translationRepo,
                 resolvedEmojis = threadResolvedEmojis,
                 unicodeEmojis = threadUnicodeEmojis,
@@ -1093,6 +1102,9 @@ fun WispNavHost(
                         feedViewModel.setSelectedRelay(url)
                         feedViewModel.setFeedType(FeedType.RELAY)
                         navController.popBackStack(Routes.FEED, inclusive = false)
+                    },
+                    onArticleClick = { kind, author, dTag ->
+                        navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
                     }
                 )
             }
@@ -1104,6 +1116,34 @@ fun WispNavHost(
                 nip05Repo = feedViewModel.nip05Repo,
                 translationRepo = feedViewModel.translationRepo,
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            Routes.ARTICLE,
+            arguments = listOf(
+                navArgument("kind") { type = NavType.IntType },
+                navArgument("author") { type = NavType.StringType },
+                navArgument("dTag") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val kind = backStackEntry.arguments?.getInt("kind") ?: return@composable
+            val author = backStackEntry.arguments?.getString("author") ?: return@composable
+            val dTag = java.net.URLDecoder.decode(
+                backStackEntry.arguments?.getString("dTag") ?: return@composable, "UTF-8"
+            )
+            val articleViewModel: ArticleViewModel = viewModel()
+            LaunchedEffect(kind, author, dTag) {
+                articleViewModel.loadArticle(kind, author, dTag, feedViewModel.eventRepo)
+            }
+            ArticleScreen(
+                viewModel = articleViewModel,
+                eventRepo = feedViewModel.eventRepo,
+                onBack = { navController.popBackStack() },
+                onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
+                onHashtagClick = { tag ->
+                    navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
+                }
             )
         }
 

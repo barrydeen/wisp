@@ -125,6 +125,7 @@ fun FeedScreen(
     onAddToList: (String) -> Unit = {},
     onRelayDetail: (String) -> Unit = {},
     onHashtagClick: ((String) -> Unit)? = null,
+    onArticleClick: ((Int, String, String) -> Unit)? = null,
     scrollToTopTrigger: Int = 0
 ) {
     val feed by viewModel.feed.collectAsState()
@@ -220,7 +221,8 @@ fun FeedScreen(
             onRelayClick = { url ->
                 viewModel.setSelectedRelay(url)
                 viewModel.setFeedType(FeedType.RELAY)
-            }
+            },
+            onArticleClick = onArticleClick
         )
     }
 
