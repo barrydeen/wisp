@@ -670,6 +670,17 @@ class FeedSubscriptionManager(
                 Log.d("RLC", "[FeedSub] safety net engagement EOSE received")
             }
         }
+
+        // Subscribe for private zap receipts on DM relays
+        if (relayPool.hasDmRelays() && pubkeyHex != null) {
+            val myEventIds = feedEvents.filter { it.pubkey == pubkeyHex }.map { it.id }
+            if (myEventIds.isNotEmpty()) {
+                val dmSubId = "engage-zap-dm"
+                activeEngagementSubIds.add(dmSubId)
+                val zapFilter = Filter(kinds = listOf(9735), eTags = myEventIds)
+                relayPool.sendToDmRelays(ClientMessage.req(dmSubId, zapFilter))
+            }
+        }
     }
 
     fun subscribeNotifEngagement() {
@@ -699,6 +710,15 @@ class FeedSubscriptionManager(
         val zapMsg = if (zapFilters.size == 1) ClientMessage.req(zapSubId, zapFilters[0])
         else ClientMessage.req(zapSubId, zapFilters)
         relayPool.sendToReadRelays(zapMsg)
+
+        // Also fetch private zap receipts from DM relays
+        if (relayPool.hasDmRelays()) {
+            val dmZapSubId = "engage-notif-zap-dm"
+            activeEngagementSubIds.add(dmZapSubId)
+            val dmZapMsg = if (zapFilters.size == 1) ClientMessage.req(dmZapSubId, zapFilters[0])
+            else ClientMessage.req(dmZapSubId, zapFilters)
+            relayPool.sendToDmRelays(dmZapMsg)
+        }
     }
 
     /** Reset state for account switch. */

@@ -254,7 +254,7 @@ class SocialActionManager(
         return subId
     }
 
-    fun sendZap(event: NostrEvent, amountMsats: Long, message: String = "", isAnonymous: Boolean = false) {
+    fun sendZap(event: NostrEvent, amountMsats: Long, message: String = "", isAnonymous: Boolean = false, isPrivate: Boolean = false) {
         val profileData = eventRepo.getProfileData(event.pubkey)
         val lud16 = profileData?.lud16
         if (lud16.isNullOrBlank()) {
@@ -270,25 +270,32 @@ class SocialActionManager(
             // Open receipt subscription BEFORE paying so we catch the 9735
             // even if the LNURL provider publishes it before NWC confirms
             val receiptSubId = subscribeZapReceipt(event.id)
+            // For private zaps, also subscribe on DM relays for the receipt
+            if (isPrivate && relayPool.hasDmRelays()) {
+                val dmFilter = Filter(kinds = listOf(9735), eTags = listOf(event.id))
+                relayPool.sendToDmRelays(ClientMessage.req("zap-rcpt-dm-${event.id.take(12)}", dmFilter))
+            }
             val result = zapSender.sendZap(
                 recipientLud16 = lud16,
                 recipientPubkey = event.pubkey,
                 eventId = event.id,
                 amountMsats = amountMsats,
                 message = message,
-                isAnonymous = isAnonymous
+                isAnonymous = isAnonymous,
+                isPrivate = isPrivate
             )
             _zapInProgress.value = _zapInProgress.value - event.id
             result.fold(
                 onSuccess = {
                     val myPubkey = if (isAnonymous) "" else (getUserPubkey() ?: "")
-                    eventRepo.addOptimisticZap(event.id, myPubkey, amountMsats / 1000, message)
+                    eventRepo.addOptimisticZap(event.id, myPubkey, amountMsats / 1000, message, isPrivate)
                     _zapSuccess.tryEmit(event.id)
                 },
                 onFailure = { e ->
                     _zapError.tryEmit(e.message ?: "Zap failed")
                     // Close receipt subscription on failure
                     relayPool.closeOnAllRelays(receiptSubId)
+                    if (isPrivate) relayPool.closeOnAllRelays("zap-rcpt-dm-${event.id.take(12)}")
                 }
             )
         }

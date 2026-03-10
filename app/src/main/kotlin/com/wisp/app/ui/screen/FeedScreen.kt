@@ -297,15 +297,17 @@ fun FeedScreen(
     }
 
     if (zapTargetEvent != null) {
+        val zapRecipient = zapTargetEvent!!.pubkey
         ZapDialog(
             isWalletConnected = isWalletConnected,
             onDismiss = { zapTargetEvent = null },
-            onZap = { amountMsats, message, isAnonymous ->
+            onZap = { amountMsats, message, isAnonymous, isPrivate ->
                 val event = zapTargetEvent ?: return@ZapDialog
                 zapTargetEvent = null
-                viewModel.sendZap(event, amountMsats, message, isAnonymous)
+                viewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
             },
-            onGoToWallet = onWallet
+            onGoToWallet = onWallet,
+            canPrivateZap = viewModel.relayPool.hasDmRelays() && viewModel.relayListRepo.hasDmRelays(zapRecipient)
         )
     }
 

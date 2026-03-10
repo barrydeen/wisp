@@ -21,7 +21,8 @@ class ZapSender(
         eventId: String?,
         amountMsats: Long,
         message: String = "",
-        isAnonymous: Boolean = false
+        isAnonymous: Boolean = false,
+        isPrivate: Boolean = false
     ): Result<Unit> {
         // 1. LNURL discovery
         val payInfo = Nip57.resolveLud16(recipientLud16, httpClient)
@@ -36,12 +37,23 @@ class ZapSender(
         }
 
         // 2. Build zap request (kind 9734)
-        // Recipient's read relays first (so they see the receipt), then our own
-        // read relays (so we can verify it), deduped, capped at 5.
-        val recipientRelays = relayListRepo.getReadRelays(recipientPubkey) ?: emptyList()
-        val ourRelays = relayPool.getReadRelayUrls()
-        val relayUrls = (recipientRelays + ourRelays).distinct().take(5)
-            .ifEmpty { relayPool.getRelayUrls().take(3) }
+        val relayUrls = if (isPrivate) {
+            // Private zap: route receipt through DM relays only
+            val recipientDmRelays = relayListRepo.getDmRelays(recipientPubkey) ?: emptyList()
+            val ourDmRelays = relayPool.getDmRelayUrls()
+            val combined = (recipientDmRelays + ourDmRelays).distinct().take(5)
+            if (combined.isEmpty()) {
+                return Result.failure(Exception("No DM relays available for private zap"))
+            }
+            combined
+        } else {
+            // Recipient's read relays first (so they see the receipt), then our own
+            // read relays (so we can verify it), deduped, capped at 5.
+            val recipientRelays = relayListRepo.getReadRelays(recipientPubkey) ?: emptyList()
+            val ourRelays = relayPool.getReadRelayUrls()
+            (recipientRelays + ourRelays).distinct().take(5)
+                .ifEmpty { relayPool.getRelayUrls().take(3) }
+        }
 
         val zapRequest = if (isAnonymous) {
             val throwaway = Keys.generate()

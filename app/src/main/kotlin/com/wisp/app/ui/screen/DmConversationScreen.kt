@@ -58,6 +58,7 @@ import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.ui.component.DmBubble
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.nostr.NostrSigner
+import com.wisp.app.viewmodel.DeliveryRelaySource
 import com.wisp.app.viewmodel.DmConversationViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -80,11 +81,11 @@ fun DmConversationScreen(
     val messageText by viewModel.messageText.collectAsState()
     val sending by viewModel.sending.collectAsState()
     val sendError by viewModel.sendError.collectAsState()
-    val peerDmRelays by viewModel.peerDmRelays.collectAsState()
+    val peerDelivery by viewModel.peerDeliveryRelays.collectAsState()
     val userDmRelays by viewModel.userDmRelays.collectAsState()
     val listState = rememberLazyListState()
     var showRelayInfo by remember { mutableStateOf(false) }
-    val totalRelayCount = (peerDmRelays.size + userDmRelays.size)
+    val totalRelayCount = (peerDelivery.urls.size + userDmRelays.size)
 
     // Auto-scroll to bottom when new messages arrive
     LaunchedEffect(messages.size) {
@@ -167,7 +168,7 @@ fun DmConversationScreen(
                                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
                                 .padding(horizontal = 16.dp, vertical = 8.dp)
                         ) {
-                            if (peerDmRelays.isNotEmpty()) {
+                            if (peerDelivery.urls.isNotEmpty()) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     ProfilePicture(url = peerProfile?.picture, size = 20)
                                     Spacer(Modifier.width(8.dp))
@@ -178,8 +179,22 @@ fun DmConversationScreen(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
+                                    val sourceLabel = when (peerDelivery.source) {
+                                        DeliveryRelaySource.DM_RELAYS -> null
+                                        DeliveryRelaySource.READ_RELAYS -> "inbox"
+                                        DeliveryRelaySource.WRITE_RELAYS -> "write"
+                                        DeliveryRelaySource.OWN_RELAYS -> "your relays"
+                                    }
+                                    if (sourceLabel != null) {
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            text = "($sourceLabel)",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
-                                for (url in peerDmRelays) {
+                                for (url in peerDelivery.urls) {
                                     Text(
                                         text = url.removePrefix("wss://"),
                                         style = MaterialTheme.typography.bodySmall,
@@ -188,7 +203,7 @@ fun DmConversationScreen(
                                     )
                                 }
                             }
-                            if (peerDmRelays.isNotEmpty() && userDmRelays.isNotEmpty()) {
+                            if (peerDelivery.urls.isNotEmpty() && userDmRelays.isNotEmpty()) {
                                 Spacer(Modifier.height(6.dp))
                             }
                             if (userDmRelays.isNotEmpty()) {

@@ -342,7 +342,11 @@ class NotificationRepository(
         val zapEventIds = zapEventIdsByGroup.getOrPut(key) { mutableSetOf() }
         if (!zapEventIds.add(event.id)) return false
         val message = Nip57.getZapMessage(event)
-        val entry = ZapEntry(pubkey = zapperPubkey, sats = amount, message = message, createdAt = event.created_at)
+        val dmRelays = eventRepo?.dmRelayUrls ?: emptySet()
+        val isPrivate = dmRelays.isNotEmpty() && Nip57.getZapRequestRelays(event).let { reqRelays ->
+            reqRelays.isNotEmpty() && reqRelays.all { it in dmRelays }
+        }
+        val entry = ZapEntry(pubkey = zapperPubkey, sats = amount, message = message, createdAt = event.created_at, receiptEventId = event.id, isPrivate = isPrivate)
         val emoji = NotificationGroup.ZAP_EMOJI
         val existing = groupMap[key] as? NotificationGroup.ReactionGroup
 

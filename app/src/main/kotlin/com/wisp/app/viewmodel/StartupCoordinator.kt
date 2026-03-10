@@ -37,6 +37,7 @@ import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.repo.RelaySetRepository
 import com.wisp.app.repo.ZapPreferences
+import com.wisp.app.nostr.NostrSigner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -90,7 +91,8 @@ class StartupCoordinator(
     private val pubkeyHex: String?,
     private val getUserPubkey: () -> String?,
     private val registerAuthSigner: () -> Unit,
-    private val fetchMissingEmojiSets: () -> Unit
+    private val fetchMissingEmojiSets: () -> Unit,
+    private val getSigner: () -> NostrSigner?
 ) {
     private var eventProcessingJob: Job? = null
     private var metadataSweepJob: Job? = null
@@ -194,7 +196,9 @@ class StartupCoordinator(
             .filter { it.url !in pinnedUrls }
         val initialRelays = pinnedRelays + cachedScored
         relayPool.updateRelays(initialRelays)
-        relayPool.updateDmRelays(keyRepo.getDmRelays())
+        val dmRelays = keyRepo.getDmRelays()
+        relayPool.updateDmRelays(dmRelays)
+        eventRepo.dmRelayUrls = dmRelays.toSet()
 
         scope.launch {
             relayInfoRepo.prefetchAll(initialRelays.map { it.url })
@@ -487,8 +491,37 @@ class StartupCoordinator(
             }
         }
 
+        // Apply default DM relays if the user has none set (e.g. new account or never configured)
+        applyDefaultDmRelaysIfEmpty(myPubkey)
+
         // DMs and notifications are not feed-blocking — fire and forget
         subscribeDmsAndNotifications(myPubkey)
+    }
+
+    /**
+     * If the user has no DM relays after fetching self-data, apply defaults and broadcast.
+     */
+    private fun applyDefaultDmRelaysIfEmpty(myPubkey: String) {
+        if (keyRepo.getDmRelays().isNotEmpty()) return
+
+        val defaults = RelayConfig.DEFAULT_DM_RELAYS
+        keyRepo.saveDmRelays(defaults)
+        relayPool.updateDmRelays(defaults)
+        Log.d("StartupCoord", "Applied default DM relays: $defaults")
+
+        // Publish kind 10050 so other clients and relays know our DM relays
+        val s = getSigner() ?: return
+        scope.launch {
+            val tags = Nip51.buildRelaySetTags(defaults)
+            val event = s.signEvent(kind = Nip51.KIND_DM_RELAYS, content = "", tags = tags)
+            val msg = ClientMessage.event(event)
+            relayPool.sendToWriteRelays(msg)
+            relayPool.sendToDmRelays(msg)
+            for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+                relayPool.sendToRelayOrEphemeral(url, msg)
+            }
+            Log.d("StartupCoord", "Published default DM relay list (kind ${Nip51.KIND_DM_RELAYS})")
+        }
     }
 
     /**
@@ -522,6 +555,16 @@ class StartupCoordinator(
             .filter { it !in readUrls }
         for (url in topScored) {
             relayPool.sendToRelay(url, notifReqMsg)
+        }
+
+        // Fetch private zap receipts from DM relays
+        if (relayPool.hasDmRelays()) {
+            val dmZapFilter = Filter(
+                kinds = listOf(9735),
+                pTags = listOf(myPubkey),
+                limit = 100
+            )
+            relayPool.sendToDmRelays(ClientMessage.req("notif", dmZapFilter))
         }
 
         // Fetch the user's own recent notes upfront so notification referenced events
@@ -680,7 +723,9 @@ class StartupCoordinator(
         val relays = keyRepo.getRelays()
         relayPool.setPinnedRelays(relays.map { it.url }.toSet())
         relayPool.updateRelays(relays)
-        relayPool.updateDmRelays(keyRepo.getDmRelays())
+        val dmRelays = keyRepo.getDmRelays()
+        relayPool.updateDmRelays(dmRelays)
+        eventRepo.dmRelayUrls = dmRelays.toSet()
         feedSub.subscribeFeed()
     }
 }

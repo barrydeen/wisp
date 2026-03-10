@@ -89,8 +89,9 @@ private val BoltGlow = Color(0x40FFD700)
 fun ZapDialog(
     isWalletConnected: Boolean,
     onDismiss: () -> Unit,
-    onZap: (amountMsats: Long, message: String, isAnonymous: Boolean) -> Unit,
-    onGoToWallet: () -> Unit
+    onZap: (amountMsats: Long, message: String, isAnonymous: Boolean, isPrivate: Boolean) -> Unit,
+    onGoToWallet: () -> Unit,
+    canPrivateZap: Boolean = false
 ) {
     if (!isWalletConnected) {
         AlertDialog(
@@ -119,6 +120,7 @@ fun ZapDialog(
     var customAmount by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var isAnonymous by remember { mutableStateOf(false) }
+    var isPrivate by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var editMode by remember { mutableStateOf(false) }
 
@@ -356,7 +358,45 @@ fun ZapDialog(
                         )
                         Switch(
                             checked = isAnonymous,
-                            onCheckedChange = { isAnonymous = it },
+                            onCheckedChange = {
+                                isAnonymous = it
+                                if (it) isPrivate = false
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = LightningOrange,
+                                checkedTrackColor = LightningOrange.copy(alpha = 0.5f)
+                            )
+                        )
+                    }
+
+                    // Private toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Private",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (canPrivateZap) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            )
+                            if (!canPrivateZap) {
+                                Text(
+                                    text = "Both parties need DM relays",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = isPrivate,
+                            onCheckedChange = {
+                                isPrivate = it
+                                if (it) isAnonymous = false
+                            },
+                            enabled = canPrivateZap,
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = LightningOrange,
                                 checkedTrackColor = LightningOrange.copy(alpha = 0.5f)
@@ -380,7 +420,7 @@ fun ZapDialog(
 
                         Button(
                             onClick = {
-                                onZap(effectiveAmount * 1000, effectiveMessage.ifEmpty { message }, isAnonymous)
+                                onZap(effectiveAmount * 1000, effectiveMessage.ifEmpty { message }, isAnonymous, isPrivate)
                             },
                             enabled = effectiveAmount > 0,
                             modifier = Modifier.weight(2f),

@@ -3,6 +3,7 @@ package com.wisp.app.repo
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.LruCache
+import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.Nip65
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.RelayConfig
@@ -20,8 +21,13 @@ class RelayListRepository(context: Context) {
     // pubkey -> event timestamp
     private val timestamps = LruCache<String, Long>(5000)
 
+    // DM relay cache (kind 10050): pubkey -> list of relay URLs
+    private val dmRelayCache = LruCache<String, List<String>>(5000)
+    private val dmTimestamps = LruCache<String, Long>(5000)
+
     init {
         loadFromPrefs()
+        loadDmRelaysFromPrefs()
     }
 
     fun updateFromEvent(event: NostrEvent) {
@@ -49,12 +55,32 @@ class RelayListRepository(context: Context) {
 
     fun hasRelayList(pubkey: String): Boolean = cache.get(pubkey) != null
 
+    fun updateDmRelaysFromEvent(event: NostrEvent) {
+        if (event.kind != Nip51.KIND_DM_RELAYS) return
+        val existing = dmTimestamps.get(event.pubkey)
+        if (existing != null && event.created_at <= existing) return
+
+        val relays = Nip51.parseRelaySet(event)
+        if (relays.isEmpty()) return
+
+        dmRelayCache.put(event.pubkey, relays)
+        dmTimestamps.put(event.pubkey, event.created_at)
+        saveDmRelaysToPrefs(event.pubkey, relays, event.created_at)
+    }
+
+    fun getDmRelays(pubkey: String): List<String>? =
+        dmRelayCache.get(pubkey)?.ifEmpty { null }
+
+    fun hasDmRelays(pubkey: String): Boolean = dmRelayCache.get(pubkey) != null
+
     fun getMissingPubkeys(pubkeys: List<String>): List<String> =
         pubkeys.filter { cache.get(it) == null }
 
     fun clear() {
         cache.evictAll()
         timestamps.evictAll()
+        dmRelayCache.evictAll()
+        dmTimestamps.evictAll()
         prefs.edit().clear().apply()
     }
 
@@ -80,6 +106,30 @@ class RelayListRepository(context: Context) {
                 val relays = serializable.map { RelayConfig(it.url, it.read, it.write) }
                 cache.put(pubkey, relays)
                 timestamps.put(pubkey, ts)
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun saveDmRelaysToPrefs(pubkey: String, relays: List<String>, timestamp: Long) {
+        prefs.edit()
+            .putString("dm_$pubkey", json.encodeToString(relays))
+            .putLong("dm_ts_$pubkey", timestamp)
+            .apply()
+    }
+
+    private fun loadDmRelaysFromPrefs() {
+        val allKeys = prefs.all.keys
+        val pubkeys = allKeys
+            .filter { it.startsWith("dm_") && !it.startsWith("dm_ts_") }
+            .map { it.removePrefix("dm_") }
+
+        for (pubkey in pubkeys) {
+            try {
+                val str = prefs.getString("dm_$pubkey", null) ?: continue
+                val ts = prefs.getLong("dm_ts_$pubkey", 0)
+                val relays = json.decodeFromString<List<String>>(str)
+                dmRelayCache.put(pubkey, relays)
+                dmTimestamps.put(pubkey, ts)
             } catch (_: Exception) {}
         }
     }

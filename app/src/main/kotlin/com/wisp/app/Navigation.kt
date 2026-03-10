@@ -789,13 +789,14 @@ fun WispNavHost(
                 onNoteClick = { event -> navController.navigate("thread/${event.id}") },
                 onQuotedNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                 onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
-                onZap = { event, amountMsats, message, isAnonymous -> feedViewModel.sendZap(event, amountMsats, message, isAnonymous) },
+                onZap = { event, amountMsats, message, isAnonymous, isPrivate -> feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate) },
                 userPubkey = feedViewModel.getUserPubkey(),
                 isWalletConnected = feedViewModel.nwcRepo.hasConnection(),
                 onWallet = { navController.navigate(Routes.WALLET) },
                 zapSuccess = feedViewModel.zapSuccess,
                 zapError = feedViewModel.zapError,
                 zapInProgressIds = profileZapInProgress,
+                canPrivateZap = feedViewModel.relayPool.hasDmRelays() && feedViewModel.relayListRepo.hasDmRelays(pubkey),
                 ownLists = feedViewModel.listRepo.ownLists.collectAsState().value,
                 onAddToList = { dTag, pk -> feedViewModel.addToList(dTag, pk) },
                 onRemoveFromList = { dTag, pk -> feedViewModel.removeFromList(dTag, pk) },
@@ -951,15 +952,17 @@ fun WispNavHost(
             }
 
             if (threadZapTarget != null) {
+                val threadZapRecipient = threadZapTarget!!.pubkey
                 ZapDialog(
                     isWalletConnected = isNwcConnected,
                     onDismiss = { threadZapTarget = null },
-                    onZap = { amountMsats, message, isAnonymous ->
+                    onZap = { amountMsats, message, isAnonymous, isPrivate ->
                         val event = threadZapTarget ?: return@ZapDialog
                         threadZapTarget = null
-                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous)
+                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
-                    onGoToWallet = { navController.navigate(Routes.WALLET) }
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
+                    canPrivateZap = feedViewModel.relayPool.hasDmRelays() && feedViewModel.relayListRepo.hasDmRelays(threadZapRecipient)
                 )
             }
             val threadSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
@@ -1478,15 +1481,17 @@ fun WispNavHost(
             }
 
             if (notifZapTarget != null) {
+                val notifZapRecipient = notifZapTarget!!.pubkey
                 ZapDialog(
                     isWalletConnected = isNwcConnected,
                     onDismiss = { notifZapTarget = null },
-                    onZap = { amountMsats, message, isAnonymous ->
+                    onZap = { amountMsats, message, isAnonymous, isPrivate ->
                         val event = notifZapTarget ?: return@ZapDialog
                         notifZapTarget = null
-                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous)
+                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
-                    onGoToWallet = { navController.navigate(Routes.WALLET) }
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
+                    canPrivateZap = feedViewModel.relayPool.hasDmRelays() && feedViewModel.relayListRepo.hasDmRelays(notifZapRecipient)
                 )
             }
 

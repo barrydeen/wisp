@@ -1,6 +1,7 @@
 package com.wisp.app.ui.screen
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -72,6 +73,8 @@ import com.wisp.app.nostr.ProfileData
 import kotlinx.coroutines.flow.SharedFlow
 import com.wisp.app.nostr.ZapEntry
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.ZapDetail
+import com.wisp.app.ui.component.ZapInspectorDialog
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.TranslationRepository
 import com.wisp.app.ui.component.PostCard
@@ -497,7 +500,8 @@ private fun NotificationItem(
             isFollowing = { viewModel.isFollowing(it) },
             onProfileClick = onProfileClick,
             onFollowToggle = postCardParams.onFollowToggle,
-            postCardParams = postCardParams
+            postCardParams = postCardParams,
+            eventRepo = postCardParams.eventRepo
         )
         is NotificationGroup.ReplyNotification -> ReplyPostCard(
             item = group,
@@ -531,8 +535,11 @@ private fun ReactionGroupRow(
     isFollowing: (String) -> Boolean,
     onProfileClick: (String) -> Unit,
     onFollowToggle: ((String) -> Unit)? = null,
-    postCardParams: NotifPostCardParams
+    postCardParams: NotifPostCardParams,
+    eventRepo: EventRepository? = null
 ) {
+    var inspectedZap by remember { mutableStateOf<ZapEntry?>(null) }
+
     Column(modifier = Modifier.fillMaxWidth()) {
         // Emoji summary header
         Column(
@@ -561,7 +568,11 @@ private fun ReactionGroupRow(
                         profile = resolveProfile(zap.pubkey),
                         showFollowBadge = isFollowing(zap.pubkey),
                         highlighted = index == 0 && sortedZaps.size > 1,
-                        onProfileClick = onProfileClick
+                        onProfileClick = onProfileClick,
+                        onLongPress = if (zap.receiptEventId != null) {
+                            { inspectedZap = zap }
+                        } else null,
+                        isPrivate = zap.isPrivate
                     )
                 }
             }
@@ -650,19 +661,50 @@ private fun ReactionGroupRow(
             relayHints = group.relayHints
         )
     }
+
+    if (inspectedZap != null && eventRepo != null) {
+        val zapDetail = remember(inspectedZap) {
+            val z = inspectedZap!!
+            ZapDetail(
+                pubkey = z.pubkey,
+                sats = z.sats,
+                message = z.message,
+                isPrivate = z.isPrivate,
+                receiptEventId = z.receiptEventId
+            )
+        }
+        ZapInspectorDialog(
+            zapDetail = zapDetail,
+            eventRepo = eventRepo,
+            onDismiss = { inspectedZap = null }
+        )
+    }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun ZapEntryRow(
     zap: ZapEntry,
     profile: ProfileData?,
     showFollowBadge: Boolean,
     highlighted: Boolean = false,
-    onProfileClick: (String) -> Unit
+    onProfileClick: (String) -> Unit,
+    onLongPress: (() -> Unit)? = null,
+    isPrivate: Boolean = false
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(
+                if (onLongPress != null) {
+                    Modifier.combinedClickable(
+                        onClick = { onProfileClick(zap.pubkey) },
+                        onLongClick = onLongPress
+                    )
+                } else {
+                    Modifier
+                }
+            )
             .padding(vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -670,6 +712,15 @@ private fun ZapEntryRow(
             text = "\u26A1",
             style = MaterialTheme.typography.bodyMedium
         )
+        if (isPrivate) {
+            Spacer(Modifier.width(2.dp))
+            Icon(
+                painter = androidx.compose.ui.res.painterResource(com.wisp.app.R.drawable.ic_private_zap),
+                contentDescription = "Private zap",
+                modifier = Modifier.size(16.dp),
+                tint = Color(0xFFFF8C00)
+            )
+        }
         Spacer(Modifier.width(4.dp))
         Text(
             text = formatSats(zap.sats),

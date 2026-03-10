@@ -1,5 +1,6 @@
 package com.wisp.app.viewmodel
 
+import android.util.Log
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -12,6 +13,7 @@ import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.nostr.SignerCancelledException
 import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.nostr.toHex
+import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.KeyRepository
@@ -22,6 +24,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+
+enum class DeliveryRelaySource { DM_RELAYS, READ_RELAYS, WRITE_RELAYS, OWN_RELAYS }
+
+data class PeerDeliveryRelays(
+    val urls: List<String> = emptyList(),
+    val source: DeliveryRelaySource = DeliveryRelaySource.DM_RELAYS
+)
 
 class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
@@ -38,8 +47,8 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
     private val _sendError = MutableStateFlow<String?>(null)
     val sendError: StateFlow<String?> = _sendError
 
-    private val _peerDmRelays = MutableStateFlow<List<String>>(emptyList())
-    val peerDmRelays: StateFlow<List<String>> = _peerDmRelays
+    private val _peerDeliveryRelays = MutableStateFlow(PeerDeliveryRelays())
+    val peerDeliveryRelays: StateFlow<PeerDeliveryRelays> = _peerDeliveryRelays
 
     private val _userDmRelays = MutableStateFlow<List<String>>(emptyList())
     val userDmRelays: StateFlow<List<String>> = _userDmRelays
@@ -59,15 +68,20 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
             _userDmRelays.value = relayPool.getDmRelayUrls()
         }
 
-        // Fetch peer's DM relays
+        // Fetch peer's DM relays and resolve delivery relays with fallback chain
         if (relayPool != null) {
             viewModelScope.launch {
                 val cached = dmRepository.getCachedDmRelays(peerPubkeyHex)
                 if (cached != null) {
-                    _peerDmRelays.value = cached
-                } else {
-                    val fetched = fetchRecipientDmRelays(relayPool)
-                    _peerDmRelays.value = fetched
+                    _peerDeliveryRelays.value = PeerDeliveryRelays(cached, DeliveryRelaySource.DM_RELAYS)
+                }
+                // Always fetch fresh relays from indexers to ensure we have the latest
+                val fetched = fetchRecipientDmRelays(relayPool, forceRefresh = true)
+                if (fetched.isNotEmpty()) {
+                    _peerDeliveryRelays.value = PeerDeliveryRelays(fetched, DeliveryRelaySource.DM_RELAYS)
+                } else if (cached.isNullOrEmpty()) {
+                    // No DM relays found — resolve fallback chain
+                    _peerDeliveryRelays.value = resolveRecipientRelaysWithSource(emptyList(), relayPool)
                 }
             }
         }
@@ -88,30 +102,43 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Fetch recipient's kind 10050 DM relays, with cache-first strategy.
+     * Fetch recipient's kind 10050 DM relays from indexer relays.
+     * When [forceRefresh] is false, returns cached relays if available.
+     * When true, always queries indexer relays for the freshest relay set.
      */
-    private suspend fun fetchRecipientDmRelays(relayPool: RelayPool): List<String> {
+    private suspend fun fetchRecipientDmRelays(relayPool: RelayPool, forceRefresh: Boolean = false): List<String> {
         val repo = dmRepo ?: return emptyList()
 
-        // Cache hit
-        repo.getCachedDmRelays(peerPubkey)?.let { return it }
+        // Cache hit (skip when forcing a refresh)
+        if (!forceRefresh) {
+            repo.getCachedDmRelays(peerPubkey)?.let { return it }
+        }
 
-        // Send REQ for kind 10050 to all connected relays
+        // Send REQ for kind 10050 to indexer relays (most likely to have relay metadata)
         val subId = "dm_relay_${peerPubkey.take(8)}"
         val filter = Filter(
             kinds = listOf(Nip51.KIND_DM_RELAYS),
             authors = listOf(peerPubkey),
             limit = 1
         )
-        relayPool.sendToAll(ClientMessage.req(subId, filter))
+        val reqMsg = ClientMessage.req(subId, filter)
+        for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+            relayPool.sendToRelayOrEphemeral(url, reqMsg, skipBadCheck = true)
+        }
+        // Also broadcast to connected relays for additional coverage
+        relayPool.sendToAll(reqMsg)
 
-        // Wait up to 3s for a matching event
-        val result = withTimeoutOrNull(3000L) {
+        // Wait up to 4s for a matching event
+        val result = withTimeoutOrNull(4000L) {
             relayPool.relayEvents.first { it.subscriptionId == subId }
         }
 
         // Close subscription
-        relayPool.sendToAll(ClientMessage.close(subId))
+        val closeMsg = ClientMessage.close(subId)
+        for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+            relayPool.sendToRelay(url, closeMsg)
+        }
+        relayPool.sendToAll(closeMsg)
 
         if (result != null) {
             val urls = Nip51.parseRelaySet(result.event)
@@ -126,22 +153,66 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Resolve which relays to send to for the recipient, with fallback chain:
      * 1. Recipient's kind 10050 DM relays
-     * 2. Recipient's kind 10002 write relays
-     * 3. Sender's own write relays
+     * 2. Recipient's kind 10002 read/inbox relays
+     * 3. Recipient's kind 10002 write relays
+     * 4. Sender's own write relays
+     *
+     * If the peer's relay list (kind 10002) isn't cached, fetches it from indexers first.
      */
-    private fun resolveRecipientRelays(
+    private suspend fun resolveRecipientRelaysWithSource(
         recipientDmRelays: List<String>,
         relayPool: RelayPool
-    ): List<String> {
-        // 1. Recipient's DM relays
-        if (recipientDmRelays.isNotEmpty()) return recipientDmRelays
+    ): PeerDeliveryRelays {
+        if (recipientDmRelays.isNotEmpty())
+            return PeerDeliveryRelays(recipientDmRelays, DeliveryRelaySource.DM_RELAYS)
 
-        // 2. Recipient's kind 10002 write relays
+        // Ensure we have the peer's kind 10002 relay list
+        if (relayListRepo?.hasRelayList(peerPubkey) != true) {
+            fetchPeerRelayList(relayPool)
+        }
+
+        val readRelays = relayListRepo?.getReadRelays(peerPubkey)
+        if (!readRelays.isNullOrEmpty())
+            return PeerDeliveryRelays(readRelays, DeliveryRelaySource.READ_RELAYS)
+
         val writeRelays = relayListRepo?.getWriteRelays(peerPubkey)
-        if (!writeRelays.isNullOrEmpty()) return writeRelays
+        if (!writeRelays.isNullOrEmpty())
+            return PeerDeliveryRelays(writeRelays, DeliveryRelaySource.WRITE_RELAYS)
 
-        // 3. Sender's own write relays (last resort)
-        return relayPool.getWriteRelayUrls()
+        return PeerDeliveryRelays(relayPool.getWriteRelayUrls(), DeliveryRelaySource.OWN_RELAYS)
+    }
+
+    /**
+     * Fetch peer's kind 10002 relay list from indexer relays if not already cached.
+     */
+    private suspend fun fetchPeerRelayList(relayPool: RelayPool) {
+        val repo = relayListRepo ?: return
+
+        val subId = "rl_${peerPubkey.take(8)}"
+        val filter = Filter(
+            kinds = listOf(10002),
+            authors = listOf(peerPubkey),
+            limit = 1
+        )
+        val reqMsg = ClientMessage.req(subId, filter)
+        for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+            relayPool.sendToRelayOrEphemeral(url, reqMsg, skipBadCheck = true)
+        }
+        relayPool.sendToAll(reqMsg)
+
+        val result = withTimeoutOrNull(4000L) {
+            relayPool.relayEvents.first { it.subscriptionId == subId }
+        }
+
+        val closeMsg = ClientMessage.close(subId)
+        for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+            relayPool.sendToRelay(url, closeMsg)
+        }
+        relayPool.sendToAll(closeMsg)
+
+        if (result != null) {
+            repo.updateFromEvent(result.event)
+        }
     }
 
     fun sendMessage(relayPool: RelayPool, signer: NostrSigner? = null) {
@@ -156,7 +227,7 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch(Dispatchers.Default) {
                 try {
                     val recipientDmRelays = fetchRecipientDmRelays(relayPool)
-                    val deliveryRelays = resolveRecipientRelays(recipientDmRelays, relayPool)
+                    val deliveryRelays = resolveRecipientRelaysWithSource(recipientDmRelays, relayPool).urls
 
                     val recipientWrap = Nip17.createGiftWrapRemote(
                         signer = signer,
@@ -164,11 +235,11 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                         message = text
                     )
                     val recipientMsg = ClientMessage.event(recipientWrap)
-                    val sentRelayUrls = mutableSetOf<String>()
-                    for (url in deliveryRelays) {
-                        if (relayPool.sendToRelayOrEphemeral(url, recipientMsg)) {
-                            sentRelayUrls.add(url)
-                        }
+                    val sentRelayUrls = sendToDeliveryRelays(relayPool, deliveryRelays, recipientMsg)
+
+                    if (sentRelayUrls.isEmpty()) {
+                        _messageText.value = text
+                        _sendError.value = "Failed to deliver — no relays accepted the message"
                     }
 
                     val selfWrap = Nip17.createGiftWrapRemote(
@@ -197,7 +268,10 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                 } catch (e: SignerCancelledException) {
                     _messageText.value = text
                     _sendError.value = "Signing cancelled"
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    _messageText.value = text
+                    _sendError.value = "Failed to send message"
+                    Log.w("DmConversation", "Send failed (remote signer)", e)
                 } finally {
                     _sending.value = false
                 }
@@ -209,6 +283,7 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
         val keypair = keyRepo.getKeypair() ?: return
 
         _messageText.value = ""
+        _sendError.value = null
         _sending.value = true
 
         viewModelScope.launch(Dispatchers.Default) {
@@ -216,7 +291,7 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                 val senderPubkeyHex = keypair.pubkey.toHex()
 
                 val recipientDmRelays = fetchRecipientDmRelays(relayPool)
-                val deliveryRelays = resolveRecipientRelays(recipientDmRelays, relayPool)
+                val deliveryRelays = resolveRecipientRelaysWithSource(recipientDmRelays, relayPool).urls
 
                 val recipientWrap = Nip17.createGiftWrap(
                     senderPrivkey = keypair.privkey,
@@ -225,11 +300,11 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                     message = text
                 )
                 val recipientMsg = ClientMessage.event(recipientWrap)
-                val sentRelayUrls = mutableSetOf<String>()
-                for (url in deliveryRelays) {
-                    if (relayPool.sendToRelayOrEphemeral(url, recipientMsg)) {
-                        sentRelayUrls.add(url)
-                    }
+                val sentRelayUrls = sendToDeliveryRelays(relayPool, deliveryRelays, recipientMsg)
+
+                if (sentRelayUrls.isEmpty()) {
+                    _messageText.value = text
+                    _sendError.value = "Failed to deliver — no relays accepted the message"
                 }
 
                 val selfWrap = Nip17.createGiftWrap(
@@ -256,10 +331,36 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 dmRepo?.addMessage(dmMsg, peerPubkey)
                 dmRepo?.markGiftWrapSeen(selfWrap.id, dmMsg.id)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                _messageText.value = text
+                _sendError.value = "Failed to send message"
+                Log.w("DmConversation", "Send failed (local signer)", e)
             } finally {
                 _sending.value = false
             }
         }
+    }
+
+    /**
+     * Send a message to delivery relays, awaiting ephemeral connections.
+     * Skips health checks since these are the recipient's chosen relays.
+     * Tries all relays independently — failure on one doesn't block others.
+     */
+    private suspend fun sendToDeliveryRelays(
+        relayPool: RelayPool,
+        deliveryRelays: List<String>,
+        message: String
+    ): Set<String> {
+        val sentRelayUrls = mutableSetOf<String>()
+        for (url in deliveryRelays) {
+            try {
+                if (relayPool.sendToRelayOrEphemeral(url, message, skipBadCheck = true)) {
+                    sentRelayUrls.add(url)
+                }
+            } catch (e: Exception) {
+                Log.w("DmConversation", "Failed to send to relay $url", e)
+            }
+        }
+        return sentRelayUrls
     }
 }

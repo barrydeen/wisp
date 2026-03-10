@@ -68,6 +68,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.CircularProgressIndicator
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
+import com.wisp.app.repo.ZapDetail
 import com.wisp.app.repo.Nip05Status
 import com.wisp.app.repo.TranslationState
 import com.wisp.app.repo.TranslationStatus
@@ -102,7 +103,7 @@ fun PostCard(
     repostPubkeys: List<String> = emptyList(),
     repostTime: Long? = null,
     reactionDetails: Map<String, List<String>> = emptyMap(),
-    zapDetails: List<Triple<String, Long, String>> = emptyList(),
+    zapDetails: List<ZapDetail> = emptyList(),
     onNavigateToProfileFromDetails: ((String) -> Unit)? = null,
     onFollowAuthor: () -> Unit = {},
     onBlockAuthor: () -> Unit = {},
@@ -606,20 +607,20 @@ fun PostCard(
             // Top zapper banner
             if (zapDetails.isNotEmpty()) {
                 val topZap = remember(zapDetails) {
-                    zapDetails.maxByOrNull { it.second }
+                    zapDetails.maxByOrNull { it.sats }
                 }
                 if (topZap != null) {
-                    val zapperProfile = eventRepo?.getProfileData(topZap.first)
+                    val zapperProfile = eventRepo?.getProfileData(topZap.pubkey)
                     val zapperName = zapperProfile?.displayString
-                        ?: (topZap.first.take(8) + "...")
+                        ?: (topZap.pubkey.take(8) + "...")
                     TopZapperBanner(
                         avatarUrl = zapperProfile?.picture,
                         name = zapperName,
-                        sats = topZap.second,
-                        message = topZap.third,
+                        sats = topZap.sats,
+                        message = topZap.message,
                         onClick = {
                             val nav = onNavigateToProfileFromDetails ?: onNavigateToProfile
-                            nav?.invoke(topZap.first)
+                            nav?.invoke(topZap.pubkey)
                         }
                     )
                 }
@@ -677,7 +678,8 @@ fun PostCard(
                         repostDetails = repostDetails,
                         resolveProfile = profileResolver,
                         onProfileClick = navToProfile,
-                        reactionEmojiUrls = reactionEmojiUrls
+                        reactionEmojiUrls = reactionEmojiUrls,
+                        eventRepo = eventRepo
                     )
                 }
                 if (displayIcons.isNotEmpty()) {

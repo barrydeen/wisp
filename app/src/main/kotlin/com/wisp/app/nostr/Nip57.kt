@@ -45,6 +45,18 @@ object Nip57 {
         }
     }
 
+    /** Extract the relay URLs from the embedded 9734 zap request's "relays" tag. */
+    fun getZapRequestRelays(event: NostrEvent): List<String> {
+        val description = event.tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
+            ?: return emptyList()
+        return try {
+            val zapRequest = NostrEvent.fromJson(description)
+            zapRequest.tags.firstOrNull { it.size >= 2 && it[0] == "relays" }?.drop(1) ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     fun getZapAmountSats(event: NostrEvent): Long {
         val bolt11 = event.tags.firstOrNull { it.size >= 2 && it[0] == "bolt11" }?.get(1)
             ?: return 0

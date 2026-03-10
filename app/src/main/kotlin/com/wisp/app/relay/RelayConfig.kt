@@ -23,6 +23,11 @@ data class RelayConfig(
             RelayConfig("wss://relay.nos.social", read = true, write = false)
         )
 
+        /** Default DM relays applied when a user has no DM relay set (kind 10050). */
+        val DEFAULT_DM_RELAYS = listOf(
+            "wss://auth.nostr1.com"
+        )
+
         /** Fallback indexer relays used when the user hasn't configured search relays (kind 10007). */
         val DEFAULT_INDEXER_RELAYS = listOf(
             "wss://purplepag.es",

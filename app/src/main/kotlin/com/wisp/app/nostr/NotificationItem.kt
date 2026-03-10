@@ -14,7 +14,9 @@ data class ZapEntry(
     val pubkey: String,
     val sats: Long,
     val message: String,
-    val createdAt: Long
+    val createdAt: Long,
+    val receiptEventId: String? = null,
+    val isPrivate: Boolean = false
 )
 
 sealed class NotificationGroup {

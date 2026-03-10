@@ -18,11 +18,21 @@ import kotlinx.coroutines.launch
 import com.wisp.app.db.EventPersistence
 import java.util.concurrent.ConcurrentHashMap
 
+data class ZapDetail(
+    val pubkey: String,
+    val sats: Long,
+    val message: String,
+    val isPrivate: Boolean = false,
+    val receiptEventId: String? = null
+)
+
 class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: MuteRepository? = null, val relayHintStore: RelayHintStore? = null) {
     var metadataFetcher: MetadataFetcher? = null
     var deletedEventsRepo: DeletedEventsRepository? = null
     var currentUserPubkey: String? = null
     var eventPersistence: EventPersistence? = null
+    /** Set of current user's DM relay URLs — used to detect private zaps. */
+    var dmRelayUrls: Set<String> = emptySet()
     private val eventCache = LruCache<String, NostrEvent>(15000)
     private val seenEventIds = ConcurrentHashMap.newKeySet<String>()  // thread-safe dedup that doesn't evict
     private val feedList = mutableListOf<NostrEvent>()
@@ -97,8 +107,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     // Custom emoji URL tracking for reactions: target eventId -> (":shortcode:" -> url)
     private val reactionEmojiUrls = LruCache<String, ConcurrentHashMap<String, String>>(15000)
 
-    // Detailed zap tracking: eventId -> synchronized list of (zapper pubkey, sats, message)
-    private val zapDetails = LruCache<String, MutableList<Triple<String, Long, String>>>(15000)
+    // Detailed zap tracking: eventId -> synchronized list of ZapDetail
+    private val zapDetails = LruCache<String, MutableList<ZapDetail>>(15000)
     // Track which events the current user has zapped: eventId -> true
     private val userZaps = LruCache<String, Boolean>(15000)
     // Events where we optimistically added the user's own zap (to avoid double-counting receipts)
@@ -187,10 +197,11 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (muteRepo?.isBlocked(event.pubkey) == true) return
         if (event.kind == 1 && muteRepo?.containsMutedWord(event.content) == true) return
         if (deletedEventsRepo?.isDeleted(event.id) == true) return
-        // Engagement events (reactions, zap receipts, reposts) are only needed for their
+        // Engagement events (reactions, reposts) are only needed for their
         // side effects (counts, details, etc.) — skip eventCache to avoid evicting the
         // kind 0/1 events that screens actually navigate to.
-        if (event.kind != 7 && event.kind != 9735 && event.kind != 6) {
+        // Zap receipts (9735) are cached for the zap inspector debug feature.
+        if (event.kind != 7 && event.kind != 6) {
             eventCache.put(event.id, event)
         }
         eventPersistence?.persistEvent(event)
@@ -279,11 +290,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         addZapSats(targetId, sats)
                         if (zapperPubkey != null) {
                             val zapMessage = Nip57.getZapMessage(event)
+                            val isPrivateZap = dmRelayUrls.isNotEmpty() && Nip57.getZapRequestRelays(event).let { reqRelays ->
+                                reqRelays.isNotEmpty() && reqRelays.all { it in dmRelayUrls }
+                            }
                             val zaps = zapDetails.get(targetId)
-                                ?: java.util.Collections.synchronizedList(mutableListOf<Triple<String, Long, String>>()).also {
+                                ?: java.util.Collections.synchronizedList(mutableListOf<ZapDetail>()).also {
                                     zapDetails.put(targetId, it)
                                 }
-                            zaps.add(Triple(zapperPubkey, sats, zapMessage))
+                            zaps.add(ZapDetail(zapperPubkey, sats, zapMessage, isPrivate = isPrivateZap, receiptEventId = event.id))
                         }
                     }
                     // Always mark user zap flag from receipts
@@ -499,7 +513,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         return details.mapValues { (_, pubkeys) -> synchronized(pubkeys) { pubkeys.toList() } }
     }
 
-    fun getZapDetails(eventId: String): List<Triple<String, Long, String>> {
+    fun getZapDetails(eventId: String): List<ZapDetail> {
         val list = zapDetails.get(eventId) ?: return emptyList()
         return synchronized(list) { list.toList() }
     }
@@ -607,7 +621,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
      * Optimistically record the current user's zap so the UI updates immediately
      * without waiting for the 9735 receipt from relays.
      */
-    fun addOptimisticZap(eventId: String, zapperPubkey: String, sats: Long, message: String = "") {
+    fun addOptimisticZap(eventId: String, zapperPubkey: String, sats: Long, message: String = "", isPrivate: Boolean = false) {
         // If the 9735 receipt already arrived and was counted, skip the optimistic add
         // to avoid double-counting (receipt can beat the NWC confirmation)
         if (userZaps.get(eventId) == true) return
@@ -615,10 +629,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         optimisticZaps.add(eventId)
         addZapSats(eventId, sats)
         val zaps = zapDetails.get(eventId)
-            ?: java.util.Collections.synchronizedList(mutableListOf<Triple<String, Long, String>>()).also {
+            ?: java.util.Collections.synchronizedList(mutableListOf<ZapDetail>()).also {
                 zapDetails.put(eventId, it)
             }
-        zaps.add(Triple(zapperPubkey, sats, message))
+        zaps.add(ZapDetail(zapperPubkey, sats, message, isPrivate))
     }
 
     fun hasUserZapped(eventId: String): Boolean = userZaps.get(eventId) == true

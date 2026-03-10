@@ -93,7 +93,11 @@ class EventRouter(
                 when (event.kind) {
                     5 -> eventRepo.addEvent(event)
                     6 -> eventRepo.addEvent(event)
-                    7, 9735 -> eventRepo.addEvent(event)
+                    7 -> eventRepo.addEvent(event)
+                    9735 -> {
+                        eventRepo.addEvent(event)
+                        eventRepo.addEventRelay(event.id, relayUrl)
+                    }
                     1 -> {
                         eventRepo.cacheEvent(event)
                         val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
@@ -154,6 +158,7 @@ class EventRouter(
         } else if (subscriptionId.startsWith("zap-count-") || subscriptionId.startsWith("zap-rcpt-")) {
             if (event.kind == 9735) {
                 eventRepo.addEvent(event)
+                eventRepo.addEventRelay(event.id, relayUrl)
                 val zapperPubkey = Nip57.getZapperPubkey(event)
                 if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
                     metadataFetcher.addToPendingProfiles(zapperPubkey)
@@ -170,6 +175,7 @@ class EventRouter(
                 7 -> eventRepo.addEvent(event)
                 9735 -> {
                     eventRepo.addEvent(event)
+                    eventRepo.addEventRelay(event.id, relayUrl)
                     val zapperPubkey = Nip57.getZapperPubkey(event)
                     if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
                         metadataFetcher.addToPendingProfiles(zapperPubkey)
@@ -234,11 +240,13 @@ class EventRouter(
                 }
             }
             if (event.kind == Nip51.KIND_DM_RELAYS) {
+                relayListRepo.updateDmRelaysFromEvent(event)
                 val myPubkey = getUserPubkey()
                 if (myPubkey != null && event.pubkey == myPubkey && isNewestSelfData(event)) {
                     val urls = Nip51.parseRelaySet(event)
                     keyRepo.saveDmRelays(urls)
                     relayPool.updateDmRelays(urls)
+                    eventRepo.dmRelayUrls = urls.toSet()
                 }
             }
             if (event.kind == Nip51.KIND_SEARCH_RELAYS) {

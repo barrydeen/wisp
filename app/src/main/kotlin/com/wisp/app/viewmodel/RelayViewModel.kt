@@ -137,6 +137,9 @@ class RelayViewModel(app: Application) : AndroidViewModel(app) {
                 val event = s.signEvent(kind = kind, content = "", tags = tags)
                 val msg = ClientMessage.event(event)
                 relayPool.sendToWriteRelays(msg)
+                for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+                    relayPool.sendToRelayOrEphemeral(url, msg)
+                }
             }
             true
         } catch (_: Exception) {

@@ -119,13 +119,14 @@ fun UserProfileScreen(
     onNoteClick: (NostrEvent) -> Unit = {},
     onQuotedNoteClick: ((String) -> Unit)? = null,
     onReact: (NostrEvent, String) -> Unit = { _, _ -> },
-    onZap: (NostrEvent, Long, String, Boolean) -> Unit = { _, _, _, _ -> },
+    onZap: (NostrEvent, Long, String, Boolean, Boolean) -> Unit = { _, _, _, _, _ -> },
     userPubkey: String? = null,
     isWalletConnected: Boolean = false,
     onWallet: () -> Unit = {},
     zapSuccess: SharedFlow<String>? = null,
     zapError: SharedFlow<String>? = null,
     zapInProgressIds: Set<String> = emptySet(),
+    canPrivateZap: Boolean = false,
     ownLists: List<FollowSet> = emptyList(),
     onAddToList: ((String, String) -> Unit)? = null,
     onRemoveFromList: ((String, String) -> Unit)? = null,
@@ -183,12 +184,13 @@ fun UserProfileScreen(
         ZapDialog(
             isWalletConnected = isWalletConnected,
             onDismiss = { zapTargetEvent = null },
-            onZap = { amountMsats, message, isAnonymous ->
+            onZap = { amountMsats, message, isAnonymous, isPrivate ->
                 val event = zapTargetEvent ?: return@ZapDialog
                 zapTargetEvent = null
-                onZap(event, amountMsats, message, isAnonymous)
+                onZap(event, amountMsats, message, isAnonymous, isPrivate)
             },
-            onGoToWallet = onWallet
+            onGoToWallet = onWallet,
+            canPrivateZap = canPrivateZap
         )
     }
 
