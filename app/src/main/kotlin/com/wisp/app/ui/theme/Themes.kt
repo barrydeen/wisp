@@ -5,8 +5,8 @@ import androidx.compose.ui.graphics.Color
 object Themes {
     val themes = listOf(
         ThemePreset(
-            name = "wisp",
-            displayName = "Wisp",
+            name = "custom",
+            displayName = "Custom",
             dark = ThemeColors(
                 primary = Color(0xFFFF9800),
                 secondary = Color(0xFFFFB74D),

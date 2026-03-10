@@ -66,7 +66,7 @@ fun InterfaceScreen(
     var isLargeText by remember { mutableStateOf(interfacePrefs.isLargeText()) }
     var newNotesHidden by remember { mutableStateOf(interfacePrefs.isNewNotesButtonHidden()) }
     var selectedTheme by remember { mutableStateOf(interfacePrefs.getTheme()) }
-    var isCustomTheme by remember { mutableStateOf(selectedTheme == "wisp") }
+    var isCustomTheme by remember { mutableStateOf(selectedTheme == "custom") }
 
     val savedColor = remember { Color(interfacePrefs.getAccentColor()) }
     val initialHsv = remember {
@@ -179,7 +179,7 @@ fun InterfaceScreen(
                             isDark = true,
                             onClick = {
                                 selectedTheme = theme.name
-                                isCustomTheme = theme.name == "wisp"
+                                isCustomTheme = theme.name == "custom"
                                 interfacePrefs.setTheme(theme.name)
                                 onChanged()
                             }
@@ -190,62 +190,64 @@ fun InterfaceScreen(
 
             Spacer(Modifier.height(24.dp))
 
-            // Accent Color section
-            Text(
-                text = "Accent Color",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(Modifier.height(12.dp))
-
-            // Preview swatch
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(currentColor)
-                )
-                Spacer(Modifier.padding(start = 12.dp))
+            if (isCustomTheme) {
+                // Accent Color section
                 Text(
-                    text = "Preview",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "Accent Color",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
+                Spacer(Modifier.height(12.dp))
+
+                // Preview swatch
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(currentColor)
+                    )
+                    Spacer(Modifier.padding(start = 12.dp))
+                    Text(
+                        text = "Preview",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Saturation/Brightness square
+                SatBrightnessSquare(
+                    hue = hue,
+                    saturation = saturation,
+                    brightness = brightness,
+                    onChanged = { s, b ->
+                        saturation = s
+                        brightness = b
+                        interfacePrefs.setAccentColor(
+                            android.graphics.Color.HSVToColor(floatArrayOf(hue, s, b))
+                        )
+                        onChanged()
+                    }
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                // Hue slider
+                HueBar(
+                    hue = hue,
+                    onHueChanged = { h ->
+                        hue = h
+                        interfacePrefs.setAccentColor(
+                            android.graphics.Color.HSVToColor(floatArrayOf(h, saturation, brightness))
+                        )
+                        onChanged()
+                    }
+                )
+
+                Spacer(Modifier.height(24.dp))
             }
-
-            Spacer(Modifier.height(16.dp))
-
-            // Saturation/Brightness square
-            SatBrightnessSquare(
-                hue = hue,
-                saturation = saturation,
-                brightness = brightness,
-                onChanged = { s, b ->
-                    saturation = s
-                    brightness = b
-                    interfacePrefs.setAccentColor(
-                        android.graphics.Color.HSVToColor(floatArrayOf(hue, s, b))
-                    )
-                    onChanged()
-                }
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            // Hue slider
-            HueBar(
-                hue = hue,
-                onHueChanged = { h ->
-                    hue = h
-                    interfacePrefs.setAccentColor(
-                        android.graphics.Color.HSVToColor(floatArrayOf(h, saturation, brightness))
-                    )
-                    onChanged()
-                }
-            )
-
-            Spacer(Modifier.height(24.dp))
 
             // New Notes Button section
             Text(

@@ -44,11 +44,11 @@ fun WispTheme(
     isDarkTheme: Boolean = true,
     accentColor: Color = Color(0xFFFF9800),
     isLargeText: Boolean = false,
-    themeName: String = "wisp",
+    themeName: String = "custom",
     content: @Composable () -> Unit
 ) {
     val themePreset = remember(themeName) { Themes.getTheme(themeName) }
-    val isCustomTheme = themeName == "wisp"
+    val isCustomTheme = themeName == "custom"
 
     val primary = if (isCustomTheme) accentColor else themePreset.dark.primary
     val secondary = remember(primary) { lightenColor(primary) }
