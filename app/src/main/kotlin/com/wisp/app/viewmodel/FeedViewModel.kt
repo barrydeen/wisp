@@ -274,6 +274,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val zapInProgress: StateFlow<Set<String>> = socialActions.zapInProgress
     val zapSuccess: SharedFlow<String> = socialActions.zapSuccess
     val zapError: SharedFlow<String> = socialActions.zapError
+    val reactionSent: SharedFlow<Unit> = socialActions.reactionSent
 
     fun getUserPubkey(): String? = keyRepo.getPubkeyHex()
     fun resetNewNoteCount() = eventRepo.resetNewNoteCount()

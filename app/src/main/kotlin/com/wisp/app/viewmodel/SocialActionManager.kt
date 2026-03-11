@@ -66,6 +66,9 @@ class SocialActionManager(
     private val _zapError = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val zapError: SharedFlow<String> = _zapError
 
+    private val _reactionSent = MutableSharedFlow<Unit>(extraBufferCapacity = 8)
+    val reactionSent: SharedFlow<Unit> = _reactionSent
+
     fun toggleFollow(pubkey: String) {
         val s = getSigner() ?: return
         val currentList = contactRepo.getFollowList()
@@ -200,6 +203,7 @@ class SocialActionManager(
                     val msg = ClientMessage.event(reactionEvent)
                     outboxRouter.publishToInbox(msg, event.pubkey)
                     eventRepo.addEvent(reactionEvent)
+                    _reactionSent.tryEmit(Unit)
                 }
             } catch (_: Exception) {}
         }

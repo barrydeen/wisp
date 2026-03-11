@@ -42,6 +42,7 @@ import com.wisp.app.repo.SigningMode
 import android.content.Context
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import com.wisp.app.ui.component.HapticHelper
 import com.wisp.app.ui.component.NotifBlipSound
 import com.wisp.app.ui.component.WispBottomBar
 import com.wisp.app.ui.component.ZapDialog
@@ -375,10 +376,41 @@ fun WispNavHost(
     DisposableEffect(Unit) {
         onDispose { notifBlipSound.release() }
     }
+    LaunchedEffect(Unit) { HapticHelper.init(context) }
     val currentNotifSoundEnabled by rememberUpdatedState(notifSoundEnabled)
     LaunchedEffect(Unit) {
         notificationsViewModel.notifReceived.collect {
-            if (currentNotifSoundEnabled) notifBlipSound.play()
+            if (currentNotifSoundEnabled) {
+                notifBlipSound.play()
+                HapticHelper.blip()
+            }
+        }
+    }
+    LaunchedEffect(Unit) {
+        notificationsViewModel.zapReceived.collect {
+            if (currentNotifSoundEnabled) HapticHelper.zapBuzz()
+        }
+    }
+    LaunchedEffect(Unit) {
+        notificationsViewModel.replyReceived.collect {
+            if (currentNotifSoundEnabled) HapticHelper.pulse()
+        }
+    }
+    LaunchedEffect(Unit) {
+        feedViewModel.reactionSent.collect { HapticHelper.blip() }
+    }
+    LaunchedEffect(Unit) {
+        feedViewModel.zapSuccess.collect { HapticHelper.zapBuzz() }
+    }
+    LaunchedEffect(Unit) {
+        var fired = false
+        feedViewModel.relayPool.broadcastState.collect { state ->
+            if (state != null && state.accepted > 0 && !fired) {
+                fired = true
+                HapticHelper.pulse()
+            } else if (state == null) {
+                fired = false
+            }
         }
     }
 
