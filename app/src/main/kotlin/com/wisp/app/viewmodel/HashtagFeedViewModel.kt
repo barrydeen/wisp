@@ -92,9 +92,8 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
                             7 -> eventRepo.addEvent(relayEvent.event)
                             9735 -> eventRepo.addEvent(relayEvent.event)
                             1 -> {
-                                val rootId = Nip10.getRootId(relayEvent.event)
-                                    ?: Nip10.getReplyTarget(relayEvent.event)
-                                if (rootId != null) eventRepo.addReplyCount(rootId, relayEvent.event.id)
+                                val parentId = Nip10.getReplyTarget(relayEvent.event)
+                                if (parentId != null) eventRepo.addReplyCount(parentId, relayEvent.event.id)
                             }
                         }
                     }

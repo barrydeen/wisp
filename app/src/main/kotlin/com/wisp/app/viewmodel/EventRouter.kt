@@ -100,8 +100,8 @@ class EventRouter(
                     }
                     1 -> {
                         eventRepo.cacheEvent(event)
-                        val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
-                        if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
+                        val parentId = Nip10.getReplyTarget(event)
+                        if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
                     }
                     else -> eventRepo.cacheEvent(event)
                 }
@@ -121,8 +121,8 @@ class EventRouter(
             val myPubkey = getUserPubkey()
             if (myPubkey != null && event.kind == 1) {
                 eventRepo.cacheEvent(event)
-                val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
-                if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
+                val parentId = Nip10.getReplyTarget(event)
+                if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
                 notifRepo.addEvent(event, myPubkey, replyToMyEvent = true)
                 if (eventRepo.getProfileData(event.pubkey) == null) {
                     metadataFetcher.addToPendingProfiles(event.pubkey)
@@ -141,8 +141,8 @@ class EventRouter(
         } else if (subscriptionId == "self-notes") {
             eventRepo.cacheEvent(event)
             if (event.kind == 1) {
-                val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
-                if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
+                val parentId = Nip10.getReplyTarget(event)
+                if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
             }
         } else if (subscriptionId.startsWith("quote-")) {
             eventRepo.cacheEvent(event)
@@ -152,8 +152,8 @@ class EventRouter(
         } else if (subscriptionId.startsWith("reply-count-")) {
             if (event.kind == 1) {
                 eventRepo.cacheEvent(event)
-                val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
-                if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
+                val parentId = Nip10.getReplyTarget(event)
+                if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
             }
         } else if (subscriptionId.startsWith("zap-count-") || subscriptionId.startsWith("zap-rcpt-")) {
             if (event.kind == 9735) {
@@ -183,8 +183,8 @@ class EventRouter(
                 }
                 1 -> {
                     eventRepo.cacheEvent(event)
-                    val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
-                    if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
+                    val parentId = Nip10.getReplyTarget(event)
+                    if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
                 }
             }
             // Engagement events win the dedup race against "notif" subscription,

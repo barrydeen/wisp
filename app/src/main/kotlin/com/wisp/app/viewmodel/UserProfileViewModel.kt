@@ -199,8 +199,8 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                         7 -> eventRepo.addEvent(event)
                         9735 -> eventRepo.addEvent(event)
                         1 -> {
-                            val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event)
-                            if (rootId != null) eventRepo.addReplyCount(rootId, event.id)
+                            val parentId = Nip10.getReplyTarget(event)
+                            if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
                         }
                     }
                     return@collect
