@@ -1011,11 +1011,13 @@ class RelayPool {
         val dmUrls = allDmUrls ?: dmRelays.map { it.config.url }.toList()
         Log.d("RLC", "[Pool] swapClientAndReconnect — persistent=${configs.size} dm=${dmUrls.size}")
 
+        val oldClient = client
         disconnectAll()
         client = HttpClientFactory.createRelayClient()
         clientBuiltWithTor = TorManager.isEnabled()
         updateRelays(configs)
         updateDmRelays(dmUrls)
+        scope.launch { HttpClientFactory.safeShutdownClient(oldClient) }
     }
 
     fun disconnectAll() {

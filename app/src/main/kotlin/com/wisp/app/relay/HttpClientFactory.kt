@@ -82,6 +82,19 @@ object HttpClientFactory {
             .build()
     }
 
+    fun safeShutdownClient(client: OkHttpClient) {
+        client.dispatcher.cancelAll()
+        client.connectionPool.evictAll()
+        client.dispatcher.executorService.shutdown()
+        try {
+            if (!client.dispatcher.executorService.awaitTermination(2, TimeUnit.SECONDS)) {
+                client.dispatcher.executorService.shutdownNow()
+            }
+        } catch (_: InterruptedException) {
+            client.dispatcher.executorService.shutdownNow()
+        }
+    }
+
     fun createHttpClient(
         connectTimeoutSeconds: Long = 10,
         readTimeoutSeconds: Long = 10,

@@ -161,8 +161,7 @@ object RelayProber {
             }
         }
 
-        client.dispatcher.executorService.shutdown()
-        client.connectionPool.evictAll()
+        HttpClientFactory.safeShutdownClient(client)
         return events
     }
 
@@ -208,10 +207,8 @@ object RelayProber {
             }
         }.awaitAll()
 
-        nip11Client.dispatcher.executorService.shutdown()
-        nip11Client.connectionPool.evictAll()
-        wsClient.dispatcher.executorService.shutdown()
-        wsClient.connectionPool.evictAll()
+        HttpClientFactory.safeShutdownClient(nip11Client)
+        HttpClientFactory.safeShutdownClient(wsClient)
 
         results
     }
