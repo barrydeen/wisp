@@ -1,7 +1,10 @@
 package com.wisp.app.viewmodel
 
+import android.content.ContentResolver
+import android.net.Uri
 import android.util.Log
 import android.app.Application
+import android.webkit.MimeTypeMap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.ClientMessage
@@ -15,6 +18,7 @@ import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
+import com.wisp.app.repo.BlossomRepository
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.RelayListRepository
@@ -34,6 +38,7 @@ data class PeerDeliveryRelays(
 
 class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
+    private val blossomRepo = BlossomRepository(app, keyRepo.getPubkeyHex())
 
     private val _messages = MutableStateFlow<List<DmMessage>>(emptyList())
     val messages: StateFlow<List<DmMessage>> = _messages
@@ -46,6 +51,9 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _sendError = MutableStateFlow<String?>(null)
     val sendError: StateFlow<String?> = _sendError
+
+    private val _uploadProgress = MutableStateFlow<String?>(null)
+    val uploadProgress: StateFlow<String?> = _uploadProgress
 
     private val _peerDeliveryRelays = MutableStateFlow(PeerDeliveryRelays())
     val peerDeliveryRelays: StateFlow<PeerDeliveryRelays> = _peerDeliveryRelays
@@ -99,6 +107,28 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearSendError() {
         _sendError.value = null
+    }
+
+    fun uploadMedia(uris: List<Uri>, contentResolver: ContentResolver, signer: NostrSigner? = null) {
+        viewModelScope.launch {
+            val total = uris.size
+            for ((index, uri) in uris.withIndex()) {
+                try {
+                    _uploadProgress.value = if (total > 1) "Uploading ${index + 1}/$total..." else "Uploading..."
+                    val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw Exception("Cannot read file")
+                    val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
+                    val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "bin"
+                    val url = blossomRepo.uploadMedia(bytes, mimeType, ext, signer)
+                    val current = _messageText.value
+                    _messageText.value = if (current.isBlank()) url else "$current\n$url"
+                } catch (e: Exception) {
+                    _sendError.value = "Upload failed: ${e.message}"
+                    break
+                }
+            }
+            _uploadProgress.value = null
+        }
     }
 
     /**
