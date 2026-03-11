@@ -75,8 +75,11 @@ class DmListViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private val _decrypting = MutableStateFlow(false)
-    val decrypting: StateFlow<Boolean> = _decrypting
+    val decrypting: StateFlow<Boolean>
+        get() = dmRepo?.decrypting ?: MutableStateFlow(false)
+
+    val pendingDecryptCount: StateFlow<Int>
+        get() = dmRepo?.pendingDecryptCount ?: MutableStateFlow(0)
 
     /**
      * Decrypt pending gift wraps using the remote signer, one at a time.
@@ -87,12 +90,12 @@ class DmListViewModel(app: Application) : AndroidViewModel(app) {
         val myPubkey = signer.pubkeyHex
 
         viewModelScope.launch(Dispatchers.Default) {
-            val pending = repo.takePendingGiftWraps()
-            if (pending.isEmpty()) return@launch
+            if (repo.pendingDecryptCount.value == 0) return@launch
 
-            _decrypting.value = true
+            repo.markDecryptingStart()
             try {
-                for (wrap in pending) {
+                while (true) {
+                    val wrap = repo.takeNextPendingGiftWrap() ?: break
                     try {
                         val rumor = Nip17.unwrapGiftWrapRemote(signer, wrap.event) ?: continue
                         val peerPubkey = if (rumor.pubkey == myPubkey) {
@@ -117,7 +120,7 @@ class DmListViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
             } finally {
-                _decrypting.value = false
+                repo.markDecryptingEnd()
             }
         }
     }

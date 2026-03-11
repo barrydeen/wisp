@@ -926,7 +926,9 @@ fun WispNavHost(
             val pubkey = backStackEntry.arguments?.getString("pubkey") ?: return@composable
             val dmConvoViewModel: DmConversationViewModel = viewModel()
             LaunchedEffect(pubkey) {
+                feedViewModel.refreshDmsAndNotifications()
                 dmConvoViewModel.init(pubkey, feedViewModel.dmRepo, feedViewModel.relayListRepo, feedViewModel.relayPool)
+                activeSigner?.let { dmConvoViewModel.decryptPending(it, feedViewModel.muteRepo) }
             }
             val peerProfile = feedViewModel.eventRepo.getProfileData(pubkey)
             val userPubkey = feedViewModel.getUserPubkey()

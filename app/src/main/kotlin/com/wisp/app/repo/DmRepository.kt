@@ -39,6 +39,26 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
     private val _hasUnreadDms = MutableStateFlow(false)
     val hasUnreadDms: StateFlow<Boolean> = _hasUnreadDms
 
+    /** Number of gift wraps waiting to be decrypted (remote signer mode). */
+    private val _pendingDecryptCount = MutableStateFlow(0)
+    val pendingDecryptCount: StateFlow<Int> = _pendingDecryptCount
+
+    /** True while any coroutine is actively decrypting pending gift wraps. */
+    private val _decrypting = MutableStateFlow(false)
+    val decrypting: StateFlow<Boolean> = _decrypting
+    private val decryptingRefCount = java.util.concurrent.atomic.AtomicInteger(0)
+
+    fun markDecryptingStart() {
+        decryptingRefCount.incrementAndGet()
+        _decrypting.value = true
+    }
+
+    fun markDecryptingEnd() {
+        if (decryptingRefCount.decrementAndGet() <= 0) {
+            _decrypting.value = false
+        }
+    }
+
     fun addMessage(msg: DmMessage, peerPubkey: String) {
         synchronized(lock) {
             val existingMsgId = seenGiftWraps.get(msg.giftWrapId)
@@ -124,6 +144,16 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
             // Dedup by event id
             if (pendingGiftWraps.any { it.event.id == event.id }) return
             pendingGiftWraps.add(PendingGiftWrap(event, relayUrl))
+            _pendingDecryptCount.value = pendingGiftWraps.size
+        }
+    }
+
+    /** Pop a single pending gift wrap for decryption. Returns null when empty. */
+    fun takeNextPendingGiftWrap(): PendingGiftWrap? {
+        return synchronized(pendingLock) {
+            val wrap = pendingGiftWraps.removeFirstOrNull()
+            _pendingDecryptCount.value = pendingGiftWraps.size
+            wrap
         }
     }
 
@@ -131,6 +161,7 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
         return synchronized(pendingLock) {
             val copy = pendingGiftWraps.toList()
             pendingGiftWraps.clear()
+            _pendingDecryptCount.value = 0
             copy
         }
     }
@@ -148,9 +179,12 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
         }
         synchronized(pendingLock) {
             pendingGiftWraps.clear()
+            _pendingDecryptCount.value = 0
         }
         _conversationList.value = emptyList()
         _hasUnreadDms.value = false
+        _decrypting.value = false
+        decryptingRefCount.set(0)
         prefs?.edit()?.clear()?.apply()
     }
 

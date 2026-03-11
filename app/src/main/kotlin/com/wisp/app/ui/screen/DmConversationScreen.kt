@@ -90,6 +90,8 @@ fun DmConversationScreen(
     val uploadProgress by viewModel.uploadProgress.collectAsState()
     val peerDelivery by viewModel.peerDeliveryRelays.collectAsState()
     val userDmRelays by viewModel.userDmRelays.collectAsState()
+    val decrypting by viewModel.decrypting.collectAsState()
+    val pendingDecryptCount by viewModel.pendingDecryptCount.collectAsState()
     val listState = rememberLazyListState()
     var showRelayInfo by remember { mutableStateOf(false) }
     val totalRelayCount = (peerDelivery.urls.size + userDmRelays.size)
@@ -252,6 +254,30 @@ fun DmConversationScreen(
                 .navigationBarsPadding()
                 .imePadding()
         ) {
+            // Decrypting indicator (remote signer mode)
+            AnimatedVisibility(visible = decrypting) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (pendingDecryptCount > 0) "Decrypting messages ($pendingDecryptCount remaining)..."
+                               else "Decrypting messages...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             LazyColumn(
                 state = listState,
                 modifier = Modifier
