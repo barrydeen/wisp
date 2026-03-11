@@ -239,29 +239,29 @@ object Themes {
             )
         ),
         ThemePreset(
-            name = "earth",
-            displayName = "Earth",
+            name = "earthsong",
+            displayName = "Earthsong",
             dark = ThemeColors(
-                primary = Color(0xFF8FBC8F),
-                secondary = Color(0xFFD4A574),
-                background = Color(0xFF1A1814),
-                surface = Color(0xFF2A2520),
+                primary = Color(0xFF6B8E4E),
+                secondary = Color(0xFFF5AE2E),
+                background = Color(0xFF1A1612),
+                surface = Color(0xFF282520),
                 surfaceVariant = Color(0xFF3A3530),
-                onBackground = Color(0xFFE8DFD0),
-                onSurface = Color(0xFFE8DFD0),
+                onBackground = Color(0xFFE5C7A9),
+                onSurface = Color(0xFFE5C7A9),
                 onSurfaceVariant = Color(0xFFA89880),
-                outline = Color(0xFF454038)
+                outline = Color(0xFF4A4540)
             ),
             light = ThemeColors(
-                primary = Color(0xFF4A6B48),
-                secondary = Color(0xFF6B5010),
-                background = Color(0xFFD8D2C4),
-                surface = Color(0xFFCCC6B8),
-                surfaceVariant = Color(0xFFBEB4A4),
-                onBackground = Color(0xFF302820),
-                onSurface = Color(0xFF302820),
+                primary = Color(0xFF4A6B38),
+                secondary = Color(0xFF8B6914),
+                background = Color(0xFFD8D0C0),
+                surface = Color(0xFFCCC4B4),
+                surfaceVariant = Color(0xFFB8B0A0),
+                onBackground = Color(0xFF2A2420),
+                onSurface = Color(0xFF2A2420),
                 onSurfaceVariant = Color(0xFF4A4030),
-                outline = Color(0xFF9A9080)
+                outline = Color(0xFF908880)
             )
         ),
         ThemePreset(
@@ -314,6 +314,84 @@ object Themes {
                 onSurface = Color(0xFF1C1B19),
                 onSurfaceVariant = Color(0xFF5A5548),
                 outline = Color(0xFF989088)
+            )
+        ),
+        ThemePreset(
+            name = "kanagawa",
+            displayName = "Kanagawa",
+            dark = ThemeColors(
+                primary = Color(0xFFD27E2A),
+                secondary = Color(0xFF7E9AAA),
+                background = Color(0xFF1F1F2E),
+                surface = Color(0xFF2A2A3E),
+                surfaceVariant = Color(0xFF363650),
+                onBackground = Color(0xFFC8C8D0),
+                onSurface = Color(0xFFC8C8D0),
+                onSurfaceVariant = Color(0xFF9090A8),
+                outline = Color(0xFF484868)
+            ),
+            light = ThemeColors(
+                primary = Color(0xFFB27018),
+                secondary = Color(0xFF5B7080),
+                background = Color(0xFFE8E4DC),
+                surface = Color(0xFFDCD8D0),
+                surfaceVariant = Color(0xFFCAC6BC),
+                onBackground = Color(0xFF2A2838),
+                onSurface = Color(0xFF2A2838),
+                onSurfaceVariant = Color(0xFF4A4858),
+                outline = Color(0xFFA0A0A8)
+            )
+        ),
+        ThemePreset(
+            name = "ashen",
+            displayName = "Ashen",
+            dark = ThemeColors(
+                primary = Color(0xFFE07850),
+                secondary = Color(0xFFB87860),
+                background = Color(0xFF1A1815),
+                surface = Color(0xFF282420),
+                surfaceVariant = Color(0xFF3A3530),
+                onBackground = Color(0xFFB8B0A0),
+                onSurface = Color(0xFFA8A090),
+                onSurfaceVariant = Color(0xFF787068),
+                outline = Color(0xFF484440)
+            ),
+            light = ThemeColors(
+                primary = Color(0xFFB05830),
+                secondary = Color(0xFF8B5848),
+                background = Color(0xFFE8E4DC),
+                surface = Color(0xFFD8D4CC),
+                surfaceVariant = Color(0xFFC8C4BC),
+                onBackground = Color(0xFF38342C),
+                onSurface = Color(0xFF38342C),
+                onSurfaceVariant = Color(0xFF58544C),
+                outline = Color(0xFF908880)
+            )
+        ),
+        ThemePreset(
+            name = "miasma",
+            displayName = "Miasma",
+            dark = ThemeColors(
+                primary = Color(0xFF8ABF78),
+                secondary = Color(0xFFCD9766),
+                background = Color(0xFF1A1816),
+                surface = Color(0xFF2A2824),
+                surfaceVariant = Color(0xFF3A3834),
+                onBackground = Color(0xFFB8B4A8),
+                onSurface = Color(0xFFA8A498),
+                onSurfaceVariant = Color(0xFF787068),
+                outline = Color(0xFF4A4840)
+            ),
+            light = ThemeColors(
+                primary = Color(0xFF5A8A4A),
+                secondary = Color(0xFF8B6030),
+                background = Color(0xFFE0DCD4),
+                surface = Color(0xFFD0CCC4),
+                surfaceVariant = Color(0xFFB8B4AC),
+                onBackground = Color(0xFF38342C),
+                onSurface = Color(0xFF38342C),
+                onSurfaceVariant = Color(0xFF58544C),
+                outline = Color(0xFF908880)
             )
         )
     )
