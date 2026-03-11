@@ -323,7 +323,7 @@ fun WispNavHost(
     val currentRoute = navBackStackEntry?.destination?.route
 
     val nonAppRoutes = setOf(Routes.AUTH, Routes.LOADING, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS, Routes.EXISTING_USER_ONBOARDING)
-    val hideBottomBarRoutes = nonAppRoutes
+    val hideBottomBarRoutes = nonAppRoutes + Routes.DM_CONVERSATION
     val socialGraphDiscoveryState by feedViewModel.extendedNetworkRepo.discoveryState.collectAsState()
     val socialGraphComputing = currentRoute == Routes.SOCIAL_GRAPH && (
         socialGraphDiscoveryState is com.wisp.app.repo.DiscoveryState.FetchingFollowLists ||

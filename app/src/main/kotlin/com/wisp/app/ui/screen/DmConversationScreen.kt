@@ -1,5 +1,8 @@
 package com.wisp.app.ui.screen
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -13,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -44,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -81,16 +87,24 @@ fun DmConversationScreen(
     val messageText by viewModel.messageText.collectAsState()
     val sending by viewModel.sending.collectAsState()
     val sendError by viewModel.sendError.collectAsState()
+    val uploadProgress by viewModel.uploadProgress.collectAsState()
     val peerDelivery by viewModel.peerDeliveryRelays.collectAsState()
     val userDmRelays by viewModel.userDmRelays.collectAsState()
     val listState = rememberLazyListState()
     var showRelayInfo by remember { mutableStateOf(false) }
     val totalRelayCount = (peerDelivery.urls.size + userDmRelays.size)
+    val context = LocalContext.current
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isNotEmpty()) viewModel.uploadMedia(uris, context.contentResolver, signer)
+    }
 
     // Auto-scroll to bottom when new messages arrive
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+            listState.animateScrollToItem(0)
         }
     }
 
@@ -235,6 +249,7 @@ fun DmConversationScreen(
         Column(
             modifier = Modifier
                 .padding(padding)
+                .navigationBarsPadding()
                 .imePadding()
         ) {
             LazyColumn(
@@ -242,17 +257,10 @@ fun DmConversationScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                reverseLayout = false
+                reverseLayout = true
             ) {
                 var lastDateKey = ""
-                for (msg in messages) {
-                    val dateKey = dayKey(msg.createdAt)
-                    if (dateKey != lastDateKey) {
-                        lastDateKey = dateKey
-                        item(key = "date-$dateKey") {
-                            DateHeader(formatDateHeader(msg.createdAt))
-                        }
-                    }
+                for (msg in messages.reversed()) {
                     item(key = msg.id) {
                         val icons = msg.relayUrls.map { url ->
                             url to relayInfoRepo?.getIconUrl(url)
@@ -267,10 +275,29 @@ fun DmConversationScreen(
                             onNoteClick = onNoteClick
                         )
                     }
+                    val dateKey = dayKey(msg.createdAt)
+                    if (dateKey != lastDateKey) {
+                        lastDateKey = dateKey
+                        item(key = "date-$dateKey") {
+                            DateHeader(formatDateHeader(msg.createdAt))
+                        }
+                    }
                 }
             }
 
-            // Error banner for signing failures
+            // Upload progress banner
+            AnimatedVisibility(visible = uploadProgress != null) {
+                Text(
+                    text = uploadProgress ?: "",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+            }
+
+            // Error banner for signing/upload failures
             AnimatedVisibility(visible = sendError != null) {
                 Text(
                     text = sendError ?: "",
@@ -294,6 +321,21 @@ fun DmConversationScreen(
                     .fillMaxWidth()
                     .padding(8.dp)
             ) {
+                IconButton(
+                    onClick = {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                        )
+                    },
+                    enabled = uploadProgress == null && !sending
+                ) {
+                    Icon(
+                        Icons.Outlined.Image,
+                        contentDescription = "Attach media",
+                        tint = if (uploadProgress == null && !sending) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                    )
+                }
                 OutlinedTextField(
                     value = messageText,
                     onValueChange = { viewModel.updateMessageText(it) },
