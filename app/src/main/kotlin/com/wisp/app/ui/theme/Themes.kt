@@ -393,6 +393,84 @@ object Themes {
                 onSurfaceVariant = Color(0xFF58544C),
                 outline = Color(0xFF908880)
             )
+        ),
+        ThemePreset(
+            name = "emerald",
+            displayName = "Emerald",
+            dark = ThemeColors(
+                primary = Color(0xFF50C878),
+                secondary = Color(0xFF98FB98),
+                background = Color(0xFF1A1D1A),
+                surface = Color(0xFF252A25),
+                surfaceVariant = Color(0xFF353D35),
+                onBackground = Color(0xFFD4E5D4),
+                onSurface = Color(0xFFD4E5D4),
+                onSurfaceVariant = Color(0xFF9CB09C),
+                outline = Color(0xFF404D44)
+            ),
+            light = ThemeColors(
+                primary = Color(0xFF2E8B57),
+                secondary = Color(0xFF3CB371),
+                background = Color(0xFFE0E8E0),
+                surface = Color(0xFFD0D8D0),
+                surfaceVariant = Color(0xFFB8C4B8),
+                onBackground = Color(0xFF1A2A1C),
+                onSurface = Color(0xFF1A2A1C),
+                onSurfaceVariant = Color(0xFF2A3A2C),
+                outline = Color(0xFF889888)
+            )
+        ),
+        ThemePreset(
+            name = "amethyst",
+            displayName = "Amethyst",
+            dark = ThemeColors(
+                primary = Color(0xFF9966CC),
+                secondary = Color(0xFFDA70D6),
+                background = Color(0xFF1D1A24),
+                surface = Color(0xFF282433),
+                surfaceVariant = Color(0xFF383248),
+                onBackground = Color(0xFFE0D8F0),
+                onSurface = Color(0xFFE0D8F0),
+                onSurfaceVariant = Color(0xFFA898C0),
+                outline = Color(0xFF444058)
+            ),
+            light = ThemeColors(
+                primary = Color(0xFF7B4BA8),
+                secondary = Color(0xFFB04DAD),
+                background = Color(0xFFE8E4F0),
+                surface = Color(0xFFD8D4E0),
+                surfaceVariant = Color(0xFFC8C4D0),
+                onBackground = Color(0xFF2A2838),
+                onSurface = Color(0xFF2A2838),
+                onSurfaceVariant = Color(0xFF3A3848),
+                outline = Color(0xFF9890A8)
+            )
+        ),
+        ThemePreset(
+            name = "ruby",
+            displayName = "Ruby",
+            dark = ThemeColors(
+                primary = Color(0xFFE0115F),
+                secondary = Color(0xFFFF6B6B),
+                background = Color(0xFF1D1618),
+                surface = Color(0xFF2A2024),
+                surfaceVariant = Color(0xFF3A2830),
+                onBackground = Color(0xFFF0D8E0),
+                onSurface = Color(0xFFF0D8E0),
+                onSurfaceVariant = Color(0xFFB898A0),
+                outline = Color(0xFF4A3840)
+            ),
+            light = ThemeColors(
+                primary = Color(0xFFB00B3A),
+                secondary = Color(0xFFDD4455),
+                background = Color(0xFFF8E8EC),
+                surface = Color(0xFFE8D8E0),
+                surfaceVariant = Color(0xFFD8C8D0),
+                onBackground = Color(0xFF2A1820),
+                onSurface = Color(0xFF2A1820),
+                onSurfaceVariant = Color(0xFF4A2838),
+                outline = Color(0xFF9890A0)
+            )
         )
     )
 
