@@ -8,7 +8,7 @@ import okhttp3.OkHttpClient
 
 class ZapSender(
     private val keyRepo: KeyRepository,
-    private val nwcRepo: NwcRepository,
+    private val getWalletProvider: () -> WalletProvider,
     private val relayPool: RelayPool,
     private val relayListRepo: RelayListRepository,
     private val httpClient: OkHttpClient
@@ -99,8 +99,8 @@ class ZapSender(
         val bolt11 = Nip57.fetchInvoice(payInfo.callback, amountMsats, zapRequest, httpClient)
             ?: return Result.failure(Exception("Could not get invoice from lightning provider"))
 
-        // 4. Pay via NWC
-        val payResult = nwcRepo.payInvoice(bolt11)
+        // 4. Pay via wallet
+        val payResult = getWalletProvider().payInvoice(bolt11)
         return payResult.map { }
     }
 }

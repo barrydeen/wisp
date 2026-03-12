@@ -84,7 +84,8 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
-import com.wisp.app.nostr.Nip47
+import com.wisp.app.repo.WalletMode
+import com.wisp.app.repo.WalletTransaction
 import com.wisp.app.ui.component.SatsNumpad
 import com.wisp.app.viewmodel.WalletPage
 import com.wisp.app.viewmodel.WalletState
@@ -111,10 +112,8 @@ fun WalletScreen(
                 title = { Text("Wallet") },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (walletState !is WalletState.Connected || viewModel.isOnHome) {
+                        if (!viewModel.navigateBack()) {
                             onBack()
-                        } else {
-                            viewModel.navigateBack()
                         }
                     }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -137,21 +136,60 @@ fun WalletScreen(
                         .padding(horizontal = 16.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    WalletConnectionContent(
-                        walletState = walletState,
-                        connectionString = viewModel.connectionString.collectAsState().value,
-                        statusLines = viewModel.statusLines.collectAsState().value,
-                        onConnectionStringChange = { viewModel.updateConnectionString(it) },
-                        onConnect = { viewModel.connectWallet() },
-                        onDisconnect = { viewModel.disconnectWallet() }
-                    )
+                    when (currentPage) {
+                        is WalletPage.NwcSetup -> WalletConnectionContent(
+                            walletState = walletState,
+                            connectionString = viewModel.connectionString.collectAsState().value,
+                            statusLines = viewModel.statusLines.collectAsState().value,
+                            onConnectionStringChange = { viewModel.updateConnectionString(it) },
+                            onConnect = { viewModel.connectNwcWallet() },
+                            onDisconnect = { viewModel.disconnectWallet() }
+                        )
+                        is WalletPage.SparkSetup -> SparkSetupContent(
+                            walletState = walletState,
+                            statusLines = viewModel.statusLines.collectAsState().value,
+                            restoreMnemonic = viewModel.restoreMnemonic.collectAsState().value,
+                            error = viewModel.sendError.collectAsState().value,
+                            onCreateWallet = { viewModel.generateSparkWallet() },
+                            onRestoreMnemonicChange = { viewModel.updateRestoreMnemonic(it) },
+                            onRestoreWallet = { viewModel.restoreSparkWallet() },
+                            onDisconnect = { viewModel.disconnectWallet() }
+                        )
+                        is WalletPage.SparkBackup -> {
+                            val page = currentPage as WalletPage.SparkBackup
+                            SparkBackupContent(
+                                mnemonic = page.mnemonic,
+                                onConfirm = { viewModel.confirmSparkBackup() }
+                            )
+                        }
+                        else -> WalletModeSelectionContent(
+                            onSelectNwc = { viewModel.selectNwcMode() },
+                            onSelectSpark = { viewModel.selectSparkMode() }
+                        )
+                    }
                 }
             }
             is WalletState.Connected -> {
                 val balanceMsats = (walletState as WalletState.Connected).balanceMsats
                 when (currentPage) {
+                    is WalletPage.SparkBackup -> {
+                        val page = currentPage as WalletPage.SparkBackup
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(padding)
+                                .padding(horizontal = 16.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            SparkBackupContent(
+                                mnemonic = page.mnemonic,
+                                onConfirm = { viewModel.navigateHome() }
+                            )
+                        }
+                    }
                     is WalletPage.Home -> WalletHomeContent(
                         balanceMsats = balanceMsats,
+                        walletMode = viewModel.walletMode.collectAsState().value,
                         onSend = { viewModel.navigateTo(WalletPage.SendInput) },
                         onReceive = {
                             viewModel.navigateTo(WalletPage.ReceiveAmount)
@@ -162,6 +200,9 @@ fun WalletScreen(
                         },
                         onRefresh = { viewModel.refreshBalance() },
                         onDisconnect = { viewModel.disconnectWallet() },
+                        onBackupMnemonic = if (viewModel.walletMode.collectAsState().value == WalletMode.SPARK) {
+                            { viewModel.showMnemonicBackup() }
+                        } else null,
                         modifier = Modifier.padding(padding)
                     )
                     is WalletPage.SendInput -> SendInputContent(
@@ -230,12 +271,36 @@ fun WalletScreen(
                             modifier = Modifier.padding(padding)
                         )
                     }
+                    is WalletPage.ReceiveSuccess -> {
+                        val page = currentPage as WalletPage.ReceiveSuccess
+                        ReceiveSuccessContent(
+                            amountSats = page.amountSats,
+                            onDone = { viewModel.navigateHome() },
+                            modifier = Modifier.padding(padding)
+                        )
+                    }
                     is WalletPage.Transactions -> TransactionHistoryContent(
                         transactions = viewModel.transactions.collectAsState().value,
                         error = viewModel.transactionsError.collectAsState().value,
                         isLoading = viewModel.isLoading.collectAsState().value,
                         modifier = Modifier.padding(padding)
                     )
+                    else -> {
+                        // ModeSelection, NwcSetup, SparkSetup — shouldn't appear while connected
+                        WalletHomeContent(
+                            balanceMsats = balanceMsats,
+                            walletMode = viewModel.walletMode.collectAsState().value,
+                            onSend = { viewModel.navigateTo(WalletPage.SendInput) },
+                            onReceive = { viewModel.navigateTo(WalletPage.ReceiveAmount) },
+                            onTransactions = {
+                                viewModel.loadTransactions()
+                                viewModel.navigateTo(WalletPage.Transactions)
+                            },
+                            onRefresh = { viewModel.refreshBalance() },
+                            onDisconnect = { viewModel.disconnectWallet() },
+                            modifier = Modifier.padding(padding)
+                        )
+                    }
                 }
             }
         }
@@ -394,11 +459,13 @@ private fun WalletConnectionContent(
 @Composable
 private fun WalletHomeContent(
     balanceMsats: Long,
+    walletMode: WalletMode = WalletMode.NWC,
     onSend: () -> Unit,
     onReceive: () -> Unit,
     onTransactions: () -> Unit,
     onRefresh: () -> Unit,
     onDisconnect: () -> Unit,
+    onBackupMnemonic: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val balanceSats = balanceMsats / 1000
@@ -482,7 +549,21 @@ private fun WalletHomeContent(
             Text("Transaction History")
         }
 
+        if (onBackupMnemonic != null) {
+            TextButton(onClick = onBackupMnemonic) {
+                Text("Backup Recovery Phrase")
+            }
+        }
+
         Spacer(Modifier.weight(1f))
+
+        Text(
+            if (walletMode == WalletMode.SPARK) "Spark Wallet" else "NWC",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(Modifier.height(4.dp))
 
         TextButton(
             onClick = onDisconnect,
@@ -949,11 +1030,60 @@ private fun ReceiveInvoiceContent(
     }
 }
 
+// --- Receive Success ---
+
+@Composable
+private fun ReceiveSuccessContent(
+    amountSats: Long,
+    onDone: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            Icons.Default.Check,
+            contentDescription = null,
+            modifier = Modifier
+                .size(64.dp)
+                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                .padding(12.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        Text(
+            "Payment Received",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        Text(
+            "%,d sats".format(amountSats),
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Spacer(Modifier.height(32.dp))
+
+        Button(onClick = onDone) {
+            Text("Done")
+        }
+    }
+}
+
 // --- Transaction History ---
 
 @Composable
 private fun TransactionHistoryContent(
-    transactions: List<Nip47.Transaction>,
+    transactions: List<WalletTransaction>,
     error: String?,
     isLoading: Boolean,
     modifier: Modifier = Modifier
@@ -1025,9 +1155,9 @@ private fun TransactionHistoryContent(
 }
 
 @Composable
-private fun TransactionRow(tx: Nip47.Transaction) {
+private fun TransactionRow(tx: WalletTransaction) {
     val isIncoming = tx.type == "incoming"
-    val amountSats = tx.amount / 1000
+    val amountSats = tx.amountMsats / 1000
 
     Row(
         modifier = Modifier
@@ -1086,6 +1216,273 @@ private fun TransactionRow(tx: Nip47.Transaction) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+// --- Wallet Mode Selection ---
+
+@Composable
+private fun WalletModeSelectionContent(
+    onSelectNwc: () -> Unit,
+    onSelectSpark: () -> Unit
+) {
+    Spacer(Modifier.height(16.dp))
+
+    Text(
+        "Connect a Wallet",
+        style = MaterialTheme.typography.headlineSmall,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        "Choose how to connect a Lightning wallet for sending and receiving sats.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+
+    Spacer(Modifier.height(24.dp))
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelectSpark() },
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                "Spark Wallet",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Non-custodial Lightning wallet built into the app. No external wallet needed.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+            )
+        }
+    }
+
+    Spacer(Modifier.height(12.dp))
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelectNwc() },
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                "Nostr Wallet Connect",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Connect an external Lightning wallet using a NWC connection string.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    Spacer(Modifier.height(32.dp))
+}
+
+// --- Spark Setup ---
+
+@Composable
+private fun SparkSetupContent(
+    walletState: WalletState,
+    statusLines: List<String>,
+    restoreMnemonic: String,
+    error: String?,
+    onCreateWallet: () -> Unit,
+    onRestoreMnemonicChange: (String) -> Unit,
+    onRestoreWallet: () -> Unit,
+    onDisconnect: () -> Unit
+) {
+    val isConnecting = walletState is WalletState.Connecting
+
+    Spacer(Modifier.height(16.dp))
+
+    Text(
+        "Spark Wallet",
+        style = MaterialTheme.typography.headlineSmall,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        "Create a new non-custodial Lightning wallet or restore from a recovery phrase.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+
+    Spacer(Modifier.height(24.dp))
+
+    if (!isConnecting) {
+        Button(
+            onClick = onCreateWallet,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Create New Wallet")
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        Text(
+            "Or restore an existing wallet",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        OutlinedTextField(
+            value = restoreMnemonic,
+            onValueChange = onRestoreMnemonicChange,
+            label = { Text("Recovery phrase") },
+            placeholder = { Text("Enter 12 or 24 words...") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = false,
+            maxLines = 3
+        )
+
+        if (error != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                error,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        OutlinedButton(
+            onClick = onRestoreWallet,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = restoreMnemonic.isNotBlank()
+        ) {
+            Text("Restore Wallet")
+        }
+    }
+
+    if (walletState is WalletState.Error) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            walletState.message,
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+
+    if (isConnecting) {
+        Spacer(Modifier.height(16.dp))
+        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+        Spacer(Modifier.height(8.dp))
+        Text("Connecting...", style = MaterialTheme.typography.bodyMedium)
+    }
+
+    if (statusLines.isNotEmpty()) {
+        Spacer(Modifier.height(12.dp))
+        Column(modifier = Modifier.fillMaxWidth()) {
+            statusLines.forEach { line ->
+                Text(
+                    line,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+
+    if (isConnecting) {
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(
+            onClick = onDisconnect,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Cancel")
+        }
+    }
+
+    Spacer(Modifier.height(32.dp))
+}
+
+// --- Spark Backup ---
+
+@Composable
+private fun SparkBackupContent(
+    mnemonic: String,
+    onConfirm: () -> Unit
+) {
+    val words = mnemonic.split(" ")
+
+    Spacer(Modifier.height(16.dp))
+
+    Text(
+        "Recovery Phrase",
+        style = MaterialTheme.typography.headlineSmall,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        "Write down these words in order and store them safely. This is the only way to recover your wallet.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.error
+    )
+
+    Spacer(Modifier.height(24.dp))
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Display words in two columns
+            for (i in words.indices step 2) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                ) {
+                    Text(
+                        "${i + 1}. ${words[i]}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (i + 1 < words.size) {
+                        Text(
+                            "${i + 2}. ${words[i + 1]}",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    Spacer(Modifier.height(24.dp))
+
+    Button(
+        onClick = onConfirm,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text("I've backed this up")
+    }
+
+    Spacer(Modifier.height(32.dp))
 }
 
 private fun formatRelativeTime(timestamp: Long): String {

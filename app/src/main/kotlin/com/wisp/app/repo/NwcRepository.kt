@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 
-class NwcRepository(private val context: Context, private val relayPool: RelayPool? = null, pubkeyHex: String? = null) {
+class NwcRepository(private val context: Context, private val relayPool: RelayPool? = null, pubkeyHex: String? = null) : WalletProvider {
     private val TAG = "NwcRepository"
 
     private val masterKey = MasterKey.Builder(context)
@@ -42,24 +42,27 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
     private val pendingRequests = mutableMapOf<String, CompletableDeferred<Nip47.NwcResponse>>()
 
     private val _balance = MutableStateFlow<Long?>(null)
-    val balance: StateFlow<Long?> = _balance
+    override val balance: StateFlow<Long?> = _balance
 
     private val _isConnected = MutableStateFlow(false)
-    val isConnected: StateFlow<Boolean> = _isConnected
+    override val isConnected: StateFlow<Boolean> = _isConnected
 
     /** True once encryption is negotiated and the response subscription is active. */
     private val _isReady = MutableStateFlow(false)
 
     /** Granular status updates emitted during connect flow */
     private val _statusLog = MutableSharedFlow<String>(extraBufferCapacity = 32)
-    val statusLog: SharedFlow<String> = _statusLog
+    override val statusLog: SharedFlow<String> = _statusLog
+
+    private val _paymentReceived = MutableSharedFlow<Long>(extraBufferCapacity = 8)
+    override val paymentReceived: SharedFlow<Long> = _paymentReceived
 
     private fun emitStatus(msg: String) {
         Log.d(TAG, msg)
         _statusLog.tryEmit(msg)
     }
 
-    fun hasConnection(): Boolean = encPrefs.getString("nwc_uri", null) != null
+    override fun hasConnection(): Boolean = encPrefs.getString("nwc_uri", null) != null
 
     fun saveConnectionString(uri: String) {
         encPrefs.edit().putString("nwc_uri", uri).apply()
@@ -80,7 +83,7 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         _balance.value = null
     }
 
-    fun connect() {
+    override fun connect() {
         val uri = getConnectionString() ?: return
         val conn = Nip47.parseConnectionString(uri) ?: run {
             emitStatus("Failed to parse connection string")
@@ -263,7 +266,7 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         }
     }
 
-    suspend fun fetchBalance(): Result<Long> {
+    override suspend fun fetchBalance(): Result<Long> {
         emitStatus("Fetching balance...")
         val result = sendRequest(Nip47.NwcRequest.GetBalance)
         return result.map { response ->
@@ -273,22 +276,37 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         }
     }
 
-    suspend fun payInvoice(bolt11: String): Result<String> {
+    override suspend fun payInvoice(bolt11: String): Result<String> {
         val result = sendRequest(Nip47.NwcRequest.PayInvoice(bolt11))
         return result.map { (it as Nip47.NwcResponse.PayInvoiceResult).preimage }
     }
 
-    suspend fun makeInvoice(amountMsats: Long, description: String): Result<String> {
+    override suspend fun makeInvoice(amountMsats: Long, description: String): Result<String> {
         val result = sendRequest(Nip47.NwcRequest.MakeInvoice(amountMsats, description))
         return result.map { (it as Nip47.NwcResponse.MakeInvoiceResult).invoice }
     }
 
-    suspend fun listTransactions(limit: Int = 50): Result<List<Nip47.Transaction>> {
+    suspend fun listNwcTransactions(limit: Int = 50): Result<List<Nip47.Transaction>> {
         val result = sendRequest(Nip47.NwcRequest.ListTransactions(limit = limit))
         return result.map { (it as Nip47.NwcResponse.ListTransactionsResult).transactions }
     }
 
-    fun disconnect() {
+    override suspend fun listTransactions(limit: Int): Result<List<WalletTransaction>> {
+        return listNwcTransactions(limit).map { txs ->
+            txs.map { tx ->
+                WalletTransaction(
+                    type = tx.type,
+                    description = tx.description,
+                    paymentHash = tx.paymentHash,
+                    amountMsats = tx.amount,
+                    createdAt = tx.createdAt,
+                    settledAt = tx.settledAt
+                )
+            }
+        }
+    }
+
+    override fun disconnect() {
         scope?.cancel()
         scope = null
         relay?.disconnect()

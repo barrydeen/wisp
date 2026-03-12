@@ -54,6 +54,13 @@
 -dontwarn io.objectbox.**
 -keep class com.wisp.app.db.** { *; }
 
+# Breez SDK Spark (UniFFI bindings)
+-keep class breez_sdk_spark.** { *; }
+-dontwarn breez_sdk_spark.**
+# JNA (used by Breez SDK UniFFI)
+-keep class com.sun.jna.** { *; }
+-dontwarn com.sun.jna.**
+
 # java.lang.management (not available on Android)
 -dontwarn java.lang.management.ManagementFactory
 -dontwarn java.lang.management.RuntimeMXBean

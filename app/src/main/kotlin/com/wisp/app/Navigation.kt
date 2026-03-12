@@ -160,7 +160,11 @@ fun WispNavHost(
         factory = object : androidx.lifecycle.ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                return WalletViewModel(feedViewModel.nwcRepo) as T
+                return WalletViewModel(
+                    feedViewModel.nwcRepo,
+                    feedViewModel.sparkRepo,
+                    feedViewModel.walletModeRepo
+                ) as T
             }
         }
     )
@@ -821,7 +825,7 @@ fun WispNavHost(
                 onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
                 onZap = { event, amountMsats, message, isAnonymous, isPrivate -> feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate) },
                 userPubkey = feedViewModel.getUserPubkey(),
-                isWalletConnected = feedViewModel.nwcRepo.hasConnection(),
+                isWalletConnected = feedViewModel.activeWalletProvider.hasConnection(),
                 onWallet = { navController.navigate(Routes.WALLET) },
                 zapSuccess = feedViewModel.zapSuccess,
                 zapError = feedViewModel.zapError,
@@ -974,7 +978,7 @@ fun WispNavHost(
             var threadZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
             val threadZapInProgress by feedViewModel.zapInProgress.collectAsState()
             var threadZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
-            val isNwcConnected = feedViewModel.nwcRepo.hasConnection()
+            val isNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
             var showThreadEmojiLibrary by remember { mutableStateOf(false) }
 
             LaunchedEffect(Unit) {
@@ -1190,7 +1194,7 @@ fun WispNavHost(
             var articleZapTarget by remember { mutableStateOf<com.wisp.app.nostr.NostrEvent?>(null) }
             val articleZapInProgress by feedViewModel.zapInProgress.collectAsState()
             var articleZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
-            val isNwcConnected = feedViewModel.nwcRepo.hasConnection()
+            val isNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
             val articleSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
             val articleBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
             val articleListedIds = remember(articleSetListedIds, articleBookmarkedIds) { articleSetListedIds + articleBookmarkedIds }
@@ -1674,7 +1678,7 @@ fun WispNavHost(
             val notifSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
             val notifBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
             val notifListedIds = remember(notifSetListedIds, notifBookmarkedIds) { notifSetListedIds + notifBookmarkedIds }
-            val isNwcConnected = feedViewModel.nwcRepo.hasConnection()
+            val isNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
             var showNotifEmojiLibrary by remember { mutableStateOf(false) }
 
             LaunchedEffect(Unit) {
