@@ -163,7 +163,10 @@ fun WispNavHost(
                 return WalletViewModel(
                     feedViewModel.nwcRepo,
                     feedViewModel.sparkRepo,
-                    feedViewModel.walletModeRepo
+                    feedViewModel.walletModeRepo,
+                    feedViewModel.eventRepo,
+                    feedViewModel.relayPool,
+                    feedViewModel.keyRepo
                 ) as T
             }
         }

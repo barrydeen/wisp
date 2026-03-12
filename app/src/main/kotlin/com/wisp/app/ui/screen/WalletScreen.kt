@@ -50,7 +50,11 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.ElectricBolt
+import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -72,7 +76,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -80,6 +86,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -88,6 +95,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import com.wisp.app.R
 import com.wisp.app.repo.WalletMode
 import com.wisp.app.repo.WalletTransaction
 import com.wisp.app.ui.component.SatsNumpad
@@ -203,10 +211,12 @@ fun WalletScreen(
                             viewModel.navigateTo(WalletPage.Transactions)
                         },
                         onRefresh = { viewModel.refreshBalance() },
-                        onDisconnect = { viewModel.disconnectWallet() },
-                        onBackupMnemonic = if (viewModel.walletMode.collectAsState().value == WalletMode.SPARK) {
-                            { viewModel.showMnemonicBackup() }
-                        } else null,
+                        onSettings = { viewModel.navigateTo(WalletPage.Settings) },
+                        lightningAddress = viewModel.lightningAddress.collectAsState().value,
+                        onSetupAddress = {
+                            viewModel.resetAddressSetupState()
+                            viewModel.navigateTo(WalletPage.LightningAddressSetup)
+                        },
                         modifier = Modifier.padding(padding)
                     )
                     is WalletPage.SendInput -> SendInputContent(
@@ -289,6 +299,41 @@ fun WalletScreen(
                         isLoading = viewModel.isLoading.collectAsState().value,
                         modifier = Modifier.padding(padding)
                     )
+                    is WalletPage.Settings -> WalletSettingsContent(
+                        walletMode = viewModel.walletMode.collectAsState().value,
+                        lightningAddress = viewModel.lightningAddress.collectAsState().value,
+                        onSetupAddress = {
+                            viewModel.resetAddressSetupState()
+                            viewModel.navigateTo(WalletPage.LightningAddressSetup)
+                        },
+                        onShowAddressQR = { viewModel.navigateTo(WalletPage.LightningAddressQR) },
+                        onBackupMnemonic = { viewModel.showMnemonicBackup() },
+                        onDeleteWallet = { viewModel.navigateTo(WalletPage.DeleteWalletConfirm) },
+                        modifier = Modifier.padding(padding)
+                    )
+                    is WalletPage.LightningAddressSetup -> LightningAddressSetupContent(
+                        addressAvailable = viewModel.addressAvailable.collectAsState().value,
+                        addressCheckLoading = viewModel.addressCheckLoading.collectAsState().value,
+                        isLoading = viewModel.lightningAddressLoading.collectAsState().value,
+                        error = viewModel.lightningAddressError.collectAsState().value,
+                        showBioPrompt = viewModel.showBioPrompt.collectAsState().value,
+                        onCheckAvailability = { viewModel.checkAddressAvailable(it) },
+                        onRegister = { viewModel.registerLightningAddress(it) },
+                        onAddToBio = { viewModel.addAddressToNostrBio() },
+                        onDismissBioPrompt = { viewModel.dismissBioPrompt() },
+                        modifier = Modifier.padding(padding)
+                    )
+                    is WalletPage.LightningAddressQR -> LightningAddressQRContent(
+                        address = viewModel.lightningAddress.value ?: "",
+                        modifier = Modifier.padding(padding)
+                    )
+                    is WalletPage.DeleteWalletConfirm -> DeleteWalletConfirmContent(
+                        confirmText = viewModel.deleteConfirmText.collectAsState().value,
+                        onConfirmTextChange = { viewModel.updateDeleteConfirmText(it) },
+                        onDelete = { viewModel.deleteWallet() },
+                        onCancel = { viewModel.navigateBack() },
+                        modifier = Modifier.padding(padding)
+                    )
                     else -> {
                         // ModeSelection, NwcSetup, SparkSetup — shouldn't appear while connected
                         WalletHomeContent(
@@ -301,7 +346,12 @@ fun WalletScreen(
                                 viewModel.navigateTo(WalletPage.Transactions)
                             },
                             onRefresh = { viewModel.refreshBalance() },
-                            onDisconnect = { viewModel.disconnectWallet() },
+                            onSettings = { viewModel.navigateTo(WalletPage.Settings) },
+                            lightningAddress = viewModel.lightningAddress.collectAsState().value,
+                            onSetupAddress = {
+                                viewModel.resetAddressSetupState()
+                                viewModel.navigateTo(WalletPage.LightningAddressSetup)
+                            },
                             modifier = Modifier.padding(padding)
                         )
                     }
@@ -468,8 +518,9 @@ private fun WalletHomeContent(
     onReceive: () -> Unit,
     onTransactions: () -> Unit,
     onRefresh: () -> Unit,
-    onDisconnect: () -> Unit,
-    onBackupMnemonic: (() -> Unit)? = null,
+    onSettings: () -> Unit,
+    lightningAddress: String? = null,
+    onSetupAddress: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val balanceSats = balanceMsats / 1000
@@ -480,7 +531,21 @@ private fun WalletHomeContent(
             .padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(Modifier.height(48.dp))
+        // Settings gear in top-right
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            IconButton(onClick = onSettings) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
 
         // Bitcoin icon
         Box(
@@ -489,10 +554,11 @@ private fun WalletHomeContent(
                 .background(MaterialTheme.colorScheme.primary, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                "₿",
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.onPrimary
+            Icon(
+                Icons.Default.ElectricBolt,
+                contentDescription = null,
+                modifier = Modifier.size(36.dp),
+                tint = MaterialTheme.colorScheme.onPrimary
             )
         }
 
@@ -553,28 +619,57 @@ private fun WalletHomeContent(
             Text("Transaction History")
         }
 
-        if (onBackupMnemonic != null) {
-            TextButton(onClick = onBackupMnemonic) {
-                Text("Backup Recovery Phrase")
+        // Lightning address setup prompt (Spark only)
+        if (walletMode == WalletMode.SPARK && lightningAddress == null) {
+            Spacer(Modifier.height(8.dp))
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSetupAddress() },
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.ElectricBolt,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Set up your Lightning Address",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            "Get a username@breez.tips address",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                    }
+                }
             }
         }
 
-        Spacer(Modifier.weight(1f))
-
-        Text(
-            if (walletMode == WalletMode.SPARK) "Spark Wallet" else "NWC",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(Modifier.height(4.dp))
-
-        TextButton(
-            onClick = onDisconnect,
-            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-        ) {
-            Text("Disconnect")
+        // Show lightning address if set
+        if (lightningAddress != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                lightningAddress,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
+
+        Spacer(Modifier.weight(1f))
 
         Spacer(Modifier.height(16.dp))
     }
@@ -1584,6 +1679,559 @@ private fun SparkBackupContent(
     }
 
     Spacer(Modifier.height(32.dp))
+}
+
+// --- Wallet Settings ---
+
+@Composable
+private fun WalletSettingsContent(
+    walletMode: WalletMode,
+    lightningAddress: String?,
+    onSetupAddress: () -> Unit,
+    onShowAddressQR: () -> Unit,
+    onBackupMnemonic: () -> Unit,
+    onDeleteWallet: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val clipboardManager = LocalClipboardManager.current
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        Spacer(Modifier.height(16.dp))
+
+        Text(
+            "Settings",
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        // Lightning Address section (Spark only)
+        if (walletMode == WalletMode.SPARK) {
+            Spacer(Modifier.height(24.dp))
+
+            Text(
+                "Lightning Address",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            if (lightningAddress != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            lightningAddress,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = {
+                            clipboardManager.setText(AnnotatedString(lightningAddress))
+                        }) {
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = "Copy address",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = onShowAddressQR,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Show QR Code")
+                }
+            } else {
+                OutlinedButton(
+                    onClick = onSetupAddress,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.ElectricBolt, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Set up Lightning Address")
+                }
+            }
+        }
+
+        // Security section
+        Spacer(Modifier.height(24.dp))
+
+        Text(
+            "Security",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        if (walletMode == WalletMode.SPARK) {
+            OutlinedButton(
+                onClick = onBackupMnemonic,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Backup Recovery Phrase")
+            }
+        }
+
+        // Disclaimer
+        Spacer(Modifier.height(24.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+        ) {
+            Text(
+                "IMPORTANT: Wisp never holds user funds. You manage your own wallet and are responsible for securing it properly.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(16.dp)
+            )
+        }
+
+        // Danger Zone
+        Spacer(Modifier.height(32.dp))
+
+        Text(
+            "Danger Zone",
+            style = MaterialTheme.typography.titleMedium,
+            color = Color(0xFFD32F2F)
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        Button(
+            onClick = onDeleteWallet,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFFD32F2F),
+                contentColor = Color.White
+            )
+        ) {
+            Text("Delete Wallet")
+        }
+
+        // Footer
+        Spacer(Modifier.height(32.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (walletMode == WalletMode.SPARK) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_spark_logo),
+                    contentDescription = "Spark",
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "Spark",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    "·",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(12.dp))
+                Icon(
+                    painter = painterResource(R.drawable.ic_breez_logo),
+                    contentDescription = "Breez",
+                    modifier = Modifier.height(12.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "SDK v0.10.0",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Text(
+                    "Nostr Wallet Connect",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(Modifier.height(32.dp))
+    }
+}
+
+// --- Lightning Address Setup ---
+
+@Composable
+private fun LightningAddressSetupContent(
+    addressAvailable: Boolean?,
+    addressCheckLoading: Boolean,
+    isLoading: Boolean,
+    error: String?,
+    showBioPrompt: Boolean,
+    onCheckAvailability: (String) -> Unit,
+    onRegister: (String) -> Unit,
+    onAddToBio: () -> Unit,
+    onDismissBioPrompt: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var username by remember { mutableStateOf("") }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(32.dp))
+
+        Text(
+            "Lightning Address",
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        Text(
+            "Choose a username to get a lightning address for receiving payments.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = username,
+                onValueChange = { username = it.lowercase().filter { c -> c.isLetterOrDigit() || c == '_' || c == '-' } },
+                label = { Text("Username") },
+                placeholder = { Text("satoshi") },
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "@breez.tips",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Availability indicator
+        if (addressAvailable == true) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = null,
+                    tint = Color(0xFF2E7D32),
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Available!",
+                    color = Color(0xFF2E7D32),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        } else if (addressAvailable == false) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Not available",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+
+        if (error != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                error,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        if (addressCheckLoading || isLoading) {
+            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+        } else {
+            OutlinedButton(
+                onClick = { onCheckAvailability(username) },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = username.length >= 3
+            ) {
+                Text("Check Availability")
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            Button(
+                onClick = { onRegister(username) },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = addressAvailable == true && username.length >= 3
+            ) {
+                Text("Register")
+            }
+        }
+    }
+
+    // Bio update prompt dialog
+    if (showBioPrompt) {
+        AlertDialog(
+            onDismissRequest = onDismissBioPrompt,
+            title = { Text("Update Nostr Profile?") },
+            text = { Text("Add this lightning address to your Nostr profile so others can zap you?") },
+            confirmButton = {
+                TextButton(onClick = onAddToBio) {
+                    Text("Yes")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissBioPrompt) {
+                    Text("No")
+                }
+            }
+        )
+    }
+}
+
+// --- Lightning Address QR ---
+
+@Composable
+private fun LightningAddressQRContent(
+    address: String,
+    modifier: Modifier = Modifier
+) {
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+
+    val qrBitmap = remember(address) {
+        if (address.isBlank()) return@remember null
+        val writer = QRCodeWriter()
+        val matrix = writer.encode(address, BarcodeFormat.QR_CODE, 512, 512)
+        val bitmap = Bitmap.createBitmap(matrix.width, matrix.height, Bitmap.Config.RGB_565)
+        for (x in 0 until matrix.width) {
+            for (y in 0 until matrix.height) {
+                bitmap.setPixel(x, y, if (matrix.get(x, y)) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+            }
+        }
+        bitmap
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(32.dp))
+
+        Text(
+            "Lightning Address",
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        if (qrBitmap != null) {
+            Image(
+                bitmap = qrBitmap.asImageBitmap(),
+                contentDescription = "Lightning Address QR Code",
+                modifier = Modifier
+                    .size(280.dp)
+                    .background(Color.White, RoundedCornerShape(12.dp))
+                    .padding(12.dp)
+            )
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    address,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = {
+                    clipboardManager.setText(AnnotatedString(address))
+                }) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "Copy address",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        OutlinedButton(
+            onClick = {
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, address)
+                }
+                context.startActivity(Intent.createChooser(intent, "Share Lightning Address"))
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Share")
+        }
+
+        Spacer(Modifier.height(32.dp))
+    }
+}
+
+// --- Delete Wallet Confirmation ---
+
+@Composable
+private fun DeleteWalletConfirmContent(
+    confirmText: String,
+    onConfirmTextChange: (String) -> Unit,
+    onDelete: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(32.dp))
+
+        Icon(
+            Icons.Default.Close,
+            contentDescription = null,
+            modifier = Modifier
+                .size(64.dp)
+                .background(Color(0xFFD32F2F).copy(alpha = 0.1f), CircleShape)
+                .padding(16.dp),
+            tint = Color(0xFFD32F2F)
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        Text(
+            "Delete Wallet",
+            style = MaterialTheme.typography.headlineMedium,
+            color = Color(0xFFD32F2F)
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        Text(
+            "This will permanently delete your wallet from this device. Your funds cannot be recovered without your recovery phrase.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        Text(
+            "Make sure you have backed up your recovery phrase before proceeding.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color(0xFFD32F2F),
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        OutlinedTextField(
+            value = confirmText,
+            onValueChange = onConfirmTextChange,
+            label = { Text("Type DELETE to confirm") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        Button(
+            onClick = onDelete,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = confirmText == "DELETE",
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFFD32F2F),
+                contentColor = Color.White
+            )
+        ) {
+            Text("Delete Wallet")
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        OutlinedButton(
+            onClick = onCancel,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Cancel")
+        }
+
+        Spacer(Modifier.height(32.dp))
+    }
 }
 
 private fun formatRelativeTime(timestamp: Long): String {

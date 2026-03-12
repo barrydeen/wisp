@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import breez_sdk_spark.CheckLightningAddressRequest
 import breez_sdk_spark.ConnectRequest
 import breez_sdk_spark.EventListener
 import breez_sdk_spark.GetInfoRequest
@@ -14,6 +15,7 @@ import breez_sdk_spark.PaymentType
 import breez_sdk_spark.PrepareSendPaymentRequest
 import breez_sdk_spark.ReceivePaymentMethod
 import breez_sdk_spark.ReceivePaymentRequest
+import breez_sdk_spark.RegisterLightningAddressRequest
 import breez_sdk_spark.SdkEvent
 import breez_sdk_spark.Seed
 import breez_sdk_spark.SendPaymentOptions
@@ -363,4 +365,44 @@ class SparkRepository(
                 Result.failure(e)
             }
         }
+
+    // --- Lightning Address ---
+
+    suspend fun getLightningAddress(): Result<String?> = withContext(Dispatchers.IO) {
+        try {
+            val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
+            val info = instance.getLightningAddress()
+            Result.success(info?.lightningAddress)
+        } catch (e: Exception) {
+            Result.success(null)
+        }
+    }
+
+    suspend fun checkLightningAddressAvailable(username: String): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            try {
+                val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
+                val available = instance.checkLightningAddressAvailable(
+                    CheckLightningAddressRequest(username)
+                )
+                Result.success(available)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    suspend fun registerLightningAddress(
+        username: String,
+        description: String = "Wisp wallet"
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
+            val info = instance.registerLightningAddress(
+                RegisterLightningAddressRequest(username, description)
+            )
+            Result.success(info.lightningAddress)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

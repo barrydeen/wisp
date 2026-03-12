@@ -3,19 +3,27 @@ package com.wisp.app.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.Bolt11
+import com.wisp.app.nostr.ClientMessage
+import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.Nip57
+import com.wisp.app.nostr.toHex
+import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.NwcRepository
 import com.wisp.app.repo.SparkRepository
 import com.wisp.app.repo.WalletMode
 import com.wisp.app.repo.WalletModeRepository
 import com.wisp.app.repo.WalletProvider
 import com.wisp.app.repo.WalletTransaction
+import com.wisp.app.relay.RelayPool
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 
 sealed class WalletState {
     object NotConnected : WalletState()
@@ -44,12 +52,19 @@ sealed class WalletPage {
     data class ReceiveInvoice(val invoice: String, val amountSats: Long) : WalletPage()
     data class ReceiveSuccess(val amountSats: Long) : WalletPage()
     object Transactions : WalletPage()
+    object Settings : WalletPage()
+    object LightningAddressSetup : WalletPage()
+    object LightningAddressQR : WalletPage()
+    object DeleteWalletConfirm : WalletPage()
 }
 
 class WalletViewModel(
     val nwcRepo: NwcRepository,
     val sparkRepo: SparkRepository,
-    val walletModeRepo: WalletModeRepository
+    val walletModeRepo: WalletModeRepository,
+    val eventRepo: EventRepository,
+    val relayPool: RelayPool,
+    val keyRepo: KeyRepository
 ) : ViewModel() {
 
     private val _walletMode = MutableStateFlow(walletModeRepo.getMode())
@@ -106,6 +121,33 @@ class WalletViewModel(
     private val _restoreMnemonic = MutableStateFlow("")
     val restoreMnemonic: StateFlow<String> = _restoreMnemonic
 
+    // Lightning address
+    private val _lightningAddress = MutableStateFlow<String?>(null)
+    val lightningAddress: StateFlow<String?> = _lightningAddress
+
+    private val _lightningAddressLoading = MutableStateFlow(false)
+    val lightningAddressLoading: StateFlow<Boolean> = _lightningAddressLoading
+
+    private val _lightningAddressError = MutableStateFlow<String?>(null)
+    val lightningAddressError: StateFlow<String?> = _lightningAddressError
+
+    // Delete wallet confirmation
+    private val _deleteConfirmText = MutableStateFlow("")
+    val deleteConfirmText: StateFlow<String> = _deleteConfirmText
+
+    // Lightning address availability check
+    private val _addressAvailable = MutableStateFlow<Boolean?>(null)
+    val addressAvailable: StateFlow<Boolean?> = _addressAvailable
+
+    private val _addressCheckLoading = MutableStateFlow(false)
+    val addressCheckLoading: StateFlow<Boolean> = _addressCheckLoading
+
+    // Nostr bio update prompt
+    private val _showBioPrompt = MutableStateFlow(false)
+    val showBioPrompt: StateFlow<Boolean> = _showBioPrompt
+
+    private val _registeredAddress = MutableStateFlow<String?>(null)
+
     private var connectJob: Job? = null
     private var statusCollectJob: Job? = null
     private var connectionMonitorJob: Job? = null
@@ -155,6 +197,14 @@ class WalletViewModel(
                 }
             }
         }
+
+        // Auto-fetch lightning address when Spark connected
+        if (mode == WalletMode.SPARK && sparkRepo.hasMnemonic()) {
+            viewModelScope.launch {
+                sparkRepo.isConnected.first { it }
+                fetchLightningAddress()
+            }
+        }
     }
 
     // --- Navigation ---
@@ -181,6 +231,9 @@ class WalletViewModel(
         _sendError.value = null
         _receiveAmount.value = ""
         _restoreMnemonic.value = ""
+        _deleteConfirmText.value = ""
+        _lightningAddressError.value = null
+        _addressAvailable.value = null
     }
 
     val isOnHome: Boolean get() = pageStack.size <= 1
@@ -261,6 +314,12 @@ class WalletViewModel(
         startStatusCollection(sparkRepo)
         sparkRepo.connect()
         startConnectionMonitor(sparkRepo)
+
+        // Fetch lightning address once connected
+        viewModelScope.launch {
+            sparkRepo.isConnected.first { it }
+            fetchLightningAddress()
+        }
     }
 
     fun showMnemonicBackup() {
@@ -324,6 +383,35 @@ class WalletViewModel(
         }
     }
 
+    fun deleteWallet() {
+        if (_deleteConfirmText.value != "DELETE") return
+
+        connectJob?.cancel()
+        statusCollectJob?.cancel()
+        connectionMonitorJob?.cancel()
+
+        when (_walletMode.value) {
+            WalletMode.NWC -> {
+                nwcRepo.disconnect()
+                nwcRepo.clearConnection()
+            }
+            WalletMode.SPARK -> {
+                sparkRepo.disconnect()
+                sparkRepo.clearMnemonic()
+            }
+            WalletMode.NONE -> {}
+        }
+
+        walletModeRepo.setMode(WalletMode.NONE)
+        _walletMode.value = WalletMode.NONE
+        _walletState.value = WalletState.NotConnected
+        _connectionString.value = ""
+        _statusLines.value = emptyList()
+        _lightningAddress.value = null
+        _deleteConfirmText.value = ""
+        navigateHome()
+    }
+
     fun disconnectWallet() {
         connectJob?.cancel()
         statusCollectJob?.cancel()
@@ -346,7 +434,12 @@ class WalletViewModel(
         _walletState.value = WalletState.NotConnected
         _connectionString.value = ""
         _statusLines.value = emptyList()
+        _lightningAddress.value = null
         navigateHome()
+    }
+
+    fun updateDeleteConfirmText(value: String) {
+        _deleteConfirmText.value = value
     }
 
     fun refreshState() {
@@ -374,6 +467,114 @@ class WalletViewModel(
                 WalletMode.NONE -> {}
             }
         }
+    }
+
+    // --- Lightning Address ---
+
+    fun fetchLightningAddress() {
+        if (_walletMode.value != WalletMode.SPARK) return
+        viewModelScope.launch {
+            _lightningAddressLoading.value = true
+            val result = sparkRepo.getLightningAddress()
+            result.fold(
+                onSuccess = { address ->
+                    _lightningAddress.value = address
+                },
+                onFailure = { /* silently ignore */ }
+            )
+            _lightningAddressLoading.value = false
+        }
+    }
+
+    fun checkAddressAvailable(username: String) {
+        _addressCheckLoading.value = true
+        _addressAvailable.value = null
+        _lightningAddressError.value = null
+        viewModelScope.launch {
+            val result = sparkRepo.checkLightningAddressAvailable(username)
+            result.fold(
+                onSuccess = { available ->
+                    _addressAvailable.value = available
+                    if (!available) {
+                        _lightningAddressError.value = "Username is already taken"
+                    }
+                },
+                onFailure = { e ->
+                    _lightningAddressError.value = e.message ?: "Check failed"
+                }
+            )
+            _addressCheckLoading.value = false
+        }
+    }
+
+    fun registerLightningAddress(username: String) {
+        _lightningAddressLoading.value = true
+        _lightningAddressError.value = null
+        viewModelScope.launch {
+            val result = sparkRepo.registerLightningAddress(username)
+            result.fold(
+                onSuccess = { fullAddress ->
+                    _lightningAddress.value = fullAddress
+                    _registeredAddress.value = fullAddress
+                    _showBioPrompt.value = true
+                    _lightningAddressLoading.value = false
+                },
+                onFailure = { e ->
+                    _lightningAddressError.value = e.message ?: "Registration failed"
+                    _lightningAddressLoading.value = false
+                }
+            )
+        }
+    }
+
+    fun dismissBioPrompt() {
+        _showBioPrompt.value = false
+        _registeredAddress.value = null
+        navigateBack()
+    }
+
+    fun addAddressToNostrBio() {
+        val address = _registeredAddress.value ?: return
+        _showBioPrompt.value = false
+
+        viewModelScope.launch {
+            try {
+                val keypair = keyRepo.getKeypair() ?: return@launch
+                val pubkeyHex = keypair.pubkey.toHex()
+                val profile = eventRepo.getProfileData(pubkeyHex)
+
+                // Build kind 0 JSON preserving all existing fields
+                val content = buildJsonObject {
+                    // Preserve existing fields
+                    if (profile != null) {
+                        profile.name?.let { put("name", JsonPrimitive(it)) }
+                        profile.displayName?.let { put("display_name", JsonPrimitive(it)) }
+                        profile.about?.let { put("about", JsonPrimitive(it)) }
+                        profile.picture?.let { put("picture", JsonPrimitive(it)) }
+                        profile.banner?.let { put("banner", JsonPrimitive(it)) }
+                        profile.nip05?.let { put("nip05", JsonPrimitive(it)) }
+                    }
+                    // Set the lightning address
+                    put("lud16", JsonPrimitive(address))
+                }.toString()
+
+                val signer = LocalSigner(keypair.privkey, keypair.pubkey)
+                val event = signer.signEvent(kind = 0, content = content)
+                val msg = ClientMessage.event(event)
+                relayPool.sendToWriteRelays(msg)
+            } catch (_: Exception) {
+                // Silently fail — profile update is best-effort
+            }
+
+            _registeredAddress.value = null
+            navigateBack()
+        }
+    }
+
+    fun resetAddressSetupState() {
+        _addressAvailable.value = null
+        _addressCheckLoading.value = false
+        _lightningAddressError.value = null
     }
 
     // --- Send flow ---
