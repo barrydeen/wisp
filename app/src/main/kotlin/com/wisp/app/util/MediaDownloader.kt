@@ -33,17 +33,24 @@ object MediaDownloader {
 
     suspend fun downloadMedia(context: Context, url: String) {
         try {
-            val bytes = withContext(Dispatchers.IO) {
+            val (bytes, responseMimeType) = withContext(Dispatchers.IO) {
                 val request = Request.Builder().url(url).build()
                 httpClient.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) error("Download failed: ${response.code}")
-                    response.body?.bytes() ?: error("Empty response")
+                    val contentType = response.header("Content-Type")?.substringBefore(';')?.trim()
+                    val body = response.body?.bytes() ?: error("Empty response")
+                    body to contentType
                 }
             }
 
-            val fileName = url.substringAfterLast('/').substringBefore('?').ifEmpty { "download" }
-            val ext = fileName.substringAfterLast('.', "").lowercase()
-            val mimeType = mimeTypes[ext] ?: "application/octet-stream"
+            val rawName = url.substringAfterLast('/').substringBefore('?').ifEmpty { "download" }
+            val ext = rawName.substringAfterLast('.', "").lowercase()
+            val mimeType = mimeTypes[ext] ?: responseMimeType ?: "application/octet-stream"
+            // If no extension, append one based on mime type
+            val fileName = if (ext.isEmpty() || ext == rawName) {
+                val guessedExt = mimeTypes.entries.firstOrNull { it.value == mimeType }?.key ?: "bin"
+                "$rawName.$guessedExt"
+            } else rawName
 
             withContext(Dispatchers.IO) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

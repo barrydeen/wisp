@@ -83,6 +83,7 @@ import com.wisp.app.ui.component.ContentSegment
 import com.wisp.app.ui.component.FullScreenImageViewer
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.parseContent
+import com.wisp.app.ui.component.parseImetaTags
 import com.wisp.app.ui.component.QrCodeDialog
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
@@ -343,10 +344,12 @@ fun UserProfileScreen(
             else (rootNotes + replies)
                 .sortedByDescending { it.created_at }
                 .flatMap { event ->
-                    parseContent(event.content).mapNotNull { segment ->
+                    val imeta = parseImetaTags(event)
+                    parseContent(event.content, imetaMap = imeta).mapNotNull { segment ->
                         when (segment) {
                             is ContentSegment.ImageSegment -> MediaItem(segment.url, MediaType.IMAGE)
                             is ContentSegment.VideoSegment -> MediaItem(segment.url, MediaType.VIDEO)
+                            is ContentSegment.UnknownMediaSegment -> MediaItem(segment.url, MediaType.IMAGE)
                             else -> null
                         }
                     }
