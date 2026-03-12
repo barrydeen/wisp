@@ -12,9 +12,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -72,7 +71,11 @@ fun SatsNumpad(
                             FilledTonalButton(
                                 onClick = onBackspace,
                                 modifier = Modifier.size(72.dp),
-                                shape = CircleShape
+                                shape = CircleShape,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                )
                             ) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.Backspace,
@@ -82,11 +85,15 @@ fun SatsNumpad(
                             }
                         }
                         "✓" -> {
-                            Button(
+                            FilledTonalButton(
                                 onClick = onConfirm,
                                 modifier = Modifier.size(72.dp),
                                 shape = CircleShape,
-                                enabled = confirmEnabled
+                                enabled = confirmEnabled,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                )
                             ) {
                                 Icon(
                                     Icons.Default.Check,
@@ -99,7 +106,11 @@ fun SatsNumpad(
                             FilledTonalButton(
                                 onClick = { onDigit(key[0]) },
                                 modifier = Modifier.size(72.dp),
-                                shape = CircleShape
+                                shape = CircleShape,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                )
                             ) {
                                 Text(
                                     key,

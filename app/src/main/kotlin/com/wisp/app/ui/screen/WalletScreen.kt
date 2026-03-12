@@ -53,9 +53,11 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -929,7 +931,10 @@ private fun ReceiveInvoiceContent(
                 )
                 IconButton(onClick = {
                     clipboardManager.setText(AnnotatedString(invoice))
-                }) {
+                }, colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )) {
                     Icon(
                         Icons.Default.ContentCopy,
                         contentDescription = "Copy invoice",
@@ -941,7 +946,7 @@ private fun ReceiveInvoiceContent(
 
         Spacer(Modifier.height(24.dp))
 
-        Button(onClick = onDone) {
+        FilledTonalButton(onClick = onDone) {
             Text("Done")
         }
 
