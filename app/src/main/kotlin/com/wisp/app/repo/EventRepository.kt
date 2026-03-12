@@ -843,6 +843,60 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         }
     }
 
+    fun addTrendingFeedEvent(event: NostrEvent) {
+        if (event.created_at > System.currentTimeMillis() / 1000 + 30) return
+        if (muteRepo?.isBlocked(event.pubkey) == true) return
+        if (deletedEventsRepo?.isDeleted(event.id) == true) return
+
+        when (event.kind) {
+            1 -> {
+                val isReply = event.tags.any { it.size >= 2 && it[0] == "e" }
+                if (!isReply) {
+                    eventCache.put(event.id, event)
+                    relayHintStore?.extractHintsFromTags(event)
+                    trendingFeedAppend(event)
+                }
+            }
+            30023 -> {
+                eventCache.put(event.id, event)
+                relayHintStore?.extractHintsFromTags(event)
+                trendingFeedAppend(event)
+            }
+            6 -> {
+                if (event.content.isNotBlank()) {
+                    try {
+                        val inner = NostrEvent.fromJson(event.content)
+                        if (muteRepo?.isBlocked(inner.pubkey) == true) return
+                        if (muteRepo?.containsMutedWord(inner.content) == true) return
+                        val authors = repostAuthors.get(inner.id)
+                            ?: mutableSetOf<String>().also { repostAuthors.put(inner.id, it) }
+                        authors.add(event.pubkey)
+                        if (event.pubkey == currentUserPubkey) {
+                            userReposts.put(inner.id, true)
+                        }
+                        repostDirty = true
+                        markVersionDirty()
+                        val isReply = inner.tags.any { it.size >= 2 && it[0] == "e" }
+                        if (!isReply) {
+                            eventCache.put(inner.id, inner)
+                            relayHintStore?.extractHintsFromTags(inner)
+                            feedSortTime.put(inner.id, event.created_at)
+                            trendingFeedAppend(inner)
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
+    private fun trendingFeedAppend(event: NostrEvent) {
+        synchronized(relayFeedList) {
+            if (!relayFeedIds.add(event.id)) return
+            relayFeedList.add(event)  // append to end — preserves relay ordering
+        }
+        relayFeedInserted.trySend(Unit)
+    }
+
     private fun relayFeedBinaryInsert(event: NostrEvent, sortTime: Long = event.created_at) {
         synchronized(relayFeedList) {
             if (!relayFeedIds.add(event.id)) return
