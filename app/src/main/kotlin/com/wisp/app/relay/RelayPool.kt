@@ -397,7 +397,7 @@ class RelayPool {
             }
         }
         scope.launch(parentJob) {
-            relay.connectionErrors.collect { addConsoleEntry(it) }
+            relay.connectionErrors.collect { if (appIsActive) addConsoleEntry(it) }
         }
         scope.launch(parentJob) {
             relay.connectionState.collect { connected ->

@@ -163,9 +163,9 @@ class Relay(
                         _connectionErrors.tryEmit(ConsoleLogEntry(
                             relayUrl = config.url,
                             type = ConsoleLogType.CONN_FAILURE,
-                            message = t.message ?: "Unknown error"
+                            message = t.message ?: t.javaClass.simpleName
                         ))
-                        _failures.tryEmit(RelayFailure(config.url, response?.code, t.message ?: "Unknown error"))
+                        _failures.tryEmit(RelayFailure(config.url, response?.code, t.message ?: t.javaClass.simpleName))
                         reconnect()
                     }
                 }

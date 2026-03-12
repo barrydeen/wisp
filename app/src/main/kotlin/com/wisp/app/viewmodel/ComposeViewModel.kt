@@ -36,8 +36,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 private val NOSTR_URI_REGEX = Regex("nostr:(npub1[a-z0-9]{58}|nprofile1[a-z0-9]+|note1[a-z0-9]{58}|nevent1[a-z0-9]+)")
-// Matches bare bech32 IDs not already preceded by "nostr:"
-private val BARE_BECH32_REGEX = Regex("(?<!nostr:)(?<![a-z0-9])((note1|nevent1|npub1|nprofile1)[a-z0-9]{10,})")
+// Matches bare bech32 IDs not already preceded by "nostr:" or embedded in a URL
+private val BARE_BECH32_REGEX = Regex("(?<!nostr:)(?<![a-z0-9/.:#])((note1|nevent1|npub1|nprofile1)[a-z0-9]{10,})")
 
 class ComposeViewModel(app: Application, private val savedStateHandle: SavedStateHandle) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
