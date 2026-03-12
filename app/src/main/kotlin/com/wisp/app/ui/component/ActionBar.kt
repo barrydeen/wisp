@@ -7,6 +7,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -48,6 +51,7 @@ import coil3.compose.AsyncImage
 import com.wisp.app.nostr.Nip30
 import kotlin.math.sin
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ActionBar(
     onReply: () -> Unit,
@@ -90,7 +94,17 @@ fun ActionBar(
         )
         Spacer(Modifier.width(8.dp))
         Box {
-            IconButton(onClick = { showEmojiPicker = true }) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(48.dp)
+                    .combinedClickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = androidx.compose.material3.ripple(bounded = false, radius = 24.dp),
+                        onClick = { showEmojiPicker = true },
+                        onLongClick = { onReact("") }
+                    )
+            ) {
                 val displayEmoji = userReactionEmojis.firstOrNull()
                 val displayEmojiUrl = displayEmoji?.let { reactionEmojiUrls[it] ?: resolvedEmojis[it.removeSurrounding(":")] }
                 if (displayEmoji != null && displayEmojiUrl != null) {
