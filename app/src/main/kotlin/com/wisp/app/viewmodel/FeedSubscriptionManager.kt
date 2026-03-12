@@ -59,6 +59,7 @@ class FeedSubscriptionManager(
         // received by the main feed subscription can still appear in relay feeds.
         relayPool.registerDedupBypass("relay-feed-")
         relayPool.registerDedupBypass("relay-loadmore")
+        relayPool.registerDedupBypass("trending-feed-")
     }
 
     private val _feedType = MutableStateFlow(FeedType.FOLLOWS)
@@ -69,6 +70,12 @@ class FeedSubscriptionManager(
 
     private val _selectedRelaySet = MutableStateFlow<RelaySet?>(null)
     val selectedRelaySet: StateFlow<RelaySet?> = _selectedRelaySet
+
+    private val _trendingMetric = MutableStateFlow(TrendingMetric.REACTIONS)
+    val trendingMetric: StateFlow<TrendingMetric> = _trendingMetric
+
+    private val _trendingTimeframe = MutableStateFlow(TrendingTimeframe.TODAY)
+    val trendingTimeframe: StateFlow<TrendingTimeframe> = _trendingTimeframe
 
     private val _relayFeedStatus = MutableStateFlow<RelayFeedStatus>(RelayFeedStatus.Idle)
     val relayFeedStatus: StateFlow<RelayFeedStatus> = _relayFeedStatus
@@ -117,7 +124,7 @@ class FeedSubscriptionManager(
                 if (pubkeyHex != null) follows + pubkeyHex else follows
             }
             FeedType.LIST -> listRepo.selectedList.value?.members
-            else -> null  // EXTENDED_FOLLOWS and RELAY show everything
+            else -> null  // EXTENDED_FOLLOWS, RELAY, and TRENDING show everything
         })
     }
 
@@ -127,8 +134,11 @@ class FeedSubscriptionManager(
         _feedType.value = type
         applyAuthorFilterForFeedType(type)
 
-        // Tear down relay feed when leaving RELAY mode
+        // Tear down relay/trending feed when leaving those modes
         if (prev == FeedType.RELAY && type != FeedType.RELAY) {
+            unsubscribeRelayFeed()
+        }
+        if (prev == FeedType.TRENDING && type != FeedType.TRENDING) {
             unsubscribeRelayFeed()
         }
 
@@ -161,6 +171,10 @@ class FeedSubscriptionManager(
                 val listSince = System.currentTimeMillis() / 1000 - 60 * 60 * 24 * 7
                 eventRepo.rebuildFeedFromCache(sinceTimestamp = listSince)
                 resubscribeFeed()
+            }
+            FeedType.TRENDING -> {
+                eventRepo.clearRelayFeed()
+                subscribeTrendingFeed()
             }
         }
     }
@@ -197,6 +211,9 @@ class FeedSubscriptionManager(
         if (_feedType.value == FeedType.RELAY) {
             eventRepo.clearRelayFeed()
             subscribeRelayFeed()
+        } else if (_feedType.value == FeedType.TRENDING) {
+            eventRepo.clearRelayFeed()
+            subscribeTrendingFeed()
         }
     }
 
@@ -249,9 +266,9 @@ class FeedSubscriptionManager(
                     indexerRelays = indexerRelays, blockedUrls = excludedUrls
                 )
             }
-            FeedType.RELAY -> {
-                // RELAY feeds use subscribeRelayFeed() — should not reach here
-                Log.w("RLC", "[FeedSub] resubscribeFeed() called for RELAY type, skipping")
+            FeedType.RELAY, FeedType.TRENDING -> {
+                // RELAY/TRENDING feeds use their own subscribe methods — should not reach here
+                Log.w("RLC", "[FeedSub] resubscribeFeed() called for ${_feedType.value} type, skipping")
                 return
             }
             FeedType.LIST -> {
@@ -338,6 +355,7 @@ class FeedSubscriptionManager(
 
     fun loadMore() {
         if (isLoadingMore) return
+        if (_feedType.value == FeedType.TRENDING) return  // trending relay sends full ranked set
         isLoadingMore = true
 
         val indexerRelays = getIndexerRelays()
@@ -412,6 +430,7 @@ class FeedSubscriptionManager(
                     indexerRelays = indexerRelays, blockedUrls = excludedUrls
                 )
             }
+            FeedType.TRENDING -> return  // guarded above, but required for exhaustiveness
         }
 
         val loadMoreSubId = if (_feedType.value == FeedType.RELAY) "relay-loadmore" else "loadmore"
@@ -445,6 +464,53 @@ class FeedSubscriptionManager(
     fun resumeEngagement() {
         if (activeEngagementSubIds.isEmpty()) {
             subscribeEngagementForFeed()
+        }
+    }
+
+    // -- Trending feed --
+
+    fun setTrendingMetric(metric: TrendingMetric) {
+        _trendingMetric.value = metric
+        if (_feedType.value == FeedType.TRENDING) {
+            eventRepo.clearRelayFeed()
+            subscribeTrendingFeed()
+        }
+    }
+
+    fun setTrendingTimeframe(timeframe: TrendingTimeframe) {
+        _trendingTimeframe.value = timeframe
+        if (_feedType.value == FeedType.TRENDING) {
+            eventRepo.clearRelayFeed()
+            subscribeTrendingFeed()
+        }
+    }
+
+    private fun subscribeTrendingFeed() {
+        val oldSubId = relayFeedSubId
+        relayFeedGeneration++
+        relayFeedSubId = "trending-feed-$relayFeedGeneration"
+        relayPool.closeOnAllRelays(oldSubId)
+        relayFeedEoseJob?.cancel()
+        relayStatusMonitorJob?.cancel()
+
+        val url = buildTrendingRelayUrl(_trendingMetric.value, _trendingTimeframe.value)
+        _relayFeedStatus.value = RelayFeedStatus.Connecting
+
+        val filter = Filter(kinds = listOf(1, 6, 30023), limit = 100)
+        val msg = ClientMessage.req(relayFeedSubId, filter)
+        val sent = relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
+        if (!sent) {
+            _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to trending relay")
+            return
+        }
+
+        relayFeedEoseJob = scope.launch {
+            subManager.awaitEoseCount(relayFeedSubId, 1)
+            onRelayFeedEose()
+            subscribeEngagementForFeed()
+            withContext(processingContext) {
+                metadataFetcher.sweepMissingProfiles()
+            }
         }
     }
 
@@ -623,7 +689,7 @@ class FeedSubscriptionManager(
     }
 
     private fun onRelayFeedEose() {
-        if (_feedType.value != FeedType.RELAY) return
+        if (_feedType.value != FeedType.RELAY && _feedType.value != FeedType.TRENDING) return
         val status = _relayFeedStatus.value
         if (status is RelayFeedStatus.Connecting || status is RelayFeedStatus.Subscribing) {
             _relayFeedStatus.value = if (eventRepo.relayFeed.value.isEmpty()) {
@@ -636,7 +702,7 @@ class FeedSubscriptionManager(
 
     /** Mark status as Streaming when events start arriving. Called by EventRouter. */
     fun onRelayFeedEventReceived() {
-        if (_feedType.value != FeedType.RELAY) return
+        if (_feedType.value != FeedType.RELAY && _feedType.value != FeedType.TRENDING) return
         val status = _relayFeedStatus.value
         if (status is RelayFeedStatus.Subscribing || status is RelayFeedStatus.Connecting) {
             _relayFeedStatus.value = RelayFeedStatus.Streaming
@@ -649,7 +715,7 @@ class FeedSubscriptionManager(
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
         activeEngagementSubIds.clear()
 
-        val feedEvents = if (_feedType.value == FeedType.RELAY) eventRepo.relayFeed.value else eventRepo.feed.value
+        val feedEvents = if (_feedType.value == FeedType.RELAY || _feedType.value == FeedType.TRENDING) eventRepo.relayFeed.value else eventRepo.feed.value
         if (feedEvents.isEmpty()) return
 
         val eventsByAuthor = mutableMapOf<String, MutableList<String>>()
@@ -733,6 +799,8 @@ class FeedSubscriptionManager(
         _initLoadingState.value = InitLoadingState.SearchingProfile
         _selectedRelay.value = null
         _selectedRelaySet.value = null
+        _trendingMetric.value = TrendingMetric.REACTIONS
+        _trendingTimeframe.value = TrendingTimeframe.TODAY
         isLoadingMore = false
     }
 }

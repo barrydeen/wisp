@@ -75,6 +75,9 @@ import com.wisp.app.ui.component.ZapDialog
 import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.relay.ScoredRelay
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -85,7 +88,14 @@ import com.wisp.app.viewmodel.FeedViewModel
 import com.wisp.app.viewmodel.InitLoadingState
 import com.wisp.app.viewmodel.PowStatus
 import com.wisp.app.viewmodel.RelayFeedStatus
+import com.wisp.app.viewmodel.TrendingMetric
+import com.wisp.app.viewmodel.TrendingTimeframe
+import com.wisp.app.viewmodel.buildTrendingRelayUrl
+import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -189,6 +199,8 @@ fun FeedScreen(
     val newNotesButtonHidden by viewModel.newNotesButtonHidden.collectAsState()
     val initLoadingState by viewModel.initLoadingState.collectAsState()
     val relayFeedStatus by viewModel.relayFeedStatus.collectAsState()
+    val trendingMetric by viewModel.trendingMetric.collectAsState()
+    val trendingTimeframe by viewModel.trendingTimeframe.collectAsState()
     val zapInProgress by viewModel.zapInProgress.collectAsState()
     val setListedIds by viewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
     val bookmarkedIds by viewModel.bookmarkRepo.bookmarkedIds.collectAsState()
@@ -474,6 +486,7 @@ fun FeedScreen(
                                             FeedType.LIST -> if (selectedList != null) {
                                                 selectedList!!.name
                                             } else "List"
+                                            FeedType.TRENDING -> "Trending"
                                         }
                                         Text(
                                             feedLabel,
@@ -535,6 +548,16 @@ fun FeedScreen(
                                             showListPicker = true
                                         },
                                         trailingIcon = if (feedType == FeedType.LIST) {{
+                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        }} else null
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Trending") },
+                                        onClick = {
+                                            showFeedTypeDropdown = false
+                                            viewModel.setFeedType(FeedType.TRENDING)
+                                        },
+                                        trailingIcon = if (feedType == FeedType.TRENDING) {{
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                         }} else null
                                     )
@@ -662,6 +685,14 @@ fun FeedScreen(
                     relayFeedStatus = relayFeedStatus
                 )
             }
+            if (feedType == FeedType.TRENDING) {
+                TrendingFilterBar(
+                    metric = trendingMetric,
+                    timeframe = trendingTimeframe,
+                    onMetricChange = { viewModel.setTrendingMetric(it) },
+                    onTimeframeChange = { viewModel.setTrendingTimeframe(it) }
+                )
+            }
             Box(
                 modifier = Modifier.fillMaxSize()
             ) {
@@ -709,6 +740,13 @@ fun FeedScreen(
                                     status = relayFeedStatus,
                                     relayUrl = selectedRelay ?: "",
                                     onRetry = { viewModel.retryRelayFeed() }
+                                )
+                            }
+                            feedType == FeedType.TRENDING -> {
+                                RelayFeedEmptyState(
+                                    status = relayFeedStatus,
+                                    relayUrl = buildTrendingRelayUrl(trendingMetric, trendingTimeframe),
+                                    onRetry = { viewModel.setFeedType(FeedType.TRENDING) }
                                 )
                             }
                             initLoadingState != InitLoadingState.Done -> {
@@ -1611,6 +1649,94 @@ private fun NewNotesButton(
                     }
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun TrendingFilterBar(
+    metric: TrendingMetric,
+    timeframe: TrendingTimeframe,
+    onMetricChange: (TrendingMetric) -> Unit,
+    onTimeframeChange: (TrendingTimeframe) -> Unit
+) {
+    val metricIcon = @Composable { m: TrendingMetric ->
+        when (m) {
+            TrendingMetric.REACTIONS -> Icon(Icons.Outlined.FavoriteBorder, contentDescription = m.label, modifier = Modifier.size(16.dp))
+            TrendingMetric.REPLIES -> Icon(Icons.AutoMirrored.Outlined.Reply, contentDescription = m.label, modifier = Modifier.size(16.dp))
+            TrendingMetric.REPOSTS -> Icon(Icons.Outlined.Repeat, contentDescription = m.label, modifier = Modifier.size(16.dp))
+            TrendingMetric.ZAPS -> Icon(Icons.Outlined.CurrencyBitcoin, contentDescription = m.label, modifier = Modifier.size(16.dp))
+        }
+    }
+
+    var showTimeframeDropdown by remember { mutableStateOf(false) }
+
+    Surface(color = MaterialTheme.colorScheme.surface) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TrendingMetric.entries.forEach { m ->
+                    FilterChip(
+                        selected = m == metric,
+                        onClick = { onMetricChange(m) },
+                        label = { metricIcon(m) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primary,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                            selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                Box {
+                    Surface(
+                        onClick = { showTimeframeDropdown = true },
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                timeframe.label,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(2.dp))
+                            Icon(
+                                Icons.Default.ArrowDropDown,
+                                contentDescription = "Change timeframe",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = showTimeframeDropdown,
+                        onDismissRequest = { showTimeframeDropdown = false }
+                    ) {
+                        TrendingTimeframe.entries.forEach { t ->
+                            DropdownMenuItem(
+                                text = { Text(t.label) },
+                                onClick = {
+                                    showTimeframeDropdown = false
+                                    onTimeframeChange(t)
+                                },
+                                trailingIcon = if (t == timeframe) {{
+                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                }} else null
+                            )
+                        }
+                    }
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
         }
     }
 }

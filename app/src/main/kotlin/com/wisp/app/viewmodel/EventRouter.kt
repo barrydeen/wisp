@@ -63,6 +63,7 @@ class EventRouter(
     private val getSigner: () -> NostrSigner?,
     private val getFeedSubId: () -> String,
     private val getRelayFeedSubId: () -> String,
+    private val getIsTrendingFeed: () -> Boolean,
     private val onRelayFeedEventReceived: () -> Unit
 ) {
     // Track newest created_at per (pubkey, kind) to prevent stale overwrites
@@ -339,7 +340,11 @@ class EventRouter(
                 subscriptionId == "relay-loadmore"
             if (isRelayFeedSub) {
                 eventRepo.cacheEvent(event)
-                eventRepo.addRelayFeedEvent(event)
+                if (getIsTrendingFeed()) {
+                    eventRepo.addTrendingFeedEvent(event)
+                } else {
+                    eventRepo.addRelayFeedEvent(event)
+                }
                 onRelayFeedEventReceived()
                 eventRepo.addEventRelay(event.id, relayUrl)
                 if (event.kind == 1 || event.kind == 30023) {
