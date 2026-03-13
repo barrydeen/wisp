@@ -76,6 +76,23 @@ class EventPersistence(
         }
     }
 
+    fun searchProfiles(query: String, limit: Int = 500): List<NostrEvent> {
+        if (query.isBlank()) return emptyList()
+        return try {
+            val entities = box.query(
+                EventEntity_.kind.equal(0)
+                    .and(EventEntity_.content.contains(query, StringOrder.CASE_INSENSITIVE))
+            )
+                .order(EventEntity_.createdAt, io.objectbox.query.QueryBuilder.DESCENDING)
+                .build()
+                .use { it.find(0, limit.toLong()) }
+            entities.mapNotNull { it.toNostrEvent() }
+        } catch (e: Exception) {
+            Log.w("EventPersistence", "searchProfiles failed: ${e.message}")
+            emptyList()
+        }
+    }
+
     fun searchNotes(query: String, limit: Int = 50): List<NostrEvent> {
         if (query.isBlank()) return emptyList()
         return try {

@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
 private val NOSTR_URI_REGEX = Regex("nostr:(npub1[a-z0-9]{58}|nprofile1[a-z0-9]+|note1[a-z0-9]{58}|nevent1[a-z0-9]+)")
 // Matches bare bech32 IDs not already preceded by "nostr:" or embedded in a URL
 private val BARE_BECH32_REGEX = Regex("(?<!nostr:)(?<![a-z0-9/.:#])((note1|nevent1|npub1|nprofile1)[a-z0-9]{10,})")
+private val HASHTAG_REGEX = Regex("(?:^|(?<=\\s))#([a-zA-Z0-9_]+)")
 
 class ComposeViewModel(app: Application, private val savedStateHandle: SavedStateHandle) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
@@ -74,6 +75,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     private val _mentionCandidates = MutableStateFlow<List<MentionCandidate>>(emptyList())
     val mentionCandidates: StateFlow<List<MentionCandidate>> = _mentionCandidates
 
+    private val _hashtags = MutableStateFlow<List<String>>(emptyList())
+    val hashtags: StateFlow<List<String>> = _hashtags
+
     private val _explicit = MutableStateFlow(false)
     val explicit: StateFlow<Boolean> = _explicit
 
@@ -104,11 +108,13 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     var currentDraftId: String? = null
         private set
 
-    fun init(profileRepo: ProfileRepository, contactRepo: ContactRepository, relayPool: RelayPool, eventRepo: EventRepository? = null) {
+    fun init(profileRepo: ProfileRepository, contactRepo: ContactRepository, relayPool: RelayPool, eventRepo: EventRepository? = null, eventPersistence: com.wisp.app.db.EventPersistence? = null) {
         if (initialized) return
         initialized = true
         this.eventRepo = eventRepo
-        mentionSearchRepo = MentionSearchRepository(profileRepo, contactRepo, relayPool, keyRepo)
+        mentionSearchRepo = MentionSearchRepository(profileRepo, contactRepo, relayPool, keyRepo).also {
+            it.eventPersistence = eventPersistence
+        }
         // Forward candidates from search repo
         viewModelScope.launch {
             mentionSearchRepo!!.candidates.collect { _mentionCandidates.value = it }
@@ -170,6 +176,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _content.value = prefixed
         savedStateHandle["draft_content"] = prefixed.text
         detectMentionQuery(prefixed)
+        detectHashtags(prefixed.text)
     }
 
     private fun prefixBareBech32(value: TextFieldValue): TextFieldValue {
@@ -219,6 +226,13 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         val query = text.substring(atIndex + 1, cursor)
         _mentionQuery.value = query
         mentionSearchRepo?.search(query, viewModelScope)
+    }
+
+    private fun detectHashtags(text: String) {
+        _hashtags.value = HASHTAG_REGEX.findAll(text)
+            .map { it.groupValues[1].lowercase() }
+            .distinct()
+            .toList()
     }
 
     private fun clearMentionState() {
@@ -361,6 +375,10 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             Nip18.appendNoteUri(content, quoteTo.id, relayHints, quoteTo.pubkey)
         } else {
             content
+        }
+
+        for (hashtag in _hashtags.value) {
+            tags.add(listOf("t", hashtag))
         }
 
         if (interfacePrefs.isClientTagEnabled()) {
@@ -540,6 +558,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _uploadedUrls.value = emptyList()
         _uploadProgress.value = null
         _explicit.value = false
+        _hashtags.value = emptyList()
         _powEnabled.value = false
         clearMentionState()
     }

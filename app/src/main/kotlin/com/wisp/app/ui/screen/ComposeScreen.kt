@@ -37,8 +37,10 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -87,7 +89,7 @@ import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.MentionCandidate
 import com.wisp.app.repo.ProfileRepository
-import com.wisp.app.ui.component.MentionVisualTransformation
+import com.wisp.app.ui.component.MentionOutputTransformation
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
 import com.wisp.app.viewmodel.ComposeViewModel
@@ -95,13 +97,17 @@ import com.wisp.app.viewmodel.PowManager
 import com.wisp.app.viewmodel.PowStatus
 import com.wisp.app.repo.PowPreferences
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.animateContentSize
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.Tag
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun ComposeScreen(
     viewModel: ComposeViewModel,
@@ -128,6 +134,7 @@ fun ComposeScreen(
     val mentionCandidates by viewModel.mentionCandidates.collectAsState()
     val mentionQuery by viewModel.mentionQuery.collectAsState()
     val explicit by viewModel.explicit.collectAsState()
+    val hashtags by viewModel.hashtags.collectAsState()
     val powEnabled by viewModel.powEnabled.collectAsState()
     val powStatus = powManager?.status?.collectAsState()?.value ?: PowStatus.Idle
     val isMiningBusy = powStatus is PowStatus.Mining
@@ -141,12 +148,10 @@ fun ComposeScreen(
         if (uris.isNotEmpty()) viewModel.uploadMedia(uris, context.contentResolver, signer)
     }
 
-    val accentColor = MaterialTheme.colorScheme.primary
-    val visualTransformation = remember(accentColor, profileRepo) {
-        MentionVisualTransformation(
-            accentColor = accentColor,
+    val outputTransformation = remember(profileRepo) {
+        MentionOutputTransformation(
             resolveDisplayName = { bech32 ->
-                if (profileRepo == null) return@MentionVisualTransformation null
+                if (profileRepo == null) return@MentionOutputTransformation null
                 try {
                     val data = Nip19.decodeNostrUri("nostr:$bech32")
                     if (data is com.wisp.app.nostr.NostrUriData.ProfileRef) {
@@ -181,13 +186,13 @@ fun ComposeScreen(
             )
         }
     ) { padding ->
-        // Outer non-scrollable Column handles IME padding
         Column(
             modifier = Modifier
                 .padding(padding)
+                .consumeWindowInsets(WindowInsets.navigationBars)
                 .imePadding()
         ) {
-            // Inner scrollable content takes remaining space
+            // Scrollable content takes remaining space
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -364,6 +369,7 @@ fun ComposeScreen(
                     enabled = enabled,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     lineLimits = TextFieldLineLimits.MultiLine(),
+                    outputTransformation = outputTransformation,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         color = MaterialTheme.colorScheme.onSurface
                     ),
@@ -373,40 +379,12 @@ fun ComposeScreen(
                             innerTextField = innerTextField,
                             enabled = enabled,
                             singleLine = false,
-                            visualTransformation = visualTransformation,
+                            visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
                             interactionSource = interactionSource,
                             label = { Text("What's on your mind?") }
                         )
                     }
                 )
-
-                // Media previews
-                if (uploadedUrls.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    uploadedUrls.forEach { url ->
-                        Box(modifier = Modifier.padding(bottom = 8.dp)) {
-                            AsyncImage(
-                                model = url,
-                                contentDescription = "Attached media",
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(200.dp)
-                                    .clip(RoundedCornerShape(8.dp)),
-                                contentScale = ContentScale.Crop
-                            )
-                            IconButton(
-                                onClick = { viewModel.removeMediaUrl(url) },
-                                modifier = Modifier.align(Alignment.TopEnd)
-                            ) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "Remove",
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    }
-                }
 
                 // Attach row with preview toggle
                 Spacer(Modifier.height(4.dp))
@@ -469,6 +447,48 @@ fun ComposeScreen(
                     }
                 }
 
+                // Hashtag chips
+                AnimatedVisibility(
+                    visible = hashtags.isNotEmpty(),
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.Top,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp, horizontal = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.Tag,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                            modifier = Modifier
+                                .size(16.dp)
+                                .padding(top = 2.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            hashtags.forEach { tag ->
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                ) {
+                                    Text(
+                                        text = "#$tag",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // NSFW feedback banner
                 AnimatedVisibility(
                     visible = explicit,
@@ -497,41 +517,6 @@ fun ComposeScreen(
                                 text = "Marked as NSFW",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
-                    }
-                }
-
-                // PoW enabled banner
-                AnimatedVisibility(
-                    visible = powEnabled,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    val difficulty = powPrefs?.getNoteDifficulty() ?: 16
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFFFF9800).copy(alpha = 0.12f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                    ) {
-                        val orange = Color(0xFFFF9800)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Icon(
-                                Icons.Outlined.Shield,
-                                contentDescription = null,
-                                tint = orange,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = "PoW: $difficulty bits (mined in background)",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = orange
                             )
                         }
                     }
@@ -594,7 +579,7 @@ fun ComposeScreen(
             }
 
             // Bottom bar — always visible above keyboard
-            Column(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp, top = 4.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp).padding(top = 4.dp)) {
                 if (countdownSeconds != null) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),

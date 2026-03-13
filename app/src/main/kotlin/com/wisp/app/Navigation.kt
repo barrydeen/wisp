@@ -307,7 +307,7 @@ fun WispNavHost(
 
     // Initialize compose viewmodel with shared repos
     LaunchedEffect(Unit) {
-        composeViewModel.init(feedViewModel.profileRepo, feedViewModel.contactRepo, feedViewModel.relayPool, feedViewModel.eventRepo)
+        composeViewModel.init(feedViewModel.profileRepo, feedViewModel.contactRepo, feedViewModel.relayPool, feedViewModel.eventRepo, feedViewModel.eventPersistence)
     }
 
     // Initialize DM list viewmodel with shared repo
