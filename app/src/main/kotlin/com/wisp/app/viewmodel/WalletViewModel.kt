@@ -354,52 +354,70 @@ class WalletViewModel(
                 val filter = Nip78.backupFilter(pubkey)
                 val events = mutableListOf<NostrEvent>()
                 var eoseCount = 0
-                val relayCount = relayPool.getReadRelayUrls().size
+                val relayCount = relayPool.connectedCount.value
+                Log.d("WalletVM", "autoCheck: connected=$relayCount read=${relayPool.getReadRelayUrls().size} all=${relayPool.getRelayUrls().size}")
                 val collectJob = launch {
                     relayPool.relayEvents.collect { relayEvent: RelayEvent ->
                         if (relayEvent.subscriptionId == subId) {
+                            Log.d("WalletVM", "autoCheck: event kind=${relayEvent.event.kind} d=${Nip78.extractDTag(relayEvent.event)} from=${relayEvent.relayUrl}")
                             events.add(relayEvent.event)
                         }
                     }
                 }
                 val eoseJob = launch {
                     relayPool.eoseSignals.collect { id ->
-                        if (id == subId) eoseCount++
+                        if (id == subId) {
+                            eoseCount++
+                            Log.d("WalletVM", "autoCheck: eose $eoseCount")
+                        }
                     }
                 }
                 yield() // ensure collectors are subscribed before sending REQ
                 relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
+                val readCount = relayPool.getReadRelayUrls().size
 
                 // Wait for all relays to respond (or timeout)
-                withTimeoutOrNull(8_000) {
-                    while (eoseCount < relayCount) {
+                withTimeoutOrNull(10_000) {
+                    while (eoseCount < readCount) {
                         delay(200)
                     }
                 }
+                Log.d("WalletVM", "autoCheck: done eose=$eoseCount/$readCount events=${events.size}")
                 collectJob.cancel()
                 eoseJob.cancel()
                 relayPool.closeOnAllRelays(subId)
 
-                val best = events
+                // Filter to spark-wallet-backup events only
+                val sparkEvents = events.filter { event ->
+                    val dTag = Nip78.extractDTag(event)
+                    dTag != null && dTag.startsWith("spark-wallet-backup")
+                }
+                Log.d("WalletVM", "autoCheck: ${sparkEvents.size} spark events out of ${events.size} total")
+
+                val best = sparkEvents
                     .filter { !Nip78.isDeletedBackup(it) }
                     .sortedByDescending { it.created_at }
                     .firstOrNull()
 
                 if (best == null) {
+                    Log.d("WalletVM", "autoCheck: no valid spark backup (${sparkEvents.size} spark, ${sparkEvents.count { Nip78.isDeletedBackup(it) }} deleted)")
                     _autoCheckState.value = AutoCheckState.NotFound
                     return@launch
                 }
 
+                Log.d("WalletVM", "autoCheck: best d=${Nip78.extractDTag(best)} content=${best.content.length} chars created=${best.created_at}")
                 val mnemonic = withContext(Dispatchers.Default) {
                     Nip78.decryptBackup(signer, best)
                 }
                 if (mnemonic != null) {
+                    Log.d("WalletVM", "autoCheck: decrypt success, ${mnemonic.split(" ").size} words")
                     _autoCheckState.value = AutoCheckState.Found(
                         mnemonic = mnemonic,
                         walletId = Nip78.extractWalletId(best),
                         createdAt = best.created_at
                     )
                 } else {
+                    Log.d("WalletVM", "autoCheck: decrypt FAILED for d=${Nip78.extractDTag(best)} content=${best.content.take(50)}...")
                     _autoCheckState.value = AutoCheckState.NotFound
                 }
             } catch (_: Exception) {
@@ -501,7 +519,7 @@ class WalletViewModel(
     fun acknowledgeSeedBackup() {
         sparkRepo.setSeedBackupAcknowledged(true)
         _seedBackupAcked.value = true
-        navigateHome()
+        navigateBack()
     }
 
     // --- Shared connection helpers ---
@@ -1126,17 +1144,22 @@ class WalletViewModel(
                 // Collect events until all relays EOSE
                 val events = mutableListOf<NostrEvent>()
                 var eoseCount = 0
-                val relayCount = relayPool.getReadRelayUrls().size
+                val readCount = relayPool.getReadRelayUrls().size
+                Log.d("WalletVM", "search: connected=${relayPool.connectedCount.value} read=$readCount all=${relayPool.getRelayUrls().size}")
                 val collectJob = launch {
                     relayPool.relayEvents.collect { relayEvent: RelayEvent ->
                         if (relayEvent.subscriptionId == subId) {
+                            Log.d("WalletVM", "search: event kind=${relayEvent.event.kind} d=${Nip78.extractDTag(relayEvent.event)} from=${relayEvent.relayUrl}")
                             events.add(relayEvent.event)
                         }
                     }
                 }
                 val eoseJob = launch {
                     relayPool.eoseSignals.collect { id ->
-                        if (id == subId) eoseCount++
+                        if (id == subId) {
+                            eoseCount++
+                            Log.d("WalletVM", "search: eose $eoseCount")
+                        }
                     }
                 }
                 yield() // ensure collectors are subscribed before sending REQ
@@ -1144,38 +1167,52 @@ class WalletViewModel(
 
                 // Wait for all relays to respond (or timeout)
                 withTimeoutOrNull(10_000) {
-                    while (eoseCount < relayCount) {
+                    while (eoseCount < readCount) {
                         delay(200)
                     }
                 }
+                Log.d("WalletVM", "search: done eose=$eoseCount/$readCount events=${events.size}")
                 collectJob.cancel()
                 eoseJob.cancel()
                 relayPool.closeOnAllRelays(subId)
 
+                // Filter to spark-wallet-backup events only
+                val sparkEvents = events.filter { event ->
+                    val dTag = Nip78.extractDTag(event)
+                    dTag != null && dTag.startsWith("spark-wallet-backup")
+                }
+                Log.d("WalletVM", "search: ${sparkEvents.size} spark events out of ${events.size} total")
+
                 // Find the newest non-deleted backup
-                val best = events
+                val best = sparkEvents
                     .filter { !Nip78.isDeletedBackup(it) }
                     .sortedByDescending { it.created_at }
                     .firstOrNull()
 
                 if (best == null) {
+                    Log.d("WalletVM", "search: no valid spark backup (${sparkEvents.size} spark, ${sparkEvents.count { Nip78.isDeletedBackup(it) }} deleted)")
                     _restoreFromRelayStatus.value = RestoreFromRelayStatus.NotFound
                     return@launch
                 }
 
+                Log.d("WalletVM", "search: best d=${Nip78.extractDTag(best)} content=${best.content.length} chars created=${best.created_at}")
                 val mnemonic = withContext(Dispatchers.Default) {
                     Nip78.decryptBackup(signer, best)
                 }
                 if (mnemonic != null) {
+                    Log.d("WalletVM", "search: decrypt success, ${mnemonic.split(" ").size} words")
                     _restoreFromRelayStatus.value = RestoreFromRelayStatus.Found(
                         mnemonic = mnemonic,
                         walletId = Nip78.extractWalletId(best),
                         createdAt = best.created_at
                     )
                 } else {
+                    Log.d("WalletVM", "search: decrypt FAILED for d=${Nip78.extractDTag(best)} content=${best.content.take(50)}...")
+                    Log.d("WalletVM", "searchRelayBackup: decryption failed for event ${best.id}")
                     _restoreFromRelayStatus.value = RestoreFromRelayStatus.NotFound
                 }
             } catch (e: Exception) {
+                Log.e("WalletVM", "searchRelayBackup: error", e)
                 _restoreFromRelayStatus.value = RestoreFromRelayStatus.Error(e.message ?: "Search failed")
             }
         }

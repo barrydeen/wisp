@@ -308,7 +308,7 @@ private fun NwcInfoStep(onContinue: () -> Unit) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                text = "Zaps with NWC",
+                text = "Zaps",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -318,9 +318,9 @@ private fun NwcInfoStep(onContinue: () -> Unit) {
             Spacer(Modifier.height(16.dp))
 
             Text(
-                text = "Wisp supports Nostr Wallet Connect, letting you send " +
-                    "and receive zaps directly from your Lightning wallet. " +
-                    "You can set this up anytime from the Wallet screen in settings.",
+                text = "Wisp supports zaps with an embedded Lightning wallet " +
+                    "or Nostr Wallet Connect. You can set this up anytime " +
+                    "from the Wallet screen.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

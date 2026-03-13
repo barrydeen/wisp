@@ -2006,6 +2006,12 @@ private fun SparkSetupContent(
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                         )
                     }
+                    val dateFormat = java.text.SimpleDateFormat("MMM d, yyyy 'at' h:mm a", java.util.Locale.getDefault())
+                    Text(
+                        "Saved: ${dateFormat.format(java.util.Date(autoCheckState.createdAt * 1000))}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    )
                     Spacer(Modifier.height(12.dp))
                     Button(
                         onClick = onRestoreFromAutoCheck,
@@ -2018,7 +2024,7 @@ private fun SparkSetupContent(
                         onClick = onDismissAutoCheck,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Create New Instead")
+                        Text("Create New Wallet")
                     }
                 }
             }
@@ -2085,7 +2091,7 @@ private fun SparkSetupContent(
                 onClick = onRestoreFromRelay,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Restore from Nostr Relay")
+                Text("Restore From Relays")
             }
         }
     }
@@ -2192,13 +2198,21 @@ private fun SparkBackupContent(
         }
     }
 
+    Spacer(Modifier.height(16.dp))
+
+    Text(
+        "This recovery phrase is specific to Spark wallets. It will not work with other Lightning or Bitcoin wallet apps.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+
     Spacer(Modifier.height(24.dp))
 
     Button(
         onClick = onConfirm,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Text("I've backed this up")
+        Text("I've Backed This Up")
     }
 
     Spacer(Modifier.height(32.dp))
@@ -2328,7 +2342,7 @@ private fun WalletSettingsContent(
                 ) {
                     Icon(Icons.Default.ElectricBolt, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Set up Lightning Address")
+                    Text("Set Up Lightning Address")
                 }
             }
         }
@@ -2471,7 +2485,7 @@ private fun WalletSettingsContent(
                             onDismissRequest = { showDeleteDialog = false },
                             title = { Text("Delete Relay Backup?") },
                             text = {
-                                Text("This will publish a tombstone event to your relays, marking the backup as deleted. Make sure you have your recovery phrase saved elsewhere.")
+                                Text("This will delete your wallet backup from your relays. Make sure you have your recovery phrase saved elsewhere.")
                             },
                             confirmButton = {
                                 TextButton(
@@ -3096,7 +3110,7 @@ private fun RestoreFromRelayContent(
         Spacer(Modifier.height(32.dp))
 
         Text(
-            "Restore from Nostr Relay",
+            "Restore From Relays",
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -3178,8 +3192,9 @@ private fun RestoreFromRelayContent(
                     )
                 }
 
+                val dateFormat = java.text.SimpleDateFormat("MMM d, yyyy 'at' h:mm a", java.util.Locale.getDefault())
                 Text(
-                    "Backed up: ${formatRelativeTime(status.createdAt)}",
+                    "Saved: ${dateFormat.format(java.util.Date(status.createdAt * 1000))}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -12,7 +12,8 @@ class SubscriptionTracker {
     companion object {
         const val SOFT_CAP = 20
         private val PRIORITY_PREFIXES = listOf(
-            "dms", "notif", "feed", "self-data", "thread-", "user-engage", "extnet-"
+            "dms", "notif", "feed", "self-data", "thread-", "user-engage", "extnet-",
+            "wallet-backup", "auto-check", "relay-backup"
         )
     }
 

@@ -1,5 +1,6 @@
 package com.wisp.app
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.ui.Alignment
@@ -480,9 +481,7 @@ fun WispNavHost(
                 onToggleTor = onToggleTor,
                 onAuthenticated = { isNewAccount ->
                     if (isNewAccount) {
-                        navController.navigate(Routes.ONBOARDING_PROFILE) {
-                            popUpTo(Routes.AUTH) { inclusive = true }
-                        }
+                        navController.navigate(Routes.ONBOARDING_PROFILE)
                     } else if (authViewModel.keyRepo.isReadOnly()) {
                         feedViewModel.reloadForNewAccount()
                         relayViewModel.reload()
@@ -1614,6 +1613,11 @@ fun WispNavHost(
         }
 
         composable(Routes.ONBOARDING_PROFILE) {
+            val onBack: () -> Unit = {
+                authViewModel.keyRepo.clearKeypair()
+                navController.popBackStack()
+            }
+            BackHandler(onBack = onBack)
             OnboardingScreen(
                 viewModel = onboardingViewModel,
                 onContinue = {
@@ -1623,6 +1627,7 @@ fun WispNavHost(
                         }
                     }
                 },
+                onBack = onBack,
                 signer = activeSigner
             )
         }
@@ -1664,6 +1669,19 @@ fun WispNavHost(
                             popUpTo(0) { inclusive = true }
                         }
                     }
+                },
+                onSkip = {
+                    authViewModel.keyRepo.markOnboardingComplete()
+                    feedViewModel.setFeedType(FeedType.EXTENDED_FOLLOWS)
+                    feedViewModel.reloadForNewAccount()
+                    relayViewModel.reload()
+                    blossomServersViewModel.reload()
+                    composeViewModel.reloadBlossomRepo()
+                    walletViewModel.refreshState()
+                    navController.navigate(Routes.FEED) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                    scope.launch { feedViewModel.initRelays() }
                 }
             )
         }
