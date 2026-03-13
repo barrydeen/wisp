@@ -170,6 +170,7 @@ class SparkRepository(
 
                 val config = defaultConfig(Network.MAINNET)
                 config.apiKey = BREEZ_API_KEY
+                config.supportLnurlVerify = true
 
                 val seed = Seed.Mnemonic(mnemonic, null)
                 val request = ConnectRequest(
@@ -344,18 +345,23 @@ class SparkRepository(
                     sortAscending = false
                 ))
                 val transactions = response.payments.map { payment ->
-                    val description = when (val details = payment.details) {
-                        is PaymentDetails.Lightning -> details.description
-                        else -> null
+                    val lightningDetails = payment.details as? PaymentDetails.Lightning
+                    val description = lightningDetails?.description
+
+                    // Extract payment hash from bolt11 invoice (Spark uses UUIDs as payment.id)
+                    val bolt11Hash = lightningDetails?.invoice?.let {
+                        com.wisp.app.nostr.Bolt11.decode(it)?.paymentHash
                     }
+
                     WalletTransaction(
                         type = when (payment.paymentType) {
                             PaymentType.SEND -> "outgoing"
                             else -> "incoming"
                         },
                         description = description,
-                        paymentHash = payment.id,
+                        paymentHash = bolt11Hash ?: payment.id,
                         amountMsats = payment.amount.toLong() * 1000,
+                        feeMsats = payment.fees.toLong() * 1000,
                         createdAt = payment.timestamp.toLong(),
                         settledAt = payment.timestamp.toLong()
                     )
@@ -390,6 +396,16 @@ class SparkRepository(
                 Result.failure(e)
             }
         }
+
+    suspend fun deleteLightningAddress(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
+            instance.deleteLightningAddress()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
     suspend fun registerLightningAddress(
         username: String,

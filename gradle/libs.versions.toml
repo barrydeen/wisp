@@ -18,6 +18,8 @@ kmp-tor = "2.0.0"
 kmp-tor-resource = "408.12.0"
 mlkit-translate = "17.0.3"
 mlkit-language-id = "17.0.6"
+mlkit-barcode = "17.3.0"
+camerax = "1.4.1"
 objectbox = "5.2.0"
 breez-sdk-spark = "0.10.0"
 activity-compose = "1.9.3"
@@ -57,6 +59,12 @@ kmp-tor-runtime = { group = "io.matthewnelson.kmp-tor", name = "runtime", versio
 kmp-tor-resource-exec = { group = "io.matthewnelson.kmp-tor", name = "resource-exec-tor", version.ref = "kmp-tor-resource" }
 mlkit-translate = { group = "com.google.mlkit", name = "translate", version.ref = "mlkit-translate" }
 mlkit-language-id = { group = "com.google.mlkit", name = "language-id", version.ref = "mlkit-language-id" }
+mlkit-barcode = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkit-barcode" }
+camerax-core = { group = "androidx.camera", name = "camera-core", version.ref = "camerax" }
+camerax-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
+camerax-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
+camerax-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
+camerax-mlkit = { group = "androidx.camera", name = "camera-mlkit-vision", version.ref = "camerax" }
 kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "coroutines" }
 objectbox-android = { group = "io.objectbox", name = "objectbox-android", version.ref = "objectbox" }
 objectbox-kotlin = { group = "io.objectbox", name = "objectbox-kotlin", version.ref = "objectbox" }

@@ -299,6 +299,7 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
                     description = tx.description,
                     paymentHash = tx.paymentHash,
                     amountMsats = tx.amount,
+                    feeMsats = tx.feesPaid,
                     createdAt = tx.createdAt,
                     settledAt = tx.settledAt
                 )

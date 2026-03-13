@@ -41,6 +41,10 @@
 # ZXing
 -keep class com.google.zxing.** { *; }
 
+# CameraX
+-keep class androidx.camera.** { *; }
+-dontwarn androidx.camera.**
+
 # kmp-tor
 -keep class io.matthewnelson.kmp.tor.** { *; }
 -dontwarn io.matthewnelson.kmp.tor.**

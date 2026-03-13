@@ -1,11 +1,23 @@
 package com.wisp.app.ui.screen
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.ImageDecoder
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -49,8 +61,11 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ElectricBolt
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
@@ -73,6 +88,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -81,18 +97,26 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.wisp.app.R
@@ -224,6 +248,14 @@ fun WalletScreen(
                         error = viewModel.sendError.collectAsState().value,
                         onInputChange = { viewModel.updateSendInput(it) },
                         onNext = { viewModel.processInput() },
+                        onScanQR = { viewModel.navigateTo(WalletPage.ScanQR) },
+                        modifier = Modifier.padding(padding)
+                    )
+                    is WalletPage.ScanQR -> ScanQRContent(
+                        onResult = { scanned ->
+                            viewModel.updateSendInput(scanned)
+                            viewModel.navigateTo(WalletPage.SendInput)
+                        },
                         modifier = Modifier.padding(padding)
                     )
                     is WalletPage.SendAmount -> {
@@ -297,16 +329,19 @@ fun WalletScreen(
                         transactions = viewModel.transactions.collectAsState().value,
                         error = viewModel.transactionsError.collectAsState().value,
                         isLoading = viewModel.isLoading.collectAsState().value,
+                        profileLookup = { viewModel.getProfileData(it) },
                         modifier = Modifier.padding(padding)
                     )
                     is WalletPage.Settings -> WalletSettingsContent(
                         walletMode = viewModel.walletMode.collectAsState().value,
                         lightningAddress = viewModel.lightningAddress.collectAsState().value,
+                        lightningAddressLoading = viewModel.lightningAddressLoading.collectAsState().value,
                         onSetupAddress = {
                             viewModel.resetAddressSetupState()
                             viewModel.navigateTo(WalletPage.LightningAddressSetup)
                         },
                         onShowAddressQR = { viewModel.navigateTo(WalletPage.LightningAddressQR) },
+                        onDeleteAddress = { viewModel.deleteLightningAddress() },
                         onBackupMnemonic = { viewModel.showMnemonicBackup() },
                         onDeleteWallet = { viewModel.navigateTo(WalletPage.DeleteWalletConfirm) },
                         modifier = Modifier.padding(padding)
@@ -524,6 +559,7 @@ private fun WalletHomeContent(
     modifier: Modifier = Modifier
 ) {
     val balanceSats = balanceMsats / 1000
+    var balanceHidden by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -531,11 +567,18 @@ private fun WalletHomeContent(
             .padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Settings gear in top-right
+        // Top bar: history (left) and settings (right)
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            IconButton(onClick = onTransactions) {
+                Icon(
+                    Icons.Default.Receipt,
+                    contentDescription = "Transaction History",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             IconButton(onClick = onSettings) {
                 Icon(
                     Icons.Default.Settings,
@@ -545,39 +588,41 @@ private fun WalletHomeContent(
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.weight(1f))
 
-        // Bitcoin icon
-        Box(
-            modifier = Modifier
-                .size(72.dp)
-                .background(MaterialTheme.colorScheme.primary, CircleShape),
-            contentAlignment = Alignment.Center
+        // Balance — tap to hide/show
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.clickable { balanceHidden = !balanceHidden }
         ) {
-            Icon(
-                Icons.Default.ElectricBolt,
-                contentDescription = null,
-                modifier = Modifier.size(36.dp),
-                tint = MaterialTheme.colorScheme.onPrimary
-            )
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        // Balance
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                "%,d".format(balanceSats),
-                style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "sats",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 4.dp)
-            )
+            if (balanceHidden) {
+                Text(
+                    "* * * * *",
+                    style = MaterialTheme.typography.displaySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Tap to reveal",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        "%,d".format(balanceSats),
+                        style = MaterialTheme.typography.displaySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "sats",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
+            }
         }
 
         IconButton(onClick = onRefresh) {
@@ -588,38 +633,7 @@ private fun WalletHomeContent(
             )
         }
 
-        Spacer(Modifier.height(40.dp))
-
-        // Send / Receive buttons
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Button(
-                onClick = onSend,
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Send")
-            }
-            Button(
-                onClick = onReceive,
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.ArrowDownward, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Receive")
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        TextButton(onClick = onTransactions) {
-            Text("Transaction History")
-        }
-
-        // Lightning address setup prompt (Spark only)
+        // Lightning address or setup prompt
         if (walletMode == WalletMode.SPARK && lightningAddress == null) {
             Spacer(Modifier.height(8.dp))
             Card(
@@ -657,10 +671,7 @@ private fun WalletHomeContent(
                     }
                 }
             }
-        }
-
-        // Show lightning address if set
-        if (lightningAddress != null) {
+        } else if (lightningAddress != null) {
             Spacer(Modifier.height(8.dp))
             Text(
                 lightningAddress,
@@ -671,7 +682,61 @@ private fun WalletHomeContent(
 
         Spacer(Modifier.weight(1f))
 
-        Spacer(Modifier.height(16.dp))
+        // Large circular Send / Receive buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            // Send button
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                        .clickable { onSend() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.ArrowUpward,
+                        contentDescription = "Send",
+                        modifier = Modifier.size(32.dp),
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Send",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            // Receive button
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                        .clickable { onReceive() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.ArrowDownward,
+                        contentDescription = "Receive",
+                        modifier = Modifier.size(32.dp),
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Receive",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        Spacer(Modifier.height(32.dp))
     }
 }
 
@@ -683,9 +748,47 @@ private fun SendInputContent(
     error: String?,
     onInputChange: (String) -> Unit,
     onNext: () -> Unit,
+    onScanQR: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+
+    // Gallery image picker → decode QR from image
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri ?: return@rememberLauncherForActivityResult
+        try {
+            val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
+            } else {
+                @Suppress("DEPRECATION")
+                MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+            }
+            val image = InputImage.fromBitmap(bitmap, 0)
+            val options = BarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                .build()
+            val scanner = BarcodeScanning.getClient(options)
+            scanner.process(image)
+                .addOnSuccessListener { barcodes ->
+                    val value = barcodes.firstOrNull()?.rawValue
+                    if (value != null) {
+                        // Strip common URI prefixes
+                        val cleaned = value
+                            .removePrefix("lightning:")
+                            .removePrefix("LIGHTNING:")
+                            .removePrefix("bitcoin:")
+                            .removePrefix("BITCOIN:")
+                        onInputChange(cleaned)
+                    }
+                }
+                .addOnCompleteListener { scanner.close() }
+        } catch (e: Exception) {
+            Log.e("WalletScreen", "Failed to decode QR from image", e)
+        }
+    }
 
     Column(
         modifier = modifier
@@ -730,6 +833,39 @@ private fun SendInputContent(
             )
         }
 
+        Spacer(Modifier.height(24.dp))
+
+        // Scan QR / Import from Gallery buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedButton(
+                onClick = onScanQR,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    Icons.Default.QrCode,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Scan QR")
+            }
+            OutlinedButton(
+                onClick = { galleryLauncher.launch("image/*") },
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    Icons.Default.Image,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Gallery")
+            }
+        }
+
         Spacer(Modifier.height(16.dp))
 
         Button(
@@ -739,6 +875,186 @@ private fun SendInputContent(
         ) {
             Text("Next")
         }
+    }
+}
+
+// --- QR Scanner ---
+
+@Composable
+private fun ScanQRContent(
+    onResult: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var hasCameraPermission by remember { mutableStateOf(false) }
+    var scanned by remember { mutableStateOf(false) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasCameraPermission = granted
+    }
+
+    LaunchedEffect(Unit) {
+        hasCameraPermission = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.CAMERA
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!hasCameraPermission) {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    Column(
+        modifier = modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(16.dp))
+
+        Text(
+            "Scan QR Code",
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        if (!hasCameraPermission) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Default.CameraAlt,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "Camera permission required",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = {
+                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                    }) {
+                        Text("Grant Permission")
+                    }
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 16.dp)
+                    .clip(RoundedCornerShape(16.dp))
+            ) {
+                AndroidView(
+                    factory = { ctx ->
+                        val previewView = PreviewView(ctx)
+                        val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                        cameraProviderFuture.addListener({
+                            val cameraProvider = cameraProviderFuture.get()
+                            val preview = Preview.Builder().build().also {
+                                it.surfaceProvider = previewView.surfaceProvider
+                            }
+
+                            val options = BarcodeScannerOptions.Builder()
+                                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                                .build()
+                            val scanner = BarcodeScanning.getClient(options)
+
+                            val analysis = ImageAnalysis.Builder()
+                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                .build()
+                            analysis.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
+                                @androidx.camera.core.ExperimentalGetImage
+                                val mediaImage = imageProxy.image
+                                if (mediaImage != null && !scanned) {
+                                    val inputImage = InputImage.fromMediaImage(
+                                        mediaImage, imageProxy.imageInfo.rotationDegrees
+                                    )
+                                    scanner.process(inputImage)
+                                        .addOnSuccessListener { barcodes ->
+                                            val value = barcodes.firstOrNull()?.rawValue
+                                            if (value != null && !scanned) {
+                                                scanned = true
+                                                val cleaned = value
+                                                    .removePrefix("lightning:")
+                                                    .removePrefix("LIGHTNING:")
+                                                    .removePrefix("bitcoin:")
+                                                    .removePrefix("BITCOIN:")
+                                                onResult(cleaned)
+                                            }
+                                        }
+                                        .addOnCompleteListener { imageProxy.close() }
+                                } else {
+                                    imageProxy.close()
+                                }
+                            }
+
+                            try {
+                                cameraProvider.unbindAll()
+                                cameraProvider.bindToLifecycle(
+                                    lifecycleOwner,
+                                    CameraSelector.DEFAULT_BACK_CAMERA,
+                                    preview,
+                                    analysis
+                                )
+                            } catch (e: Exception) {
+                                Log.e("ScanQR", "Camera bind failed", e)
+                            }
+                        }, ContextCompat.getMainExecutor(ctx))
+                        previewView
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Viewfinder overlay
+                Box(
+                    modifier = Modifier
+                        .size(250.dp)
+                        .align(Alignment.Center)
+                        .background(Color.Transparent)
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val strokeW = 3.dp.toPx()
+                        val cornerLen = 30.dp.toPx()
+                        val color = Color.White
+                        // Top-left corner
+                        drawLine(color, start = androidx.compose.ui.geometry.Offset(0f, 0f), end = androidx.compose.ui.geometry.Offset(cornerLen, 0f), strokeWidth = strokeW)
+                        drawLine(color, start = androidx.compose.ui.geometry.Offset(0f, 0f), end = androidx.compose.ui.geometry.Offset(0f, cornerLen), strokeWidth = strokeW)
+                        // Top-right corner
+                        drawLine(color, start = androidx.compose.ui.geometry.Offset(size.width, 0f), end = androidx.compose.ui.geometry.Offset(size.width - cornerLen, 0f), strokeWidth = strokeW)
+                        drawLine(color, start = androidx.compose.ui.geometry.Offset(size.width, 0f), end = androidx.compose.ui.geometry.Offset(size.width, cornerLen), strokeWidth = strokeW)
+                        // Bottom-left corner
+                        drawLine(color, start = androidx.compose.ui.geometry.Offset(0f, size.height), end = androidx.compose.ui.geometry.Offset(cornerLen, size.height), strokeWidth = strokeW)
+                        drawLine(color, start = androidx.compose.ui.geometry.Offset(0f, size.height), end = androidx.compose.ui.geometry.Offset(0f, size.height - cornerLen), strokeWidth = strokeW)
+                        // Bottom-right corner
+                        drawLine(color, start = androidx.compose.ui.geometry.Offset(size.width, size.height), end = androidx.compose.ui.geometry.Offset(size.width - cornerLen, size.height), strokeWidth = strokeW)
+                        drawLine(color, start = androidx.compose.ui.geometry.Offset(size.width, size.height), end = androidx.compose.ui.geometry.Offset(size.width, size.height - cornerLen), strokeWidth = strokeW)
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Text(
+            "Point your camera at a Lightning invoice or address QR code",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 32.dp)
+        )
+
+        Spacer(Modifier.height(16.dp))
     }
 }
 
@@ -1282,6 +1598,7 @@ private fun TransactionHistoryContent(
     transactions: List<WalletTransaction>,
     error: String?,
     isLoading: Boolean,
+    profileLookup: (String) -> com.wisp.app.nostr.ProfileData?,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -1338,7 +1655,7 @@ private fun TransactionHistoryContent(
             else -> {
                 LazyColumn {
                     items(transactions) { tx ->
-                        TransactionRow(tx)
+                        TransactionRow(tx, profileLookup)
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp),
                             color = MaterialTheme.colorScheme.outlineVariant
@@ -1351,9 +1668,13 @@ private fun TransactionHistoryContent(
 }
 
 @Composable
-private fun TransactionRow(tx: WalletTransaction) {
+private fun TransactionRow(
+    tx: WalletTransaction,
+    profileLookup: (String) -> com.wisp.app.nostr.ProfileData?
+) {
     val isIncoming = tx.type == "incoming"
     val amountSats = tx.amountMsats / 1000
+    val profile = tx.counterpartyPubkey?.let { profileLookup(it) }
 
     Row(
         modifier = Modifier
@@ -1361,32 +1682,50 @@ private fun TransactionRow(tx: WalletTransaction) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Direction icon
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .background(
-                    if (isIncoming) Color(0xFF2E7D32).copy(alpha = 0.1f)
-                    else MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
-                    CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                if (isIncoming) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
-                contentDescription = if (isIncoming) "Received" else "Sent",
-                tint = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(20.dp)
+        // Avatar or direction icon
+        if (profile?.picture != null) {
+            AsyncImage(
+                model = profile.picture,
+                contentDescription = profile.displayString,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
             )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        if (isIncoming) Color(0xFF2E7D32).copy(alpha = 0.1f)
+                        else MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
+                        CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (isIncoming) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
+                    contentDescription = if (isIncoming) "Received" else "Sent",
+                    tint = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
 
         Spacer(Modifier.width(12.dp))
 
-        // Description + time
+        // Name/description + time
         Column(modifier = Modifier.weight(1f)) {
+            val displayLabel = if (profile != null) {
+                profile.displayString
+            } else {
+                // Try to get a meaningful description; skip raw zap request JSON
+                val desc = tx.description?.takeIf {
+                    it.isNotBlank() && it != "null" && !it.trimStart().startsWith("{")
+                }
+                desc ?: if (isIncoming) "Received" else "Sent"
+            }
             Text(
-                tx.description?.takeIf { it.isNotBlank() && it != "null" }
-                    ?: if (isIncoming) "⚡ Zap!" else "Sent",
+                displayLabel,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
@@ -1399,18 +1738,30 @@ private fun TransactionRow(tx: WalletTransaction) {
             )
         }
 
-        // Amount
-        Text(
-            "${if (isIncoming) "+" else "-"}%,d".format(amountSats),
-            style = MaterialTheme.typography.titleMedium,
-            color = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
-        )
-        Spacer(Modifier.width(4.dp))
-        Text(
-            "sats",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        // Amount + fee
+        Column(horizontalAlignment = Alignment.End) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${if (isIncoming) "+" else "-"}%,d".format(amountSats),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "sats",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (!isIncoming && tx.feeMsats > 0) {
+                val feeSats = tx.feeMsats / 1000
+                Text(
+                    "fee: %,d sats".format(feeSats),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 
@@ -1687,8 +2038,10 @@ private fun SparkBackupContent(
 private fun WalletSettingsContent(
     walletMode: WalletMode,
     lightningAddress: String?,
+    lightningAddressLoading: Boolean = false,
     onSetupAddress: () -> Unit,
     onShowAddressQR: () -> Unit,
+    onDeleteAddress: () -> Unit = {},
     onBackupMnemonic: () -> Unit,
     onDeleteWallet: () -> Unit,
     modifier: Modifier = Modifier
@@ -1721,7 +2074,14 @@ private fun WalletSettingsContent(
 
             Spacer(Modifier.height(12.dp))
 
-            if (lightningAddress != null) {
+            if (lightningAddressLoading) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                }
+            } else if (lightningAddress != null) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -1754,13 +2114,33 @@ private fun WalletSettingsContent(
 
                 Spacer(Modifier.height(8.dp))
 
-                OutlinedButton(
-                    onClick = onShowAddressQR,
-                    modifier = Modifier.fillMaxWidth()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Show QR Code")
+                    OutlinedButton(
+                        onClick = onShowAddressQR,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("QR Code")
+                    }
+                    OutlinedButton(
+                        onClick = onSetupAddress,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Change")
+                    }
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                TextButton(
+                    onClick = onDeleteAddress,
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFD32F2F))
+                ) {
+                    Text("Remove Lightning Address")
                 }
             } else {
                 OutlinedButton(

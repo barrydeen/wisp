@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.Bolt11
 import com.wisp.app.nostr.ClientMessage
+import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.Nip57
+import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.toHex
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.KeyRepository
@@ -14,14 +16,19 @@ import com.wisp.app.repo.SparkRepository
 import com.wisp.app.repo.WalletMode
 import com.wisp.app.repo.WalletModeRepository
 import com.wisp.app.repo.WalletProvider
+import android.util.Log
 import com.wisp.app.repo.WalletTransaction
+import com.wisp.app.repo.ZapSender
 import com.wisp.app.relay.RelayPool
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
@@ -39,6 +46,7 @@ sealed class WalletPage {
     object SparkSetup : WalletPage()
     data class SparkBackup(val mnemonic: String) : WalletPage()
     object SendInput : WalletPage()
+    object ScanQR : WalletPage()
     data class SendAmount(val address: String) : WalletPage()
     data class SendConfirm(
         val invoice: String,
@@ -571,6 +579,23 @@ class WalletViewModel(
         }
     }
 
+    fun deleteLightningAddress() {
+        _lightningAddressLoading.value = true
+        _lightningAddressError.value = null
+        viewModelScope.launch {
+            val result = sparkRepo.deleteLightningAddress()
+            result.fold(
+                onSuccess = {
+                    _lightningAddress.value = null
+                },
+                onFailure = { e ->
+                    _lightningAddressError.value = e.message ?: "Failed to delete address"
+                }
+            )
+            _lightningAddressLoading.value = false
+        }
+    }
+
     fun resetAddressSetupState() {
         _addressAvailable.value = null
         _addressCheckLoading.value = false
@@ -731,18 +756,87 @@ class WalletViewModel(
         _isLoading.value = true
         _transactionsError.value = null
         viewModelScope.launch {
-            val result = activeProvider.listTransactions()
-            result.fold(
-                onSuccess = { txs ->
-                    _transactions.value = txs
-                },
-                onFailure = { e ->
-                    _transactionsError.value = e.message ?: "Failed to load transactions"
+            // Sync Spark wallet to pick up latest payments before listing
+            if (_walletMode.value == WalletMode.SPARK) {
+                sparkRepo.syncWallet()
+            }
+
+            // Fetch the user's incoming zap receipts from relays so they land in ObjectBox
+            fetchUserZapReceipts()
+
+            // Build lookups and list transactions off the main thread
+            val mapped = withContext(Dispatchers.IO) {
+                val (zapSenders, zapRecipients) = eventRepo.getZapReceiptCounterparties()
+                val result = activeProvider.listTransactions()
+                result.map { txs ->
+                    txs.map { tx ->
+                        if (tx.counterpartyPubkey != null) tx
+                        else tx.copy(counterpartyPubkey = extractCounterpartyPubkey(tx, zapSenders, zapRecipients))
+                    }
                 }
+            }
+            mapped.fold(
+                onSuccess = { txs -> _transactions.value = txs },
+                onFailure = { e -> _transactionsError.value = e.message ?: "Failed to load transactions" }
             )
             _isLoading.value = false
         }
     }
+
+    /**
+     * One-shot relay query for kind 9735 zap receipts targeting the current user.
+     * Events auto-persist to ObjectBox via the normal relay event pipeline.
+     */
+    private suspend fun fetchUserZapReceipts() {
+        val pubkey = keyRepo.getPubkeyHex() ?: run {
+            Log.d("WalletVM", "fetchUserZapReceipts: no pubkey")
+            return
+        }
+        val subId = "zap-rcpt-${System.currentTimeMillis()}"
+        val filter = Filter(kinds = listOf(9735), pTags = listOf(pubkey), limit = 500)
+        val msg = ClientMessage.req(subId, filter)
+        relayPool.sendToReadRelays(msg)
+
+        // Wait for EOSE from any relay (events auto-flow into EventRepository → ObjectBox)
+        withTimeoutOrNull(5_000) {
+            relayPool.eoseSignals.first { it == subId }
+        }
+        relayPool.closeOnAllRelays(subId)
+    }
+
+    /**
+     * Extract the counterparty pubkey from a transaction.
+     * Uses persisted zap receipts (kind 9735) from ObjectBox — survives app restarts.
+     * Falls back to ZapSender in-memory map and description parsing.
+     */
+    private fun extractCounterpartyPubkey(
+        tx: WalletTransaction,
+        zapSenders: Map<String, String>,
+        zapRecipients: Map<String, String>
+    ): String? {
+        if (tx.type == "outgoing") {
+            zapRecipients[tx.paymentHash]?.let { return it }
+            ZapSender.getZapRecipient(tx.paymentHash)?.let { return it }
+        } else {
+            zapSenders[tx.paymentHash]?.let { return it }
+        }
+
+        // Fallback: try parsing description as kind 9734 zap request
+        val desc = tx.description ?: return null
+        return try {
+            val event = NostrEvent.fromJson(desc)
+            if (event.kind != 9734) return null
+            if (tx.type == "outgoing") {
+                event.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
+            } else {
+                event.pubkey
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun getProfileData(pubkey: String) = eventRepo.getProfileData(pubkey)
 
     // --- Sync polling for receive ---
 

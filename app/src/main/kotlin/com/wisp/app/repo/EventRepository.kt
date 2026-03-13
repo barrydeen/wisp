@@ -3,6 +3,7 @@ package com.wisp.app.repo
 import android.util.LruCache
 import com.wisp.app.nostr.Nip09
 import com.wisp.app.nostr.Nip30
+import com.wisp.app.nostr.Bolt11
 import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrEvent.Companion.fromJson
@@ -469,6 +470,39 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     fun bumpEventCacheVersion() { _eventCacheVersion.value++ }
 
     fun getProfileData(pubkey: String): ProfileData? = profileRepo?.get(pubkey)
+
+    /**
+     * Build maps of bolt11 payment hash → counterparty pubkey from persisted zap receipts (kind 9735).
+     * Returns a pair: (senderMap for incoming zaps, recipientMap for outgoing zaps).
+     * Queries ObjectBox for persistent data across app restarts.
+     */
+    // Cached zap receipt counterparty maps (payment hash → pubkey)
+    private var cachedZapSenders: Map<String, String> = emptyMap()
+    private var cachedZapRecipients: Map<String, String> = emptyMap()
+    private var cachedZapReceiptCount = 0
+
+    fun getZapReceiptCounterparties(): Pair<Map<String, String>, Map<String, String>> {
+        val receipts = eventPersistence?.getZapReceipts() ?: return cachedZapSenders to cachedZapRecipients
+        // Only rebuild if new receipts arrived
+        if (receipts.size == cachedZapReceiptCount) return cachedZapSenders to cachedZapRecipients
+
+        val senders = mutableMapOf<String, String>()    // payment hash → sender pubkey
+        val recipients = mutableMapOf<String, String>()  // payment hash → recipient pubkey
+        for (event in receipts) {
+            val bolt11 = event.tags.firstOrNull { it.size >= 2 && it[0] == "bolt11" }?.get(1) ?: continue
+            val hash = Bolt11.decode(bolt11)?.paymentHash ?: continue
+            // Sender from embedded kind 9734 zap request
+            val sender = Nip57.getZapperPubkey(event)
+            if (sender != null) senders[hash] = sender
+            // Recipient from 'p' tag of the receipt
+            val recipient = event.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
+            if (recipient != null) recipients[hash] = recipient
+        }
+        cachedZapSenders = senders
+        cachedZapRecipients = recipients
+        cachedZapReceiptCount = receipts.size
+        return senders to recipients
+    }
 
     fun requestProfileIfMissing(pubkey: String, relayHints: List<String> = emptyList()) {
         metadataFetcher?.addToPendingProfiles(pubkey, relayHints)

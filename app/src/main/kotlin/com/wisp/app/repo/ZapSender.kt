@@ -1,5 +1,9 @@
 package com.wisp.app.repo
 
+import android.content.Context
+import android.content.SharedPreferences
+import android.util.Log
+import com.wisp.app.nostr.Bolt11
 import com.wisp.app.nostr.Keys
 import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.NostrSigner
@@ -14,6 +18,46 @@ class ZapSender(
     private val httpClient: OkHttpClient
 ) {
     var signer: NostrSigner? = null
+
+    companion object {
+        private const val PREFS_NAME = "wisp_zap_recipients"
+        private const val MAX_ENTRIES = 500
+
+        /** In-memory map of payment hash → recipient pubkey for outgoing zaps. */
+        private val _zapRecipients = LinkedHashMap<String, String>()
+        private var prefs: SharedPreferences? = null
+
+        /** Call once from Application.onCreate to enable persistence. */
+        fun init(context: Context) {
+            prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            // Load persisted entries into memory
+            synchronized(_zapRecipients) {
+                prefs?.all?.forEach { (hash, pubkey) ->
+                    if (pubkey is String) _zapRecipients[hash] = pubkey
+                }
+            }
+        }
+
+        fun getZapRecipient(paymentHash: String): String? = synchronized(_zapRecipients) {
+            _zapRecipients[paymentHash]
+        }
+
+        private fun recordZap(bolt11: String, recipientPubkey: String) {
+            val decoded = Bolt11.decode(bolt11)
+            val hash = decoded?.paymentHash ?: return
+            synchronized(_zapRecipients) {
+                _zapRecipients[hash] = recipientPubkey
+                // Cap at MAX_ENTRIES
+                while (_zapRecipients.size > MAX_ENTRIES) {
+                    val first = _zapRecipients.keys.first()
+                    _zapRecipients.remove(first)
+                    prefs?.edit()?.remove(first)?.apply()
+                }
+            }
+            // Persist to disk
+            prefs?.edit()?.putString(hash, recipientPubkey)?.apply()
+        }
+    }
 
     suspend fun sendZap(
         recipientLud16: String,
@@ -99,7 +143,10 @@ class ZapSender(
         val bolt11 = Nip57.fetchInvoice(payInfo.callback, amountMsats, zapRequest, httpClient)
             ?: return Result.failure(Exception("Could not get invoice from lightning provider"))
 
-        // 4. Pay via wallet
+        // 4. Record zap recipient for transaction history display
+        recordZap(bolt11, recipientPubkey)
+
+        // 5. Pay via wallet
         val payResult = getWalletProvider().payInvoice(bolt11)
         return payResult.map { }
     }

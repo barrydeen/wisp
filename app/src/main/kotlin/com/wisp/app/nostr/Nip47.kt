@@ -56,6 +56,7 @@ object Nip47 {
         val description: String?,
         val paymentHash: String,
         val amount: Long,
+        val feesPaid: Long = 0,
         val createdAt: Long,
         val settledAt: Long?
     )
@@ -234,6 +235,7 @@ object Nip47 {
                         description = tx["description"]?.jsonPrimitive?.content,
                         paymentHash = tx["payment_hash"]?.jsonPrimitive?.content ?: "",
                         amount = tx["amount"]?.jsonPrimitive?.longOrNull ?: 0,
+                        feesPaid = tx["fees_paid"]?.jsonPrimitive?.longOrNull ?: 0,
                         createdAt = tx["created_at"]?.jsonPrimitive?.longOrNull ?: 0,
                         settledAt = tx["settled_at"]?.jsonPrimitive?.longOrNull
                     )

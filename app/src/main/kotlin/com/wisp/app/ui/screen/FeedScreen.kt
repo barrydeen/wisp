@@ -200,7 +200,7 @@ fun FeedScreen(
     var zapErrorMessage by remember { mutableStateOf<String?>(null) }
     var showEmojiLibrary by remember { mutableStateOf(false) }
 
-    val isWalletConnected = viewModel.nwcRepo.hasConnection()
+    val isWalletConnected = viewModel.activeWalletProvider.hasConnection()
 
     val noteActions = remember(userPubkey) {
         NoteActions(

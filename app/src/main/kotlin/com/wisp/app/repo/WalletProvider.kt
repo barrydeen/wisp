@@ -25,6 +25,9 @@ data class WalletTransaction(
     val description: String?,
     val paymentHash: String,
     val amountMsats: Long,
+    val feeMsats: Long = 0,
     val createdAt: Long,
-    val settledAt: Long?
+    val settledAt: Long?,
+    /** Pubkey of the counterparty (recipient for outgoing, sender for incoming zaps). */
+    val counterpartyPubkey: String? = null
 )
