@@ -1173,11 +1173,19 @@ fun WispNavHost(
                     }
                 )
             }
+            val interestSets by feedViewModel.interestRepo.sets.collectAsState()
             HashtagFeedScreen(
                 viewModel = hashtagFeedViewModel,
                 eventRepo = feedViewModel.eventRepo,
                 userPubkey = feedViewModel.getUserPubkey(),
                 noteActions = hashtagNoteActions,
+                interestSets = interestSets,
+                onFollowHashtag = { dTag -> feedViewModel.followHashtag(tag, dTag) },
+                onUnfollowHashtag = { dTag -> feedViewModel.unfollowHashtag(tag, dTag) },
+                onCreateDefaultSet = {
+                    feedViewModel.createInterestSet("Interests")
+                    feedViewModel.followHashtag(tag, "interests")
+                },
                 nip05Repo = feedViewModel.nip05Repo,
                 translationRepo = feedViewModel.translationRepo,
                 onBack = { navController.popBackStack() }

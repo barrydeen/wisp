@@ -23,6 +23,7 @@ import com.wisp.app.repo.CustomEmojiRepository
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.ExtendedNetworkRepository
+import com.wisp.app.repo.InterestRepository
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.ListRepository
 import com.wisp.app.repo.MetadataFetcher
@@ -52,6 +53,7 @@ class EventRouter(
     private val blossomRepo: BlossomRepository,
     private val customEmojiRepo: CustomEmojiRepository,
     private val relayListRepo: RelayListRepository,
+    private val interestRepo: InterestRepository,
     private val relaySetRepo: RelaySetRepository,
     private val relayScoreBoard: RelayScoreBoard,
     private val relayHintStore: RelayHintStore,
@@ -291,6 +293,12 @@ class EventRouter(
                     try { s.nip44Decrypt(event.content, myPubkey) } catch (_: Exception) { null }
                 } else null
                 listRepo.updateFromEvent(event, decrypted)
+            }
+            if (event.kind == Nip51.KIND_INTEREST_SET) {
+                val myPubkey = getUserPubkey()
+                if (myPubkey != null && event.pubkey == myPubkey) {
+                    interestRepo.updateFromEvent(event)
+                }
             }
             if (event.kind == Nip51.KIND_BOOKMARK_SET) {
                 val myPubkey = getUserPubkey()

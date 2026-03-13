@@ -1,32 +1,45 @@
 package com.wisp.app.ui.screen
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.wisp.app.nostr.InterestSet
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.PostCard
@@ -42,6 +55,10 @@ fun HashtagFeedScreen(
     eventRepo: EventRepository,
     userPubkey: String?,
     noteActions: NoteActions,
+    interestSets: List<InterestSet> = emptyList(),
+    onFollowHashtag: (dTag: String) -> Unit = {},
+    onUnfollowHashtag: (dTag: String) -> Unit = {},
+    onCreateDefaultSet: () -> Unit = {},
     nip05Repo: Nip05Repository? = null,
     translationRepo: TranslationRepository? = null,
     onBack: () -> Unit
@@ -56,6 +73,11 @@ fun HashtagFeedScreen(
     val zapVersion by eventRepo.zapVersion.collectAsState()
     val repostVersion by eventRepo.repostVersion.collectAsState()
 
+    val isFollowing = remember(interestSets, hashtag) {
+        interestSets.any { hashtag.lowercase() in it.hashtags }
+    }
+    var showSetPicker by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -69,6 +91,27 @@ fun HashtagFeedScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (userPubkey != null) {
+                        IconButton(onClick = {
+                            val containingSets = interestSets.filter { hashtag.lowercase() in it.hashtags }
+                            if (containingSets.isNotEmpty()) {
+                                containingSets.forEach { onUnfollowHashtag(it.dTag) }
+                            } else if (interestSets.size == 1) {
+                                onFollowHashtag(interestSets.first().dTag)
+                            } else if (interestSets.isEmpty()) {
+                                onCreateDefaultSet()
+                            } else {
+                                showSetPicker = true
+                            }
+                        }) {
+                            Icon(
+                                if (isFollowing) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                contentDescription = if (isFollowing) "Unfollow hashtag" else "Follow hashtag"
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -117,6 +160,60 @@ fun HashtagFeedScreen(
             }
         }
     }
+
+    if (showSetPicker) {
+        InterestSetPickerDialog(
+            sets = interestSets,
+            onSelect = { dTag ->
+                onFollowHashtag(dTag)
+                showSetPicker = false
+            },
+            onDismiss = { showSetPicker = false }
+        )
+    }
+}
+
+@Composable
+private fun InterestSetPickerDialog(
+    sets: List<InterestSet>,
+    onSelect: (dTag: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add to Set") },
+        text = {
+            Column {
+                sets.forEach { set ->
+                    Surface(
+                        onClick = { onSelect(set.dTag) },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                set.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                "${set.hashtags.size}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 @Composable

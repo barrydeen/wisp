@@ -35,6 +35,7 @@ import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.repo.RelayListRepository
+import com.wisp.app.repo.InterestRepository
 import com.wisp.app.repo.RelaySetRepository
 import com.wisp.app.repo.ZapPreferences
 import com.wisp.app.nostr.NostrSigner
@@ -69,6 +70,7 @@ class StartupCoordinator(
     private val relaySetRepo: RelaySetRepository,
     private val pinRepo: PinRepository,
     private val blossomRepo: BlossomRepository,
+    private val interestRepo: InterestRepository,
     private val customEmojiRepo: CustomEmojiRepository,
     private val relayListRepo: RelayListRepository,
     private val relayScoreBoard: RelayScoreBoard,
@@ -137,6 +139,7 @@ class StartupCoordinator(
         pinRepo.clear()
         listRepo.clear()
         blossomRepo.clear()
+        interestRepo.clear()
         extendedNetworkRepo.clear()
         relayScoreBoard.clear()
         relayHintStore.clear()
@@ -169,6 +172,7 @@ class StartupCoordinator(
         pinRepo.reload(newPubkey)
         listRepo.reload(newPubkey)
         blossomRepo.reload(newPubkey)
+        interestRepo.reload(newPubkey)
         nwcRepo.reload(newPubkey)
         relayScoreBoard.reload(newPubkey)
         healthTracker.reload(newPubkey)
@@ -445,6 +449,7 @@ class StartupCoordinator(
             Filter(kinds = listOf(Nip51.KIND_FOLLOW_SET), authors = listOf(myPubkey), limit = 50),
             Filter(kinds = listOf(Nip51.KIND_BOOKMARK_SET), authors = listOf(myPubkey), limit = 50),
             Filter(kinds = listOf(Nip51.KIND_RELAY_SET), authors = listOf(myPubkey), limit = 50),
+            Filter(kinds = listOf(Nip51.KIND_INTEREST_SET), authors = listOf(myPubkey), limit = 50),
             Filter(kinds = listOf(Nip30.KIND_USER_EMOJI_LIST), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Nip30.KIND_EMOJI_SET), authors = listOf(myPubkey), limit = 50)
         )

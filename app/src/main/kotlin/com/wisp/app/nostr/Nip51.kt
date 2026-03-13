@@ -38,6 +38,13 @@ data class BookmarkSet(
     val isPrivate: Boolean = false
 )
 
+data class InterestSet(
+    val dTag: String,
+    val name: String,
+    val hashtags: Set<String>,
+    val createdAt: Long = 0
+)
+
 data class RelaySet(
     val pubkey: String,
     val dTag: String,
@@ -57,6 +64,7 @@ object Nip51 {
     const val KIND_FOLLOW_SET = 30000
     const val KIND_RELAY_SET = 30002
     const val KIND_BOOKMARK_SET = 30003
+    const val KIND_INTEREST_SET = 30015
 
     fun parseRelaySet(event: NostrEvent): List<String> {
         return event.tags.mapNotNull { tag ->
@@ -318,6 +326,34 @@ object Nip51 {
         }
         for (coord in coordinates) tags.add(listOf("a", coord))
         for (tag in hashtags) tags.add(listOf("t", tag))
+        return tags
+    }
+
+    fun parseInterestSet(event: NostrEvent): InterestSet? {
+        if (event.kind != KIND_INTEREST_SET) return null
+        val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: return null
+        val hashtags = mutableSetOf<String>()
+        var title: String? = null
+        for (tag in event.tags) {
+            if (tag.size < 2) continue
+            when (tag[0]) {
+                "t" -> hashtags.add(tag[1].lowercase())
+                "title" -> title = tag[1]
+            }
+        }
+        return InterestSet(
+            dTag = dTag,
+            name = title ?: dTag,
+            hashtags = hashtags,
+            createdAt = event.created_at
+        )
+    }
+
+    fun buildInterestSetTags(dTag: String, hashtags: Set<String>, title: String? = null): List<List<String>> {
+        val tags = mutableListOf<List<String>>()
+        tags.add(listOf("d", dTag))
+        if (title != null) tags.add(listOf("title", title))
+        for (tag in hashtags) tags.add(listOf("t", tag.lowercase()))
         return tags
     }
 

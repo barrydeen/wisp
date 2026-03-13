@@ -12,6 +12,7 @@ import com.wisp.app.relay.SubscriptionManager
 import com.wisp.app.repo.BookmarkSetRepository
 import com.wisp.app.repo.CustomEmojiRepository
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.InterestRepository
 import com.wisp.app.repo.ListRepository
 import com.wisp.app.repo.MetadataFetcher
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +29,7 @@ class ListCrudManager(
     private val subManager: SubscriptionManager,
     private val eventRepo: EventRepository,
     private val listRepo: ListRepository,
+    private val interestRepo: InterestRepository,
     private val bookmarkSetRepo: BookmarkSetRepository,
     private val customEmojiRepo: CustomEmojiRepository,
     private val metadataFetcher: MetadataFetcher,
@@ -245,6 +247,72 @@ class ListCrudManager(
             withContext(processingContext) {
                 metadataFetcher.sweepMissingProfiles()
             }
+        }
+    }
+
+    // -- Interest Set (kind 30015) CRUD --
+
+    fun followHashtag(hashtag: String, dTag: String) {
+        val s = getSigner() ?: return
+        val existing = interestRepo.getSet(dTag)
+        val newHashtags = (existing?.hashtags ?: emptySet()) + hashtag.lowercase()
+        val title = existing?.name?.takeIf { it != dTag }
+        val tags = Nip51.buildInterestSetTags(dTag, newHashtags, title = title)
+        scope.launch {
+            val event = s.signEvent(kind = Nip51.KIND_INTEREST_SET, content = "", tags = tags)
+            eventRepo.cacheEvent(event)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            interestRepo.updateFromEvent(event)
+        }
+    }
+
+    fun unfollowHashtag(hashtag: String, dTag: String) {
+        val s = getSigner() ?: return
+        val existing = interestRepo.getSet(dTag) ?: return
+        val newHashtags = existing.hashtags - hashtag.lowercase()
+        val title = existing.name.takeIf { it != dTag }
+        val tags = Nip51.buildInterestSetTags(dTag, newHashtags, title = title)
+        scope.launch {
+            val event = s.signEvent(kind = Nip51.KIND_INTEREST_SET, content = "", tags = tags)
+            eventRepo.cacheEvent(event)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            interestRepo.updateFromEvent(event)
+        }
+    }
+
+    fun createInterestSet(name: String) {
+        val s = getSigner() ?: return
+        val title = name.trim()
+        val dTag = title.lowercase().replace(Regex("[^a-z0-9-_]"), "-")
+        val tags = Nip51.buildInterestSetTags(dTag, emptySet(), title = title)
+        scope.launch {
+            val event = s.signEvent(kind = Nip51.KIND_INTEREST_SET, content = "", tags = tags)
+            eventRepo.cacheEvent(event)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            interestRepo.updateFromEvent(event)
+        }
+    }
+
+    fun renameInterestSet(dTag: String, newName: String) {
+        val s = getSigner() ?: return
+        val existing = interestRepo.getSet(dTag) ?: return
+        val tags = Nip51.buildInterestSetTags(dTag, existing.hashtags, title = newName.trim())
+        scope.launch {
+            val event = s.signEvent(kind = Nip51.KIND_INTEREST_SET, content = "", tags = tags)
+            eventRepo.cacheEvent(event)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            interestRepo.updateFromEvent(event)
+        }
+    }
+
+    fun deleteInterestSet(dTag: String) {
+        val s = getSigner() ?: return
+        val myPubkey = s.pubkeyHex
+        val deletionTags = Nip09.buildAddressableDeletionTags(Nip51.KIND_INTEREST_SET, myPubkey, dTag)
+        scope.launch {
+            val deleteEvent = s.signEvent(kind = 5, content = "", tags = deletionTags)
+            relayPool.sendToWriteRelays(ClientMessage.event(deleteEvent))
+            interestRepo.removeSet(dTag)
         }
     }
 
