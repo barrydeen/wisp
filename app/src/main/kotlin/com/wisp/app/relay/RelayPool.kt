@@ -819,36 +819,19 @@ class RelayPool {
         for (relayMap in activeSubscriptions.values) {
             relayMap.keys.retainAll { subId -> keepPrefixes.any { subId.startsWith(it) } }
         }
-        // Smart reconnect: only tear down relays that are disconnected.
-        // Healthy relays are kept alive to avoid thundering herd on short resume.
-        var reconnected = 0
-        val keptAlive = mutableListOf<Relay>()
+        // Always tear down and reconnect — we cannot trust isConnected after
+        // an OS sleep; the socket may be dead even though the flag says true.
         for (relay in relays) {
             relay.resetBackoff()
+            relay.disconnect()
+            relay.connect()
             relay.reconnectEnabled = true
-            if (relay.isConnected) {
-                keptAlive.add(relay)
-            } else {
-                relay.disconnect()
-                relay.connect()
-                reconnected++
-            }
         }
         for (relay in dmRelays) {
             relay.resetBackoff()
+            relay.disconnect()
+            relay.connect()
             relay.reconnectEnabled = true
-            if (relay.isConnected) {
-                keptAlive.add(relay)
-            } else {
-                relay.disconnect()
-                relay.connect()
-                reconnected++
-            }
-        }
-        // Resync subscriptions on kept-alive relays — connectionState won't fire
-        // for them, so they'd miss any new subscriptions without this.
-        for (relay in keptAlive) {
-            resyncSubscriptions(relay)
         }
         // Evict ALL ephemeral relays — they'll be recreated on demand.
         // Even "connected" ephemerals may be stale and have autoReconnect=false.
@@ -863,7 +846,7 @@ class RelayPool {
         ephemeralLastUsed.clear()
         isReconnecting = false
         val total = relays.size + dmRelays.size
-        Log.d("RLC", "[Pool] reconnectAll() END — reconnected $reconnected/$total relays (${keptAlive.size} kept alive), activeSubs remaining=${activeSubscriptions.size}")
+        Log.d("RLC", "[Pool] reconnectAll() END — reconnected $total relays, activeSubs remaining=${activeSubscriptions.size}")
         updateConnectedCount()
         return total
     }

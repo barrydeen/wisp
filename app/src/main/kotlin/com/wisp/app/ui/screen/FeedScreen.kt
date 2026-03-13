@@ -532,6 +532,16 @@ fun FeedScreen(
                                         }} else null
                                     )
                                     DropdownMenuItem(
+                                        text = { Text("Trending") },
+                                        onClick = {
+                                            showFeedTypeDropdown = false
+                                            viewModel.setFeedType(FeedType.TRENDING)
+                                        },
+                                        trailingIcon = if (feedType == FeedType.TRENDING) {{
+                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        }} else null
+                                    )
+                                    DropdownMenuItem(
                                         text = { Text("Relay") },
                                         onClick = {
                                             showFeedTypeDropdown = false
@@ -548,16 +558,6 @@ fun FeedScreen(
                                             showListPicker = true
                                         },
                                         trailingIcon = if (feedType == FeedType.LIST) {{
-                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        }} else null
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Trending") },
-                                        onClick = {
-                                            showFeedTypeDropdown = false
-                                            viewModel.setFeedType(FeedType.TRENDING)
-                                        },
-                                        trailingIcon = if (feedType == FeedType.TRENDING) {{
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                         }} else null
                                     )
