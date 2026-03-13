@@ -164,24 +164,32 @@ fun FeedScreen(
     }
     val userPubkey = viewModel.getUserPubkey()
     val selectedList by viewModel.selectedList.collectAsState()
-    // Jump to top only when feed type, selected list, or selected relay actually changes
+    val trendingMetric by viewModel.trendingMetric.collectAsState()
+    val trendingTimeframe by viewModel.trendingTimeframe.collectAsState()
+    // Jump to top only when feed type, selected list, selected relay, or trending filters actually change
     // (not on recomposition after back-navigation from thread/compose)
     var prevFeedType by rememberSaveable { mutableStateOf(feedType.name) }
     var prevSelectedListId by rememberSaveable { mutableStateOf(selectedList?.dTag) }
     var prevSelectedRelay by rememberSaveable { mutableStateOf(selectedRelay) }
     var prevSelectedRelaySet by rememberSaveable { mutableStateOf(selectedRelaySet?.name) }
+    var prevTrendingMetric by rememberSaveable { mutableStateOf(trendingMetric.name) }
+    var prevTrendingTimeframe by rememberSaveable { mutableStateOf(trendingTimeframe.name) }
 
-    LaunchedEffect(feedType, selectedList, selectedRelay, selectedRelaySet) {
+    LaunchedEffect(feedType, selectedList, selectedRelay, selectedRelaySet, trendingMetric, trendingTimeframe) {
         val feedTypeChanged = feedType.name != prevFeedType
         val listChanged = selectedList?.dTag != prevSelectedListId
         val relayChanged = selectedRelay != prevSelectedRelay
         val relaySetChanged = selectedRelaySet?.name != prevSelectedRelaySet
+        val metricChanged = trendingMetric.name != prevTrendingMetric
+        val timeframeChanged = trendingTimeframe.name != prevTrendingTimeframe
 
-        if (feedTypeChanged || listChanged || relayChanged || relaySetChanged) {
+        if (feedTypeChanged || listChanged || relayChanged || relaySetChanged || metricChanged || timeframeChanged) {
             prevFeedType = feedType.name
             prevSelectedListId = selectedList?.dTag
             prevSelectedRelay = selectedRelay
             prevSelectedRelaySet = selectedRelaySet?.name
+            prevTrendingMetric = trendingMetric.name
+            prevTrendingTimeframe = trendingTimeframe.name
             listState.scrollToItem(0)
         }
     }
@@ -199,8 +207,6 @@ fun FeedScreen(
     val newNotesButtonHidden by viewModel.newNotesButtonHidden.collectAsState()
     val initLoadingState by viewModel.initLoadingState.collectAsState()
     val relayFeedStatus by viewModel.relayFeedStatus.collectAsState()
-    val trendingMetric by viewModel.trendingMetric.collectAsState()
-    val trendingTimeframe by viewModel.trendingTimeframe.collectAsState()
     val zapInProgress by viewModel.zapInProgress.collectAsState()
     val setListedIds by viewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
     val bookmarkedIds by viewModel.bookmarkRepo.bookmarkedIds.collectAsState()
