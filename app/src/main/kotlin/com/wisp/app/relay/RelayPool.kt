@@ -945,6 +945,27 @@ class RelayPool {
         }
     }
 
+    /**
+     * Pre-connect an ephemeral relay without sending a message. Use this to start
+     * the WebSocket connection early so it's ready when the first REQ arrives.
+     */
+    fun preConnectEphemeral(url: String) {
+        ensureClientCurrent()
+        if (url in blockedUrls) return
+        if (!RelayConfig.isConnectableUrl(url)) return
+        if (ephemeralRelays.containsKey(url)) return
+        if (ephemeralRelays.size >= MAX_EPHEMERAL) return
+        val relay = Relay(RelayConfig(url, read = true, write = false), client, scope)
+        relay.autoReconnect = false
+        wireByteTracking(relay)
+        relayIndex[url] = relay
+        collectMessages(relay)
+        ephemeralRelays[url] = relay
+        ephemeralLastUsed[url] = System.currentTimeMillis()
+        relay.connect()
+        Log.d("RLC", "[Pool] preConnectEphemeral($url)")
+    }
+
     fun disconnectRelay(url: String) {
         relayIndex.remove(url)?.disconnect()
         relays.removeAll { it.config.url == url }

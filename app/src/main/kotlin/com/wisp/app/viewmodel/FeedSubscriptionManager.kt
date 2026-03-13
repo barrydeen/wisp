@@ -497,15 +497,43 @@ class FeedSubscriptionManager(
         _relayFeedStatus.value = RelayFeedStatus.Connecting
 
         val filter = Filter(kinds = listOf(1, 6, 30023), limit = 100)
-        val msg = ClientMessage.req(relayFeedSubId, filter)
-        val sent = relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
-        if (!sent) {
-            _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to trending relay")
-            return
-        }
+        val currentGen = relayFeedGeneration
+        val subId = relayFeedSubId
 
         relayFeedEoseJob = scope.launch {
-            subManager.awaitEoseCount(relayFeedSubId, 1)
+            // The relay may already be pre-connecting (via onPreReconnect) or may
+            // need to be created fresh. sendToRelayOrEphemeral handles both cases
+            // and queues the REQ as a pending message if the WebSocket isn't open yet.
+            // If the relay fails to connect (stale DNS after sleep, etc.), retry with
+            // a fresh ephemeral connection.
+            var connected = false
+            for (attempt in 0..2) {
+                if (relayFeedGeneration != currentGen) return@launch
+                if (attempt > 0) {
+                    relayPool.disconnectRelay(url)
+                    delay(1500L)
+                }
+                val msg = ClientMessage.req(subId, filter)
+                relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
+
+                // Wait for relay to connect — pending messages drain on WebSocket open
+                val deadline = System.currentTimeMillis() + 5_000
+                while (System.currentTimeMillis() < deadline) {
+                    if (relayFeedGeneration != currentGen) return@launch
+                    if (relayPool.isRelayConnected(url)) {
+                        connected = true
+                        break
+                    }
+                    delay(200)
+                }
+                if (connected) break
+            }
+            if (!connected) {
+                _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to trending relay")
+                return@launch
+            }
+
+            subManager.awaitEoseCount(subId, 1)
             onRelayFeedEose()
             subscribeEngagementForFeed()
             withContext(processingContext) {

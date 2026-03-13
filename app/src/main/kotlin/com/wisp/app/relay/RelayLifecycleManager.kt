@@ -21,6 +21,7 @@ class RelayLifecycleManager(
     private val context: Context,
     private val relayPool: RelayPool,
     private val scope: CoroutineScope,
+    private val onPreReconnect: (() -> Unit)? = null,
     private val onReconnected: (force: Boolean) -> Unit
 ) {
     private var connectivityJob: Job? = null
@@ -157,6 +158,10 @@ class RelayLifecycleManager(
                     Log.d("RLC", "[Lifecycle] → reconnectAll()")
                     relayPool.reconnectAll()
                 }
+                // Let callers start priority ephemeral connections (e.g. trending
+                // relay) so they connect in parallel with persistent relays instead
+                // of waiting until after awaitAnyConnected.
+                onPreReconnect?.invoke()
                 val minCount = if (force) 3 else 1
                 Log.d("RLC", "[Lifecycle] awaiting $minCount relays...")
                 relayPool.awaitAnyConnected(minCount = minCount, timeoutMs = 5_000)
