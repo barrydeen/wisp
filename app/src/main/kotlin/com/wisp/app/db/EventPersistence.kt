@@ -147,6 +147,20 @@ class EventPersistence(
         }
     }
 
+    /** Query all zap receipt events (kind 9735) from ObjectBox. */
+    fun getZapReceipts(limit: Int = 500): List<NostrEvent> {
+        return try {
+            val entities = box.query(EventEntity_.kind.equal(9735))
+                .order(EventEntity_.createdAt, io.objectbox.query.QueryBuilder.DESCENDING)
+                .build()
+                .use { it.find(0, limit.toLong()) }
+            entities.mapNotNull { it.toNostrEvent() }
+        } catch (e: Exception) {
+            Log.w("EventPersistence", "getZapReceipts failed: ${e.message}")
+            emptyList()
+        }
+    }
+
     /**
      * Prune old events to keep the database size bounded.
      * Never prunes the current user's own events.

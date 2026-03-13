@@ -40,11 +40,13 @@ import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.clickable
@@ -342,6 +344,8 @@ fun WispDrawerContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        var showLogoutDialog by remember { mutableStateOf(false) }
+
         NavigationDrawerItem(
             icon = {
                 Icon(
@@ -354,9 +358,32 @@ fun WispDrawerContent(
                 Text("Logout", color = MaterialTheme.colorScheme.error)
             },
             selected = false,
-            onClick = onLogout,
+            onClick = { showLogoutDialog = true },
             modifier = Modifier.padding(horizontal = 12.dp)
         )
+
+        if (showLogoutDialog) {
+            AlertDialog(
+                onDismissRequest = { showLogoutDialog = false },
+                title = { Text("Logout") },
+                text = {
+                    Text("Make sure you've backed up your private key before logging out. You can find it in Keys settings. Without it, you won't be able to recover your account.")
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showLogoutDialog = false
+                        onLogout()
+                    }) {
+                        Text("Logout", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showLogoutDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
         }

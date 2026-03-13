@@ -38,6 +38,10 @@ import com.wisp.app.repo.NotificationRepository
 import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.repo.NwcRepository
+import com.wisp.app.repo.SparkRepository
+import com.wisp.app.repo.WalletMode
+import com.wisp.app.repo.WalletModeRepository
+import com.wisp.app.repo.WalletProvider
 import com.wisp.app.repo.CustomEmojiRepository
 import com.wisp.app.repo.InterfacePreferences
 import com.wisp.app.repo.PowPreferences
@@ -217,7 +221,16 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     val interfacePrefs = InterfacePreferences(app)
     val nwcRepo = NwcRepository(app, relayPool, pubkeyHex)
-    val zapSender = ZapSender(keyRepo, nwcRepo, relayPool, relayListRepo, HttpClientFactory.createRelayClient(), interfacePrefs)
+    val sparkRepo = SparkRepository(app, pubkeyHex)
+    val walletModeRepo = WalletModeRepository(app, pubkeyHex)
+
+    val activeWalletProvider: WalletProvider
+        get() = when (walletModeRepo.getMode()) {
+            WalletMode.SPARK -> sparkRepo
+            else -> nwcRepo
+        }
+
+    val zapSender = ZapSender(keyRepo, { activeWalletProvider }, relayPool, relayListRepo, HttpClientFactory.createRelayClient(), interfacePrefs)
     val powManager = PowManager(powPrefs, relayPool, outboxRouter, eventRepo, viewModelScope)
 
     // -- Manager classes --
@@ -241,7 +254,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     val socialActions: SocialActionManager = SocialActionManager(
         relayPool, outboxRouter, eventRepo, contactRepo, muteRepo, notifRepo, dmRepo,
-        pinRepo, deletedEventsRepo, nwcRepo, customEmojiRepo, zapSender, powPrefs, interfacePrefs, viewModelScope,
+        pinRepo, deletedEventsRepo, { activeWalletProvider }, customEmojiRepo, zapSender, powPrefs, interfacePrefs, viewModelScope,
         getSigner = { signer },
         getUserPubkey = { getUserPubkey() }
     )
@@ -627,6 +640,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         super.onCleared()
         nwcRepo.disconnect()
+        sparkRepo.disconnect()
         relayPool.disconnectAll()
     }
 }

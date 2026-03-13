@@ -28,6 +28,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,7 +52,8 @@ fun OnboardingSuggestionsScreen(
     onToggleFollowAll: (SectionType) -> Unit,
     onTogglePubkey: (String) -> Unit,
     totalSelected: Int,
-    onContinue: () -> Unit
+    onContinue: () -> Unit,
+    onSkip: () -> Unit = {}
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -63,11 +65,22 @@ fun OnboardingSuggestionsScreen(
             Spacer(Modifier.height(48.dp))
 
             // Header
-            Text(
-                text = "Find people to follow",
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Find people to follow",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (com.wisp.app.BuildConfig.DEBUG) {
+                    TextButton(onClick = onSkip) {
+                        Text("Skip", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
             Spacer(Modifier.height(8.dp))
             Text(
                 text = "Follow at least 5 accounts to build your feed",

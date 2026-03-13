@@ -1,5 +1,6 @@
 package com.wisp.app
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.ui.Alignment
@@ -157,11 +158,20 @@ fun WispNavHost(
     val profileViewModel: ProfileViewModel = viewModel()
     val dmListViewModel: DmListViewModel = viewModel()
     val blossomServersViewModel: BlossomServersViewModel = viewModel()
+    val appContext = LocalContext.current.applicationContext
     val walletViewModel: WalletViewModel = viewModel(
         factory = object : androidx.lifecycle.ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                return WalletViewModel(feedViewModel.nwcRepo) as T
+                return WalletViewModel(
+                    feedViewModel.nwcRepo,
+                    feedViewModel.sparkRepo,
+                    feedViewModel.walletModeRepo,
+                    feedViewModel.eventRepo,
+                    feedViewModel.relayPool,
+                    feedViewModel.keyRepo,
+                    appContext.contentResolver
+                ) as T
             }
         }
     )
@@ -503,9 +513,7 @@ fun WispNavHost(
                 onToggleTor = onToggleTor,
                 onAuthenticated = { isNewAccount ->
                     if (isNewAccount) {
-                        navController.navigate(Routes.ONBOARDING_PROFILE) {
-                            popUpTo(Routes.AUTH) { inclusive = true }
-                        }
+                        navController.navigate(Routes.ONBOARDING_PROFILE)
                     } else if (authViewModel.keyRepo.isReadOnly()) {
                         feedViewModel.reloadForNewAccount()
                         relayViewModel.reload()
@@ -853,7 +861,7 @@ fun WispNavHost(
                 onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
                 onZap = { event, amountMsats, message, isAnonymous, isPrivate -> feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate) },
                 userPubkey = feedViewModel.getUserPubkey(),
-                isWalletConnected = feedViewModel.nwcRepo.hasConnection(),
+                isWalletConnected = feedViewModel.activeWalletProvider.hasConnection(),
                 onWallet = { navController.navigate(Routes.WALLET) },
                 zapSuccess = feedViewModel.zapSuccess,
                 zapError = feedViewModel.zapError,
@@ -1002,7 +1010,7 @@ fun WispNavHost(
             var threadZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
             val threadZapInProgress by feedViewModel.zapInProgress.collectAsState()
             var threadZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
-            val isNwcConnected = feedViewModel.nwcRepo.hasConnection()
+            val isNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
             var showThreadEmojiLibrary by remember { mutableStateOf(false) }
 
             LaunchedEffect(Unit) {
@@ -1231,7 +1239,7 @@ fun WispNavHost(
             var articleZapTarget by remember { mutableStateOf<com.wisp.app.nostr.NostrEvent?>(null) }
             val articleZapInProgress by feedViewModel.zapInProgress.collectAsState()
             var articleZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
-            val isNwcConnected = feedViewModel.nwcRepo.hasConnection()
+            val isNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
             val articleSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
             val articleBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
             val articleListedIds = remember(articleSetListedIds, articleBookmarkedIds) { articleSetListedIds + articleBookmarkedIds }
@@ -1646,6 +1654,11 @@ fun WispNavHost(
         }
 
         composable(Routes.ONBOARDING_PROFILE) {
+            val onBack: () -> Unit = {
+                authViewModel.keyRepo.clearKeypair()
+                navController.popBackStack()
+            }
+            BackHandler(onBack = onBack)
             OnboardingScreen(
                 viewModel = onboardingViewModel,
                 onContinue = {
@@ -1655,6 +1668,7 @@ fun WispNavHost(
                         }
                     }
                 },
+                onBack = onBack,
                 signer = activeSigner
             )
         }
@@ -1696,6 +1710,19 @@ fun WispNavHost(
                             popUpTo(0) { inclusive = true }
                         }
                     }
+                },
+                onSkip = {
+                    authViewModel.keyRepo.markOnboardingComplete()
+                    feedViewModel.setFeedType(FeedType.EXTENDED_FOLLOWS)
+                    feedViewModel.reloadForNewAccount()
+                    relayViewModel.reload()
+                    blossomServersViewModel.reload()
+                    composeViewModel.reloadBlossomRepo()
+                    walletViewModel.refreshState()
+                    navController.navigate(Routes.FEED) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                    scope.launch { feedViewModel.initRelays() }
                 }
             )
         }
@@ -1715,7 +1742,7 @@ fun WispNavHost(
             val notifSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
             val notifBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
             val notifListedIds = remember(notifSetListedIds, notifBookmarkedIds) { notifSetListedIds + notifBookmarkedIds }
-            val isNwcConnected = feedViewModel.nwcRepo.hasConnection()
+            val isNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
             var showNotifEmojiLibrary by remember { mutableStateOf(false) }
 
             LaunchedEffect(Unit) {

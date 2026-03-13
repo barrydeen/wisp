@@ -43,6 +43,10 @@
 # ZXing
 -keep class com.google.zxing.** { *; }
 
+# CameraX
+-keep class androidx.camera.** { *; }
+-dontwarn androidx.camera.**
+
 # kmp-tor
 -keep class io.matthewnelson.kmp.tor.** { *; }
 -dontwarn io.matthewnelson.kmp.tor.**
@@ -55,6 +59,13 @@
 -keep class io.objectbox.** { *; }
 -dontwarn io.objectbox.**
 -keep class com.wisp.app.db.** { *; }
+
+# Breez SDK Spark (UniFFI bindings)
+-keep class breez_sdk_spark.** { *; }
+-dontwarn breez_sdk_spark.**
+# JNA (used by Breez SDK UniFFI)
+-keep class com.sun.jna.** { *; }
+-dontwarn com.sun.jna.**
 
 # java.lang.management (not available on Android)
 -dontwarn java.lang.management.ManagementFactory

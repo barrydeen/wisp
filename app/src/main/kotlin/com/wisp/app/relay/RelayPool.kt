@@ -507,6 +507,15 @@ class RelayPool {
         return sentCount
     }
 
+    /** Send an EVENT message to all relays (read + write) so every relay gets it. */
+    fun sendToAllRelays(message: String): Int {
+        var sentCount = 0
+        for (relay in relays) {
+            if (relay.send(message)) sentCount++
+        }
+        return sentCount
+    }
+
     /**
      * Triggers connect() on any disconnected write relays and waits briefly
      * for at least one to become connected. Returns the number of connected

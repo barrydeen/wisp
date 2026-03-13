@@ -20,7 +20,7 @@ import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.MuteRepository
 import com.wisp.app.repo.NotificationRepository
-import com.wisp.app.repo.NwcRepository
+import com.wisp.app.repo.WalletProvider
 import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.CustomEmojiRepository
 import com.wisp.app.repo.DeletedEventsRepository
@@ -50,7 +50,7 @@ class SocialActionManager(
     private val dmRepo: DmRepository,
     private val pinRepo: PinRepository,
     private val deletedEventsRepo: DeletedEventsRepository,
-    private val nwcRepo: NwcRepository,
+    private val getWalletProvider: () -> WalletProvider,
     private val customEmojiRepo: CustomEmojiRepository,
     private val zapSender: ZapSender,
     private val powPrefs: PowPreferences,
@@ -274,9 +274,10 @@ class SocialActionManager(
             _zapError.tryEmit("This user has no lightning address")
             return
         }
-        // Reconnect NWC relay if credentials exist but relay disconnected
-        if (nwcRepo.hasConnection() && !nwcRepo.isConnected.value) {
-            nwcRepo.connect()
+        // Reconnect wallet if credentials exist but not connected
+        val wallet = getWalletProvider()
+        if (wallet.hasConnection() && !wallet.isConnected.value) {
+            wallet.connect()
         }
         scope.launch {
             _zapInProgress.value = _zapInProgress.value + event.id
