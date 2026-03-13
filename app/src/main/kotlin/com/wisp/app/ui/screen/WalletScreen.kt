@@ -325,13 +325,18 @@ fun WalletScreen(
                             modifier = Modifier.padding(padding)
                         )
                     }
-                    is WalletPage.Transactions -> TransactionHistoryContent(
-                        transactions = viewModel.transactions.collectAsState().value,
-                        error = viewModel.transactionsError.collectAsState().value,
-                        isLoading = viewModel.isLoading.collectAsState().value,
-                        profileLookup = { viewModel.getProfileData(it) },
-                        modifier = Modifier.padding(padding)
-                    )
+                    is WalletPage.Transactions -> {
+                        // Observe profile refresh key so UI recomposes when new profiles arrive
+                        val profileKey = viewModel.profileRefreshKey.collectAsState().value
+                        TransactionHistoryContent(
+                            transactions = viewModel.transactions.collectAsState().value,
+                            error = viewModel.transactionsError.collectAsState().value,
+                            isLoading = viewModel.isLoading.collectAsState().value,
+                            profileLookup = { viewModel.getProfileData(it) },
+                            profileRefreshKey = profileKey,
+                            modifier = Modifier.padding(padding)
+                        )
+                    }
                     is WalletPage.Settings -> WalletSettingsContent(
                         walletMode = viewModel.walletMode.collectAsState().value,
                         lightningAddress = viewModel.lightningAddress.collectAsState().value,
@@ -1594,11 +1599,13 @@ private fun ReceiveSuccessContent(
 // --- Transaction History ---
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 private fun TransactionHistoryContent(
     transactions: List<WalletTransaction>,
     error: String?,
     isLoading: Boolean,
     profileLookup: (String) -> com.wisp.app.nostr.ProfileData?,
+    profileRefreshKey: Int = 0,
     modifier: Modifier = Modifier
 ) {
     Column(

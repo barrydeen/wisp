@@ -346,12 +346,18 @@ class SparkRepository(
                 ))
                 val transactions = response.payments.map { payment ->
                     val lightningDetails = payment.details as? PaymentDetails.Lightning
-                    val description = lightningDetails?.description
 
-                    // Extract payment hash from bolt11 invoice (Spark uses UUIDs as payment.id)
-                    val bolt11Hash = lightningDetails?.invoice?.let {
-                        com.wisp.app.nostr.Bolt11.decode(it)?.paymentHash
+                    // Prefer bolt11-decoded hash (matches ZapSender records), fall back to HTLC hash, then payment ID
+                    val decoded = lightningDetails?.invoice?.let {
+                        com.wisp.app.nostr.Bolt11.decode(it)
                     }
+                    val htlcHash = lightningDetails?.htlcDetails?.paymentHash?.lowercase()
+                    val paymentHash = decoded?.paymentHash ?: htlcHash ?: payment.id
+
+                    // Prefer Spark's description, fall back to bolt11 description
+                    // (bolt11 tag 13 may contain the kind 9734 zap request JSON)
+                    val description = lightningDetails?.description
+                        ?: decoded?.description
 
                     WalletTransaction(
                         type = when (payment.paymentType) {
@@ -359,7 +365,7 @@ class SparkRepository(
                             else -> "incoming"
                         },
                         description = description,
-                        paymentHash = bolt11Hash ?: payment.id,
+                        paymentHash = paymentHash,
                         amountMsats = payment.amount.toLong() * 1000,
                         feeMsats = payment.fees.toLong() * 1000,
                         createdAt = payment.timestamp.toLong(),

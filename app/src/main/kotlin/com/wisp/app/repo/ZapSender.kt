@@ -35,6 +35,9 @@ class ZapSender(
                 prefs?.all?.forEach { (hash, pubkey) ->
                     if (pubkey is String) _zapRecipients[hash] = pubkey
                 }
+                if (_zapRecipients.isNotEmpty()) {
+                    Log.d("ZapSender", "Loaded ${_zapRecipients.size} persisted zap recipients")
+                }
             }
         }
 
@@ -42,20 +45,27 @@ class ZapSender(
             _zapRecipients[paymentHash]
         }
 
-        private fun recordZap(bolt11: String, recipientPubkey: String) {
-            val decoded = Bolt11.decode(bolt11)
-            val hash = decoded?.paymentHash ?: return
+        /**
+         * Persist a payment hash → recipient pubkey mapping.
+         * Called both at zap-send time and when resolving historical zap receipts.
+         */
+        fun persistRecipient(paymentHash: String, recipientPubkey: String) {
             synchronized(_zapRecipients) {
-                _zapRecipients[hash] = recipientPubkey
-                // Cap at MAX_ENTRIES
+                if (_zapRecipients[paymentHash] == recipientPubkey) return
+                _zapRecipients[paymentHash] = recipientPubkey
                 while (_zapRecipients.size > MAX_ENTRIES) {
                     val first = _zapRecipients.keys.first()
                     _zapRecipients.remove(first)
                     prefs?.edit()?.remove(first)?.apply()
                 }
             }
-            // Persist to disk
-            prefs?.edit()?.putString(hash, recipientPubkey)?.apply()
+            prefs?.edit()?.putString(paymentHash, recipientPubkey)?.apply()
+        }
+
+        private fun recordZap(bolt11: String, recipientPubkey: String) {
+            val decoded = Bolt11.decode(bolt11)
+            val hash = decoded?.paymentHash ?: return
+            persistRecipient(hash, recipientPubkey)
         }
     }
 

@@ -122,6 +122,10 @@ class WalletViewModel(
     private val _transactionsError = MutableStateFlow<String?>(null)
     val transactionsError: StateFlow<String?> = _transactionsError
 
+    /** Incremented when new profiles arrive for transaction counterparties, to trigger UI refresh. */
+    private val _profileRefreshKey = MutableStateFlow(0)
+    val profileRefreshKey: StateFlow<Int> = _profileRefreshKey
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading
 
@@ -771,12 +775,33 @@ class WalletViewModel(
                 result.map { txs ->
                     txs.map { tx ->
                         if (tx.counterpartyPubkey != null) tx
-                        else tx.copy(counterpartyPubkey = extractCounterpartyPubkey(tx, zapSenders, zapRecipients))
+                        else {
+                            val pubkey = extractCounterpartyPubkey(tx, zapSenders, zapRecipients)
+                            // Persist outgoing zap counterparties so they survive app restarts
+                            if (pubkey != null && tx.type == "outgoing") {
+                                ZapSender.persistRecipient(tx.paymentHash, pubkey)
+                            }
+                            tx.copy(counterpartyPubkey = pubkey)
+                        }
                     }
                 }
             }
             mapped.fold(
-                onSuccess = { txs -> _transactions.value = txs },
+                onSuccess = { txs ->
+                    _transactions.value = txs
+                    // Request profiles for any counterparty pubkeys not yet cached
+                    val missing = txs.mapNotNull { it.counterpartyPubkey }
+                        .distinct()
+                        .filter { eventRepo.getProfileData(it) == null }
+                    missing.forEach { eventRepo.requestProfileIfMissing(it) }
+                    // After a delay, bump refresh key so UI picks up newly-arrived profiles
+                    if (missing.isNotEmpty()) {
+                        viewModelScope.launch {
+                            delay(3_000)
+                            _profileRefreshKey.value++
+                        }
+                    }
+                },
                 onFailure = { e -> _transactionsError.value = e.message ?: "Failed to load transactions" }
             )
             _isLoading.value = false
@@ -784,7 +809,8 @@ class WalletViewModel(
     }
 
     /**
-     * One-shot relay query for kind 9735 zap receipts targeting the current user.
+     * One-shot relay queries for kind 9735 zap receipts involving the current user.
+     * Fetches both incoming (p tag = us) and outgoing (P tag = us) receipts.
      * Events auto-persist to ObjectBox via the normal relay event pipeline.
      */
     private suspend fun fetchUserZapReceipts() {
@@ -792,16 +818,28 @@ class WalletViewModel(
             Log.d("WalletVM", "fetchUserZapReceipts: no pubkey")
             return
         }
-        val subId = "zap-rcpt-${System.currentTimeMillis()}"
-        val filter = Filter(kinds = listOf(9735), pTags = listOf(pubkey), limit = 500)
-        val msg = ClientMessage.req(subId, filter)
-        relayPool.sendToReadRelays(msg)
+        val ts = System.currentTimeMillis()
 
-        // Wait for EOSE from any relay (events auto-flow into EventRepository → ObjectBox)
+        // Incoming: receipts where we're the recipient (lowercase p tag)
+        val inSubId = "zap-rcpt-in-$ts"
+        val inFilter = Filter(kinds = listOf(9735), pTags = listOf(pubkey), limit = 500)
+        relayPool.sendToReadRelays(ClientMessage.req(inSubId, inFilter))
+
+        // Outgoing: receipts where we're the sender (uppercase P tag)
+        // Not all relays index #P, but those that do will return our outgoing zap receipts.
+        val outSubId = "zap-rcpt-out-$ts"
+        val outFilter = Filter(kinds = listOf(9735), bigPTags = listOf(pubkey), limit = 500)
+        relayPool.sendToReadRelays(ClientMessage.req(outSubId, outFilter))
+
+        // Wait for EOSE from both (events auto-flow into EventRepository → ObjectBox)
         withTimeoutOrNull(5_000) {
-            relayPool.eoseSignals.first { it == subId }
+            relayPool.eoseSignals.first { it == inSubId }
         }
-        relayPool.closeOnAllRelays(subId)
+        withTimeoutOrNull(3_000) {
+            relayPool.eoseSignals.first { it == outSubId }
+        }
+        relayPool.closeOnAllRelays(inSubId)
+        relayPool.closeOnAllRelays(outSubId)
     }
 
     /**
