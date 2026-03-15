@@ -38,6 +38,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -129,6 +130,7 @@ import com.wisp.app.viewmodel.AutoCheckState
 import com.wisp.app.viewmodel.BackupStatus
 import com.wisp.app.viewmodel.DeleteBackupStatus
 import com.wisp.app.viewmodel.RelayBackupInfo
+import com.wisp.app.viewmodel.BackupEntry
 import com.wisp.app.viewmodel.RestoreFromRelayStatus
 import com.wisp.app.viewmodel.WalletPage
 import com.wisp.app.viewmodel.WalletState
@@ -178,6 +180,7 @@ fun WalletScreen(
                         status = viewModel.restoreFromRelayStatus.collectAsState().value,
                         onSearch = { viewModel.searchRelayBackup() },
                         onRestore = { viewModel.restoreFromRelayBackup() },
+                        onSelectBackup = { viewModel.selectBackupToRestore(it) },
                         onCancel = {
                             viewModel.resetRestoreFromRelayStatus()
                             viewModel.navigateBack()
@@ -432,6 +435,7 @@ fun WalletScreen(
                         status = viewModel.restoreFromRelayStatus.collectAsState().value,
                         onSearch = { viewModel.searchRelayBackup() },
                         onRestore = { viewModel.restoreFromRelayBackup() },
+                        onSelectBackup = { viewModel.selectBackupToRestore(it) },
                         onCancel = {
                             viewModel.resetRestoreFromRelayStatus()
                             viewModel.navigateBack()
@@ -3124,6 +3128,7 @@ private fun RestoreFromRelayContent(
     status: RestoreFromRelayStatus,
     onSearch: () -> Unit,
     onRestore: () -> Unit,
+    onSelectBackup: (BackupEntry) -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -3233,6 +3238,55 @@ private fun RestoreFromRelayContent(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Restore This Wallet")
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Cancel")
+                }
+            }
+            is RestoreFromRelayStatus.MultipleFound -> {
+                Text(
+                    "Multiple wallets found",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                Text(
+                    "Choose a backup to restore:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                val dateFormat = java.text.SimpleDateFormat("MMM d, yyyy 'at' h:mm a", java.util.Locale.getDefault())
+                status.backups.forEach { entry ->
+                    OutlinedButton(
+                        onClick = { onSelectBackup(entry) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(16.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                if (entry.walletId != null) "Wallet ${entry.walletId}" else "Spark wallet",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                dateFormat.format(java.util.Date(entry.createdAt * 1000)),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
                 }
 
                 Spacer(Modifier.height(8.dp))
