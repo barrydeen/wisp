@@ -17,7 +17,7 @@ interface WalletProvider {
     suspend fun fetchBalance(): Result<Long>
     suspend fun payInvoice(bolt11: String): Result<String>
     suspend fun makeInvoice(amountMsats: Long, description: String): Result<String>
-    suspend fun listTransactions(limit: Int = 50): Result<List<WalletTransaction>>
+    suspend fun listTransactions(limit: Int = 50, offset: Int = 0): Result<List<WalletTransaction>>
 }
 
 data class WalletTransaction(

@@ -286,13 +286,13 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         return result.map { (it as Nip47.NwcResponse.MakeInvoiceResult).invoice }
     }
 
-    suspend fun listNwcTransactions(limit: Int = 50): Result<List<Nip47.Transaction>> {
-        val result = sendRequest(Nip47.NwcRequest.ListTransactions(limit = limit))
+    suspend fun listNwcTransactions(limit: Int = 50, offset: Int = 0): Result<List<Nip47.Transaction>> {
+        val result = sendRequest(Nip47.NwcRequest.ListTransactions(limit = limit, offset = offset))
         return result.map { (it as Nip47.NwcResponse.ListTransactionsResult).transactions }
     }
 
-    override suspend fun listTransactions(limit: Int): Result<List<WalletTransaction>> {
-        return listNwcTransactions(limit).map { txs ->
+    override suspend fun listTransactions(limit: Int, offset: Int): Result<List<WalletTransaction>> {
+        return listNwcTransactions(limit, offset).map { txs ->
             txs.map { tx ->
                 WalletTransaction(
                     type = tx.type,

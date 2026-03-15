@@ -361,6 +361,9 @@ fun WalletScreen(
                             transactions = viewModel.transactions.collectAsState().value,
                             error = viewModel.transactionsError.collectAsState().value,
                             isLoading = viewModel.isLoading.collectAsState().value,
+                            isLoadingMore = viewModel.isLoadingMore.collectAsState().value,
+                            hasMore = viewModel.hasMoreTransactions.collectAsState().value,
+                            onLoadMore = { viewModel.loadMoreTransactions() },
                             profileLookup = { viewModel.getProfileData(it) },
                             profileRefreshKey = profileKey,
                             modifier = Modifier.padding(padding)
@@ -1676,6 +1679,9 @@ private fun TransactionHistoryContent(
     transactions: List<WalletTransaction>,
     error: String?,
     isLoading: Boolean,
+    isLoadingMore: Boolean = false,
+    hasMore: Boolean = false,
+    onLoadMore: () -> Unit = {},
     profileLookup: (String) -> com.wisp.app.nostr.ProfileData?,
     profileRefreshKey: Int = 0,
     modifier: Modifier = Modifier
@@ -1739,6 +1745,27 @@ private fun TransactionHistoryContent(
                             modifier = Modifier.padding(horizontal = 16.dp),
                             color = MaterialTheme.colorScheme.outlineVariant
                         )
+                    }
+                    if (hasMore) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isLoadingMore) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    TextButton(onClick = onLoadMore) {
+                                        Text("Load more")
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

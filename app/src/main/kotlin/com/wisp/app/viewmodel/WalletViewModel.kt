@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -169,6 +170,12 @@ class WalletViewModel(
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading
+
+    private val _isLoadingMore = MutableStateFlow(false)
+    val isLoadingMore: StateFlow<Boolean> = _isLoadingMore
+
+    private val _hasMoreTransactions = MutableStateFlow(true)
+    val hasMoreTransactions: StateFlow<Boolean> = _hasMoreTransactions
 
     // Spark setup
     private val _restoreMnemonic = MutableStateFlow("")
@@ -942,25 +949,88 @@ class WalletViewModel(
     fun loadTransactions() {
         _isLoading.value = true
         _transactionsError.value = null
+        _hasMoreTransactions.value = true
         viewModelScope.launch {
-            // Sync Spark wallet to pick up latest payments before listing
+            // Kick off sync + zap receipt fetch in background (don't block)
             if (_walletMode.value == WalletMode.SPARK) {
-                sparkRepo.syncWallet()
+                launch { sparkRepo.syncWallet() }
             }
+            val zapJob = launch { fetchUserZapReceipts() }
 
-            // Fetch the user's incoming zap receipts from relays so they land in ObjectBox
-            fetchUserZapReceipts()
-
-            // Build lookups and list transactions off the main thread
+            // Show transactions immediately using whatever zap data we already have cached
             val mapped = withContext(Dispatchers.IO) {
-                val (zapSenders, zapRecipients) = eventRepo.getZapReceiptCounterparties()
+                val zapMaps = eventRepo.getZapReceiptCounterparties()
                 val result = activeProvider.listTransactions()
+                result.map { txs -> enrichTransactions(txs, zapMaps) }
+            }
+            mapped.fold(
+                onSuccess = { txs ->
+                    _transactions.value = txs
+                    _hasMoreTransactions.value = txs.size >= 50
+                    requestMissingProfiles(txs)
+                },
+                onFailure = { e -> _transactionsError.value = e.message ?: "Failed to load transactions" }
+            )
+            _isLoading.value = false
+
+            // After zap receipts arrive, re-enrich to pick up newly fetched counterparties
+            zapJob.join()
+            val current = _transactions.value
+            if (current.isNotEmpty()) {
+                val reEnriched = withContext(Dispatchers.IO) {
+                    val zapMaps = eventRepo.getZapReceiptCounterparties()
+                    enrichTransactions(current, zapMaps)
+                }
+                if (reEnriched != current) {
+                    _transactions.value = reEnriched
+                    requestMissingProfiles(reEnriched)
+                }
+            }
+        }
+    }
+
+    private fun enrichTransactions(
+        txs: List<WalletTransaction>,
+        zapMaps: EventRepository.ZapCounterpartyMaps
+    ): List<WalletTransaction> {
+        return txs.map { tx ->
+            if (tx.counterpartyPubkey != null) tx
+            else {
+                val pubkey = extractCounterpartyPubkey(tx, zapMaps)
+                if (pubkey != null && tx.type == "outgoing") {
+                    ZapSender.persistRecipient(tx.paymentHash, pubkey)
+                }
+                tx.copy(counterpartyPubkey = pubkey)
+            }
+        }
+    }
+
+    private fun requestMissingProfiles(txs: List<WalletTransaction>) {
+        val missing = txs.mapNotNull { it.counterpartyPubkey }
+            .distinct()
+            .filter { eventRepo.getProfileData(it) == null }
+        missing.forEach { eventRepo.requestProfileIfMissing(it) }
+        if (missing.isNotEmpty()) {
+            viewModelScope.launch {
+                delay(3_000)
+                _profileRefreshKey.value++
+            }
+        }
+    }
+
+    fun loadMoreTransactions() {
+        if (_isLoadingMore.value) return
+        _isLoadingMore.value = true
+        viewModelScope.launch {
+            val currentSize = _transactions.value.size
+            val mapped = withContext(Dispatchers.IO) {
+                val zapMaps = eventRepo.getZapReceiptCounterparties()
+                val result = activeProvider.listTransactions(limit = 50, offset = currentSize)
                 result.map { txs ->
                     txs.map { tx ->
                         if (tx.counterpartyPubkey != null) tx
                         else {
-                            val pubkey = extractCounterpartyPubkey(tx, zapSenders, zapRecipients)
-                            // Persist outgoing zap counterparties so they survive app restarts
+                            val pubkey = extractCounterpartyPubkey(tx, zapMaps)
                             if (pubkey != null && tx.type == "outgoing") {
                                 ZapSender.persistRecipient(tx.paymentHash, pubkey)
                             }
@@ -971,13 +1041,12 @@ class WalletViewModel(
             }
             mapped.fold(
                 onSuccess = { txs ->
-                    _transactions.value = txs
-                    // Request profiles for any counterparty pubkeys not yet cached
+                    _transactions.value = _transactions.value + txs
+                    _hasMoreTransactions.value = txs.size >= 50
                     val missing = txs.mapNotNull { it.counterpartyPubkey }
                         .distinct()
                         .filter { eventRepo.getProfileData(it) == null }
                     missing.forEach { eventRepo.requestProfileIfMissing(it) }
-                    // After a delay, bump refresh key so UI picks up newly-arrived profiles
                     if (missing.isNotEmpty()) {
                         viewModelScope.launch {
                             delay(3_000)
@@ -985,9 +1054,9 @@ class WalletViewModel(
                         }
                     }
                 },
-                onFailure = { e -> _transactionsError.value = e.message ?: "Failed to load transactions" }
+                onFailure = { /* silently ignore pagination errors */ }
             )
-            _isLoading.value = false
+            _isLoadingMore.value = false
         }
     }
 
@@ -1005,21 +1074,19 @@ class WalletViewModel(
 
         // Incoming: receipts where we're the recipient (lowercase p tag)
         val inSubId = "zap-rcpt-in-$ts"
-        val inFilter = Filter(kinds = listOf(9735), pTags = listOf(pubkey), limit = 500)
+        val inFilter = Filter(kinds = listOf(9735), pTags = listOf(pubkey), limit = 1000)
         relayPool.sendToReadRelays(ClientMessage.req(inSubId, inFilter))
 
         // Outgoing: receipts where we're the sender (uppercase P tag)
         // Not all relays index #P, but those that do will return our outgoing zap receipts.
         val outSubId = "zap-rcpt-out-$ts"
-        val outFilter = Filter(kinds = listOf(9735), bigPTags = listOf(pubkey), limit = 500)
+        val outFilter = Filter(kinds = listOf(9735), bigPTags = listOf(pubkey), limit = 1000)
         relayPool.sendToReadRelays(ClientMessage.req(outSubId, outFilter))
 
-        // Wait for EOSE from both (events auto-flow into EventRepository → ObjectBox)
-        withTimeoutOrNull(5_000) {
-            relayPool.eoseSignals.first { it == inSubId }
-        }
-        withTimeoutOrNull(3_000) {
-            relayPool.eoseSignals.first { it == outSubId }
+        // Wait for EOSE from both in parallel
+        coroutineScope {
+            launch { withTimeoutOrNull(5_000) { relayPool.eoseSignals.first { it == inSubId } } }
+            launch { withTimeoutOrNull(5_000) { relayPool.eoseSignals.first { it == outSubId } } }
         }
         relayPool.closeOnAllRelays(inSubId)
         relayPool.closeOnAllRelays(outSubId)
@@ -1032,14 +1099,23 @@ class WalletViewModel(
      */
     private fun extractCounterpartyPubkey(
         tx: WalletTransaction,
-        zapSenders: Map<String, String>,
-        zapRecipients: Map<String, String>
+        zapMaps: EventRepository.ZapCounterpartyMaps
     ): String? {
         if (tx.type == "outgoing") {
-            zapRecipients[tx.paymentHash]?.let { return it }
+            zapMaps.recipients[tx.paymentHash]?.let { return it }
             ZapSender.getZapRecipient(tx.paymentHash)?.let { return it }
         } else {
-            zapSenders[tx.paymentHash]?.let { return it }
+            zapMaps.senders[tx.paymentHash]?.let { return it }
+        }
+
+        // Fuzzy match by amount + timestamp (handles Spark wrapped invoices)
+        val bucket = tx.createdAt / 60
+        for (off in -5L..5L) {
+            val key = "${tx.amountMsats}:${bucket + off}"
+            zapMaps.byAmountTime[key]?.let { (sender, recipient) ->
+                if (tx.type == "outgoing" && recipient != null) return recipient
+                if (tx.type == "incoming" && sender != null) return sender
+            }
         }
 
         // Fallback: try parsing description as kind 9734 zap request

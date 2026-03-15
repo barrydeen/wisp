@@ -381,12 +381,13 @@ class SparkRepository(
 
     // --- Transactions ---
 
-    override suspend fun listTransactions(limit: Int): Result<List<WalletTransaction>> =
+    override suspend fun listTransactions(limit: Int, offset: Int): Result<List<WalletTransaction>> =
         withContext(Dispatchers.IO) {
             try {
                 val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
                 val response = instance.listPayments(ListPaymentsRequest(
                     limit = limit.toUInt(),
+                    offset = offset.toUInt(),
                     sortAscending = false
                 ))
                 val transactions = response.payments.map { payment ->
@@ -398,7 +399,6 @@ class SparkRepository(
                     }
                     val htlcHash = lightningDetails?.htlcDetails?.paymentHash?.lowercase()
                     val paymentHash = decoded?.paymentHash ?: htlcHash ?: payment.id
-
                     // Prefer Spark's description, fall back to bolt11 description
                     // (bolt11 tag 13 may contain the kind 9734 zap request JSON)
                     val description = lightningDetails?.description
