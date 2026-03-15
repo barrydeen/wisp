@@ -1,5 +1,6 @@
 package com.wisp.app
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.ui.Alignment
@@ -458,6 +459,24 @@ fun WispNavHost(
             onAllow = { feedViewModel.relayPool.approveAuth(request) },
             onDeny = { feedViewModel.relayPool.denyAuth(request) }
         )
+    }
+
+    // Prevent the system back button from ever closing the app.
+    // On FEED: consume the press (nowhere to go).
+    // On any other app screen: pop the back stack, falling back to FEED if empty.
+    val isAppRoute = currentRoute != null && currentRoute !in nonAppRoutes
+    BackHandler(enabled = isAppRoute) {
+        if (currentRoute == Routes.FEED) {
+            // Already on home — do nothing
+        } else {
+            val popped = navController.popBackStack()
+            if (!popped) {
+                navController.navigate(Routes.FEED) {
+                    popUpTo(0) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+        }
     }
 
     Scaffold(
