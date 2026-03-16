@@ -45,11 +45,13 @@ class BlossomServersViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun addServer() {
-        val url = _newServerUrl.value.trim().trimEnd('/')
-        if (!url.startsWith("https://")) {
-            _error.value = "URL must start with https://"
+        val raw = _newServerUrl.value.trim().trimEnd('/')
+        if (raw.isBlank()) return
+        if (raw.startsWith("http://")) {
+            _error.value = "Only HTTPS servers are supported"
             return
         }
+        val url = if (raw.startsWith("https://")) raw else "https://$raw"
         val current = servers.value.toMutableList()
         if (current.contains(url)) {
             _error.value = "Server already added"
