@@ -70,6 +70,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 enum class FeedType { FOLLOWS, EXTENDED_FOLLOWS, RELAY, LIST, TRENDING }
 
+enum class TrendingMode { NOTES, USERS }
+
 enum class TrendingMetric(val slug: String, val label: String) {
     REACTIONS("reactions", "Reactions"),
     REPLIES("replies", "Replies"),
@@ -84,6 +86,8 @@ enum class TrendingTimeframe(val slug: String, val label: String) {
     YEAR("1y", "1y"),
     ALL("all", "All")
 }
+
+const val TRENDING_USERS_RELAY_URL = "wss://feeds.nostrarchives.com/users/upandcoming"
 
 fun buildTrendingRelayUrl(metric: TrendingMetric, timeframe: TrendingTimeframe): String =
     "wss://feeds.nostrarchives.com/notes/trending/${metric.slug}/${timeframe.slug}"
@@ -185,7 +189,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             // Start the trending relay connection early so it connects in parallel
             // with persistent relays, not sequentially after them.
             if (feedSub.feedType.value == FeedType.TRENDING) {
-                val url = buildTrendingRelayUrl(feedSub.trendingMetric.value, feedSub.trendingTimeframe.value)
+                val url = if (feedSub.trendingMode.value == TrendingMode.USERS) {
+                    TRENDING_USERS_RELAY_URL
+                } else {
+                    buildTrendingRelayUrl(feedSub.trendingMetric.value, feedSub.trendingTimeframe.value)
+                }
                 relayPool.preConnectEphemeral(url)
             }
         },
@@ -316,6 +324,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val loadingScreenComplete: StateFlow<Boolean> = feedSub.loadingScreenComplete
     val trendingMetric: StateFlow<TrendingMetric> = feedSub.trendingMetric
     val trendingTimeframe: StateFlow<TrendingTimeframe> = feedSub.trendingTimeframe
+    val trendingMode: StateFlow<TrendingMode> = feedSub.trendingMode
+    val trendingUsers: StateFlow<List<com.wisp.app.nostr.ProfileData>> = feedSub.trendingUsers
+    val trendingUsersLoading: StateFlow<Boolean> = feedSub.trendingUsersLoading
     val selectedList: StateFlow<com.wisp.app.nostr.FollowSet?> = listRepo.selectedList
     val zapInProgress: StateFlow<Set<String>> = socialActions.zapInProgress
     val zapSuccess: SharedFlow<String> = socialActions.zapSuccess
@@ -348,6 +359,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun loadMore() = feedSub.loadMore()
     fun setTrendingMetric(metric: TrendingMetric) = feedSub.setTrendingMetric(metric)
     fun setTrendingTimeframe(timeframe: TrendingTimeframe) = feedSub.setTrendingTimeframe(timeframe)
+    fun setTrendingMode(mode: TrendingMode) = feedSub.setTrendingMode(mode)
     fun pauseEngagement() = feedSub.pauseEngagement()
     fun resumeEngagement() = feedSub.resumeEngagement()
 

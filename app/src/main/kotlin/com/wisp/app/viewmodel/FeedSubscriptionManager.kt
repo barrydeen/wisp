@@ -4,6 +4,7 @@ import android.util.Log
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.nostr.ProfileData
 import com.wisp.app.relay.ConsoleLogType
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayConfig
@@ -60,6 +61,7 @@ class FeedSubscriptionManager(
         relayPool.registerDedupBypass("relay-feed-")
         relayPool.registerDedupBypass("relay-loadmore")
         relayPool.registerDedupBypass("trending-feed-")
+        relayPool.registerDedupBypass("trending-users-")
     }
 
     private val _feedType = MutableStateFlow(FeedType.FOLLOWS)
@@ -76,6 +78,15 @@ class FeedSubscriptionManager(
 
     private val _trendingTimeframe = MutableStateFlow(TrendingTimeframe.TODAY)
     val trendingTimeframe: StateFlow<TrendingTimeframe> = _trendingTimeframe
+
+    private val _trendingMode = MutableStateFlow(TrendingMode.NOTES)
+    val trendingMode: StateFlow<TrendingMode> = _trendingMode
+
+    private val _trendingUsers = MutableStateFlow<List<ProfileData>>(emptyList())
+    val trendingUsers: StateFlow<List<ProfileData>> = _trendingUsers
+
+    private val _trendingUsersLoading = MutableStateFlow(false)
+    val trendingUsersLoading: StateFlow<Boolean> = _trendingUsersLoading
 
     private val _relayFeedStatus = MutableStateFlow<RelayFeedStatus>(RelayFeedStatus.Idle)
     val relayFeedStatus: StateFlow<RelayFeedStatus> = _relayFeedStatus
@@ -174,7 +185,11 @@ class FeedSubscriptionManager(
             }
             FeedType.TRENDING -> {
                 eventRepo.clearRelayFeed()
-                subscribeTrendingFeed()
+                if (_trendingMode.value == TrendingMode.USERS) {
+                    subscribeTrendingUsers()
+                } else {
+                    subscribeTrendingFeed()
+                }
             }
         }
     }
@@ -213,7 +228,11 @@ class FeedSubscriptionManager(
             subscribeRelayFeed()
         } else if (_feedType.value == FeedType.TRENDING) {
             eventRepo.clearRelayFeed()
-            subscribeTrendingFeed()
+            if (_trendingMode.value == TrendingMode.USERS) {
+                subscribeTrendingUsers()
+            } else {
+                subscribeTrendingFeed()
+            }
         }
     }
 
@@ -470,6 +489,9 @@ class FeedSubscriptionManager(
     // -- Trending feed --
 
     fun setTrendingMetric(metric: TrendingMetric) {
+        if (_trendingMode.value == TrendingMode.USERS) {
+            _trendingMode.value = TrendingMode.NOTES
+        }
         _trendingMetric.value = metric
         if (_feedType.value == FeedType.TRENDING) {
             eventRepo.clearRelayFeed()
@@ -479,9 +501,25 @@ class FeedSubscriptionManager(
 
     fun setTrendingTimeframe(timeframe: TrendingTimeframe) {
         _trendingTimeframe.value = timeframe
-        if (_feedType.value == FeedType.TRENDING) {
+        if (_feedType.value == FeedType.TRENDING && _trendingMode.value == TrendingMode.NOTES) {
             eventRepo.clearRelayFeed()
             subscribeTrendingFeed()
+        }
+    }
+
+    fun setTrendingMode(mode: TrendingMode) {
+        if (_trendingMode.value == mode) return
+        _trendingMode.value = mode
+        if (_feedType.value == FeedType.TRENDING) {
+            if (mode == TrendingMode.USERS) {
+                unsubscribeRelayFeed()
+                subscribeTrendingUsers()
+            } else {
+                _trendingUsers.value = emptyList()
+                _trendingUsersLoading.value = false
+                eventRepo.clearRelayFeed()
+                subscribeTrendingFeed()
+            }
         }
     }
 
@@ -539,6 +577,87 @@ class FeedSubscriptionManager(
             withContext(processingContext) {
                 metadataFetcher.sweepMissingProfiles()
             }
+        }
+    }
+
+    private fun subscribeTrendingUsers() {
+        val oldSubId = relayFeedSubId
+        relayFeedGeneration++
+        relayFeedSubId = "trending-users-$relayFeedGeneration"
+        relayPool.closeOnAllRelays(oldSubId)
+        relayFeedEoseJob?.cancel()
+        relayStatusMonitorJob?.cancel()
+
+        val url = TRENDING_USERS_RELAY_URL
+        _trendingUsersLoading.value = true
+        _trendingUsers.value = emptyList()
+        _relayFeedStatus.value = RelayFeedStatus.Connecting
+
+        val filter = Filter(kinds = listOf(0), limit = 100)
+        val currentGen = relayFeedGeneration
+        val subId = relayFeedSubId
+
+        relayFeedEoseJob = scope.launch {
+            var connected = false
+            for (attempt in 0..2) {
+                if (relayFeedGeneration != currentGen) return@launch
+                if (attempt > 0) {
+                    relayPool.disconnectRelay(url)
+                    delay(1500L)
+                }
+                val msg = ClientMessage.req(subId, filter)
+                relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
+
+                val deadline = System.currentTimeMillis() + 5_000
+                while (System.currentTimeMillis() < deadline) {
+                    if (relayFeedGeneration != currentGen) return@launch
+                    if (relayPool.isRelayConnected(url)) {
+                        connected = true
+                        break
+                    }
+                    delay(200)
+                }
+                if (connected) break
+            }
+            if (!connected) {
+                _relayFeedStatus.value = RelayFeedStatus.ConnectionFailed("Failed to connect to trending users relay")
+                _trendingUsersLoading.value = false
+                return@launch
+            }
+
+            _relayFeedStatus.value = RelayFeedStatus.Subscribing
+
+            // Collect kind 0 events as they arrive
+            val collected = mutableListOf<ProfileData>()
+            val seenPubkeys = mutableSetOf<String>()
+            val collectJob = launch {
+                relayPool.relayEvents.collect { relayEvent ->
+                    if (relayEvent.subscriptionId != subId) return@collect
+                    if (relayFeedGeneration != currentGen) return@collect
+                    val event = relayEvent.event
+                    if (event.kind == 0 && seenPubkeys.add(event.pubkey)) {
+                        val profile = ProfileData.fromEvent(event)
+                        if (profile != null) {
+                            profileRepo.updateFromEvent(event)
+                            collected.add(profile)
+                            _trendingUsers.value = collected.toList()
+                            if (collected.size == 1) {
+                                _relayFeedStatus.value = RelayFeedStatus.Streaming
+                            }
+                        }
+                    }
+                }
+            }
+
+            subManager.awaitEoseCount(subId, 1)
+            collectJob.cancel()
+
+            if (collected.isEmpty()) {
+                _relayFeedStatus.value = RelayFeedStatus.NoEvents
+            } else {
+                _relayFeedStatus.value = RelayFeedStatus.Streaming
+            }
+            _trendingUsersLoading.value = false
         }
     }
 
@@ -829,6 +948,9 @@ class FeedSubscriptionManager(
         _selectedRelaySet.value = null
         _trendingMetric.value = TrendingMetric.REACTIONS
         _trendingTimeframe.value = TrendingTimeframe.TODAY
+        _trendingMode.value = TrendingMode.NOTES
+        _trendingUsers.value = emptyList()
+        _trendingUsersLoading.value = false
         isLoadingMore = false
     }
 }

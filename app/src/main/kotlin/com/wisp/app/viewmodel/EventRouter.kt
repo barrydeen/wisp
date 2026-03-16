@@ -346,6 +346,10 @@ class EventRouter(
                 subscriptionId == "feed-backfill"
             val isRelayFeedSub = subscriptionId == relayFeedSubId ||
                 subscriptionId == "relay-loadmore"
+            if (isRelayFeedSub && subscriptionId.startsWith("trending-users-")) {
+                // Kind 0 events collected directly by subscribeTrendingUsers() — skip feed routing
+                return
+            }
             if (isRelayFeedSub) {
                 eventRepo.cacheEvent(event)
                 if (getIsTrendingFeed()) {

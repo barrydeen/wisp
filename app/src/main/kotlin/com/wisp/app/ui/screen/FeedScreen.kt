@@ -93,14 +93,25 @@ import com.wisp.app.viewmodel.InitLoadingState
 import com.wisp.app.viewmodel.PowStatus
 import com.wisp.app.viewmodel.RelayFeedStatus
 import com.wisp.app.viewmodel.TrendingMetric
+import com.wisp.app.viewmodel.TrendingMode
 import com.wisp.app.viewmodel.TrendingTimeframe
 import com.wisp.app.viewmodel.buildTrendingRelayUrl
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
+import com.wisp.app.nostr.ProfileData
+import com.wisp.app.ui.component.FollowButton
+import com.wisp.app.viewmodel.TRENDING_USERS_RELAY_URL
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -170,6 +181,9 @@ fun FeedScreen(
     val selectedList by viewModel.selectedList.collectAsState()
     val trendingMetric by viewModel.trendingMetric.collectAsState()
     val trendingTimeframe by viewModel.trendingTimeframe.collectAsState()
+    val trendingMode by viewModel.trendingMode.collectAsState()
+    val trendingUsers by viewModel.trendingUsers.collectAsState()
+    val trendingUsersLoading by viewModel.trendingUsersLoading.collectAsState()
     // Jump to top only when feed type, selected list, selected relay, or trending filters actually change
     // (not on recomposition after back-navigation from thread/compose)
     var prevFeedType by rememberSaveable { mutableStateOf(feedType.name) }
@@ -178,22 +192,25 @@ fun FeedScreen(
     var prevSelectedRelaySet by rememberSaveable { mutableStateOf(selectedRelaySet?.name) }
     var prevTrendingMetric by rememberSaveable { mutableStateOf(trendingMetric.name) }
     var prevTrendingTimeframe by rememberSaveable { mutableStateOf(trendingTimeframe.name) }
+    var prevTrendingMode by rememberSaveable { mutableStateOf(trendingMode.name) }
 
-    LaunchedEffect(feedType, selectedList, selectedRelay, selectedRelaySet, trendingMetric, trendingTimeframe) {
+    LaunchedEffect(feedType, selectedList, selectedRelay, selectedRelaySet, trendingMetric, trendingTimeframe, trendingMode) {
         val feedTypeChanged = feedType.name != prevFeedType
         val listChanged = selectedList?.dTag != prevSelectedListId
         val relayChanged = selectedRelay != prevSelectedRelay
         val relaySetChanged = selectedRelaySet?.name != prevSelectedRelaySet
         val metricChanged = trendingMetric.name != prevTrendingMetric
         val timeframeChanged = trendingTimeframe.name != prevTrendingTimeframe
+        val modeChanged = trendingMode.name != prevTrendingMode
 
-        if (feedTypeChanged || listChanged || relayChanged || relaySetChanged || metricChanged || timeframeChanged) {
+        if (feedTypeChanged || listChanged || relayChanged || relaySetChanged || metricChanged || timeframeChanged || modeChanged) {
             prevFeedType = feedType.name
             prevSelectedListId = selectedList?.dTag
             prevSelectedRelay = selectedRelay
             prevSelectedRelaySet = selectedRelaySet?.name
             prevTrendingMetric = trendingMetric.name
             prevTrendingTimeframe = trendingTimeframe.name
+            prevTrendingMode = trendingMode.name
             listState.scrollToItem(0)
         }
     }
@@ -727,14 +744,27 @@ fun FeedScreen(
                 TrendingFilterBar(
                     metric = trendingMetric,
                     timeframe = trendingTimeframe,
+                    mode = trendingMode,
                     onMetricChange = { viewModel.setTrendingMetric(it) },
-                    onTimeframeChange = { viewModel.setTrendingTimeframe(it) }
+                    onTimeframeChange = { viewModel.setTrendingTimeframe(it) },
+                    onModeChange = { viewModel.setTrendingMode(it) }
                 )
             }
             Box(
                 modifier = Modifier.fillMaxSize()
             ) {
-                if (feed.isEmpty()) {
+                if (feedType == FeedType.TRENDING && trendingMode == TrendingMode.USERS) {
+                    TrendingUsersContent(
+                        users = trendingUsers,
+                        isLoading = trendingUsersLoading,
+                        relayFeedStatus = relayFeedStatus,
+                        contactRepo = viewModel.contactRepo,
+                        onProfileClick = onProfileClick,
+                        onToggleFollow = { viewModel.toggleFollow(it) },
+                        onFollowAll = { viewModel.followAll(it) },
+                        onRetry = { viewModel.setTrendingMode(TrendingMode.USERS) }
+                    )
+                } else if (feed.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -1879,8 +1909,10 @@ private fun NewNotesButton(
 private fun TrendingFilterBar(
     metric: TrendingMetric,
     timeframe: TrendingTimeframe,
+    mode: TrendingMode,
     onMetricChange: (TrendingMetric) -> Unit,
-    onTimeframeChange: (TrendingTimeframe) -> Unit
+    onTimeframeChange: (TrendingTimeframe) -> Unit,
+    onModeChange: (TrendingMode) -> Unit
 ) {
     val metricIcon = @Composable { m: TrendingMetric ->
         when (m) {
@@ -1902,9 +1934,31 @@ private fun TrendingFilterBar(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                FilterChip(
+                    selected = mode == TrendingMode.USERS,
+                    onClick = { onModeChange(TrendingMode.USERS) },
+                    label = { Icon(Icons.Outlined.Person, contentDescription = "People", modifier = Modifier.size(16.dp)) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                        selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                )
+                // Vertical divider
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(20.dp)
+                        .padding(vertical = 2.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    ) {}
+                }
                 TrendingMetric.entries.forEach { m ->
                     FilterChip(
-                        selected = m == metric,
+                        selected = mode == TrendingMode.NOTES && m == metric,
                         onClick = { onMetricChange(m) },
                         label = { metricIcon(m) },
                         colors = FilterChipDefaults.filterChipColors(
@@ -1915,50 +1969,191 @@ private fun TrendingFilterBar(
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                Box {
-                    Surface(
-                        onClick = { showTimeframeDropdown = true },
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                AnimatedVisibility(visible = mode == TrendingMode.NOTES) {
+                    Box {
+                        Surface(
+                            onClick = { showTimeframeDropdown = true },
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant
                         ) {
-                            Text(
-                                timeframe.label,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.width(2.dp))
-                            Icon(
-                                Icons.Default.ArrowDropDown,
-                                contentDescription = "Change timeframe",
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    timeframe.label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.width(2.dp))
+                                Icon(
+                                    Icons.Default.ArrowDropDown,
+                                    contentDescription = "Change timeframe",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
-                    }
-                    DropdownMenu(
-                        expanded = showTimeframeDropdown,
-                        onDismissRequest = { showTimeframeDropdown = false }
-                    ) {
-                        TrendingTimeframe.entries.forEach { t ->
-                            DropdownMenuItem(
-                                text = { Text(t.label) },
-                                onClick = {
-                                    showTimeframeDropdown = false
-                                    onTimeframeChange(t)
-                                },
-                                trailingIcon = if (t == timeframe) {{
-                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                                }} else null
-                            )
+                        DropdownMenu(
+                            expanded = showTimeframeDropdown,
+                            onDismissRequest = { showTimeframeDropdown = false }
+                        ) {
+                            TrendingTimeframe.entries.forEach { t ->
+                                DropdownMenuItem(
+                                    text = { Text(t.label) },
+                                    onClick = {
+                                        showTimeframeDropdown = false
+                                        onTimeframeChange(t)
+                                    },
+                                    trailingIcon = if (t == timeframe) {{
+                                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    }} else null
+                                )
+                            }
                         }
                     }
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+        }
+    }
+}
+
+@Composable
+private fun TrendingUsersContent(
+    users: List<ProfileData>,
+    isLoading: Boolean,
+    relayFeedStatus: RelayFeedStatus,
+    contactRepo: com.wisp.app.repo.ContactRepository,
+    onProfileClick: (String) -> Unit,
+    onToggleFollow: (String) -> Unit,
+    onFollowAll: (Set<String>) -> Unit,
+    onRetry: () -> Unit
+) {
+    if (isLoading && users.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        }
+        return
+    }
+
+    if (users.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            RelayFeedEmptyState(
+                status = relayFeedStatus,
+                relayUrl = TRENDING_USERS_RELAY_URL,
+                onRetry = onRetry
+            )
+        }
+        return
+    }
+
+    val followList by contactRepo.followList.collectAsState()
+    val followingPubkeys = remember(followList) {
+        followList.map { it.pubkey }.toSet()
+    }
+    val unfollowedPubkeys = remember(users, followingPubkeys) {
+        users.map { it.pubkey }.filter { it !in followingPubkeys }.toSet()
+    }
+
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Up & Coming",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (unfollowedPubkeys.isNotEmpty()) {
+                    FilledTonalButton(
+                        onClick = { onFollowAll(unfollowedPubkeys) }
+                    ) {
+                        Text("Follow All (${unfollowedPubkeys.size})")
+                    }
+                }
+            }
+        }
+
+        itemsIndexed(
+            items = users,
+            key = { _, profile -> profile.pubkey }
+        ) { index, profile ->
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn(tween(300, delayMillis = index * 50)) +
+                        slideInVertically(tween(300, delayMillis = index * 50)) { it / 2 }
+            ) {
+                val isFollowing = profile.pubkey in followingPubkeys
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .clickable { onProfileClick(profile.pubkey) },
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ProfilePicture(
+                            url = profile.picture,
+                            size = 56,
+                            onClick = { onProfileClick(profile.pubkey) }
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                profile.displayString,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (!profile.nip05.isNullOrBlank()) {
+                                Text(
+                                    profile.nip05,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (!profile.about.isNullOrBlank()) {
+                                Text(
+                                    profile.about,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        FollowButton(
+                            isFollowing = isFollowing,
+                            onClick = { onToggleFollow(profile.pubkey) }
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            Spacer(Modifier.height(80.dp).navigationBarsPadding())
         }
     }
 }
