@@ -45,6 +45,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import com.wisp.app.ui.component.HapticHelper
 import com.wisp.app.ui.component.NotifBlipSound
+import com.wisp.app.ui.component.BottomTab
 import com.wisp.app.ui.component.WispBottomBar
 import com.wisp.app.ui.component.ZapDialog
 import com.wisp.app.ui.component.AuthApprovalDialog
@@ -486,6 +487,7 @@ fun WispNavHost(
                         if (currentRoute == tab.route) {
                             scrollToTopTrigger++
                         } else {
+                            if (tab == BottomTab.WALLET) walletViewModel.navigateHome()
                             navController.navigate(tab.route) {
                                 popUpTo(Routes.FEED) { inclusive = false }
                                 launchSingleTop = true
