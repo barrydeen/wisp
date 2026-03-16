@@ -2000,13 +2000,13 @@ private fun WalletModeSelectionContent(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Spark Wallet",
+                "Create a New Wallet",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "Non-custodial Lightning wallet built into the app. No external wallet needed.",
+                "Create a new wallet directly in Wisp, funds are secured by Spark providers",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
