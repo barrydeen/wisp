@@ -92,6 +92,7 @@ import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.ui.component.MentionOutputTransformation
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
+import com.wisp.app.ui.theme.WispThemeColors
 import com.wisp.app.viewmodel.ComposeViewModel
 import com.wisp.app.viewmodel.PowManager
 import com.wisp.app.viewmodel.PowStatus
@@ -423,7 +424,7 @@ fun ComposeScreen(
                         Icon(
                             Icons.Outlined.Shield,
                             contentDescription = "Proof of Work",
-                            tint = if (powEnabled) Color(0xFFFF9800)
+                            tint = if (powEnabled) WispThemeColors.zapColor
                                    else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }

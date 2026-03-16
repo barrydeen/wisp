@@ -74,6 +74,7 @@ import com.wisp.app.repo.ZapDetail
 import com.wisp.app.repo.Nip05Status
 import com.wisp.app.repo.TranslationState
 import com.wisp.app.repo.TranslationStatus
+import com.wisp.app.ui.theme.WispThemeColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -904,7 +905,7 @@ private fun TopZapperBanner(
     message: String,
     onClick: () -> Unit
 ) {
-    val orange = Color(0xFFFF9800)
+    val orange = WispThemeColors.zapColor
 
     Row(
         modifier = Modifier

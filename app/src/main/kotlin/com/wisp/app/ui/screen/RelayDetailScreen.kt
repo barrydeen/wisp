@@ -50,6 +50,7 @@ import com.wisp.app.nostr.ProfileData
 import com.wisp.app.nostr.RelaySet
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RelayIcon
+import com.wisp.app.ui.theme.WispThemeColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -264,7 +265,7 @@ private fun RelayHeader(
                 }
             }
             if (info?.paymentRequired == true) {
-                StatusBadge("Paid", Color(0xFFFFD54F))
+                StatusBadge("Paid", WispThemeColors.paidColor)
             }
             if (info?.authRequired == true) {
                 StatusBadge("Auth Required", Color(0xFF90CAF9))
@@ -537,7 +538,7 @@ private fun StatsGrid(stats: RelayHealthTracker.RelayStats) {
             )
             StatCard(
                 "Rate Limits", stats.totalRateLimits.toString(), Modifier.weight(1f),
-                valueColor = if (stats.totalRateLimits > 0) Color(0xFFFFD54F) else null
+                valueColor = if (stats.totalRateLimits > 0) WispThemeColors.paidColor else null
             )
         }
 

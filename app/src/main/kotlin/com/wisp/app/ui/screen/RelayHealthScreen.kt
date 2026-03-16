@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RelayIcon
+import com.wisp.app.ui.theme.WispThemeColors
 import com.wisp.app.viewmodel.HealthFilter
 import com.wisp.app.viewmodel.HealthSortMode
 import com.wisp.app.viewmodel.RelayHealthSummary
@@ -248,8 +249,8 @@ private fun RelayHealthItem(
                     shape = CircleShape,
                     color = when {
                         relay.isBad -> Color(0xFFFF5252)
-                        relay.cooldownRemaining > 0 -> Color(0xFFFFD54F)
-                        relay.isConnected -> Color(0xFF81C784)
+                        relay.cooldownRemaining > 0 -> WispThemeColors.paidColor
+                        relay.isConnected -> WispThemeColors.repostColor
                         else -> MaterialTheme.colorScheme.outline
                     },
                     modifier = Modifier
@@ -335,13 +336,13 @@ private fun RelayHealthItem(
                     Spacer(Modifier.height(2.dp))
                     Surface(
                         shape = RoundedCornerShape(4.dp),
-                        color = Color(0xFFFFD54F).copy(alpha = 0.15f)
+                        color = WispThemeColors.paidColor.copy(alpha = 0.15f)
                     ) {
                         Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
                             Text(
                                 "Cooldown ${relay.cooldownRemaining}s",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFFFFD54F)
+                                color = WispThemeColors.paidColor
                             )
                             if (relay.cooldownReason != null) {
                                 Text(
@@ -380,7 +381,7 @@ private fun RelayHealthItem(
                             Text(
                                 text = "${relay.stats.totalRateLimits} rate limits",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFFFFD54F)
+                                color = WispThemeColors.paidColor
                             )
                         }
                     }
@@ -392,7 +393,7 @@ private fun RelayHealthItem(
                     val total = relay.sessionHistory.size
                     val healthColor = when {
                         okSessions.toFloat() / total < 0.5f -> Color(0xFFFF5252)
-                        okSessions.toFloat() / total < 0.8f -> Color(0xFFFFD54F)
+                        okSessions.toFloat() / total < 0.8f -> WispThemeColors.paidColor
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     }
                     Text(

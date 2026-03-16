@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import com.wisp.app.ui.theme.WispThemeColors
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -46,6 +47,9 @@ fun ZapBurstEffect(
 
     var bolts by remember { mutableStateOf<List<MiniBolt>>(emptyList()) }
     val progress = remember { Animatable(0f) }
+
+    val paidColor = WispThemeColors.paidColor
+    val zapColor = WispThemeColors.zapColor
 
     if (!isActive && progress.value <= 0f) return
 
@@ -72,7 +76,7 @@ fun ZapBurstEffect(
         val cy = size.height / 2f
 
         for (bolt in bolts) {
-            drawMiniBolt(bolt, cx, cy, extension, alpha)
+            drawMiniBolt(bolt, cx, cy, extension, alpha, paidColor, zapColor)
         }
     }
 }
@@ -104,7 +108,9 @@ private fun DrawScope.drawMiniBolt(
     cx: Float,
     cy: Float,
     extension: Float,
-    alpha: Float
+    alpha: Float,
+    paidColor: Color,
+    zapColor: Color
 ) {
     val startR = 14f * density
     val endR = startR + bolt.length * density * extension
@@ -136,13 +142,13 @@ private fun DrawScope.drawMiniBolt(
 
     drawPath(
         path = path,
-        color = Color(0xFFFFD54F).copy(alpha = alpha * 0.4f),
+        color = paidColor.copy(alpha = alpha * 0.4f),
         style = Stroke(width = bolt.width * density * 3f, cap = StrokeCap.Round)
     )
 
     drawPath(
         path = path,
-        color = Color(0xFFFF9800).copy(alpha = alpha * 0.7f),
+        color = zapColor.copy(alpha = alpha * 0.7f),
         style = Stroke(width = bolt.width * density * 1.5f, cap = StrokeCap.Round)
     )
 

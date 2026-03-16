@@ -80,6 +80,7 @@ import com.wisp.app.repo.TranslationRepository
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.StackedAvatarRow
+import com.wisp.app.ui.theme.WispThemeColors
 import com.wisp.app.viewmodel.NotificationFilter
 import com.wisp.app.viewmodel.NotificationsViewModel
 import java.text.SimpleDateFormat
@@ -609,7 +610,7 @@ private fun ReactionGroupRow(
                         modifier = Modifier
                             .size(24.dp)
                             .padding(top = 6.dp),
-                        tint = Color(0xFF4CAF50)
+                        tint = WispThemeColors.repostColor
                     )
                     Spacer(Modifier.width(8.dp))
                     StackedAvatarRow(

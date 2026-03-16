@@ -36,6 +36,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.wisp.app.R
+import com.wisp.app.ui.theme.WispThemeColors
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -92,7 +93,7 @@ private fun HighlightedProfilePicture(
         label = "glow"
     )
 
-    val orange = Color(0xFFFF9800)
+    val orange = WispThemeColors.bookmarkColor
     val glowSpread = (size * 0.2f).coerceIn(5f, 10f)
 
     Box(
