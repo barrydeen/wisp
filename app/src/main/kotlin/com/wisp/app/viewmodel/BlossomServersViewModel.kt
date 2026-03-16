@@ -69,6 +69,14 @@ class BlossomServersViewModel(app: Application) : AndroidViewModel(app) {
         blossomRepo.saveBlossomServers(current)
     }
 
+    fun moveServer(from: Int, to: Int) {
+        val current = servers.value.toMutableList()
+        if (from !in current.indices || to !in current.indices) return
+        val item = current.removeAt(from)
+        current.add(to, item)
+        blossomRepo.saveBlossomServers(current)
+    }
+
     fun publishServerList(relayPool: RelayPool, signer: NostrSigner? = null) {
         val s = signer ?: keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) } ?: return
         val tags = Blossom.buildServerListTags(servers.value)
