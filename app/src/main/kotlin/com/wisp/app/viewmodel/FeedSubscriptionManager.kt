@@ -21,6 +21,7 @@ import com.wisp.app.repo.MetadataFetcher
 import com.wisp.app.repo.NotificationRepository
 import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.nostr.Nip57
+import com.wisp.app.nostr.Nip88
 import com.wisp.app.nostr.RelaySet
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -892,6 +893,24 @@ class FeedSubscriptionManager(
                 activeEngagementSubIds.add(dmSubId)
                 val zapFilter = Filter(kinds = listOf(9735), eTags = myEventIds)
                 relayPool.sendToDmRelays(ClientMessage.req(dmSubId, zapFilter))
+            }
+        }
+
+        // Subscribe for poll vote responses on read relays + safety net.
+        // Voters publish kind 1018 to their own write relays, which may not overlap
+        // with the poll author's inbox relays queried by the general engagement sub.
+        val pollEventIds = feedEvents.filter { it.kind == Nip88.KIND_POLL }.map { it.id }
+        if (pollEventIds.isNotEmpty()) {
+            val pollSubId = "engage-poll-votes"
+            activeEngagementSubIds.add(pollSubId)
+            val pollFilters = pollEventIds.chunked(OutboxRouter.MAX_ETAGS_PER_FILTER).map { chunk ->
+                Filter(kinds = listOf(Nip88.KIND_POLL_RESPONSE), eTags = chunk)
+            }
+            val msg = if (pollFilters.size == 1) ClientMessage.req(pollSubId, pollFilters[0])
+            else ClientMessage.req(pollSubId, pollFilters)
+            relayPool.sendToReadRelays(msg)
+            for (url in safetyNet) {
+                relayPool.sendToRelayOrEphemeral(url, msg)
             }
         }
     }
