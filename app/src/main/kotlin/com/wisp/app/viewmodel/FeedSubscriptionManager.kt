@@ -896,8 +896,8 @@ class FeedSubscriptionManager(
             }
         }
 
-        // Subscribe for poll vote responses per NIP-88: query the relays
-        // specified in each poll event's relay tags, plus read relays as fallback.
+        // Subscribe for poll vote responses: cast a wide net since voters
+        // publish to their own write relays which could be anywhere.
         val pollEvents = feedEvents.filter { it.kind == Nip88.KIND_POLL }
         if (pollEvents.isNotEmpty()) {
             val pollEventIds = pollEvents.map { it.id }
@@ -908,20 +908,19 @@ class FeedSubscriptionManager(
             }
             val msg = if (pollFilters.size == 1) ClientMessage.req(pollSubId, pollFilters[0])
             else ClientMessage.req(pollSubId, pollFilters)
-            // Query poll-specified relays (where voters are told to publish)
-            val pollRelayUrls = mutableSetOf<String>()
+            // Send to ALL persistent relays for broadest coverage — poll votes
+            // can come from any user on any relay, unlike reactions which cluster
+            // on the post author's inbox relays.
+            relayPool.sendToAllRelays(msg)
+            // Also query poll-specified relays and safety net via ephemeral connections
+            val sentUrls = relayPool.getReadRelayUrls().toSet() + relayPool.getWriteRelayUrls().toSet()
             for (poll in pollEvents) {
-                pollRelayUrls.addAll(Nip88.parsePollRelays(poll))
-            }
-            for (url in pollRelayUrls) {
-                relayPool.sendToRelayOrEphemeral(url, msg)
-            }
-            // Also query our read relays and safety net as fallback
-            relayPool.sendToReadRelays(msg)
-            for (url in safetyNet) {
-                if (url !in pollRelayUrls) {
-                    relayPool.sendToRelayOrEphemeral(url, msg)
+                for (url in Nip88.parsePollRelays(poll)) {
+                    if (url !in sentUrls) relayPool.sendToRelayOrEphemeral(url, msg)
                 }
+            }
+            for (url in safetyNet) {
+                if (url !in sentUrls) relayPool.sendToRelayOrEphemeral(url, msg)
             }
         }
     }
