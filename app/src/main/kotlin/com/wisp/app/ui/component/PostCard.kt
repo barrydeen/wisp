@@ -850,18 +850,22 @@ private fun PollResultRow(
     )
     val barColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
 
+    val fillHeight = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val density = LocalDensity.current
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            .onGloballyPositioned { fillHeight.intValue = it.size.height }
     ) {
         // Filled bar — primary color for all options
         Box(
             modifier = Modifier
-                .fillMaxWidth(fraction = animatedFraction)
-                .matchParentSize()
+                .fillMaxWidth(fraction = if (animatedFraction > 0f) animatedFraction else 0.001f)
+                .height(with(density) { fillHeight.intValue.toDp() })
                 .background(color = barColor)
         )
         Row(
