@@ -424,7 +424,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         val eventKind: Int
         if (_pollEnabled.value) {
             val nonBlankOptions = _pollOptions.value
-                .map { label -> Nip88.PollOption(Nip88.generateOptionId(), label.trim()) }
+                .mapIndexed { i, label -> Nip88.PollOption(i.toString(), label.trim()) }
                 .filter { it.label.isNotBlank() }
             if (nonBlankOptions.size < 2) {
                 _error.value = "Poll needs at least 2 options"
