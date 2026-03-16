@@ -46,6 +46,7 @@ import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.ZapDetail
+import com.wisp.app.ui.theme.WispThemeColors
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -234,7 +235,7 @@ fun ReactionDetailsSection(
                     Icons.Outlined.Repeat,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
-                    tint = Color(0xFF4CAF50)
+                    tint = WispThemeColors.repostColor
                 )
                 Spacer(Modifier.width(8.dp))
                 StackedAvatarRow(

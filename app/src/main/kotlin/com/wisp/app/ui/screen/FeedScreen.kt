@@ -105,6 +105,7 @@ import com.wisp.app.viewmodel.buildTrendingRelayUrl
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.itemsIndexed
+import com.wisp.app.ui.theme.WispThemeColors
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
@@ -681,13 +682,14 @@ fun FeedScreen(
                                     Box(
                                         modifier = Modifier.size(8.dp),
                                         contentAlignment = Alignment.Center
-                                    ) {
+                                        ) {
+                                        val repostColor = WispThemeColors.repostColor
                                         androidx.compose.foundation.Canvas(
                                             modifier = Modifier.size(8.dp)
                                         ) {
                                             drawCircle(
                                                 color = if (connectedCount > 0)
-                                                    androidx.compose.ui.graphics.Color(0xFF4CAF50)
+                                                    repostColor
                                                 else
                                                     androidx.compose.ui.graphics.Color(0xFFFF5252)
                                             )
@@ -2333,12 +2335,12 @@ private fun RelayFeedBar(
     var newSetName by remember { mutableStateOf("") }
 
     val statusColor = when (relayFeedStatus) {
-        is RelayFeedStatus.Streaming -> androidx.compose.ui.graphics.Color(0xFF4CAF50)
-        is RelayFeedStatus.Connecting, is RelayFeedStatus.Subscribing -> androidx.compose.ui.graphics.Color(0xFFFFC107)
+        is RelayFeedStatus.Streaming -> WispThemeColors.repostColor
+        is RelayFeedStatus.Connecting, is RelayFeedStatus.Subscribing -> WispThemeColors.paidColor
         is RelayFeedStatus.Disconnected, is RelayFeedStatus.ConnectionFailed,
         is RelayFeedStatus.TimedOut -> androidx.compose.ui.graphics.Color(0xFFFF5252)
         is RelayFeedStatus.RateLimited, is RelayFeedStatus.BadRelay,
-        is RelayFeedStatus.Cooldown -> androidx.compose.ui.graphics.Color(0xFFFF9800)
+        is RelayFeedStatus.Cooldown -> WispThemeColors.zapColor
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
@@ -2511,8 +2513,8 @@ private fun RelaySetFeedBar(
     relayFeedStatus: RelayFeedStatus
 ) {
     val statusColor = when (relayFeedStatus) {
-        is RelayFeedStatus.Streaming -> androidx.compose.ui.graphics.Color(0xFF4CAF50)
-        is RelayFeedStatus.Connecting, is RelayFeedStatus.Subscribing -> androidx.compose.ui.graphics.Color(0xFFFFC107)
+        is RelayFeedStatus.Streaming -> WispThemeColors.repostColor
+        is RelayFeedStatus.Connecting, is RelayFeedStatus.Subscribing -> WispThemeColors.paidColor
         is RelayFeedStatus.Disconnected, is RelayFeedStatus.ConnectionFailed,
         is RelayFeedStatus.TimedOut -> androidx.compose.ui.graphics.Color(0xFFFF5252)
         else -> MaterialTheme.colorScheme.onSurfaceVariant

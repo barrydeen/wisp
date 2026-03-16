@@ -16,7 +16,11 @@ object Themes {
                 onBackground = Color(0xFFE0E0E0),
                 onSurface = Color(0xFFE0E0E0),
                 onSurfaceVariant = Color(0xFF9998A0),
-                outline = Color(0xFF343338)
+                outline = Color(0xFF343338),
+                zapColor = Color(0xFFFF9800),
+                repostColor = Color(0xFF4CAF50),
+                bookmarkColor = Color(0xFFFF9800),
+                paidColor = Color(0xFFFFD54F)
             ),
             light = ThemeColors(
                 primary = Color(0xFFCC7000),
@@ -27,7 +31,11 @@ object Themes {
                 onBackground = Color(0xFF1C1B1F),
                 onSurface = Color(0xFF1C1B1F),
                 onSurfaceVariant = Color(0xFF333333),
-                outline = Color(0xFF999999)
+                outline = Color(0xFF999999),
+                zapColor = Color(0xFFB85C00),
+                repostColor = Color(0xFF2E7D32),
+                bookmarkColor = Color(0xFFB85C00),
+                paidColor = Color(0xFFC9A000)
             )
         ),
         ThemePreset(
@@ -42,7 +50,11 @@ object Themes {
                 onBackground = Color(0xFFD8DEE9),
                 onSurface = Color(0xFFD8DEE9),
                 onSurfaceVariant = Color(0xFFECEFF4),
-                outline = Color(0xFF4C566A)
+                outline = Color(0xFF4C566A),
+                zapColor = Color(0xFFEBcb8b),
+                repostColor = Color(0xFFA3BE8C),
+                bookmarkColor = Color(0xFFEBcb8b),
+                paidColor = Color(0xFFEBcb8b)
             ),
             light = ThemeColors(
                 primary = Color(0xFF456085),
@@ -53,7 +65,11 @@ object Themes {
                 onBackground = Color(0xFF2E3440),
                 onSurface = Color(0xFF2E3440),
                 onSurfaceVariant = Color(0xFF2E3440),
-                outline = Color(0xFF8A96A8)
+                outline = Color(0xFF8A96A8),
+                zapColor = Color(0xFFB5862E),
+                repostColor = Color(0xFF5B7A3A),
+                bookmarkColor = Color(0xFFB5862E),
+                paidColor = Color(0xFFB5862E)
             )
         ),
         ThemePreset(
@@ -68,7 +84,11 @@ object Themes {
                 onBackground = Color(0xFFF8F8F2),
                 onSurface = Color(0xFFF8F8F2),
                 onSurfaceVariant = Color(0xFFB4B8D8),
-                outline = Color(0xFF4A4D6E)
+                outline = Color(0xFF4A4D6E),
+                zapColor = Color(0xFFFFB86C),
+                repostColor = Color(0xFF50FA7B),
+                bookmarkColor = Color(0xFFFFB86C),
+                paidColor = Color(0xFFF1FA8C)
             ),
             light = ThemeColors(
                 primary = Color(0xFF9A70C8),
@@ -79,7 +99,11 @@ object Themes {
                 onBackground = Color(0xFF282A36),
                 onSurface = Color(0xFF282A36),
                 onSurfaceVariant = Color(0xFF333340),
-                outline = Color(0xFF9E9E98)
+                outline = Color(0xFF9E9E98),
+                zapColor = Color(0xFFD4894A),
+                repostColor = Color(0xFF2E8A4A),
+                bookmarkColor = Color(0xFFD4894A),
+                paidColor = Color(0xFFC9B000)
             )
         ),
         ThemePreset(
@@ -94,7 +118,11 @@ object Themes {
                 onBackground = Color(0xFFEBDBB2),
                 onSurface = Color(0xFFEBDBB2),
                 onSurfaceVariant = Color(0xFFA89984),
-                outline = Color(0xFF665C54)
+                outline = Color(0xFF665C54),
+                zapColor = Color(0xFFFE8019),
+                repostColor = Color(0xFF8EC07C),
+                bookmarkColor = Color(0xFFFE8019),
+                paidColor = Color(0xFFD79921)
             ),
             light = ThemeColors(
                 primary = Color(0xFF991815),
@@ -105,7 +133,11 @@ object Themes {
                 onBackground = Color(0xFF3C3836),
                 onSurface = Color(0xFF3C3836),
                 onSurfaceVariant = Color(0xFF504038),
-                outline = Color(0xFFA89880)
+                outline = Color(0xFFA89880),
+                zapColor = Color(0xFFB85A10),
+                repostColor = Color(0xFF5B8A3A),
+                bookmarkColor = Color(0xFFB85A10),
+                paidColor = Color(0xFFA07000)
             )
         ),
         ThemePreset(
@@ -120,7 +152,11 @@ object Themes {
                 onBackground = Color(0xFFE0DEF4),
                 onSurface = Color(0xFFE0DEF4),
                 onSurfaceVariant = Color(0xFF6E6A86),
-                outline = Color(0xFF44475A)
+                outline = Color(0xFF44475A),
+                zapColor = Color(0xFFF6C177),
+                repostColor = Color(0xFFEBBCBA),
+                bookmarkColor = Color(0xFFF6C177),
+                paidColor = Color(0xFFF6C177)
             ),
             light = ThemeColors(
                 primary = Color(0xFFB04540),
@@ -131,7 +167,11 @@ object Themes {
                 onBackground = Color(0xFF57534E),
                 onSurface = Color(0xFF57534E),
                 onSurfaceVariant = Color(0xFF4A4540),
-                outline = Color(0xFFADA8A0)
+                outline = Color(0xFFADA8A0),
+                zapColor = Color(0xFFB85A30),
+                repostColor = Color(0xFF9C6A6A),
+                bookmarkColor = Color(0xFFB85A30),
+                paidColor = Color(0xFFA07030)
             )
         ),
         ThemePreset(
@@ -146,7 +186,11 @@ object Themes {
                 onBackground = Color(0xFFCDD6F4),
                 onSurface = Color(0xFFCDD6F4),
                 onSurfaceVariant = Color(0xFFBAC2DE),
-                outline = Color(0xFF585B70)
+                outline = Color(0xFF585B70),
+                zapColor = Color(0xFFFAB387),
+                repostColor = Color(0xFFA6E3A1),
+                bookmarkColor = Color(0xFFFAB387),
+                paidColor = Color(0xFFF9E2AF)
             ),
             light = ThemeColors(
                 primary = Color(0xFF1848C0),
@@ -157,7 +201,11 @@ object Themes {
                 onBackground = Color(0xFF4C4F69),
                 onSurface = Color(0xFF4C4F69),
                 onSurfaceVariant = Color(0xFF3C4058),
-                outline = Color(0xFF9498A8)
+                outline = Color(0xFF9498A8),
+                zapColor = Color(0xFFCB7030),
+                repostColor = Color(0xFF3A7A40),
+                bookmarkColor = Color(0xFFCB7030),
+                paidColor = Color(0xFFA09000)
             )
         ),
         ThemePreset(
@@ -172,7 +220,11 @@ object Themes {
                 onBackground = Color(0xFFD3C6AA),
                 onSurface = Color(0xFFD3C6AA),
                 onSurfaceVariant = Color(0xFF9DA9A0),
-                outline = Color(0xFF414B50)
+                outline = Color(0xFF414B50),
+                zapColor = Color(0xFFE69875),
+                repostColor = Color(0xFFA7C080),
+                bookmarkColor = Color(0xFFE69875),
+                paidColor = Color(0xFFDBBC7F)
             ),
             light = ThemeColors(
                 primary = Color(0xFF6A7800),
@@ -183,7 +235,11 @@ object Themes {
                 onBackground = Color(0xFF4F5B62),
                 onSurface = Color(0xFF4F5B62),
                 onSurfaceVariant = Color(0xFF404A50),
-                outline = Color(0xFF959088)
+                outline = Color(0xFF959088),
+                zapColor = Color(0xFFB07850),
+                repostColor = Color(0xFF5A7A3A),
+                bookmarkColor = Color(0xFFB07850),
+                paidColor = Color(0xFF908030)
             )
         ),
         ThemePreset(
@@ -198,7 +254,11 @@ object Themes {
                 onBackground = Color(0xFFB0B8C4),
                 onSurface = Color(0xFFB0B8C4),
                 onSurfaceVariant = Color(0xFF9DA5B4),
-                outline = Color(0xFF4B5263)
+                outline = Color(0xFF4B5263),
+                zapColor = Color(0xFFE5C07B),
+                repostColor = Color(0xFF98C379),
+                bookmarkColor = Color(0xFFE5C07B),
+                paidColor = Color(0xFFE5C07B)
             ),
             light = ThemeColors(
                 primary = Color(0xFF4A80B8),
@@ -209,7 +269,11 @@ object Themes {
                 onBackground = Color(0xFF282C34),
                 onSurface = Color(0xFF282C34),
                 onSurfaceVariant = Color(0xFF323640),
-                outline = Color(0xFFA0A0A0)
+                outline = Color(0xFFA0A0A0),
+                zapColor = Color(0xFFB5862E),
+                repostColor = Color(0xFF5B8A3A),
+                bookmarkColor = Color(0xFFB5862E),
+                paidColor = Color(0xFFA09000)
             )
         ),
         ThemePreset(
@@ -224,7 +288,11 @@ object Themes {
                 onBackground = Color(0xFFC0CAF5),
                 onSurface = Color(0xFFC0CAF5),
                 onSurfaceVariant = Color(0xFFA9B1D6),
-                outline = Color(0xFF365A77)
+                outline = Color(0xFF365A77),
+                zapColor = Color(0xFFE0AF68),
+                repostColor = Color(0xFF9ECE6A),
+                bookmarkColor = Color(0xFFE0AF68),
+                paidColor = Color(0xFFE0AF68)
             ),
             light = ThemeColors(
                 primary = Color(0xFF2090B0),
@@ -235,7 +303,11 @@ object Themes {
                 onBackground = Color(0xFF1A1B26),
                 onSurface = Color(0xFF1A1B26),
                 onSurfaceVariant = Color(0xFF2A2C40),
-                outline = Color(0xFF9094A8)
+                outline = Color(0xFF9094A8),
+                zapColor = Color(0xFFB07030),
+                repostColor = Color(0xFF4A7A3A),
+                bookmarkColor = Color(0xFFB07030),
+                paidColor = Color(0xFF907030)
             )
         ),
         ThemePreset(
@@ -250,7 +322,11 @@ object Themes {
                 onBackground = Color(0xFFE5C7A9),
                 onSurface = Color(0xFFE5C7A9),
                 onSurfaceVariant = Color(0xFFA89880),
-                outline = Color(0xFF4A4540)
+                outline = Color(0xFF4A4540),
+                zapColor = Color(0xFFF5AE2E),
+                repostColor = Color(0xFF6B8E4E),
+                bookmarkColor = Color(0xFFF5AE2E),
+                paidColor = Color(0xFFF5AE2E)
             ),
             light = ThemeColors(
                 primary = Color(0xFF4A6B38),
@@ -261,7 +337,11 @@ object Themes {
                 onBackground = Color(0xFF2A2420),
                 onSurface = Color(0xFF2A2420),
                 onSurfaceVariant = Color(0xFF4A4030),
-                outline = Color(0xFF908880)
+                outline = Color(0xFF908880),
+                zapColor = Color(0xFF8B6914),
+                repostColor = Color(0xFF4A6B38),
+                bookmarkColor = Color(0xFF8B6914),
+                paidColor = Color(0xFF8B6914)
             )
         ),
         ThemePreset(
@@ -276,7 +356,11 @@ object Themes {
                 onBackground = Color(0xFFC7C8FF),
                 onSurface = Color(0xFFC7C8FF),
                 onSurfaceVariant = Color(0xFF9AA0C0),
-                outline = Color(0xFF404858)
+                outline = Color(0xFF404858),
+                zapColor = Color(0xFFDD92F6),
+                repostColor = Color(0xFF8CE8FF),
+                bookmarkColor = Color(0xFFDD92F6),
+                paidColor = Color(0xFFF0E080)
             ),
             light = ThemeColors(
                 primary = Color(0xFF285088),
@@ -287,7 +371,11 @@ object Themes {
                 onBackground = Color(0xFF1E2030),
                 onSurface = Color(0xFF1E2030),
                 onSurfaceVariant = Color(0xFF383848),
-                outline = Color(0xFF8890A0)
+                outline = Color(0xFF8890A0),
+                zapColor = Color(0xFF8040A0),
+                repostColor = Color(0xFF3060A0),
+                bookmarkColor = Color(0xFF8040A0),
+                paidColor = Color(0xFF707090)
             )
         ),
         ThemePreset(
@@ -302,7 +390,11 @@ object Themes {
                 onBackground = Color(0xFFBAA67F),
                 onSurface = Color(0xFFBAA67F),
                 onSurfaceVariant = Color(0xFF918175),
-                outline = Color(0xFF3A3A3A)
+                outline = Color(0xFF3A3A3A),
+                zapColor = Color(0xFFFF5F00),
+                repostColor = Color(0xFF519F50),
+                bookmarkColor = Color(0xFFFF5F00),
+                paidColor = Color(0xFFFBC00)
             ),
             light = ThemeColors(
                 primary = Color(0xFF225A9A),
@@ -313,7 +405,11 @@ object Themes {
                 onBackground = Color(0xFF1C1B19),
                 onSurface = Color(0xFF1C1B19),
                 onSurfaceVariant = Color(0xFF5A5548),
-                outline = Color(0xFF989088)
+                outline = Color(0xFF989088),
+                zapColor = Color(0xFFB84800),
+                repostColor = Color(0xFF407A40),
+                bookmarkColor = Color(0xFFB84800),
+                paidColor = Color(0xFFA08000)
             )
         ),
         ThemePreset(
@@ -328,7 +424,11 @@ object Themes {
                 onBackground = Color(0xFFC8C8D0),
                 onSurface = Color(0xFFC8C8D0),
                 onSurfaceVariant = Color(0xFF9090A8),
-                outline = Color(0xFF484868)
+                outline = Color(0xFF484868),
+                zapColor = Color(0xFFFF9E3B),
+                repostColor = Color(0xFF8F9E8B),
+                bookmarkColor = Color(0xFFFF9E3B),
+                paidColor = Color(0xFFFF9E3B)
             ),
             light = ThemeColors(
                 primary = Color(0xFFB27018),
@@ -339,7 +439,11 @@ object Themes {
                 onBackground = Color(0xFF2A2838),
                 onSurface = Color(0xFF2A2838),
                 onSurfaceVariant = Color(0xFF4A4858),
-                outline = Color(0xFFA0A0A8)
+                outline = Color(0xFFA0A0A8),
+                zapColor = Color(0xFFA85A18),
+                repostColor = Color(0xFF4A7050),
+                bookmarkColor = Color(0xFFA85A18),
+                paidColor = Color(0xFF908030)
             )
         ),
         ThemePreset(
@@ -354,7 +458,11 @@ object Themes {
                 onBackground = Color(0xFFB8B0A0),
                 onSurface = Color(0xFFA8A090),
                 onSurfaceVariant = Color(0xFF787068),
-                outline = Color(0xFF484440)
+                outline = Color(0xFF484440),
+                zapColor = Color(0xFFE07850),
+                repostColor = Color(0xFFB87860),
+                bookmarkColor = Color(0xFFE07850),
+                paidColor = Color(0xFFF5AE2E)
             ),
             light = ThemeColors(
                 primary = Color(0xFFB05830),
@@ -365,7 +473,11 @@ object Themes {
                 onBackground = Color(0xFF38342C),
                 onSurface = Color(0xFF38342C),
                 onSurfaceVariant = Color(0xFF58544C),
-                outline = Color(0xFF908880)
+                outline = Color(0xFF908880),
+                zapColor = Color(0xFF904820),
+                repostColor = Color(0xFF5A4030),
+                bookmarkColor = Color(0xFF904820),
+                paidColor = Color(0xFF785020)
             )
         ),
         ThemePreset(
@@ -380,7 +492,11 @@ object Themes {
                 onBackground = Color(0xFFB8B4A8),
                 onSurface = Color(0xFFA8A498),
                 onSurfaceVariant = Color(0xFF787068),
-                outline = Color(0xFF4A4840)
+                outline = Color(0xFF4A4840),
+                zapColor = Color(0xFFCD9766),
+                repostColor = Color(0xFF8ABF78),
+                bookmarkColor = Color(0xFFCD9766),
+                paidColor = Color(0xFFE5C07B)
             ),
             light = ThemeColors(
                 primary = Color(0xFF5A8A4A),
@@ -391,7 +507,11 @@ object Themes {
                 onBackground = Color(0xFF38342C),
                 onSurface = Color(0xFF38342C),
                 onSurfaceVariant = Color(0xFF58544C),
-                outline = Color(0xFF908880)
+                outline = Color(0xFF908880),
+                zapColor = Color(0xFF705020),
+                repostColor = Color(0xFF4A6A3A),
+                bookmarkColor = Color(0xFF705020),
+                paidColor = Color(0xFF806010)
             )
         ),
         ThemePreset(
@@ -406,7 +526,11 @@ object Themes {
                 onBackground = Color(0xFFD4E5D4),
                 onSurface = Color(0xFFD4E5D4),
                 onSurfaceVariant = Color(0xFF9CB09C),
-                outline = Color(0xFF404D44)
+                outline = Color(0xFF404D44),
+                zapColor = Color(0xFF50C878),
+                repostColor = Color(0xFF98FB98),
+                bookmarkColor = Color(0xFF50C878),
+                paidColor = Color(0xFFF0E080)
             ),
             light = ThemeColors(
                 primary = Color(0xFF2E8B57),
@@ -417,7 +541,11 @@ object Themes {
                 onBackground = Color(0xFF1A2A1C),
                 onSurface = Color(0xFF1A2A1C),
                 onSurfaceVariant = Color(0xFF2A3A2C),
-                outline = Color(0xFF889888)
+                outline = Color(0xFF889888),
+                zapColor = Color(0xFF2E8B57),
+                repostColor = Color(0xFF3CB371),
+                bookmarkColor = Color(0xFF2E8B57),
+                paidColor = Color(0xFF807010)
             )
         ),
         ThemePreset(
@@ -432,7 +560,11 @@ object Themes {
                 onBackground = Color(0xFFE0D8F0),
                 onSurface = Color(0xFFE0D8F0),
                 onSurfaceVariant = Color(0xFFA898C0),
-                outline = Color(0xFF444058)
+                outline = Color(0xFF444058),
+                zapColor = Color(0xFFBB88DD),
+                repostColor = Color(0xFFDA70D6),
+                bookmarkColor = Color(0xFFBB88DD),
+                paidColor = Color(0xFFF0E080)
             ),
             light = ThemeColors(
                 primary = Color(0xFF7B4BA8),
@@ -443,7 +575,11 @@ object Themes {
                 onBackground = Color(0xFF2A2838),
                 onSurface = Color(0xFF2A2838),
                 onSurfaceVariant = Color(0xFF3A3848),
-                outline = Color(0xFF9890A8)
+                outline = Color(0xFF9890A8),
+                zapColor = Color(0xFF9040A0),
+                repostColor = Color(0xFF6A4A8A),
+                bookmarkColor = Color(0xFF9040A0),
+                paidColor = Color(0xFF7850A0)
             )
         ),
         ThemePreset(
@@ -458,7 +594,11 @@ object Themes {
                 onBackground = Color(0xFFF0D8E0),
                 onSurface = Color(0xFFF0D8E0),
                 onSurfaceVariant = Color(0xFFB898A0),
-                outline = Color(0xFF4A3840)
+                outline = Color(0xFF4A3840),
+                zapColor = Color(0xFFFF6B6B),
+                repostColor = Color(0xFFFF6B6B),
+                bookmarkColor = Color(0xFFFF6B6B),
+                paidColor = Color(0xFFF0E080)
             ),
             light = ThemeColors(
                 primary = Color(0xFFB00B3A),
@@ -469,7 +609,11 @@ object Themes {
                 onBackground = Color(0xFF2A1820),
                 onSurface = Color(0xFF2A1820),
                 onSurfaceVariant = Color(0xFF4A2838),
-                outline = Color(0xFF9890A0)
+                outline = Color(0xFF9890A0),
+                zapColor = Color(0xFFB00B3A),
+                repostColor = Color(0xFF8B3A5A),
+                bookmarkColor = Color(0xFFB00B3A),
+                paidColor = Color(0xFF805060)
             )
         )
     )
@@ -494,5 +638,9 @@ data class ThemeColors(
     val onBackground: Color,
     val onSurface: Color,
     val onSurfaceVariant: Color,
-    val outline: Color
+    val outline: Color,
+    val zapColor: Color,
+    val repostColor: Color,
+    val bookmarkColor: Color,
+    val paidColor: Color
 )

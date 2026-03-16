@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.platform.LocalContext
+import com.wisp.app.ui.theme.WispThemeColors
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.cos
@@ -47,6 +48,8 @@ fun IcqFlowerBurstEffect(
     var petalCount by remember { mutableStateOf(8) }
     val progress = remember { Animatable(0f) }
     val rotation = remember { Animatable(0f) }
+
+    val repostColor = WispThemeColors.repostColor
 
     if (!isActive && progress.value <= 0f) return
 
@@ -80,7 +83,7 @@ fun IcqFlowerBurstEffect(
         val cx = size.width / 2f
         val cy = size.height / 2f
 
-        drawIcqFlower(cx, cy, scale, alpha, rot, petalCount)
+        drawIcqFlower(cx, cy, scale, alpha, rot, petalCount, repostColor)
     }
 }
 
@@ -90,7 +93,8 @@ private fun DrawScope.drawIcqFlower(
     scale: Float,
     alpha: Float,
     rotationDeg: Float,
-    petalCount: Int
+    petalCount: Int,
+    repostColor: Color
 ) {
     val petalLength = 24f * density * scale
     val petalWidth = 10f * density * scale
@@ -99,7 +103,7 @@ private fun DrawScope.drawIcqFlower(
     // Draw petals
     for (i in 0 until petalCount) {
         val baseAngle = (2f * Math.PI.toFloat() * i / petalCount) + rotRad
-        drawPetal(cx, cy, baseAngle, petalLength, petalWidth, alpha)
+        drawPetal(cx, cy, baseAngle, petalLength, petalWidth, alpha, repostColor)
     }
 
     // Center circle
@@ -122,7 +126,8 @@ private fun DrawScope.drawPetal(
     angle: Float,
     length: Float,
     width: Float,
-    alpha: Float
+    alpha: Float,
+    repostColor: Color
 ) {
     val cosA = cos(angle)
     val sinA = sin(angle)
@@ -160,7 +165,7 @@ private fun DrawScope.drawPetal(
     // Outer glow
     drawPath(
         path = path,
-        color = Color(0xFF4CAF50).copy(alpha = alpha * 0.3f),
+        color = repostColor.copy(alpha = alpha * 0.3f),
         style = Fill
     )
 

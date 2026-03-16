@@ -44,6 +44,7 @@ import com.wisp.app.nostr.ProfileData
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.ui.component.FollowButton
 import com.wisp.app.ui.component.ProfilePicture
+import com.wisp.app.ui.theme.WispThemeColors
 import com.wisp.app.viewmodel.CommunityViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,7 +65,7 @@ fun CommunityScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Community")
                         Spacer(Modifier.width(8.dp))
-                        PulsingDot()
+                        LiveIndicator()
                         Spacer(Modifier.width(4.dp))
                         Text(
                             "Posting now",
@@ -188,22 +189,23 @@ private fun ProfileCard(
 }
 
 @Composable
-private fun PulsingDot() {
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
+private fun LiveIndicator() {
+    val transition = rememberInfiniteTransition(label = "live")
+    val alpha by transition.animateFloat(
+        initialValue = 0.4f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1000),
+            animation = tween(600),
             repeatMode = RepeatMode.Reverse
         ),
         label = "pulseAlpha"
     )
+    val repostColor = WispThemeColors.repostColor
     Canvas(
         modifier = Modifier
             .size(8.dp)
             .alpha(alpha)
     ) {
-        drawCircle(color = Color(0xFF4CAF50))
+        drawCircle(color = repostColor)
     }
 }

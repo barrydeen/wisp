@@ -5,6 +5,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -12,6 +13,29 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.ColorUtils
+
+val LocalWispColors = androidx.compose.runtime.staticCompositionLocalOf {
+    WispColors(
+        zapColor = Color.Unspecified,
+        repostColor = Color.Unspecified,
+        bookmarkColor = Color.Unspecified,
+        paidColor = Color.Unspecified
+    )
+}
+
+data class WispColors(
+    val zapColor: Color,
+    val repostColor: Color,
+    val bookmarkColor: Color,
+    val paidColor: Color
+)
+
+object WispThemeColors {
+    val zapColor: Color @Composable get() = LocalWispColors.current.zapColor
+    val repostColor: Color @Composable get() = LocalWispColors.current.repostColor
+    val bookmarkColor: Color @Composable get() = LocalWispColors.current.bookmarkColor
+    val paidColor: Color @Composable get() = LocalWispColors.current.paidColor
+}
 
 private val WispTypography = Typography(
     titleLarge = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold),
@@ -113,9 +137,49 @@ fun WispTheme(
         }
     }
 
+    val wispColors = if (isDarkTheme) {
+        if (isCustomTheme) {
+            WispColors(
+                zapColor = accentColor,
+                repostColor = Color(0xFF4CAF50),
+                bookmarkColor = accentColor,
+                paidColor = Color(0xFFFFD54F)
+            )
+        } else {
+            val colors = themePreset.dark
+            WispColors(
+                zapColor = colors.zapColor,
+                repostColor = colors.repostColor,
+                bookmarkColor = colors.bookmarkColor,
+                paidColor = colors.paidColor
+            )
+        }
+    } else {
+        if (isCustomTheme) {
+            WispColors(
+                zapColor = Color(0xFFB85C00),
+                repostColor = Color(0xFF2E7D32),
+                bookmarkColor = Color(0xFFB85C00),
+                paidColor = Color(0xFFC9A000)
+            )
+        } else {
+            val colors = themePreset.light
+            WispColors(
+                zapColor = colors.zapColor,
+                repostColor = colors.repostColor,
+                bookmarkColor = colors.bookmarkColor,
+                paidColor = colors.paidColor
+            )
+        }
+    }
+
     MaterialTheme(
         colorScheme = colorScheme,
         typography = if (isLargeText) WispTypographyLarge else WispTypography,
-        content = content
+        content = {
+            CompositionLocalProvider(LocalWispColors provides wispColors) {
+                content()
+            }
+        }
     )
 }

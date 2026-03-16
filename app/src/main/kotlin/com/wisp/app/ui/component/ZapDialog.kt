@@ -75,6 +75,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.wisp.app.repo.ZapPreferences
 import com.wisp.app.repo.ZapPreset
+import com.wisp.app.ui.theme.WispThemeColors
 import kotlin.math.sin
 import kotlin.random.Random
 
