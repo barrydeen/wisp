@@ -842,6 +842,9 @@ fun WispNavHost(
             val profileListedIds = remember(profileSetListedIds, profileBookmarkedIds) { profileSetListedIds + profileBookmarkedIds }
             val profilePinnedIds by if (isOwnProfile) feedViewModel.pinRepo.pinnedIds.collectAsState() else userProfileViewModel.pinnedNoteIds.collectAsState()
             val profileZapInProgress by feedViewModel.zapInProgress.collectAsState()
+            val profileResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
+            val profileUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+            var showProfileEmojiLibrary by remember { mutableStateOf(false) }
             UserProfileScreen(
                 viewModel = userProfileViewModel,
                 contactRepo = feedViewModel.contactRepo,
@@ -906,8 +909,20 @@ fun WispNavHost(
                 onArticleClick = { kind, articleAuthor, articleDTag ->
                     navController.navigate("article/$kind/$articleAuthor/${java.net.URLEncoder.encode(articleDTag, "UTF-8")}")
                 },
-                onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) }
+                onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
+                resolvedEmojis = profileResolvedEmojis,
+                unicodeEmojis = profileUnicodeEmojis,
+                onOpenEmojiLibrary = { showProfileEmojiLibrary = true }
             )
+            if (showProfileEmojiLibrary) {
+                com.wisp.app.ui.component.EmojiLibrarySheet(
+                    currentEmojis = profileUnicodeEmojis,
+                    onAddEmojis = { emojis ->
+                        emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                    },
+                    onDismiss = { showProfileEmojiLibrary = false }
+                )
+            }
         }
 
         composable(Routes.SEARCH) {

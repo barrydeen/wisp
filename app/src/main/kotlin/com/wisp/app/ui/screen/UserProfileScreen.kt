@@ -145,7 +145,10 @@ fun UserProfileScreen(
     signer: com.wisp.app.nostr.NostrSigner? = null,
     translationRepo: TranslationRepository? = null,
     onArticleClick: ((Int, String, String) -> Unit)? = null,
-    onPollVote: (String, List<String>) -> Unit = { _, _ -> }
+    onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    resolvedEmojis: Map<String, String> = emptyMap(),
+    unicodeEmojis: List<String> = emptyList(),
+    onOpenEmojiLibrary: (() -> Unit)? = null
 ) {
     val profile by viewModel.profile.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()
@@ -472,7 +475,10 @@ fun UserProfileScreen(
                                 pollVoteCounts = pinnedPollVoteCounts,
                                 pollTotalVotes = pinnedPollTotalVotes,
                                 userPollVotes = pinnedUserPollVotes,
-                                onPollVote = { optionIds -> onPollVote(event.id, optionIds) }
+                                onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                                resolvedEmojis = resolvedEmojis,
+                                unicodeEmojis = unicodeEmojis,
+                                onOpenEmojiLibrary = onOpenEmojiLibrary
                             )
                         }
                     }
@@ -568,7 +574,10 @@ fun UserProfileScreen(
                                 pollVoteCounts = rootPollVoteCounts,
                                 pollTotalVotes = rootPollTotalVotes,
                                 userPollVotes = rootUserPollVotes,
-                                onPollVote = { optionIds -> onPollVote(event.id, optionIds) }
+                                onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                                resolvedEmojis = resolvedEmojis,
+                                unicodeEmojis = unicodeEmojis,
+                                onOpenEmojiLibrary = onOpenEmojiLibrary
                             )
                         }
                         if (rootNotes.isNotEmpty()) {
@@ -657,7 +666,10 @@ fun UserProfileScreen(
                                 pollVoteCounts = replyPollVoteCounts,
                                 pollTotalVotes = replyPollTotalVotes,
                                 userPollVotes = replyUserPollVotes,
-                                onPollVote = { optionIds -> onPollVote(event.id, optionIds) }
+                                onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                                resolvedEmojis = resolvedEmojis,
+                                unicodeEmojis = unicodeEmojis,
+                                onOpenEmojiLibrary = onOpenEmojiLibrary
                             )
                         }
                         item {
