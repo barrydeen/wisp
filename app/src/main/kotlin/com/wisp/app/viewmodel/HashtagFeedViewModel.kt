@@ -95,6 +95,7 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
                         if (event.kind == 1 && event.id !in seenIds) {
                             seenIds.add(event.id)
                             eventRepo.cacheEvent(event)
+                            eventRepo.requestProfileIfMissing(event.pubkey)
                             val current = _notes.value.toMutableList()
                             current.add(event)
                             current.sortByDescending { it.created_at }
@@ -129,6 +130,12 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
                 relayPool.eoseSignals.first { it == currentNoteSub }
             }
             _isLoading.value = false
+
+            // Fetch profiles for all note authors
+            for (note in _notes.value) {
+                eventRepo.requestProfileIfMissing(note.pubkey)
+            }
+
             subscribeEngagement(relayPool, eventRepo)
 
             // Keep collecting for another 10s then clean up

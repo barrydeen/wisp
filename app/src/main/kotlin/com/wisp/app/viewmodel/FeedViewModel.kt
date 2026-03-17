@@ -515,6 +515,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     private val _interestSetsFetched = MutableStateFlow(false)
     val interestSetsFetched: StateFlow<Boolean> = _interestSetsFetched
 
+    private val _hashtagPickerRequested = MutableStateFlow(false)
+    val hashtagPickerRequested: StateFlow<Boolean> = _hashtagPickerRequested
+    fun requestHashtagPicker() { _hashtagPickerRequested.value = true }
+    fun clearHashtagPickerRequest() { _hashtagPickerRequested.value = false }
+
     /**
      * Fetch interest sets (kind 30015) from relays if none are cached locally.
      * Called when entering hashtag feed to ensure we have up-to-date data.

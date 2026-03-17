@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -242,7 +243,14 @@ fun FeedScreen(
     var showRelayPicker by remember { mutableStateOf(false) }
     var showListPicker by remember { mutableStateOf(false) }
     val interestSets by viewModel.interestRepo.sets.collectAsState()
+    val hashtagPickerRequested by viewModel.hashtagPickerRequested.collectAsState()
     var showHashtagPicker by remember { mutableStateOf(false) }
+    LaunchedEffect(hashtagPickerRequested) {
+        if (hashtagPickerRequested) {
+            showHashtagPicker = true
+            viewModel.clearHashtagPickerRequest()
+        }
+    }
     var showRelayDropdown by remember { mutableStateOf(false) }
     var showFeedTypeDropdown by remember { mutableStateOf(false) }
     var showSocialGraphDialog by remember { mutableStateOf(false) }
@@ -366,6 +374,7 @@ fun FeedScreen(
                 onViewSetFeed?.invoke(set)
             },
             onAddHashtag = { tag, dTag -> viewModel.followHashtag(tag, dTag) },
+            onRemoveHashtag = { tag, dTag -> viewModel.unfollowHashtag(tag, dTag) },
             onCreateSet = { name -> viewModel.createInterestSet(name) },
             onRenameSet = { dTag, name -> viewModel.renameInterestSet(dTag, name) },
             onDeleteSet = { dTag -> viewModel.deleteInterestSet(dTag) },
@@ -1707,6 +1716,7 @@ private fun HashtagPickerDialog(
     onSelectHashtag: (String) -> Unit,
     onViewSetFeed: (com.wisp.app.nostr.InterestSet) -> Unit,
     onAddHashtag: (tag: String, dTag: String) -> Unit,
+    onRemoveHashtag: (tag: String, dTag: String) -> Unit,
     onCreateSet: (String) -> Unit,
     onRenameSet: (String, String) -> Unit,
     onDeleteSet: (String) -> Unit,
@@ -1720,6 +1730,10 @@ private fun HashtagPickerDialog(
     var confirmDeleteDTag by remember { mutableStateOf<String?>(null) }
     var showNewSetField by remember { mutableStateOf(false) }
     val newSetFocusRequester = remember { FocusRequester() }
+    // First set always expanded by default
+    var expandedDTags by remember(sets.size) {
+        mutableStateOf(sets.firstOrNull()?.let { setOf(it.dTag) } ?: emptySet())
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1800,24 +1814,34 @@ private fun HashtagPickerDialog(
                                 }
                             }
                         } else {
+                            val isExpanded = set.dTag in expandedDTags
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                             ) {
+                                Icon(
+                                    if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.width(6.dp))
                                 Text(
                                     set.name,
-                                    style = MaterialTheme.typography.titleSmall,
+                                    style = MaterialTheme.typography.titleMedium,
                                     modifier = Modifier
                                         .weight(1f)
                                         .combinedClickable(
-                                            onClick = {},
+                                            onClick = {
+                                                expandedDTags = if (isExpanded) expandedDTags - set.dTag else expandedDTags + set.dTag
+                                            },
                                             onLongClick = {
                                                 renamingDTag = set.dTag
                                                 renameText = set.name
                                             }
                                         )
                                 )
-                                if (set.hashtags.isNotEmpty()) {
+                                if (isExpanded && set.hashtags.isNotEmpty()) {
                                     TextButton(
                                         onClick = { onViewSetFeed(set) },
                                         modifier = Modifier.heightIn(min = 32.dp),
@@ -1826,76 +1850,84 @@ private fun HashtagPickerDialog(
                                         Text("Feed", style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
-                                IconButton(
-                                    onClick = {
-                                        addingToDTag = if (addingToDTag == set.dTag) null else set.dTag
-                                        newHashtagText = ""
-                                    },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Add,
-                                        contentDescription = "Add hashtag",
-                                        modifier = Modifier.size(16.dp)
-                                    )
+                                if (isExpanded) {
+                                    IconButton(
+                                        onClick = {
+                                            addingToDTag = if (addingToDTag == set.dTag) null else set.dTag
+                                            newHashtagText = ""
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Add,
+                                            contentDescription = "Add hashtag",
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
-                        // Add hashtag input for this set
-                        if (addingToDTag == set.dTag) {
-                            val focusRequester = remember { FocusRequester() }
-                            LaunchedEffect(Unit) { focusRequester.requestFocus() }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp)
-                            ) {
-                                androidx.compose.material3.OutlinedTextField(
-                                    value = newHashtagText,
-                                    onValueChange = { newHashtagText = it },
-                                    placeholder = { Text("hashtag") },
-                                    singleLine = true,
-                                    modifier = Modifier.weight(1f).focusRequester(focusRequester)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                TextButton(
-                                    onClick = {
-                                        val cleaned = newHashtagText.trim().removePrefix("#").lowercase()
-                                        if (cleaned.isNotBlank()) {
-                                            onAddHashtag(cleaned, set.dTag)
-                                            newHashtagText = ""
-                                            addingToDTag = null
-                                        }
-                                    },
-                                    enabled = newHashtagText.trim().removePrefix("#").isNotBlank()
-                                ) { Text("Add") }
+                        val isExpanded = renamingDTag == set.dTag || set.dTag in expandedDTags
+                        if (isExpanded) {
+                            // Add hashtag input for this set
+                            if (addingToDTag == set.dTag) {
+                                val focusRequester = remember { FocusRequester() }
+                                LaunchedEffect(Unit) { focusRequester.requestFocus() }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp)
+                                ) {
+                                    androidx.compose.material3.OutlinedTextField(
+                                        value = newHashtagText,
+                                        onValueChange = { newHashtagText = it },
+                                        placeholder = { Text("hashtag") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f).focusRequester(focusRequester)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    TextButton(
+                                        onClick = {
+                                            val cleaned = newHashtagText.trim().removePrefix("#").lowercase()
+                                            if (cleaned.isNotBlank()) {
+                                                onAddHashtag(cleaned, set.dTag)
+                                                newHashtagText = ""
+                                                addingToDTag = null
+                                            }
+                                        },
+                                        enabled = newHashtagText.trim().removePrefix("#").isNotBlank()
+                                    ) { Text("Add") }
+                                }
                             }
-                        }
-                        // Hashtags in this set
-                        if (set.hashtags.isEmpty()) {
-                            Text(
-                                "No hashtags yet",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 12.dp, bottom = 4.dp)
-                            )
-                        } else {
-                            FlowRow(
-                                modifier = Modifier.padding(start = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                set.hashtags.sorted().forEach { tag ->
-                                    Surface(
-                                        onClick = { onSelectHashtag(tag) },
-                                        shape = RoundedCornerShape(16.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant
-                                    ) {
-                                        Text(
-                                            "#$tag",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                                        )
+                            // Hashtags in this set
+                            if (set.hashtags.isEmpty()) {
+                                Text(
+                                    "No hashtags yet",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 12.dp, bottom = 4.dp)
+                                )
+                            } else {
+                                FlowRow(
+                                    modifier = Modifier.padding(start = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    set.hashtags.sorted().forEach { tag ->
+                                        Surface(
+                                            shape = RoundedCornerShape(16.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant,
+                                            modifier = Modifier.combinedClickable(
+                                                onClick = { onSelectHashtag(tag) },
+                                                onLongClick = { onRemoveHashtag(tag, set.dTag) }
+                                            )
+                                        ) {
+                                            Text(
+                                                "#$tag",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }

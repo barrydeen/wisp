@@ -1245,6 +1245,10 @@ fun WispNavHost(
                 },
                 nip05Repo = feedViewModel.nip05Repo,
                 translationRepo = feedViewModel.translationRepo,
+                onHashtagPicker = {
+                    feedViewModel.requestHashtagPicker()
+                    navController.popBackStack()
+                },
                 onBack = { navController.popBackStack() },
                 onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) }
             )
@@ -1332,6 +1336,10 @@ fun WispNavHost(
                 },
                 nip05Repo = feedViewModel.nip05Repo,
                 translationRepo = feedViewModel.translationRepo,
+                onHashtagPicker = {
+                    feedViewModel.requestHashtagPicker()
+                    navController.popBackStack()
+                },
                 onBack = { navController.popBackStack() },
                 onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) }
             )
