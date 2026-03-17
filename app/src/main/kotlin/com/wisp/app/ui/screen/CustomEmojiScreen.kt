@@ -101,7 +101,10 @@ fun CustomEmojiScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showCreateSetDialog = true }) {
+            FloatingActionButton(
+                onClick = { showCreateSetDialog = true },
+                containerColor = MaterialTheme.colorScheme.primary
+            ) {
                 Icon(Icons.Default.Add, contentDescription = "Create Emoji Set")
             }
         }

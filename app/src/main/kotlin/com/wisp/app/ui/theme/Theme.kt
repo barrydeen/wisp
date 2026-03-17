@@ -103,9 +103,10 @@ fun WispTheme(
             )
         } else {
             val colors = themePreset.dark
+            val isCrt = themeEffect == ThemeEffect.CRT
             darkColorScheme(
                 primary = colors.primary,
-                onPrimary = Color.White,
+                onPrimary = if (isCrt) colors.outline else Color.White,
                 secondary = colors.secondary,
                 background = colors.background,
                 surface = colors.surface,

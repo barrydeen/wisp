@@ -485,7 +485,7 @@ object Themes {
                 onBackground = Color(0xFF00FF41),
                 onSurface = Color(0xFF00CC33),
                 onSurfaceVariant = Color(0xFF008F11),
-                outline = Color(0xFF333333)
+                outline = Color(0xFF006622)
             ),
             light = ThemeColors(
                 primary = Color(0xFF008F11),
@@ -512,7 +512,7 @@ object Themes {
                 onBackground = Color(0xFFFFB000),
                 onSurface = Color(0xFFFFB000),
                 onSurfaceVariant = Color(0xFFCC8C00),
-                outline = Color(0xFF3A2A00)
+                outline = Color(0xFF996600)
             ),
             light = ThemeColors(
                 primary = Color(0xFFCC8C00),
@@ -524,6 +524,33 @@ object Themes {
                 onSurface = Color(0xFF4A3000),
                 onSurfaceVariant = Color(0xFF5A4000),
                 outline = Color(0xFFA09070)
+            )
+        ),
+        ThemePreset(
+            name = "peagreen",
+            displayName = "Pea Green",
+            effect = ThemeEffect.CRT,
+            dark = ThemeColors(
+                primary = Color(0xFF9ACD32),
+                secondary = Color(0xFFB8E05C),
+                background = Color(0xFF1A2414),
+                surface = Color(0xFF24301A),
+                surfaceVariant = Color(0xFF2E3D20),
+                onBackground = Color(0xFFC8E06E),
+                onSurface = Color(0xFFD4E88A),
+                onSurfaceVariant = Color(0xFFB8D05A),
+                outline = Color(0xFF2A3A1A)
+            ),
+            light = ThemeColors(
+                primary = Color(0xFF6B8F2A),
+                secondary = Color(0xFF8AB340),
+                background = Color(0xFFE8F0D8),
+                surface = Color(0xFFDCE8C8),
+                surfaceVariant = Color(0xFFD0E0B8),
+                onBackground = Color(0xFF2A3A1A),
+                onSurface = Color(0xFF2A3A1A),
+                onSurfaceVariant = Color(0xFF3A4A20),
+                outline = Color(0xFFA8B890)
             )
         )
     )
