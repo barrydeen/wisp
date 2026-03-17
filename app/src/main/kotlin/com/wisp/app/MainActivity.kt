@@ -19,6 +19,8 @@ import com.wisp.app.repo.InterfacePreferences
 import com.wisp.app.ui.component.LocalMediaSettings
 import com.wisp.app.ui.component.MediaSettings
 import com.wisp.app.ui.theme.WispTheme
+import com.wisp.app.ui.theme.ThemeEffectOverlay
+import com.wisp.app.ui.theme.LocalThemeEffect
 
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

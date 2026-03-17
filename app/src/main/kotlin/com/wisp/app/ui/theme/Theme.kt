@@ -5,13 +5,20 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.Box
 import androidx.core.graphics.ColorUtils
+
+val LocalThemeEffect = androidx.compose.runtime.staticCompositionLocalOf { ThemeEffect.NONE }
 
 private val WispTypography = Typography(
     titleLarge = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold),
@@ -39,6 +46,32 @@ private fun lightenColor(color: Color, fraction: Float = 0.3f): Color {
     return Color(ColorUtils.HSLToColor(hsl))
 }
 
+private fun createGlowTypography(glowColor: Color): Typography {
+    val glow = Shadow(color = glowColor.copy(alpha = 0.6f), blurRadius = 8f, offset = androidx.compose.ui.geometry.Offset.Zero)
+    val glowStrong = Shadow(color = glowColor.copy(alpha = 0.8f), blurRadius = 12f, offset = androidx.compose.ui.geometry.Offset.Zero)
+    return Typography(
+        titleLarge = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold, shadow = glowStrong),
+        titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, shadow = glow),
+        bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 22.sp, shadow = glow),
+        bodyMedium = TextStyle(fontSize = 14.sp, shadow = glow),
+        bodySmall = TextStyle(fontSize = 12.sp, shadow = glow),
+        labelSmall = TextStyle(fontSize = 11.sp, shadow = glow)
+    )
+}
+
+private fun createGlowTypographyLarge(glowColor: Color): Typography {
+    val glow = Shadow(color = glowColor.copy(alpha = 0.6f), blurRadius = 8f, offset = androidx.compose.ui.geometry.Offset.Zero)
+    val glowStrong = Shadow(color = glowColor.copy(alpha = 0.8f), blurRadius = 12f, offset = androidx.compose.ui.geometry.Offset.Zero)
+    return Typography(
+        titleLarge = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, shadow = glowStrong),
+        titleMedium = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold, shadow = glow),
+        bodyLarge = TextStyle(fontSize = 17.sp, lineHeight = 24.sp, shadow = glow),
+        bodyMedium = TextStyle(fontSize = 16.sp, shadow = glow),
+        bodySmall = TextStyle(fontSize = 14.sp, shadow = glow),
+        labelSmall = TextStyle(fontSize = 13.sp, shadow = glow)
+    )
+}
+
 @Composable
 fun WispTheme(
     isDarkTheme: Boolean = true,
@@ -48,6 +81,7 @@ fun WispTheme(
     content: @Composable () -> Unit
 ) {
     val themePreset = remember(themeName) { Themes.getTheme(themeName) }
+    val themeEffect = remember(themeName) { Themes.getThemeEffect(themeName) }
     val isCustomTheme = themeName == "custom"
 
     val primary = if (isCustomTheme) accentColor else themePreset.dark.primary
@@ -113,9 +147,28 @@ fun WispTheme(
         }
     }
 
+    val typography = when {
+        themeEffect == ThemeEffect.CRT && isDarkTheme && isLargeText -> createGlowTypographyLarge(primary)
+        themeEffect == ThemeEffect.CRT && isDarkTheme -> createGlowTypography(primary)
+        isLargeText -> WispTypographyLarge
+        else -> WispTypography
+    }
+
+    val effectiveEffect = if (isDarkTheme) themeEffect else ThemeEffect.NONE
+
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = if (isLargeText) WispTypographyLarge else WispTypography,
-        content = content
+        typography = typography,
+        content = {
+            CompositionLocalProvider(LocalThemeEffect provides effectiveEffect) {
+                Box(modifier = Modifier) {
+                    content()
+                    ThemeEffectOverlay(
+                        effect = effectiveEffect,
+                        modifier = Modifier.align(Alignment.TopStart)
+                    )
+                }
+            }
+        }
     )
 }
