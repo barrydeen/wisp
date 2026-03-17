@@ -72,12 +72,17 @@ fun SatsNumpad(
                             FilledTonalButton(
                                 onClick = onBackspace,
                                 modifier = Modifier.size(72.dp),
-                                shape = CircleShape
+                                shape = CircleShape,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = MaterialTheme.colorScheme.onSurface
+                                )
                             ) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.Backspace,
                                     contentDescription = "Backspace",
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
@@ -99,11 +104,16 @@ fun SatsNumpad(
                             FilledTonalButton(
                                 onClick = { onDigit(key[0]) },
                                 modifier = Modifier.size(72.dp),
-                                shape = CircleShape
+                                shape = CircleShape,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = MaterialTheme.colorScheme.onSurface
+                                )
                             ) {
                                 Text(
                                     key,
-                                    style = MaterialTheme.typography.headlineSmall
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
