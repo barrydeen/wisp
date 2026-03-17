@@ -394,7 +394,7 @@ object Themes {
                 zapColor = Color(0xFFFF5F00),
                 repostColor = Color(0xFF519F50),
                 bookmarkColor = Color(0xFFFF5F00),
-                paidColor = Color(0xFFFBC00)
+                paidColor = Color(0xFFFBC000)
             ),
             light = ThemeColors(
                 primary = Color(0xFF225A9A),
