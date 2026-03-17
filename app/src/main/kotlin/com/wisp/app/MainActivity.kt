@@ -1,6 +1,7 @@
 package com.wisp.app
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.SystemBarStyle
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -23,10 +24,14 @@ import com.wisp.app.ui.theme.ThemeEffectOverlay
 import com.wisp.app.ui.theme.LocalThemeEffect
 
 class MainActivity : FragmentActivity() {
+    var deepLinkUri = mutableStateOf<String?>(null)
+        private set
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        deepLinkUri.value = intent?.data?.toString()
         setContent {
             val prefs = remember { getSharedPreferences("wisp_settings", Context.MODE_PRIVATE) }
             val interfacePrefs = remember { InterfacePreferences(this@MainActivity) }
@@ -59,6 +64,8 @@ class MainActivity : FragmentActivity() {
             WispTheme(isDarkTheme = isDarkTheme, accentColor = accentColor, isLargeText = isLargeText, themeName = themeName) {
                 CompositionLocalProvider(LocalMediaSettings provides mediaSettings) {
                     WispNavHost(
+                        deepLinkUri = deepLinkUri.value,
+                        onDeepLinkConsumed = { deepLinkUri.value = null },
                         isDarkTheme = isDarkTheme,
                         onToggleTheme = {
                             isDarkTheme = !isDarkTheme
@@ -79,5 +86,10 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        deepLinkUri.value = intent.data?.toString()
     }
 }

@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -62,10 +63,12 @@ fun HashtagFeedScreen(
     onCreateDefaultSet: () -> Unit = {},
     nip05Repo: Nip05Repository? = null,
     translationRepo: TranslationRepository? = null,
+    onHashtagPicker: () -> Unit = {},
     onBack: () -> Unit,
     onPollVote: (String, List<String>) -> Unit = { _, _ -> }
 ) {
     val hashtag by viewModel.hashtag.collectAsState()
+    val setName by viewModel.setName.collectAsState()
     val notes by viewModel.notes.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
 
@@ -86,7 +89,7 @@ fun HashtagFeedScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "#$hashtag",
+                        text = setName ?: "#$hashtag",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -97,6 +100,12 @@ fun HashtagFeedScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onHashtagPicker) {
+                        Icon(
+                            Icons.Outlined.Tag,
+                            contentDescription = "Hashtag picker"
+                        )
+                    }
                     if (userPubkey != null) {
                         if (!interestSetsLoaded && interestSets.isEmpty()) {
                             CircularProgressIndicator(
@@ -119,7 +128,8 @@ fun HashtagFeedScreen(
                             }) {
                                 Icon(
                                     if (isFollowing) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                    contentDescription = if (isFollowing) "Unfollow hashtag" else "Follow hashtag"
+                                    contentDescription = if (isFollowing) "Unfollow hashtag" else "Follow hashtag",
+                                    tint = MaterialTheme.colorScheme.primary
                                 )
                             }
                         }

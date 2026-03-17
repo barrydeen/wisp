@@ -43,6 +43,8 @@ fun PowSettingsScreen(
     var noteDifficulty by remember { mutableIntStateOf(powPrefs.getNoteDifficulty()) }
     var reactionEnabled by remember { mutableStateOf(powPrefs.isReactionPowEnabled()) }
     var reactionDifficulty by remember { mutableIntStateOf(powPrefs.getReactionDifficulty()) }
+    var dmEnabled by remember { mutableStateOf(powPrefs.isDmPowEnabled()) }
+    var dmDifficulty by remember { mutableIntStateOf(powPrefs.getDmDifficulty()) }
 
     Scaffold(
         topBar = {
@@ -150,6 +152,47 @@ fun PowSettingsScreen(
                     onValueChange = {
                         reactionDifficulty = it
                         powPrefs.setReactionDifficulty(it)
+                    }
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            // DMs section
+            Text(
+                text = "Direct Messages",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Enable PoW for DMs", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Mine proof of work on gift wraps before sending DMs",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = dmEnabled,
+                    onCheckedChange = {
+                        dmEnabled = it
+                        powPrefs.setDmPowEnabled(it)
+                    }
+                )
+            }
+            if (dmEnabled) {
+                Spacer(Modifier.height(12.dp))
+                DifficultySelector(
+                    label = "DM difficulty",
+                    value = dmDifficulty,
+                    onValueChange = {
+                        dmDifficulty = it
+                        powPrefs.setDmDifficulty(it)
                     }
                 )
             }
