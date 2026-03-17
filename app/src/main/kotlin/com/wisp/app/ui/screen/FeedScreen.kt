@@ -25,7 +25,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -67,6 +69,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.FollowSet
 import com.wisp.app.nostr.NostrEvent
@@ -356,6 +360,7 @@ fun FeedScreen(
                 showHashtagPicker = false
                 onHashtagClick?.invoke(tag)
             },
+            onAddHashtag = { tag, dTag -> viewModel.followHashtag(tag, dTag) },
             onCreateSet = { name -> viewModel.createInterestSet(name) },
             onRenameSet = { dTag, name -> viewModel.renameInterestSet(dTag, name) },
             onDeleteSet = { dTag -> viewModel.deleteInterestSet(dTag) },
@@ -1689,27 +1694,43 @@ private fun ListPickerDialog(
     )
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun HashtagPickerDialog(
     sets: List<com.wisp.app.nostr.InterestSet>,
     isLoading: Boolean = false,
     onSelectHashtag: (String) -> Unit,
+    onAddHashtag: (tag: String, dTag: String) -> Unit,
     onCreateSet: (String) -> Unit,
     onRenameSet: (String, String) -> Unit,
     onDeleteSet: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var newSetName by remember { mutableStateOf("") }
+    var addingToDTag by remember { mutableStateOf<String?>(null) }
+    var newHashtagText by remember { mutableStateOf("") }
     var renamingDTag by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
     var confirmDeleteDTag by remember { mutableStateOf<String?>(null) }
+    var showNewSetField by remember { mutableStateOf(false) }
+    val newSetFocusRequester = remember { FocusRequester() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Hashtags") },
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Hashtags")
+                TextButton(onClick = { showNewSetField = true }) {
+                    Text("New Set")
+                }
+            }
+        },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 if (isLoading) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
@@ -1733,6 +1754,8 @@ private fun HashtagPickerDialog(
                     sets.forEach { set ->
                         // Set header
                         if (renamingDTag == set.dTag) {
+                            val renameFocusRequester = remember { FocusRequester() }
+                            LaunchedEffect(Unit) { renameFocusRequester.requestFocus() }
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
@@ -1741,7 +1764,7 @@ private fun HashtagPickerDialog(
                                     value = renameText,
                                     onValueChange = { renameText = it },
                                     singleLine = true,
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f).focusRequester(renameFocusRequester)
                                 )
                                 TextButton(onClick = {
                                     if (renameText.isNotBlank()) {
@@ -1749,31 +1772,6 @@ private fun HashtagPickerDialog(
                                         renamingDTag = null
                                     }
                                 }) { Text("Save") }
-                                TextButton(onClick = { renamingDTag = null }) { Text("Cancel") }
-                            }
-                        } else {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                            ) {
-                                Text(
-                                    set.name,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(
-                                    onClick = {
-                                        renamingDTag = set.dTag
-                                        renameText = set.name
-                                    },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Edit,
-                                        contentDescription = "Rename",
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
                                 IconButton(
                                     onClick = { confirmDeleteDTag = set.dTag },
                                     modifier = Modifier.size(32.dp)
@@ -1784,6 +1782,67 @@ private fun HashtagPickerDialog(
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
+                            }
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                            ) {
+                                Text(
+                                    set.name,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .combinedClickable(
+                                            onClick = {},
+                                            onLongClick = {
+                                                renamingDTag = set.dTag
+                                                renameText = set.name
+                                            }
+                                        )
+                                )
+                                IconButton(
+                                    onClick = {
+                                        addingToDTag = if (addingToDTag == set.dTag) null else set.dTag
+                                        newHashtagText = ""
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Add,
+                                        contentDescription = "Add hashtag",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                        // Add hashtag input for this set
+                        if (addingToDTag == set.dTag) {
+                            val focusRequester = remember { FocusRequester() }
+                            LaunchedEffect(Unit) { focusRequester.requestFocus() }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp)
+                            ) {
+                                androidx.compose.material3.OutlinedTextField(
+                                    value = newHashtagText,
+                                    onValueChange = { newHashtagText = it },
+                                    placeholder = { Text("hashtag") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f).focusRequester(focusRequester)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                TextButton(
+                                    onClick = {
+                                        val cleaned = newHashtagText.trim().removePrefix("#").lowercase()
+                                        if (cleaned.isNotBlank()) {
+                                            onAddHashtag(cleaned, set.dTag)
+                                            newHashtagText = ""
+                                            addingToDTag = null
+                                        }
+                                    },
+                                    enabled = newHashtagText.trim().removePrefix("#").isNotBlank()
+                                ) { Text("Add") }
                             }
                         }
                         // Hashtags in this set
@@ -1797,8 +1856,8 @@ private fun HashtagPickerDialog(
                         } else {
                             FlowRow(
                                 modifier = Modifier.padding(start = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
                                 set.hashtags.sorted().forEach { tag ->
                                     Surface(
@@ -1819,6 +1878,9 @@ private fun HashtagPickerDialog(
                         Spacer(Modifier.size(8.dp))
                     }
                 }
+                if (showNewSetField) {
+                    LaunchedEffect(Unit) { newSetFocusRequester.requestFocus() }
+                }
                 Spacer(Modifier.size(4.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -1829,7 +1891,7 @@ private fun HashtagPickerDialog(
                         onValueChange = { newSetName = it },
                         placeholder = { Text("New set name") },
                         singleLine = true,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f).focusRequester(newSetFocusRequester)
                     )
                     Spacer(Modifier.width(8.dp))
                     TextButton(
@@ -1837,6 +1899,7 @@ private fun HashtagPickerDialog(
                             if (newSetName.isNotBlank()) {
                                 onCreateSet(newSetName.trim())
                                 newSetName = ""
+                                showNewSetField = false
                             }
                         },
                         enabled = newSetName.isNotBlank()
