@@ -34,6 +34,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
 import com.wisp.app.nostr.Nip10
+import com.wisp.app.nostr.Nip19
+import com.wisp.app.nostr.NostrUriData
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.RemoteSigner
@@ -145,6 +147,8 @@ object Routes {
 
 @Composable
 fun WispNavHost(
+    deepLinkUri: String? = null,
+    onDeepLinkConsumed: () -> Unit = {},
     isDarkTheme: Boolean = true,
     onToggleTheme: () -> Unit = {},
     accentColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color(0xFFFF9800),
@@ -329,6 +333,33 @@ fun WispNavHost(
     // Initialize notifications viewmodel with shared repos
     LaunchedEffect(Unit) {
         notificationsViewModel.init(feedViewModel.notifRepo, feedViewModel.eventRepo, feedViewModel.contactRepo)
+    }
+
+    // Resolve deep link URI to a navigation route
+    val deepLinkRoute = remember(deepLinkUri) {
+        val uri = deepLinkUri ?: return@remember null
+        val parsed = Nip19.decodeNostrUri(uri) ?: return@remember null
+        when (parsed) {
+            is NostrUriData.ProfileRef -> "profile/${parsed.pubkey}"
+            is NostrUriData.NoteRef -> "thread/${parsed.eventId}"
+            is NostrUriData.AddressRef -> {
+                if (parsed.kind == 30023 && parsed.author != null) {
+                    "article/${parsed.kind}/${parsed.author}/${parsed.dTag}"
+                } else null
+            }
+        }
+    }
+
+    // Handle deep links when app is already past loading (onNewIntent)
+    LaunchedEffect(deepLinkUri) {
+        val route = deepLinkRoute ?: return@LaunchedEffect
+        if (!authViewModel.isLoggedIn) return@LaunchedEffect
+        val currentDest = navController.currentDestination?.route
+        // Only navigate directly if we're past the loading/auth screens
+        if (currentDest != null && currentDest !in setOf(Routes.LOADING, Routes.AUTH, Routes.ONBOARDING_PROFILE)) {
+            onDeepLinkConsumed()
+            navController.navigate(route)
+        }
     }
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -564,8 +595,18 @@ fun WispNavHost(
             LoadingScreen(
                 viewModel = feedViewModel,
                 onReady = {
-                    navController.navigate(Routes.FEED) {
-                        popUpTo(Routes.LOADING) { inclusive = true }
+                    val target = deepLinkRoute
+                    if (target != null) {
+                        onDeepLinkConsumed()
+                        // Navigate to Feed first (as backstack root), then to the deep link target
+                        navController.navigate(Routes.FEED) {
+                            popUpTo(Routes.LOADING) { inclusive = true }
+                        }
+                        navController.navigate(target)
+                    } else {
+                        navController.navigate(Routes.FEED) {
+                            popUpTo(Routes.LOADING) { inclusive = true }
+                        }
                     }
                 }
             )
