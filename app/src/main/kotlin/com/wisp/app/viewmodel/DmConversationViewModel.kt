@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.DmMessage
 import com.wisp.app.nostr.Filter
+import com.wisp.app.nostr.Nip13
 import com.wisp.app.nostr.Nip17
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.NostrSigner
@@ -22,6 +23,7 @@ import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.BlossomRepository
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.KeyRepository
+import com.wisp.app.repo.PowPreferences
 import com.wisp.app.repo.RelayListRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,14 +71,19 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
     private val _pendingDecryptCount = MutableStateFlow(0)
     val pendingDecryptCount: StateFlow<Int> = _pendingDecryptCount
 
+    private val _miningStatus = MutableStateFlow<PowStatus>(PowStatus.Idle)
+    val miningStatus: StateFlow<PowStatus> = _miningStatus
+
     private var peerPubkey: String = ""
     private var dmRepo: DmRepository? = null
     private var relayListRepo: RelayListRepository? = null
+    private var powPrefs: PowPreferences? = null
 
-    fun init(peerPubkeyHex: String, dmRepository: DmRepository, relayListRepository: RelayListRepository? = null, relayPool: RelayPool? = null) {
+    fun init(peerPubkeyHex: String, dmRepository: DmRepository, relayListRepository: RelayListRepository? = null, relayPool: RelayPool? = null, powPreferences: PowPreferences? = null) {
         peerPubkey = peerPubkeyHex
         dmRepo = dmRepository
         relayListRepo = relayListRepository
+        powPrefs = powPreferences
         _messages.value = dmRepository.getConversation(peerPubkeyHex)
 
         // Expose user's own DM relays
@@ -320,10 +327,20 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                     val recipientDmRelays = fetchRecipientDmRelays(relayPool)
                     val deliveryRelays = resolveRecipientRelaysWithSource(recipientDmRelays, relayPool).urls
 
+                    val dmPowEnabled = powPrefs?.isDmPowEnabled() == true
+                    val dmDifficulty = if (dmPowEnabled) powPrefs?.getDmDifficulty() ?: 0 else 0
+                    if (dmDifficulty > 0) {
+                        _miningStatus.value = PowStatus.Mining(1059, 0, dmDifficulty)
+                    }
+
                     val recipientWrap = Nip17.createGiftWrapRemote(
                         signer = signer,
                         recipientPubkeyHex = peerPubkey,
-                        message = text
+                        message = text,
+                        targetDifficulty = dmDifficulty,
+                        onProgress = { attempts ->
+                            _miningStatus.value = PowStatus.Mining(1059, attempts, dmDifficulty)
+                        }
                     )
                     val recipientMsg = ClientMessage.event(recipientWrap)
                     val sentRelayUrls = sendToDeliveryRelays(relayPool, deliveryRelays, recipientMsg)
@@ -365,6 +382,7 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                     Log.w("DmConversation", "Send failed (remote signer)", e)
                 } finally {
                     _sending.value = false
+                    _miningStatus.value = PowStatus.Idle
                 }
             }
             return
@@ -384,11 +402,21 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                 val recipientDmRelays = fetchRecipientDmRelays(relayPool)
                 val deliveryRelays = resolveRecipientRelaysWithSource(recipientDmRelays, relayPool).urls
 
+                val dmPowEnabled = powPrefs?.isDmPowEnabled() == true
+                val dmDifficulty = if (dmPowEnabled) powPrefs?.getDmDifficulty() ?: 0 else 0
+                if (dmDifficulty > 0) {
+                    _miningStatus.value = PowStatus.Mining(1059, 0, dmDifficulty)
+                }
+
                 val recipientWrap = Nip17.createGiftWrap(
                     senderPrivkey = keypair.privkey,
                     senderPubkey = keypair.pubkey,
                     recipientPubkey = peerPubkey.hexToByteArray(),
-                    message = text
+                    message = text,
+                    targetDifficulty = dmDifficulty,
+                    onProgress = { attempts ->
+                        _miningStatus.value = PowStatus.Mining(1059, attempts, dmDifficulty)
+                    }
                 )
                 val recipientMsg = ClientMessage.event(recipientWrap)
                 val sentRelayUrls = sendToDeliveryRelays(relayPool, deliveryRelays, recipientMsg)
@@ -428,6 +456,7 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                 Log.w("DmConversation", "Send failed (local signer)", e)
             } finally {
                 _sending.value = false
+                _miningStatus.value = PowStatus.Idle
             }
         }
     }

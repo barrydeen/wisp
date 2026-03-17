@@ -983,7 +983,7 @@ fun WispNavHost(
             val dmConvoViewModel: DmConversationViewModel = viewModel()
             LaunchedEffect(pubkey) {
                 feedViewModel.refreshDmsAndNotifications()
-                dmConvoViewModel.init(pubkey, feedViewModel.dmRepo, feedViewModel.relayListRepo, feedViewModel.relayPool)
+                dmConvoViewModel.init(pubkey, feedViewModel.dmRepo, feedViewModel.relayListRepo, feedViewModel.relayPool, feedViewModel.powPrefs)
                 activeSigner?.let { dmConvoViewModel.decryptPending(it, feedViewModel.muteRepo) }
             }
             val peerProfile = feedViewModel.eventRepo.getProfileData(pubkey)

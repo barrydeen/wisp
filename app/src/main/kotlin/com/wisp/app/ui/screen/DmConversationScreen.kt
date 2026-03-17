@@ -66,6 +66,7 @@ import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.viewmodel.DeliveryRelaySource
 import com.wisp.app.viewmodel.DmConversationViewModel
+import com.wisp.app.viewmodel.PowStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,6 +93,7 @@ fun DmConversationScreen(
     val userDmRelays by viewModel.userDmRelays.collectAsState()
     val decrypting by viewModel.decrypting.collectAsState()
     val pendingDecryptCount by viewModel.pendingDecryptCount.collectAsState()
+    val miningStatus by viewModel.miningStatus.collectAsState()
     val listState = rememberLazyListState()
     var showRelayInfo by remember { mutableStateOf(false) }
     val totalRelayCount = (peerDelivery.urls.size + userDmRelays.size)
@@ -371,7 +373,20 @@ fun DmConversationScreen(
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(8.dp))
-                if (sending) {
+                if (sending && miningStatus is PowStatus.Mining) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            "Mining...",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else if (sending) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
                         strokeWidth = 2.dp,

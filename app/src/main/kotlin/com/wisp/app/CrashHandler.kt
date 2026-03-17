@@ -70,7 +70,7 @@ object CrashHandler {
         "wss://relay.damus.io"
     )
 
-    fun sendCrashDm(keyRepo: KeyRepository, relayPool: RelayPool, crashLog: String) {
+    suspend fun sendCrashDm(keyRepo: KeyRepository, relayPool: RelayPool, crashLog: String) {
         val keypair = keyRepo.getKeypair() ?: return
 
         val recipientPubkey = DEVELOPER_PUBKEY.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
