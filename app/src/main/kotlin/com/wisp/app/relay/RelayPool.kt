@@ -28,6 +28,11 @@ data class PublishResult(val relayUrl: String, val eventId: String, val accepted
 data class BroadcastState(val accepted: Int, val sent: Int)
 
 class RelayPool {
+    /** Incremented on every reconnectAll()/forceReconnectAll(). Allows SubscriptionManager
+     *  to detect stale EOSE signals from pre-reconnect subscriptions. */
+    @Volatile var reconnectGeneration: Long = 0
+        private set
+
     private var client: OkHttpClient = Relay.createClient()
     private var clientBuiltWithTor: Boolean = TorManager.isEnabled()
     private val relays = CopyOnWriteArrayList<Relay>()
@@ -847,6 +852,7 @@ class RelayPool {
 
     fun reconnectAll(): Int {
         Log.d("RLC", "[Pool] reconnectAll() START — persistent=${relays.size} dm=${dmRelays.size} ephemeral=${ephemeralRelays.size} activeSubs=${activeSubscriptions.size}")
+        reconnectGeneration++
         isReconnecting = true
         // Clear all cooldowns — background failures shouldn't block reconnection
         relayCooldowns.clear()
@@ -895,6 +901,7 @@ class RelayPool {
      */
     fun forceReconnectAll() {
         Log.d("RLC", "[Pool] forceReconnectAll() START — persistent=${relays.size} dm=${dmRelays.size} ephemeral=${ephemeralRelays.size}")
+        reconnectGeneration++
         isReconnecting = true
         // Server-side subscriptions are dead — clear tracker so fresh REQs are sent
         subscriptionTracker.clear()
@@ -904,6 +911,7 @@ class RelayPool {
         // Tear down and reconnect persistent relays
         for (relay in relays) {
             relay.resetBackoff()
+            relay.reconnectEnabled = false  // Suppress onFailure errors from disconnect()
             relay.disconnect()
             relay.connect()
             relay.reconnectEnabled = true
@@ -911,6 +919,7 @@ class RelayPool {
         // Tear down and reconnect DM relays
         for (relay in dmRelays) {
             relay.resetBackoff()
+            relay.reconnectEnabled = false  // Suppress onFailure errors from disconnect()
             relay.disconnect()
             relay.connect()
             relay.reconnectEnabled = true

@@ -357,6 +357,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshFeed() = feedSub.refreshFeed()
     fun retryRelayFeed() = feedSub.retryRelayFeed()
     fun loadMore() = feedSub.loadMore()
+    fun onVisibleRangeChanged(first: Int, last: Int) = feedSub.onViewportChanged(first, last)
     fun setTrendingMetric(metric: TrendingMetric) = feedSub.setTrendingMetric(metric)
     fun setTrendingTimeframe(timeframe: TrendingTimeframe) = feedSub.setTrendingTimeframe(timeframe)
     fun setTrendingMode(mode: TrendingMode) = feedSub.setTrendingMode(mode)

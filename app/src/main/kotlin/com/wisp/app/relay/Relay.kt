@@ -161,12 +161,16 @@ class Relay(
                     // Stale callbacks from a replaced socket must not wipe the new socket's state.
                     if (isCurrent) {
                         _connectionState.tryEmit(false)
-                        _connectionErrors.tryEmit(ConsoleLogEntry(
-                            relayUrl = config.url,
-                            type = ConsoleLogType.CONN_FAILURE,
-                            message = t.message ?: t.javaClass.simpleName
-                        ))
-                        _failures.tryEmit(RelayFailure(config.url, response?.code, t.message ?: t.javaClass.simpleName))
+                        // Suppress error emissions during force reconnect — disconnect()
+                        // triggers onFailure for the torn-down socket, flooding the console.
+                        if (reconnectEnabled) {
+                            _connectionErrors.tryEmit(ConsoleLogEntry(
+                                relayUrl = config.url,
+                                type = ConsoleLogType.CONN_FAILURE,
+                                message = t.message ?: t.javaClass.simpleName
+                            ))
+                            _failures.tryEmit(RelayFailure(config.url, response?.code, t.message ?: t.javaClass.simpleName))
+                        }
                         reconnect()
                     }
                 }
@@ -184,11 +188,13 @@ class Relay(
                     if (isCurrent) {
                         _connectionState.tryEmit(false)
                         if (code != 1000) {
-                            _connectionErrors.tryEmit(ConsoleLogEntry(
-                                relayUrl = config.url,
-                                type = ConsoleLogType.CONN_CLOSED,
-                                message = "Code $code: $reason"
-                            ))
+                            if (reconnectEnabled) {
+                                _connectionErrors.tryEmit(ConsoleLogEntry(
+                                    relayUrl = config.url,
+                                    type = ConsoleLogType.CONN_CLOSED,
+                                    message = "Code $code: $reason"
+                                ))
+                            }
                             reconnect()
                         }
                     }

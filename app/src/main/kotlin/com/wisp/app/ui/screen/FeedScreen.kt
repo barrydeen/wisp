@@ -55,6 +55,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -113,6 +114,9 @@ import com.wisp.app.nostr.ProfileData
 import com.wisp.app.ui.component.FollowButton
 import com.wisp.app.viewmodel.TRENDING_USERS_RELAY_URL
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -171,6 +175,20 @@ fun FeedScreen(
     val translationVersion by viewModel.translationRepo.version.collectAsState()
     val connectedCount by viewModel.relayPool.connectedCount.collectAsState()
     val listState = rememberLazyListState()
+
+    // Viewport-aware engagement: notify ViewModel of visible item range
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo }
+            .mapNotNull { items ->
+                if (items.isEmpty()) null
+                else items.first().index to items.last().index
+            }
+            .distinctUntilChanged()
+            .collectLatest { (first, last) ->
+                viewModel.onVisibleRangeChanged(first, last)
+            }
+    }
+
     var handledScrollTrigger by rememberSaveable { mutableStateOf(scrollToTopTrigger) }
     LaunchedEffect(scrollToTopTrigger) {
         if (scrollToTopTrigger != handledScrollTrigger) {
