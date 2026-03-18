@@ -688,6 +688,29 @@ class WalletViewModel(
         navigateHome()
     }
 
+    /**
+     * Suspend the active wallet connection for an account switch without clearing
+     * stored credentials. The new account's wallet will be loaded by refreshState()
+     * after the repo reload completes.
+     */
+    fun suspendForAccountSwitch() {
+        connectJob?.cancel()
+        statusCollectJob?.cancel()
+        connectionMonitorJob?.cancel()
+
+        when (_walletMode.value) {
+            WalletMode.NWC -> nwcRepo.disconnect()
+            WalletMode.SPARK -> sparkRepo.disconnect()
+            WalletMode.NONE -> {}
+        }
+
+        _walletMode.value = WalletMode.NONE
+        _walletState.value = WalletState.NotConnected
+        _connectionString.value = ""
+        _statusLines.value = emptyList()
+        _lightningAddress.value = null
+    }
+
     fun updateDeleteConfirmText(value: String) {
         _deleteConfirmText.value = value
     }

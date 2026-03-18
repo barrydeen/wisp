@@ -30,6 +30,8 @@ import com.wisp.app.repo.MuteRepository
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.NotificationRepository
 import com.wisp.app.repo.NwcRepository
+import com.wisp.app.repo.SparkRepository
+import com.wisp.app.repo.WalletModeRepository
 import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.repo.RelayHintStore
@@ -83,6 +85,8 @@ class StartupCoordinator(
     private val relayInfoRepo: RelayInfoRepository,
     private val nip05Repo: Nip05Repository,
     private val nwcRepo: NwcRepository,
+    private val sparkRepo: SparkRepository,
+    private val walletModeRepo: WalletModeRepository,
     private val dmRepo: DmRepository,
     private val zapPrefs: ZapPreferences,
     private val lifecycleManager: RelayLifecycleManager,
@@ -163,6 +167,7 @@ class StartupCoordinator(
 
         // Reload per-account prefs for new pubkey
         eventRepo.currentUserPubkey = newPubkey
+        eventPersistence?.currentUserPubkey = newPubkey
         keyRepo.reloadPrefs(newPubkey)
         contactRepo.reload(newPubkey)
         muteRepo.reload(newPubkey)
@@ -174,6 +179,8 @@ class StartupCoordinator(
         blossomRepo.reload(newPubkey)
         interestRepo.reload(newPubkey)
         nwcRepo.reload(newPubkey)
+        sparkRepo.reload(newPubkey)
+        walletModeRepo.reload(newPubkey)
         relayScoreBoard.reload(newPubkey)
         healthTracker.reload(newPubkey)
         extendedNetworkRepo.reload(newPubkey)
@@ -252,7 +259,7 @@ class StartupCoordinator(
         notifRefreshJob = scope.launch {
             while (true) {
                 delay(3 * 60 * 1000L)
-                val pk = pubkeyHex ?: continue
+                val pk = getUserPubkey() ?: continue
                 subscribeDmsAndNotifications(pk)
             }
         }
@@ -487,8 +494,13 @@ class StartupCoordinator(
             subManager.closeSubscription("self-data")
         }
 
-        // Cache the user's avatar locally for instant loading screen display.
+        // Update account registry with display info for the drawer account picker
         val profile = profileRepo.get(myPubkey)
+        if (profile != null) {
+            keyRepo.updateAccountMetadata(myPubkey, profile.displayString, profile.picture)
+        }
+
+        // Cache the user's avatar locally for instant loading screen display.
         if (profile?.picture != null) {
             val localFile = profileRepo.getLocalAvatar(myPubkey)
             val urlFile = File(profileRepo.avatarDir, "${myPubkey}.url")
@@ -769,7 +781,7 @@ class StartupCoordinator(
     }
 
     fun refreshDmsAndNotifications() {
-        val pk = pubkeyHex ?: return
+        val pk = getUserPubkey() ?: return
         subscribeDmsAndNotifications(pk)
     }
 

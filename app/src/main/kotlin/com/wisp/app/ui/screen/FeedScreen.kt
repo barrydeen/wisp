@@ -116,6 +116,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import com.wisp.app.nostr.ProfileData
+import com.wisp.app.repo.AccountInfo
 import com.wisp.app.ui.component.FollowButton
 import com.wisp.app.viewmodel.TRENDING_USERS_RELAY_URL
 import kotlinx.coroutines.delay
@@ -145,6 +146,9 @@ fun FeedScreen(
     onNoteClick: (NostrEvent) -> Unit = {},
     onQuotedNoteClick: ((String) -> Unit)? = null,
     onSearch: () -> Unit = {},
+    accounts: List<AccountInfo> = emptyList(),
+    onSwitchAccount: (String) -> Unit = {},
+    onAddAccount: () -> Unit = {},
     onLogout: () -> Unit = {},
     onMediaServers: () -> Unit = {},
     onWallet: () -> Unit = {},
@@ -467,6 +471,15 @@ fun FeedScreen(
                 isTorEnabled = isTorEnabled,
                 torStatus = torStatus,
                 onToggleTor = onToggleTor,
+                accounts = accounts,
+                onSwitchAccount = { pubkeyHex ->
+                    scope.launch { drawerState.close() }
+                    onSwitchAccount(pubkeyHex)
+                },
+                onAddAccount = {
+                    scope.launch { drawerState.close() }
+                    onAddAccount()
+                },
                 onProfile = {
                     scope.launch { drawerState.close() }
                     onProfileEdit()

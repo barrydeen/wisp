@@ -354,7 +354,8 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                         signer = signer,
                         recipientPubkeyHex = signer.pubkeyHex,
                         message = text,
-                        rumorPTag = peerPubkey
+                        rumorPTag = peerPubkey,
+                        targetDifficulty = dmDifficulty
                     )
                     val selfMsg = ClientMessage.event(selfWrap)
                     if (relayPool.hasDmRelays()) {
@@ -431,7 +432,8 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                     senderPubkey = keypair.pubkey,
                     recipientPubkey = keypair.pubkey,
                     message = text,
-                    rumorPTag = peerPubkey
+                    rumorPTag = peerPubkey,
+                    targetDifficulty = dmDifficulty
                 )
                 val selfMsg = ClientMessage.event(selfWrap)
                 if (relayPool.hasDmRelays()) {

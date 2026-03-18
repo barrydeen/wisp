@@ -191,8 +191,9 @@ fun WispNavHost(
     relayViewModel.relayPool = feedViewModel.relayPool
 
     // Unified signer — handles both LOCAL (nsec) and REMOTE (NIP-55) modes
+    // Reactive: recomposes on login, logout, and account switch
     val context = LocalContext.current
-    val signingMode = if (authViewModel.isLoggedIn) authViewModel.keyRepo.getSigningMode() else null
+    val signingMode by authViewModel.signingModeFlow.collectAsState()
     val activeSigner = remember(signingMode) {
         when (signingMode) {
             SigningMode.REMOTE -> {
@@ -238,6 +239,33 @@ fun WispNavHost(
     var quoteTarget by remember { mutableStateOf<NostrEvent?>(null) }
     var scrollToTopTrigger by remember { mutableStateOf(0) }
     var addToListEventId by remember { mutableStateOf<String?>(null) }
+
+    // Multi-account state
+    val accounts by authViewModel.accountsFlow.collectAsState()
+
+    val onSwitchAccount: (String) -> Unit = { pubkeyHex ->
+        feedViewModel.resetForAccountSwitch()
+        walletViewModel.suspendForAccountSwitch()  // disconnect only, preserve credentials
+        authViewModel.switchAccount(pubkeyHex)
+        feedViewModel.reloadForNewAccount()
+        relayViewModel.reload()
+        blossomServersViewModel.reload()
+        composeViewModel.reloadBlossomRepo()
+        walletViewModel.refreshState()
+        // initRelays() is called by the LOADING composable's LaunchedEffect
+        navController.navigate(Routes.LOADING) {
+            popUpTo(0) { inclusive = true }
+        }
+    }
+
+    val onAddAccount: () -> Unit = {
+        authViewModel.isAddingAccount = true
+        feedViewModel.resetForAccountSwitch()
+        walletViewModel.suspendForAccountSwitch()  // disconnect only, preserve credentials
+        navController.navigate(Routes.AUTH) {
+            popUpTo(0) { inclusive = true }
+        }
+    }
 
     // Tor state
     val torPrefs = remember { context.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE) }
@@ -564,8 +592,23 @@ fun WispNavHost(
                 torStatus = torStatus,
                 onToggleTor = onToggleTor,
                 onAuthenticated = { isNewAccount ->
+                    val wasAddingAccount = authViewModel.isAddingAccount
+                    authViewModel.isAddingAccount = false
+
                     if (isNewAccount) {
+                        // New key generation always goes through full onboarding
                         navController.navigate(Routes.ONBOARDING_PROFILE)
+                    } else if (wasAddingAccount && authViewModel.keyRepo.isOnboardingComplete()) {
+                        // Adding an existing account that already completed onboarding — skip straight to loading
+                        feedViewModel.reloadForNewAccount()
+                        relayViewModel.reload()
+                        blossomServersViewModel.reload()
+                        composeViewModel.reloadBlossomRepo()
+                        feedViewModel.initRelays()
+                        walletViewModel.refreshState()
+                        navController.navigate(Routes.LOADING) {
+                            popUpTo(Routes.AUTH) { inclusive = true }
+                        }
                     } else if (authViewModel.keyRepo.isReadOnly()) {
                         feedViewModel.reloadForNewAccount()
                         relayViewModel.reload()
@@ -593,6 +636,12 @@ fun WispNavHost(
         }
 
         composable(Routes.LOADING) {
+            // Ensure relays are initialized whenever the loading screen is shown —
+            // covers both initial cold start and account switches (where initRelays()
+            // is not called eagerly so old relay connections fully close first).
+            LaunchedEffect(Unit) {
+                feedViewModel.initRelays()
+            }
             LoadingScreen(
                 viewModel = feedViewModel,
                 onReady = {
@@ -678,12 +727,28 @@ fun WispNavHost(
                 onQuotedNoteClick = { eventId ->
                     navController.navigate("thread/$eventId")
                 },
+                accounts = accounts,
+                onSwitchAccount = onSwitchAccount,
+                onAddAccount = onAddAccount,
                 onLogout = {
                     feedViewModel.resetForAccountSwitch()
-                    walletViewModel.disconnectWallet()
-                    authViewModel.logOut()
-                    navController.navigate(Routes.AUTH) {
-                        popUpTo(0) { inclusive = true }
+                    walletViewModel.disconnectWallet()  // full clear — intentional logout
+                    val hasRemaining = authViewModel.logOut()
+                    if (hasRemaining) {
+                        // logOut() already switched to the first remaining account
+                        feedViewModel.reloadForNewAccount()
+                        relayViewModel.reload()
+                        blossomServersViewModel.reload()
+                        composeViewModel.reloadBlossomRepo()
+                        walletViewModel.refreshState()
+                        // initRelays() triggered by LOADING composable LaunchedEffect
+                        navController.navigate(Routes.LOADING) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    } else {
+                        navController.navigate(Routes.AUTH) {
+                            popUpTo(0) { inclusive = true }
+                        }
                     }
                 },
                 onMediaServers = {

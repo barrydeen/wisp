@@ -4,12 +4,16 @@ import android.content.Context
 
 enum class WalletMode { NONE, NWC, SPARK }
 
-class WalletModeRepository(context: Context, pubkeyHex: String? = null) {
+class WalletModeRepository(private val context: Context, pubkeyHex: String? = null) {
 
-    private val prefs = context.getSharedPreferences(
-        if (pubkeyHex != null) "wisp_wallet_mode_$pubkeyHex" else "wisp_wallet_mode",
+    private var prefs = context.getSharedPreferences(
+        prefsName(pubkeyHex),
         Context.MODE_PRIVATE
     )
+
+    fun reload(pubkeyHex: String?) {
+        prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
+    }
 
     fun getMode(): WalletMode {
         val name = prefs.getString("wallet_mode", null) ?: return WalletMode.NONE
@@ -18,5 +22,10 @@ class WalletModeRepository(context: Context, pubkeyHex: String? = null) {
 
     fun setMode(mode: WalletMode) {
         prefs.edit().putString("wallet_mode", mode.name).apply()
+    }
+
+    companion object {
+        private fun prefsName(pubkeyHex: String?) =
+            if (pubkeyHex != null) "wisp_wallet_mode_$pubkeyHex" else "wisp_wallet_mode"
     }
 }

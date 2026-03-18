@@ -279,7 +279,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         listRepo, bookmarkRepo, bookmarkSetRepo, relaySetRepo, pinRepo, blossomRepo, interestRepo, customEmojiRepo,
         relayListRepo, relayScoreBoard, relayHintStore, healthTracker, keyRepo,
         extendedNetworkRepo, metadataFetcher, profileRepo, relayInfoRepo, nip05Repo,
-        nwcRepo, dmRepo, zapPrefs, lifecycleManager, eventRouter, feedSub,
+        nwcRepo, sparkRepo, walletModeRepo, dmRepo, zapPrefs, lifecycleManager, eventRouter, feedSub,
         viewModelScope, processingDispatcher, pubkeyHex,
         getUserPubkey = { getUserPubkey() },
         registerAuthSigner = { registerAuthSigner() },

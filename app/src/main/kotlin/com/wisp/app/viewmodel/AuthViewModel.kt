@@ -6,7 +6,9 @@ import com.wisp.app.nostr.Keys
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.nostr.toHex
+import com.wisp.app.repo.AccountInfo
 import com.wisp.app.repo.KeyRepository
+import com.wisp.app.repo.SigningMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -22,6 +24,13 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
     private val _npub = MutableStateFlow<String?>(keyRepo.getNpub())
     val npub: StateFlow<String?> = _npub
 
+    private val _signingMode = MutableStateFlow(if (keyRepo.isLoggedIn()) keyRepo.getSigningMode() else null)
+    val signingModeFlow: StateFlow<SigningMode?> = _signingMode
+
+    val accountsFlow: StateFlow<List<AccountInfo>> = keyRepo.accountsFlow
+
+    var isAddingAccount: Boolean = false
+
     val isLoggedIn: Boolean get() = keyRepo.isLoggedIn()
 
     fun updateNsecInput(value: String) {
@@ -35,6 +44,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             keyRepo.saveKeypair(keypair)
             keyRepo.reloadPrefs(keypair.pubkey.toHex())
             _npub.value = Nip19.npubEncode(keypair.pubkey)
+            _signingMode.value = SigningMode.LOCAL
             _error.value = null
             true
         } catch (e: Exception) {
@@ -67,6 +77,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             keyRepo.saveKeypair(keypair)
             keyRepo.reloadPrefs(keypair.pubkey.toHex())
             _npub.value = Nip19.npubEncode(keypair.pubkey)
+            _signingMode.value = SigningMode.LOCAL
             _nsecInput.value = ""
             _error.value = null
             true
@@ -83,6 +94,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             keyRepo.savePubkeyReadOnly(pubkeyHex)
             keyRepo.reloadPrefs(pubkeyHex)
             _npub.value = Nip19.npubEncode(pubkey)
+            _signingMode.value = SigningMode.READ_ONLY
             _nsecInput.value = ""
             _error.value = null
             true
@@ -97,6 +109,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             keyRepo.savePubkeyReadOnly(hex)
             keyRepo.reloadPrefs(hex)
             _npub.value = Nip19.npubEncode(hex.hexToByteArray())
+            _signingMode.value = SigningMode.READ_ONLY
             _nsecInput.value = ""
             _error.value = null
             true
@@ -110,11 +123,38 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         keyRepo.savePubkeyOnly(pubkeyHex, signerPackage)
         keyRepo.reloadPrefs(pubkeyHex)
         _npub.value = Nip19.npubEncode(pubkeyHex.hexToByteArray())
+        _signingMode.value = SigningMode.REMOTE
         _error.value = null
     }
 
-    fun logOut() {
-        keyRepo.clearKeypair()
+    fun switchAccount(pubkeyHex: String) {
+        keyRepo.switchToAccount(pubkeyHex)
+        keyRepo.reloadPrefs(pubkeyHex)
+        _npub.value = Nip19.npubEncode(pubkeyHex.hexToByteArray())
+        _signingMode.value = keyRepo.getSigningMode()
+    }
+
+    /**
+     * Logs out the current account. Returns true if other accounts remain
+     * (caller should switch to the next one), false if no accounts left
+     * (caller should navigate to AUTH).
+     */
+    fun logOut(): Boolean {
+        val currentPubkey = keyRepo.getPubkeyHex()
+        if (currentPubkey != null) {
+            keyRepo.removeAccount(currentPubkey)
+        } else {
+            keyRepo.clearKeypair()
+        }
         _npub.value = null
+        _signingMode.value = null
+
+        // If other accounts remain, switch to the first one
+        val remaining = keyRepo.getAccountList()
+        if (remaining.isNotEmpty()) {
+            switchAccount(remaining.first().pubkeyHex)
+            return true
+        }
+        return false
     }
 }

@@ -278,8 +278,8 @@ object Nip17 {
     }
 
     private fun randomizeTimestamp(base: Long): Long {
-        // +-2 days in seconds
+        // 0 to 2 days in the past — avoids future timestamps that relays reject
         val twoDays = 2 * 24 * 60 * 60
-        return base + random.nextInt(twoDays * 2) - twoDays
+        return base - random.nextInt(twoDays)
     }
 }

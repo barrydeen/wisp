@@ -68,7 +68,15 @@ class SparkRepository(
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
         .build()
 
-    private val encPrefs = EncryptedSharedPreferences.create(
+    private var encPrefs = createEncPrefs(pubkeyHex)
+
+    fun reload(pubkeyHex: String?) {
+        disconnect()
+        encPrefs = createEncPrefs(pubkeyHex)
+        _balance.value = null
+    }
+
+    private fun createEncPrefs(pubkeyHex: String?) = EncryptedSharedPreferences.create(
         context,
         if (pubkeyHex != null) "wisp_spark_$pubkeyHex" else "wisp_spark",
         masterKey,

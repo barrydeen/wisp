@@ -14,7 +14,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 
 class EventPersistence(
-    private val currentUserPubkey: String?
+    var currentUserPubkey: String?
 ) {
     private val box: Box<EventEntity> = WispObjectBox.store.boxFor(EventEntity::class.java)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

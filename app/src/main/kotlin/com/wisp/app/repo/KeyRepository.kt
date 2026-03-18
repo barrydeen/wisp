@@ -11,10 +11,19 @@ import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.RelayConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 
 enum class SigningMode { LOCAL, REMOTE, READ_ONLY }
+
+@Serializable
+data class AccountInfo(
+    val pubkeyHex: String,
+    val signingMode: SigningMode,
+    val displayName: String? = null,
+    val picture: String? = null
+)
 
 class KeyRepository(private val context: Context) {
     private val masterKey = MasterKey.Builder(context)
@@ -59,17 +68,158 @@ class KeyRepository(private val context: Context) {
         }
     }
 
+    // --- Multi-account registry ---
+
+    private val _accounts = MutableStateFlow(loadAccountList())
+    val accountsFlow: StateFlow<List<AccountInfo>> = _accounts
+
     init {
         prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        migrateToMultiAccount()
     }
 
-    fun saveKeypair(keypair: Keys.Keypair) {
+    /**
+     * One-time migration: if legacy keys exist but no account registry,
+     * wrap the current single account into the new format.
+     */
+    private fun migrateToMultiAccount() {
+        if (encPrefs.contains("accounts")) return
+        val pubkey = encPrefs.getString("pubkey", null) ?: return
+        val mode = getSigningMode()
+        val privkey = encPrefs.getString("privkey", null)
+        val signerPkg = encPrefs.getString("signer_package", null)
+
+        // Store indexed credentials
+        if (privkey != null) {
+            encPrefs.edit().putString("privkey_$pubkey", privkey).apply()
+        }
+        if (signerPkg != null) {
+            encPrefs.edit().putString("signer_package_$pubkey", signerPkg).apply()
+        }
+
+        val account = AccountInfo(pubkey, mode)
         encPrefs.edit()
-            .putString("privkey", keypair.privkey.toHex())
-            .putString("pubkey", keypair.pubkey.toHex())
+            .putString("accounts", json.encodeToString(listOf(account)))
+            .putString("active_pubkey", pubkey)
+            .apply()
+        _accounts.value = listOf(account)
+    }
+
+    fun getAccountList(): List<AccountInfo> = _accounts.value
+
+    fun getAccountCount(): Int = _accounts.value.size
+
+    fun getActivePubkey(): String? = encPrefs.getString("active_pubkey", null)
+
+    fun addAccount(pubkeyHex: String, signingMode: SigningMode, privkeyHex: String? = null, signerPackage: String? = null) {
+        val accounts = loadAccountList().toMutableList()
+        // Remove existing entry for this pubkey (re-login scenario)
+        accounts.removeAll { it.pubkeyHex == pubkeyHex }
+        accounts.add(AccountInfo(pubkeyHex, signingMode))
+
+        val editor = encPrefs.edit()
+            .putString("accounts", json.encodeToString(accounts))
+            .putString("active_pubkey", pubkeyHex)
+
+        // Store indexed credentials
+        if (privkeyHex != null) {
+            editor.putString("privkey_$pubkeyHex", privkeyHex)
+        } else {
+            editor.remove("privkey_$pubkeyHex")
+        }
+        if (signerPackage != null) {
+            editor.putString("signer_package_$pubkeyHex", signerPackage)
+        } else {
+            editor.remove("signer_package_$pubkeyHex")
+        }
+        editor.apply()
+        _accounts.value = accounts
+    }
+
+    fun switchToAccount(pubkeyHex: String) {
+        val accounts = loadAccountList()
+        val account = accounts.find { it.pubkeyHex == pubkeyHex } ?: return
+
+        // Sync legacy keys from indexed storage
+        val editor = encPrefs.edit()
+            .putString("pubkey", pubkeyHex)
+            .putString("active_pubkey", pubkeyHex)
+            .putString("signing_mode", account.signingMode.name)
+
+        when (account.signingMode) {
+            SigningMode.LOCAL -> {
+                val privkey = encPrefs.getString("privkey_$pubkeyHex", null)
+                editor.putString("privkey", privkey)
+                editor.remove("signer_package")
+            }
+            SigningMode.REMOTE -> {
+                val signerPkg = encPrefs.getString("signer_package_$pubkeyHex", null)
+                editor.remove("privkey")
+                editor.putString("signer_package", signerPkg)
+            }
+            SigningMode.READ_ONLY -> {
+                editor.remove("privkey")
+                editor.remove("signer_package")
+            }
+        }
+        editor.apply()
+    }
+
+    fun removeAccount(pubkeyHex: String) {
+        val accounts = loadAccountList().toMutableList()
+        accounts.removeAll { it.pubkeyHex == pubkeyHex }
+
+        val editor = encPrefs.edit()
+            .putString("accounts", json.encodeToString(accounts))
+
+        // Remove indexed credentials
+        editor.remove("privkey_$pubkeyHex")
+        editor.remove("signer_package_$pubkeyHex")
+
+        // If removing the active account, clear legacy keys
+        if (getPubkeyHex() == pubkeyHex) {
+            editor.remove("pubkey")
+                .remove("privkey")
+                .remove("signing_mode")
+                .remove("signer_package")
+                .remove("active_pubkey")
+        }
+        editor.apply()
+        _accounts.value = accounts
+    }
+
+    fun updateAccountMetadata(pubkeyHex: String, displayName: String?, picture: String?) {
+        val accounts = loadAccountList().toMutableList()
+        val index = accounts.indexOfFirst { it.pubkeyHex == pubkeyHex }
+        if (index < 0) return
+        val current = accounts[index]
+        if (current.displayName == displayName && current.picture == picture) return
+        accounts[index] = current.copy(displayName = displayName, picture = picture)
+        encPrefs.edit().putString("accounts", json.encodeToString(accounts)).apply()
+        _accounts.value = accounts
+    }
+
+    private fun loadAccountList(): List<AccountInfo> {
+        val str = encPrefs.getString("accounts", null) ?: return emptyList()
+        return try {
+            json.decodeFromString<List<AccountInfo>>(str)
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    // --- Existing key methods (write to legacy keys + register in account list) ---
+
+    fun saveKeypair(keypair: Keys.Keypair) {
+        val pubHex = keypair.pubkey.toHex()
+        val privHex = keypair.privkey.toHex()
+        encPrefs.edit()
+            .putString("privkey", privHex)
+            .putString("pubkey", pubHex)
             .putString("signing_mode", SigningMode.LOCAL.name)
             .remove("signer_package")
             .apply()
+        addAccount(pubHex, SigningMode.LOCAL, privkeyHex = privHex)
     }
 
     fun getKeypair(): Keys.Keypair? {
@@ -85,6 +235,7 @@ class KeyRepository(private val context: Context) {
             .putString("signer_package", signerPackage)
             .remove("privkey")
             .apply()
+        addAccount(pubkeyHex, SigningMode.REMOTE, signerPackage = signerPackage)
     }
 
     fun savePubkeyReadOnly(pubkeyHex: String) {
@@ -94,6 +245,7 @@ class KeyRepository(private val context: Context) {
             .remove("privkey")
             .remove("signer_package")
             .apply()
+        addAccount(pubkeyHex, SigningMode.READ_ONLY)
     }
 
     fun getSigningMode(): SigningMode {
@@ -109,6 +261,7 @@ class KeyRepository(private val context: Context) {
 
     fun clearKeypair() {
         encPrefs.edit().clear().apply()
+        _accounts.value = emptyList()
     }
 
     fun isLoggedIn(): Boolean = encPrefs.getString("pubkey", null) != null
