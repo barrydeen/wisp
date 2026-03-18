@@ -117,4 +117,18 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         keyRepo.clearKeypair()
         _npub.value = null
     }
+
+    fun switchAccount(pubkeyHex: String) {
+        keyRepo.setActiveAccount(pubkeyHex)
+        _npub.value = keyRepo.getNpub()
+    }
+
+    fun removeAccount(pubkeyHex: String) {
+        keyRepo.removeAccount(pubkeyHex)
+        _npub.value = keyRepo.getNpub()
+    }
+
+    fun getAccounts() = keyRepo.getAccounts()
+
+    fun getActivePubkey() = keyRepo.getPubkeyHex()
 }

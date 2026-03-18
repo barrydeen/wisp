@@ -153,7 +153,12 @@ fun FeedScreen(
     onRelayDetail: (String) -> Unit = {},
     onHashtagClick: ((String) -> Unit)? = null,
     onArticleClick: ((Int, String, String) -> Unit)? = null,
-    scrollToTopTrigger: Int = 0
+    scrollToTopTrigger: Int = 0,
+    accounts: List<com.wisp.app.repo.Account> = emptyList(),
+    onSwitchAccount: (String) -> Unit = {},
+    onRemoveAccount: (String) -> Unit = {},
+    onAddAccount: () -> Unit = {},
+    getAccountProfile: (String) -> com.wisp.app.nostr.ProfileData? = { null }
 ) {
     val feed by viewModel.feed.collectAsState()
     val feedType by viewModel.feedType.collectAsState()
@@ -500,7 +505,21 @@ fun FeedScreen(
                 onLogout = {
                     scope.launch { drawerState.close() }
                     onLogout()
-                }
+                },
+                accounts = accounts,
+                onSwitchAccount = { pubkey ->
+                    scope.launch { drawerState.close() }
+                    onSwitchAccount(pubkey)
+                },
+                onRemoveAccount = { pubkey ->
+                    scope.launch { drawerState.close() }
+                    onRemoveAccount(pubkey)
+                },
+                onAddAccount = {
+                    scope.launch { drawerState.close() }
+                    onAddAccount()
+                },
+                getAccountProfile = { pubkey -> viewModel.eventRepo.getProfileData(pubkey) }
             )
         }
     ) {

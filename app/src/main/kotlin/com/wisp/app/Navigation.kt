@@ -39,6 +39,7 @@ import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.RemoteSigner
 import com.wisp.app.nostr.SignerIntentBridge
 import com.wisp.app.nostr.SignResult
+import com.wisp.app.repo.Account
 import com.wisp.app.repo.SigningMode
 import android.content.Context
 import androidx.compose.runtime.rememberCoroutineScope
@@ -188,7 +189,8 @@ fun WispNavHost(
     // Unified signer — handles both LOCAL (nsec) and REMOTE (NIP-55) modes
     val context = LocalContext.current
     val signingMode = if (authViewModel.isLoggedIn) authViewModel.keyRepo.getSigningMode() else null
-    val activeSigner = remember(signingMode) {
+    val currentPubkey = authViewModel.keyRepo.getPubkeyHex()
+    val activeSigner = remember(signingMode, currentPubkey) {
         when (signingMode) {
             SigningMode.REMOTE -> {
                 val pubkey = authViewModel.keyRepo.getPubkeyHex() ?: ""
@@ -696,7 +698,41 @@ fun WispNavHost(
                 },
                 onArticleClick = { kind, author, dTag ->
                     navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
-                }
+                },
+                accounts = authViewModel.getAccounts(),
+                onSwitchAccount = { pubkey ->
+                    feedViewModel.resetForAccountSwitch()
+                    authViewModel.switchAccount(pubkey)
+                    feedViewModel.reloadForNewAccount()
+                    relayViewModel.reload()
+                    blossomServersViewModel.reload()
+                    composeViewModel.reloadBlossomRepo()
+                    feedViewModel.initRelays()
+                    walletViewModel.refreshState()
+                },
+                onRemoveAccount = { pubkey ->
+                    feedViewModel.resetForAccountSwitch()
+                    walletViewModel.disconnectWallet()
+                    authViewModel.removeAccount(pubkey)
+                    if (authViewModel.isLoggedIn) {
+                        feedViewModel.reloadForNewAccount()
+                        relayViewModel.reload()
+                        blossomServersViewModel.reload()
+                        composeViewModel.reloadBlossomRepo()
+                        feedViewModel.initRelays()
+                        walletViewModel.refreshState()
+                    } else {
+                        navController.navigate(Routes.AUTH) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                },
+                onAddAccount = {
+                    feedViewModel.resetForAccountSwitch()
+                    walletViewModel.disconnectWallet()
+                    navController.navigate(Routes.AUTH)
+                },
+                getAccountProfile = { pubkey -> feedViewModel.eventRepo.getProfileData(pubkey) }
             )
         }
 
