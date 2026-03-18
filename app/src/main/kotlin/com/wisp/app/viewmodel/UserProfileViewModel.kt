@@ -238,7 +238,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                                 }
                             }
                         }
-                        30023 -> {
+                        30023, 1068 -> {
                             eventRepo.cacheEvent(event)
                             if (event.created_at < oldestNoteTimestamp) oldestNoteTimestamp = event.created_at
                             val current = _rootNotes.value.toMutableList()
