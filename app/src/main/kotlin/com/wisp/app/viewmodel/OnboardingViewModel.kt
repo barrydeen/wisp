@@ -147,7 +147,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun startDiscovery(sparkRepo: SparkRepository? = null) {
+    fun startDiscovery(sparkRepo: SparkRepository? = null, walletModeRepo: WalletModeRepository? = null) {
         // Reset state from any previous onboarding run (ViewModel survives logout)
         suggestionsJob?.cancel()
         suggestionsJob = null
@@ -164,8 +164,12 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
         keyRepo.reloadPrefs(pubHex)
         blossomRepo.reload(pubHex)
 
+        // Reload wallet repos so mnemonic + mode are stored under the correct pubkey prefs
+        walletModeRepo?.reload(pubHex)
+
         // Pre-generate mnemonic (CPU only, no network contention with relay probing)
         if (sparkRepo != null) {
+            sparkRepo.reload(pubHex)
             try {
                 val mnemonic = sparkRepo.newMnemonic()
                 sparkRepo.saveMnemonic(mnemonic)

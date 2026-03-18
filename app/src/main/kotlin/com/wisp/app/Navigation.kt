@@ -194,7 +194,8 @@ fun WispNavHost(
     // Reactive: recomposes on login, logout, and account switch
     val context = LocalContext.current
     val signingMode by authViewModel.signingModeFlow.collectAsState()
-    val activeSigner = remember(signingMode) {
+    val npub by authViewModel.npub.collectAsState()
+    val activeSigner = remember(signingMode, npub) {
         when (signingMode) {
             SigningMode.REMOTE -> {
                 val pubkey = authViewModel.keyRepo.getPubkeyHex() ?: ""
@@ -1908,7 +1909,7 @@ fun WispNavHost(
             val scope = rememberCoroutineScope()
             BackHandler(onBack = onBack)
             LaunchedEffect(Unit) {
-                onboardingViewModel.startDiscovery(feedViewModel.sparkRepo)
+                onboardingViewModel.startDiscovery(feedViewModel.sparkRepo, feedViewModel.walletModeRepo)
             }
             OnboardingScreen(
                 viewModel = onboardingViewModel,
