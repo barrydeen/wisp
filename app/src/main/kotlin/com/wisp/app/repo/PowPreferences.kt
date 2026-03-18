@@ -16,4 +16,10 @@ class PowPreferences(context: Context) {
 
     fun getReactionDifficulty(): Int = prefs.getInt("pow_reaction_difficulty", 12)
     fun setReactionDifficulty(bits: Int) = prefs.edit().putInt("pow_reaction_difficulty", bits.coerceIn(8, 32)).apply()
+
+    fun isDmPowEnabled(): Boolean = prefs.getBoolean("pow_dm_enabled", true)
+    fun setDmPowEnabled(enabled: Boolean) = prefs.edit().putBoolean("pow_dm_enabled", enabled).apply()
+
+    fun getDmDifficulty(): Int = prefs.getInt("pow_dm_difficulty", 12)
+    fun setDmDifficulty(bits: Int) = prefs.edit().putInt("pow_dm_difficulty", bits.coerceIn(8, 32)).apply()
 }

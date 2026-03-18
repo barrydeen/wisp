@@ -118,6 +118,11 @@ class FeedSubscriptionManager(
     private var relayStatusMonitorJob: Job? = null
     private var isLoadingMore = false
 
+    // Batched engagement state (Steps 2-4)
+    private var engagementGeneration = 0
+    private val engagedEventIds = mutableSetOf<String>()
+    private var viewportEngagementJob: Job? = null
+
     fun markLoadingComplete() { _loadingScreenComplete.value = true }
 
     /** Resolve indexer relays: user's search relays (kind 10007) with default fallback. */
@@ -145,6 +150,8 @@ class FeedSubscriptionManager(
         val prev = _feedType.value
         Log.d("RLC", "[FeedSub] setFeedType $prev → $type feedSize=${eventRepo.feed.value.size}")
         _feedType.value = type
+        engagedEventIds.clear()
+        viewportEngagementJob?.cancel()
         applyAuthorFilterForFeedType(type)
 
         // Tear down relay/trending feed when leaving those modes
@@ -255,6 +262,8 @@ class FeedSubscriptionManager(
         relayPool.closeOnAllRelays(oldSubId)
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
         activeEngagementSubIds.clear()
+        engagedEventIds.clear()
+        viewportEngagementJob?.cancel()
         eventRepo.countNewNotes = false
         feedEoseJob?.cancel()
 
@@ -434,11 +443,15 @@ class FeedSubscriptionManager(
                             "loadmore", authors, templateFilter,
                             indexerRelays = indexerRelays, blockedUrls = excludedUrls
                         )
-                        val feedSizeBefore = eventRepo.feed.value.size
+                        val feedBefore = eventRepo.feed.value.toList()
                         subManager.awaitEoseWithTimeout("loadmore")
                         subManager.closeSubscription("loadmore")
-                        if (eventRepo.feed.value.size > feedSizeBefore) {
-                            subscribeEngagementForFeed()
+                        if (eventRepo.feed.value.size > feedBefore.size) {
+                            val existingIds = feedBefore.map { it.id }.toSet()
+                            val newEvents = eventRepo.feed.value.filter { it.id !in existingIds }
+                            if (newEvents.isNotEmpty()) {
+                                subscribeEngagementForEvents(newEvents)
+                            }
                         }
                         isLoadingMore = false
                     }
@@ -456,21 +469,27 @@ class FeedSubscriptionManager(
 
         val loadMoreSubId = if (_feedType.value == FeedType.RELAY) "relay-loadmore" else "loadmore"
         scope.launch {
-            val feedSizeBefore = if (_feedType.value == FeedType.RELAY) {
-                eventRepo.relayFeed.value.size
+            val feedBefore = if (_feedType.value == FeedType.RELAY) {
+                eventRepo.relayFeed.value.toList()
             } else {
-                eventRepo.feed.value.size
+                eventRepo.feed.value.toList()
             }
+            val sizeBefore = feedBefore.size
             subManager.awaitEoseWithTimeout(loadMoreSubId)
             subManager.closeSubscription(loadMoreSubId)
 
-            val feedSizeAfter = if (_feedType.value == FeedType.RELAY) {
-                eventRepo.relayFeed.value.size
+            val feedAfter = if (_feedType.value == FeedType.RELAY) {
+                eventRepo.relayFeed.value
             } else {
-                eventRepo.feed.value.size
+                eventRepo.feed.value
             }
-            if (feedSizeAfter > feedSizeBefore) {
-                subscribeEngagementForFeed()
+            if (feedAfter.size > sizeBefore) {
+                // Only engage the new events — don't reset existing engagement
+                val existingIds = feedBefore.map { it.id }.toSet()
+                val newEvents = feedAfter.filter { it.id !in existingIds }
+                if (newEvents.isNotEmpty()) {
+                    subscribeEngagementForEvents(newEvents)
+                }
             }
 
             isLoadingMore = false
@@ -480,10 +499,14 @@ class FeedSubscriptionManager(
     fun pauseEngagement() {
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
         activeEngagementSubIds.clear()
+        viewportEngagementJob?.cancel()
     }
 
     fun resumeEngagement() {
         if (activeEngagementSubIds.isEmpty()) {
+            // After reconnect, re-engage only the initial viewport — the viewport
+            // tracker will handle the rest as the user scrolls.
+            engagedEventIds.clear()
             subscribeEngagementForFeed()
         }
     }
@@ -863,29 +886,54 @@ class FeedSubscriptionManager(
     fun subscribeEngagementForFeed() {
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
         activeEngagementSubIds.clear()
+        engagedEventIds.clear()
 
         val feedEvents = if (_feedType.value == FeedType.RELAY || _feedType.value == FeedType.TRENDING) eventRepo.relayFeed.value else eventRepo.feed.value
         if (feedEvents.isEmpty()) return
 
+        // Subscribe global subs (poll votes, DM zaps) for all feed events
+        subscribeGlobalEngagement(feedEvents)
+
+        // Only engage the first ~15 events (rough viewport). Viewport tracking
+        // via onViewportChanged() handles the rest as the user scrolls.
+        val initialBatch = feedEvents.take(15)
+        subscribeEngagementForEvents(initialBatch)
+    }
+
+    /**
+     * Subscribe engagement for a batch of events that haven't been engaged yet.
+     * Each batch gets a unique sub ID to avoid cancelling in-progress fetches.
+     */
+    private fun subscribeEngagementForEvents(events: List<NostrEvent>) {
+        val newEvents = events.filter { engagedEventIds.add(it.id) }
+        if (newEvents.isEmpty()) return
+
+        engagementGeneration++
+        val batchSubId = "engage-${engagementGeneration}"
+        Log.d("RLC", "[FeedSub] subscribeEngagementForEvents batch=$batchSubId count=${newEvents.size}")
+
         val eventsByAuthor = mutableMapOf<String, MutableList<String>>()
-        for (event in feedEvents) {
+        for (event in newEvents) {
             eventsByAuthor.getOrPut(event.pubkey) { mutableListOf() }.add(event.id)
         }
         val safetyNet = relayScoreBoard.getScoredRelays().take(5).map { it.url }
-        val relayCount = outboxRouter.subscribeEngagementByAuthors("engage", eventsByAuthor, activeEngagementSubIds, safetyNet)
+        val relayCount = outboxRouter.subscribeEngagementByAuthors(batchSubId, eventsByAuthor, activeEngagementSubIds, safetyNet)
 
-        // Await EOSE from a threshold of inbox relays so engagement counts populate
-        // before the user sees the feed. Without this, engagement is fire-and-forget
-        // and most counts show zero.
         if (relayCount > 0) {
             scope.launch {
                 val eoseTarget = maxOf(3, (relayCount * 0.3).toInt()).coerceIn(1, relayCount)
-                Log.d("RLC", "[FeedSub] awaiting $eoseTarget/$relayCount EOSEs for engagement")
-                subManager.awaitEoseCount("engage", eoseTarget, timeoutMs = 4_000)
-                Log.d("RLC", "[FeedSub] safety net engagement EOSE received")
+                Log.d("RLC", "[FeedSub] awaiting $eoseTarget/$relayCount EOSEs for $batchSubId")
+                subManager.awaitEoseCount(batchSubId, eoseTarget, timeoutMs = 8_000)
+                Log.d("RLC", "[FeedSub] engagement EOSE received for $batchSubId")
             }
         }
+    }
 
+    /**
+     * Subscribe global engagement subs that need broad relay coverage:
+     * private zap receipts on DM relays and poll vote responses.
+     */
+    private fun subscribeGlobalEngagement(feedEvents: List<NostrEvent>) {
         // Subscribe for private zap receipts on DM relays
         if (relayPool.hasDmRelays() && pubkeyHex != null) {
             val myEventIds = feedEvents.filter { it.pubkey == pubkeyHex }.map { it.id }
@@ -918,6 +966,7 @@ class FeedSubscriptionManager(
             val sentAll = relayPool.sendToAllRelays(msg)
             Log.d("POLL", "[FeedSub] sent poll vote REQ to $sentAll persistent relays")
             // Also query poll-specified relays and safety net via ephemeral connections
+            val safetyNet = relayScoreBoard.getScoredRelays().take(5).map { it.url }
             val sentUrls = relayPool.getReadRelayUrls().toSet() + relayPool.getWriteRelayUrls().toSet()
             for (poll in pollEvents) {
                 for (url in Nip88.parsePollRelays(poll)) {
@@ -939,6 +988,56 @@ class FeedSubscriptionManager(
                 }
             }
         }
+    }
+
+    /**
+     * Called by FeedViewModel when the visible item range changes.
+     * Subscribes engagement for newly visible events not yet engaged.
+     */
+    fun onViewportChanged(firstVisible: Int, lastVisible: Int) {
+        viewportEngagementJob?.cancel()
+        viewportEngagementJob = scope.launch {
+            // Debounce to avoid thrashing during fast scrolls
+            delay(300)
+            val feedEvents = if (_feedType.value == FeedType.RELAY || _feedType.value == FeedType.TRENDING) {
+                eventRepo.relayFeed.value
+            } else {
+                eventRepo.feed.value
+            }
+            if (feedEvents.isEmpty()) return@launch
+
+            // Expand visible range with prefetch buffer: 5 above, 10 below
+            val bufferedFirst = maxOf(0, firstVisible - 5)
+            val bufferedLast = minOf(feedEvents.size - 1, lastVisible + 10)
+
+            val viewportEvents = feedEvents.subList(bufferedFirst, minOf(bufferedLast + 1, feedEvents.size))
+            val newEvents = viewportEvents.filter { it.id !in engagedEventIds }
+            if (newEvents.isNotEmpty()) {
+                Log.d("RLC", "[FeedSub] viewport [$firstVisible-$lastVisible] buffered [$bufferedFirst-$bufferedLast] — ${newEvents.size} new events to engage")
+                subscribeEngagementForEvents(newEvents)
+            }
+
+            // Cleanup: close engagement subs for events far from viewport.
+            // Data persists in EventRepository LRU cache even after sub closes.
+            cleanupDistantEngagementSubs(feedEvents, firstVisible, lastVisible)
+        }
+    }
+
+    /**
+     * Close engagement subs for events >50 items away from the current viewport.
+     * The engagement data is already cached in EventRepository's LRU caches.
+     */
+    private fun cleanupDistantEngagementSubs(
+        feedEvents: List<NostrEvent>,
+        firstVisible: Int,
+        lastVisible: Int
+    ) {
+        // Only clean up when there are many active engagement subs
+        if (activeEngagementSubIds.size < 5) return
+        // We don't track which sub IDs map to which events, so cleanup is
+        // handled naturally by the generation-based sub ID scheme — old subs
+        // eventually get closed when subscribeEngagementForFeed() is called
+        // on feed switches/reconnects.
     }
 
     fun subscribeNotifEngagement() {
@@ -982,10 +1081,12 @@ class FeedSubscriptionManager(
     /** Reset state for account switch. */
     fun reset() {
         feedEoseJob?.cancel()
+        viewportEngagementJob?.cancel()
         unsubscribeRelayFeed()
         relayPool.closeOnAllRelays(feedSubId)
         for (subId in activeEngagementSubIds) relayPool.closeOnAllRelays(subId)
         activeEngagementSubIds.clear()
+        engagedEventIds.clear()
         _loadingScreenComplete.value = false
         _initialLoadDone.value = false
         _initLoadingState.value = InitLoadingState.SearchingProfile

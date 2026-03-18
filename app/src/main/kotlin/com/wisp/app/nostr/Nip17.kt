@@ -24,13 +24,15 @@ object Nip17 {
      * Create a gift-wrapped DM (kind 1059) from sender to recipient.
      * Implements the 3-layer NIP-17 scheme: rumor(14) -> seal(13) -> gift wrap(1059).
      */
-    fun createGiftWrap(
+    suspend fun createGiftWrap(
         senderPrivkey: ByteArray,
         senderPubkey: ByteArray,
         recipientPubkey: ByteArray,
         message: String,
         replyTags: List<List<String>> = emptyList(),
-        rumorPTag: String? = null
+        rumorPTag: String? = null,
+        targetDifficulty: Int = 0,
+        onProgress: ((Long) -> Unit)? = null
     ): NostrEvent {
         val senderPubkeyHex = senderPubkey.toHex()
         val recipientPubkeyHex = recipientPubkey.toHex()
@@ -72,13 +74,34 @@ object Nip17 {
         val throwawayRecipientKey = Nip44.getConversationKey(throwaway.privkey, recipientPubkey)
         val encryptedSeal = Nip44.encrypt(seal.toJson(), throwawayRecipientKey)
         val wrapTimestamp = randomizeTimestamp(now)
+        val baseTags = listOf(listOf("p", recipientPubkeyHex))
+
+        val finalTags: List<List<String>>
+        val finalCreatedAt: Long
+        if (targetDifficulty > 0) {
+            val result = Nip13.mine(
+                pubkeyHex = throwaway.pubkey.toHex(),
+                kind = 1059,
+                content = encryptedSeal,
+                tags = baseTags,
+                targetDifficulty = targetDifficulty,
+                createdAt = wrapTimestamp,
+                onProgress = onProgress
+            )
+            finalTags = result.tags
+            finalCreatedAt = result.createdAt
+        } else {
+            finalTags = baseTags
+            finalCreatedAt = wrapTimestamp
+        }
+
         val giftWrap = NostrEvent.create(
             privkey = throwaway.privkey,
             pubkey = throwaway.pubkey,
             kind = 1059,
             content = encryptedSeal,
-            tags = listOf(listOf("p", recipientPubkeyHex)),
-            createdAt = wrapTimestamp
+            tags = finalTags,
+            createdAt = finalCreatedAt
         )
 
         // Wipe throwaway private key — no reason for it to persist
@@ -140,7 +163,9 @@ object Nip17 {
         recipientPubkeyHex: String,
         message: String,
         replyTags: List<List<String>> = emptyList(),
-        rumorPTag: String? = null
+        rumorPTag: String? = null,
+        targetDifficulty: Int = 0,
+        onProgress: ((Long) -> Unit)? = null
     ): NostrEvent {
         val senderPubkeyHex = signer.pubkeyHex
 
@@ -177,13 +202,34 @@ object Nip17 {
         val throwawayRecipientKey = Nip44.getConversationKey(throwaway.privkey, recipientPubkeyHex.hexToByteArray())
         val encryptedSeal = Nip44.encrypt(seal.toJson(), throwawayRecipientKey)
         val wrapTimestamp = randomizeTimestamp(now)
+        val baseTags = listOf(listOf("p", recipientPubkeyHex))
+
+        val finalTags: List<List<String>>
+        val finalCreatedAt: Long
+        if (targetDifficulty > 0) {
+            val result = Nip13.mine(
+                pubkeyHex = throwaway.pubkey.toHex(),
+                kind = 1059,
+                content = encryptedSeal,
+                tags = baseTags,
+                targetDifficulty = targetDifficulty,
+                createdAt = wrapTimestamp,
+                onProgress = onProgress
+            )
+            finalTags = result.tags
+            finalCreatedAt = result.createdAt
+        } else {
+            finalTags = baseTags
+            finalCreatedAt = wrapTimestamp
+        }
+
         val giftWrap = NostrEvent.create(
             privkey = throwaway.privkey,
             pubkey = throwaway.pubkey,
             kind = 1059,
             content = encryptedSeal,
-            tags = listOf(listOf("p", recipientPubkeyHex)),
-            createdAt = wrapTimestamp
+            tags = finalTags,
+            createdAt = finalCreatedAt
         )
 
         throwaway.wipe()
