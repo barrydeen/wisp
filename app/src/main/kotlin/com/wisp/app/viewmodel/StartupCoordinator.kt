@@ -597,6 +597,7 @@ class StartupCoordinator(
      */
     fun subscribeDmsAndNotifications(myPubkey: String) {
         notifRepo.soundEligibleAfter = System.currentTimeMillis() / 1000
+        dmRepo.soundEligibleAfter = System.currentTimeMillis() / 1000
         val dmFilter = Filter(kinds = listOf(1059), pTags = listOf(myPubkey))
         val dmReqMsg = ClientMessage.req("dms", dmFilter)
         relayPool.sendToAll(dmReqMsg)
@@ -770,6 +771,7 @@ class StartupCoordinator(
     fun onAppPause() {
         Log.d("RLC", "[Startup] onAppPause — feedType=${feedSub.feedType.value} connectedCount=${relayPool.connectedCount.value}")
         notifRepo.appIsActive = false
+        dmRepo.appIsActive = false
         lifecycleManager.onAppPause()
     }
 
@@ -777,6 +779,7 @@ class StartupCoordinator(
     fun onAppResume(pausedMs: Long) {
         Log.d("RLC", "[Startup] onAppResume — paused ${pausedMs/1000}s, feedType=${feedSub.feedType.value} connectedCount=${relayPool.connectedCount.value}")
         notifRepo.appIsActive = true
+        dmRepo.appIsActive = true
         lifecycleManager.onAppResume(pausedMs)
     }
 

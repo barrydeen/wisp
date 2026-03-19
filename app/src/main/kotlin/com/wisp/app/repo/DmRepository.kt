@@ -7,11 +7,16 @@ import com.wisp.app.nostr.DmConversation
 import com.wisp.app.nostr.DmMessage
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.wipe
+import com.wisp.app.nostr.FlatNotificationItem
+import com.wisp.app.nostr.NotificationType
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.util.concurrent.ConcurrentHashMap
 
 class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
+    private val myPubkey: String? = pubkeyHex
     private val prefs: SharedPreferences? =
         context?.getSharedPreferences("wisp_dm_${pubkeyHex ?: "anon"}", Context.MODE_PRIVATE)
     private var lastReadDmTimestamp: Long = prefs?.getLong("last_read_dm", 0L) ?: 0L
@@ -48,6 +53,19 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
     val decrypting: StateFlow<Boolean> = _decrypting
     private val decryptingRefCount = java.util.concurrent.atomic.AtomicInteger(0)
 
+    /** Only play sounds for DMs created after this timestamp (set at subscription time). */
+    @Volatile var soundEligibleAfter: Long = System.currentTimeMillis() / 1000
+
+    @Volatile var appIsActive: Boolean = true
+
+    private val _dmReceived = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val dmReceived: SharedFlow<Unit> = _dmReceived
+
+    private val dmNotifItems = mutableListOf<FlatNotificationItem>()
+    private val dmNotifIds = mutableSetOf<String>()
+    private val _dmNotifications = MutableStateFlow<List<FlatNotificationItem>>(emptyList())
+    val dmNotifications: StateFlow<List<FlatNotificationItem>> = _dmNotifications
+
     fun markDecryptingStart() {
         decryptingRefCount.incrementAndGet()
         _decrypting.value = true
@@ -60,6 +78,7 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
     }
 
     fun addMessage(msg: DmMessage, peerPubkey: String) {
+        var isNewIncoming = false
         synchronized(lock) {
             val existingMsgId = seenGiftWraps.get(msg.giftWrapId)
             if (existingMsgId != null) {
@@ -73,11 +92,36 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
                 _hasUnreadDms.value = true
             }
 
+            // Track incoming DMs as notification items
+            val incoming = myPubkey != null && msg.senderPubkey != myPubkey
+            if (incoming) {
+                val flatId = "dm:${msg.id}"
+                if (dmNotifIds.add(flatId)) {
+                    dmNotifItems.add(FlatNotificationItem(
+                        id = flatId,
+                        type = NotificationType.DM,
+                        actorPubkey = msg.senderPubkey,
+                        referencedEventId = msg.id,
+                        timestamp = msg.createdAt,
+                        dmContent = msg.content,
+                        dmPeerPubkey = peerPubkey
+                    ))
+                    val sorted = dmNotifItems.sortedByDescending { it.timestamp }
+                    _dmNotifications.value = if (sorted.size > 200) sorted.take(200) else sorted
+                }
+                if (msg.createdAt >= soundEligibleAfter && appIsActive) {
+                    isNewIncoming = true
+                }
+            }
+
             val messages = conversations.get(peerPubkey) ?: mutableListOf<DmMessage>().also {
                 conversations.put(peerPubkey, it)
             }
             messages.add(msg)
             messages.sortBy { it.createdAt }
+        }
+        if (isNewIncoming) {
+            _dmReceived.tryEmit(Unit)
         }
         updateConversationList()
     }
@@ -176,6 +220,8 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
             conversationKeyCache.evictAll()
             seenGiftWraps.clear()
             dmRelayCache.evictAll()
+            dmNotifItems.clear()
+            dmNotifIds.clear()
         }
         synchronized(pendingLock) {
             pendingGiftWraps.clear()
@@ -184,7 +230,9 @@ class DmRepository(context: Context? = null, pubkeyHex: String? = null) {
         _conversationList.value = emptyList()
         _hasUnreadDms.value = false
         _decrypting.value = false
+        _dmNotifications.value = emptyList()
         decryptingRefCount.set(0)
+        soundEligibleAfter = System.currentTimeMillis() / 1000
         prefs?.edit()?.clear()?.apply()
     }
 

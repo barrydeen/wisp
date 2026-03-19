@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -137,6 +138,7 @@ fun NotificationsScreen(
     translationRepo: TranslationRepository? = null,
     onPollVote: (String, List<String>) -> Unit = { _, _ -> },
     onUploadMedia: (List<Uri>, onUrl: (String) -> Unit) -> Unit = { _, _ -> },
+    onSendDm: (peerPubkey: String, content: String) -> Unit = { _, _ -> },
 ) {
     val notifications by viewModel.filteredFlatNotifications.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -152,6 +154,9 @@ fun NotificationsScreen(
 
     // Track inline replies sent by user: replyEventId -> list of sent content strings
     var inlineReplies by remember { mutableStateOf(mapOf<String, List<String>>()) }
+
+    // Track inline DM replies sent by user: peerPubkey -> list of sent content strings
+    var inlineDmReplies by remember { mutableStateOf(mapOf<String, List<String>>()) }
 
     // Version flows for PostCard cache invalidation
     val reactionVersion = eventRepo?.reactionVersion?.collectAsState()?.value ?: 0
@@ -338,6 +343,7 @@ fun NotificationsScreen(
                         profileVersion = profileVersion,
                         isExpanded = isExpanded,
                         inlineReplies = inlineReplies[item.replyEventId ?: ""] ?: emptyList(),
+                        inlineDmReplies = inlineDmReplies[item.dmPeerPubkey ?: ""] ?: emptyList(),
                         userPubkey = userPubkey,
                         postCardParams = postCardParams,
                         onClick = {
@@ -349,6 +355,11 @@ fun NotificationsScreen(
                             val key = item.replyEventId ?: ""
                             val existing = inlineReplies[key] ?: emptyList()
                             inlineReplies = inlineReplies + (key to (existing + content))
+                        },
+                        onSendDm = { peerPubkey, content ->
+                            onSendDm(peerPubkey, content)
+                            val existing = inlineDmReplies[peerPubkey] ?: emptyList()
+                            inlineDmReplies = inlineDmReplies + (peerPubkey to (existing + content))
                         },
                         onUploadMedia = onUploadMedia,
                         onReplyFocused = {
@@ -386,11 +397,13 @@ private fun ZenNotificationRow(
     profileVersion: Int,
     isExpanded: Boolean = false,
     inlineReplies: List<String> = emptyList(),
+    inlineDmReplies: List<String> = emptyList(),
     userPubkey: String? = null,
     postCardParams: NotifPostCardParams? = null,
     onClick: () -> Unit,
     onProfileClick: (String) -> Unit,
     onSendReply: (NostrEvent, String) -> Unit = { _, _ -> },
+    onSendDm: (String, String) -> Unit = { _, _ -> },
     onUploadMedia: (List<Uri>, onUrl: (String) -> Unit) -> Unit = { _, _ -> },
     onReplyFocused: () -> Unit = {}
 ) {
@@ -471,7 +484,18 @@ private fun ZenNotificationRow(
             enter = expandVertically(),
             exit = shrinkVertically()
         ) {
-            if (item.type == NotificationType.REPLY) {
+            if (item.type == NotificationType.DM) {
+                DmExpansion(
+                    item = item,
+                    resolveProfile = resolveProfile,
+                    profileVersion = profileVersion,
+                    inlineDmReplies = inlineDmReplies,
+                    userPubkey = userPubkey,
+                    onSendDm = onSendDm,
+                    onProfileClick = onProfileClick,
+                    onFocused = onReplyFocused
+                )
+            } else if (item.type == NotificationType.REPLY) {
                 ReplyExpansion(
                     item = item,
                     eventRepo = eventRepo,
@@ -516,6 +540,66 @@ private fun NoteExpansion(
         ReferencedNotePostCard(
             eventId = eventId,
             params = params
+        )
+    }
+}
+
+// ── DM Expansion ──────────────────────────────────────────────────────
+
+@Composable
+private fun DmExpansion(
+    item: FlatNotificationItem,
+    resolveProfile: (String) -> ProfileData?,
+    profileVersion: Int,
+    inlineDmReplies: List<String> = emptyList(),
+    userPubkey: String? = null,
+    onSendDm: (String, String) -> Unit = { _, _ -> },
+    onProfileClick: (String) -> Unit = {},
+    onFocused: () -> Unit = {}
+) {
+    val peerPubkey = item.dmPeerPubkey ?: return
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp)
+    ) {
+        // Their message
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 68.dp, end = 16.dp)
+        ) {
+            Text(
+                text = item.dmContent ?: "",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(12.dp)
+            )
+        }
+
+        // User's inline DM replies
+        val userProfile = remember(profileVersion, userPubkey) {
+            userPubkey?.let { resolveProfile(it) }
+        }
+        inlineDmReplies.forEach { content ->
+            InlineSentReply(
+                content = content,
+                profile = userProfile,
+                onProfileClick = onProfileClick,
+                onNoteClick = {},
+                modifier = Modifier.padding(start = 48.dp, top = 4.dp, end = 16.dp)
+            )
+        }
+
+        // Inline DM composer
+        InlineReplyComposer(
+            onSend = { content -> onSendDm(peerPubkey, content) },
+            onFocused = onFocused,
+            placeholder = "Message...",
+            modifier = Modifier.padding(start = 48.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)
         )
     }
 }
@@ -775,7 +859,7 @@ private data class NotifPostCardParams(
 private fun InlineSentReply(
     content: String,
     profile: ProfileData?,
-    eventRepo: EventRepository?,
+    eventRepo: EventRepository? = null,
     onProfileClick: (String) -> Unit,
     onNoteClick: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -809,6 +893,7 @@ private fun InlineReplyComposer(
     onSend: (String) -> Unit,
     onUploadMedia: (List<Uri>, onUrl: (String) -> Unit) -> Unit = { _, _ -> },
     onFocused: () -> Unit = {},
+    placeholder: String = "Reply...",
     modifier: Modifier = Modifier
 ) {
     val textFieldState = remember { TextFieldState() }
@@ -858,7 +943,7 @@ private fun InlineReplyComposer(
                 Box {
                     if (textFieldState.text.isEmpty()) {
                         Text(
-                            "Reply...",
+                            placeholder,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -980,6 +1065,14 @@ private fun NotificationTypeIcon(item: FlatNotificationItem, showSats: Boolean =
                 tint = MaterialTheme.colorScheme.primary
             )
         }
+        NotificationType.DM -> {
+            Icon(
+                Icons.Outlined.MailOutline,
+                contentDescription = "DM",
+                modifier = Modifier.size(iconSize),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
         NotificationType.VOTE -> {
             Icon(
                 Icons.Outlined.BarChart,
@@ -999,6 +1092,7 @@ private fun actionText(item: FlatNotificationItem): String = when (item.type) {
     NotificationType.QUOTE -> "quoted"
     NotificationType.MENTION -> "mentioned you"
     NotificationType.VOTE -> "voted"
+    NotificationType.DM -> "messaged you"
 }
 
 // ── Daily Summary Bar ──────────────────────────────────────────────────
@@ -1026,6 +1120,7 @@ private fun DailySummaryBar(summary: NotificationSummary, onFilterSelect: (Notif
             SummaryStat(Icons.Outlined.CurrencyBitcoin, formatSatsCompact(summary.zapSats)) { onFilterSelect(NotificationFilter.ZAPS) }
             SummaryStat(Icons.Outlined.Repeat, summary.repostCount.toString()) { onFilterSelect(NotificationFilter.REPOSTS) }
             SummaryStat(Icons.Outlined.AlternateEmail, (summary.mentionCount + summary.quoteCount).toString()) { onFilterSelect(NotificationFilter.MENTIONS) }
+            SummaryStat(Icons.Outlined.MailOutline, summary.dmCount.toString()) { onFilterSelect(NotificationFilter.DMS) }
         }
     }
 }
