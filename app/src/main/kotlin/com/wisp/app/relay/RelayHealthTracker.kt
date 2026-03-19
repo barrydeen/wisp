@@ -10,6 +10,9 @@ import android.util.Log
  * A session starts when a relay connects while the app is active and ends either
  * when the app pauses (recorded normally) or when the relay disconnects mid-session
  * (counted as a failure). An `appIsActive` flag on RelayPool gates all tracking.
+ *
+ * Relays are marked bad only when they return a 5xx HTTP error — rate limiting
+ * and mid-session disconnects are not penalised.
  */
 class RelayHealthTracker(
     private val context: Context,
@@ -18,11 +21,7 @@ class RelayHealthTracker(
     companion object {
         private const val TAG = "RelayHealthTracker"
         private const val MAX_SESSION_HISTORY = 10
-        private const val MIN_SESSIONS_FOR_EVAL = 3
         private const val MIN_SESSION_DURATION_MS = 30_000L
-        private const val BAD_ZERO_EVENT_SESSIONS = 8
-        private const val BAD_DISCONNECT_SESSIONS = 8
-        private const val BAD_RATE_LIMIT_SESSIONS = 3
         private const val BAD_RELAY_EXPIRY_MS = 24 * 60 * 60 * 1000L // 24 hours
 
         private fun prefsName(pubkeyHex: String?): String =
@@ -34,14 +33,12 @@ class RelayHealthTracker(
     private data class ActiveSession(
         var eventsReceived: Int = 0,
         var midSessionFailures: Int = 0,
-        var rateLimitHits: Int = 0,
         val startedAt: Long = System.currentTimeMillis()
     )
 
     private data class SessionRecord(
         val eventsReceived: Int,
         val hadMidSessionFailure: Boolean,
-        val hadRateLimit: Boolean,
         val durationMs: Long
     )
 
@@ -118,11 +115,22 @@ class RelayHealthTracker(
 
     @Synchronized
     fun onRateLimitHit(url: String) {
-        activeSessions[url]?.rateLimitHits?.let {
-            activeSessions[url]!!.rateLimitHits = it + 1
-        }
+        // Track rate limits as a stat for display purposes only — not used for bad marking.
         getOrCreateStats(url).totalRateLimits++
         Log.d(TAG, "Rate limit hit: $url")
+    }
+
+    /**
+     * Mark a relay bad immediately due to a 5xx server error.
+     */
+    @Synchronized
+    fun onServerError(url: String, httpCode: Int) {
+        if (url in _badRelays) return
+        _badRelays[url] = System.currentTimeMillis()
+        _badRelayReasons[url] = "Server error HTTP $httpCode"
+        onBadRelaysChanged?.invoke()
+        saveToPrefs()
+        Log.w(TAG, "Relay marked BAD: $url (HTTP $httpCode)")
     }
 
     /**
@@ -135,11 +143,9 @@ class RelayHealthTracker(
         for ((url, session) in activeSessions) {
             val duration = now - session.startedAt
             recordSession(url, session, duration, isMidSessionFailure = false)
-            // Accumulate connected time
             getOrCreateStats(url).totalConnectedMs += duration
         }
         activeSessions.clear()
-        evaluateAllRelays()
         saveToPrefs()
         Log.d(TAG, "Closed all sessions (${sessionHistory.size} relays tracked)")
     }
@@ -152,15 +158,12 @@ class RelayHealthTracker(
         val session = activeSessions.remove(url) ?: return
         val duration = System.currentTimeMillis() - session.startedAt
         getOrCreateStats(url).totalConnectedMs += duration
-        // Short-lived disconnects are almost certainly app lifecycle transitions
-        // (minimize/close), not actual relay failures — skip failure tracking.
         if (duration < MIN_SESSION_DURATION_MS) {
             Log.d(TAG, "Session too short for failure tracking: $url (${duration / 1000}s)")
             return
         }
         getOrCreateStats(url).totalFailures++
         recordSession(url, session, duration, isMidSessionFailure = true)
-        evaluateRelay(url)
         saveToPrefs()
         Log.d(TAG, "Session closed (failure): $url, events=${session.eventsReceived}, duration=${duration / 1000}s")
     }
@@ -233,7 +236,6 @@ class RelayHealthTracker(
     data class SessionSummary(
         val eventsReceived: Int,
         val hadMidSessionFailure: Boolean,
-        val hadRateLimit: Boolean,
         val durationMs: Long
     )
 
@@ -245,7 +247,7 @@ class RelayHealthTracker(
     @Synchronized
     fun getSessionHistory(url: String): List<SessionSummary> {
         return sessionHistory[url]?.map {
-            SessionSummary(it.eventsReceived, it.hadMidSessionFailure, it.hadRateLimit, it.durationMs)
+            SessionSummary(it.eventsReceived, it.hadMidSessionFailure, it.durationMs)
         } ?: emptyList()
     }
 
@@ -286,57 +288,12 @@ class RelayHealthTracker(
         val record = SessionRecord(
             eventsReceived = session.eventsReceived,
             hadMidSessionFailure = isMidSessionFailure,
-            hadRateLimit = session.rateLimitHits > 0,
             durationMs = durationMs
         )
         val history = sessionHistory.getOrPut(url) { mutableListOf() }
         history.add(record)
         if (history.size > MAX_SESSION_HISTORY) {
             history.removeAt(0)
-        }
-    }
-
-    private fun evaluateAllRelays() {
-        val previousBad = _badRelays.keys.toSet()
-        for (url in sessionHistory.keys) {
-            evaluateRelayInternal(url)
-        }
-        if (_badRelays.keys != previousBad) {
-            onBadRelaysChanged?.invoke()
-        }
-    }
-
-    private fun evaluateRelay(url: String) {
-        val previousBad = _badRelays.keys.toSet()
-        evaluateRelayInternal(url)
-        if (_badRelays.keys != previousBad) {
-            onBadRelaysChanged?.invoke()
-        }
-    }
-
-    private fun evaluateRelayInternal(url: String) {
-        val history = sessionHistory[url] ?: return
-        if (history.size < MIN_SESSIONS_FOR_EVAL) return
-
-        val zeroEventSessions = history.count {
-            it.eventsReceived == 0 && it.durationMs >= MIN_SESSION_DURATION_MS
-        }
-        val disconnectSessions = history.count { it.hadMidSessionFailure }
-        val rateLimitSessions = history.count { it.hadRateLimit }
-
-        val wasBad = url in _badRelays
-        val isBadNow = zeroEventSessions >= BAD_ZERO_EVENT_SESSIONS ||
-                disconnectSessions >= BAD_DISCONNECT_SESSIONS ||
-                rateLimitSessions >= BAD_RATE_LIMIT_SESSIONS
-
-        if (isBadNow && !wasBad) {
-            _badRelays[url] = System.currentTimeMillis()
-            val reasons = mutableListOf<String>()
-            if (zeroEventSessions >= BAD_ZERO_EVENT_SESSIONS) reasons.add("$zeroEventSessions/${history.size} sessions received 0 events")
-            if (disconnectSessions >= BAD_DISCONNECT_SESSIONS) reasons.add("$disconnectSessions/${history.size} sessions disconnected mid-session")
-            if (rateLimitSessions >= BAD_RATE_LIMIT_SESSIONS) reasons.add("$rateLimitSessions/${history.size} sessions hit rate limits")
-            _badRelayReasons[url] = reasons.joinToString("; ")
-            Log.w(TAG, "Relay marked BAD: $url (zero=$zeroEventSessions, disconnects=$disconnectSessions, rateLimit=$rateLimitSessions)")
         }
     }
 
@@ -351,15 +308,16 @@ class RelayHealthTracker(
         editor.putString("bad_relays_v2", badRelayEntries)
         editor.remove("bad_relays") // Remove old format
 
-        // Session history: url -> "events,failure,ratelimit,duration;..."
+        // Session history: url -> "events,failure,duration;..."
         val historySnapshot = HashMap(sessionHistory)
         val historyEntries = historySnapshot.entries.joinToString("\n") { (url, records) ->
             val recordStr = records.toList().joinToString(";") { r ->
-                "${r.eventsReceived},${if (r.hadMidSessionFailure) 1 else 0},${if (r.hadRateLimit) 1 else 0},${r.durationMs}"
+                "${r.eventsReceived},${if (r.hadMidSessionFailure) 1 else 0},${r.durationMs}"
             }
             "$url\t$recordStr"
         }
-        editor.putString("session_history", historyEntries)
+        editor.putString("session_history_v2", historyEntries)
+        editor.remove("session_history") // Remove old format (had rate limit field)
 
         // Lifetime stats: url -> "evRcv,evSent,byRcv,bySent,conns,connMs,fails,rl,first,last"
         val statsSnapshot = HashMap(lifetimeStats)
@@ -383,7 +341,6 @@ class RelayHealthTracker(
                 if (parts.size == 2) {
                     val url = parts[0]
                     val ts = parts[1].toLongOrNull() ?: now
-                    // Skip expired entries on load
                     if (now - ts <= BAD_RELAY_EXPIRY_MS) {
                         _badRelays[url] = ts
                     } else {
@@ -392,9 +349,6 @@ class RelayHealthTracker(
                 }
             }
         } else {
-            // Migrate old format (no timestamps) — treat as freshly marked
-            // But since we can't know when they were marked, DON'T migrate — let them expire
-            // by simply not loading. This clears stale bad relay lists on upgrade.
             prefs.getStringSet("bad_relays", null)?.let { oldSet ->
                 if (oldSet.isNotEmpty()) {
                     Log.d(TAG, "Discarding ${oldSet.size} bad relays from old format (no timestamps)")
@@ -403,8 +357,8 @@ class RelayHealthTracker(
             }
         }
 
-        // Session history
-        val historyStr = prefs.getString("session_history", null)
+        // Session history (v2: 3 fields per record — events, failure, duration)
+        val historyStr = prefs.getString("session_history_v2", null)
         if (!historyStr.isNullOrBlank()) {
             for (line in historyStr.split("\n")) {
                 val parts = line.split("\t", limit = 2)
@@ -412,13 +366,12 @@ class RelayHealthTracker(
                 val url = parts[0]
                 val records = parts[1].split(";").mapNotNull { r ->
                     val fields = r.split(",")
-                    if (fields.size != 4) return@mapNotNull null
+                    if (fields.size != 3) return@mapNotNull null
                     try {
                         SessionRecord(
                             eventsReceived = fields[0].toInt(),
                             hadMidSessionFailure = fields[1] == "1",
-                            hadRateLimit = fields[2] == "1",
-                            durationMs = fields[3].toLong()
+                            durationMs = fields[2].toLong()
                         )
                     } catch (_: NumberFormatException) { null }
                 }

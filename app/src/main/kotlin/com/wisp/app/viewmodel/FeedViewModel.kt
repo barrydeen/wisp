@@ -406,7 +406,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         val timeoutMs = if (isTor) 15_000L else 4_000L
         val client = HttpClientFactory.createRelayClient()
         val relay = Relay(RelayConfig(url, read = true, write = false), client)
-        relay.autoReconnect = false
         return try {
             relay.connect()
             val connected = relay.awaitConnected(timeoutMs = timeoutMs)

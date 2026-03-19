@@ -99,10 +99,7 @@ class RelayPool {
     @Volatile var appIsActive = false
         set(value) {
             field = value
-            // Suppress/enable auto-reconnect on all relays based on app state.
-            // When backgrounded, relays that drop shouldn't waste resources retrying —
-            // onAppResume handles reconnection.
-            setReconnectEnabled(value)
+            if (value) startReconnectSweep() else stopReconnectSweep()
         }
     /** True while reconnectAll/forceReconnectAll is in progress — guards health tracker
      *  from recording disconnect churn as real failures. */
@@ -236,7 +233,7 @@ class RelayPool {
         val existingUrls = relays.map { it.config.url }.toSet()
         for (config in filtered) {
             if (config.url !in existingUrls) {
-                val relay = Relay(config, client, scope)
+                val relay = Relay(config, client)
                 wireByteTracking(relay)
                 relays.add(relay)
                 relayIndex[config.url] = relay
@@ -261,7 +258,7 @@ class RelayPool {
         val existingUrls = dmRelays.map { it.config.url }.toSet()
         for (url in filtered) {
             if (url !in existingUrls) {
-                val relay = Relay(RelayConfig(url, read = true, write = true), client, scope)
+                val relay = Relay(RelayConfig(url, read = true, write = true), client)
                 wireByteTracking(relay)
                 dmRelays.add(relay)
                 relayIndex[url] = relay
@@ -286,11 +283,26 @@ class RelayPool {
         }
     }
 
-    private fun setReconnectEnabled(enabled: Boolean) {
-        for (relay in relays) relay.reconnectEnabled = enabled
-        for (relay in dmRelays) relay.reconnectEnabled = enabled
-        for (relay in ephemeralRelays.values) relay.reconnectEnabled = enabled
-        if (!enabled) Log.d("RLC", "[Pool] auto-reconnect suppressed (app backgrounded)")
+    private var reconnectSweepJob: Job? = null
+
+    private fun startReconnectSweep() {
+        reconnectSweepJob?.cancel()
+        reconnectSweepJob = scope.launch {
+            while (appIsActive) {
+                delay(3_000)
+                if (appIsActive) {
+                    for (relay in relays) relay.connectIfNeeded()
+                    for (relay in dmRelays) relay.connectIfNeeded()
+                    // Ephemeral relays are NOT swept — they're recreated on demand
+                }
+            }
+        }
+    }
+
+    private fun stopReconnectSweep() {
+        reconnectSweepJob?.cancel()
+        reconnectSweepJob = null
+        Log.d("RLC", "[Pool] reconnect sweep stopped (app backgrounded)")
     }
 
     private fun cancelRelayJobs(url: String) {
@@ -301,6 +313,7 @@ class RelayPool {
         val parentJob = SupervisorJob()
         relayJobs[relay.config.url]?.cancel()
         relayJobs[relay.config.url] = parentJob
+        relay.onConnected = { resyncSubscriptions(relay) }
 
         scope.launch(parentJob) {
             relay.messages.collect { msg ->
@@ -415,10 +428,6 @@ class RelayPool {
                 Log.d("RLC", "[Pool] connectionState=$connected for ${relay.config.url} | relay.isConnected=${relay.isConnected} appIsActive=$appIsActive isReconnecting=$isReconnecting")
                 updateConnectedCount()
                 if (connected) {
-                    // Always resync regardless of appIsActive — relays that connect
-                    // during the awaitAnyConnected window (before appIsActive=true)
-                    // would otherwise miss their subscriptions entirely.
-                    resyncSubscriptions(relay)
                     if (appIsActive && !isReconnecting) healthTracker?.onRelayConnected(relay.config.url)
                 } else {
                     if (appIsActive && !isReconnecting) healthTracker?.closeSession(relay.config.url)
@@ -768,8 +777,7 @@ class RelayPool {
         var isNew = false
         val ephemeral = ephemeralRelays.computeIfAbsent(url) {
             isNew = true
-            val relay = Relay(RelayConfig(url, read = true, write = false), client, scope)
-            relay.autoReconnect = false
+            val relay = Relay(RelayConfig(url, read = true, write = false), client)
             wireByteTracking(relay)
             relayIndex[url] = relay
             collectMessages(relay)
@@ -794,8 +802,12 @@ class RelayPool {
     private fun collectRelayFailures(relay: Relay, parentJob: Job) {
         scope.launch(parentJob) {
             relay.failures.collect { failure ->
-                if (appIsActive && failure.httpCode == 429) {
-                    healthTracker?.onRateLimitHit(relay.config.url)
+                if (appIsActive) {
+                    when {
+                        failure.httpCode == 429 -> healthTracker?.onRateLimitHit(relay.config.url)
+                        failure.httpCode != null && failure.httpCode in 500..599 ->
+                            healthTracker?.onServerError(relay.config.url, failure.httpCode)
+                    }
                 }
                 val isEphemeral = ephemeralRelays.containsKey(relay.config.url)
                 // Only apply cooldowns to ephemeral relays.
@@ -868,16 +880,14 @@ class RelayPool {
             relay.resetBackoff()
             relay.disconnect()
             relay.connect()
-            relay.reconnectEnabled = true
         }
         for (relay in dmRelays) {
             relay.resetBackoff()
             relay.disconnect()
             relay.connect()
-            relay.reconnectEnabled = true
         }
         // Evict ALL ephemeral relays — they'll be recreated on demand.
-        // Even "connected" ephemerals may be stale and have autoReconnect=false.
+        // Even "connected" ephemerals may be stale.
         for ((url, relay) in ephemeralRelays) {
             relay.disconnect()
             relayIndex.remove(url)
@@ -911,18 +921,14 @@ class RelayPool {
         // Tear down and reconnect persistent relays
         for (relay in relays) {
             relay.resetBackoff()
-            relay.reconnectEnabled = false  // Suppress onFailure errors from disconnect()
             relay.disconnect()
             relay.connect()
-            relay.reconnectEnabled = true
         }
         // Tear down and reconnect DM relays
         for (relay in dmRelays) {
             relay.resetBackoff()
-            relay.reconnectEnabled = false  // Suppress onFailure errors from disconnect()
             relay.disconnect()
             relay.connect()
-            relay.reconnectEnabled = true
         }
         // Evict all ephemeral relays — they'll be recreated on demand
         for ((url, relay) in ephemeralRelays) {
@@ -1001,8 +1007,7 @@ class RelayPool {
         if (!RelayConfig.isConnectableUrl(url)) return
         if (ephemeralRelays.containsKey(url)) return
         if (ephemeralRelays.size >= MAX_EPHEMERAL) return
-        val relay = Relay(RelayConfig(url, read = true, write = false), client, scope)
-        relay.autoReconnect = false
+        val relay = Relay(RelayConfig(url, read = true, write = false), client)
         wireByteTracking(relay)
         relayIndex[url] = relay
         collectMessages(relay)

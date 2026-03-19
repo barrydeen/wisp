@@ -2,13 +2,9 @@ package com.wisp.app.relay
 
 import android.util.Log
 import com.wisp.app.nostr.RelayMessage
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -16,42 +12,32 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.TimeUnit
 
 data class RelayFailure(val relayUrl: String, val httpCode: Int?, val message: String)
 
 class Relay(
     val config: RelayConfig,
     private val client: OkHttpClient,
-    private val scope: CoroutineScope? = null
 ) {
     @Volatile private var webSocket: WebSocket? = null
     private val connectLock = Any()
     @Volatile var isConnected = false
         private set
-    var autoReconnect = true
-    /** Set to false when app is backgrounded to suppress reconnect attempts. */
-    @Volatile var reconnectEnabled = true
     @Volatile var cooldownUntil: Long = 0L
 
-    // Connection attempt tracking for automatic backoff
-    private val connectAttempts = mutableListOf<Long>()
-    private val attemptLock = Any()
-
     companion object {
-        private const val ATTEMPT_WINDOW_MS = 60_000L       // Track attempts in the last 60s
-        private const val MAX_ATTEMPTS_IN_WINDOW = 20        // Threshold before backing off
-        private const val BACKOFF_COOLDOWN_MS = 5 * 60_000L  // 5 min cooldown when threshold hit
-
-        /** Shared scheduler for non-blocking reconnect delays (avoids blocking OkHttp dispatcher threads). */
-        private val reconnectScheduler = Executors.newSingleThreadScheduledExecutor { r ->
-            Thread(r, "relay-reconnect").apply { isDaemon = true }
-        }
+        const val INITIAL_RECONNECT_DELAY_MS = 1_000L
+        const val MAX_RECONNECT_DELAY_MS = 5 * 60_000L
+        /** Minimum time a connection must stay open before its backoff is considered reset. */
+        private const val STABLE_CONNECTION_MS = 10_000L
 
         fun createClient(): OkHttpClient = HttpClientFactory.createRelayClient()
     }
+
+    @Volatile var reconnectDelayMs: Long = INITIAL_RECONNECT_DELAY_MS
+        private set
+    @Volatile var lastAttemptMs: Long = 0L
+        private set
 
     private val sendLock = Any()
     private val pendingMessages = ConcurrentLinkedQueue<String>()
@@ -78,59 +64,53 @@ class Relay(
     var onBytesReceived: ((url: String, size: Int) -> Unit)? = null
     var onBytesSent: ((url: String, size: Int) -> Unit)? = null
 
+    /**
+     * Called synchronously on OkHttp's thread at the start of onOpen, before drainPendingMessages.
+     * Use to immediately resend subscriptions so they hit the wire within the relay's idle-timeout
+     * window (some uWebSockets-based relays drop connections that send nothing within ~150ms).
+     */
+    var onConnected: (() -> Unit)? = null
+
     fun connect() {
         synchronized(connectLock) {
             if (isConnected || webSocket != null) return
 
-            // Check if we're in a cooldown period
             val now = System.currentTimeMillis()
             if (now < cooldownUntil) {
                 Log.d("Relay", "Skipping connect to ${config.url} — cooled down for ${(cooldownUntil - now) / 1000}s more")
                 return
             }
 
-            // Track this attempt and check for excessive reconnections
-            synchronized(attemptLock) {
-                connectAttempts.add(now)
-                // Prune old attempts outside the window
-                connectAttempts.removeAll { now - it > ATTEMPT_WINDOW_MS }
-                if (connectAttempts.size >= MAX_ATTEMPTS_IN_WINDOW) {
-                    cooldownUntil = now + BACKOFF_COOLDOWN_MS
-                    connectAttempts.clear()
-                    Log.w("Relay", "Too many connection attempts to ${config.url} " +
-                        "(${MAX_ATTEMPTS_IN_WINDOW} in ${ATTEMPT_WINDOW_MS / 1000}s), " +
-                        "backing off for ${BACKOFF_COOLDOWN_MS / 1000 / 60} min")
-                    _connectionErrors.tryEmit(ConsoleLogEntry(
-                        relayUrl = config.url,
-                        type = ConsoleLogType.CONN_FAILURE,
-                        message = "Too many reconnect attempts — cooling off for ${BACKOFF_COOLDOWN_MS / 1000 / 60} min"
-                    ))
-                    return
-                }
-            }
+            lastAttemptMs = now
 
             val request = try {
-                Request.Builder().url(config.url).build()
+                Request.Builder()
+                    .url(config.url)
+                    .header("User-Agent", "Wisp/1.0 (Android; Nostr)")
+                    .build()
             } catch (e: IllegalArgumentException) {
                 Log.w("Relay", "Invalid relay URL: ${config.url}")
                 return
             }
-            val socketId = System.nanoTime() // unique ID for this WebSocket instance
+            val socketId = System.nanoTime()
             Log.d("RLC", "[Relay] connect() creating ws#$socketId for ${config.url}")
             if (config.url.contains(".onion")) {
                 Log.d("TorRelay", "[Relay] connect() .onion relay: ${config.url} proxy=${client.proxy} connectTimeout=${client.connectTimeoutMillis}ms")
             }
             webSocket = client.newWebSocket(request, object : WebSocketListener() {
+                var openedAtMs = 0L
+
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     Log.d("RLC", "[Relay] ws#$socketId onOpen ${config.url} | isConnected was=$isConnected")
                     if (config.url.contains(".onion")) {
                         Log.d("TorRelay", "[Relay] .onion connection SUCCESS: ${config.url}")
                     }
+                    openedAtMs = System.currentTimeMillis()
                     isConnected = true
-                    // Successful connection — reset attempt tracking
-                    synchronized(attemptLock) { connectAttempts.clear() }
-                    _connectionState.tryEmit(true)
+                    lastAttemptMs = 0L
+                    onConnected?.invoke()
                     drainPendingMessages(webSocket)
+                    _connectionState.tryEmit(true)
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
@@ -146,32 +126,33 @@ class Relay(
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     val isCurrent = synchronized(connectLock) { this@Relay.webSocket === webSocket }
-                    Log.e("RLC", "[Relay] ws#$socketId onFailure ${config.url}: ${t.message} | isCurrent=$isCurrent isConnected=$isConnected")
+                    Log.e("RLC", "[Relay] ws#$socketId onFailure ${config.url}: ${t.javaClass.simpleName}: ${t.message} | httpCode=${response?.code} | isCurrent=$isCurrent isConnected=$isConnected")
                     if (config.url.contains(".onion")) {
                         Log.e("TorRelay", "[Relay] .onion connection FAILED: ${config.url} | error=${t.javaClass.simpleName}: ${t.message}", t)
                     }
                     synchronized(connectLock) {
-                        // Only null the reference if this callback is for the current WebSocket
                         if (this@Relay.webSocket === webSocket) {
                             isConnected = false
                             this@Relay.webSocket = null
                         }
                     }
-                    // Only emit state/errors and reconnect for the current WebSocket.
-                    // Stale callbacks from a replaced socket must not wipe the new socket's state.
                     if (isCurrent) {
-                        _connectionState.tryEmit(false)
-                        // Suppress error emissions during force reconnect — disconnect()
-                        // triggers onFailure for the torn-down socket, flooding the console.
-                        if (reconnectEnabled) {
-                            _connectionErrors.tryEmit(ConsoleLogEntry(
-                                relayUrl = config.url,
-                                type = ConsoleLogType.CONN_FAILURE,
-                                message = t.message ?: t.javaClass.simpleName
-                            ))
-                            _failures.tryEmit(RelayFailure(config.url, response?.code, t.message ?: t.javaClass.simpleName))
+                        val now = System.currentTimeMillis()
+                        lastAttemptMs = now
+                        val connectedDurationMs = if (openedAtMs > 0) now - openedAtMs else 0L
+                        reconnectDelayMs = if (connectedDurationMs >= STABLE_CONNECTION_MS) {
+                            INITIAL_RECONNECT_DELAY_MS  // Was stable — reset backoff
+                        } else {
+                            minOf(reconnectDelayMs * 2, MAX_RECONNECT_DELAY_MS)  // Fast fail — back off
                         }
-                        reconnect()
+                        openedAtMs = 0L
+                        _connectionState.tryEmit(false)
+                        _connectionErrors.tryEmit(ConsoleLogEntry(
+                            relayUrl = config.url,
+                            type = ConsoleLogType.CONN_FAILURE,
+                            message = t.message ?: t.javaClass.simpleName
+                        ))
+                        _failures.tryEmit(RelayFailure(config.url, response?.code, t.message ?: t.javaClass.simpleName))
                     }
                 }
 
@@ -184,18 +165,25 @@ class Relay(
                             this@Relay.webSocket = null
                         }
                     }
-                    // Only emit state/errors and reconnect for the current WebSocket.
                     if (isCurrent) {
+                        val now = System.currentTimeMillis()
+                        val connectedDurationMs = if (openedAtMs > 0) now - openedAtMs else 0L
+                        openedAtMs = 0L
                         _connectionState.tryEmit(false)
-                        if (code != 1000) {
-                            if (reconnectEnabled) {
-                                _connectionErrors.tryEmit(ConsoleLogEntry(
-                                    relayUrl = config.url,
-                                    type = ConsoleLogType.CONN_CLOSED,
-                                    message = "Code $code: $reason"
-                                ))
+                        if (code == 1000) {
+                            reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS  // Clean close — reset backoff
+                        } else {
+                            lastAttemptMs = now
+                            reconnectDelayMs = if (connectedDurationMs >= STABLE_CONNECTION_MS) {
+                                INITIAL_RECONNECT_DELAY_MS
+                            } else {
+                                minOf(reconnectDelayMs * 2, MAX_RECONNECT_DELAY_MS)
                             }
-                            reconnect()
+                            _connectionErrors.tryEmit(ConsoleLogEntry(
+                                relayUrl = config.url,
+                                type = ConsoleLogType.CONN_CLOSED,
+                                message = "Code $code: $reason"
+                            ))
                         }
                     }
                 }
@@ -203,17 +191,26 @@ class Relay(
         }
     }
 
+    /** Returns true if this relay is disconnected and enough time has passed to attempt reconnection. */
+    fun needsReconnect(): Boolean {
+        if (isConnected || webSocket != null) return false
+        val now = System.currentTimeMillis()
+        return now >= cooldownUntil && now >= lastAttemptMs + reconnectDelayMs
+    }
+
+    /** Calls connect() only if the relay needs reconnection. */
+    fun connectIfNeeded() {
+        if (needsReconnect()) connect()
+    }
+
     fun send(message: String): Boolean {
         val ws = webSocket
         if (ws != null && isConnected) {
             onBytesSent?.invoke(config.url, message.length)
-            // Serialize all writes — OkHttp's WebSocket writer is not thread-safe.
-            // Also prevents cancel() (which acquires sendLock) from racing with send().
             synchronized(sendLock) {
                 return ws.send(message)
             }
         }
-        // Queue message for delivery when connected
         if (pendingMessages.size < maxPendingMessages) {
             pendingMessages.add(message)
         }
@@ -254,13 +251,6 @@ class Relay(
             Log.d("RLC", "[Relay] disconnect() ${config.url} | wasConnected=$wasConnected hasSocket=${ws != null}")
             isConnected = false
             webSocket = null
-            pendingReconnect?.cancel(false)
-            pendingReconnect = null
-            pendingReconnectJob?.cancel()
-            pendingReconnectJob = null
-            // Acquire sendLock before cancel() to ensure no in-flight send() or
-            // drainPendingMessages() is using the WebSocket when we tear it down.
-            // Without this, cancel() can null OkHttp's internal writer mid-send → NPE.
             if (ws != null) {
                 synchronized(sendLock) { ws.cancel() }
             }
@@ -275,10 +265,6 @@ class Relay(
             val ws = webSocket
             isConnected = false
             webSocket = null
-            pendingReconnect?.cancel(false)
-            pendingReconnect = null
-            pendingReconnectJob?.cancel()
-            pendingReconnectJob = null
             if (ws != null) {
                 synchronized(sendLock) { ws.cancel() }
             }
@@ -288,31 +274,8 @@ class Relay(
     /** Reset backoff state — call when user explicitly reconnects */
     fun resetBackoff() {
         cooldownUntil = 0L
-        synchronized(attemptLock) { connectAttempts.clear() }
-    }
-
-    @Volatile private var pendingReconnect: ScheduledFuture<*>? = null
-    @Volatile private var pendingReconnectJob: Job? = null
-
-    private fun reconnect() {
-        if (!autoReconnect || !reconnectEnabled) return
-        if (scope != null) {
-            pendingReconnectJob?.cancel()
-            pendingReconnectJob = scope.launch {
-                val now = System.currentTimeMillis()
-                val delayMs = maxOf(3000L, cooldownUntil - now)
-                delay(delayMs)
-                if (!isConnected) connect()
-            }
-        } else {
-            // Fallback for relays created without a scope — use scheduler instead of
-            // blocking a thread from the shared OkHttp dispatcher pool
-            val now = System.currentTimeMillis()
-            val delayMs = maxOf(3000L, cooldownUntil - now)
-            pendingReconnect = reconnectScheduler.schedule({
-                if (!isConnected) connect()
-            }, delayMs, TimeUnit.MILLISECONDS)
-        }
+        reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS
+        lastAttemptMs = 0L
     }
 
 }
