@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -148,7 +149,8 @@ fun UserProfileScreen(
     onPollVote: (String, List<String>) -> Unit = { _, _ -> },
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
-    onOpenEmojiLibrary: (() -> Unit)? = null
+    onOpenEmojiLibrary: (() -> Unit)? = null,
+    onSearchAuthor: (() -> Unit)? = null
 ) {
     val profile by viewModel.profile.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()
@@ -279,6 +281,11 @@ fun UserProfileScreen(
                 },
                 actions = {
                     val context = LocalContext.current
+                    if (onSearchAuthor != null) {
+                        IconButton(onClick = onSearchAuthor) {
+                            Icon(Icons.Default.Search, "Search notes")
+                        }
+                    }
                     IconButton(onClick = { showQrDialog = true }) {
                         Icon(Icons.Default.QrCode2, "QR Code")
                     }

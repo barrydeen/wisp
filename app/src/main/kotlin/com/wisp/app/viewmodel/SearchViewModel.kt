@@ -46,6 +46,16 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private val _searchRelays = MutableStateFlow(keyRepo.getSearchRelays())
     val searchRelays: StateFlow<List<String>> = _searchRelays
 
+    // Author filter (for note search)
+    private val _authorFilter = MutableStateFlow<ProfileData?>(null)
+    val authorFilter: StateFlow<ProfileData?> = _authorFilter
+
+    private val _authorSearchResults = MutableStateFlow<List<ProfileData>>(emptyList())
+    val authorSearchResults: StateFlow<List<ProfileData>> = _authorSearchResults
+
+    private val _isAuthorSearching = MutableStateFlow(false)
+    val isAuthorSearching: StateFlow<Boolean> = _isAuthorSearching
+
     // Results
     private val _users = MutableStateFlow<List<ProfileData>>(emptyList())
     val users: StateFlow<List<ProfileData>> = _users
@@ -57,11 +67,13 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     val isSearching: StateFlow<Boolean> = _isSearching
 
     private var searchJob: Job? = null
+    private var authorSearchJob: Job? = null
     private var relayPool: RelayPool? = null
     private var searchCounter = 0
 
     private var userSubId = "search-users-0"
     private var noteSubId = "search-notes-0"
+    private var authorSubId = "search-author-0"
 
     fun selectFilter(filter: SearchFilter) {
         _filter.value = filter
@@ -105,6 +117,81 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         _query.value = newQuery
     }
 
+    fun setAuthorFilter(profile: ProfileData) {
+        _authorFilter.value = profile
+        _authorSearchResults.value = emptyList()
+    }
+
+    fun clearAuthorFilter() {
+        _authorFilter.value = null
+    }
+
+    fun prepareAuthorSearch(profile: ProfileData) {
+        _filter.value = SearchFilter.NOTES
+        _authorFilter.value = profile
+        _authorSearchResults.value = emptyList()
+    }
+
+    fun searchAuthors(query: String, relayPool: RelayPool, eventRepo: EventRepository) {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) {
+            _authorSearchResults.value = emptyList()
+            return
+        }
+
+        authorSearchJob?.cancel()
+        searchCounter++
+        authorSubId = "search-author-$searchCounter"
+        _isAuthorSearching.value = true
+        _authorSearchResults.value = emptyList()
+
+        val relaysToQuery = when (_selectedRelayOption.value) {
+            RelayOption.DEFAULT -> listOf(DEFAULT_SEARCH_RELAY)
+            RelayOption.ALL_RELAYS -> _searchRelays.value
+            RelayOption.INDIVIDUAL -> listOfNotNull(_selectedRelayUrl.value)
+        }
+
+        val authorFilter = Filter(kinds = listOf(0), search = trimmed, limit = 10)
+        val req = ClientMessage.req(authorSubId, authorFilter)
+        for (url in relaysToQuery) {
+            relayPool.sendToRelayOrEphemeral(url, req)
+        }
+
+        val activeSubId = authorSubId
+        val seenPubkeys = mutableSetOf<String>()
+
+        authorSearchJob = viewModelScope.launch {
+            val eventJob = launch {
+                relayPool.relayEvents.collect { relayEvent ->
+                    if (relayEvent.subscriptionId != activeSubId) return@collect
+                    val event = relayEvent.event
+                    if (event.kind == 0 && event.pubkey !in seenPubkeys) {
+                        seenPubkeys.add(event.pubkey)
+                        eventRepo.cacheEvent(event)
+                        val profile = ProfileData.fromEvent(event)
+                        if (profile != null) {
+                            _authorSearchResults.value = _authorSearchResults.value + profile
+                        }
+                    }
+                }
+            }
+
+            val eoseJob = launch {
+                relayPool.eoseSignals.collect { subId ->
+                    if (subId == activeSubId) {
+                        _isAuthorSearching.value = false
+                    }
+                }
+            }
+
+            delay(3000)
+            _isAuthorSearching.value = false
+            relayPool.closeOnAllRelays(activeSubId)
+            eventJob.cancel()
+            eoseJob.cancel()
+        }
+    }
+
     fun search(query: String, relayPool: RelayPool, eventRepo: EventRepository, muteRepo: MuteRepository? = null) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) {
@@ -143,7 +230,13 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 userSubId
             }
             SearchFilter.NOTES -> {
-                val noteFilter = Filter(kinds = listOf(1), search = trimmed, limit = 50)
+                val authorPubkey = _authorFilter.value?.pubkey
+                val noteFilter = Filter(
+                    kinds = listOf(1),
+                    authors = authorPubkey?.let { listOf(it) },
+                    search = trimmed,
+                    limit = 50
+                )
                 val noteReq = ClientMessage.req(noteSubId, noteFilter)
                 for (url in relaysToQuery) {
                     relayPool.sendToRelayOrEphemeral(url, noteReq)
@@ -203,11 +296,15 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clear() {
         searchJob?.cancel()
+        authorSearchJob?.cancel()
         relayPool?.let { closeSubscriptions(it) }
         _query.value = ""
         _users.value = emptyList()
         _notes.value = emptyList()
         _isSearching.value = false
+        _authorFilter.value = null
+        _authorSearchResults.value = emptyList()
+        _isAuthorSearching.value = false
     }
 
     companion object {
@@ -217,5 +314,6 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private fun closeSubscriptions(relayPool: RelayPool) {
         relayPool.closeOnAllRelays(userSubId)
         relayPool.closeOnAllRelays(noteSubId)
+        relayPool.closeOnAllRelays(authorSubId)
     }
 }
