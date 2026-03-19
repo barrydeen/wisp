@@ -37,6 +37,7 @@ import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.NostrUriData
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.nostr.ProfileData
 import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.RemoteSigner
 import com.wisp.app.nostr.SignerIntentBridge
@@ -1044,7 +1045,17 @@ fun WispNavHost(
                 onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
                 resolvedEmojis = profileResolvedEmojis,
                 unicodeEmojis = profileUnicodeEmojis,
-                onOpenEmojiLibrary = { showProfileEmojiLibrary = true }
+                onOpenEmojiLibrary = { showProfileEmojiLibrary = true },
+                onSearchAuthor = {
+                    val authorProfile = userProfileViewModel.profile.value
+                        ?: ProfileData(pubkey = pubkey, name = null, displayName = null, about = null, picture = null, nip05 = null, banner = null, lud16 = null, updatedAt = 0)
+                    searchViewModel.prepareAuthorSearch(authorProfile)
+                    navController.navigate(Routes.SEARCH) {
+                        popUpTo(Routes.FEED) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
             )
             if (showProfileEmojiLibrary) {
                 com.wisp.app.ui.component.EmojiLibrarySheet(
