@@ -108,6 +108,25 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     private val _pollType = MutableStateFlow(Nip88.PollType.SINGLECHOICE)
     val pollType: StateFlow<Nip88.PollType> = _pollType
 
+    private val _scheduleEnabled = MutableStateFlow(false)
+    val scheduleEnabled: StateFlow<Boolean> = _scheduleEnabled
+
+    private val _scheduleTimestamp = MutableStateFlow<Long?>(null)
+    val scheduleTimestamp: StateFlow<Long?> = _scheduleTimestamp
+
+    fun toggleSchedule() {
+        _scheduleEnabled.value = !_scheduleEnabled.value
+        if (!_scheduleEnabled.value) _scheduleTimestamp.value = null
+    }
+
+    fun setScheduleTimestamp(epochSeconds: Long) {
+        _scheduleTimestamp.value = epochSeconds
+    }
+
+    companion object {
+        val SCHEDULER_RELAYS = listOf("wss://scheduler.nostrarchives.com")
+    }
+
     fun togglePoll() {
         _pollEnabled.value = !_pollEnabled.value
     }
@@ -324,6 +343,18 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             return
         }
 
+        if (_scheduleEnabled.value) {
+            val ts = _scheduleTimestamp.value
+            if (ts == null) {
+                _error.value = "Pick a date and time to schedule"
+                return
+            }
+            if (ts <= System.currentTimeMillis() / 1000) {
+                _error.value = "Scheduled time must be in the future"
+                return
+            }
+        }
+
         _publishing.value = true
         startCountdown(text, s, relayPool, replyTo, quoteTo, outboxRouter, onSuccess, onNotePublished, powManager)
     }
@@ -440,6 +471,31 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
         if (interfacePrefs.isClientTagEnabled()) {
             tags.add(listOf("client", "Wisp"))
+        }
+
+        // Scheduled post — sign with future created_at and send to scheduler relays
+        if (_scheduleEnabled.value && _scheduleTimestamp.value != null) {
+            val scheduledAt = _scheduleTimestamp.value!!
+            val event = signer.signEvent(kind = eventKind, content = finalContent, tags = tags, createdAt = scheduledAt)
+            val msg = ClientMessage.event(event)
+            var sentCount = 0
+            for (url in SCHEDULER_RELAYS) {
+                if (relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)) sentCount++
+            }
+            if (sentCount == 0) {
+                _error.value = "Could not connect to scheduler relay"
+                _publishing.value = false
+                return 0
+            }
+            deleteDraftOnPublish(relayPool, signer)
+            _content.value = TextFieldValue()
+            savedStateHandle.remove<String>("draft_content")
+            _uploadedUrls.value = emptyList()
+            _error.value = null
+            _publishing.value = false
+            _scheduleEnabled.value = false
+            _scheduleTimestamp.value = null
+            return sentCount
         }
 
         // Hand off to PowManager for background mining if PoW enabled
@@ -620,6 +676,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _pollEnabled.value = false
         _pollOptions.value = listOf("", "")
         _pollType.value = Nip88.PollType.SINGLECHOICE
+        _scheduleEnabled.value = false
+        _scheduleTimestamp.value = null
         clearMentionState()
     }
 }
