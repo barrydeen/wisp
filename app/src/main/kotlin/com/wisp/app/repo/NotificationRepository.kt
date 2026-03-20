@@ -68,7 +68,6 @@ class NotificationRepository(
     fun addEvent(event: NostrEvent, myPubkey: String, replyToMyEvent: Boolean = false) {
         if (event.pubkey == myPubkey) return
         val hasPTag = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == myPubkey }
-        // Kind 6 reposts may omit the p-tag; callers must pre-filter kind 6 ownership.
         // replyToMyEvent bypasses p-tag check for kind 1 replies found via e-tag subscription.
         if (!hasPTag && event.kind != 6 && event.kind != Nip88.KIND_POLL_RESPONSE && !(replyToMyEvent && event.kind == 1)) return
         // Kind 1018 poll votes: only notify if the poll is ours
@@ -77,14 +76,21 @@ class NotificationRepository(
             val pollEvent = pollId?.let { eventRepo?.getEvent(it) }
             if (pollEvent == null || pollEvent.pubkey != myPubkey) return
         }
-        // Reactions, reposts, and zaps: only notify if the referenced event is ours.
-        // A p-tag on these events can come from thread inheritance (the original note
-        // being reacted to was in a thread the user participated in), so a p-tag match
-        // alone is not sufficient. If the referenced event is cached and belongs to
-        // someone else, this is activity on another person's post — skip it.
+        // Reactions, reposts, and zaps: verify the referenced event belongs to us.
+        // p-tags on these events can come from thread inheritance, so a p-tag match alone
+        // is not sufficient. Two signals are used, either is sufficient:
+        //   1. referencedEvent is cached and authored by us (definitive ownership proof)
+        //   2. hasPTag — relay confirmed the event is relevant to us via #p filter
+        // For kind 6 specifically, some clients omit the p-tag on reposts, so we also
+        // accept kind 6 when we can positively confirm ownership from cache.
+        // If NEITHER signal is present we skip — this is the case when a relay ignores
+        // the #p filter (returns unfiltered events) and the referenced event isn't cached,
+        // e.g. when self-data failed to load and the user's own posts are not in cache.
         if (event.kind == 6 || event.kind == 7 || event.kind == 9735) {
             val referencedId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
             val referencedEvent = referencedId?.let { eventRepo?.getEvent(it) }
+            val confirmedOurs = referencedEvent?.pubkey == myPubkey
+            if (!confirmedOurs && !hasPTag) return
             if (referencedEvent != null && referencedEvent.pubkey != myPubkey) return
         }
 
