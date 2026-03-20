@@ -77,6 +77,16 @@ class NotificationRepository(
             val pollEvent = pollId?.let { eventRepo?.getEvent(it) }
             if (pollEvent == null || pollEvent.pubkey != myPubkey) return
         }
+        // Reactions, reposts, and zaps: only notify if the referenced event is ours.
+        // A p-tag on these events can come from thread inheritance (the original note
+        // being reacted to was in a thread the user participated in), so a p-tag match
+        // alone is not sufficient. If the referenced event is cached and belongs to
+        // someone else, this is activity on another person's post — skip it.
+        if (event.kind == 6 || event.kind == 7 || event.kind == 9735) {
+            val referencedId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+            val referencedEvent = referencedId?.let { eventRepo?.getEvent(it) }
+            if (referencedEvent != null && referencedEvent.pubkey != myPubkey) return
+        }
 
         synchronized(lock) {
             // Atomic check-then-put inside lock to prevent race when the same
