@@ -392,9 +392,16 @@ class StartupCoordinator(
                 feedSub._initLoadingState.value = InitLoadingState.WarmLoading
 
                 relayPool.awaitAnyConnected(minCount = minOf(3, relayCount), timeoutMs = 5_000)
-                // Fire-and-forget self-data refresh
+                // Fire-and-forget self-data refresh — catch exceptions so a self-data failure
+                // does not prevent DM and notification subscriptions from being set up.
                 launch {
-                    subscribeSelfData()
+                    try {
+                        subscribeSelfData()
+                    } catch (e: Exception) {
+                        Log.e("StartupCoord", "subscribeSelfData failed on warm start, ensuring DMs/notifs are subscribed", e)
+                        val pk = getUserPubkey()
+                        if (pk != null) subscribeDmsAndNotifications(pk)
+                    }
                     fetchMissingEmojiSets()
                 }
 
@@ -460,19 +467,22 @@ class StartupCoordinator(
             Filter(kinds = listOf(Nip30.KIND_USER_EMOJI_LIST), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Nip30.KIND_EMOJI_SET), authors = listOf(myPubkey), limit = 50)
         )
-        // Send to all indexer relays (ephemeral if not already connected) —
-        // these are the most reliable sources for user metadata on first launch.
+        // Send to indexer relays (ephemeral if not already connected) AND the user's own
+        // write relays — write relays are the authoritative source since the user published
+        // directly there. Indexers may lag or be unreachable for some users.
         val indexerRelays = RelayConfig.DEFAULT_INDEXER_RELAYS
+        val writeRelayUrls = relayPool.getWriteRelayUrls()
+        val selfDataRelays = (indexerRelays + writeRelayUrls).distinct()
         val reqMsg = ClientMessage.req("self-data", selfDataFilters)
-        for (url in indexerRelays) {
+        for (url in selfDataRelays) {
             relayPool.sendToRelayOrEphemeral(url, reqMsg)
         }
 
-        // Wait for indexer relays to EOSE so we get the newest kind 3 (follow list).
+        // Wait for relays to EOSE so we get the newest kind 3 (follow list).
         // contactRepo.updateFromEvent already keeps the newest by created_at, so collecting
         // from several relays ensures we don't proceed with a stale follow list from
         // a single fast relay.
-        val eoseCount = subManager.awaitEoseCount("self-data", expectedCount = indexerRelays.size, timeoutMs = 4_000)
+        val eoseCount = subManager.awaitEoseCount("self-data", expectedCount = selfDataRelays.size, timeoutMs = 4_000)
 
         // EOSE and events travel on separate SharedFlows, so the kind 3 event may still
         // be buffered in relayEvents waiting for the processing loop on Dispatchers.Default.
@@ -786,6 +796,21 @@ class StartupCoordinator(
     fun refreshDmsAndNotifications() {
         val pk = getUserPubkey() ?: return
         subscribeDmsAndNotifications(pk)
+    }
+
+    /**
+     * Re-fetch self-data (NIP-51 lists, follow list, relay lists, etc.) in the background.
+     * Called after a long pause (force reconnect) to ensure lists like bookmarks, hashtag
+     * sets, and media servers are refreshed — they are not re-fetched by subscribeDmsAndNotifications.
+     */
+    fun refreshSelfData() {
+        scope.launch {
+            try {
+                subscribeSelfData()
+            } catch (e: Exception) {
+                Log.e("StartupCoord", "refreshSelfData failed", e)
+            }
+        }
     }
 
     fun refreshRelays() {

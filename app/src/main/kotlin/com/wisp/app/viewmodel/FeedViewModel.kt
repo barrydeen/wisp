@@ -208,6 +208,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             if (myPubkey != null) startup.subscribeDmsAndNotifications(myPubkey)
             if (force) {
                 startup.fetchRelayListsForFollows()
+                // After a long pause, NIP-51 lists (bookmarks, hashtag sets, media servers, etc.)
+                // may be stale. Re-fetch self-data so they're up to date.
+                startup.refreshSelfData()
             }
         }
     )
