@@ -31,9 +31,10 @@ data class RelayConfig(
 
         /** Fallback indexer relays used when the user hasn't configured search relays (kind 10007). */
         val DEFAULT_INDEXER_RELAYS = listOf(
-            "wss://purplepag.es",
             "wss://indexer.coracle.social",
             "wss://relay.nos.social",
+            "wss://nos.lol",
+            "wss://indexer.nostrarchives.com",
             "wss://relay.damus.io",
             "wss://relay.primal.net"
         )
