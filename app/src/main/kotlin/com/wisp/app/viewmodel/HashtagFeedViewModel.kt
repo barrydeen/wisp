@@ -9,11 +9,14 @@ import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.MuteRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -33,6 +36,7 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
     private var relayPoolRef: RelayPool? = null
     private var eventRepoRef: EventRepository? = null
     private var loadJob: Job? = null
+    private var muteObserverJob: Job? = null
     private val activeSubIds = mutableListOf<String>()
     private var topRelayUrls: List<String> = emptyList()
     private var loadCounter = 0
@@ -43,10 +47,11 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
         tag: String,
         relayPool: RelayPool,
         eventRepo: EventRepository,
-        topRelayUrls: List<String> = emptyList()
+        topRelayUrls: List<String> = emptyList(),
+        muteRepo: MuteRepository? = null
     ) {
         _setName.value = null
-        loadTags(listOf(tag), tag, relayPool, eventRepo, topRelayUrls)
+        loadTags(listOf(tag), tag, relayPool, eventRepo, topRelayUrls, muteRepo)
     }
 
     fun loadHashtags(
@@ -54,10 +59,11 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
         name: String,
         relayPool: RelayPool,
         eventRepo: EventRepository,
-        topRelayUrls: List<String> = emptyList()
+        topRelayUrls: List<String> = emptyList(),
+        muteRepo: MuteRepository? = null
     ) {
         _setName.value = name
-        loadTags(tags, tags.firstOrNull() ?: "", relayPool, eventRepo, topRelayUrls)
+        loadTags(tags, tags.firstOrNull() ?: "", relayPool, eventRepo, topRelayUrls, muteRepo)
     }
 
     private fun loadTags(
@@ -65,7 +71,8 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
         displayTag: String,
         relayPool: RelayPool,
         eventRepo: EventRepository,
-        topRelayUrls: List<String> = emptyList()
+        topRelayUrls: List<String> = emptyList(),
+        muteRepo: MuteRepository? = null
     ) {
         if (tags.isEmpty()) return
 
@@ -78,6 +85,15 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
         relayPoolRef = relayPool
         eventRepoRef = eventRepo
         this.topRelayUrls = topRelayUrls
+
+        muteObserverJob?.cancel()
+        if (muteRepo != null) {
+            muteObserverJob = muteRepo.blockedPubkeys
+                .onEach { blocked ->
+                    _notes.value = _notes.value.filter { it.pubkey !in blocked }
+                }
+                .launchIn(viewModelScope)
+        }
 
         loadCounter++
         noteSub = "hashtag-notes-$loadCounter"
@@ -93,6 +109,8 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
                     if (relayEvent.subscriptionId == currentNoteSub) {
                         val event = relayEvent.event
                         if (event.kind == 1 && event.id !in seenIds) {
+                            if (muteRepo?.isBlocked(event.pubkey) == true) return@collect
+                            if (muteRepo?.containsMutedWord(event.content) == true) return@collect
                             seenIds.add(event.id)
                             eventRepo.cacheEvent(event)
                             eventRepo.requestProfileIfMissing(event.pubkey)
@@ -174,6 +192,7 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         super.onCleared()
         loadJob?.cancel()
+        muteObserverJob?.cancel()
         relayPoolRef?.let { closeAllSubs(it) }
     }
 }

@@ -1332,7 +1332,8 @@ fun WispNavHost(
                     tag = tag,
                     relayPool = feedViewModel.relayPool,
                     eventRepo = feedViewModel.eventRepo,
-                    topRelayUrls = feedViewModel.getScoredRelays().take(10).map { it.url }
+                    topRelayUrls = feedViewModel.getScoredRelays().take(10).map { it.url },
+                    muteRepo = feedViewModel.muteRepo
                 )
             }
             val hashtagNoteActions = remember {
@@ -1423,7 +1424,8 @@ fun WispNavHost(
                     name = name,
                     relayPool = feedViewModel.relayPool,
                     eventRepo = feedViewModel.eventRepo,
-                    topRelayUrls = feedViewModel.getScoredRelays().take(10).map { it.url }
+                    topRelayUrls = feedViewModel.getScoredRelays().take(10).map { it.url },
+                    muteRepo = feedViewModel.muteRepo
                 )
             }
             val setFeedNoteActions = remember {
