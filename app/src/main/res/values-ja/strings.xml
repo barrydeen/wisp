@@ -11,6 +11,7 @@
     <string name="drawer_my_profile">マイプロフィール</string>
     <string name="drawer_feeds">フィード</string>
     <string name="drawer_lists">リスト</string>
+<<<<<<< HEAD
     <string name="drawer_drafts">下書き &amp; 予約済み</string>
     <string name="drawer_settings">設定</string>
 
@@ -25,6 +26,10 @@
     <string name="delete_draft">下書きを削除</string>
     <string name="empty_content">（空）</string>
     <string name="remove_from_schedule">予約を解除</string>
+=======
+    <string name="drawer_drafts">下書き</string>
+    <string name="drawer_settings">設定</string>
+>>>>>>> 049a7dc (added translations)
     <string name="drawer_interface">インターフェース</string>
     <string name="drawer_relays">リレー</string>
     <string name="drawer_media_servers">メディアサーバー</string>
@@ -84,7 +89,10 @@
     <string name="compose_mining">マイニング中…</string>
     <string name="compose_post_now">今すぐ投稿 (%d)</string>
     <string name="compose_replying_to">に返信 </string>
+<<<<<<< HEAD
     <string name="content_marked_nsfw">NSFW 指定</string>
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="btn_post_now">今すぐ投稿</string>
     <string name="btn_cancel">キャンセル</string>
     <string name="btn_save">保存</string>
@@ -201,12 +209,16 @@
     <string name="tab_relay">リレー</string>
     <string name="tab_list">リスト</string>
     <string name="tab_hashtags">ハッシュタグ</string>
+<<<<<<< HEAD
     <string name="interests">関心</string>
     <string name="tab_feed">フィード</string>
     <string name="loading_interest_sets">関心セットを読み込み中…</string>
     <string name="no_interest_sets">関心セットがありません。下記で作成するか、フィードページからハッシュタグをフォローしてください。</string>
     <string name="no_hashtags_yet">ハッシュタグなし</string>
     <string name="delete_set">セットを削除</string>
+=======
+    <string name="tab_feed">フィード</string>
+>>>>>>> 049a7dc (added translations)
     <string name="tab_muted_words">ミュート単語</string>
     <string name="tab_muted_users">ミュートユーザー</string>
     <string name="tab_replies">返信</string>
@@ -217,6 +229,7 @@
     <string name="tab_earlier">以前</string>
     <string name="tab_pinned">ピン留め</string>
     <string name="tab_new_set">新しいセット</string>
+<<<<<<< HEAD
     <string name="btn_new_set">+ 新しいセット</string>
     <string name="tab_all_relays">すべてのリレー</string>
     <string name="tab_favorites">お気に入り</string>
@@ -227,6 +240,9 @@
     <string name="error_no_relay_scores">リレースコアがありません</string>
     <string name="btn_add_to_set">+セット</string>
     <string name="btn_details">詳細</string>
+=======
+    <string name="tab_all_relays">すべてのリレー</string>
+>>>>>>> 049a7dc (added translations)
 
     <!-- Content Descriptions -->
     <string name="cd_back">戻る</string>
@@ -289,6 +305,7 @@
     <string name="cd_add_new">新規追加</string>
     <string name="cd_create_emoji_set">絵文字セットを作成</string>
     <string name="cd_upload_image">画像をアップロード</string>
+<<<<<<< HEAD
 
     <!-- Custom Emoji Screen -->
     <string name="emoji_quick_reactions">クイックリアクション</string>
@@ -371,6 +388,8 @@
     <string name="social_stat_qualified_thresh">適格(しきい値)</string>
     <string name="social_stat_relays_covered">カバーされたリレー</string>
 
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="cd_preview">プレビュー</string>
     <string name="cd_check_relay_backups">リレーバックアップを確認</string>
     <string name="cd_copy_address">アドレスをコピー</string>
@@ -421,6 +440,16 @@
     <string name="zap_both_parties_need_dm_relays">両者ともDMリレーが必要です</string>
     <string name="zap_x_sats">%dサッツをサップ</string>
     <string name="zap_failed">サップ失敗</string>
+<<<<<<< HEAD
+=======
+    <string name="wallet_nwc">Nostr Wallet Connect</string>
+    <string name="wallet_connect_info">サッツを送受信するにはLightningウォレットを接続してください。ウォレットプロバイダーからNWC接続文字列を貼り付けてください。</string>
+    <string name="wallet_recommended_wallets">推奨ウォレット</string>
+    <string name="wallet_connecting">接続中…</string>
+    <string name="wallet_lightning_address_setup">Lightningアドレスを設定</string>
+    <string name="wallet_get_username">username@breez.tipsアドレスを取得</string>
+    <string name="wallet_tap_to_reveal">タップして表示</string>
+>>>>>>> 049a7dc (added translations)
     <string name="dm_decrypting">メッセージを復号中…</string>
     <string name="dm_mining">マイニング中…</string>
     <string name="dm_peer">ピア</string>
@@ -501,9 +530,12 @@
     <string name="loading_expanding_relays">%d個拡張リレーに接続中…</string>
     <string name="loading_subscribing">フィードを購読中…</string>
     <string name="loading_notes">ノートを読み込み中…</string>
+<<<<<<< HEAD
     <string name="loading_connecting_relays">リレーに接続中…</string>
     <string name="loading_finding_posts">投稿を検索中…</string>
     <string name="loading_preparing_feed">フィードを準備中…</string>
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="error_list_not_found">リストが見つかりません</string>
     <string name="error_no_list_members">このリストにはメンバーがいません</string>
 
@@ -537,6 +569,7 @@
 
     <!-- Time -->
     <string name="time_24h">24時間</string>
+<<<<<<< HEAD
 
     <!-- Profile -->
     <string name="profile_tab_notes">ノート</string>
@@ -625,4 +658,6 @@
     <string name="share_logs">ログを共有</string>
     <string name="share_diagnostic_logs">診断ログを共有</string>
     <string name="clear_logs">ログをクリア</string>
+=======
+>>>>>>> 049a7dc (added translations)
 </resources>

@@ -8,6 +8,7 @@
     <string name="drawer_my_profile">Мой профиль</string>
     <string name="drawer_feeds">Ленты</string>
     <string name="drawer_lists">Списки</string>
+<<<<<<< HEAD
     <string name="drawer_drafts">Черновики &amp; Запланированные</string>
     <string name="drawer_settings">Настройки</string>
 
@@ -22,6 +23,10 @@
     <string name="delete_draft">Удалить черновик</string>
     <string name="empty_content">(пусто)</string>
     <string name="remove_from_schedule">Удалить из расписания</string>
+=======
+    <string name="drawer_drafts">Черновики</string>
+    <string name="drawer_settings">Настройки</string>
+>>>>>>> 049a7dc (added translations)
     <string name="drawer_interface">Интерфейс</string>
     <string name="drawer_relays">Рилэи</string>
     <string name="drawer_media_servers">Медиа-серверы</string>
@@ -82,7 +87,10 @@
     <string name="compose_mining">Майнинг…</string>
     <string name="compose_post_now">Опубликовать (%d)</string>
     <string name="compose_replying_to">Ответ для </string>
+<<<<<<< HEAD
     <string name="content_marked_nsfw">Отмечено как NSFW</string>
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="btn_close">Закрыть</string>
     <string name="btn_ok">ОК</string>
     <string name="btn_retry">Повторить</string>
@@ -186,12 +194,16 @@
     <string name="tab_relay">Рилэй</string>
     <string name="tab_list">Список</string>
     <string name="tab_hashtags">Хештеги</string>
+<<<<<<< HEAD
     <string name="interests">Интересы</string>
     <string name="tab_feed">Лента</string>
     <string name="loading_interest_sets">Загрузка наборов интересов…</string>
     <string name="no_interest_sets">Пока нет наборов интересов. Создайте один ниже или подпишитесь на хештеги со страниц лент.</string>
     <string name="no_hashtags_yet">Пока нет хештегов</string>
     <string name="delete_set">Удалить набор</string>
+=======
+    <string name="tab_feed">Лента</string>
+>>>>>>> 049a7dc (added translations)
     <string name="tab_muted_words">Заглушённые слова</string>
     <string name="tab_muted_users">Заглушённые пользователи</string>
     <string name="tab_replies">Ответы</string>
@@ -202,6 +214,7 @@
     <string name="tab_earlier">Ранние</string>
     <string name="tab_pinned">Закреплённые</string>
     <string name="tab_new_set">Новый набор</string>
+<<<<<<< HEAD
     <string name="btn_new_set">+ Новый набор</string>
     <string name="tab_all_relays">Все рилэи</string>
     <string name="tab_favorites">Избранное</string>
@@ -212,6 +225,9 @@
     <string name="error_no_relay_scores">Рейтинги рилэев пока недоступны</string>
     <string name="btn_add_to_set">+Набор</string>
     <string name="btn_details">Подробнее</string>
+=======
+    <string name="tab_all_relays">Все рилэи</string>
+>>>>>>> 049a7dc (added translations)
     <string name="cd_back">Назад</string>
     <string name="cd_toggle_tor">Переключить Tor</string>
     <string name="cd_toggle_theme">Переключить тему</string>
@@ -272,6 +288,7 @@
     <string name="cd_add_new">Добавить новый</string>
     <string name="cd_create_emoji_set">Создать набор эмодзи</string>
     <string name="cd_upload_image">Загрузить изображение</string>
+<<<<<<< HEAD
 
     <!-- Custom Emoji Screen -->
     <string name="emoji_quick_reactions">Быстрые реакции</string>
@@ -354,6 +371,8 @@
     <string name="social_stat_qualified_thresh">Квалифицировано (порог)</string>
     <string name="social_stat_relays_covered">Покрытые релеи</string>
 
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="cd_preview">Предпросмотр</string>
     <string name="cd_check_relay_backups">Проверить бэкапы рилэев</string>
     <string name="cd_copy_address">Копировать адрес</string>
@@ -400,6 +419,16 @@
     <string name="zap_both_parties_need_dm_relays">Обеим сторонам нужны рилэи ЛС</string>
     <string name="zap_x_sats">Зап %d сатоши</string>
     <string name="zap_failed">Zap не удался</string>
+<<<<<<< HEAD
+=======
+    <string name="wallet_nwc">Nostr Wallet Connect</string>
+    <string name="wallet_connect_info">Подключите Lightning-кошелёк для отправки и получения сатоши. Вставьте строку подключения NWC от вашего провайдера кошелька.</string>
+    <string name="wallet_recommended_wallets">Рекомендуемые кошельки</string>
+    <string name="wallet_connecting">Подключение…</string>
+    <string name="wallet_lightning_address_setup">Настройте ваш Lightning-адрес</string>
+    <string name="wallet_get_username">Получите адрес пользователь@breez.tips</string>
+    <string name="wallet_tap_to_reveal">Нажмите, чтобы показать</string>
+>>>>>>> 049a7dc (added translations)
     <string name="dm_decrypting">Расшифровка сообщений…</string>
     <string name="dm_mining">Майнинг…</string>
     <string name="dm_peer">Пир</string>
@@ -474,9 +503,12 @@
     <string name="loading_expanding_relays">Подключение к %d расширенным рилэям…</string>
     <string name="loading_subscribing">Подписка на ленту…</string>
     <string name="loading_notes">Загрузка заметок…</string>
+<<<<<<< HEAD
     <string name="loading_connecting_relays">Подключение к рилэям…</string>
     <string name="loading_finding_posts">Поиск публикаций…</string>
     <string name="loading_preparing_feed">Подготовка вашей ленты…</string>
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="error_list_not_found">Список не найден</string>
     <string name="error_no_list_members">В этом списке нет участников</string>
     <string name="menu_add_to_relay_set">Добавить в набор рилэев</string>
@@ -498,6 +530,7 @@
     <string name="safety_hide_until_restart">Скрыть до перезапуска приложения</string>
     <string name="safety_hide_forever">Скрыть навсегда</string>
     <string name="time_24h">24ч</string>
+<<<<<<< HEAD
 
     <!-- Profile -->
     <string name="profile_tab_notes">Заметки</string>
@@ -586,4 +619,6 @@
     <string name="share_logs">Поделиться логами</string>
     <string name="share_diagnostic_logs">Поделиться диагностическими логами</string>
     <string name="clear_logs">Очистить логи</string>
+=======
+>>>>>>> 049a7dc (added translations)
 </resources>

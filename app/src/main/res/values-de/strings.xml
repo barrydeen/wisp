@@ -11,6 +11,7 @@
     <string name="drawer_my_profile">Mein Profil</string>
     <string name="drawer_feeds">Feeds</string>
     <string name="drawer_lists">Listen</string>
+<<<<<<< HEAD
     <string name="drawer_drafts">Entwürfe &amp; Geplant</string>
     <string name="drawer_settings">Einstellungen</string>
 
@@ -25,6 +26,10 @@
     <string name="delete_draft">Entwurf löschen</string>
     <string name="empty_content">(leer)</string>
     <string name="remove_from_schedule">Aus Planung entfernen</string>
+=======
+    <string name="drawer_drafts">Entwürfe</string>
+    <string name="drawer_settings">Einstellungen</string>
+>>>>>>> 049a7dc (added translations)
     <string name="drawer_interface">Oberfläche</string>
     <string name="drawer_relays">Relays</string>
     <string name="drawer_media_servers">Medienserver</string>
@@ -84,7 +89,10 @@
     <string name="compose_mining">Mining läuft…</string>
     <string name="compose_post_now">Jetzt posten (%d)</string>
     <string name="compose_replying_to">Antworten an </string>
+<<<<<<< HEAD
     <string name="content_marked_nsfw">Markiert als NSFW</string>
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="btn_post_now">Jetzt posten</string>
     <string name="btn_cancel">Abbrechen</string>
     <string name="btn_save">Speichern</string>
@@ -201,12 +209,16 @@
     <string name="tab_relay">Relay</string>
     <string name="tab_list">Liste</string>
     <string name="tab_hashtags">Hashtags</string>
+<<<<<<< HEAD
     <string name="interests">Interessen</string>
     <string name="tab_feed">Feed</string>
     <string name="loading_interest_sets">Interest-Sets werden geladen…</string>
     <string name="no_interest_sets">Noch keine Interest-Sets. Erstelle eines unten, oder folge Hashtags von deren Feed-Seiten.</string>
     <string name="no_hashtags_yet">Noch keine Hashtags</string>
     <string name="delete_set">Set löschen</string>
+=======
+    <string name="tab_feed">Feed</string>
+>>>>>>> 049a7dc (added translations)
     <string name="tab_muted_words">Stummgeschaltete Wörter</string>
     <string name="tab_muted_users">Stummgeschaltete Nutzer</string>
     <string name="tab_replies">Antworten</string>
@@ -217,6 +229,7 @@
     <string name="tab_earlier">Früher</string>
     <string name="tab_pinned">Angeheftet</string>
     <string name="tab_new_set">Neuer Set</string>
+<<<<<<< HEAD
     <string name="btn_new_set">+ Neuer Set</string>
     <string name="tab_all_relays">Alle Relays</string>
     <string name="tab_favorites">Favoriten</string>
@@ -227,6 +240,9 @@
     <string name="error_no_relay_scores">Noch keine Relay-Bewertungen verfügbar</string>
     <string name="btn_add_to_set">+Set</string>
     <string name="btn_details">Details</string>
+=======
+    <string name="tab_all_relays">Alle Relays</string>
+>>>>>>> 049a7dc (added translations)
 
     <!-- Content Descriptions -->
     <string name="cd_back">Zurück</string>
@@ -289,6 +305,7 @@
     <string name="cd_add_new">Neu hinzufügen</string>
     <string name="cd_create_emoji_set">Emoji-Set erstellen</string>
     <string name="cd_upload_image">Bild hochladen</string>
+<<<<<<< HEAD
 
     <!-- Custom Emoji Screen -->
     <string name="emoji_quick_reactions">Schnelle Reaktionen</string>
@@ -371,6 +388,8 @@
     <string name="social_stat_qualified_thresh">Qualifiziert (Schwellenwert)</string>
     <string name="social_stat_relays_covered">Abgedeckte Relays</string>
 
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="cd_preview">Vorschau</string>
     <string name="cd_check_relay_backups">Relay-Backups prüfen</string>
     <string name="cd_copy_address">Adresse kopieren</string>
@@ -421,6 +440,16 @@
     <string name="zap_both_parties_need_dm_relays">Beide Parteien benötigen DM-Relays</string>
     <string name="zap_x_sats">%d Sats zappen</string>
     <string name="zap_failed">Zap fehlgeschlagen</string>
+<<<<<<< HEAD
+=======
+    <string name="wallet_nwc">Nostr Wallet Connect</string>
+    <string name="wallet_connect_info">Verbinde eine Lightning-Wallet, um Sats zu senden und zu empfangen. Füge eine NWC-Verbindungszeichenfolge von deinem Wallet-Anbieter ein.</string>
+    <string name="wallet_recommended_wallets">Empfohlene Wallets</string>
+    <string name="wallet_connecting">Verbindung wird hergestellt…</string>
+    <string name="wallet_lightning_address_setup">Richte deine Lightning-Adresse ein</string>
+    <string name="wallet_get_username">Hol dir eine Benutzer@breez.tips-Adresse</string>
+    <string name="wallet_tap_to_reveal">Tippen zum Enthüllen</string>
+>>>>>>> 049a7dc (added translations)
     <string name="dm_decrypting">Nachrichten werden entschlüsselt…</string>
     <string name="dm_mining">Mining…</string>
     <string name="dm_peer">Peer</string>
@@ -501,9 +530,12 @@
     <string name="loading_expanding_relays">Verbinde mit %d erweiterten Relays…</string>
     <string name="loading_subscribing">Abonniere Feed…</string>
     <string name="loading_notes">Lade Notizen…</string>
+<<<<<<< HEAD
     <string name="loading_connecting_relays">Verbinde mit Relays…</string>
     <string name="loading_finding_posts">Suche Beiträge…</string>
     <string name="loading_preparing_feed">Bereite Feed vor…</string>
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="error_list_not_found">Liste nicht gefunden</string>
     <string name="error_no_list_members">Diese Liste hat keine Mitglieder</string>
 
@@ -537,6 +569,7 @@
 
     <!-- Time -->
     <string name="time_24h">24h</string>
+<<<<<<< HEAD
 
     <!-- Profile -->
     <string name="profile_tab_notes">Notizen</string>
@@ -625,4 +658,6 @@
     <string name="share_logs">Logs teilen</string>
     <string name="share_diagnostic_logs">Diagnoselogs teilen</string>
     <string name="clear_logs">Logs löschen</string>
+=======
+>>>>>>> 049a7dc (added translations)
 </resources>

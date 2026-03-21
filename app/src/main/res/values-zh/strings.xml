@@ -11,6 +11,7 @@
     <string name="drawer_my_profile">我的资料</string>
     <string name="drawer_feeds">动态</string>
     <string name="drawer_lists">列表</string>
+<<<<<<< HEAD
     <string name="drawer_drafts">草稿 &amp; 定时</string>
     <string name="drawer_settings">设置</string>
 
@@ -25,6 +26,10 @@
     <string name="delete_draft">删除草稿</string>
     <string name="empty_content">（空）</string>
     <string name="remove_from_schedule">取消定时</string>
+=======
+    <string name="drawer_drafts">草稿</string>
+    <string name="drawer_settings">设置</string>
+>>>>>>> 049a7dc (added translations)
     <string name="drawer_interface">界面</string>
     <string name="drawer_relays">中继</string>
     <string name="drawer_media_servers">媒体服务器</string>
@@ -84,7 +89,10 @@
     <string name="compose_mining">挖矿中…</string>
     <string name="compose_post_now">立即发布 (%d)</string>
     <string name="compose_replying_to">回复 </string>
+<<<<<<< HEAD
     <string name="content_marked_nsfw">标记为 NSFW</string>
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="btn_post_now">立即发布</string>
     <string name="btn_cancel">取消</string>
     <string name="btn_save">保存</string>
@@ -201,12 +209,16 @@
     <string name="tab_relay">中继</string>
     <string name="tab_list">列表</string>
     <string name="tab_hashtags">话题</string>
+<<<<<<< HEAD
     <string name="interests">兴趣</string>
     <string name="tab_feed">动态</string>
     <string name="loading_interest_sets">正在加载兴趣集…</string>
     <string name="no_interest_sets">暂无兴趣集。在下方创建一个，或从动态页面关注话题标签。</string>
     <string name="no_hashtags_yet">暂无话题标签</string>
     <string name="delete_set">删除集</string>
+=======
+    <string name="tab_feed">动态</string>
+>>>>>>> 049a7dc (added translations)
     <string name="tab_muted_words">静音词语</string>
     <string name="tab_muted_users">静音用户</string>
     <string name="tab_replies">回复</string>
@@ -217,6 +229,7 @@
     <string name="tab_earlier">更早</string>
     <string name="tab_pinned">已固定</string>
     <string name="tab_new_set">新集合</string>
+<<<<<<< HEAD
     <string name="btn_new_set">+ 新集合</string>
     <string name="tab_all_relays">所有中继</string>
     <string name="tab_favorites">收藏</string>
@@ -227,6 +240,9 @@
     <string name="error_no_relay_scores">暂无中继评分</string>
     <string name="btn_add_to_set">+集合</string>
     <string name="btn_details">详情</string>
+=======
+    <string name="tab_all_relays">所有中继</string>
+>>>>>>> 049a7dc (added translations)
 
     <!-- Content Descriptions -->
     <string name="cd_back">返回</string>
@@ -289,6 +305,7 @@
     <string name="cd_add_new">新增</string>
     <string name="cd_create_emoji_set">创建表情包</string>
     <string name="cd_upload_image">上传图片</string>
+<<<<<<< HEAD
 
     <!-- Custom Emoji Screen -->
     <string name="emoji_quick_reactions">快速反应</string>
@@ -371,6 +388,8 @@
     <string name="social_stat_qualified_thresh">合格(阈值)</string>
     <string name="social_stat_relays_covered">覆盖的中继</string>
 
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="cd_preview">预览</string>
     <string name="cd_check_relay_backups">检查中继备份</string>
     <string name="cd_copy_address">复制地址</string>
@@ -421,6 +440,16 @@
     <string name="zap_both_parties_need_dm_relays">双方都需要私信中继</string>
     <string name="zap_x_sats">支付 %d 聪</string>
     <string name="zap_failed">闪电支付失败</string>
+<<<<<<< HEAD
+=======
+    <string name="wallet_nwc">Nostr 钱包连接</string>
+    <string name="wallet_connect_info">连接闪电钱包以发送和接收聪。粘贴你的钱包提供商的 NWC 连接字符串。</string>
+    <string name="wallet_recommended_wallets">推荐钱包</string>
+    <string name="wallet_connecting">正在连接…</string>
+    <string name="wallet_lightning_address_setup">设置你的闪电地址</string>
+    <string name="wallet_get_username">获取用户名@breez.tips 地址</string>
+    <string name="wallet_tap_to_reveal">点击显示</string>
+>>>>>>> 049a7dc (added translations)
     <string name="dm_decrypting">正在解密消息…</string>
     <string name="dm_mining">正在挖矿…</string>
     <string name="dm_peer">对等方</string>
@@ -501,9 +530,12 @@
     <string name="loading_expanding_relays">正在连接 %d 个扩展中继…</string>
     <string name="loading_subscribing">正在订阅动态…</string>
     <string name="loading_notes">正在加载帖子…</string>
+<<<<<<< HEAD
     <string name="loading_connecting_relays">正在连接中继…</string>
     <string name="loading_finding_posts">正在寻找帖子…</string>
     <string name="loading_preparing_feed">正在准备动态…</string>
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="error_list_not_found">未找到列表</string>
     <string name="error_no_list_members">此列表没有成员</string>
 
@@ -537,6 +569,7 @@
 
     <!-- Time -->
     <string name="time_24h">24小时</string>
+<<<<<<< HEAD
 
     <!-- Profile -->
     <string name="profile_tab_notes">帖子</string>
@@ -625,4 +658,6 @@
     <string name="share_logs">分享日志</string>
     <string name="share_diagnostic_logs">分享诊断日志</string>
     <string name="clear_logs">清除日志</string>
+=======
+>>>>>>> 049a7dc (added translations)
 </resources>

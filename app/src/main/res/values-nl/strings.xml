@@ -11,6 +11,7 @@
     <string name="drawer_my_profile">Mijn Profiel</string>
     <string name="drawer_feeds">Feeds</string>
     <string name="drawer_lists">Lijsten</string>
+<<<<<<< HEAD
     <string name="drawer_drafts">Concepten &amp; Gepland</string>
     <string name="drawer_settings">Instellingen</string>
 
@@ -25,6 +26,10 @@
     <string name="delete_draft">Concept verwijderen</string>
     <string name="empty_content">(leeg)</string>
     <string name="remove_from_schedule">Van planning verwijderen</string>
+=======
+    <string name="drawer_drafts">Concepten</string>
+    <string name="drawer_settings">Instellingen</string>
+>>>>>>> 049a7dc (added translations)
     <string name="drawer_interface">Interface</string>
     <string name="drawer_relays">Relays</string>
     <string name="drawer_media_servers">Mediaservers</string>
@@ -84,7 +89,10 @@
     <string name="compose_mining">Minen…</string>
     <string name="compose_post_now">Nu plaatsen (%d)</string>
     <string name="compose_replying_to">Reageren op </string>
+<<<<<<< HEAD
     <string name="content_marked_nsfw">Gemarkeerd als NSFW</string>
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="btn_post_now">Nu Plaatstellen</string>
     <string name="btn_cancel">Annuleren</string>
     <string name="btn_save">Opslaan</string>
@@ -201,12 +209,16 @@
     <string name="tab_relay">Relay</string>
     <string name="tab_list">Lijst</string>
     <string name="tab_hashtags">Hashtags</string>
+<<<<<<< HEAD
     <string name="interests">Interesses</string>
     <string name="tab_feed">Feed</string>
     <string name="loading_interest_sets">Interessesets laden…</string>
     <string name="no_interest_sets">Nog geen interessesets. Maak er een hieronder aan, of volg hashtags vanaf hun feed-pagina\'s.</string>
     <string name="no_hashtags_yet">Nog geen hashtags</string>
     <string name="delete_set">Set verwijderen</string>
+=======
+    <string name="tab_feed">Feed</string>
+>>>>>>> 049a7dc (added translations)
     <string name="tab_muted_words">Gedempte Woorden</string>
     <string name="tab_muted_users">Gedempte Gebruikers</string>
     <string name="tab_replies">Antwoorden</string>
@@ -217,6 +229,7 @@
     <string name="tab_earlier">Eerder</string>
     <string name="tab_pinned">Vastgemaakt</string>
     <string name="tab_new_set">Nieuwe Set</string>
+<<<<<<< HEAD
     <string name="btn_new_set">+ Nieuwe Set</string>
     <string name="tab_all_relays">Alle relays</string>
     <string name="tab_favorites">Favorieten</string>
@@ -227,6 +240,9 @@
     <string name="error_no_relay_scores">Nog geen relay-scores beschikbaar</string>
     <string name="btn_add_to_set">+Set</string>
     <string name="btn_details">Details</string>
+=======
+    <string name="tab_all_relays">Alle relays</string>
+>>>>>>> 049a7dc (added translations)
 
     <!-- Content Descriptions -->
     <string name="cd_back">Terug</string>
@@ -289,6 +305,7 @@
     <string name="cd_add_new">Nieuw Toevoegen</string>
     <string name="cd_create_emoji_set">Emoji Set Maken</string>
     <string name="cd_upload_image">Afbeelding Uploaden</string>
+<<<<<<< HEAD
 
     <!-- Custom Emoji Screen -->
     <string name="emoji_quick_reactions">Snelle Reacties</string>
@@ -371,6 +388,8 @@
     <string name="social_stat_qualified_thresh">Gekwalificeerd (drempel)</string>
     <string name="social_stat_relays_covered">Relays gedekt</string>
 
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="cd_preview">Voorbeeld</string>
     <string name="cd_check_relay_backups">Relay Backups Controleren</string>
     <string name="cd_copy_address">Adres Kopiëren</string>
@@ -421,6 +440,16 @@
     <string name="zap_both_parties_need_dm_relays">Beide partijen hebben DM relays nodig</string>
     <string name="zap_x_sats">Zap %d sats</string>
     <string name="zap_failed">Zap Mislukt</string>
+<<<<<<< HEAD
+=======
+    <string name="wallet_nwc">Nostr Wallet Connect</string>
+    <string name="wallet_connect_info">Verbind een Lightning portemonnee om sats te verzenden en ontvangen. Plak een NWC verbindingsreeks van je portemonnee-provider.</string>
+    <string name="wallet_recommended_wallets">Aanbevolen Portemonnees</string>
+    <string name="wallet_connecting">Verbinden…</string>
+    <string name="wallet_lightning_address_setup">Stel je Lightning Adres in</string>
+    <string name="wallet_get_username">Krijg een gebruiker@breez.tips adres</string>
+    <string name="wallet_tap_to_reveal">Tik om te onthullen</string>
+>>>>>>> 049a7dc (added translations)
     <string name="dm_decrypting">Berichten Ontsleutelen…</string>
     <string name="dm_mining">Mining…</string>
     <string name="dm_peer">Peer</string>
@@ -501,9 +530,12 @@
     <string name="loading_expanding_relays">Verbinden met %d uitgebreide relays…</string>
     <string name="loading_subscribing">Abonneren op feed…</string>
     <string name="loading_notes">Notities laden…</string>
+<<<<<<< HEAD
     <string name="loading_connecting_relays">Verbinden met relays…</string>
     <string name="loading_finding_posts">Zoeken naar berichten…</string>
     <string name="loading_preparing_feed">Je feed voorbereiden…</string>
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="error_list_not_found">Lijst niet gevonden</string>
     <string name="error_no_list_members">Deze lijst heeft geen leden</string>
 
@@ -537,6 +569,7 @@
 
     <!-- Time -->
     <string name="time_24h">24u</string>
+<<<<<<< HEAD
 
     <!-- Profile -->
     <string name="profile_tab_notes">Notities</string>
@@ -625,4 +658,6 @@
     <string name="share_logs">Logs delen</string>
     <string name="share_diagnostic_logs">Diagnostische logs delen</string>
     <string name="clear_logs">Logs wissen</string>
+=======
+>>>>>>> 049a7dc (added translations)
 </resources>

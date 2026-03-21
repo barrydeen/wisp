@@ -392,7 +392,11 @@ fun CustomEmojiScreen(
                     OutlinedTextField(
                         value = shortcode,
                         onValueChange = { shortcode = it.replace(Regex("[^a-zA-Z0-9_]"), "") },
+<<<<<<< HEAD
                         placeholder = { Text(stringResource(R.string.emoji_shortcode)) },
+=======
+                        placeholder = { Text("Shortcode") },
+>>>>>>> 049a7dc (added translations)
                         singleLine = true
                     )
                     Row(

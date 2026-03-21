@@ -11,6 +11,7 @@
     <string name="drawer_my_profile">Mi Perfil</string>
     <string name="drawer_feeds">Feeds</string>
     <string name="drawer_lists">Listas</string>
+<<<<<<< HEAD
     <string name="drawer_drafts">Borradores &amp; Programados</string>
     <string name="drawer_settings">Ajustes</string>
 
@@ -25,6 +26,10 @@
     <string name="delete_draft">Eliminar borrador</string>
     <string name="empty_content">(vacío)</string>
     <string name="remove_from_schedule">Quitar de programación</string>
+=======
+    <string name="drawer_drafts">Borradores</string>
+    <string name="drawer_settings">Ajustes</string>
+>>>>>>> 049a7dc (added translations)
     <string name="drawer_interface">Interfaz</string>
     <string name="drawer_relays">Relays</string>
     <string name="drawer_media_servers">Servidores de Medios</string>
@@ -84,7 +89,10 @@
     <string name="compose_mining">Minando…</string>
     <string name="compose_post_now">Publicar ahora (%d)</string>
     <string name="compose_replying_to">Respondiendo a </string>
+<<<<<<< HEAD
     <string name="content_marked_nsfw">Marcado como NSFW</string>
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="btn_post_now">Publicar ahora</string>
     <string name="btn_cancel">Cancelar</string>
     <string name="btn_save">Guardar</string>
@@ -201,12 +209,16 @@
     <string name="tab_relay">Relay</string>
     <string name="tab_list">Lista</string>
     <string name="tab_hashtags">Etiquetas</string>
+<<<<<<< HEAD
     <string name="interests">Intereses</string>
     <string name="tab_feed">Feed</string>
     <string name="loading_interest_sets">Cargando conjuntos de intereses…</string>
     <string name="no_interest_sets">Aún no hay conjuntos de intereses. Crea uno abajo, o sigue hashtags desde sus páginas de feed.</string>
     <string name="no_hashtags_yet">Sin hashtags aún</string>
     <string name="delete_set">Eliminar conjunto</string>
+=======
+    <string name="tab_feed">Feed</string>
+>>>>>>> 049a7dc (added translations)
     <string name="tab_muted_words">Palabras Silenciadas</string>
     <string name="tab_muted_users">Usuarios Silenciados</string>
     <string name="tab_replies">Respuestas</string>
@@ -217,6 +229,7 @@
     <string name="tab_earlier">Anterior</string>
     <string name="tab_pinned">Fijado</string>
     <string name="tab_new_set">Nuevo Conjunto</string>
+<<<<<<< HEAD
     <string name="btn_new_set">+ Nuevo Conjunto</string>
     <string name="tab_all_relays">Todos los relays</string>
     <string name="tab_favorites">Favoritos</string>
@@ -227,6 +240,9 @@
     <string name="error_no_relay_scores">Aún no hay puntuaciones de relays disponibles</string>
     <string name="btn_add_to_set">+Set</string>
     <string name="btn_details">Detalles</string>
+=======
+    <string name="tab_all_relays">Todos los relays</string>
+>>>>>>> 049a7dc (added translations)
 
     <!-- Content Descriptions -->
     <string name="cd_back">Atrás</string>
@@ -289,6 +305,7 @@
     <string name="cd_add_new">Añadir nuevo</string>
     <string name="cd_create_emoji_set">Crear Conjunto de Emojis</string>
     <string name="cd_upload_image">Subir imagen</string>
+<<<<<<< HEAD
 
     <!-- Custom Emoji Screen -->
     <string name="emoji_quick_reactions">Reacciones Rápidas</string>
@@ -371,6 +388,8 @@
     <string name="social_stat_qualified_thresh">Cualificados (umbral)</string>
     <string name="social_stat_relays_covered">Relays cubiertos</string>
 
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="cd_preview">Vista previa</string>
     <string name="cd_check_relay_backups">Verificar respaldos de relays</string>
     <string name="cd_copy_address">Copiar dirección</string>
@@ -421,6 +440,16 @@
     <string name="zap_both_parties_need_dm_relays">Ambas partes necesitan relays de MD</string>
     <string name="zap_x_sats">Zap %d sats</string>
     <string name="zap_failed">Zap Fallido</string>
+<<<<<<< HEAD
+=======
+    <string name="wallet_nwc">Nostr Wallet Connect</string>
+    <string name="wallet_connect_info">Conecta una billetera Lightning para enviar y recibir sats. Pega una cadena de conexión NWC de tu proveedor de billetera.</string>
+    <string name="wallet_recommended_wallets">Billeteras recomendadas</string>
+    <string name="wallet_connecting">Conectando…</string>
+    <string name="wallet_lightning_address_setup">Configura tu Dirección Lightning</string>
+    <string name="wallet_get_username">Obtén una dirección usuario@breez.tips</string>
+    <string name="wallet_tap_to_reveal">Toca para revelar</string>
+>>>>>>> 049a7dc (added translations)
     <string name="dm_decrypting">Descifrando mensajes…</string>
     <string name="dm_mining">Minando…</string>
     <string name="dm_peer">Pareja</string>
@@ -482,6 +511,7 @@
     <string name="translate_translating">Traduciendo…</string>
     <string name="translate_translated_from">Traducido del %s</string>
 
+<<<<<<< HEAD
     <!-- Loading -->
     <string name="loading_searching_profile">Buscando tu perfil…</string>
     <string name="loading_finding_friends">Buscando tus amigos…</string>
@@ -494,6 +524,8 @@
     <string name="loading_finding_posts">Buscando publicaciones…</string>
     <string name="loading_preparing_feed">Preparando tu feed…</string>
 
+=======
+>>>>>>> 049a7dc (added translations)
     <!-- Errors / Alerts -->
     <string name="error_social_graph_required">Grafo social requerido</string>
     <string name="error_extended_feed_description">El feed extendido muestra publicaciones de amigos-de-amigos. Primero necesitas calcular tu grafo social.</string>
@@ -537,6 +569,7 @@
 
     <!-- Time -->
     <string name="time_24h">24h</string>
+<<<<<<< HEAD
 
     <!-- Profile -->
     <string name="profile_tab_notes">Notas</string>
@@ -625,4 +658,6 @@
     <string name="share_logs">Compartir registros</string>
     <string name="share_diagnostic_logs">Compartir registros de diagnóstico</string>
     <string name="clear_logs">Borrar registros</string>
+=======
+>>>>>>> 049a7dc (added translations)
 </resources>

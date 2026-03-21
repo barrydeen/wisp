@@ -11,7 +11,11 @@
     <string name="drawer_my_profile">My Profile</string>
     <string name="drawer_feeds">Feeds</string>
     <string name="drawer_lists">Lists</string>
+<<<<<<< HEAD
     <string name="drawer_drafts">Drafts &amp; Scheduled</string>
+=======
+    <string name="drawer_drafts">Drafts</string>
+>>>>>>> 049a7dc (added translations)
     <string name="drawer_settings">Settings</string>
     <string name="drawer_interface">Interface</string>
     <string name="drawer_relays">Relays</string>
@@ -72,7 +76,10 @@
     <string name="compose_mining">Mining in progress…</string>
     <string name="compose_post_now">Post now (%d)</string>
     <string name="compose_replying_to">Replying to </string>
+<<<<<<< HEAD
     <string name="content_marked_nsfw">Marked as NSFW</string>
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="btn_post_now">Post now</string>
     <string name="btn_cancel">Cancel</string>
     <string name="btn_save">Save</string>
@@ -189,12 +196,16 @@
     <string name="tab_relay">Relay</string>
     <string name="tab_list">List</string>
     <string name="tab_hashtags">Hashtags</string>
+<<<<<<< HEAD
     <string name="interests">Interests</string>
     <string name="tab_feed">Feed</string>
     <string name="loading_interest_sets">Loading interest sets…</string>
     <string name="no_interest_sets">No interest sets yet. Create one below, or follow hashtags from their feed pages.</string>
     <string name="no_hashtags_yet">No hashtags yet</string>
     <string name="delete_set">Delete Set</string>
+=======
+    <string name="tab_feed">Feed</string>
+>>>>>>> 049a7dc (added translations)
     <string name="tab_muted_words">Muted Words</string>
     <string name="tab_muted_users">Muted Users</string>
     <string name="tab_replies">Replies</string>
@@ -205,6 +216,7 @@
     <string name="tab_earlier">Earlier</string>
     <string name="tab_pinned">Pinned</string>
     <string name="tab_new_set">New Set</string>
+<<<<<<< HEAD
     <string name="btn_new_set">+ New Set</string>
     <string name="tab_all_relays">All relays</string>
     <string name="tab_favorites">Favorites</string>
@@ -215,6 +227,9 @@
     <string name="error_no_relay_scores">No relay scores available yet</string>
     <string name="btn_add_to_set">+Set</string>
     <string name="btn_details">Details</string>
+=======
+    <string name="tab_all_relays">All relays</string>
+>>>>>>> 049a7dc (added translations)
 
     <!-- Content Descriptions -->
     <string name="cd_back">Back</string>
@@ -277,6 +292,7 @@
     <string name="cd_add_new">Add new</string>
     <string name="cd_create_emoji_set">Create Emoji Set</string>
     <string name="cd_upload_image">Upload image</string>
+<<<<<<< HEAD
 
     <!-- Custom Emoji Screen -->
     <string name="emoji_quick_reactions">Quick Reactions</string>
@@ -359,6 +375,8 @@
     <string name="social_stat_qualified_thresh">Qualified (threshold)</string>
     <string name="social_stat_relays_covered">Relays covered</string>
 
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="cd_preview">Preview</string>
     <string name="cd_check_relay_backups">Check relay backups</string>
     <string name="cd_copy_address">Copy address</string>
@@ -409,6 +427,16 @@
     <string name="zap_both_parties_need_dm_relays">Both parties need DM relays</string>
     <string name="zap_x_sats">Zap %d sats</string>
     <string name="zap_failed">Zap Failed</string>
+<<<<<<< HEAD
+=======
+    <string name="wallet_nwc">Nostr Wallet Connect</string>
+    <string name="wallet_connect_info">Connect a Lightning wallet to send and receive sats. Paste a NWC connection string from your wallet provider.</string>
+    <string name="wallet_recommended_wallets">Recommended wallets</string>
+    <string name="wallet_connecting">Connecting…</string>
+    <string name="wallet_lightning_address_setup">Set up your Lightning Address</string>
+    <string name="wallet_get_username">Get a username@breez.tips address</string>
+    <string name="wallet_tap_to_reveal">Tap to reveal</string>
+>>>>>>> 049a7dc (added translations)
     <string name="dm_decrypting">Decrypting messages…</string>
     <string name="dm_mining">Mining…</string>
     <string name="dm_peer">Peer</string>
@@ -489,9 +517,12 @@
     <string name="loading_expanding_relays">Connecting to %d extended relays…</string>
     <string name="loading_subscribing">Subscribing to feed…</string>
     <string name="loading_notes">Loading notes…</string>
+<<<<<<< HEAD
     <string name="loading_connecting_relays">Connecting to relays…</string>
     <string name="loading_finding_posts">Finding posts…</string>
     <string name="loading_preparing_feed">Preparing your feed…</string>
+=======
+>>>>>>> 049a7dc (added translations)
     <string name="error_list_not_found">List not found</string>
     <string name="error_no_list_members">This list has no members</string>
 
@@ -525,6 +556,7 @@
 
     <!-- Time -->
     <string name="time_24h">24h</string>
+<<<<<<< HEAD
 
     <!-- Profile -->
     <string name="profile_tab_notes">Notes</string>
@@ -638,4 +670,6 @@
     <string name="wallet_spark_sdk">SDK v%s</string>
     <string name="wallet_not_supported">Not supported by your wallet</string>
     <string name="wallet_creating_invoice">Creating invoice…</string>
+=======
+>>>>>>> 049a7dc (added translations)
 </resources>
