@@ -106,6 +106,7 @@ object RelayProber {
         for (bootstrapUrl in BOOTSTRAP) {
             try {
                 val relay = Relay(RelayConfig(bootstrapUrl, read = true, write = false), client)
+                relay.autoReconnect = false
                 relay.connect()
 
                 val connected = withTimeoutOrNull(5000L) {
@@ -230,6 +231,7 @@ object RelayProber {
         // Ephemeral write test: connect, send kind 20242, await OK
         return try {
             val relay = Relay(RelayConfig(url, read = true, write = true), wsClient)
+            relay.autoReconnect = false
             relay.connect()
 
             val connected = withTimeoutOrNull(PROBE_TIMEOUT_MS) {

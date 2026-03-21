@@ -107,7 +107,7 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         scope = newScope
 
         val client = Relay.createClient()
-        val r = Relay(RelayConfig(conn.relayUrl), client)
+        val r = Relay(RelayConfig(conn.relayUrl), client, scope = newScope)
         relay = r
 
         emitStatus("Connecting to relay ${conn.relayUrl}...")
