@@ -44,8 +44,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.wisp.app.R
 import com.wisp.app.nostr.BookmarkSet
 import com.wisp.app.nostr.FollowSet
 import com.wisp.app.repo.BookmarkRepository
@@ -95,7 +97,7 @@ fun ListsHubScreen(
         val target = deleteConfirmation!!
         AlertDialog(
             onDismissRequest = { deleteConfirmation = null },
-            title = { Text("Delete List") },
+            title = { Text(stringResource(R.string.btn_delete_list)) },
             text = { Text("Are you sure you want to delete \"${target.name}\"? A deletion request will be sent to relays, but it cannot be guaranteed.") },
             confirmButton = {
                 TextButton(onClick = {
@@ -105,12 +107,12 @@ fun ListsHubScreen(
                     }
                     deleteConfirmation = null
                 }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.btn_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteConfirmation = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.btn_cancel))
                 }
             }
         )
@@ -122,10 +124,10 @@ fun ListsHubScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Lists") },
+                title = { Text(stringResource(R.string.drawer_lists)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -138,7 +140,7 @@ fun ListsHubScreen(
                 onClick = { showCreateDialog = true },
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Create List")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.btn_create))
             }
         }
     ) { padding ->
@@ -150,7 +152,7 @@ fun ListsHubScreen(
             // People Lists section
             item {
                 Text(
-                    "People Lists",
+                    stringResource(R.string.tab_people),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -184,7 +186,7 @@ fun ListsHubScreen(
             // Notes Lists section
             item {
                 Text(
-                    "Notes Lists",
+                    stringResource(R.string.tab_notes),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)
@@ -329,7 +331,7 @@ private fun FollowSetRow(
         IconButton(onClick = { menuExpanded = true }) {
             Icon(
                 Icons.Default.MoreVert,
-                contentDescription = "More options",
+                contentDescription = stringResource(R.string.cd_more_options),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
             )
@@ -339,14 +341,14 @@ private fun FollowSetRow(
             onDismissRequest = { menuExpanded = false }
         ) {
             DropdownMenuItem(
-                text = { Text("View JSON") },
+                text = { Text(stringResource(R.string.btn_copy_list_json)) },
                 onClick = {
                     menuExpanded = false
                     showJsonDialog = true
                 }
             )
             DropdownMenuItem(
-                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                text = { Text(stringResource(R.string.btn_delete), color = MaterialTheme.colorScheme.error) },
                 onClick = {
                     menuExpanded = false
                     onDelete()
@@ -419,7 +421,7 @@ private fun BookmarkSetRow(
         IconButton(onClick = { menuExpanded = true }) {
             Icon(
                 Icons.Default.MoreVert,
-                contentDescription = "More options",
+                contentDescription = stringResource(R.string.cd_more_options),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
             )
@@ -429,14 +431,14 @@ private fun BookmarkSetRow(
             onDismissRequest = { menuExpanded = false }
         ) {
             DropdownMenuItem(
-                text = { Text("View JSON") },
+                text = { Text(stringResource(R.string.btn_copy_list_json)) },
                 onClick = {
                     menuExpanded = false
                     showJsonDialog = true
                 }
             )
             DropdownMenuItem(
-                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                text = { Text(stringResource(R.string.btn_delete), color = MaterialTheme.colorScheme.error) },
                 onClick = {
                     menuExpanded = false
                     onDelete()
@@ -451,7 +453,7 @@ private fun JsonViewDialog(json: String, onDismiss: () -> Unit) {
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("List JSON") },
+        title = { Text(stringResource(R.string.btn_copy_list_json)) },
         text = {
             androidx.compose.foundation.lazy.LazyColumn {
                 item {
@@ -469,12 +471,12 @@ private fun JsonViewDialog(json: String, onDismiss: () -> Unit) {
             TextButton(onClick = {
                 clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(json))
             }) {
-                Text("Copy")
+                Text(stringResource(R.string.btn_copy))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close")
+                Text(stringResource(R.string.btn_close))
             }
         }
     )
@@ -494,7 +496,7 @@ private fun CreateListDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create List") },
+        title = { Text(stringResource(R.string.btn_create)) },
         text = {
             Column {
                 Row(
@@ -504,7 +506,7 @@ private fun CreateListDialog(
                     FilterChip(
                         selected = selectedType == ListType.PEOPLE,
                         onClick = { selectedType = ListType.PEOPLE },
-                        label = { Text("People") },
+                        label = { Text(stringResource(R.string.tab_people)) },
                         leadingIcon = if (selectedType == ListType.PEOPLE) {{
                             Icon(Icons.Outlined.People, null, modifier = Modifier.size(18.dp))
                         }} else null
@@ -513,7 +515,7 @@ private fun CreateListDialog(
                     FilterChip(
                         selected = selectedType == ListType.NOTES,
                         onClick = { selectedType = ListType.NOTES },
-                        label = { Text("Notes") },
+                        label = { Text(stringResource(R.string.tab_notes)) },
                         leadingIcon = if (selectedType == ListType.NOTES) {{
                             Icon(Icons.Outlined.BookmarkBorder, null, modifier = Modifier.size(18.dp))
                         }} else null
@@ -523,7 +525,7 @@ private fun CreateListDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    placeholder = { Text("List name") },
+                    placeholder = { Text(stringResource(R.string.placeholder_new_list_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -540,7 +542,7 @@ private fun CreateListDialog(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "Private",
+                        stringResource(R.string.btn_private),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f)
                     )
@@ -563,10 +565,10 @@ private fun CreateListDialog(
             TextButton(
                 onClick = { if (name.isNotBlank()) onConfirm(name.trim(), selectedType, isPrivate) },
                 enabled = name.isNotBlank()
-            ) { Text("Create") }
+            ) { Text(stringResource(R.string.btn_create)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.btn_cancel)) }
         }
     )
 }

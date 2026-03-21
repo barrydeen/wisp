@@ -32,10 +32,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.wisp.app.R
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.ui.component.FollowToggleButton
 import com.wisp.app.ui.component.ProfilePicture
@@ -76,9 +78,9 @@ fun OnboardingSuggestionsScreen(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 if (com.wisp.app.BuildConfig.DEBUG) {
-                    TextButton(onClick = onSkip) {
-                        Text("Skip", style = MaterialTheme.typography.labelLarge)
-                    }
+                TextButton(onClick = onSkip) {
+                    Text(stringResource(R.string.btn_skip), style = MaterialTheme.typography.labelLarge)
+                }
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -134,8 +136,8 @@ fun OnboardingSuggestionsScreen(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text(
-                    if (enabled) "Follow $totalSelected accounts"
-                    else "Select at least 5 ($totalSelected/5)"
+                    if (enabled) "Follow $totalSelected accounts" else "Select at least 5 ($totalSelected/5)",
+                    style = MaterialTheme.typography.labelLarge
                 )
             }
         }

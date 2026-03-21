@@ -36,6 +36,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.wisp.app.R
 import com.wisp.app.repo.MuteRepository
 import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.ui.component.ProfilePicture
@@ -53,10 +55,10 @@ fun SafetyScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Safety") },
+                title = { Text(stringResource(R.string.title_safety)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -74,12 +76,12 @@ fun SafetyScreen(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("Muted Words") }
+                    text = { Text(stringResource(R.string.tab_muted_words)) }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("Muted Users") }
+                    text = { Text(stringResource(R.string.tab_muted_users)) }
                 )
             }
 
@@ -105,7 +107,7 @@ private fun MutedWordsTab(
             .padding(horizontal = 16.dp)
     ) {
         Text(
-            text = "Notes containing these words will be hidden from your feed.",
+            text = stringResource(R.string.settings_muted_words_description),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(vertical = 12.dp)
@@ -118,7 +120,7 @@ private fun MutedWordsTab(
             OutlinedTextField(
                 value = newWord,
                 onValueChange = { newWord = it },
-                placeholder = { Text("Add a word or phrase") },
+                placeholder = { Text(stringResource(R.string.placeholder_add_word_phrase)) },
                 singleLine = true,
                 modifier = Modifier.weight(1f)
             )
@@ -133,7 +135,7 @@ private fun MutedWordsTab(
                     }
                 }
             ) {
-                Icon(Icons.Default.Add, "Add word")
+                Icon(Icons.Default.Add, stringResource(R.string.cd_add_word))
             }
         }
 
@@ -161,7 +163,7 @@ private fun MutedWordsTab(
                     ) {
                         Icon(
                             Icons.Default.Close,
-                            contentDescription = "Remove",
+                            contentDescription = stringResource(R.string.btn_remove),
                             tint = MaterialTheme.colorScheme.error
                         )
                     }
@@ -189,7 +191,7 @@ private fun MutedUsersTab(
         ) {
             Spacer(Modifier.height(32.dp))
             Text(
-                text = "No muted users",
+                text = stringResource(R.string.settings_no_muted_users),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -236,7 +238,7 @@ private fun MutedUsersTab(
                     ) {
                         Icon(
                             Icons.Default.Close,
-                            contentDescription = "Unblock",
+                            contentDescription = stringResource(R.string.btn_unblock),
                             tint = MaterialTheme.colorScheme.error
                         )
                     }

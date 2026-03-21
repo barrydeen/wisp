@@ -36,6 +36,7 @@
     <string name="title_chat">Чат</string>
     <string name="title_list">Список</string>
     <string name="title_community">Сообщество</string>
+<<<<<<< HEAD
     <!-- Splash Screen -->
     <string name="splash_create_account">Создать аккаунт</string>
     <string name="splash_log_in">Войти</string>
@@ -45,6 +46,8 @@
     <string name="splash_connect_tor">Подключиться через Tor</string>
     <string name="splash_people_online">%d человек онлайн</string>
 
+=======
+>>>>>>> 0e7a1ee (added translations)
     <string name="auth_sign_up">Регистрация</string>
     <string name="auth_log_in">Войти</string>
     <string name="auth_login_with_signer">Войти через подписчик</string>

@@ -46,6 +46,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,6 +63,7 @@ import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.nostr.hexToByteArray
+import com.wisp.app.R
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import com.wisp.app.nostr.Nip30
@@ -263,7 +265,7 @@ fun PostCard(
                             Spacer(Modifier.width(4.dp))
                             Icon(
                                 Icons.Default.CheckCircle,
-                                contentDescription = "Verified",
+                                contentDescription = stringResource(R.string.cd_verified),
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(14.dp)
                             )
@@ -272,7 +274,7 @@ fun PostCard(
                             Spacer(Modifier.width(4.dp))
                             Icon(
                                 Icons.Default.Refresh,
-                                contentDescription = "Retry verification",
+                                contentDescription = stringResource(R.string.cd_retry_verification),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier
                                     .size(14.dp)
@@ -290,12 +292,12 @@ fun PostCard(
             val powBits = remember(event.id) { Nip13.verifyDifficulty(event) }
             if (powBits >= 16) {
                 Spacer(Modifier.width(4.dp))
-                Surface(
+                    Surface(
                     shape = RoundedCornerShape(4.dp),
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                 ) {
                     Text(
-                        text = "PoW $powBits",
+                        text = stringResource(R.string.post_pow_x, powBits),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
@@ -312,7 +314,7 @@ fun PostCard(
                 ) {
                     Icon(
                         Icons.Default.MoreVert,
-                        contentDescription = "More options",
+                        contentDescription = stringResource(R.string.cd_more_options),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         modifier = Modifier.size(18.dp)
                     )
@@ -323,14 +325,14 @@ fun PostCard(
                 ) {
                     if (!isOwnEvent) {
                         DropdownMenuItem(
-                            text = { Text(if (isFollowingAuthor) "Unfollow" else "Follow") },
+                            text = { Text(if (isFollowingAuthor) stringResource(R.string.btn_unfollow) else stringResource(R.string.btn_follow)) },
                             onClick = {
                                 menuExpanded = false
                                 onFollowAuthor()
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Block") },
+                            text = { Text(stringResource(R.string.btn_block)) },
                             onClick = {
                                 menuExpanded = false
                                 onBlockAuthor()
@@ -339,15 +341,15 @@ fun PostCard(
                     }
                     if (onMuteThread != null) {
                         DropdownMenuItem(
-                            text = { Text("Mute Thread") },
+                            text = { Text(stringResource(R.string.btn_mute_thread)) },
                             onClick = {
                                 menuExpanded = false
                                 onMuteThread()
                             }
                         )
                     }
-                    DropdownMenuItem(
-                        text = { Text("Add to List") },
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_add_to_list)) },
                         onClick = {
                             menuExpanded = false
                             onAddToList()
@@ -355,22 +357,22 @@ fun PostCard(
                     )
                     if (isOwnEvent) {
                         DropdownMenuItem(
-                            text = { Text(if (isPinned) "Unpin from Profile" else "Pin to Profile") },
+                            text = { Text(if (isPinned) stringResource(R.string.btn_unpin_from_profile) else stringResource(R.string.btn_pin_to_profile)) },
                             onClick = {
                                 menuExpanded = false
                                 onPin()
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Delete") },
+                            text = { Text(stringResource(R.string.btn_delete)) },
                             onClick = {
                                 menuExpanded = false
                                 onDelete()
                             }
                         )
                     }
-                    DropdownMenuItem(
-                        text = { Text("Share") },
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_share)) },
                         onClick = {
                             menuExpanded = false
                             try {
@@ -384,8 +386,8 @@ fun PostCard(
                             } catch (_: Exception) {}
                         }
                     )
-                    DropdownMenuItem(
-                        text = { Text("Copy Note ID") },
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_copy_note_id)) },
                         onClick = {
                             menuExpanded = false
                             try {
@@ -399,8 +401,8 @@ fun PostCard(
                             } catch (_: Exception) {}
                         }
                     )
-                    DropdownMenuItem(
-                        text = { Text("Copy Note JSON") },
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_copy_note_json)) },
                         onClick = {
                             menuExpanded = false
                             clipboardManager.setText(AnnotatedString(event.toJson()))
@@ -413,10 +415,10 @@ fun PostCard(
                         text = {
                             Text(
                                 when {
-                                    translationState.status == TranslationStatus.DONE && showTranslation -> "Show Original"
-                                    translationState.status == TranslationStatus.DONE && !showTranslation -> "Show Translation"
-                                    translationState.status == TranslationStatus.SAME_LANGUAGE -> "Same Language"
-                                    else -> "Translate"
+                                    translationState.status == TranslationStatus.DONE && showTranslation -> stringResource(R.string.translate_show_original)
+                                    translationState.status == TranslationStatus.DONE && !showTranslation -> stringResource(R.string.translate_show_translation)
+                                    translationState.status == TranslationStatus.SAME_LANGUAGE -> stringResource(R.string.translate_same_language)
+                                    else -> stringResource(R.string.translate_translate)
                                 }
                             )
                         },
@@ -450,20 +452,20 @@ fun PostCard(
                 ) {
                     Icon(
                         Icons.Outlined.Warning,
-                        contentDescription = "Content warning",
+                        contentDescription = stringResource(R.string.cd_content_warning),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(28.dp)
                     )
                     Spacer(Modifier.height(8.dp))
                     val reason = contentWarning.getOrNull(1)?.takeIf { it.isNotBlank() }
                     Text(
-                        text = reason ?: "Sensitive content",
+                        text = reason ?: stringResource(R.string.translate_sensitive_content),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "Tap to reveal",
+                        text = stringResource(R.string.translate_tap_to_reveal),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
@@ -527,12 +529,12 @@ fun PostCard(
             }
 
             if (contentExceedsMax) {
-                TextButton(
-                    onClick = { contentExpanded = !contentExpanded },
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                ) {
-                    Text(
-                        text = if (contentExpanded) "Show less" else "Show more",
+                    TextButton(
+                        onClick = { contentExpanded = !contentExpanded },
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    ) {
+                        Text(
+                            text = if (contentExpanded) stringResource(R.string.translate_show_less) else stringResource(R.string.translate_show_more),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -546,7 +548,7 @@ fun PostCard(
                     modifier = Modifier.align(Alignment.End)
                 ) {
                     Text(
-                        text = "Hide",
+                        text = stringResource(R.string.btn_hide),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -570,9 +572,9 @@ fun PostCard(
                         )
                         Text(
                             text = when (translationState.status) {
-                                TranslationStatus.IDENTIFYING_LANGUAGE -> "Detecting language..."
-                                TranslationStatus.DOWNLOADING_MODEL -> "Downloading language model..."
-                                else -> "Translating..."
+                                TranslationStatus.IDENTIFYING_LANGUAGE -> stringResource(R.string.translate_detecting_language)
+                                TranslationStatus.DOWNLOADING_MODEL -> stringResource(R.string.translate_downloading_model)
+                                else -> stringResource(R.string.translate_translating)
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -587,7 +589,7 @@ fun PostCard(
                                 thickness = 0.5.dp
                             )
                             Text(
-                                text = "Translated from ${translationState.sourceLanguage}",
+                                text = stringResource(R.string.translate_translated_from, translationState.sourceLanguage),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
@@ -680,7 +682,7 @@ fun PostCard(
             Icon(
                 imageVector = if (expandedDetails) Icons.Filled.KeyboardArrowUp
                     else Icons.Filled.KeyboardArrowDown,
-                contentDescription = if (expandedDetails) "Collapse details" else "Expand details",
+                contentDescription = if (expandedDetails) stringResource(R.string.cd_collapse) else stringResource(R.string.cd_expand),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .size(20.dp)
@@ -789,7 +791,7 @@ private fun PollSection(
                     TextButton(
                         onClick = { onVote(selected.toList()) }
                     ) {
-                        Text("Vote")
+                        Text(stringResource(R.string.btn_vote))
                     }
                 }
             }

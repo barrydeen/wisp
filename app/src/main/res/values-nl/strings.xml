@@ -42,6 +42,7 @@
     <string name="title_list">Lijst</string>
     <string name="title_community">Gemeenschap</string>
 
+<<<<<<< HEAD
     <!-- Splash Screen -->
     <string name="splash_create_account">Account aanmaken</string>
     <string name="splash_log_in">Inloggen</string>
@@ -51,6 +52,8 @@
     <string name="splash_connect_tor">Via Tor verbinden</string>
     <string name="splash_people_online">%d mensen online</string>
 
+=======
+>>>>>>> 0e7a1ee (added translations)
     <!-- Auth Screen -->
     <string name="auth_sign_up">Aanmelden</string>
     <string name="auth_log_in">Inloggen</string>

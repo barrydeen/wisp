@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -93,11 +94,11 @@ fun AuthScreen(
     ) {
         Image(
             painter = painterResource(R.drawable.ic_logo_round),
-            contentDescription = "Wisp logo",
+            contentDescription = stringResource(R.string.onboarding_wisp_logo),
             modifier = Modifier.size(108.dp)
         )
         Text(
-            text = "wisp",
+            text = stringResource(R.string.auth_wisp),
             style = MaterialTheme.typography.titleLarge.copy(
                 fontSize = 36.sp,
                 fontWeight = FontWeight.Bold,
@@ -137,7 +138,7 @@ fun AuthScreen(
                 } else {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_tor_onion),
-                        contentDescription = "Toggle Tor",
+                        contentDescription = stringResource(R.string.cd_toggle_tor),
                         modifier = Modifier.size(18.dp),
                         tint = when (torStatus) {
                             TorStatus.CONNECTED -> MaterialTheme.colorScheme.primary
@@ -189,6 +190,7 @@ fun AuthScreen(
         } else {
             Spacer(Modifier.height(12.dp))
         }
+
 
         OutlinedTextField(
             value = nsecInput,

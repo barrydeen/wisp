@@ -42,6 +42,7 @@
     <string name="title_list">리스트</string>
     <string name="title_community">커뮤니티</string>
 
+<<<<<<< HEAD
     <!-- Splash Screen -->
     <string name="splash_create_account">계정 생성</string>
     <string name="splash_log_in">로그인</string>
@@ -51,6 +52,8 @@
     <string name="splash_connect_tor">Tor로 연결</string>
     <string name="splash_people_online">%d명 온라인</string>
 
+=======
+>>>>>>> 0e7a1ee (added translations)
     <!-- Auth Screen -->
     <string name="auth_sign_up">회원가입</string>
     <string name="auth_log_in">로그인</string>

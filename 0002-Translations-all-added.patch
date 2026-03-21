@@ -1,0 +1,1232 @@
+From 19806251b7b3e143ae6f237017d1927eebadff82 Mon Sep 17 00:00:00 2001
+From: roguehashrate <roguehashrate@duck.com>
+Date: Wed, 18 Mar 2026 21:54:25 -0500
+Subject: [PATCH 2/3] Translations all added
+
+---
+ app/build.gradle.kts                          |  1 +
+ app/src/main/AndroidManifest.xml              |  3 +-
+ .../main/kotlin/com/wisp/app/MainActivity.kt  |  6 ++--
+ .../com/wisp/app/repo/LocaleRepository.kt     | 34 +++++++++++++-----
+ .../ui/component/ReactionDetailsSection.kt    |  6 ++--
+ .../com/wisp/app/ui/screen/ComposeScreen.kt   | 30 ++++++++--------
+ .../com/wisp/app/ui/screen/DmListScreen.kt    |  4 +--
+ .../com/wisp/app/ui/screen/FeedScreen.kt      | 15 ++++----
+ .../com/wisp/app/ui/screen/InterfaceScreen.kt |  5 +++
+ .../com/wisp/app/ui/screen/LoadingScreen.kt   | 32 +++++++++--------
+ .../wisp/app/ui/screen/NotificationsScreen.kt |  4 +--
+ .../app/viewmodel/NotificationsViewModel.kt   | 16 +++++----
+ app/src/main/res/values-de/strings.xml        | 35 +++++++++++++++++++
+ app/src/main/res/values-es/strings.xml        | 26 ++++++++++++++
+ app/src/main/res/values-fr/strings.xml        | 35 +++++++++++++++++++
+ app/src/main/res/values-it/strings.xml        | 26 ++++++++++++++
+ app/src/main/res/values-ja/strings.xml        | 35 +++++++++++++++++++
+ app/src/main/res/values-ko/strings.xml        | 26 ++++++++++++++
+ app/src/main/res/values-nl/strings.xml        | 35 +++++++++++++++++++
+ app/src/main/res/values-pt/strings.xml        | 26 ++++++++++++++
+ app/src/main/res/values-ru/strings.xml        | 35 +++++++++++++++++++
+ app/src/main/res/values-zh/strings.xml        | 35 +++++++++++++++++++
+ app/src/main/res/values/strings.xml           | 35 +++++++++++++++++++
+ app/src/main/res/xml/locale_config.xml        | 14 ++++++++
+ gradle/libs.versions.toml                     |  2 ++
+ 25 files changed, 458 insertions(+), 63 deletions(-)
+ create mode 100644 app/src/main/res/xml/locale_config.xml
+
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 754238f..89162c0 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -86,6 +86,7 @@ dependencies {
+     implementation(libs.media3.datasource.okhttp)
+     implementation(libs.media3.ui)
+     implementation(libs.biometric)
++    implementation(libs.appcompat)
+     implementation(libs.splashscreen)
+     implementation(libs.profileinstaller)
+     implementation(libs.zxing.core)
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index 6434781..c0fd308 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -24,11 +24,12 @@
+         android:networkSecurityConfig="@xml/network_security_config"
+         android:supportsRtl="true"
+         android:largeHeap="true"
++        android:localeConfig="@xml/locale_config"
+         android:theme="@style/Theme.Wisp.Splash">
+         <activity
+             android:name=".MainActivity"
+             android:exported="true"
+-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
++            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|locale|layoutDirection"
+             android:windowSoftInputMode="adjustResize">
+             <intent-filter>
+                 <action android:name="android.intent.action.MAIN" />
+diff --git a/app/src/main/kotlin/com/wisp/app/MainActivity.kt b/app/src/main/kotlin/com/wisp/app/MainActivity.kt
+index 0426c30..378b2b2 100644
+--- a/app/src/main/kotlin/com/wisp/app/MainActivity.kt
++++ b/app/src/main/kotlin/com/wisp/app/MainActivity.kt
+@@ -27,12 +27,12 @@ class MainActivity : FragmentActivity() {
+         private set
+ 
+     override fun onCreate(savedInstanceState: Bundle?) {
++        val interfacePrefs = InterfacePreferences(this)
++        LocaleRepository.applyLanguage(this, interfacePrefs.getLanguage())
++
+         installSplashScreen()
+         super.onCreate(savedInstanceState)
+ 
+-        val interfacePrefs = InterfacePreferences(this)
+-        LocaleRepository.applyLanguage(application, interfacePrefs.getLanguage())
+-
+         enableEdgeToEdge()
+         deepLinkUri.value = intent?.data?.toString()
+         setContent {
+diff --git a/app/src/main/kotlin/com/wisp/app/repo/LocaleRepository.kt b/app/src/main/kotlin/com/wisp/app/repo/LocaleRepository.kt
+index 7d2311e..441370e 100644
+--- a/app/src/main/kotlin/com/wisp/app/repo/LocaleRepository.kt
++++ b/app/src/main/kotlin/com/wisp/app/repo/LocaleRepository.kt
+@@ -1,6 +1,10 @@
+ package com.wisp.app.repo
+ 
+ import android.app.Application
++import android.os.Build
++import android.app.LocaleManager
++import android.os.LocaleList
++import android.content.Context
+ import androidx.appcompat.app.AppCompatDelegate
+ import androidx.core.os.LocaleListCompat
+ import java.util.Locale
+@@ -23,13 +27,23 @@ object LocaleRepository {
+         Language("zh", "中文")
+     )
+ 
+-    fun applyLanguage(application: Application, languageCode: String) {
+-        val localeList = if (languageCode == "system") {
+-            LocaleListCompat.getEmptyLocaleList()
++    fun applyLanguage(context: Context, languageCode: String) {
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
++            val localeManager = context.getSystemService(LocaleManager::class.java)
++            if (languageCode == "system") {
++                localeManager.applicationLocales = LocaleList.getEmptyLocaleList()
++            } else {
++                val locale = Locale.forLanguageTag(languageCode)
++                localeManager.applicationLocales = LocaleList(locale)
++            }
+         } else {
+-            LocaleListCompat.forLanguageTags(languageCode)
++            val localeList = if (languageCode == "system") {
++                LocaleListCompat.getEmptyLocaleList()
++            } else {
++                LocaleListCompat.forLanguageTags(languageCode)
++            }
++            AppCompatDelegate.setApplicationLocales(localeList)
+         }
+-        AppCompatDelegate.setApplicationLocales(localeList)
+     }
+ 
+     fun getLanguageDisplayName(code: String): String {
+@@ -37,11 +51,13 @@ object LocaleRepository {
+     }
+ 
+     fun getCurrentLocale(): String {
+-        val locales = AppCompatDelegate.getApplicationLocales()
+-        return if (locales.isEmpty) {
+-            "system"
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
++            val localeManager = android.app.Application().getSystemService(LocaleManager::class.java)
++            val locales = localeManager.applicationLocales
++            return if (locales.isEmpty) "system" else locales[0]?.language ?: "system"
+         } else {
+-            locales[0]?.language ?: "system"
++            val locales = AppCompatDelegate.getApplicationLocales()
++            return if (locales.isEmpty) "system" else locales[0]?.language ?: "system"
+         }
+     }
+ }
+diff --git a/app/src/main/kotlin/com/wisp/app/ui/component/ReactionDetailsSection.kt b/app/src/main/kotlin/com/wisp/app/ui/component/ReactionDetailsSection.kt
+index 1a0dfbb..52475c6 100644
+--- a/app/src/main/kotlin/com/wisp/app/ui/component/ReactionDetailsSection.kt
++++ b/app/src/main/kotlin/com/wisp/app/ui/component/ReactionDetailsSection.kt
+@@ -28,6 +28,7 @@ import androidx.compose.material3.Surface
+ import androidx.compose.material3.Text
+ import androidx.compose.material3.TextButton
+ import androidx.compose.runtime.Composable
++import androidx.compose.ui.res.stringResource
+ import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.remember
+@@ -42,6 +43,7 @@ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import androidx.compose.ui.zIndex
+ import coil3.compose.AsyncImage
++import com.wisp.app.R
+ import com.wisp.app.nostr.NostrEvent
+ import com.wisp.app.nostr.ProfileData
+ import com.wisp.app.repo.EventRepository
+@@ -468,7 +470,7 @@ fun SeenOnSection(
+             verticalAlignment = Alignment.CenterVertically
+         ) {
+             Text(
+-                text = "Seen on",
++                text = stringResource(R.string.cd_seen_on),
+                 style = MaterialTheme.typography.labelSmall,
+                 color = MaterialTheme.colorScheme.onSurfaceVariant
+             )
+@@ -515,7 +517,7 @@ fun ClientTagSection(
+             verticalAlignment = Alignment.CenterVertically
+         ) {
+             Text(
+-                text = "Sent with",
++                text = stringResource(R.string.cd_sent_with),
+                 style = MaterialTheme.typography.labelSmall,
+                 color = MaterialTheme.colorScheme.onSurfaceVariant
+             )
+diff --git a/app/src/main/kotlin/com/wisp/app/ui/screen/ComposeScreen.kt b/app/src/main/kotlin/com/wisp/app/ui/screen/ComposeScreen.kt
+index 846ca66..bc2be68 100644
+--- a/app/src/main/kotlin/com/wisp/app/ui/screen/ComposeScreen.kt
++++ b/app/src/main/kotlin/com/wisp/app/ui/screen/ComposeScreen.kt
+@@ -174,14 +174,14 @@ fun ComposeScreen(
+ 
+     Scaffold(
+         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+-        topBar = {
++                topBar = {
+             TopAppBar(
+                 title = {
+                     Text(
+                         when {
+-                            quoteTo != null -> "Quote"
+-                            replyTo != null -> "Reply"
+-                            else -> "New Post"
++                            quoteTo != null -> stringResource(R.string.compose_quote)
++                            replyTo != null -> stringResource(R.string.compose_reply)
++                            else -> stringResource(R.string.compose_new_post)
+                         }
+                     )
+                 },
+@@ -236,7 +236,7 @@ fun ComposeScreen(
+                                 ProfilePicture(url = replyProfile?.picture, size = 24)
+                                 Spacer(Modifier.width(6.dp))
+                                 Text(
+-                                    text = "Replying to ",
++                                    text = stringResource(R.string.compose_replying_to),
+                                     style = MaterialTheme.typography.bodySmall,
+                                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                                 )
+@@ -391,7 +391,7 @@ fun ComposeScreen(
+                             singleLine = false,
+                             visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+                             interactionSource = interactionSource,
+-                            label = { Text("What's on your mind?") }
++                            label = { Text(stringResource(R.string.compose_placeholder)) }
+                         )
+                     }
+                 )
+@@ -449,7 +449,7 @@ fun ComposeScreen(
+                         )
+                         Spacer(Modifier.width(6.dp))
+                         Text(
+-                            text = "Uploading...",
++                            stringResource(R.string.compose_uploading),
+                             style = MaterialTheme.typography.bodySmall,
+                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                         )
+@@ -457,11 +457,11 @@ fun ComposeScreen(
+ 
+                     Spacer(Modifier.weight(1f))
+ 
+-                    if (content.text.isNotBlank()) {
++                        if (content.text.isNotBlank()) {
+                         TextButton(
+                             onClick = onSaveDraft
+                         ) {
+-                            Text("Save draft")
++                            Text(stringResource(R.string.btn_save_draft))
+                         }
+                     }
+                 }
+@@ -701,7 +701,7 @@ fun ComposeScreen(
+ 
+             // Bottom bar — always visible above keyboard
+             Column(modifier = Modifier.padding(horizontal = 16.dp).padding(top = 4.dp)) {
+-                if (countdownSeconds != null) {
++                    if (countdownSeconds != null) {
+                     Row(
+                         modifier = Modifier.fillMaxWidth(),
+                         verticalAlignment = Alignment.CenterVertically
+@@ -712,14 +712,14 @@ fun ComposeScreen(
+                                 contentColor = MaterialTheme.colorScheme.error
+                             )
+                         ) {
+-                            Text("Undo")
++                            Text(stringResource(R.string.btn_undo))
+                         }
+                         Spacer(Modifier.width(8.dp))
+                         Button(
+                             onClick = { viewModel.publishNow() },
+                             modifier = Modifier.weight(1f)
+                         ) {
+-                            Text("Post now (${countdownSeconds}s)")
++                            Text(stringResource(R.string.compose_post_now, countdownSeconds!!))
+                         }
+                     }
+                 } else {
+@@ -741,9 +741,9 @@ fun ComposeScreen(
+                     ) {
+                         Text(
+                             when {
+-                                isMiningBusy -> "Mining in progress..."
+-                                publishing -> "Publishing..."
+-                                else -> "Publish"
++                                isMiningBusy -> stringResource(R.string.compose_mining)
++                                publishing -> stringResource(R.string.compose_publishing)
++                                else -> stringResource(R.string.compose_publish)
+                             }
+                         )
+                     }
+diff --git a/app/src/main/kotlin/com/wisp/app/ui/screen/DmListScreen.kt b/app/src/main/kotlin/com/wisp/app/ui/screen/DmListScreen.kt
+index e8d49b1..26b16af 100644
+--- a/app/src/main/kotlin/com/wisp/app/ui/screen/DmListScreen.kt
++++ b/app/src/main/kotlin/com/wisp/app/ui/screen/DmListScreen.kt
+@@ -77,12 +77,12 @@ fun DmListScreen(
+             ) {
+                 Spacer(Modifier.height(64.dp))
+                 Text(
+-                    "No messages yet",
++                    stringResource(R.string.error_no_messages),
+                     style = MaterialTheme.typography.bodyLarge,
+                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                 )
+                 Text(
+-                    "Send a message from someone's profile",
++                    stringResource(R.string.error_send_message_hint),
+                     style = MaterialTheme.typography.bodySmall,
+                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                 )
+diff --git a/app/src/main/kotlin/com/wisp/app/ui/screen/FeedScreen.kt b/app/src/main/kotlin/com/wisp/app/ui/screen/FeedScreen.kt
+index 015b8d7..b6af097 100644
+--- a/app/src/main/kotlin/com/wisp/app/ui/screen/FeedScreen.kt
++++ b/app/src/main/kotlin/com/wisp/app/ui/screen/FeedScreen.kt
+@@ -2047,7 +2047,7 @@ private fun NewNotesButton(
+                     )
+                     Spacer(Modifier.width(4.dp))
+                     Text(
+-                        "$count new notes",
++                        stringResource(R.string.new_notes_button, count),
+                         style = MaterialTheme.typography.labelMedium
+                     )
+                 }
+@@ -2058,14 +2058,14 @@ private fun NewNotesButton(
+                 onDismissRequest = { showMenu = false }
+             ) {
+                 DropdownMenuItem(
+-                    text = { Text("Hide until app restart") },
++                    text = { Text(stringResource(R.string.new_notes_hide_temporary)) },
+                     onClick = {
+                         showMenu = false
+                         onHide(false)
+                     }
+                 )
+                 DropdownMenuItem(
+-                    text = { Text("Hide forever") },
++                    text = { Text(stringResource(R.string.new_notes_hide_forever)) },
+                     onClick = {
+                         showMenu = false
+                         onHide(true)
+@@ -2732,7 +2732,7 @@ fun BroadcastStatusBar(
+                         )
+                         Spacer(Modifier.width(8.dp))
+                         Text(
+-                            text = "Mining PoW (${powStatus.attempts / 1000}k)...",
++                            text = stringResource(R.string.broadcast_mining, powStatus.attempts / 1000),
+                             style = MaterialTheme.typography.labelMedium,
+                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                         )
+@@ -2744,7 +2744,7 @@ fun BroadcastStatusBar(
+                             ) {
+                                 Icon(
+                                     Icons.Default.Close,
+-                                    contentDescription = "Cancel mining",
++                                    contentDescription = stringResource(R.string.broadcast_cancel_mining),
+                                     modifier = Modifier.size(14.dp),
+                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                 )
+@@ -2778,9 +2778,10 @@ fun BroadcastStatusBar(
+                         }
+                         Text(
+                             text = if (state.accepted < state.sent) {
+-                                "Broadcasting (${state.accepted}/${state.sent})"
++                                stringResource(R.string.broadcast_broadcasting, state.accepted, state.sent)
+                             } else {
+-                                "Published to ${state.accepted} relay${if (state.accepted != 1) "s" else ""}"
++                                if (state.accepted != 1) stringResource(R.string.broadcast_published_plural, state.accepted)
++                                else stringResource(R.string.broadcast_published, state.accepted)
+                             },
+                             style = MaterialTheme.typography.labelMedium,
+                             color = MaterialTheme.colorScheme.onSurfaceVariant
+diff --git a/app/src/main/kotlin/com/wisp/app/ui/screen/InterfaceScreen.kt b/app/src/main/kotlin/com/wisp/app/ui/screen/InterfaceScreen.kt
+index 88a2da5..e063ffd 100644
+--- a/app/src/main/kotlin/com/wisp/app/ui/screen/InterfaceScreen.kt
++++ b/app/src/main/kotlin/com/wisp/app/ui/screen/InterfaceScreen.kt
+@@ -1,5 +1,6 @@
+ package com.wisp.app.ui.screen
+ 
++import android.app.Activity
+ import android.app.Application
+ import androidx.compose.foundation.Canvas
+ import androidx.compose.foundation.background
+@@ -184,6 +185,10 @@ fun InterfaceScreen(
+                                 interfacePrefs.setLanguage(language.code)
+                                 LocaleRepository.applyLanguage(application, language.code)
+                                 languagesExpanded = false
++                                (application as? android.app.Activity)?.let { activity ->
++                                    activity.finish()
++                                    activity.startActivity(activity.intent)
++                                }
+                             }
+                             .padding(vertical = 12.dp, horizontal = 8.dp),
+                         verticalAlignment = Alignment.CenterVertically
+diff --git a/app/src/main/kotlin/com/wisp/app/ui/screen/LoadingScreen.kt b/app/src/main/kotlin/com/wisp/app/ui/screen/LoadingScreen.kt
+index 5d1d15c..41631ff 100644
+--- a/app/src/main/kotlin/com/wisp/app/ui/screen/LoadingScreen.kt
++++ b/app/src/main/kotlin/com/wisp/app/ui/screen/LoadingScreen.kt
+@@ -30,11 +30,13 @@ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.draw.clip
+ import androidx.compose.ui.layout.ContentScale
++import androidx.compose.ui.res.stringResource
+ import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.text.style.TextAlign
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import coil3.compose.AsyncImage
++import com.wisp.app.R
+ import com.wisp.app.viewmodel.FeedViewModel
+ import com.wisp.app.viewmodel.InitLoadingState
+ import kotlinx.coroutines.delay
+@@ -211,15 +213,15 @@ fun LoadingScreen(
+                         Spacer(Modifier.height(16.dp))
+                     }
+ 
+-                    val statusText = initLoadingText(initLoadingState)
+-                    if (statusText.isNotEmpty()) {
++                    val (textRes, args) = initLoadingText(initLoadingState)
++                    if (textRes != 0) {
+                         AnimatedContent(
+-                            targetState = statusText,
++                            targetState = textRes to args,
+                             transitionSpec = { fadeIn() togetherWith fadeOut() },
+                             label = "status"
+-                        ) { text ->
++                        ) { (resId, formatArgs) ->
+                             Text(
+-                                text = text,
++                                text = stringResource(resId, *formatArgs),
+                                 style = MaterialTheme.typography.bodyMedium,
+                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                 textAlign = TextAlign.Center
+@@ -251,18 +253,18 @@ internal fun initLoadingProgress(state: InitLoadingState): Float {
+     }
+ }
+ 
+-internal fun initLoadingText(state: InitLoadingState): String {
++internal fun initLoadingText(state: InitLoadingState): Pair<Int, Array<Any>> {
+     return when (state) {
+-        is InitLoadingState.SearchingProfile -> "Searching for your profile..."
+-        is InitLoadingState.FoundProfile -> ""
++        is InitLoadingState.SearchingProfile -> R.string.loading_searching_profile to emptyArray()
++        is InitLoadingState.FoundProfile -> 0 to emptyArray()
+         is InitLoadingState.FindingFriends -> {
+-            if (state.total > 0) "Finding your friends... ${state.found}/${state.total}"
+-            else "Finding your friends..."
++            if (state.total > 0) R.string.loading_finding_friends_progress to arrayOf(state.found, state.total)
++            else R.string.loading_finding_friends to emptyArray()
+         }
+-        is InitLoadingState.DiscoveringNetwork -> "Discovering extended network... ${state.fetched}/${state.total}"
+-        is InitLoadingState.ExpandingRelays -> "Connecting to ${state.relayCount} extended relays..."
+-        is InitLoadingState.WarmLoading -> ""
+-        is InitLoadingState.Subscribing -> "Subscribing to feed..."
+-        is InitLoadingState.Done -> "Loading notes..."
++        is InitLoadingState.DiscoveringNetwork -> R.string.loading_discovering_network to arrayOf(state.fetched, state.total)
++        is InitLoadingState.ExpandingRelays -> R.string.loading_expanding_relays to arrayOf(state.relayCount)
++        is InitLoadingState.WarmLoading -> 0 to emptyArray()
++        is InitLoadingState.Subscribing -> R.string.loading_subscribing to emptyArray()
++        is InitLoadingState.Done -> R.string.loading_notes to emptyArray()
+     }
+ }
+diff --git a/app/src/main/kotlin/com/wisp/app/ui/screen/NotificationsScreen.kt b/app/src/main/kotlin/com/wisp/app/ui/screen/NotificationsScreen.kt
+index 2eacfb6..95995db 100644
+--- a/app/src/main/kotlin/com/wisp/app/ui/screen/NotificationsScreen.kt
++++ b/app/src/main/kotlin/com/wisp/app/ui/screen/NotificationsScreen.kt
+@@ -184,7 +184,7 @@ fun NotificationsScreen(
+                                     verticalAlignment = Alignment.CenterVertically
+                                 ) {
+                                     Text(
+-                                        currentFilter.label,
++                                        stringResource(currentFilter.labelResId),
+                                         style = MaterialTheme.typography.titleSmall,
+                                         maxLines = 1,
+                                         overflow = TextOverflow.Ellipsis,
+@@ -204,7 +204,7 @@ fun NotificationsScreen(
+                             ) {
+                                 NotificationFilter.entries.forEach { filterOption ->
+                                     DropdownMenuItem(
+-                                        text = { Text(filterOption.label) },
++                                        text = { Text(stringResource(filterOption.labelResId)) },
+                                         onClick = {
+                                             showFilterDropdown = false
+                                             viewModel.setFilter(filterOption)
+diff --git a/app/src/main/kotlin/com/wisp/app/viewmodel/NotificationsViewModel.kt b/app/src/main/kotlin/com/wisp/app/viewmodel/NotificationsViewModel.kt
+index f0e2e75..0bf90a8 100644
+--- a/app/src/main/kotlin/com/wisp/app/viewmodel/NotificationsViewModel.kt
++++ b/app/src/main/kotlin/com/wisp/app/viewmodel/NotificationsViewModel.kt
+@@ -18,13 +18,15 @@ import kotlinx.coroutines.flow.StateFlow
+ import kotlinx.coroutines.flow.combine
+ import kotlinx.coroutines.launch
+ 
+-enum class NotificationFilter(val label: String) {
+-    ALL("All"),
+-    REPLIES("Replies"),
+-    REACTIONS("Reactions"),
+-    ZAPS("Zaps"),
+-    REPOSTS("Reposts"),
+-    MENTIONS("Mentions")
++import com.wisp.app.R
++
++enum class NotificationFilter(val labelResId: Int) {
++    ALL(R.string.filter_all),
++    REPLIES(R.string.filter_replies),
++    REACTIONS(R.string.filter_reactions),
++    ZAPS(R.string.filter_zaps),
++    REPOSTS(R.string.filter_reposts),
++    MENTIONS(R.string.filter_mentions)
+ }
+ 
+ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
+diff --git a/app/src/main/res/values-de/strings.xml b/app/src/main/res/values-de/strings.xml
+index 3db8759..84f95fc 100644
+--- a/app/src/main/res/values-de/strings.xml
++++ b/app/src/main/res/values-de/strings.xml
+@@ -62,6 +62,16 @@
+     <string name="btn_lets_go">Los geht\'s</string>
+     <string name="btn_save_profile">Profil speichern</string>
+     <string name="btn_save_draft">Entwurf speichern</string>
++    <string name="compose_new_post">Neuer Beitrag</string>
++    <string name="compose_reply">Antworten</string>
++    <string name="compose_quote">Zitat</string>
++    <string name="compose_placeholder">Was hast du auf dem Herzen?</string>
++    <string name="compose_publish">Veröffentlichen</string>
++    <string name="compose_publishing">Wird veröffentlicht…</string>
++    <string name="compose_uploading">Wird hochgeladen…</string>
++    <string name="compose_mining">Mining läuft…</string>
++    <string name="compose_post_now">Jetzt posten (%d)</string>
++    <string name="compose_replying_to">Antworten an </string>
+     <string name="btn_post_now">Jetzt posten</string>
+     <string name="btn_cancel">Abbrechen</string>
+     <string name="btn_save">Speichern</string>
+@@ -200,7 +210,15 @@
+     <string name="cd_switch_account">Konto wechseln</string>
+     <string name="cd_add_account">Konto hinzufügen</string>
+     <string name="cd_active">Aktiv</string>
++    <string name="cd_seen_on">Gesehen auf</string>
++    <string name="cd_sent_with">Gesendet mit</string>
+     <string name="cd_filter_notifications">Benachrichtigungen filtern</string>
++    <string name="filter_all">Alle</string>
++    <string name="filter_replies">Antworten</string>
++    <string name="filter_reactions">Reaktionen</string>
++    <string name="filter_zaps">Zaps</string>
++    <string name="filter_reposts">Geteilt</string>
++    <string name="filter_mentions">Erwähnungen</string>
+     <string name="cd_mute_notifications">Benachrichtigungen stummschalten</string>
+     <string name="cd_unmute_notifications">Benachrichtigungen aktivieren</string>
+     <string name="cd_reposted">geteilt</string>
+@@ -320,6 +338,14 @@
+     <string name="settings_new_notes_button">Neue-Notizen-Button</string>
+     <string name="settings_hide_new_notes_button">Neue-Notizen-Button ausblenden</string>
+     <string name="settings_hide_new_notes_description">Den schwebenden Button ausblenden, der erscheint, wenn neue Notizen ankommen</string>
++    <string name="new_notes_button">%d neue Notizen</string>
++    <string name="new_notes_hide_temporary">Bis zum App-Neustart ausblenden</string>
++    <string name="new_notes_hide_forever">Für immer ausblenden</string>
++    <string name="broadcast_mining">Mining PoW (%dk)…</string>
++    <string name="broadcast_cancel_mining">Mining abbrechen</string>
++    <string name="broadcast_broadcasting">Broadcasting (%d/%d)</string>
++    <string name="broadcast_published">Veröffentlicht auf %d Relay</string>
++    <string name="broadcast_published_plural">Veröffentlicht auf %d Relays</string>
+     <string name="settings_media">Medien</string>
+     <string name="settings_auto_load_media">Medien automatisch laden</string>
+     <string name="settings_auto_load_description">Bilder und Videos in Notizen automatisch herunterladen. Wenn aus, tippen zum Laden.</string>
+@@ -364,6 +390,15 @@
+     <string name="error_no_results_found">Keine Ergebnisse gefunden</string>
+     <string name="error_search_hint">Nutzer und Notizen auf Relays suchen</string>
+     <string name="error_no_notifications">Noch keine Benachrichtigungen</string>
++    <string name="error_no_messages">Noch keine Nachrichten</string>
++    <string name="error_send_message_hint">Sende eine Nachricht von jemandes Profil</string>
++    <string name="loading_searching_profile">Suche nach deinem Profil…</string>
++    <string name="loading_finding_friends">Finde deine Freunde…</string>
++    <string name="loading_finding_friends_progress">Finde deine Freunde… %d/%d</string>
++    <string name="loading_discovering_network">Entdecke erweitertes Netzwerk… %d/%d</string>
++    <string name="loading_expanding_relays">Verbinde mit %d erweiterten Relays…</string>
++    <string name="loading_subscribing">Abonniere Feed…</string>
++    <string name="loading_notes">Lade Notizen…</string>
+     <string name="error_list_not_found">Liste nicht gefunden</string>
+     <string name="error_no_list_members">Diese Liste hat keine Mitglieder</string>
+ 
+diff --git a/app/src/main/res/values-es/strings.xml b/app/src/main/res/values-es/strings.xml
+index 6e6849d..04386df 100644
+--- a/app/src/main/res/values-es/strings.xml
++++ b/app/src/main/res/values-es/strings.xml
+@@ -62,6 +62,16 @@
+     <string name="btn_lets_go">Vamos</string>
+     <string name="btn_save_profile">Guardar Perfil</string>
+     <string name="btn_save_draft">Guardar borrador</string>
++    <string name="compose_new_post">Nueva publicación</string>
++    <string name="compose_reply">Responder</string>
++    <string name="compose_quote">Citar</string>
++    <string name="compose_placeholder">¿Qué tienes en mente?</string>
++    <string name="compose_publish">Publicar</string>
++    <string name="compose_publishing">Publicando…</string>
++    <string name="compose_uploading">Subiendo…</string>
++    <string name="compose_mining">Minando…</string>
++    <string name="compose_post_now">Publicar ahora (%d)</string>
++    <string name="compose_replying_to">Respondiendo a </string>
+     <string name="btn_post_now">Publicar ahora</string>
+     <string name="btn_cancel">Cancelar</string>
+     <string name="btn_save">Guardar</string>
+@@ -200,7 +210,15 @@
+     <string name="cd_switch_account">Cambiar cuenta</string>
+     <string name="cd_add_account">Añadir cuenta</string>
+     <string name="cd_active">Activo</string>
++    <string name="cd_seen_on">Visto en</string>
++    <string name="cd_sent_with">Enviado con</string>
+     <string name="cd_filter_notifications">Filtrar notificaciones</string>
++    <string name="filter_all">Todo</string>
++    <string name="filter_replies">Respuestas</string>
++    <string name="filter_reactions">Reacciones</string>
++    <string name="filter_zaps">Zaps</string>
++    <string name="filter_reposts">Republicaciones</string>
++    <string name="filter_mentions">Menciones</string>
+     <string name="cd_mute_notifications">Silenciar notificaciones</string>
+     <string name="cd_unmute_notifications">Activar notificaciones</string>
+     <string name="cd_reposted">republicado</string>
+@@ -320,6 +338,14 @@
+     <string name="settings_new_notes_button">Botón de Nuevas Notas</string>
+     <string name="settings_hide_new_notes_button">Ocultar botón de nuevas notas</string>
+     <string name="settings_hide_new_notes_description">Ocultar el botón flotante que aparece cuando llegan nuevas notas</string>
++    <string name="new_notes_button">%d notas nuevas</string>
++    <string name="new_notes_hide_temporary">Ocultar hasta reiniciar la app</string>
++    <string name="new_notes_hide_forever">Ocultar para siempre</string>
++    <string name="broadcast_mining">Minería PoW (%dk)…</string>
++    <string name="broadcast_cancel_mining">Cancelar minería</string>
++    <string name="broadcast_broadcasting">Broadcasting (%d/%d)</string>
++    <string name="broadcast_published">Publicado en %d relay</string>
++    <string name="broadcast_published_plural">Publicado en %d relays</string>
+     <string name="settings_media">Medios</string>
+     <string name="settings_auto_load_media">Cargar medios automáticamente</string>
+     <string name="settings_auto_load_description">Descargar automáticamente imágenes y videos en notas. Cuando está desactivado, toca para cargar.</string>
+diff --git a/app/src/main/res/values-fr/strings.xml b/app/src/main/res/values-fr/strings.xml
+index 06a6098..dcb23cb 100644
+--- a/app/src/main/res/values-fr/strings.xml
++++ b/app/src/main/res/values-fr/strings.xml
+@@ -62,6 +62,16 @@
+     <string name="btn_lets_go">C\'est parti</string>
+     <string name="btn_save_profile">Enregistrer le Profil</string>
+     <string name="btn_save_draft">Enregistrer le brouillon</string>
++    <string name="compose_new_post">Nouveau post</string>
++    <string name="compose_reply">Répondre</string>
++    <string name="compose_quote">Citer</string>
++    <string name="compose_placeholder">À quoi pensez-vous ?</string>
++    <string name="compose_publish">Publier</string>
++    <string name="compose_publishing">Publication en cours…</string>
++    <string name="compose_uploading">Téléchargement en cours…</string>
++    <string name="compose_mining">Minage en cours…</string>
++    <string name="compose_post_now">Publier maintenant (%d)</string>
++    <string name="compose_replying_to">Répondre à </string>
+     <string name="btn_post_now">Publier maintenant</string>
+     <string name="btn_cancel">Annuler</string>
+     <string name="btn_save">Enregistrer</string>
+@@ -200,7 +210,15 @@
+     <string name="cd_switch_account">Changer de compte</string>
+     <string name="cd_add_account">Ajouter un compte</string>
+     <string name="cd_active">Actif</string>
++    <string name="cd_seen_on">Vu sur</string>
++    <string name="cd_sent_with">Envoyé avec</string>
+     <string name="cd_filter_notifications">Filtrer les notifications</string>
++    <string name="filter_all">Tout</string>
++    <string name="filter_replies">Réponses</string>
++    <string name="filter_reactions">Réactions</string>
++    <string name="filter_zaps">Zaps</string>
++    <string name="filter_reposts">Reposts</string>
++    <string name="filter_mentions">Mentions</string>
+     <string name="cd_mute_notifications">Désactiver les notifications</string>
+     <string name="cd_unmute_notifications">Réactiver les notifications</string>
+     <string name="cd_reposted">repartagé</string>
+@@ -320,6 +338,14 @@
+     <string name="settings_new_notes_button">Bouton Nouvelles Notes</string>
+     <string name="settings_hide_new_notes_button">Masquer le bouton nouvelles notes</string>
+     <string name="settings_hide_new_notes_description">Masquer le bouton flottant qui apparaît quand de nouvelles notes arrivent</string>
++    <string name="new_notes_button">%d nouvelles notes</string>
++    <string name="new_notes_hide_temporary">Masquer jusqu\'au redémarrage de l\'app</string>
++    <string name="new_notes_hide_forever">Masquer pour toujours</string>
++    <string name="broadcast_mining">Minage PoW (%dk)…</string>
++    <string name="broadcast_cancel_mining">Annuler le minage</string>
++    <string name="broadcast_broadcasting">Broadcasting (%d/%d)</string>
++    <string name="broadcast_published">Publié sur %d relais</string>
++    <string name="broadcast_published_plural">Publié sur %d relais</string>
+     <string name="settings_media">Médias</string>
+     <string name="settings_auto_load_media">Charger les médias automatiquement</string>
+     <string name="settings_auto_load_description">Télécharger automatiquement les images et vidéos dans les notes. Quand désactivé, appuyez pour charger.</string>
+@@ -364,6 +390,15 @@
+     <string name="error_no_results_found">Aucun résultat trouvé</string>
+     <string name="error_search_hint">Rechercher des utilisateurs et des notes sur les relais</string>
+     <string name="error_no_notifications">Pas encore de notifications</string>
++    <string name="error_no_messages">Pas encore de messages</string>
++    <string name="error_send_message_hint">Envoie un message depuis le profil de quelqu\'un</string>
++    <string name="loading_searching_profile">Recherche de ton profil…</string>
++    <string name="loading_finding_friends">Recherche de tes amis…</string>
++    <string name="loading_finding_friends_progress">Recherche de tes amis… %d/%d</string>
++    <string name="loading_discovering_network">Découverte du réseau étendu… %d/%d</string>
++    <string name="loading_expanding_relays">Connexion à %d relais étendus…</string>
++    <string name="loading_subscribing">Abonnement au flux…</string>
++    <string name="loading_notes">Chargement des notes…</string>
+     <string name="error_list_not_found">Liste non trouvée</string>
+     <string name="error_no_list_members">Cette liste n\'a pas de membres</string>
+ 
+diff --git a/app/src/main/res/values-it/strings.xml b/app/src/main/res/values-it/strings.xml
+index 21a93f4..7d16ecb 100644
+--- a/app/src/main/res/values-it/strings.xml
++++ b/app/src/main/res/values-it/strings.xml
+@@ -62,6 +62,16 @@
+     <string name="btn_lets_go">Iniziamo</string>
+     <string name="btn_save_profile">Salva Profilo</string>
+     <string name="btn_save_draft">Salva bozza</string>
++    <string name="compose_new_post">Nuovo post</string>
++    <string name="compose_reply">Rispondi</string>
++    <string name="compose_quote">Cita</string>
++    <string name="compose_placeholder">Cosa hai in mente?</string>
++    <string name="compose_publish">Pubblica</string>
++    <string name="compose_publishing">Pubblicazione in corso…</string>
++    <string name="compose_uploading">Caricamento in corso…</string>
++    <string name="compose_mining">Mining in corso…</string>
++    <string name="compose_post_now">Pubblica ora (%d)</string>
++    <string name="compose_replying_to">Rispondi a </string>
+     <string name="btn_post_now">Pubblica ora</string>
+     <string name="btn_cancel">Annulla</string>
+     <string name="btn_save">Salva</string>
+@@ -200,7 +210,15 @@
+     <string name="cd_switch_account">Cambia account</string>
+     <string name="cd_add_account">Aggiungi account</string>
+     <string name="cd_active">Attivo</string>
++    <string name="cd_seen_on">Visto su</string>
++    <string name="cd_sent_with">Inviato con</string>
+     <string name="cd_filter_notifications">Filtra notifiche</string>
++    <string name="filter_all">Tutto</string>
++    <string name="filter_replies">Risposte</string>
++    <string name="filter_reactions">Reazioni</string>
++    <string name="filter_zaps">Zaps</string>
++    <string name="filter_reposts">Condivisioni</string>
++    <string name="filter_mentions">Menzioni</string>
+     <string name="cd_mute_notifications">Silenzia notifiche</string>
+     <string name="cd_unmute_notifications">Riattiva notifiche</string>
+     <string name="cd_reposted">condiviso</string>
+@@ -320,6 +338,14 @@
+     <string name="settings_new_notes_button">Pulsante Nuove Note</string>
+     <string name="settings_hide_new_notes_button">Nascondi pulsante nuove note</string>
+     <string name="settings_hide_new_notes_description">Nascondi il pulsante flottante che appare quando arrivano nuove note</string>
++    <string name="new_notes_button">%d nuove note</string>
++    <string name="new_notes_hide_temporary">Nascondi fino al riavvio dell\'app</string>
++    <string name="new_notes_hide_forever">Nascondi per sempre</string>
++    <string name="broadcast_mining">Mining PoW (%dk)…</string>
++    <string name="broadcast_cancel_mining">Annulla mining</string>
++    <string name="broadcast_broadcasting">Broadcasting (%d/%d)</string>
++    <string name="broadcast_published">Pubblicato su %d relay</string>
++    <string name="broadcast_published_plural">Pubblicato su %d relay</string>
+     <string name="settings_media">Media</string>
+     <string name="settings_auto_load_media">Carica media automaticamente</string>
+     <string name="settings_auto_load_description">Scarica automaticamente immagini e video nelle note. Quando disattivato, tocca per caricare.</string>
+diff --git a/app/src/main/res/values-ja/strings.xml b/app/src/main/res/values-ja/strings.xml
+index d29719d..1a85bac 100644
+--- a/app/src/main/res/values-ja/strings.xml
++++ b/app/src/main/res/values-ja/strings.xml
+@@ -62,6 +62,16 @@
+     <string name="btn_lets_go">始めよう</string>
+     <string name="btn_save_profile">プロフィールを保存</string>
+     <string name="btn_save_draft">下書きを保存</string>
++    <string name="compose_new_post">新規投稿</string>
++    <string name="compose_reply">返信</string>
++    <string name="compose_quote">引用</string>
++    <string name="compose_placeholder">今何を考えていますか？</string>
++    <string name="compose_publish">投稿</string>
++    <string name="compose_publishing">投稿中…</string>
++    <string name="compose_uploading">アップロード中…</string>
++    <string name="compose_mining">マイニング中…</string>
++    <string name="compose_post_now">今すぐ投稿 (%d)</string>
++    <string name="compose_replying_to">に返信 </string>
+     <string name="btn_post_now">今すぐ投稿</string>
+     <string name="btn_cancel">キャンセル</string>
+     <string name="btn_save">保存</string>
+@@ -200,7 +210,15 @@
+     <string name="cd_switch_account">アカウントを切り替え</string>
+     <string name="cd_add_account">アカウントを追加</string>
+     <string name="cd_active">アクティブ</string>
++    <string name="cd_seen_on">で見る</string>
++    <string name="cd_sent_with">で送信</string>
+     <string name="cd_filter_notifications">通知をフィルター</string>
++    <string name="filter_all">すべて</string>
++    <string name="filter_replies">返信</string>
++    <string name="filter_reactions">リアクション</string>
++    <string name="filter_zaps">サップ</string>
++    <string name="filter_reposts">リポスト</string>
++    <string name="filter_mentions">メンション</string>
+     <string name="cd_mute_notifications">通知をミュート</string>
+     <string name="cd_unmute_notifications">通知のミュートを解除</string>
+     <string name="cd_reposted">リポスト済み</string>
+@@ -320,6 +338,14 @@
+     <string name="settings_new_notes_button">新規ノートボタン</string>
+     <string name="settings_hide_new_notes_button">新規ノートボタンを非表示</string>
+     <string name="settings_hide_new_notes_description">新しいノート到着時に表示されるフローティングボタンを非表示</string>
++    <string name="new_notes_button">%d件の新しいノート</string>
++    <string name="new_notes_hide_temporary">アプリ再起動まで非表示</string>
++    <string name="new_notes_hide_forever">永久に非表示</string>
++    <string name="broadcast_mining">PoW採掘中 (%dk)…</string>
++    <string name="broadcast_cancel_mining">採掘をキャンセル</string>
++    <string name="broadcast_broadcasting">ブロードキャスト中 (%d/%d)</string>
++    <string name="broadcast_published">%d個のリレーに公開</string>
++    <string name="broadcast_published_plural">%d個のリレーに公開</string>
+     <string name="settings_media">メディア</string>
+     <string name="settings_auto_load_media">メディアを自動読み込み</string>
+     <string name="settings_auto_load_description">ノートの画像と動画を自動的にダウンロード。オフの場合、タップして読み込み。</string>
+@@ -364,6 +390,15 @@
+     <string name="error_no_results_found">結果が見つかりません</string>
+     <string name="error_search_hint">リレー上のユーザーとノートを検索</string>
+     <string name="error_no_notifications">通知はまだありません</string>
++    <string name="error_no_messages">メッセージはまだありません</string>
++    <string name="error_send_message_hint">誰かのプロフィールからメッセージを送信</string>
++    <string name="loading_searching_profile">プロフィールを検索中…</string>
++    <string name="loading_finding_friends">友達を検索中…</string>
++    <string name="loading_finding_friends_progress">友達を検索中… %d/%d</string>
++    <string name="loading_discovering_network">拡張ネットワークを検出中… %d/%d</string>
++    <string name="loading_expanding_relays">%d個拡張リレーに接続中…</string>
++    <string name="loading_subscribing">フィードを購読中…</string>
++    <string name="loading_notes">ノートを読み込み中…</string>
+     <string name="error_list_not_found">リストが見つかりません</string>
+     <string name="error_no_list_members">このリストにはメンバーがいません</string>
+ 
+diff --git a/app/src/main/res/values-ko/strings.xml b/app/src/main/res/values-ko/strings.xml
+index 9a3b208..a949fa2 100644
+--- a/app/src/main/res/values-ko/strings.xml
++++ b/app/src/main/res/values-ko/strings.xml
+@@ -62,6 +62,16 @@
+     <string name="btn_lets_go">시작하기</string>
+     <string name="btn_save_profile">프로필 저장</string>
+     <string name="btn_save_draft">임시 저장</string>
++    <string name="compose_new_post">새 게시물</string>
++    <string name="compose_reply">답글</string>
++    <string name="compose_quote">인용</string>
++    <string name="compose_placeholder">무슨 생각을 하고 있나요?</string>
++    <string name="compose_publish">게시</string>
++    <string name="compose_publishing">게시 중…</string>
++    <string name="compose_uploading">업로드 중…</string>
++    <string name="compose_mining">채굴 중…</string>
++    <string name="compose_post_now">지금 게시 (%d)</string>
++    <string name="compose_replying_to">답글 달기 </string>
+     <string name="btn_post_now">지금 게시</string>
+     <string name="btn_cancel">취소</string>
+     <string name="btn_save">저장</string>
+@@ -200,7 +210,15 @@
+     <string name="cd_switch_account">계정 전환</string>
+     <string name="cd_add_account">계정 추가</string>
+     <string name="cd_active">활성</string>
++    <string name="cd_seen_on">에서 봄</string>
++    <string name="cd_sent_with">(으)로 전송</string>
+     <string name="cd_filter_notifications">알림 필터</string>
++    <string name="filter_all">전체</string>
++    <string name="filter_replies">답글</string>
++    <string name="filter_reactions">리액션</string>
++    <string name="filter_zaps">잽</string>
++    <string name="filter_reposts">리포스트</string>
++    <string name="filter_mentions">멘션</string>
+     <string name="cd_mute_notifications">알림 음소거</string>
+     <string name="cd_unmute_notifications">알림 음소거 해제</string>
+     <string name="cd_reposted">리포스트됨</string>
+@@ -320,6 +338,14 @@
+     <string name="settings_new_notes_button">새 노트 버튼</string>
+     <string name="settings_hide_new_notes_button">새 노트 버튼 숨기기</string>
+     <string name="settings_hide_new_notes_description">새 노트가 도착했을 때 나타나는 플로팅 버튼 숨기기</string>
++    <string name="new_notes_button">%d개의 새 노트</string>
++    <string name="new_notes_hide_temporary">앱 재시작 시까지 숨기기</string>
++    <string name="new_notes_hide_forever">영구 숨기기</string>
++    <string name="broadcast_mining">PoW 채굴 중 (%dk)…</string>
++    <string name="broadcast_cancel_mining">채굴 취소</string>
++    <string name="broadcast_broadcasting">브로드캐스트 중 (%d/%d)</string>
++    <string name="broadcast_published">%d개 릴레이에 게시됨</string>
++    <string name="broadcast_published_plural">%d개 릴레이에 게시됨</string>
+     <string name="settings_media">미디어</string>
+     <string name="settings_auto_load_media">미디어 자동 로드</string>
+     <string name="settings_auto_load_description">노트의 이미지 및 비디오 자동 다운로드. 꺼짐 시 탭하여 로드.</string>
+diff --git a/app/src/main/res/values-nl/strings.xml b/app/src/main/res/values-nl/strings.xml
+index 6d40ab8..5afb608 100644
+--- a/app/src/main/res/values-nl/strings.xml
++++ b/app/src/main/res/values-nl/strings.xml
+@@ -62,6 +62,16 @@
+     <string name="btn_lets_go">Laten we gaan</string>
+     <string name="btn_save_profile">Profiel Opslaan</string>
+     <string name="btn_save_draft">Concept Opslaan</string>
++    <string name="compose_new_post">Nieuw Bericht</string>
++    <string name="compose_reply">Reageren</string>
++    <string name="compose_quote">Citeren</string>
++    <string name="compose_placeholder">Waar denk je aan?</string>
++    <string name="compose_publish">Plaatsen</string>
++    <string name="compose_publishing">Plaatsen…</string>
++    <string name="compose_uploading">Uploaden…</string>
++    <string name="compose_mining">Minen…</string>
++    <string name="compose_post_now">Nu plaatsen (%d)</string>
++    <string name="compose_replying_to">Reageren op </string>
+     <string name="btn_post_now">Nu Plaatstellen</string>
+     <string name="btn_cancel">Annuleren</string>
+     <string name="btn_save">Opslaan</string>
+@@ -200,7 +210,15 @@
+     <string name="cd_switch_account">Account Wisselen</string>
+     <string name="cd_add_account">Account Toevoegen</string>
+     <string name="cd_active">Actief</string>
++    <string name="cd_seen_on">Gezien op</string>
++    <string name="cd_sent_with">Verzonden met</string>
+     <string name="cd_filter_notifications">Meldingen Filteren</string>
++    <string name="filter_all">Alles</string>
++    <string name="filter_replies">Antwoorden</string>
++    <string name="filter_reactions">Reacties</string>
++    <string name="filter_zaps">Zaps</string>
++    <string name="filter_reposts">Delen</string>
++    <string name="filter_mentions">Vermeldingen</string>
+     <string name="cd_mute_notifications">Meldingen Dempen</string>
+     <string name="cd_unmute_notifications">Meldingen Aanzetten</string>
+     <string name="cd_reposted">gedeeld</string>
+@@ -320,6 +338,14 @@
+     <string name="settings_new_notes_button">Nieuwe Notities Knop</string>
+     <string name="settings_hide_new_notes_button">Nieuwe notities knop verbergen</string>
+     <string name="settings_hide_new_notes_description">De drijvende knop verbergen die verschijnt wanneer nieuwe notities arriveren</string>
++    <string name="new_notes_button">%d nieuwe notities</string>
++    <string name="new_notes_hide_temporary">Verbergen tot app opnieuw start</string>
++    <string name="new_notes_hide_forever">Voor altijd verbergen</string>
++    <string name="broadcast_mining">PoW minen (%dk)…</string>
++    <string name="broadcast_cancel_mining">Minen annuleren</string>
++    <string name="broadcast_broadcasting">Broadcasten (%d/%d)</string>
++    <string name="broadcast_published">Gepubliceerd naar %d relay</string>
++    <string name="broadcast_published_plural">Gepubliceerd naar %d relays</string>
+     <string name="settings_media">Media</string>
+     <string name="settings_auto_load_media">Media automatisch laden</string>
+     <string name="settings_auto_load_description">Afbeeldingen en video\'s in notities automatisch downloaden. Als uit, tik om te laden.</string>
+@@ -364,6 +390,15 @@
+     <string name="error_no_results_found">Geen resultaten gevonden</string>
+     <string name="error_search_hint">Gebruikers en notities op relays zoeken</string>
+     <string name="error_no_notifications">Nog geen meldingen</string>
++    <string name="error_no_messages">Nog geen berichten</string>
++    <string name="error_send_message_hint">Stuur een bericht van iemands profiel</string>
++    <string name="loading_searching_profile">Zoeken naar je profiel…</string>
++    <string name="loading_finding_friends">Je vrienden zoeken…</string>
++    <string name="loading_finding_friends_progress">Je vrienden zoeken… %d/%d</string>
++    <string name="loading_discovering_network">Uitgebreid netwerk ontdekken… %d/%d</string>
++    <string name="loading_expanding_relays">Verbinden met %d uitgebreide relays…</string>
++    <string name="loading_subscribing">Abonneren op feed…</string>
++    <string name="loading_notes">Notities laden…</string>
+     <string name="error_list_not_found">Lijst niet gevonden</string>
+     <string name="error_no_list_members">Deze lijst heeft geen leden</string>
+ 
+diff --git a/app/src/main/res/values-pt/strings.xml b/app/src/main/res/values-pt/strings.xml
+index 2d63271..ef4933b 100644
+--- a/app/src/main/res/values-pt/strings.xml
++++ b/app/src/main/res/values-pt/strings.xml
+@@ -62,6 +62,16 @@
+     <string name="btn_lets_go">Vamos lá</string>
+     <string name="btn_save_profile">Salvar Perfil</string>
+     <string name="btn_save_draft">Salvar rascunho</string>
++    <string name="compose_new_post">Nova publicação</string>
++    <string name="compose_reply">Responder</string>
++    <string name="compose_quote">Citar</string>
++    <string name="compose_placeholder">O que você está pensando?</string>
++    <string name="compose_publish">Publicar</string>
++    <string name="compose_publishing">Publicando…</string>
++    <string name="compose_uploading">Enviando…</string>
++    <string name="compose_mining">Minerando…</string>
++    <string name="compose_post_now">Publicar agora (%d)</string>
++    <string name="compose_replying_to">Respondendo a </string>
+     <string name="btn_post_now">Publicar agora</string>
+     <string name="btn_cancel">Cancelar</string>
+     <string name="btn_save">Salvar</string>
+@@ -200,7 +210,15 @@
+     <string name="cd_switch_account">Trocar conta</string>
+     <string name="cd_add_account">Adicionar conta</string>
+     <string name="cd_active">Ativo</string>
++    <string name="cd_seen_on">Visto em</string>
++    <string name="cd_sent_with">Enviado com</string>
+     <string name="cd_filter_notifications">Filtrar notificações</string>
++    <string name="filter_all">Tudo</string>
++    <string name="filter_replies">Respostas</string>
++    <string name="filter_reactions">Reações</string>
++    <string name="filter_zaps">Zaps</string>
++    <string name="filter_reposts">Republicações</string>
++    <string name="filter_mentions">Menções</string>
+     <string name="cd_mute_notifications">Silenciar notificações</string>
+     <string name="cd_unmute_notifications">Ativar notificações</string>
+     <string name="cd_reposted">republicado</string>
+@@ -320,6 +338,14 @@
+     <string name="settings_new_notes_button">Botão de Novas Notas</string>
+     <string name="settings_hide_new_notes_button">Ocultar botão de novas notas</string>
+     <string name="settings_hide_new_notes_description">Ocultar o botão flutuante que aparece quando novas notas chegam</string>
++    <string name="new_notes_button">%d novas notas</string>
++    <string name="new_notes_hide_temporary">Ocultar até reiniciar o app</string>
++    <string name="new_notes_hide_forever">Ocultar para sempre</string>
++    <string name="broadcast_mining">Minerando PoW (%dk)…</string>
++    <string name="broadcast_cancel_mining">Cancelar mineração</string>
++    <string name="broadcast_broadcasting">Transmitindo (%d/%d)</string>
++    <string name="broadcast_published">Publicado em %d relay</string>
++    <string name="broadcast_published_plural">Publicado em %d relays</string>
+     <string name="settings_media">Mídia</string>
+     <string name="settings_auto_load_media">Carregar mídia automaticamente</string>
+     <string name="settings_auto_load_description">Baixar automaticamente imagens e vídeos em notas. Quando desativado, toque para carregar.</string>
+diff --git a/app/src/main/res/values-ru/strings.xml b/app/src/main/res/values-ru/strings.xml
+index 773caf5..84e2e14 100644
+--- a/app/src/main/res/values-ru/strings.xml
++++ b/app/src/main/res/values-ru/strings.xml
+@@ -60,6 +60,16 @@
+     <string name="btn_create">Создать</string>
+     <string name="btn_add">Добавить</string>
+     <string name="btn_remove">Удалить</string>
++    <string name="compose_new_post">Новая заметка</string>
++    <string name="compose_reply">Ответить</string>
++    <string name="compose_quote">Цитировать</string>
++    <string name="compose_placeholder">О чём думаете?</string>
++    <string name="compose_publish">Опубликовать</string>
++    <string name="compose_publishing">Публикация…</string>
++    <string name="compose_uploading">Загрузка…</string>
++    <string name="compose_mining">Майнинг…</string>
++    <string name="compose_post_now">Опубликовать (%d)</string>
++    <string name="compose_replying_to">Ответ для </string>
+     <string name="btn_close">Закрыть</string>
+     <string name="btn_ok">ОК</string>
+     <string name="btn_retry">Повторить</string>
+@@ -184,6 +194,14 @@
+     <string name="cd_add_account">Добавить аккаунт</string>
+     <string name="cd_active">Активный</string>
+     <string name="cd_filter_notifications">Фильтровать уведомления</string>
++    <string name="filter_all">Все</string>
++    <string name="cd_seen_on">Видно на</string>
++    <string name="cd_sent_with">Отправлено через</string>
++    <string name="filter_replies">Ответы</string>
++    <string name="filter_reactions">Реакции</string>
++    <string name="filter_zaps">Zaps</string>
++    <string name="filter_reposts">Репосты</string>
++    <string name="filter_mentions">Упоминания</string>
+     <string name="cd_mute_notifications">Заглушить уведомления</string>
+     <string name="cd_unmute_notifications">Включить уведомления</string>
+     <string name="cd_reposted">репост</string>
+@@ -297,6 +315,14 @@
+     <string name="settings_new_notes_button">Кнопка новых заметок</string>
+     <string name="settings_hide_new_notes_button">Скрыть кнопку новых заметок</string>
+     <string name="settings_hide_new_notes_description">Скрыть всплывающую кнопку при появлении новых заметок</string>
++    <string name="new_notes_button">%d новых заметок</string>
++    <string name="new_notes_hide_temporary">Скрыть до перезапуска</string>
++    <string name="new_notes_hide_forever">Скрыть навсегда</string>
++    <string name="broadcast_mining">Майнинг PoW (%dk)…</string>
++    <string name="broadcast_cancel_mining">Отменить майнинг</string>
++    <string name="broadcast_broadcasting">Трансляция (%d/%d)</string>
++    <string name="broadcast_published">Опубликовано на %d рилэе</string>
++    <string name="broadcast_published_plural">Опубликовано на %d рилэях</string>
+     <string name="settings_media">Медиа</string>
+     <string name="settings_auto_load_media">Автозагрузка медиа</string>
+     <string name="settings_auto_load_description">Автоматически загружать изображения и видео в заметках. Если выключено — нажмите для загрузки.</string>
+@@ -337,6 +363,15 @@
+     <string name="error_no_results_found">Ничего не найдено</string>
+     <string name="error_search_hint">Искать пользователей и заметки на рилэях</string>
+     <string name="error_no_notifications">Уведомлений пока нет</string>
++    <string name="error_no_messages">Сообщений пока нет</string>
++    <string name="error_send_message_hint">Отправьте сообщение из профиля человека</string>
++    <string name="loading_searching_profile">Поиск вашего профиля…</string>
++    <string name="loading_finding_friends">Поиск ваших друзей…</string>
++    <string name="loading_finding_friends_progress">Поиск ваших друзей… %d/%d</string>
++    <string name="loading_discovering_network">Обнаружение расширенной сети… %d/%d</string>
++    <string name="loading_expanding_relays">Подключение к %d расширенным рилэям…</string>
++    <string name="loading_subscribing">Подписка на ленту…</string>
++    <string name="loading_notes">Загрузка заметок…</string>
+     <string name="error_list_not_found">Список не найден</string>
+     <string name="error_no_list_members">В этом списке нет участников</string>
+     <string name="menu_add_to_relay_set">Добавить в набор рилэев</string>
+diff --git a/app/src/main/res/values-zh/strings.xml b/app/src/main/res/values-zh/strings.xml
+index b0cdebb..30e839e 100644
+--- a/app/src/main/res/values-zh/strings.xml
++++ b/app/src/main/res/values-zh/strings.xml
+@@ -62,6 +62,16 @@
+     <string name="btn_lets_go">开始吧</string>
+     <string name="btn_save_profile">保存资料</string>
+     <string name="btn_save_draft">保存草稿</string>
++    <string name="compose_new_post">新帖子</string>
++    <string name="compose_reply">回复</string>
++    <string name="compose_quote">引用</string>
++    <string name="compose_placeholder">你在想什么？</string>
++    <string name="compose_publish">发布</string>
++    <string name="compose_publishing">发布中…</string>
++    <string name="compose_uploading">上传中…</string>
++    <string name="compose_mining">挖矿中…</string>
++    <string name="compose_post_now">立即发布 (%d)</string>
++    <string name="compose_replying_to">回复 </string>
+     <string name="btn_post_now">立即发布</string>
+     <string name="btn_cancel">取消</string>
+     <string name="btn_save">保存</string>
+@@ -200,7 +210,15 @@
+     <string name="cd_switch_account">切换账户</string>
+     <string name="cd_add_account">添加账户</string>
+     <string name="cd_active">活跃</string>
++    <string name="cd_seen_on">发布于</string>
++    <string name="cd_sent_with">发送于</string>
+     <string name="cd_filter_notifications">筛选通知</string>
++    <string name="filter_all">全部</string>
++    <string name="filter_replies">回复</string>
++    <string name="filter_reactions">反应</string>
++    <string name="filter_zaps">闪电支付</string>
++    <string name="filter_reposts">转发</string>
++    <string name="filter_mentions">提及</string>
+     <string name="cd_mute_notifications">静音通知</string>
+     <string name="cd_unmute_notifications">取消静音通知</string>
+     <string name="cd_reposted">已转发</string>
+@@ -320,6 +338,14 @@
+     <string name="settings_new_notes_button">新帖子按钮</string>
+     <string name="settings_hide_new_notes_button">隐藏新帖子按钮</string>
+     <string name="settings_hide_new_notes_description">隐藏新帖子到达时出现的浮动按钮</string>
++    <string name="new_notes_button">%d 条新帖子</string>
++    <string name="new_notes_hide_temporary">隐藏直到应用重启</string>
++    <string name="new_notes_hide_forever">永久隐藏</string>
++    <string name="broadcast_mining">正在挖矿 PoW (%dk)…</string>
++    <string name="broadcast_cancel_mining">取消挖矿</string>
++    <string name="broadcast_broadcasting">广播中 (%d/%d)</string>
++    <string name="broadcast_published">已发布到 %d 个中继</string>
++    <string name="broadcast_published_plural">已发布到 %d 个中继</string>
+     <string name="settings_media">媒体</string>
+     <string name="settings_auto_load_media">自动加载媒体</string>
+     <string name="settings_auto_load_description">自动下载帖子中的图片和视频。关闭时，点击加载。</string>
+@@ -364,6 +390,15 @@
+     <string name="error_no_results_found">未找到结果</string>
+     <string name="error_search_hint">在中继上搜索用户和笔记</string>
+     <string name="error_no_notifications">暂无通知</string>
++    <string name="error_no_messages">暂无消息</string>
++    <string name="error_send_message_hint">从某人资料发送消息</string>
++    <string name="loading_searching_profile">正在搜索您的资料…</string>
++    <string name="loading_finding_friends">正在查找您的朋友…</string>
++    <string name="loading_finding_friends_progress">正在查找您的朋友… %d/%d</string>
++    <string name="loading_discovering_network">正在发现扩展网络… %d/%d</string>
++    <string name="loading_expanding_relays">正在连接 %d 个扩展中继…</string>
++    <string name="loading_subscribing">正在订阅动态…</string>
++    <string name="loading_notes">正在加载帖子…</string>
+     <string name="error_list_not_found">未找到列表</string>
+     <string name="error_no_list_members">此列表没有成员</string>
+ 
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index b99753f..603f157 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -62,6 +62,16 @@
+     <string name="btn_lets_go">Let\'s go</string>
+     <string name="btn_save_profile">Save Profile</string>
+     <string name="btn_save_draft">Save draft</string>
++    <string name="compose_new_post">New Post</string>
++    <string name="compose_reply">Reply</string>
++    <string name="compose_quote">Quote</string>
++    <string name="compose_placeholder">What\'s on your mind?</string>
++    <string name="compose_publish">Publish</string>
++    <string name="compose_publishing">Publishing…</string>
++    <string name="compose_uploading">Uploading…</string>
++    <string name="compose_mining">Mining in progress…</string>
++    <string name="compose_post_now">Post now (%d)</string>
++    <string name="compose_replying_to">Replying to </string>
+     <string name="btn_post_now">Post now</string>
+     <string name="btn_cancel">Cancel</string>
+     <string name="btn_save">Save</string>
+@@ -200,7 +210,15 @@
+     <string name="cd_switch_account">Switch account</string>
+     <string name="cd_add_account">Add account</string>
+     <string name="cd_active">Active</string>
++    <string name="cd_seen_on">Seen on</string>
++    <string name="cd_sent_with">Sent with</string>
+     <string name="cd_filter_notifications">Filter notifications</string>
++    <string name="filter_all">All</string>
++    <string name="filter_replies">Replies</string>
++    <string name="filter_reactions">Reactions</string>
++    <string name="filter_zaps">Zaps</string>
++    <string name="filter_reposts">Reposts</string>
++    <string name="filter_mentions">Mentions</string>
+     <string name="cd_mute_notifications">Mute notifications</string>
+     <string name="cd_unmute_notifications">Unmute notifications</string>
+     <string name="cd_reposted">reposted</string>
+@@ -320,6 +338,14 @@
+     <string name="settings_new_notes_button">New Notes Button</string>
+     <string name="settings_hide_new_notes_button">Hide new notes button</string>
+     <string name="settings_hide_new_notes_description">Hide the floating button that appears when new notes arrive</string>
++    <string name="new_notes_button">%d new notes</string>
++    <string name="new_notes_hide_temporary">Hide until app restart</string>
++    <string name="new_notes_hide_forever">Hide forever</string>
++    <string name="broadcast_mining">Mining PoW (%dk)…</string>
++    <string name="broadcast_cancel_mining">Cancel mining</string>
++    <string name="broadcast_broadcasting">Broadcasting (%d/%d)</string>
++    <string name="broadcast_published">Published to %d relay</string>
++    <string name="broadcast_published_plural">Published to %d relays</string>
+     <string name="settings_media">Media</string>
+     <string name="settings_auto_load_media">Auto-load media</string>
+     <string name="settings_auto_load_description">Automatically download images and videos in notes. When off, tap to load.</string>
+@@ -364,6 +390,15 @@
+     <string name="error_no_results_found">No results found</string>
+     <string name="error_search_hint">Search for users and notes on relays</string>
+     <string name="error_no_notifications">No notifications yet</string>
++    <string name="error_no_messages">No messages yet</string>
++    <string name="error_send_message_hint">Send a message from someone\'s profile</string>
++    <string name="loading_searching_profile">Searching for your profile…</string>
++    <string name="loading_finding_friends">Finding your friends…</string>
++    <string name="loading_finding_friends_progress">Finding your friends… %d/%d</string>
++    <string name="loading_discovering_network">Discovering extended network… %d/%d</string>
++    <string name="loading_expanding_relays">Connecting to %d extended relays…</string>
++    <string name="loading_subscribing">Subscribing to feed…</string>
++    <string name="loading_notes">Loading notes…</string>
+     <string name="error_list_not_found">List not found</string>
+     <string name="error_no_list_members">This list has no members</string>
+ 
+diff --git a/app/src/main/res/xml/locale_config.xml b/app/src/main/res/xml/locale_config.xml
+new file mode 100644
+index 0000000..1d9f641
+--- /dev/null
++++ b/app/src/main/res/xml/locale_config.xml
+@@ -0,0 +1,14 @@
++<?xml version="1.0" encoding="utf-8"?>
++<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
++    <locale android:name="en"/>
++    <locale android:name="de"/>
++    <locale android:name="es"/>
++    <locale android:name="fr"/>
++    <locale android:name="it"/>
++    <locale android:name="ja"/>
++    <locale android:name="ko"/>
++    <locale android:name="nl"/>
++    <locale android:name="pt"/>
++    <locale android:name="ru"/>
++    <locale android:name="zh"/>
++</locale-config>
+diff --git a/gradle/libs.versions.toml b/gradle/libs.versions.toml
+index f617257..838cc34 100644
+--- a/gradle/libs.versions.toml
++++ b/gradle/libs.versions.toml
+@@ -11,6 +11,7 @@ bouncycastle = "1.78.1"
+ media3 = "1.5.1"
+ biometric = "1.1.0"
+ coroutines = "1.9.0"
++appcompat = "1.7.0"
+ profileinstaller = "1.4.1"
+ splashscreen = "1.0.1"
+ zxing = "3.5.3"
+@@ -53,6 +54,7 @@ media3-datasource-okhttp = { group = "androidx.media3", name = "media3-datasourc
+ media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
+ biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
+ profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "profileinstaller" }
++appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+ splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashscreen" }
+ zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
+ kmp-tor-runtime = { group = "io.matthewnelson.kmp-tor", name = "runtime", version.ref = "kmp-tor" }
+-- 
+2.53.0
+

@@ -40,6 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import androidx.compose.ui.res.stringResource
+import com.wisp.app.R
 import com.wisp.app.relay.OnboardingPhase
 import com.wisp.app.viewmodel.OnboardingViewModel
 
@@ -84,7 +86,7 @@ fun OnboardingScreen(
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back"
+                    contentDescription = stringResource(R.string.cd_back)
                 )
             }
         } else {
@@ -109,14 +111,14 @@ fun OnboardingScreen(
             } else if (picture.isNotBlank()) {
                 AsyncImage(
                     model = picture,
-                    contentDescription = "Profile picture",
+                    contentDescription = stringResource(R.string.cd_profile_picture),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
                 Icon(
                     Icons.Outlined.CameraAlt,
-                    contentDescription = "Add photo",
+                    contentDescription = stringResource(R.string.placeholder_add_photo),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(36.dp)
                 )
@@ -124,7 +126,7 @@ fun OnboardingScreen(
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "Add photo",
+            text = stringResource(R.string.placeholder_add_photo),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -134,7 +136,7 @@ fun OnboardingScreen(
         OutlinedTextField(
             value = name,
             onValueChange = { viewModel.updateName(it) },
-            label = { Text("Display name") },
+            label = { Text(stringResource(R.string.placeholder_display_name)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
@@ -144,7 +146,7 @@ fun OnboardingScreen(
         OutlinedTextField(
             value = about,
             onValueChange = { viewModel.updateAbout(it) },
-            label = { Text("About") },
+            label = { Text(stringResource(R.string.placeholder_about)) },
             minLines = 3,
             modifier = Modifier.fillMaxWidth()
         )
@@ -163,9 +165,9 @@ fun OnboardingScreen(
         ) {
             Text(
                 when {
-                    !relaysReady -> "Please wait..."
-                    publishing -> "Publishing..."
-                    else -> "Continue"
+                    !relaysReady -> stringResource(R.string.onboarding_please_wait)
+                    publishing -> stringResource(R.string.onboarding_publishing)
+                    else -> stringResource(R.string.btn_continue)
                 }
             )
         }

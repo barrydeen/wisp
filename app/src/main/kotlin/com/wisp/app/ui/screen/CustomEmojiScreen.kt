@@ -56,9 +56,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.wisp.app.R
 import com.wisp.app.nostr.CustomEmoji
 import com.wisp.app.nostr.EmojiSet
 import com.wisp.app.repo.CustomEmojiRepository
@@ -92,17 +94,17 @@ fun CustomEmojiScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Custom Emojis") },
+                title = { Text(stringResource(R.string.drawer_custom_emojis)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 }
             )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { showCreateSetDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Create Emoji Set")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.cd_create_emoji_set))
             }
         }
     ) { padding ->
@@ -305,7 +307,7 @@ fun CustomEmojiScreen(
                                 managingEmojis = false
                                 removedShortcodes = emptySet()
                             }) {
-                                Text("Cancel")
+                                Text(stringResource(R.string.btn_cancel))
                             }
                             Button(
                                 onClick = {
@@ -390,7 +392,7 @@ fun CustomEmojiScreen(
                     OutlinedTextField(
                         value = shortcode,
                         onValueChange = { shortcode = it.replace(Regex("[^a-zA-Z0-9_]"), "") },
-                        placeholder = { Text("Shortcode (e.g. pepe)") },
+                        placeholder = { Text("Shortcode") },
                         singleLine = true
                     )
                     Row(
@@ -400,7 +402,7 @@ fun CustomEmojiScreen(
                         OutlinedTextField(
                             value = url,
                             onValueChange = { url = it },
-                            placeholder = { Text("Image URL") },
+                            placeholder = { Text(stringResource(R.string.cd_upload_image)) },
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
@@ -415,14 +417,14 @@ fun CustomEmojiScreen(
                             if (uploading) {
                                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                             } else {
-                                Icon(Icons.Outlined.FileUpload, contentDescription = "Upload image")
+                                Icon(Icons.Outlined.FileUpload, contentDescription = stringResource(R.string.cd_upload_image))
                             }
                         }
                     }
                     if (url.isNotBlank()) {
                         AsyncImage(
                             model = url,
-                            contentDescription = "Preview",
+                            contentDescription = stringResource(R.string.cd_preview),
                             modifier = Modifier
                                 .size(48.dp)
                                 .padding(top = 8.dp)
@@ -439,10 +441,10 @@ fun CustomEmojiScreen(
                         showAddDirectEmojiDialog = false
                     },
                     enabled = shortcode.isNotBlank() && url.isNotBlank()
-                ) { Text("Add") }
+                ) { Text(stringResource(R.string.btn_add)) }
             },
             dismissButton = {
-                TextButton(onClick = { showAddDirectEmojiDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { showAddDirectEmojiDialog = false }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -501,20 +503,20 @@ private fun EmojiSetCard(
                 IconButton(onClick = { expanded = !expanded }) {
                     Icon(
                         if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = if (expanded) "Collapse" else "Expand"
+                        contentDescription = if (expanded) stringResource(R.string.cd_collapse) else stringResource(R.string.cd_expand)
                     )
                 }
                 IconButton(onClick = onEdit) {
                     Icon(
                         Icons.Default.Add,
-                        contentDescription = "Edit",
+                        contentDescription = stringResource(R.string.btn_edit),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
                 IconButton(onClick = onDelete) {
                     Icon(
                         Icons.Default.Delete,
-                        contentDescription = "Delete",
+                        contentDescription = stringResource(R.string.btn_delete),
                         tint = MaterialTheme.colorScheme.error
                     )
                 }
@@ -554,12 +556,12 @@ private fun CreateEmojiSetDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create Emoji Set") },
+        title = { Text(stringResource(R.string.cd_create_emoji_set)) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                placeholder = { Text("Set name") },
+                placeholder = { Text(stringResource(R.string.placeholder_set_name)) },
                 singleLine = true
             )
         },
@@ -567,10 +569,10 @@ private fun CreateEmojiSetDialog(
             TextButton(
                 onClick = { onConfirm(name.trim(), emptyList()) },
                 enabled = name.isNotBlank()
-            ) { Text("Create") }
+            ) { Text(stringResource(R.string.btn_create)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.btn_cancel)) }
         }
     )
 }
@@ -602,17 +604,17 @@ private fun EditEmojiSetDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit: ${set.title}") },
+        title = { Text("${stringResource(R.string.btn_edit)}: ${set.title}") },
         text = {
             Column {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Set name") },
+                    label = { Text(stringResource(R.string.placeholder_set_name)) },
                     singleLine = true
                 )
                 Spacer(Modifier.height(8.dp))
-                Text("Add emoji:", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.btn_add) + ":", style = MaterialTheme.typography.labelMedium)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = shortcode,
@@ -625,7 +627,7 @@ private fun EditEmojiSetDialog(
                     OutlinedTextField(
                         value = url,
                         onValueChange = { url = it },
-                        placeholder = { Text("URL") },
+                        placeholder = { Text(stringResource(R.string.cd_upload_image)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
@@ -640,7 +642,7 @@ private fun EditEmojiSetDialog(
                         if (uploading) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         } else {
-                            Icon(Icons.Outlined.FileUpload, contentDescription = "Upload image")
+                            Icon(Icons.Outlined.FileUpload, contentDescription = stringResource(R.string.cd_upload_image))
                         }
                     }
                     IconButton(
@@ -652,7 +654,7 @@ private fun EditEmojiSetDialog(
                             }
                         }
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add")
+                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.btn_add))
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -677,7 +679,7 @@ private fun EditEmojiSetDialog(
                         }) {
                             Icon(
                                 Icons.Default.Delete,
-                                contentDescription = "Remove",
+                                contentDescription = stringResource(R.string.btn_remove),
                                 modifier = Modifier.size(16.dp),
                                 tint = MaterialTheme.colorScheme.error
                             )
@@ -690,10 +692,10 @@ private fun EditEmojiSetDialog(
             TextButton(
                 onClick = { onConfirm(set.dTag, title.trim(), emojis) },
                 enabled = title.isNotBlank()
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.btn_save)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.btn_cancel)) }
         }
     )
 }

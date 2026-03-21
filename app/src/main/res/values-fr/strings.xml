@@ -42,6 +42,7 @@
     <string name="title_list">Liste</string>
     <string name="title_community">Communauté</string>
 
+<<<<<<< HEAD
     <!-- Splash Screen -->
     <string name="splash_create_account">Créer un compte</string>
     <string name="splash_log_in">Se connecter</string>
@@ -51,6 +52,8 @@
     <string name="splash_connect_tor">Connexion via Tor</string>
     <string name="splash_people_online">%d personnes en ligne</string>
 
+=======
+>>>>>>> 0e7a1ee (added translations)
     <!-- Auth Screen -->
     <string name="auth_sign_up">S\'inscrire</string>
     <string name="auth_log_in">Se Connecter</string>

@@ -29,19 +29,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.wisp.app.R
 import com.wisp.app.Routes
 
 enum class BottomTab(
     val route: String,
-    val label: String,
+    val labelResId: Int,
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector
 ) {
-    HOME(Routes.FEED, "Home", Icons.Filled.Home, Icons.Outlined.Home),
-    WALLET(Routes.WALLET, "Wallet", Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet),
-    SEARCH(Routes.SEARCH, "Search", Icons.Filled.Search, Icons.Outlined.Search),
-    MESSAGES(Routes.DM_LIST, "Messages", Icons.Filled.Email, Icons.Outlined.Email),
-    NOTIFICATIONS(Routes.NOTIFICATIONS, "Notifications", Icons.Filled.Notifications, Icons.Outlined.Notifications)
+    HOME(Routes.FEED, R.string.nav_home, Icons.Filled.Home, Icons.Outlined.Home),
+    WALLET(Routes.WALLET, R.string.nav_wallet, Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet),
+    SEARCH(Routes.SEARCH, R.string.nav_search, Icons.Filled.Search, Icons.Outlined.Search),
+    MESSAGES(Routes.DM_LIST, R.string.nav_messages, Icons.Filled.Email, Icons.Outlined.Email),
+    NOTIFICATIONS(Routes.NOTIFICATIONS, R.string.nav_notifications, Icons.Filled.Notifications, Icons.Outlined.Notifications)
 }
 
 @Composable
@@ -87,7 +89,7 @@ fun WispBottomBar(
                         else tab.unselectedIcon
                         Icon(
                             imageVector = icon,
-                            contentDescription = tab.label,
+                            contentDescription = stringResource(tab.labelResId),
                             tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         if (hasUnread) {
