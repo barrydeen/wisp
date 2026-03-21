@@ -423,4 +423,38 @@
 
     <!-- Time -->
     <string name="time_24h">24h</string>
+
+    <!-- Profile -->
+    <string name="profile_tab_notes">Notas</string>
+    <string name="profile_tab_replies">Respuestas</string>
+    <string name="profile_tab_media">Medios</string>
+    <string name="profile_tab_following">Siguiendo</string>
+    <string name="profile_tab_followers">Seguidores</string>
+    <string name="profile_tab_relays">Relays</string>
+    <string name="profile_sort_recent">Reciente</string>
+    <string name="profile_sort_likes">Me gusta</string>
+    <string name="profile_sort_reposts">Republicaciones</string>
+    <string name="profile_sort_zaps">Zaps</string>
+    <string name="profile_sort_replies">Respuestas</string>
+    <string name="profile_edit">Editar Perfil</string>
+    <string name="profile_follows_you">Te sigue</string>
+    <string name="profile_copy_json">Copiar Perfil JSON</string>
+    <string name="profile_add_to_list">Añadir a Lista</string>
+    <string name="profile_block">Bloquear</string>
+    <string name="profile_unblock">Desbloquear</string>
+    <string name="profile_no_notes">Aún no hay notas</string>
+    <string name="profile_no_replies">Aún no hay respuestas</string>
+    <string name="profile_no_media">Aún no hay medios</string>
+    <string name="profile_not_following">No sigue a nadie</string>
+    <string name="profile_no_followers">No se encontraron seguidores</string>
+    <string name="profile_no_relays">No hay lista de relays publicada</string>
+    <string name="profile_relay_list">Lista de Relays (NIP-65)</string>
+    <string name="profile_discovered_relays">Relays Descubiertos</string>
+    <string name="profile_other_discovered_relays">Otros Relays Descubiertos</string>
+    <string name="profile_pinned">Fijado</string>
+    <string name="profile_json_copied">Perfil JSON copiado</string>
+    <string name="profile_send_message">Enviar mensaje</string>
+    <string name="profile_search_notes">Buscar notas</string>
+    <string name="profile_crawling_still">Aún rastreando o cuenta muy nueva</string>
+    <string name="profile_crawling_no_results">Sin resultados clasificados aún. Vuelve más tarde.</string>
 </resources>

@@ -432,4 +432,38 @@
 
     <!-- Time -->
     <string name="time_24h">24h</string>
+
+    <!-- Profile -->
+    <string name="profile_tab_notes">Notes</string>
+    <string name="profile_tab_replies">Replies</string>
+    <string name="profile_tab_media">Media</string>
+    <string name="profile_tab_following">Following</string>
+    <string name="profile_tab_followers">Followers</string>
+    <string name="profile_tab_relays">Relays</string>
+    <string name="profile_sort_recent">Recent</string>
+    <string name="profile_sort_likes">Likes</string>
+    <string name="profile_sort_reposts">Reposts</string>
+    <string name="profile_sort_zaps">Zaps</string>
+    <string name="profile_sort_replies">Replies</string>
+    <string name="profile_edit">Edit Profile</string>
+    <string name="profile_follows_you">Follows you</string>
+    <string name="profile_copy_json">Copy Profile JSON</string>
+    <string name="profile_add_to_list">Add to List</string>
+    <string name="profile_block">Block</string>
+    <string name="profile_unblock">Unblock</string>
+    <string name="profile_no_notes">No notes yet</string>
+    <string name="profile_no_replies">No replies yet</string>
+    <string name="profile_no_media">No media yet</string>
+    <string name="profile_not_following">Not following anyone</string>
+    <string name="profile_no_followers">No followers found</string>
+    <string name="profile_no_relays">No relay list published</string>
+    <string name="profile_relay_list">Relay List (NIP-65)</string>
+    <string name="profile_discovered_relays">Discovered Relays</string>
+    <string name="profile_other_discovered_relays">Other Discovered Relays</string>
+    <string name="profile_pinned">Pinned</string>
+    <string name="profile_json_copied">Profile JSON copied</string>
+    <string name="profile_send_message">Send message</string>
+    <string name="profile_search_notes">Search notes</string>
+    <string name="profile_crawling_still">Still crawling or account too new</string>
+    <string name="profile_crawling_no_results">No ranked results yet. Check back later.</string>
 </resources>

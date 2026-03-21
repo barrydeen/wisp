@@ -432,4 +432,38 @@
 
     <!-- Time -->
     <string name="time_24h">24h</string>
+
+    <!-- Profile -->
+    <string name="profile_tab_notes">Notizen</string>
+    <string name="profile_tab_replies">Antworten</string>
+    <string name="profile_tab_media">Medien</string>
+    <string name="profile_tab_following">Folge ich</string>
+    <string name="profile_tab_followers">Follower</string>
+    <string name="profile_tab_relays">Relays</string>
+    <string name="profile_sort_recent">Neueste</string>
+    <string name="profile_sort_likes">Gefällt mir</string>
+    <string name="profile_sort_reposts">Geteilt</string>
+    <string name="profile_sort_zaps">Zaps</string>
+    <string name="profile_sort_replies">Antworten</string>
+    <string name="profile_edit">Profil Bearbeiten</string>
+    <string name="profile_follows_you">Folgt dir</string>
+    <string name="profile_copy_json">Profil JSON Kopieren</string>
+    <string name="profile_add_to_list">Zur Liste Hinzufügen</string>
+    <string name="profile_block">Blockieren</string>
+    <string name="profile_unblock">Entblockieren</string>
+    <string name="profile_no_notes">Noch keine Notizen</string>
+    <string name="profile_no_replies">Noch keine Antworten</string>
+    <string name="profile_no_media">Noch keine Medien</string>
+    <string name="profile_not_following">Folgt niemandem</string>
+    <string name="profile_no_followers">Keine Follower gefunden</string>
+    <string name="profile_no_relays">Keine Relay-Liste veröffentlicht</string>
+    <string name="profile_relay_list">Relay-Liste (NIP-65)</string>
+    <string name="profile_discovered_relays">Entdeckte Relays</string>
+    <string name="profile_other_discovered_relays">Andere Entdeckte Relays</string>
+    <string name="profile_pinned">Angeheftet</string>
+    <string name="profile_json_copied">Profil JSON kopiert</string>
+    <string name="profile_send_message">Nachricht Senden</string>
+    <string name="profile_search_notes">Notizen Suchen</string>
+    <string name="profile_crawling_still">Noch beim Crawlen oder Konto zu neu</string>
+    <string name="profile_crawling_no_results">Noch keine gerankten Ergebnisse. Schauen Sie später vorbei.</string>
 </resources>
