@@ -31,6 +31,7 @@ import com.wisp.app.repo.MetadataFetcher
 import com.wisp.app.repo.MuteRepository
 import com.wisp.app.repo.NotificationRepository
 import com.wisp.app.repo.PinRepository
+import com.wisp.app.repo.DiagnosticLogger
 import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.repo.RelaySetRepository
@@ -113,7 +114,7 @@ class EventRouter(
                     }
                     else -> eventRepo.cacheEvent(event)
                 }
-                notifRepo.addEvent(event, myPubkey)
+                notifRepo.addEvent(event, myPubkey, source = "notif")
                 if (eventRepo.getProfileData(event.pubkey) == null) {
                     metadataFetcher.addToPendingProfiles(event.pubkey)
                 }
@@ -131,7 +132,7 @@ class EventRouter(
                 eventRepo.cacheEvent(event)
                 val parentId = Nip10.getReplyTarget(event)
                 if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
-                notifRepo.addEvent(event, myPubkey, replyToMyEvent = true)
+                notifRepo.addEvent(event, myPubkey, replyToMyEvent = true, source = "notif-replies-etag")
                 if (eventRepo.getProfileData(event.pubkey) == null) {
                     metadataFetcher.addToPendingProfiles(event.pubkey)
                 }
@@ -141,7 +142,7 @@ class EventRouter(
             val myPubkey = getUserPubkey()
             if (myPubkey != null && event.kind == 1) {
                 eventRepo.cacheEvent(event)
-                notifRepo.addEvent(event, myPubkey)
+                notifRepo.addEvent(event, myPubkey, source = "notif-quotes-qtag")
                 if (eventRepo.getProfileData(event.pubkey) == null) {
                     metadataFetcher.addToPendingProfiles(event.pubkey)
                 }
@@ -213,7 +214,7 @@ class EventRouter(
                 repostedEvent == null || repostedEvent.pubkey != myPubkey
             }
             if (isNotifEligible && !isRepostOfOther) {
-                notifRepo.addEvent(event, myPubkey!!)
+                notifRepo.addEvent(event, myPubkey!!, source = subscriptionId)
                 if (eventRepo.getProfileData(event.pubkey) == null) {
                     metadataFetcher.addToPendingProfiles(event.pubkey)
                 }
@@ -240,6 +241,11 @@ class EventRouter(
             if (event.kind == 10002) {
                 relayListRepo.updateFromEvent(event)
                 val myPubkey = getUserPubkey()
+                if (DiagnosticLogger.isEnabled && event.kind in SELF_DATA_KINDS) {
+                    val isMine = myPubkey != null && event.pubkey == myPubkey
+                    DiagnosticLogger.log("SELF_DATA", "kind=${event.kind} pubkey=${event.pubkey.take(8)} " +
+                        "myPubkey=${myPubkey?.take(8)} isMine=$isMine sub=$subscriptionId relay=$relayUrl")
+                }
                 if (myPubkey != null && event.pubkey == myPubkey && isNewestSelfData(event)) {
                     val relays = Nip65.parseRelayList(event)
                     if (relays.isNotEmpty()) {
@@ -410,6 +416,16 @@ class EventRouter(
                 if (myPubkey != null && event.pubkey == myPubkey) contactRepo.updateFromEvent(event)
             }
         }
+    }
+
+    companion object {
+        private val SELF_DATA_KINDS = intArrayOf(
+            0, 3, 10002, 10050, 10007, 10006,
+            Nip51.KIND_MUTE_LIST, Nip51.KIND_BOOKMARK_LIST, Nip51.KIND_PIN_LIST,
+            Blossom.KIND_SERVER_LIST, Nip51.KIND_FOLLOW_SET, Nip51.KIND_INTEREST_SET,
+            Nip51.KIND_BOOKMARK_SET, Nip51.KIND_RELAY_SET, Nip51.KIND_FAVORITE_RELAYS,
+            Nip30.KIND_USER_EMOJI_LIST, Nip30.KIND_EMOJI_SET
+        )
     }
 
     private fun processGiftWrap(event: NostrEvent, relayUrl: String) {

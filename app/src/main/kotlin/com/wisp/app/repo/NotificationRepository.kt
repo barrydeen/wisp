@@ -65,12 +65,19 @@ class NotificationRepository(
     private val _notifReceived = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val notifReceived: SharedFlow<Unit> = _notifReceived
 
-    fun addEvent(event: NostrEvent, myPubkey: String, replyToMyEvent: Boolean = false) {
+    fun addEvent(event: NostrEvent, myPubkey: String, replyToMyEvent: Boolean = false, source: String = "") {
         if (event.pubkey == myPubkey) return
         val hasPTag = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == myPubkey }
         // Kind 6 reposts may omit the p-tag; callers must pre-filter kind 6 ownership.
         // replyToMyEvent bypasses p-tag check for kind 1 replies found via e-tag subscription.
-        if (!hasPTag && event.kind != 6 && event.kind != Nip88.KIND_POLL_RESPONSE && !(replyToMyEvent && event.kind == 1)) return
+        if (!hasPTag && event.kind != 6 && event.kind != Nip88.KIND_POLL_RESPONSE && !(replyToMyEvent && event.kind == 1)) {
+            if (DiagnosticLogger.isEnabled) {
+                DiagnosticLogger.log("NOTIF", "REJECTED:no_ptag id=${event.id.take(12)} kind=${event.kind} " +
+                    "pubkey=${event.pubkey.take(8)} myPubkey=${myPubkey.take(8)} source=$source " +
+                    "hasPTag=false replyToMyEvent=$replyToMyEvent")
+            }
+            return
+        }
         // Kind 1018 poll votes: only notify if the poll is ours
         if (event.kind == Nip88.KIND_POLL_RESPONSE) {
             val pollId = Nip88.getPollEventId(event)
@@ -85,7 +92,13 @@ class NotificationRepository(
         if (event.kind == 6 || event.kind == 7 || event.kind == 9735) {
             val referencedId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
             val referencedEvent = referencedId?.let { eventRepo?.getEvent(it) }
-            if (referencedEvent != null && referencedEvent.pubkey != myPubkey) return
+            if (referencedEvent != null && referencedEvent.pubkey != myPubkey) {
+                if (DiagnosticLogger.isEnabled) {
+                    DiagnosticLogger.log("NOTIF", "REJECTED:not_our_event id=${event.id.take(12)} kind=${event.kind} " +
+                        "refId=${referencedId?.take(12)} refOwner=${referencedEvent.pubkey.take(8)} source=$source")
+                }
+                return
+            }
         }
 
         synchronized(lock) {
@@ -107,6 +120,26 @@ class NotificationRepository(
                 else -> false
             }
             if (!merged) return
+
+            if (DiagnosticLogger.isEnabled) {
+                val ownershipStatus = if (event.kind in intArrayOf(6, 7, 9735)) {
+                    val refId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+                    val refEvent = refId?.let { eventRepo?.getEvent(it) }
+                    when {
+                        refEvent?.pubkey == myPubkey -> "cached_ours"
+                        refEvent != null -> "cached_others"
+                        else -> "not_cached"
+                    }
+                } else "n/a"
+                val logMsg = "ACCEPTED id=${event.id.take(12)} kind=${event.kind} " +
+                    "pubkey=${event.pubkey.take(8)} source=$source " +
+                    "hasPTag=$hasPTag ownership=$ownershipStatus"
+                DiagnosticLogger.log("NOTIF", logMsg)
+                if (!hasPTag) {
+                    DiagnosticLogger.log("CANARY", "accepted_without_ptag id=${event.id.take(12)} " +
+                        "kind=${event.kind} source=$source replyToMyEvent=$replyToMyEvent")
+                }
+            }
 
             if (event.created_at > lastReadTimestamp) {
                 if (isViewing) {
@@ -658,6 +691,8 @@ class NotificationRepository(
             else -> null
         }
     }
+
+    fun getSeenEventsSize(): Int = seenEvents.size()
 
     companion object {
         private const val KEY_LAST_READ = "last_read_timestamp"

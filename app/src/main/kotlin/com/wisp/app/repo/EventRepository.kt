@@ -552,6 +552,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun getEvent(id: String): NostrEvent? = eventCache.get(id)
 
+    fun getCacheSize(): Int = eventCache.size()
+
     fun bumpEventCacheVersion() { _eventCacheVersion.value++ }
 
     fun getProfileData(pubkey: String): ProfileData? = profileRepo?.get(pubkey)

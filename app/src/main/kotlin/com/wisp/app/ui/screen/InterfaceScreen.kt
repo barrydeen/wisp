@@ -39,6 +39,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -52,6 +53,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
+import com.wisp.app.repo.DiagnosticLogger
 import com.wisp.app.repo.InterfacePreferences
 import com.wisp.app.ui.theme.ThemePreset
 import com.wisp.app.ui.theme.Themes
@@ -362,6 +367,102 @@ fun InterfaceScreen(
                         interfacePrefs.setClientTagEnabled(it)
                     }
                 )
+            }
+
+            Spacer(Modifier.height(32.dp))
+
+            // Version — long-press 5 times to reveal diagnostic mode
+            val context = LocalContext.current
+            val versionName = remember {
+                try {
+                    context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "?"
+                } catch (_: Exception) { "?" }
+            }
+            var tapCount by remember { mutableIntStateOf(0) }
+            var diagnosticRevealed by remember { mutableStateOf(DiagnosticLogger.isEnabled) }
+            var diagnosticEnabled by remember { mutableStateOf(DiagnosticLogger.isEnabled) }
+
+            Text(
+                text = "Wisp v$versionName",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        tapCount++
+                        if (tapCount >= 5) diagnosticRevealed = true
+                    }
+                    .padding(vertical = 8.dp)
+            )
+
+            if (diagnosticRevealed) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "Diagnostics",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Diagnostic mode", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Log event processing decisions to a file for debugging",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = diagnosticEnabled,
+                        onCheckedChange = {
+                            diagnosticEnabled = it
+                            DiagnosticLogger.setEnabled(context, it)
+                        }
+                    )
+                }
+
+                if (diagnosticEnabled) {
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "Share logs",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .clickable {
+                                    val logFile = DiagnosticLogger.getLogFile(context)
+                                    if (logFile.exists()) {
+                                        val uri = FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.fileprovider",
+                                            logFile
+                                        )
+                                        val intent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_STREAM, uri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(Intent.createChooser(intent, "Share diagnostic logs"))
+                                    }
+                                }
+                                .padding(vertical = 8.dp)
+                        )
+                        Text(
+                            text = "Clear logs",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier
+                                .clickable { DiagnosticLogger.clear(context) }
+                                .padding(vertical = 8.dp)
+                        )
+                    }
+                }
             }
         }
     }
