@@ -3,6 +3,7 @@ package com.wisp.app.relay
 import android.util.Log
 import android.util.LruCache
 import com.wisp.app.nostr.ClientMessage
+import com.wisp.app.repo.DiagnosticLogger
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.RelayMessage
 import com.wisp.app.nostr.RelayMessage.Auth
@@ -410,6 +411,11 @@ class RelayPool {
                             type = ConsoleLogType.NOTICE,
                             message = "CLOSED [${msg.subscriptionId}]: ${msg.message}"
                         ))
+                        if (DiagnosticLogger.isEnabled &&
+                            (msg.subscriptionId.startsWith("notif") || msg.subscriptionId == "dms")) {
+                            DiagnosticLogger.log("CLOSED", "sub=${msg.subscriptionId} relay=${relay.config.url} " +
+                                "msg=${msg.message}")
+                        }
                         if (appIsActive && isRateLimitMessage(msg.message)) {
                             healthTracker?.onRateLimitHit(relay.config.url)
                         }
@@ -883,6 +889,9 @@ class RelayPool {
             return
         }
         Log.d("RLC", "[Pool] resync ${relay.config.url}: sending ${snapshot.size} subs: ${snapshot.map { it.key }}")
+        if (DiagnosticLogger.isEnabled) {
+            DiagnosticLogger.log("RESYNC", "relay=${relay.config.url} subs=${snapshot.map { it.key }}")
+        }
         for ((_, message) in snapshot) {
             relay.send(message)
         }
@@ -943,6 +952,10 @@ class RelayPool {
         isReconnecting = false
         val total = relays.size + dmRelays.size
         Log.d("RLC", "[Pool] reconnectAll() END — reconnected $total relays, activeSubs remaining=${activeSubscriptions.size}")
+        if (DiagnosticLogger.isEnabled) {
+            val retainedSubs = activeSubscriptions.values.flatMap { it.keys }.distinct()
+            DiagnosticLogger.log("RECONNECT", "reconnectAll completed — $total relays, retainedSubs=$retainedSubs")
+        }
         updateConnectedCount()
         return total
     }
@@ -987,6 +1000,9 @@ class RelayPool {
         ephemeralLastUsed.clear()
         isReconnecting = false
         Log.d("RLC", "[Pool] forceReconnectAll() END — all subs/trackers cleared")
+        if (DiagnosticLogger.isEnabled) {
+            DiagnosticLogger.log("RECONNECT", "forceReconnectAll completed — all subs cleared")
+        }
         updateConnectedCount()
     }
 

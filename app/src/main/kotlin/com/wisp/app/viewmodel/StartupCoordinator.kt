@@ -34,6 +34,7 @@ import com.wisp.app.repo.SparkRepository
 import com.wisp.app.repo.WalletModeRepository
 import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.ProfileRepository
+import com.wisp.app.repo.DiagnosticLogger
 import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.repo.RelayListRepository
@@ -108,6 +109,7 @@ class StartupCoordinator(
     private var authCompletedJob: Job? = null
     private var notifRefreshJob: Job? = null
     private var startupJob: Job? = null
+    private var healthSnapshotJob: Job? = null
 
     var relaysInitialized = false
         private set
@@ -122,6 +124,7 @@ class StartupCoordinator(
         authCompletedJob?.cancel()
         notifRefreshJob?.cancel()
         startupJob?.cancel()
+        healthSnapshotJob?.cancel()
         feedSub.reset()
 
         // Stop lifecycle manager and disconnect relays
@@ -223,7 +226,16 @@ class StartupCoordinator(
         // Main event processing loop — runs on Default dispatcher to keep UI thread free
         eventProcessingJob = scope.launch(processingContext) {
             relayPool.relayEvents.collect { (event, relayUrl, subscriptionId) ->
-                eventRouter.processRelayEvent(event, relayUrl, subscriptionId)
+                try {
+                    eventRouter.processRelayEvent(event, relayUrl, subscriptionId)
+                } catch (e: Exception) {
+                    Log.e("StartupCoord", "processRelayEvent crashed", e)
+                    if (DiagnosticLogger.isEnabled) {
+                        DiagnosticLogger.log("CRASH", "processRelayEvent exception: ${e.message}\n" +
+                            "  event: id=${event.id.take(12)} kind=${event.kind} sub=$subscriptionId relay=$relayUrl\n" +
+                            "  stacktrace: ${e.stackTraceToString().take(500)}")
+                    }
+                }
             }
         }
 
@@ -251,6 +263,20 @@ class StartupCoordinator(
                 relayPool.cleanupEphemeralRelays()
                 eventRepo.trimSeenEvents()
                 relayHintStore.flush()
+            }
+        }
+
+        // Periodic health snapshot (every 60s when diagnostics enabled)
+        healthSnapshotJob = scope.launch(processingContext) {
+            while (true) {
+                delay(60_000)
+                if (!DiagnosticLogger.isEnabled) continue
+                val pk = getUserPubkey()
+                DiagnosticLogger.log("HEALTH", "pubkey=${pk?.take(8)} " +
+                    "eventProcessingJob.active=${eventProcessingJob?.isActive} " +
+                    "connectedRelays=${relayPool.connectedCount.value} " +
+                    "notifSeenSize=${notifRepo.getSeenEventsSize()} " +
+                    "eventCacheSize=${eventRepo.getCacheSize()}")
             }
         }
 

@@ -11,6 +11,7 @@ import coil3.request.crossfade
 import com.wisp.app.db.WispObjectBox
 import com.wisp.app.relay.HttpClientFactory
 import com.wisp.app.relay.TorManager
+import com.wisp.app.repo.DiagnosticLogger
 import com.wisp.app.repo.ZapSender
 import okhttp3.Call
 
@@ -19,6 +20,7 @@ class WispApp : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         CrashHandler.install(this)
+        DiagnosticLogger.init(this)
         WispObjectBox.init(this)
         TorManager.initialize(this)
         ZapSender.init(this)
