@@ -569,6 +569,13 @@ class StartupCoordinator(
         eventPersistence?.let { persistence ->
             scope.launch(processingContext) {
                 val cached = persistence.getRecentNotificationEvents(limit = 500)
+                    .filter { event ->
+                        // Only seed events that reference the current user via p-tag.
+                        // Without this, kind 6 reposts of OTHER people's notes (stored in
+                        // ObjectBox from the feed) would leak into notifications via the
+                        // kind 6 p-tag bypass in addEvent.
+                        event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == myPubkey }
+                    }
                 for (event in cached) notifRepo.addEvent(event, myPubkey)
                 Log.d("StartupCoord", "Seeded notifRepo with ${cached.size} cached events")
             }
