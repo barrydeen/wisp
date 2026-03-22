@@ -13,6 +13,18 @@
     <string name="drawer_lists">Lijsten</string>
     <string name="drawer_drafts">Concepten &amp; Gepland</string>
     <string name="drawer_settings">Instellingen</string>
+
+    <!-- Drafts & Scheduled -->
+    <string name="drafts_scheduled_title">Concepten &amp; Gepland</string>
+    <string name="drafts_tab">Concepten</string>
+    <string name="scheduled_tab">Gepland</string>
+    <string name="no_drafts_saved">Geen opgeslagen concepten</string>
+    <string name="no_scheduled_posts">Geen geplande berichten</string>
+    <string name="draft_label">Concept</string>
+    <string name="reply_label">Antwoord</string>
+    <string name="delete_draft">Concept verwijderen</string>
+    <string name="empty_content">(leeg)</string>
+    <string name="remove_from_schedule">Van planning verwijderen</string>
     <string name="drawer_interface">Interface</string>
     <string name="drawer_relays">Relays</string>
     <string name="drawer_media_servers">Mediaservers</string>

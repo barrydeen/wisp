@@ -13,6 +13,18 @@
     <string name="drawer_lists">列表</string>
     <string name="drawer_drafts">草稿 &amp; 定时</string>
     <string name="drawer_settings">设置</string>
+
+    <!-- Drafts & Scheduled -->
+    <string name="drafts_scheduled_title">草稿 &amp; 定时</string>
+    <string name="drafts_tab">草稿</string>
+    <string name="scheduled_tab">定时</string>
+    <string name="no_drafts_saved">没有保存的草稿</string>
+    <string name="no_scheduled_posts">没有定时帖子</string>
+    <string name="draft_label">草稿</string>
+    <string name="reply_label">回复</string>
+    <string name="delete_draft">删除草稿</string>
+    <string name="empty_content">（空）</string>
+    <string name="remove_from_schedule">取消定时</string>
     <string name="drawer_interface">界面</string>
     <string name="drawer_relays">中继</string>
     <string name="drawer_media_servers">媒体服务器</string>

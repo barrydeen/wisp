@@ -13,6 +13,18 @@
     <string name="drawer_lists">Listas</string>
     <string name="drawer_drafts">Rascunhos &amp; Agendados</string>
     <string name="drawer_settings">Configurações</string>
+
+    <!-- Drafts & Scheduled -->
+    <string name="drafts_scheduled_title">Rascunhos &amp; Agendados</string>
+    <string name="drafts_tab">Rascunhos</string>
+    <string name="scheduled_tab">Agendados</string>
+    <string name="no_drafts_saved">Nenhum rascunho salvo</string>
+    <string name="no_scheduled_posts">Nenhum post agendado</string>
+    <string name="draft_label">Rascunho</string>
+    <string name="reply_label">Resposta</string>
+    <string name="delete_draft">Excluir rascunho</string>
+    <string name="empty_content">(vazio)</string>
+    <string name="remove_from_schedule">Remover do agendamento</string>
     <string name="drawer_interface">Interface</string>
     <string name="drawer_relays">Relays</string>
     <string name="drawer_media_servers">Servidores de Mídia</string>

@@ -13,6 +13,18 @@
     <string name="drawer_lists">Listas</string>
     <string name="drawer_drafts">Borradores &amp; Programados</string>
     <string name="drawer_settings">Ajustes</string>
+
+    <!-- Drafts & Scheduled -->
+    <string name="drafts_scheduled_title">Borradores &amp; Programados</string>
+    <string name="drafts_tab">Borradores</string>
+    <string name="scheduled_tab">Programados</string>
+    <string name="no_drafts_saved">No hay borradores guardados</string>
+    <string name="no_scheduled_posts">No hay publicaciones programadas</string>
+    <string name="draft_label">Borrador</string>
+    <string name="reply_label">Respuesta</string>
+    <string name="delete_draft">Eliminar borrador</string>
+    <string name="empty_content">(vacío)</string>
+    <string name="remove_from_schedule">Quitar de programación</string>
     <string name="drawer_interface">Interfaz</string>
     <string name="drawer_relays">Relays</string>
     <string name="drawer_media_servers">Servidores de Medios</string>

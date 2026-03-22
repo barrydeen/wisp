@@ -13,6 +13,18 @@
     <string name="drawer_lists">Liste</string>
     <string name="drawer_drafts">Bozze &amp; Programmati</string>
     <string name="drawer_settings">Impostazioni</string>
+
+    <!-- Drafts & Scheduled -->
+    <string name="drafts_scheduled_title">Bozze &amp; Programmati</string>
+    <string name="drafts_tab">Bozze</string>
+    <string name="scheduled_tab">Programmati</string>
+    <string name="no_drafts_saved">Nessuna bozza salvata</string>
+    <string name="no_scheduled_posts">Nessun post programmato</string>
+    <string name="draft_label">Bozza</string>
+    <string name="reply_label">Risposta</string>
+    <string name="delete_draft">Elimina bozza</string>
+    <string name="empty_content">(vuoto)</string>
+    <string name="remove_from_schedule">Rimuovi dalla programmazione</string>
     <string name="drawer_interface">Interfaccia</string>
     <string name="drawer_relays">Relay</string>
     <string name="drawer_media_servers">Server Media</string>

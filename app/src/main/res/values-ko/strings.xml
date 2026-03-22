@@ -13,6 +13,18 @@
     <string name="drawer_lists">리스트</string>
     <string name="drawer_drafts">임시 저장 &amp; 예약됨</string>
     <string name="drawer_settings">설정</string>
+
+    <!-- Drafts & Scheduled -->
+    <string name="drafts_scheduled_title">임시 저장 &amp; 예약됨</string>
+    <string name="drafts_tab">임시 저장</string>
+    <string name="scheduled_tab">예약됨</string>
+    <string name="no_drafts_saved">저장된 임시 저장글이 없습니다</string>
+    <string name="no_scheduled_posts">예약된 게시물이 없습니다</string>
+    <string name="draft_label">임시 저장</string>
+    <string name="reply_label">답글</string>
+    <string name="delete_draft">임시 저장글 삭제</string>
+    <string name="empty_content">(비어 있음)</string>
+    <string name="remove_from_schedule">예약 취소</string>
     <string name="drawer_interface">인터페이스</string>
     <string name="drawer_relays">릴레이</string>
     <string name="drawer_media_servers">미디어 서버</string>

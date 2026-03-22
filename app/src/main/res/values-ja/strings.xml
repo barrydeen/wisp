@@ -13,6 +13,18 @@
     <string name="drawer_lists">リスト</string>
     <string name="drawer_drafts">下書き &amp; 予約済み</string>
     <string name="drawer_settings">設定</string>
+
+    <!-- Drafts & Scheduled -->
+    <string name="drafts_scheduled_title">下書き &amp; 予約済み</string>
+    <string name="drafts_tab">下書き</string>
+    <string name="scheduled_tab">予約済み</string>
+    <string name="no_drafts_saved">保存された下書きはありません</string>
+    <string name="no_scheduled_posts">予約された投稿はありません</string>
+    <string name="draft_label">下書き</string>
+    <string name="reply_label">返信</string>
+    <string name="delete_draft">下書きを削除</string>
+    <string name="empty_content">（空）</string>
+    <string name="remove_from_schedule">予約を解除</string>
     <string name="drawer_interface">インターフェース</string>
     <string name="drawer_relays">リレー</string>
     <string name="drawer_media_servers">メディアサーバー</string>

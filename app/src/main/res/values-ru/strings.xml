@@ -10,6 +10,18 @@
     <string name="drawer_lists">Списки</string>
     <string name="drawer_drafts">Черновики &amp; Запланированные</string>
     <string name="drawer_settings">Настройки</string>
+
+    <!-- Drafts & Scheduled -->
+    <string name="drafts_scheduled_title">Черновики &amp; Запланированные</string>
+    <string name="drafts_tab">Черновики</string>
+    <string name="scheduled_tab">Запланированные</string>
+    <string name="no_drafts_saved">Нет сохранённых черновиков</string>
+    <string name="no_scheduled_posts">Нет запланированных постов</string>
+    <string name="draft_label">Черновик</string>
+    <string name="reply_label">Ответ</string>
+    <string name="delete_draft">Удалить черновик</string>
+    <string name="empty_content">(пусто)</string>
+    <string name="remove_from_schedule">Удалить из расписания</string>
     <string name="drawer_interface">Интерфейс</string>
     <string name="drawer_relays">Рилэи</string>
     <string name="drawer_media_servers">Медиа-серверы</string>
