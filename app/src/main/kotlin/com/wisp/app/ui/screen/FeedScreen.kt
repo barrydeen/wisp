@@ -1839,9 +1839,9 @@ private fun HashtagPickerDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Hashtags")
+                Text(stringResource(R.string.tab_hashtags))
                 TextButton(onClick = { showNewSetField = true }) {
-                    Text("New Set")
+                    Text(stringResource(R.string.tab_new_set))
                 }
                 Spacer(Modifier.weight(1f))
                 IconButton(
@@ -1850,7 +1850,7 @@ private fun HashtagPickerDialog(
                 ) {
                     Icon(
                         Icons.Default.Close,
-                        contentDescription = "Close",
+                        contentDescription = stringResource(R.string.btn_close),
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -1873,7 +1873,7 @@ private fun HashtagPickerDialog(
                     }
                 } else if (sets.isEmpty()) {
                     Text(
-                        "No interest sets yet. Create one below, or follow hashtags from their feed pages.",
+                        stringResource(R.string.no_interest_sets),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
@@ -1898,14 +1898,14 @@ private fun HashtagPickerDialog(
                                         onRenameSet(set.dTag, renameText.trim())
                                         renamingDTag = null
                                     }
-                                }) { Text("Save") }
+                                }) { Text(stringResource(R.string.btn_save)) }
                                 IconButton(
                                     onClick = { confirmDeleteDTag = set.dTag },
                                     modifier = Modifier.size(32.dp)
                                 ) {
                                     Icon(
                                         Icons.Default.Delete,
-                                        contentDescription = "Delete",
+                                        contentDescription = stringResource(R.string.btn_delete),
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -1944,7 +1944,7 @@ private fun HashtagPickerDialog(
                                         modifier = Modifier.heightIn(min = 32.dp),
                                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                                     ) {
-                                        Text("Feed", style = MaterialTheme.typography.labelSmall)
+                                        Text(stringResource(R.string.tab_feed), style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
                                 if (isExpanded) {
@@ -1957,7 +1957,7 @@ private fun HashtagPickerDialog(
                                     ) {
                                         Icon(
                                             Icons.Default.Add,
-                                            contentDescription = "Add hashtag",
+                                            contentDescription = stringResource(R.string.cd_add_hashtag),
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
@@ -1977,7 +1977,7 @@ private fun HashtagPickerDialog(
                                     androidx.compose.material3.OutlinedTextField(
                                         value = newHashtagText,
                                         onValueChange = { newHashtagText = it },
-                                        placeholder = { Text("hashtag") },
+                                        placeholder = { Text(stringResource(R.string.placeholder_hashtag)) },
                                         singleLine = true,
                                         modifier = Modifier.weight(1f).focusRequester(focusRequester)
                                     )
@@ -1992,13 +1992,13 @@ private fun HashtagPickerDialog(
                                             }
                                         },
                                         enabled = newHashtagText.trim().removePrefix("#").isNotBlank()
-                                    ) { Text("Add") }
+                                    ) { Text(stringResource(R.string.btn_add)) }
                                 }
                             }
                             // Hashtags in this set
                             if (set.hashtags.isEmpty()) {
                                 Text(
-                                    "No hashtags yet",
+                                    stringResource(R.string.no_hashtags_yet),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(start = 12.dp, bottom = 4.dp)
@@ -2043,7 +2043,7 @@ private fun HashtagPickerDialog(
                     androidx.compose.material3.OutlinedTextField(
                         value = newSetName,
                         onValueChange = { newSetName = it },
-                        placeholder = { Text("New set name") },
+                        placeholder = { Text(stringResource(R.string.placeholder_new_set_name)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f).focusRequester(newSetFocusRequester)
                     )
@@ -2058,7 +2058,7 @@ private fun HashtagPickerDialog(
                         },
                         enabled = newSetName.isNotBlank()
                     ) {
-                        Text("Create")
+                        Text(stringResource(R.string.btn_create))
                     }
                 }
             }
@@ -2073,16 +2073,16 @@ private fun HashtagPickerDialog(
         val setName = sets.find { it.dTag == dTag }?.name ?: dTag
         AlertDialog(
             onDismissRequest = { confirmDeleteDTag = null },
-            title = { Text("Delete Set") },
-            text = { Text("Delete \"$setName\" and all its hashtags?") },
+            title = { Text(stringResource(R.string.delete_set)) },
+            text = { Text(stringResource(R.string.error_delete_set_hashtags, setName)) },
             confirmButton = {
                 TextButton(onClick = {
                     onDeleteSet(dTag)
                     confirmDeleteDTag = null
-                }) { Text("Delete") }
+                }) { Text(stringResource(R.string.btn_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmDeleteDTag = null }) { Text("Cancel") }
+                TextButton(onClick = { confirmDeleteDTag = null }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }

@@ -200,7 +200,12 @@
     <string name="tab_relay">Relay</string>
     <string name="tab_list">Lista</string>
     <string name="tab_hashtags">Etiquetas</string>
+    <string name="interests">Intereses</string>
     <string name="tab_feed">Feed</string>
+    <string name="loading_interest_sets">Cargando conjuntos de intereses…</string>
+    <string name="no_interest_sets">Aún no hay conjuntos de intereses. Crea uno abajo, o sigue hashtags desde sus páginas de feed.</string>
+    <string name="no_hashtags_yet">Sin hashtags aún</string>
+    <string name="delete_set">Eliminar conjunto</string>
     <string name="tab_muted_words">Palabras Silenciadas</string>
     <string name="tab_muted_users">Usuarios Silenciados</string>
     <string name="tab_replies">Respuestas</string>
@@ -211,6 +216,7 @@
     <string name="tab_earlier">Anterior</string>
     <string name="tab_pinned">Fijado</string>
     <string name="tab_new_set">Nuevo Conjunto</string>
+    <string name="btn_new_set">+ Nuevo Conjunto</string>
     <string name="tab_all_relays">Todos los relays</string>
 
     <!-- Content Descriptions -->

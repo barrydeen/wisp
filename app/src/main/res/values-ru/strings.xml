@@ -185,7 +185,12 @@
     <string name="tab_relay">Рилэй</string>
     <string name="tab_list">Список</string>
     <string name="tab_hashtags">Хештеги</string>
+    <string name="interests">Интересы</string>
     <string name="tab_feed">Лента</string>
+    <string name="loading_interest_sets">Загрузка наборов интересов…</string>
+    <string name="no_interest_sets">Пока нет наборов интересов. Создайте один ниже или подпишитесь на хештеги со страниц лент.</string>
+    <string name="no_hashtags_yet">Пока нет хештегов</string>
+    <string name="delete_set">Удалить набор</string>
     <string name="tab_muted_words">Заглушённые слова</string>
     <string name="tab_muted_users">Заглушённые пользователи</string>
     <string name="tab_replies">Ответы</string>
@@ -196,6 +201,7 @@
     <string name="tab_earlier">Ранние</string>
     <string name="tab_pinned">Закреплённые</string>
     <string name="tab_new_set">Новый набор</string>
+    <string name="btn_new_set">+ Новый набор</string>
     <string name="tab_all_relays">Все рилэи</string>
     <string name="cd_back">Назад</string>
     <string name="cd_toggle_tor">Переключить Tor</string>

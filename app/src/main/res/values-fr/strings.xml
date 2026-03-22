@@ -200,7 +200,12 @@
     <string name="tab_relay">Relais</string>
     <string name="tab_list">Liste</string>
     <string name="tab_hashtags">Hashtags</string>
+    <string name="interests">Intérêts</string>
     <string name="tab_feed">Flux</string>
+    <string name="loading_interest_sets">Chargement des centres d\'intérêt…</string>
+    <string name="no_interest_sets">Pas encore de centres d\'intérêt. Créez-en un ci-dessous, ou suivez des hashtags depuis leurs pages de flux.</string>
+    <string name="no_hashtags_yet">Pas encore de hashtags</string>
+    <string name="delete_set">Supprimer l\'ensemble</string>
     <string name="tab_muted_words">Mots Masqués</string>
     <string name="tab_muted_users">Utilisateurs Masqués</string>
     <string name="tab_replies">Réponses</string>
@@ -211,6 +216,7 @@
     <string name="tab_earlier">Précédent</string>
     <string name="tab_pinned">Épinglé</string>
     <string name="tab_new_set">Nouvel Ensemble</string>
+    <string name="btn_new_set">+ Nouvel Ensemble</string>
     <string name="tab_all_relays">Tous les relais</string>
 
     <!-- Content Descriptions -->

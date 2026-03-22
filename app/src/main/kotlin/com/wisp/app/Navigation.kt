@@ -20,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -1368,6 +1369,7 @@ fun WispNavHost(
             }
             val interestSets by feedViewModel.interestRepo.sets.collectAsState()
             val interestSetsFetched by feedViewModel.interestSetsFetched.collectAsState()
+            val interestsLabel = stringResource(R.string.interests)
             LaunchedEffect(Unit) {
                 feedViewModel.fetchInterestSetsIfMissing()
             }
@@ -1381,7 +1383,7 @@ fun WispNavHost(
                 onFollowHashtag = { dTag -> feedViewModel.followHashtag(tag, dTag) },
                 onUnfollowHashtag = { dTag -> feedViewModel.unfollowHashtag(tag, dTag) },
                 onCreateDefaultSet = {
-                    feedViewModel.createInterestSet("Interests")
+                    feedViewModel.createInterestSet(interestsLabel)
                     feedViewModel.followHashtag(tag, "interests")
                 },
                 nip05Repo = feedViewModel.nip05Repo,
@@ -1407,6 +1409,7 @@ fun WispNavHost(
             val name = java.net.URLDecoder.decode(encodedName, "UTF-8")
             val tags = java.net.URLDecoder.decode(encodedTags, "UTF-8").split(",").filter { it.isNotBlank() }
             if (tags.isEmpty()) return@composable
+            val interestsLabel = stringResource(R.string.interests)
 
             val hashtagFeedViewModel: HashtagFeedViewModel = viewModel()
             LaunchedEffect(tags) {
@@ -1472,7 +1475,7 @@ fun WispNavHost(
                 onFollowHashtag = { dTag -> tags.forEach { feedViewModel.followHashtag(it, dTag) } },
                 onUnfollowHashtag = { dTag -> tags.forEach { feedViewModel.unfollowHashtag(it, dTag) } },
                 onCreateDefaultSet = {
-                    feedViewModel.createInterestSet("Interests")
+                    feedViewModel.createInterestSet(interestsLabel)
                     tags.forEach { feedViewModel.followHashtag(it, "interests") }
                 },
                 nip05Repo = feedViewModel.nip05Repo,

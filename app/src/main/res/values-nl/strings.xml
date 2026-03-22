@@ -200,7 +200,12 @@
     <string name="tab_relay">Relay</string>
     <string name="tab_list">Lijst</string>
     <string name="tab_hashtags">Hashtags</string>
+    <string name="interests">Interesses</string>
     <string name="tab_feed">Feed</string>
+    <string name="loading_interest_sets">Interessesets laden…</string>
+    <string name="no_interest_sets">Nog geen interessesets. Maak er een hieronder aan, of volg hashtags vanaf hun feed-pagina\'s.</string>
+    <string name="no_hashtags_yet">Nog geen hashtags</string>
+    <string name="delete_set">Set verwijderen</string>
     <string name="tab_muted_words">Gedempte Woorden</string>
     <string name="tab_muted_users">Gedempte Gebruikers</string>
     <string name="tab_replies">Antwoorden</string>
@@ -211,6 +216,7 @@
     <string name="tab_earlier">Eerder</string>
     <string name="tab_pinned">Vastgemaakt</string>
     <string name="tab_new_set">Nieuwe Set</string>
+    <string name="btn_new_set">+ Nieuwe Set</string>
     <string name="tab_all_relays">Alle relays</string>
 
     <!-- Content Descriptions -->

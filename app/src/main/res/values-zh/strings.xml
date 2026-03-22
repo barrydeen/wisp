@@ -200,7 +200,12 @@
     <string name="tab_relay">中继</string>
     <string name="tab_list">列表</string>
     <string name="tab_hashtags">话题</string>
+    <string name="interests">兴趣</string>
     <string name="tab_feed">动态</string>
+    <string name="loading_interest_sets">正在加载兴趣集…</string>
+    <string name="no_interest_sets">暂无兴趣集。在下方创建一个，或从动态页面关注话题标签。</string>
+    <string name="no_hashtags_yet">暂无话题标签</string>
+    <string name="delete_set">删除集</string>
     <string name="tab_muted_words">静音词语</string>
     <string name="tab_muted_users">静音用户</string>
     <string name="tab_replies">回复</string>
@@ -211,6 +216,7 @@
     <string name="tab_earlier">更早</string>
     <string name="tab_pinned">已固定</string>
     <string name="tab_new_set">新集合</string>
+    <string name="btn_new_set">+ 新集合</string>
     <string name="tab_all_relays">所有中继</string>
 
     <!-- Content Descriptions -->

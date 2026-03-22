@@ -200,7 +200,12 @@
     <string name="tab_relay">릴레이</string>
     <string name="tab_list">리스트</string>
     <string name="tab_hashtags">해시태그</string>
+    <string name="interests">관심사</string>
     <string name="tab_feed">피드</string>
+    <string name="loading_interest_sets">관심사 세트 로딩 중…</string>
+    <string name="no_interest_sets">아직 관심사 세트가 없습니다. 아래에서 만들거나 피드 페이지에서 해시태그를 팔로우하세요.</string>
+    <string name="no_hashtags_yet">아직 해시태그 없음</string>
+    <string name="delete_set">세트 삭제</string>
     <string name="tab_muted_words">음소거 단어</string>
     <string name="tab_muted_users">음소거 사용자</string>
     <string name="tab_replies">답글</string>
@@ -211,6 +216,7 @@
     <string name="tab_earlier">이전</string>
     <string name="tab_pinned">고정됨</string>
     <string name="tab_new_set">새 세트</string>
+    <string name="btn_new_set">+ 새 세트</string>
     <string name="tab_all_relays">전체 릴레이</string>
 
     <!-- Content Descriptions -->

@@ -200,7 +200,12 @@
     <string name="tab_relay">リレー</string>
     <string name="tab_list">リスト</string>
     <string name="tab_hashtags">ハッシュタグ</string>
+    <string name="interests">関心</string>
     <string name="tab_feed">フィード</string>
+    <string name="loading_interest_sets">関心セットを読み込み中…</string>
+    <string name="no_interest_sets">関心セットがありません。下記で作成するか、フィードページからハッシュタグをフォローしてください。</string>
+    <string name="no_hashtags_yet">ハッシュタグなし</string>
+    <string name="delete_set">セットを削除</string>
     <string name="tab_muted_words">ミュート単語</string>
     <string name="tab_muted_users">ミュートユーザー</string>
     <string name="tab_replies">返信</string>
@@ -211,6 +216,7 @@
     <string name="tab_earlier">以前</string>
     <string name="tab_pinned">ピン留め</string>
     <string name="tab_new_set">新しいセット</string>
+    <string name="btn_new_set">+ 新しいセット</string>
     <string name="tab_all_relays">すべてのリレー</string>
 
     <!-- Content Descriptions -->

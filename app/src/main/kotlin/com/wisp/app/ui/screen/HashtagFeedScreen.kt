@@ -91,7 +91,10 @@ fun HashtagFeedScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = setName ?: "#$hashtag",
+                        text = if (setName?.equals("Interests", ignoreCase = true) == true)
+                            stringResource(R.string.interests)
+                        else
+                            setName ?: "#$hashtag",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
