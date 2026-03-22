@@ -11,7 +11,7 @@
     <string name="drawer_my_profile">Mon Profil</string>
     <string name="drawer_feeds">Flux</string>
     <string name="drawer_lists">Listes</string>
-    <string name="drawer_drafts">Brouillons</string>
+    <string name="drawer_drafts">Brouillons &amp; Planifiés</string>
     <string name="drawer_settings">Paramètres</string>
     <string name="drawer_interface">Interface</string>
     <string name="drawer_relays">Relais</string>
@@ -517,4 +517,12 @@
     <string name="wallet_spark_sdk">SDK v%s</string>
     <string name="wallet_not_supported">Non pris en charge par votre portefeuille</string>
     <string name="wallet_creating_invoice">Création de la facture…</string>
+
+    <!-- Diagnostics -->
+    <string name="diagnostics_title">Diagnostics</string>
+    <string name="diagnostic_mode">Mode diagnostic</string>
+    <string name="diagnostic_mode_description">Enregistrer les décisions de traitement des événements dans un fichier pour le débogage</string>
+    <string name="share_logs">Partager les logs</string>
+    <string name="share_diagnostic_logs">Partager les logs de diagnostic</string>
+    <string name="clear_logs">Effacer les logs</string>
 </resources>

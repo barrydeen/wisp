@@ -11,7 +11,7 @@
     <string name="drawer_my_profile">Mijn Profiel</string>
     <string name="drawer_feeds">Feeds</string>
     <string name="drawer_lists">Lijsten</string>
-    <string name="drawer_drafts">Concepten</string>
+    <string name="drawer_drafts">Concepten &amp; Gepland</string>
     <string name="drawer_settings">Instellingen</string>
     <string name="drawer_interface">Interface</string>
     <string name="drawer_relays">Relays</string>
@@ -517,4 +517,12 @@
     <string name="wallet_spark_sdk">SDK v%s</string>
     <string name="wallet_not_supported">Niet ondersteund door je portemonnee</string>
     <string name="wallet_creating_invoice">Factuur maken…</string>
+
+    <!-- Diagnostics -->
+    <string name="diagnostics_title">Diagnostiek</string>
+    <string name="diagnostic_mode">Diagnostische modus</string>
+    <string name="diagnostic_mode_description">Log gebeurtenisverwerkingsbeslissingen naar een bestand voor debugging</string>
+    <string name="share_logs">Logs delen</string>
+    <string name="share_diagnostic_logs">Diagnostische logs delen</string>
+    <string name="clear_logs">Logs wissen</string>
 </resources>

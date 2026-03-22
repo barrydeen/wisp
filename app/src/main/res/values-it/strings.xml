@@ -11,7 +11,7 @@
     <string name="drawer_my_profile">Il mio Profilo</string>
     <string name="drawer_feeds">Feed</string>
     <string name="drawer_lists">Liste</string>
-    <string name="drawer_drafts">Bozze</string>
+    <string name="drawer_drafts">Bozze &amp; Programmati</string>
     <string name="drawer_settings">Impostazioni</string>
     <string name="drawer_interface">Interfaccia</string>
     <string name="drawer_relays">Relay</string>
@@ -508,4 +508,12 @@
     <string name="wallet_spark_sdk">SDK v%s</string>
     <string name="wallet_not_supported">Non supportato dal tuo portafoglio</string>
     <string name="wallet_creating_invoice">Creazione fattura…</string>
+
+    <!-- Diagnostics -->
+    <string name="diagnostics_title">Diagnostica</string>
+    <string name="diagnostic_mode">Modalità diagnostica</string>
+    <string name="diagnostic_mode_description">Registra le decisioni di elaborazione degli eventi in un file per il debug</string>
+    <string name="share_logs">Condividi log</string>
+    <string name="share_diagnostic_logs">Condividi log diagnostici</string>
+    <string name="clear_logs">Cancella log</string>
 </resources>

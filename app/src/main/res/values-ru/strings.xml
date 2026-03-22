@@ -8,7 +8,7 @@
     <string name="drawer_my_profile">Мой профиль</string>
     <string name="drawer_feeds">Ленты</string>
     <string name="drawer_lists">Списки</string>
-    <string name="drawer_drafts">Черновики</string>
+    <string name="drawer_drafts">Черновики &amp; Запланированные</string>
     <string name="drawer_settings">Настройки</string>
     <string name="drawer_interface">Интерфейс</string>
     <string name="drawer_relays">Рилэи</string>
@@ -478,4 +478,12 @@
     <string name="wallet_spark_sdk">SDK v%s</string>
     <string name="wallet_not_supported">Не поддерживается вашим кошельком</string>
     <string name="wallet_creating_invoice">Создание счёта…</string>
+
+    <!-- Diagnostics -->
+    <string name="diagnostics_title">Диагностика</string>
+    <string name="diagnostic_mode">Диагностический режим</string>
+    <string name="diagnostic_mode_description">Записывать решения об обработке событий в файл для отладки</string>
+    <string name="share_logs">Поделиться логами</string>
+    <string name="share_diagnostic_logs">Поделиться диагностическими логами</string>
+    <string name="clear_logs">Очистить логи</string>
 </resources>

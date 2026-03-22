@@ -476,7 +476,7 @@ fun InterfaceScreen(
             if (diagnosticRevealed) {
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    text = "Diagnostics",
+                    text = stringResource(R.string.diagnostics_title),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -486,9 +486,9 @@ fun InterfaceScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Diagnostic mode", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.diagnostic_mode), style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            "Log event processing decisions to a file for debugging",
+                            stringResource(R.string.diagnostic_mode_description),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -509,7 +509,7 @@ fun InterfaceScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = "Share logs",
+                            text = stringResource(R.string.share_logs),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier
@@ -526,13 +526,13 @@ fun InterfaceScreen(
                                             putExtra(Intent.EXTRA_STREAM, uri)
                                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                         }
-                                        context.startActivity(Intent.createChooser(intent, "Share diagnostic logs"))
+                                        context.startActivity(Intent.createChooser(intent, context.getString(R.string.share_diagnostic_logs)))
                                     }
                                 }
                                 .padding(vertical = 8.dp)
                         )
                         Text(
-                            text = "Clear logs",
+                            text = stringResource(R.string.clear_logs),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier
