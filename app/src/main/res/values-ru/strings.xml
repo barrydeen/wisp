@@ -94,6 +94,7 @@
     <string name="compose_mining">Майнинг…</string>
     <string name="compose_post_now">Опубликовать (%d)</string>
     <string name="compose_replying_to">Ответ для </string>
+    <string name="content_marked_nsfw">Отмечено как NSFW</string>
     <string name="btn_close">Закрыть</string>
     <string name="btn_ok">ОК</string>
     <string name="btn_retry">Повторить</string>

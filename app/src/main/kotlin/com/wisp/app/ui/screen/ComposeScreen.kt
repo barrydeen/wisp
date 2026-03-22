@@ -595,7 +595,7 @@ fun ComposeScreen(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = "Marked as NSFW",
+                                text = stringResource(R.string.content_marked_nsfw),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer
                             )

@@ -84,6 +84,7 @@
     <string name="compose_mining">Mining in progress…</string>
     <string name="compose_post_now">Post now (%d)</string>
     <string name="compose_replying_to">Replying to </string>
+    <string name="content_marked_nsfw">Marked as NSFW</string>
     <string name="btn_post_now">Post now</string>
     <string name="btn_cancel">Cancel</string>
     <string name="btn_save">Save</string>

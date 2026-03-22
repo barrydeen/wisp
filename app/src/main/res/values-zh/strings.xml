@@ -96,6 +96,7 @@
     <string name="compose_mining">挖矿中…</string>
     <string name="compose_post_now">立即发布 (%d)</string>
     <string name="compose_replying_to">回复 </string>
+    <string name="content_marked_nsfw">标记为 NSFW</string>
     <string name="btn_post_now">立即发布</string>
     <string name="btn_cancel">取消</string>
     <string name="btn_save">保存</string>

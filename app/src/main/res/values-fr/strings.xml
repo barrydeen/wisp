@@ -96,6 +96,7 @@
     <string name="compose_mining">Minage en cours…</string>
     <string name="compose_post_now">Publier maintenant (%d)</string>
     <string name="compose_replying_to">Répondre à </string>
+    <string name="content_marked_nsfw">Marqué NSFW</string>
     <string name="btn_post_now">Publier maintenant</string>
     <string name="btn_cancel">Annuler</string>
     <string name="btn_save">Enregistrer</string>
