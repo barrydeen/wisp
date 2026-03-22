@@ -864,14 +864,17 @@ class RelayPool {
     private fun collectRelayFailures(relay: Relay, parentJob: Job) {
         scope.launch(parentJob) {
             relay.failures.collect { failure ->
-                if (appIsActive) {
+                val isEphemeral = ephemeralRelays.containsKey(relay.config.url)
+                // Never mark ephemeral relays bad in the health tracker — they're user-initiated
+                // (search, outbox routing) and already have an in-memory cooldown. Persisting them
+                // as bad would silently block search and outbox queries across sessions.
+                if (appIsActive && !isEphemeral) {
                     when {
                         failure.httpCode == 429 -> healthTracker?.onRateLimitHit(relay.config.url)
                         failure.httpCode != null && failure.httpCode in 500..599 ->
                             healthTracker?.onServerError(relay.config.url, failure.httpCode)
                     }
                 }
-                val isEphemeral = ephemeralRelays.containsKey(relay.config.url)
                 // Only apply cooldowns to ephemeral relays.
                 // Persistent/DM relays just use the default 3s retry in Relay.reconnect()
                 // with no additional cooldown — avoids cascading delays on app resume.
