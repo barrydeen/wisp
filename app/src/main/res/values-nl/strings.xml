@@ -84,6 +84,7 @@
     <string name="compose_mining">Minen…</string>
     <string name="compose_post_now">Nu plaatsen (%d)</string>
     <string name="compose_replying_to">Reageren op </string>
+    <string name="content_marked_nsfw">Gemarkeerd als NSFW</string>
     <string name="btn_post_now">Nu Plaatstellen</string>
     <string name="btn_cancel">Annuleren</string>
     <string name="btn_save">Opslaan</string>

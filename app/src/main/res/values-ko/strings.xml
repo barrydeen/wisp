@@ -84,6 +84,7 @@
     <string name="compose_mining">채굴 중…</string>
     <string name="compose_post_now">지금 게시 (%d)</string>
     <string name="compose_replying_to">답글 달기 </string>
+    <string name="content_marked_nsfw">NSFW 표시됨</string>
     <string name="btn_post_now">지금 게시</string>
     <string name="btn_cancel">취소</string>
     <string name="btn_save">저장</string>

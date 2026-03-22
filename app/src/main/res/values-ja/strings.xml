@@ -84,6 +84,7 @@
     <string name="compose_mining">マイニング中…</string>
     <string name="compose_post_now">今すぐ投稿 (%d)</string>
     <string name="compose_replying_to">に返信 </string>
+    <string name="content_marked_nsfw">NSFW 指定</string>
     <string name="btn_post_now">今すぐ投稿</string>
     <string name="btn_cancel">キャンセル</string>
     <string name="btn_save">保存</string>
