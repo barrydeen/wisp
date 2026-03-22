@@ -470,7 +470,7 @@ fun WispDrawerContent(
                 onDismissRequest = { showLogoutDialog = false },
                 title = { Text(stringResource(R.string.btn_logout)) },
                 text = {
-                    Text("Make sure you've backed up your private key before logging out. You can find it in Keys settings. Without it, you won't be able to recover your account.")
+                    Text(stringResource(R.string.logout_warning))
                 },
                 confirmButton = {
                     TextButton(onClick = {

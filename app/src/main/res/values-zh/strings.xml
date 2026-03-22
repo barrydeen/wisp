@@ -11,7 +11,7 @@
     <string name="drawer_my_profile">我的资料</string>
     <string name="drawer_feeds">动态</string>
     <string name="drawer_lists">列表</string>
-    <string name="drawer_drafts">草稿</string>
+    <string name="drawer_drafts">草稿 &amp; 定时</string>
     <string name="drawer_settings">设置</string>
     <string name="drawer_interface">界面</string>
     <string name="drawer_relays">中继</string>
@@ -505,4 +505,12 @@
     <string name="wallet_spark_sdk">SDK v%s</string>
     <string name="wallet_not_supported">您的钱包不支持</string>
     <string name="wallet_creating_invoice">创建发票中…</string>
+
+    <!-- Diagnostics -->
+    <string name="diagnostics_title">诊断</string>
+    <string name="diagnostic_mode">诊断模式</string>
+    <string name="diagnostic_mode_description">将事件处理决策记录到文件以进行调试</string>
+    <string name="share_logs">分享日志</string>
+    <string name="share_diagnostic_logs">分享诊断日志</string>
+    <string name="clear_logs">清除日志</string>
 </resources>

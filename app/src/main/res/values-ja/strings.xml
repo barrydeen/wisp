@@ -11,7 +11,7 @@
     <string name="drawer_my_profile">マイプロフィール</string>
     <string name="drawer_feeds">フィード</string>
     <string name="drawer_lists">リスト</string>
-    <string name="drawer_drafts">下書き</string>
+    <string name="drawer_drafts">下書き &amp; 予約済み</string>
     <string name="drawer_settings">設定</string>
     <string name="drawer_interface">インターフェース</string>
     <string name="drawer_relays">リレー</string>
@@ -505,4 +505,12 @@
     <string name="wallet_spark_sdk">SDK v%s</string>
     <string name="wallet_not_supported">お使いのウォレットではサポートされていません</string>
     <string name="wallet_creating_invoice">インボイス作成中…</string>
+
+    <!-- Diagnostics -->
+    <string name="diagnostics_title">診断</string>
+    <string name="diagnostic_mode">診断モード</string>
+    <string name="diagnostic_mode_description">イベント処理の決定をファイルにログしてデバッグする</string>
+    <string name="share_logs">ログを共有</string>
+    <string name="share_diagnostic_logs">診断ログを共有</string>
+    <string name="clear_logs">ログをクリア</string>
 </resources>

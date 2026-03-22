@@ -11,7 +11,7 @@
     <string name="drawer_my_profile">내 프로필</string>
     <string name="drawer_feeds">피드</string>
     <string name="drawer_lists">리스트</string>
-    <string name="drawer_drafts">임시 저장</string>
+    <string name="drawer_drafts">임시 저장 &amp; 예약됨</string>
     <string name="drawer_settings">설정</string>
     <string name="drawer_interface">인터페이스</string>
     <string name="drawer_relays">릴레이</string>
@@ -496,4 +496,12 @@
     <string name="wallet_spark_sdk">SDK v%s</string>
     <string name="wallet_not_supported">지갑에서 지원하지 않음</string>
     <string name="wallet_creating_invoice">인보이스 생성 중…</string>
+
+    <!-- Diagnostics -->
+    <string name="diagnostics_title">진단</string>
+    <string name="diagnostic_mode">진단 모드</string>
+    <string name="diagnostic_mode_description">디버깅을 위해 이벤트 처리 결정을 파일에 기록</string>
+    <string name="share_logs">로그 공유</string>
+    <string name="share_diagnostic_logs">진단 로그 공유</string>
+    <string name="clear_logs">로그 지우기</string>
 </resources>
