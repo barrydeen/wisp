@@ -966,6 +966,7 @@ class RelayPool {
         // Evict ALL ephemeral relays — they'll be recreated on demand.
         // Even "connected" ephemerals may be stale and have autoReconnect=false.
         for ((url, relay) in ephemeralRelays) {
+            relay.reconnectEnabled = false  // Suppress onFailure errors from disconnect()
             relay.disconnect()
             relayIndex.remove(url)
             cancelRelayJobs(url)
@@ -1017,6 +1018,7 @@ class RelayPool {
         }
         // Evict all ephemeral relays — they'll be recreated on demand
         for ((url, relay) in ephemeralRelays) {
+            relay.reconnectEnabled = false  // Suppress onFailure errors from disconnect()
             relay.disconnect()
             relayIndex.remove(url)
             cancelRelayJobs(url)
