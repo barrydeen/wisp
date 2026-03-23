@@ -219,6 +219,14 @@
     <string name="tab_new_set">새 세트</string>
     <string name="btn_new_set">+ 새 세트</string>
     <string name="tab_all_relays">전체 릴레이</string>
+    <string name="tab_favorites">즐겨찾기</string>
+    <string name="tab_relay_sets">릴레이 세트</string>
+    <string name="tab_combined_feed">통합 피드</string>
+    <string name="relay_count_format">%d개 릴레이</string>
+    <string name="relay_covers_format">%d 커버</string>
+    <string name="error_no_relay_scores">사용 가능한 릴레이 점수 없음</string>
+    <string name="btn_add_to_set">+세트</string>
+    <string name="btn_details">상세</string>
 
     <!-- Content Descriptions -->
     <string name="cd_back">뒤로</string>

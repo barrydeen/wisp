@@ -1423,10 +1423,11 @@ private fun RelayPickerDialog(
     var showCreateSet by remember { mutableStateOf(false) }
     var newSetName by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    val couldntConnectError = stringResource(R.string.error_couldnt_connect_relay)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Select Relay") },
+        title = { Text(stringResource(R.string.menu_select_relay)) },
         text = {
             Column {
                 // URL bar
@@ -1436,7 +1437,7 @@ private fun RelayPickerDialog(
                         urlInput = it
                         probeError = null
                     },
-                    placeholder = { Text("relay.example.com") },
+                    placeholder = { Text(stringResource(R.string.placeholder_relay_example)) },
                     singleLine = true,
                     enabled = !isProbing,
                     trailingIcon = {
@@ -1463,14 +1464,14 @@ private fun RelayPickerDialog(
                                             if (result != null) {
                                                 onSelect(result)
                                             } else {
-                                                probeError = "Couldn't connect to relay"
+                                                probeError = couldntConnectError
                                             }
                                         }
                                     }
                                 },
                                 enabled = urlInput.isNotBlank()
                             ) {
-                                Text("Go", style = MaterialTheme.typography.labelMedium)
+                                Text(stringResource(R.string.btn_go), style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     },
@@ -1492,7 +1493,7 @@ private fun RelayPickerDialog(
                     if (favoriteRelays.isNotEmpty()) {
                         item {
                             Text(
-                                "Favorites",
+                                stringResource(R.string.tab_favorites),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -1533,7 +1534,7 @@ private fun RelayPickerDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                "Relay Sets",
+                                stringResource(R.string.tab_relay_sets),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -1545,7 +1546,7 @@ private fun RelayPickerDialog(
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                             ) {
                                 Text(
-                                    "+ New Set",
+                                    stringResource(R.string.btn_new_set),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -1562,7 +1563,7 @@ private fun RelayPickerDialog(
                                 androidx.compose.material3.OutlinedTextField(
                                     value = newSetName,
                                     onValueChange = { newSetName = it },
-                                    placeholder = { Text("Set name") },
+                                    placeholder = { Text(stringResource(R.string.placeholder_set_name)) },
                                     singleLine = true,
                                     modifier = Modifier.weight(1f),
                                     textStyle = MaterialTheme.typography.bodySmall
@@ -1581,7 +1582,7 @@ private fun RelayPickerDialog(
                                            else MaterialTheme.colorScheme.surfaceVariant
                                 ) {
                                     Text(
-                                        "Create",
+                                        stringResource(R.string.btn_create),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = if (newSetName.isNotBlank()) MaterialTheme.colorScheme.onPrimary
                                                else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1609,7 +1610,7 @@ private fun RelayPickerDialog(
                                         modifier = Modifier.weight(1f)
                                     )
                                     Text(
-                                        "${relaySet.relays.size} relays",
+                                        stringResource(R.string.relay_count_format, relaySet.relays.size),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1631,7 +1632,7 @@ private fun RelayPickerDialog(
                                     modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 2.dp, bottom = 2.dp)
                                 ) {
                                     Text(
-                                        "Combined Feed",
+                                        stringResource(R.string.tab_combined_feed),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.primary,
                                         fontWeight = FontWeight.Medium,
@@ -1673,7 +1674,7 @@ private fun RelayPickerDialog(
                     if (scoredRelays.isNotEmpty()) {
                         item {
                             Text(
-                                "All Relays",
+                                stringResource(R.string.tab_all_relays),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -1696,7 +1697,7 @@ private fun RelayPickerDialog(
                                         modifier = Modifier.weight(1f)
                                     )
                                     Text(
-                                        "covers ${scored.coverCount}",
+                                        stringResource(R.string.relay_covers_format, scored.coverCount),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1706,7 +1707,7 @@ private fun RelayPickerDialog(
                     } else if (favoriteRelays.isEmpty() && relaySets.isEmpty()) {
                         item {
                             Text(
-                                "No relay scores available yet",
+                                stringResource(R.string.error_no_relay_scores),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall
                             )
@@ -2508,7 +2509,7 @@ private fun RelayFeedBar(
                     color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Text(
-                        "+Set",
+                        stringResource(R.string.btn_add_to_set),
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2522,7 +2523,7 @@ private fun RelayFeedBar(
                     color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Text(
-                        "Details",
+                        stringResource(R.string.btn_details),
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2536,7 +2537,7 @@ private fun RelayFeedBar(
     if (showSetPicker) {
         AlertDialog(
             onDismissRequest = { showSetPicker = false },
-            title = { Text("Add to Relay Set") },
+            title = { Text(stringResource(R.string.menu_add_to_relay_set)) },
             text = {
                 Column {
                     if (relaySets.isNotEmpty()) {
@@ -2577,7 +2578,7 @@ private fun RelayFeedBar(
                     androidx.compose.material3.OutlinedTextField(
                         value = newSetName,
                         onValueChange = { newSetName = it },
-                        placeholder = { Text("New set name") },
+                        placeholder = { Text(stringResource(R.string.placeholder_new_set_name)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         trailingIcon = {
@@ -2587,7 +2588,7 @@ private fun RelayFeedBar(
                                     newSetName = ""
                                     showSetPicker = false
                                 }) {
-                                    Text("Create", style = MaterialTheme.typography.labelSmall)
+                                    Text(stringResource(R.string.btn_create), style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
@@ -2596,7 +2597,7 @@ private fun RelayFeedBar(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { showSetPicker = false }) { Text("Cancel") }
+                TextButton(onClick = { showSetPicker = false }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }

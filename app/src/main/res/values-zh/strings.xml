@@ -219,6 +219,14 @@
     <string name="tab_new_set">新集合</string>
     <string name="btn_new_set">+ 新集合</string>
     <string name="tab_all_relays">所有中继</string>
+    <string name="tab_favorites">收藏</string>
+    <string name="tab_relay_sets">中继集合</string>
+    <string name="tab_combined_feed">合并动态</string>
+    <string name="relay_count_format">%d 个中继</string>
+    <string name="relay_covers_format">覆盖 %d</string>
+    <string name="error_no_relay_scores">暂无中继评分</string>
+    <string name="btn_add_to_set">+集合</string>
+    <string name="btn_details">详情</string>
 
     <!-- Content Descriptions -->
     <string name="cd_back">返回</string>

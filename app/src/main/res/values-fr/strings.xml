@@ -219,6 +219,14 @@
     <string name="tab_new_set">Nouvel Ensemble</string>
     <string name="btn_new_set">+ Nouvel Ensemble</string>
     <string name="tab_all_relays">Tous les relais</string>
+    <string name="tab_favorites">Favoris</string>
+    <string name="tab_relay_sets">Ensembles de Relais</string>
+    <string name="tab_combined_feed">Flux Combiné</string>
+    <string name="relay_count_format">%d relais</string>
+    <string name="relay_covers_format">couvre %d</string>
+    <string name="error_no_relay_scores">Aucune note de relais disponible</string>
+    <string name="btn_add_to_set">+Ens</string>
+    <string name="btn_details">Détails</string>
 
     <!-- Content Descriptions -->
     <string name="cd_back">Retour</string>

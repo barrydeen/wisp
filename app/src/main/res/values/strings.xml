@@ -207,6 +207,14 @@
     <string name="tab_new_set">New Set</string>
     <string name="btn_new_set">+ New Set</string>
     <string name="tab_all_relays">All relays</string>
+    <string name="tab_favorites">Favorites</string>
+    <string name="tab_relay_sets">Relay Sets</string>
+    <string name="tab_combined_feed">Combined Feed</string>
+    <string name="relay_count_format">%d relays</string>
+    <string name="relay_covers_format">covers %d</string>
+    <string name="error_no_relay_scores">No relay scores available yet</string>
+    <string name="btn_add_to_set">+Set</string>
+    <string name="btn_details">Details</string>
 
     <!-- Content Descriptions -->
     <string name="cd_back">Back</string>

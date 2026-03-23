@@ -219,6 +219,14 @@
     <string name="tab_new_set">Novo Conjunto</string>
     <string name="btn_new_set">+ Novo Conjunto</string>
     <string name="tab_all_relays">Todos os relays</string>
+    <string name="tab_favorites">Favoritos</string>
+    <string name="tab_relay_sets">Conjuntos de Relays</string>
+    <string name="tab_combined_feed">Feed Combinado</string>
+    <string name="relay_count_format">%d relays</string>
+    <string name="relay_covers_format">cobre %d</string>
+    <string name="error_no_relay_scores">Ainda não há pontuações de relay disponíveis</string>
+    <string name="btn_add_to_set">+Conj</string>
+    <string name="btn_details">Detalhes</string>
 
     <!-- Content Descriptions -->
     <string name="cd_back">Voltar</string>

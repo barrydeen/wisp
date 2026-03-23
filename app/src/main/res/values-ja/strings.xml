@@ -219,6 +219,14 @@
     <string name="tab_new_set">新しいセット</string>
     <string name="btn_new_set">+ 新しいセット</string>
     <string name="tab_all_relays">すべてのリレー</string>
+    <string name="tab_favorites">お気に入り</string>
+    <string name="tab_relay_sets">リレースキーマ</string>
+    <string name="tab_combined_feed">統合フィード</string>
+    <string name="relay_count_format">%d件のリレー</string>
+    <string name="relay_covers_format">%dをカバー</string>
+    <string name="error_no_relay_scores">リレースコアがありません</string>
+    <string name="btn_add_to_set">+セット</string>
+    <string name="btn_details">詳細</string>
 
     <!-- Content Descriptions -->
     <string name="cd_back">戻る</string>

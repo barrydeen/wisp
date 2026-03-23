@@ -219,6 +219,14 @@
     <string name="tab_new_set">Nieuwe Set</string>
     <string name="btn_new_set">+ Nieuwe Set</string>
     <string name="tab_all_relays">Alle relays</string>
+    <string name="tab_favorites">Favorieten</string>
+    <string name="tab_relay_sets">Relay Sets</string>
+    <string name="tab_combined_feed">Gecombineerde Feed</string>
+    <string name="relay_count_format">%d relays</string>
+    <string name="relay_covers_format">dekt %d</string>
+    <string name="error_no_relay_scores">Nog geen relay-scores beschikbaar</string>
+    <string name="btn_add_to_set">+Set</string>
+    <string name="btn_details">Details</string>
 
     <!-- Content Descriptions -->
     <string name="cd_back">Terug</string>

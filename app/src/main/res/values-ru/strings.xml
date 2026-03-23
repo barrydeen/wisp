@@ -204,6 +204,14 @@
     <string name="tab_new_set">Новый набор</string>
     <string name="btn_new_set">+ Новый набор</string>
     <string name="tab_all_relays">Все рилэи</string>
+    <string name="tab_favorites">Избранное</string>
+    <string name="tab_relay_sets">Наборы рилэев</string>
+    <string name="tab_combined_feed">Комбинированная лента</string>
+    <string name="relay_count_format">%d рилэев</string>
+    <string name="relay_covers_format">охват %d</string>
+    <string name="error_no_relay_scores">Рейтинги рилэев пока недоступны</string>
+    <string name="btn_add_to_set">+Набор</string>
+    <string name="btn_details">Подробнее</string>
     <string name="cd_back">Назад</string>
     <string name="cd_toggle_tor">Переключить Tor</string>
     <string name="cd_toggle_theme">Переключить тему</string>
