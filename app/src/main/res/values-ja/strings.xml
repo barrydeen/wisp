@@ -301,6 +301,79 @@
     <string name="cd_add_new">新規追加</string>
     <string name="cd_create_emoji_set">絵文字セットを作成</string>
     <string name="cd_upload_image">画像をアップロード</string>
+
+    <!-- Custom Emoji Screen -->
+    <string name="emoji_quick_reactions">クイックリアクション</string>
+    <string name="emoji_quick_reactions_description">リアクション選択に表示されるUnicode絵文字</string>
+    <string name="emoji_custom_image_emojis">カスタム画像絵文字</string>
+    <string name="emoji_custom_image_description">絵文字リストからの画像絵文字 (kind 10030)</string>
+    <string name="emoji_available_custom">利用可能なカスタム絵文字</string>
+    <string name="emoji_available_description">リアクション選択ですべて利用可能なカスタム絵文字</string>
+    <string name="emoji_manage">管理</string>
+    <string name="emoji_remove">削除</string>
+    <string name="emoji_save_removed">保存（%d件削除）</string>
+    <string name="emoji_my_sets">マイ絵文字セット</string>
+    <string name="emoji_no_sets_yet">絵文字セットがありません。+をタップして作成してください。</string>
+    <string name="emoji_add_custom">カスタム絵文字を追加</string>
+    <string name="emoji_shortcode">ショートコード</string>
+    <string name="emoji_count_format">%d件の絵文字</string>
+    <string name="emoji_library_title">絵文字ライブラリ</string>
+    <string name="emoji_add_from_keyboard">キーボードから追加</string>
+    <string name="emoji_add_from_keyboard_hint">絵文字を入力または貼り付け</string>
+    <string name="emoji_dialog_add">追加</string>
+    <string name="emoji_dialog_cancel">キャンセル</string>
+    <string name="emoji_done_format">完了 (%d)</string>
+
+    <!-- Blossom/Media Servers Screen -->
+    <string name="blossom_title">メディアサーバー</string>
+    <string name="blossom_broadcast">サーバー一覧をブロードキャスト</string>
+    <string name="blossom_broadcast_sent">ブロードキャスト送信済み</string>
+    <string name="blossom_drag_reorder">ドラッグして優先度を並べ替え</string>
+
+    <!-- PoW Screen -->
+    <string name="pow_description">Proof of Workはイベントにハッシュプレフィックスをマイニングし、スパム抑止剤として機能します。難易度が高いほど時間かかりますが、より多くの努力を示します。</string>
+    <string name="pow_notes">ノート</string>
+    <string name="pow_enable_notes">ノートにPoWを有効化</string>
+    <string name="pow_notes_subtitle">ノート公開前にProof of Workをマイニング</string>
+    <string name="pow_notes_difficulty">ノートの難易度</string>
+    <string name="pow_reactions">リアクション</string>
+    <string name="pow_enable_reactions">リアクションにPoWを有効化</string>
+    <string name="pow_reactions_subtitle">リアクションでProof of Workをマイニング（低難易度では1秒未満）</string>
+    <string name="pow_reactions_difficulty">リアクションの難易度</string>
+    <string name="pow_dms">ダイレクトメッセージ</string>
+    <string name="pow_enable_dms">DMにPoWを有効化</string>
+    <string name="pow_dms_subtitle">DM送信前にGift WrapsでProof of Workをマイニング</string>
+    <string name="pow_dms_difficulty">DMの難易度</string>
+    <string name="pow_bits_format">%d bits</string>
+
+    <!-- Social Graph Screen -->
+    <string name="social_not_computed">ソーシャルグラフはまだ計算されていません。</string>
+    <string name="social_compute_now">今すぐ計算</string>
+    <string name="social_fetching_follows">フォローリストを取得中...</string>
+    <string name="social_building_graph">グラフを構築中...</string>
+    <string name="social_computing_network">ネットワークを計算中...</string>
+    <string name="social_filtering">フィルター中...</string>
+    <string name="social_fetching_relays">リレーリストを取得中...</string>
+    <string name="social_warning">2\u20135分かかる場合があります。完了するまでこの画面にとどまってください。</string>
+    <string name="social_top_accounts">トップアカウント</string>
+    <string name="social_qualified_from">%2$d人のフォローから%1$d人が適合</string>
+    <string name="social_recompute">再計算</string>
+    <string name="social_view_profile">プロフィールを見る</string>
+    <string name="social_followed_by">%d人にフォローされている</string>
+    <string name="social_followed_by_yours">あなたのフォロワー%d人にフォローされている</string>
+    <string name="social_complete">計算完了</string>
+    <string name="social_done">完了</string>
+    <string name="social_failed">検出に失敗しました</string>
+    <string name="social_retry">再試行</string>
+    <string name="social_stat_follows">フォロー</string>
+    <string name="social_stat_2nd_degree">2次 degree</string>
+    <string name="social_stat_qualified">適格</string>
+    <string name="social_stat_relays">リレー</string>
+    <string name="social_stat_follows_1st">フォロー(1次)</string>
+    <string name="social_stat_2nd_users">2次ユーザー</string>
+    <string name="social_stat_qualified_thresh">適格(しきい値)</string>
+    <string name="social_stat_relays_covered">カバーされたリレー</string>
+
     <string name="cd_preview">プレビュー</string>
     <string name="cd_check_relay_backups">リレーバックアップを確認</string>
     <string name="cd_copy_address">アドレスをコピー</string>

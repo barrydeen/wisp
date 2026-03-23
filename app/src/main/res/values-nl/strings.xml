@@ -301,6 +301,79 @@
     <string name="cd_add_new">Nieuw Toevoegen</string>
     <string name="cd_create_emoji_set">Emoji Set Maken</string>
     <string name="cd_upload_image">Afbeelding Uploaden</string>
+
+    <!-- Custom Emoji Screen -->
+    <string name="emoji_quick_reactions">Snelle Reacties</string>
+    <string name="emoji_quick_reactions_description">Unicode emoji\'s getoond in de reactiepicker</string>
+    <string name="emoji_custom_image_emojis">Aangepaste Afbeelding Emoji\'s</string>
+    <string name="emoji_custom_image_description">Afbeelding emoji\'s van je emoji lijst (kind 10030)</string>
+    <string name="emoji_available_custom">Beschikbare Aangepaste Emoji\'s</string>
+    <string name="emoji_available_description">Alle aangepaste emoji\'s beschikbaar in je reactiepicker</string>
+    <string name="emoji_manage">Beheren</string>
+    <string name="emoji_remove">Verwijderen</string>
+    <string name="emoji_save_removed">Opslaan (%d verwijderd)</string>
+    <string name="emoji_my_sets">Mijn Emoji Sets</string>
+    <string name="emoji_no_sets_yet">Nog geen emoji sets. Tik + om er een te maken.</string>
+    <string name="emoji_add_custom">Aangepaste Emoji Toevoegen</string>
+    <string name="emoji_shortcode">Shortcode</string>
+    <string name="emoji_count_format">%d emoji\'s</string>
+    <string name="emoji_library_title">Emoji Bibliotheek</string>
+    <string name="emoji_add_from_keyboard">Van toetsenbord toevoegen</string>
+    <string name="emoji_add_from_keyboard_hint">Typ of plak een emoji</string>
+    <string name="emoji_dialog_add">Toevoegen</string>
+    <string name="emoji_dialog_cancel">Annuleren</string>
+    <string name="emoji_done_format">Klaar (%d)</string>
+
+    <!-- Blossom/Media Servers Screen -->
+    <string name="blossom_title">Mediaservers</string>
+    <string name="blossom_broadcast">Serverlijst publiceren</string>
+    <string name="blossom_broadcast_sent">Publicatie verzonden</string>
+    <string name="blossom_drag_reorder">Sleep om prioriteit te wijzigen</string>
+
+    <!-- PoW Screen -->
+    <string name="pow_description">Proof of Work mijn een hash-prefix op uw evenementen, dienend als een spam-afschrikmiddel. Hogere moeilijkheidsgraad duurt langer maar signaleert meer moeite.</string>
+    <string name="pow_notes">Notities</string>
+    <string name="pow_enable_notes">PoW inschakelen voor notities</string>
+    <string name="pow_notes_subtitle">Mijn proof of work voor het publiceren van notities</string>
+    <string name="pow_notes_difficulty">Notitie moeilijkheidsgraad</string>
+    <string name="pow_reactions">Reacties</string>
+    <string name="pow_enable_reactions">PoW inschakelen voor reacties</string>
+    <string name="pow_reactions_subtitle">Mijn proof of work op reacties (minder dan een seconde bij lage moeilijkheidsgraad)</string>
+    <string name="pow_reactions_difficulty">Reactie moeilijkheidsgraad</string>
+    <string name="pow_dms">Directe Berichten</string>
+    <string name="pow_enable_dms">PoW inschakelen voor DMs</string>
+    <string name="pow_dms_subtitle">Mijn proof of work op gift wraps voordat u DMs verzendt</string>
+    <string name="pow_dms_difficulty">DM moeilijkheidsgraad</string>
+    <string name="pow_bits_format">%d bits</string>
+
+    <!-- Social Graph Screen -->
+    <string name="social_not_computed">Sociaal graaf is nog niet berekend.</string>
+    <string name="social_compute_now">Nu Berekenen</string>
+    <string name="social_fetching_follows">Ophalen van follow-lijsten...</string>
+    <string name="social_building_graph">Graaf bouwen...</string>
+    <string name="social_computing_network">Netwerk berekenen...</string>
+    <string name="social_filtering">Filteren...</string>
+    <string name="social_fetching_relays">Ophalen van relay-lijsten...</string>
+    <string name="social_warning">Dit kan 2\u20135 minuten duren. Blijf op dit scherm tot het klaar is.</string>
+    <string name="social_top_accounts">Top Accounts</string>
+    <string name="social_qualified_from">%1$d gekwalificeerd van %2$d follows</string>
+    <string name="social_recompute">Opnieuw Berekenen</string>
+    <string name="social_view_profile">Profiel Bekijken</string>
+    <string name="social_followed_by">gevolgd door %d</string>
+    <string name="social_followed_by_yours">Gevolgd door %d van je follows</string>
+    <string name="social_complete">Berekening voltooid</string>
+    <string name="social_done">Klaar</string>
+    <string name="social_failed">Ontdekking mislukt</string>
+    <string name="social_retry">Opnieuw Proberen</string>
+    <string name="social_stat_follows">Follows</string>
+    <string name="social_stat_2nd_degree">2e graad</string>
+    <string name="social_stat_qualified">Gekwalificeerd</string>
+    <string name="social_stat_relays">Relays</string>
+    <string name="social_stat_follows_1st">Follows (1e graad)</string>
+    <string name="social_stat_2nd_users">2e graad gebruikers</string>
+    <string name="social_stat_qualified_thresh">Gekwalificeerd (drempel)</string>
+    <string name="social_stat_relays_covered">Relays gedekt</string>
+
     <string name="cd_preview">Voorbeeld</string>
     <string name="cd_check_relay_backups">Relay Backups Controleren</string>
     <string name="cd_copy_address">Adres Kopiëren</string>

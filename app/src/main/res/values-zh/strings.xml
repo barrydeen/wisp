@@ -301,6 +301,79 @@
     <string name="cd_add_new">新增</string>
     <string name="cd_create_emoji_set">创建表情包</string>
     <string name="cd_upload_image">上传图片</string>
+
+    <!-- Custom Emoji Screen -->
+    <string name="emoji_quick_reactions">快速反应</string>
+    <string name="emoji_quick_reactions_description">反应选择器中显示的Unicode表情</string>
+    <string name="emoji_custom_image_emojis">自定义图片表情</string>
+    <string name="emoji_custom_image_description">来自表情列表的图片表情 (kind 10030)</string>
+    <string name="emoji_available_custom">可用的自定义表情</string>
+    <string name="emoji_available_description">反应选择器中所有可用的自定义表情</string>
+    <string name="emoji_manage">管理</string>
+    <string name="emoji_remove">移除</string>
+    <string name="emoji_save_removed">保存（已移除 %d 个）</string>
+    <string name="emoji_my_sets">我的表情集</string>
+    <string name="emoji_no_sets_yet">还没有表情集。点击 + 创建一个。</string>
+    <string name="emoji_add_custom">添加自定义表情</string>
+    <string name="emoji_shortcode">短代码</string>
+    <string name="emoji_count_format">%d 个表情</string>
+    <string name="emoji_library_title">表情库</string>
+    <string name="emoji_add_from_keyboard">从键盘添加</string>
+    <string name="emoji_add_from_keyboard_hint">输入或粘贴表情</string>
+    <string name="emoji_dialog_add">添加</string>
+    <string name="emoji_dialog_cancel">取消</string>
+    <string name="emoji_done_format">完成 (%d)</string>
+
+    <!-- Blossom/Media Servers Screen -->
+    <string name="blossom_title">媒体服务器</string>
+    <string name="blossom_broadcast">广播服务器列表</string>
+    <string name="blossom_broadcast_sent">广播已发送</string>
+    <string name="blossom_drag_reorder">拖动以重新排序优先级</string>
+
+    <!-- PoW Screen -->
+    <string name="pow_description">工作量证明为你的活动挖掘哈希前缀，作为垃圾邮件威慑。难度越高需要越长时间，但表明更多努力。</string>
+    <string name="pow_notes">帖子</string>
+    <string name="pow_enable_notes">为帖子启用 PoW</string>
+    <string name="pow_notes_subtitle">在发布帖子前挖掘工作量证明</string>
+    <string name="pow_notes_difficulty">帖子难度</string>
+    <string name="pow_reactions">反应</string>
+    <string name="pow_enable_reactions">为反应启用 PoW</string>
+    <string name="pow_reactions_subtitle">在反应上挖掘工作量证明（低难度下不到一秒）</string>
+    <string name="pow_reactions_difficulty">反应难度</string>
+    <string name="pow_dms">私信</string>
+    <string name="pow_enable_dms">为私信启用 PoW</string>
+    <string name="pow_dms_subtitle">在发送私信前在 Gift Wraps 上挖掘工作量证明</string>
+    <string name="pow_dms_difficulty">私信难度</string>
+    <string name="pow_bits_format">%d bits</string>
+
+    <!-- Social Graph Screen -->
+    <string name="social_not_computed">社交图谱尚未计算。</string>
+    <string name="social_compute_now">立即计算</string>
+    <string name="social_fetching_follows">正在获取关注列表...</string>
+    <string name="social_building_graph">正在构建图谱...</string>
+    <string name="social_computing_network">正在计算网络...</string>
+    <string name="social_filtering">正在筛选...</string>
+    <string name="social_fetching_relays">正在获取中继列表...</string>
+    <string name="social_warning">这可能需要2\u20155分钟。请停留在此屏幕直至完成。</string>
+    <string name="social_top_accounts">热门账户</string>
+    <string name="social_qualified_from">%2$d关注中有%1$d个合格</string>
+    <string name="social_recompute">重新计算</string>
+    <string name="social_view_profile">查看资料</string>
+    <string name="social_followed_by">被%d人关注</string>
+    <string name="social_followed_by_yours">被你的%d个关注者关注</string>
+    <string name="social_complete">计算完成</string>
+    <string name="social_done">完成</string>
+    <string name="social_failed">发现失败</string>
+    <string name="social_retry">重试</string>
+    <string name="social_stat_follows">关注</string>
+    <string name="social_stat_2nd_degree">二度</string>
+    <string name="social_stat_qualified">合格</string>
+    <string name="social_stat_relays">中继</string>
+    <string name="social_stat_follows_1st">关注(一度)</string>
+    <string name="social_stat_2nd_users">二度用户</string>
+    <string name="social_stat_qualified_thresh">合格(阈值)</string>
+    <string name="social_stat_relays_covered">覆盖的中继</string>
+
     <string name="cd_preview">预览</string>
     <string name="cd_check_relay_backups">检查中继备份</string>
     <string name="cd_copy_address">复制地址</string>

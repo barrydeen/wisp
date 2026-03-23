@@ -301,6 +301,79 @@
     <string name="cd_add_new">Neu hinzufügen</string>
     <string name="cd_create_emoji_set">Emoji-Set erstellen</string>
     <string name="cd_upload_image">Bild hochladen</string>
+
+    <!-- Custom Emoji Screen -->
+    <string name="emoji_quick_reactions">Schnelle Reaktionen</string>
+    <string name="emoji_quick_reactions_description">Unicode-Emojis in der Reaktionsauswahl</string>
+    <string name="emoji_custom_image_emojis">Benutzerdefinierte Bild-Emojis</string>
+    <string name="emoji_custom_image_description">Bild-Emojis aus deiner Emoji-Liste (kind 10030)</string>
+    <string name="emoji_available_custom">Verfügbare benutzerdefinierte Emojis</string>
+    <string name="emoji_available_description">Alle benutzerdefinierten Emojis in deiner Reaktionsauswahl</string>
+    <string name="emoji_manage">Verwalten</string>
+    <string name="emoji_remove">Entfernen</string>
+    <string name="emoji_save_removed">Speichern (%d entfernt)</string>
+    <string name="emoji_my_sets">Meine Emoji-Sets</string>
+    <string name="emoji_no_sets_yet">Noch keine Emoji-Sets. Tippe auf + um eines zu erstellen.</string>
+    <string name="emoji_add_custom">Benutzerdefiniertes Emoji hinzufügen</string>
+    <string name="emoji_shortcode">Shortcode</string>
+    <string name="emoji_count_format">%d Emojis</string>
+    <string name="emoji_library_title">Emoji-Bibliothek</string>
+    <string name="emoji_add_from_keyboard">Vom Keyboard hinzufügen</string>
+    <string name="emoji_add_from_keyboard_hint">Emoji eingeben oder einfügen</string>
+    <string name="emoji_dialog_add">Hinzufügen</string>
+    <string name="emoji_dialog_cancel">Abbrechen</string>
+    <string name="emoji_done_format">Fertig (%d)</string>
+
+    <!-- Blossom/Media Servers Screen -->
+    <string name="blossom_title">Medienserver</string>
+    <string name="blossom_broadcast">Serverliste veröffentlichen</string>
+    <string name="blossom_broadcast_sent">Veröffentlichung gesendet</string>
+    <string name="blossom_drag_reorder">Ziehen um Priorität zu ändern</string>
+
+    <!-- PoW Screen -->
+    <string name="pow_description">Proof of Work schürft einen Hash-Präfix für deine Events und dient als Spam-Schutz. Höhere Schwierigkeit dauert länger, signalisiert aber mehr Aufwand.</string>
+    <string name="pow_notes">Notizen</string>
+    <string name="pow_enable_notes">PoW für Notizen aktivieren</string>
+    <string name="pow_notes_subtitle">Proof of Work vor dem Veröffentlichen von Notizen schürfen</string>
+    <string name="pow_notes_difficulty">Notiz-Schwierigkeit</string>
+    <string name="pow_reactions">Reaktionen</string>
+    <string name="pow_enable_reactions">PoW für Reaktionen aktivieren</string>
+    <string name="pow_reactions_subtitle">Proof of Work für Reaktionen schürfen (unter einer Sekunde bei niedriger Schwierigkeit)</string>
+    <string name="pow_reactions_difficulty">Reaktions-Schwierigkeit</string>
+    <string name="pow_dms">Direktnachrichten</string>
+    <string name="pow_enable_dms">PoW für DMs aktivieren</string>
+    <string name="pow_dms_subtitle">Proof of Work auf Gift Wraps vor dem Senden von DMs schürfen</string>
+    <string name="pow_dms_difficulty">DM-Schwierigkeit</string>
+    <string name="pow_bits_format">%d bits</string>
+
+    <!-- Social Graph Screen -->
+    <string name="social_not_computed">Sozialer Graph wurde noch nicht berechnet.</string>
+    <string name="social_compute_now">Jetzt berechnen</string>
+    <string name="social_fetching_follows">Follow-Listen werden abgerufen...</string>
+    <string name="social_building_graph">Graph wird aufgebaut...</string>
+    <string name="social_computing_network">Netzwerk wird berechnet...</string>
+    <string name="social_filtering">Wird gefiltert...</string>
+    <string name="social_fetching_relays">Relay-Listen werden abgerufen...</string>
+    <string name="social_warning">Dies kann 2\u20135 Minuten dauern. Bitte bleiben Sie auf diesem Bildschirm, bis es fertig ist.</string>
+    <string name="social_top_accounts">Top-Konten</string>
+    <string name="social_qualified_from">%1$d qualifiziert aus %2$d Follows</string>
+    <string name="social_recompute">Neu berechnen</string>
+    <string name="social_view_profile">Profil ansehen</string>
+    <string name="social_followed_by">gefolgt von %d</string>
+    <string name="social_followed_by_yours">Von %d Ihrer Follows gefolgt</string>
+    <string name="social_complete">Berechnung abgeschlossen</string>
+    <string name="social_done">Fertig</string>
+    <string name="social_failed">Erkennung fehlgeschlagen</string>
+    <string name="social_retry">Wiederholen</string>
+    <string name="social_stat_follows">Follows</string>
+    <string name="social_stat_2nd_degree">2. Grad</string>
+    <string name="social_stat_qualified">Qualifiziert</string>
+    <string name="social_stat_relays">Relays</string>
+    <string name="social_stat_follows_1st">Follows (1. Grad)</string>
+    <string name="social_stat_2nd_users">Benutzer 2. Grades</string>
+    <string name="social_stat_qualified_thresh">Qualifiziert (Schwellenwert)</string>
+    <string name="social_stat_relays_covered">Abgedeckte Relays</string>
+
     <string name="cd_preview">Vorschau</string>
     <string name="cd_check_relay_backups">Relay-Backups prüfen</string>
     <string name="cd_copy_address">Adresse kopieren</string>

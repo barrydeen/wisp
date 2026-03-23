@@ -301,6 +301,79 @@
     <string name="cd_add_new">새로 추가</string>
     <string name="cd_create_emoji_set">이모지 세트 만들기</string>
     <string name="cd_upload_image">이미지 업로드</string>
+
+    <!-- Custom Emoji Screen -->
+    <string name="emoji_quick_reactions">빠른 반응</string>
+    <string name="emoji_quick_reactions_description">반응 선택기에 표시되는 유니코드 이모지</string>
+    <string name="emoji_custom_image_emojis">커스텀 이미지 이모지</string>
+    <string name="emoji_custom_image_description">이모지 목록의 이미지 이모지 (kind 10030)</string>
+    <string name="emoji_available_custom">사용 가능한 커스텀 이모지</string>
+    <string name="emoji_available_description">반응 선택기에서 사용할 수 있는 모든 커스텀 이모지</string>
+    <string name="emoji_manage">관리</string>
+    <string name="emoji_remove">제거</string>
+    <string name="emoji_save_removed">저장 (%d개 제거됨)</string>
+    <string name="emoji_my_sets">내 이모지 세트</string>
+    <string name="emoji_no_sets_yet">아직 이모지 세트가 없습니다. +를 눌러 생성하세요.</string>
+    <string name="emoji_add_custom">커스텀 이모지 추가</string>
+    <string name="emoji_shortcode">쇼트코드</string>
+    <string name="emoji_count_format">%d개의 이모지</string>
+    <string name="emoji_library_title">이모지 라이브러리</string>
+    <string name="emoji_add_from_keyboard">키보드에서 추가</string>
+    <string name="emoji_add_from_keyboard_hint">이모지를 입력하거나 붙여넣기</string>
+    <string name="emoji_dialog_add">추가</string>
+    <string name="emoji_dialog_cancel">취소</string>
+    <string name="emoji_done_format">완료 (%d)</string>
+
+    <!-- Blossom/Media Servers Screen -->
+    <string name="blossom_title">미디어 서버</string>
+    <string name="blossom_broadcast">서버 목록 브로드캐스트</string>
+    <string name="blossom_broadcast_sent">브로드캐스트 전송됨</string>
+    <string name="blossom_drag_reorder">드래그하여 우선순위 변경</string>
+
+    <!-- PoW Screen -->
+    <string name="pow_description">Proof of Work는 이벤트에 해시 접두사를 마이닝하여 스팸 방지 역할을 합니다. 난이도가 높을수록 오래 걸리지만 더 많은 노력을 의미합니다.</string>
+    <string name="pow_notes">노트</string>
+    <string name="pow_enable_notes">노트에 PoW 활성화</string>
+    <string name="pow_notes_subtitle">노트 게시 전에 Proof of Work 마이닝</string>
+    <string name="pow_notes_difficulty">노트 난이도</string>
+    <string name="pow_reactions">반응</string>
+    <string name="pow_enable_reactions">반응에 PoW 활성화</string>
+    <string name="pow_reactions_subtitle">반응에서 Proof of Work 마이닝 (낮은 난이도에서 1초 미만)</string>
+    <string name="pow_reactions_difficulty">반응 난이도</string>
+    <string name="pow_dms">다이렉트 메시지</string>
+    <string name="pow_enable_dms">DM에 PoW 활성화</string>
+    <string name="pow_dms_subtitle">DM 전송 전에 Gift Wraps에서 Proof of Work 마이닝</string>
+    <string name="pow_dms_difficulty">DM 난이도</string>
+    <string name="pow_bits_format">%d bits</string>
+
+    <!-- Social Graph Screen -->
+    <string name="social_not_computed">소셜 그래프가 아직 계산되지 않았습니다.</string>
+    <string name="social_compute_now">지금 계산</string>
+    <string name="social_fetching_follows">팔로우 목록 가져오는 중...</string>
+    <string name="social_building_graph">그래프 구축 중...</string>
+    <string name="social_computing_network">네트워크 계산 중...</string>
+    <string name="social_filtering">필터링 중...</string>
+    <string name="social_fetching_relays">릴레이 목록 가져오는 중...</string>
+    <string name="social_warning">2\u20135분이 걸릴 수 있습니다. 완료될 때까지 이 화면을 유지하세요.</string>
+    <string name="social_top_accounts">상위 계정</string>
+    <string name="social_qualified_from">%2$d명의 팔로우 중 %1$d명 적합</string>
+    <string name="social_recompute">재계산</string>
+    <string name="social_view_profile">프로필 보기</string>
+    <string name="social_followed_by">%d명에게 팔로우됨</string>
+    <string name="social_followed_by_yours">당신의 팔로워 중 %d명에게 팔로우됨</string>
+    <string name="social_complete">계산 완료</string>
+    <string name="social_done">완료</string>
+    <string name="social_failed">검색 실패</string>
+    <string name="social_retry">재시도</string>
+    <string name="social_stat_follows">팔로우</string>
+    <string name="social_stat_2nd_degree">2차</string>
+    <string name="social_stat_qualified">적합</string>
+    <string name="social_stat_relays">릴레이</string>
+    <string name="social_stat_follows_1st">팔로우 (1차)</string>
+    <string name="social_stat_2nd_users">2차 사용자</string>
+    <string name="social_stat_qualified_thresh">적합 (임계값)</string>
+    <string name="social_stat_relays_covered">커버된 릴레이</string>
+
     <string name="cd_preview">미리보기</string>
     <string name="cd_check_relay_backups">릴레이 백업 확인</string>
     <string name="cd_copy_address">주소 복사</string>
