@@ -277,6 +277,79 @@
     <string name="cd_add_new">Add new</string>
     <string name="cd_create_emoji_set">Create Emoji Set</string>
     <string name="cd_upload_image">Upload image</string>
+
+    <!-- Custom Emoji Screen -->
+    <string name="emoji_quick_reactions">Quick Reactions</string>
+    <string name="emoji_quick_reactions_description">Unicode emojis shown in the reaction picker</string>
+    <string name="emoji_custom_image_emojis">Custom Image Emojis</string>
+    <string name="emoji_custom_image_description">Image emojis from your emoji list (kind 10030)</string>
+    <string name="emoji_available_custom">Available Custom Emojis</string>
+    <string name="emoji_available_description">All custom emojis available in your reaction picker</string>
+    <string name="emoji_manage">Manage</string>
+    <string name="emoji_remove">Remove</string>
+    <string name="emoji_save_removed">Save (%d removed)</string>
+    <string name="emoji_my_sets">My Emoji Sets</string>
+    <string name="emoji_no_sets_yet">No emoji sets yet. Tap + to create one.</string>
+    <string name="emoji_add_custom">Add Custom Emoji</string>
+    <string name="emoji_shortcode">Shortcode</string>
+    <string name="emoji_count_format">%d emojis</string>
+    <string name="emoji_library_title">Emoji Library</string>
+    <string name="emoji_add_from_keyboard">Add from Keyboard</string>
+    <string name="emoji_add_from_keyboard_hint">Type or paste an emoji</string>
+    <string name="emoji_dialog_add">Add</string>
+    <string name="emoji_dialog_cancel">Cancel</string>
+    <string name="emoji_done_format">Done (%d)</string>
+
+    <!-- Blossom/Media Servers Screen -->
+    <string name="blossom_title">Media Servers</string>
+    <string name="blossom_broadcast">Broadcast Server List</string>
+    <string name="blossom_broadcast_sent">Broadcast Sent</string>
+    <string name="blossom_drag_reorder">Drag to reorder priority</string>
+
+    <!-- PoW Screen -->
+    <string name="pow_description">Proof of Work mines a hash prefix on your events, acting as a spam deterrent. Higher difficulty takes longer but signals more effort.</string>
+    <string name="pow_notes">Notes</string>
+    <string name="pow_enable_notes">Enable PoW for notes</string>
+    <string name="pow_notes_subtitle">Mine proof of work before publishing notes</string>
+    <string name="pow_notes_difficulty">Note difficulty</string>
+    <string name="pow_reactions">Reactions</string>
+    <string name="pow_enable_reactions">Enable PoW for reactions</string>
+    <string name="pow_reactions_subtitle">Mine proof of work on reactions (sub-second at low difficulty)</string>
+    <string name="pow_reactions_difficulty">Reaction difficulty</string>
+    <string name="pow_dms">Direct Messages</string>
+    <string name="pow_enable_dms">Enable PoW for DMs</string>
+    <string name="pow_dms_subtitle">Mine proof of work on gift wraps before sending DMs</string>
+    <string name="pow_dms_difficulty">DM difficulty</string>
+    <string name="pow_bits_format">%d bits</string>
+
+    <!-- Social Graph Screen -->
+    <string name="social_not_computed">Social graph has not been computed yet.</string>
+    <string name="social_compute_now">Compute Now</string>
+    <string name="social_fetching_follows">Fetching follow lists...</string>
+    <string name="social_building_graph">Building graph...</string>
+    <string name="social_computing_network">Computing network...</string>
+    <string name="social_filtering">Filtering...</string>
+    <string name="social_fetching_relays">Fetching relay lists...</string>
+    <string name="social_warning">This may take 2\u20135 minutes. Please stay on this screen until it finishes.</string>
+    <string name="social_top_accounts">Top Accounts</string>
+    <string name="social_qualified_from">%1$d qualified from %2$d follows</string>
+    <string name="social_recompute">Recompute</string>
+    <string name="social_view_profile">View Profile</string>
+    <string name="social_followed_by">followed by %d</string>
+    <string name="social_followed_by_yours">Followed by %d of your follows</string>
+    <string name="social_complete">Computation complete</string>
+    <string name="social_done">Done</string>
+    <string name="social_failed">Discovery failed</string>
+    <string name="social_retry">Retry</string>
+    <string name="social_stat_follows">Follows</string>
+    <string name="social_stat_2nd_degree">2nd degree</string>
+    <string name="social_stat_qualified">Qualified</string>
+    <string name="social_stat_relays">Relays</string>
+    <string name="social_stat_follows_1st">Follows (1st degree)</string>
+    <string name="social_stat_2nd_users">2nd degree users</string>
+    <string name="social_stat_qualified_thresh">Qualified (threshold)</string>
+    <string name="social_stat_relays_covered">Relays covered</string>
+
     <string name="cd_preview">Preview</string>
     <string name="cd_check_relay_backups">Check relay backups</string>
     <string name="cd_copy_address">Copy address</string>

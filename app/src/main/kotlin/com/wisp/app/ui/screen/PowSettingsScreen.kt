@@ -31,7 +31,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import com.wisp.app.repo.PowPreferences
+import com.wisp.app.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,7 +51,7 @@ fun PowSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Proof of Work") },
+                title = { Text(stringResource(R.string.drawer_proof_of_work)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
@@ -69,7 +71,7 @@ fun PowSettingsScreen(
                 .padding(16.dp)
         ) {
             Text(
-                text = "Proof of Work mines a hash prefix on your events, acting as a spam deterrent. Higher difficulty takes longer but signals more effort.",
+                text = stringResource(R.string.pow_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -78,7 +80,7 @@ fun PowSettingsScreen(
 
             // Notes section
             Text(
-                text = "Notes",
+                text = stringResource(R.string.pow_notes),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -88,9 +90,9 @@ fun PowSettingsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Enable PoW for notes", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.pow_enable_notes), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Mine proof of work before publishing notes",
+                        stringResource(R.string.pow_notes_subtitle),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -106,7 +108,7 @@ fun PowSettingsScreen(
             if (noteEnabled) {
                 Spacer(Modifier.height(12.dp))
                 DifficultySelector(
-                    label = "Note difficulty",
+                    label = stringResource(R.string.pow_notes_difficulty),
                     value = noteDifficulty,
                     onValueChange = {
                         noteDifficulty = it
@@ -119,7 +121,7 @@ fun PowSettingsScreen(
 
             // Reactions section
             Text(
-                text = "Reactions",
+                text = stringResource(R.string.pow_reactions),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -129,9 +131,9 @@ fun PowSettingsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Enable PoW for reactions", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.pow_enable_reactions), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Mine proof of work on reactions (sub-second at low difficulty)",
+                        stringResource(R.string.pow_reactions_subtitle),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -147,7 +149,7 @@ fun PowSettingsScreen(
             if (reactionEnabled) {
                 Spacer(Modifier.height(12.dp))
                 DifficultySelector(
-                    label = "Reaction difficulty",
+                    label = stringResource(R.string.pow_reactions_difficulty),
                     value = reactionDifficulty,
                     onValueChange = {
                         reactionDifficulty = it
@@ -160,7 +162,7 @@ fun PowSettingsScreen(
 
             // DMs section
             Text(
-                text = "Direct Messages",
+                text = stringResource(R.string.pow_dms),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -170,9 +172,9 @@ fun PowSettingsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Enable PoW for DMs", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.pow_enable_dms), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Mine proof of work on gift wraps before sending DMs",
+                        stringResource(R.string.pow_dms_subtitle),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -188,7 +190,7 @@ fun PowSettingsScreen(
             if (dmEnabled) {
                 Spacer(Modifier.height(12.dp))
                 DifficultySelector(
-                    label = "DM difficulty",
+                    label = stringResource(R.string.pow_dms_difficulty),
                     value = dmDifficulty,
                     onValueChange = {
                         dmDifficulty = it
@@ -223,7 +225,7 @@ private fun DifficultySelector(
             Text("\u2212", style = MaterialTheme.typography.titleMedium)
         }
         Text(
-            text = "$value bits",
+            text = stringResource(R.string.pow_bits_format, value),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.width(56.dp),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center

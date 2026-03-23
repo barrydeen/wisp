@@ -118,12 +118,12 @@ fun CustomEmojiScreen(
             // Quick Reactions section
             item {
                 Text(
-                    text = "Quick Reactions",
+                    text = stringResource(R.string.emoji_quick_reactions),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
                 )
                 Text(
-                    text = "Unicode emojis shown in the reaction picker",
+                    text = stringResource(R.string.emoji_quick_reactions_description),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -169,12 +169,12 @@ fun CustomEmojiScreen(
             item {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Custom Image Emojis",
+                    text = stringResource(R.string.emoji_custom_image_emojis),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
                 Text(
-                    text = "Image emojis from your emoji list (kind 10030)",
+                    text = stringResource(R.string.emoji_custom_image_description),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -231,11 +231,11 @@ fun CustomEmojiScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Available Custom Emojis",
+                                text = stringResource(R.string.emoji_available_custom),
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Text(
-                                text = "All custom emojis available in your reaction picker",
+                                text = stringResource(R.string.emoji_available_description),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -245,7 +245,7 @@ fun CustomEmojiScreen(
                                 managingEmojis = true
                                 removedShortcodes = emptySet()
                             }) {
-                                Text("Manage")
+                                Text(stringResource(R.string.emoji_manage))
                             }
                         }
                     }
@@ -287,7 +287,7 @@ fun CustomEmojiScreen(
                                     ) {
                                         Icon(
                                             Icons.Default.Close,
-                                            contentDescription = "Remove",
+                                            contentDescription = stringResource(R.string.emoji_remove),
                                             tint = MaterialTheme.colorScheme.onError,
                                             modifier = Modifier.size(14.dp).padding(2.dp)
                                         )
@@ -321,7 +321,7 @@ fun CustomEmojiScreen(
                                 },
                                 enabled = removedShortcodes.isNotEmpty()
                             ) {
-                                Text("Save (${removedShortcodes.size} removed)")
+                                Text(stringResource(R.string.emoji_save_removed, removedShortcodes.size))
                             }
                         }
                     }
@@ -332,7 +332,7 @@ fun CustomEmojiScreen(
             item {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "My Emoji Sets",
+                    text = stringResource(R.string.emoji_my_sets),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
@@ -340,7 +340,7 @@ fun CustomEmojiScreen(
             if (ownSets.isEmpty()) {
                 item {
                     Text(
-                        text = "No emoji sets yet. Tap + to create one.",
+                        text = stringResource(R.string.emoji_no_sets_yet),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -386,13 +386,13 @@ fun CustomEmojiScreen(
         }
         AlertDialog(
             onDismissRequest = { showAddDirectEmojiDialog = false },
-            title = { Text("Add Custom Emoji") },
+            title = { Text(stringResource(R.string.emoji_add_custom)) },
             text = {
                 Column {
                     OutlinedTextField(
                         value = shortcode,
                         onValueChange = { shortcode = it.replace(Regex("[^a-zA-Z0-9_]"), "") },
-                        placeholder = { Text("Shortcode") },
+                        placeholder = { Text(stringResource(R.string.emoji_shortcode)) },
                         singleLine = true
                     )
                     Row(
@@ -495,7 +495,7 @@ private fun EmojiSetCard(
                         style = MaterialTheme.typography.titleSmall
                     )
                     Text(
-                        text = "${set.emojis.size} emojis",
+                        text = stringResource(R.string.emoji_count_format, set.emojis.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

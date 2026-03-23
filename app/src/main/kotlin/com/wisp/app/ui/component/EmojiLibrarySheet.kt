@@ -46,6 +46,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import androidx.compose.ui.res.stringResource
+import com.wisp.app.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -238,7 +240,7 @@ fun EmojiLibrarySheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TextButton(onClick = { showKeyboardDialog = true }) {
-                    Text("Add from Keyboard")
+                    Text(stringResource(R.string.emoji_add_from_keyboard))
                 }
                 Button(
                     onClick = {
@@ -247,7 +249,10 @@ fun EmojiLibrarySheet(
                     },
                     enabled = selectedEmojis.isNotEmpty()
                 ) {
-                    Text(if (selectedEmojis.isEmpty()) "Done" else "Done (${selectedEmojis.size})")
+                    Text(
+                        if (selectedEmojis.isEmpty()) stringResource(R.string.emoji_done_format, 0)
+                        else stringResource(R.string.emoji_done_format, selectedEmojis.size)
+                    )
                 }
             }
 
@@ -259,12 +264,12 @@ fun EmojiLibrarySheet(
         var text by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showKeyboardDialog = false },
-            title = { Text("Add Emoji") },
+            title = { Text(stringResource(R.string.emoji_add_custom)) },
             text = {
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
-                    placeholder = { Text("Type or paste an emoji") },
+                    placeholder = { Text(stringResource(R.string.emoji_add_from_keyboard_hint)) },
                     singleLine = true
                 )
             },
@@ -278,10 +283,10 @@ fun EmojiLibrarySheet(
                         showKeyboardDialog = false
                     },
                     enabled = text.isNotBlank()
-                ) { Text("Add") }
+                ) { Text(stringResource(R.string.emoji_dialog_add)) }
             },
             dismissButton = {
-                TextButton(onClick = { showKeyboardDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { showKeyboardDialog = false }) { Text(stringResource(R.string.emoji_dialog_cancel)) }
             }
         )
     }

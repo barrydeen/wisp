@@ -272,6 +272,79 @@
     <string name="cd_add_new">Добавить новый</string>
     <string name="cd_create_emoji_set">Создать набор эмодзи</string>
     <string name="cd_upload_image">Загрузить изображение</string>
+
+    <!-- Custom Emoji Screen -->
+    <string name="emoji_quick_reactions">Быстрые реакции</string>
+    <string name="emoji_quick_reactions_description">Юникод эмодзи в выборе реакций</string>
+    <string name="emoji_custom_image_emojis">Пользовательские изображения эмодзи</string>
+    <string name="emoji_custom_image_description">Изображения эмодзи из вашего списка (kind 10030)</string>
+    <string name="emoji_available_custom">Доступные пользовательские эмодзи</string>
+    <string name="emoji_available_description">Все пользовательские эмодзи в вашем выборе реакций</string>
+    <string name="emoji_manage">Управление</string>
+    <string name="emoji_remove">Удалить</string>
+    <string name="emoji_save_removed">Сохранить (%d удалено)</string>
+    <string name="emoji_my_sets">Мои наборы эмодзи</string>
+    <string name="emoji_no_sets_yet">Пока нет наборов эмодзи. Нажмите + чтобы создать.</string>
+    <string name="emoji_add_custom">Добавить пользовательский эмодзи</string>
+    <string name="emoji_shortcode">Шорткод</string>
+    <string name="emoji_count_format">%d эмодзи</string>
+    <string name="emoji_library_title">Библиотека эмодзи</string>
+    <string name="emoji_add_from_keyboard">Добавить с клавиатуры</string>
+    <string name="emoji_add_from_keyboard_hint">Введите или вставьте эмодзи</string>
+    <string name="emoji_dialog_add">Добавить</string>
+    <string name="emoji_dialog_cancel">Отмена</string>
+    <string name="emoji_done_format">Готово (%d)</string>
+
+    <!-- Blossom/Media Servers Screen -->
+    <string name="blossom_title">Медиа-серверы</string>
+    <string name="blossom_broadcast">Опубликовать список серверов</string>
+    <string name="blossom_broadcast_sent">Публикация отправлена</string>
+    <string name="blossom_drag_reorder">Перетащите для изменения приоритета</string>
+
+    <!-- PoW Screen -->
+    <string name="pow_description">Proof of Work майнит хэш-префикс для ваших событий, служа защитой от спама. Большая сложность занимает больше времени, но показывает больше усилий.</string>
+    <string name="pow_notes">Заметки</string>
+    <string name="pow_enable_notes">Включить PoW для заметок</string>
+    <string name="pow_notes_subtitle">Майнить proof of work перед публикацией заметок</string>
+    <string name="pow_notes_difficulty">Сложность заметки</string>
+    <string name="pow_reactions">Реакции</string>
+    <string name="pow_enable_reactions">Включить PoW для реакций</string>
+    <string name="pow_reactions_subtitle">Майнить proof of work на реакциях (менее секунды при низкой сложности)</string>
+    <string name="pow_reactions_difficulty">Сложность реакции</string>
+    <string name="pow_dms">Личные сообщения</string>
+    <string name="pow_enable_dms">Включить PoW для ЛС</string>
+    <string name="pow_dms_subtitle">Майнить proof of work на gift wraps перед отправкой ЛС</string>
+    <string name="pow_dms_difficulty">Сложность ЛС</string>
+    <string name="pow_bits_format">%d bits</string>
+
+    <!-- Social Graph Screen -->
+    <string name="social_not_computed">Социальный граф ещё не вычислен.</string>
+    <string name="social_compute_now">Вычислить сейчас</string>
+    <string name="social_fetching_follows">Получение списков подписок...</string>
+    <string name="social_building_graph">Построение графа...</string>
+    <string name="social_computing_network">Вычисление сети...</string>
+    <string name="social_filtering">Фильтрация...</string>
+    <string name="social_fetching_relays">Получение списков релеев...</string>
+    <string name="social_warning">Это может занять 2\u20135 минут. Пожалуйста, оставайтесь на этом экране до завершения.</string>
+    <string name="social_top_accounts">Топ Аккаунты</string>
+    <string name="social_qualified_from">%1$d квалифицировано из %2$d подписок</string>
+    <string name="social_recompute">Пересчитать</string>
+    <string name="social_view_profile">Смотреть профиль</string>
+    <string name="social_followed_by">подписан %d</string>
+    <string name="social_followed_by_yours">Подписан %d вашими подписками</string>
+    <string name="social_complete">Вычисление завершено</string>
+    <string name="social_done">Готово</string>
+    <string name="social_failed">Обнаружение не удалось</string>
+    <string name="social_retry">Повторить</string>
+    <string name="social_stat_follows">Подписки</string>
+    <string name="social_stat_2nd_degree">2-я степень</string>
+    <string name="social_stat_qualified">Квалифицировано</string>
+    <string name="social_stat_relays">Релеи</string>
+    <string name="social_stat_follows_1st">Подписки (1-я степень)</string>
+    <string name="social_stat_2nd_users">Пользователи 2-й степени</string>
+    <string name="social_stat_qualified_thresh">Квалифицировано (порог)</string>
+    <string name="social_stat_relays_covered">Покрытые релеи</string>
+
     <string name="cd_preview">Предпросмотр</string>
     <string name="cd_check_relay_backups">Проверить бэкапы рилэев</string>
     <string name="cd_copy_address">Копировать адрес</string>
