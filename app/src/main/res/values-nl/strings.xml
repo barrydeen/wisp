@@ -336,6 +336,9 @@
 
     <!-- Social Graph Screen -->
     <string name="social_not_computed">Sociaal graaf is nog niet berekend.</string>
+
+    <!-- Console Screen -->
+    <string name="console_no_errors">Geen fouten gelogd</string>
     <string name="social_compute_now">Nu Berekenen</string>
     <string name="social_fetching_follows">Ophalen van follow-lijsten...</string>
     <string name="social_building_graph">Graaf bouwen...</string>

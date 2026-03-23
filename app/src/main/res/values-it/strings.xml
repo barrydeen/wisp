@@ -336,6 +336,9 @@
 
     <!-- Social Graph Screen -->
     <string name="social_not_computed">Il grafo sociale non è stato ancora calcolato.</string>
+
+    <!-- Console Screen -->
+    <string name="console_no_errors">Nessun errore registrato</string>
     <string name="social_compute_now">Calcola Ora</string>
     <string name="social_fetching_follows">Recupero liste following...</string>
     <string name="social_building_graph">Costruzione grafo...</string>

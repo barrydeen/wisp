@@ -336,6 +336,9 @@
 
     <!-- Social Graph Screen -->
     <string name="social_not_computed">소셜 그래프가 아직 계산되지 않았습니다.</string>
+
+    <!-- Console Screen -->
+    <string name="console_no_errors">기록된 오류 없음</string>
     <string name="social_compute_now">지금 계산</string>
     <string name="social_fetching_follows">팔로우 목록 가져오는 중...</string>
     <string name="social_building_graph">그래프 구축 중...</string>

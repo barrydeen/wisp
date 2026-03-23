@@ -336,6 +336,9 @@
 
     <!-- Social Graph Screen -->
     <string name="social_not_computed">社交图谱尚未计算。</string>
+
+    <!-- Console Screen -->
+    <string name="console_no_errors">无错误日志</string>
     <string name="social_compute_now">立即计算</string>
     <string name="social_fetching_follows">正在获取关注列表...</string>
     <string name="social_building_graph">正在构建图谱...</string>

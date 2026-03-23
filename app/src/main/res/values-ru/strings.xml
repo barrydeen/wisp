@@ -319,6 +319,9 @@
 
     <!-- Social Graph Screen -->
     <string name="social_not_computed">Социальный граф ещё не вычислен.</string>
+
+    <!-- Console Screen -->
+    <string name="console_no_errors">Нет зарегистрированных ошибок</string>
     <string name="social_compute_now">Вычислить сейчас</string>
     <string name="social_fetching_follows">Получение списков подписок...</string>
     <string name="social_building_graph">Построение графа...</string>
