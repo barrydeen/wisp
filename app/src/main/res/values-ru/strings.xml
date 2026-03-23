@@ -563,7 +563,7 @@
     <string name="wallet_send_to">Куда</string>
     <string name="wallet_resolving">Разрешение…</string>
     <string name="wallet_confirm_payment">Подтвердить Оплату</string>
-    <string name="wallet_sats">сат</string>
+    <string name="wallet_sats">сатоши</string>
     <string name="wallet_fees">Комиссии</string>
     <string name="wallet_total_spent">Всего потрачено</string>
     <string name="wallet_pay">Оплатить</string>
