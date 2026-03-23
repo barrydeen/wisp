@@ -109,8 +109,10 @@ class EventRouter(
                     }
                     1 -> {
                         eventRepo.cacheEvent(event)
-                        val parentId = Nip10.getReplyTarget(event)
-                        if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
+                        if (!Nip10.isStandaloneQuote(event)) {
+                            val parentId = Nip10.getReplyTarget(event)
+                            if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
+                        }
                     }
                     else -> eventRepo.cacheEvent(event)
                 }
@@ -130,8 +132,10 @@ class EventRouter(
             val myPubkey = getUserPubkey()
             if (myPubkey != null && event.kind == 1) {
                 eventRepo.cacheEvent(event)
-                val parentId = Nip10.getReplyTarget(event)
-                if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
+                if (!Nip10.isStandaloneQuote(event)) {
+                    val parentId = Nip10.getReplyTarget(event)
+                    if (parentId != null) eventRepo.addReplyCount(parentId, event.id)
+                }
                 notifRepo.addEvent(event, myPubkey, replyToMyEvent = true, source = "notif-replies-etag")
                 if (eventRepo.getProfileData(event.pubkey) == null) {
                     metadataFetcher.addToPendingProfiles(event.pubkey)

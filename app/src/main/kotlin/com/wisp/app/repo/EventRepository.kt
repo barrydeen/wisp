@@ -3,6 +3,7 @@ package com.wisp.app.repo
 import android.util.Log
 import android.util.LruCache
 import com.wisp.app.nostr.Nip09
+import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Bolt11
 import com.wisp.app.nostr.Nip57
@@ -237,7 +238,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             }
             1 -> {
                 // Only show root notes in feed, not replies
-                val isReply = event.tags.any { it.size >= 2 && it[0] == "e" }
+                val isReply = Nip10.isReply(event)
                 if (!isReply) binaryInsert(event, fromFeed = true)
             }
             30023 -> {
@@ -259,7 +260,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         }
                         repostDirty = true
                         markVersionDirty()
-                        val isReply = inner.tags.any { it.size >= 2 && it[0] == "e" }
+                        val isReply = Nip10.isReply(inner)
                         // Only bump feed sort time if the reposter is a followed author.
                         // Engagement subscriptions bring in reposts from anyone — non-followed
                         // reposters should update counts but not re-sort the feed.
@@ -946,7 +947,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             if (event.created_at < sinceTimestamp) continue
             if (muteRepo?.isBlocked(event.pubkey) == true) continue
             if (deletedEventsRepo?.isDeleted(event.id) == true) continue
-            val isReply = event.tags.any { it.size >= 2 && it[0] == "e" }
+            val isReply = Nip10.isReply(event)
             if (isReply) continue
             val sortTime = feedSortTime.get(event.id) ?: event.created_at
             binaryInsert(event, sortTime = sortTime)
@@ -965,7 +966,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
         when (event.kind) {
             1 -> {
-                val isReply = event.tags.any { it.size >= 2 && it[0] == "e" }
+                val isReply = Nip10.isReply(event)
                 if (!isReply) {
                     eventCache.put(event.id, event)
                     relayHintStore?.extractHintsFromTags(event)
@@ -997,7 +998,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         }
                         repostDirty = true
                         markVersionDirty()
-                        val isReply = inner.tags.any { it.size >= 2 && it[0] == "e" }
+                        val isReply = Nip10.isReply(inner)
                         if (!isReply) {
                             eventCache.put(inner.id, inner)
                             relayHintStore?.extractHintsFromTags(inner)
@@ -1017,7 +1018,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
         when (event.kind) {
             1 -> {
-                val isReply = event.tags.any { it.size >= 2 && it[0] == "e" }
+                val isReply = Nip10.isReply(event)
                 if (!isReply) {
                     eventCache.put(event.id, event)
                     relayHintStore?.extractHintsFromTags(event)
@@ -1048,7 +1049,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         }
                         repostDirty = true
                         markVersionDirty()
-                        val isReply = inner.tags.any { it.size >= 2 && it[0] == "e" }
+                        val isReply = Nip10.isReply(inner)
                         if (!isReply) {
                             eventCache.put(inner.id, inner)
                             relayHintStore?.extractHintsFromTags(inner)

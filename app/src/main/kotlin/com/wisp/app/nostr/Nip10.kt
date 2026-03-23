@@ -8,6 +8,13 @@ object Nip10 {
      * Also adds p-tags for the original author.
      */
     /**
+     * Returns true if the event is a reply to another event.
+     * E-tags with the "mention" marker (used for quote posts) are not considered replies.
+     */
+    fun isReply(event: NostrEvent): Boolean =
+        event.tags.any { it.size >= 2 && it[0] == "e" && it.getOrNull(3) != "mention" }
+
+    /**
      * Returns the event ID this event directly replies to.
      * Checks "reply" marker first, then "root", then falls back to last e-tag (legacy).
      */
