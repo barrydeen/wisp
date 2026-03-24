@@ -144,9 +144,9 @@ private fun WelcomeStep(onContinue: () -> Unit) {
             AsyncImage(
                 model = null,
                 contentDescription = "Wisp logo",
-                placeholder = painterResource(R.drawable.ic_launcher_foreground),
-                fallback = painterResource(R.drawable.ic_launcher_foreground),
-                error = painterResource(R.drawable.ic_launcher_foreground),
+                placeholder = painterResource(R.drawable.ic_profile_placeholder),
+                fallback = painterResource(R.drawable.ic_profile_placeholder),
+                error = painterResource(R.drawable.ic_profile_placeholder),
                 modifier = Modifier.size(120.dp)
             )
 
