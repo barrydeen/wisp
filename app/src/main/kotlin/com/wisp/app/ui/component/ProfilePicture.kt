@@ -117,7 +117,7 @@ private fun HighlightedProfilePicture(
                 )
             }
     ) {
-        val fallbackPainter = painterResource(R.drawable.ic_launcher_foreground)
+        val fallbackPainter = painterResource(R.drawable.ic_profile_placeholder)
         AsyncImage(
             model = url,
             contentDescription = "Profile picture",
@@ -162,7 +162,7 @@ private fun BaseProfilePicture(
 ) {
     val haptic = LocalHapticFeedback.current
     Box(modifier = modifier) {
-        val fallbackPainter = painterResource(R.drawable.ic_launcher_foreground)
+        val fallbackPainter = painterResource(R.drawable.ic_profile_placeholder)
         AsyncImage(
             model = url,
             contentDescription = "Profile picture",
