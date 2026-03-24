@@ -127,12 +127,18 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val _pollVoteVersion = MutableStateFlow(0)
     val pollVoteVersion: StateFlow<Int> = _pollVoteVersion
 
+    // Activity tracking: pubkey -> last seen timestamp (ms) — used for "online now" liveness
+    private val recentlySeenPubkeys = ConcurrentHashMap<String, Long>()
+    private val _onlinePubkeys = MutableStateFlow<List<String>>(emptyList())
+    val onlinePubkeys: StateFlow<List<String>> = _onlinePubkeys
+
     // Debouncing: coalesce rapid-fire feed list and version updates
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val feedDirty = Channel<Unit>(Channel.CONFLATED)
     private val feedInserted = Channel<Unit>(Channel.CONFLATED)
     private val relayFeedInserted = Channel<Unit>(Channel.CONFLATED)
     private val versionDirty = Channel<Unit>(Channel.CONFLATED)
+    private val onlineDirty = Channel<Unit>(Channel.CONFLATED)
 
     init {
         // Emit feed updates when new events are inserted. Uses a conflated channel so
@@ -194,6 +200,25 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 pendingPollVote = false
             }
         }
+        // Online users: debounce updates triggered by new events
+        scope.launch {
+            for (signal in onlineDirty) {
+                delay(50)
+                val cutoff = System.currentTimeMillis() - 10 * 60 * 1000L
+                _onlinePubkeys.value = recentlySeenPubkeys
+                    .filter { it.value >= cutoff }
+                    .keys.toList()
+            }
+        }
+        // Periodic tick: prune authors whose 10-min window has expired even if no new events arrive
+        scope.launch {
+            while (true) {
+                delay(60_000)
+                val cutoff = System.currentTimeMillis() - 10 * 60 * 1000L
+                recentlySeenPubkeys.entries.removeIf { it.value < cutoff }
+                _onlinePubkeys.value = recentlySeenPubkeys.keys.toList()
+            }
+        }
     }
 
     @Volatile private var profileDirty = false
@@ -218,6 +243,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (muteRepo?.isBlocked(event.pubkey) == true) return
         if ((event.kind == 1 || event.kind == 30023) && muteRepo?.containsMutedWord(event.content) == true) return
         if (deletedEventsRepo?.isDeleted(event.id) == true) return
+        // Track liveness: only count active-content kinds using the event's own timestamp,
+        // so historical fetches and profile metadata don't inflate the online count.
+        if (event.kind == 1 || event.kind == 6 || event.kind == 7 || event.kind == 30023) {
+            val eventTimeMs = event.created_at * 1000L
+            recentlySeenPubkeys.merge(event.pubkey, eventTimeMs) { existing, new -> maxOf(existing, new) }
+            onlineDirty.trySend(Unit)
+        }
         // Engagement events (reactions, reposts) are only needed for their
         // side effects (counts, details, etc.) — skip eventCache to avoid evicting the
         // kind 0/1 events that screens actually navigate to.

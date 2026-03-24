@@ -53,7 +53,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
@@ -110,6 +110,7 @@ import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.FilledTonalButton
@@ -126,7 +127,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FeedScreen(
     viewModel: FeedViewModel,
@@ -257,6 +258,9 @@ fun FeedScreen(
         }
     }
     var showRelayDropdown by remember { mutableStateOf(false) }
+    var showOnlineSheet by remember { mutableStateOf(false) }
+    val onlinePubkeys by viewModel.eventRepo.onlinePubkeys.collectAsState()
+    val globalOnlineCount by viewModel.globalOnlineCount.collectAsState()
     var showFeedTypeDropdown by remember { mutableStateOf(false) }
     var showSocialGraphDialog by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -339,6 +343,72 @@ fun FeedScreen(
 
     val favoriteRelays by viewModel.relaySetRepo.favoriteRelays.collectAsState()
     val ownRelaySets by viewModel.relaySetRepo.ownRelaySets.collectAsState()
+
+    if (showOnlineSheet) {
+        androidx.compose.material3.ModalBottomSheet(
+            onDismissRequest = { showOnlineSheet = false }
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp)
+                    .navigationBarsPadding()
+            ) {
+                Text(
+                    "Online Now",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(8.dp))
+                val greenDot = androidx.compose.ui.graphics.Color(0xFF4CAF50)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.foundation.Canvas(modifier = Modifier.size(8.dp)) {
+                        drawCircle(color = greenDot)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "${onlinePubkeys.size} online in your network",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                if (globalOnlineCount != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.foundation.Canvas(modifier = Modifier.size(8.dp)) {
+                            drawCircle(color = greenDot)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "$globalOnlineCount online across all of Nostr",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    onlinePubkeys.forEach { pubkey ->
+                        val profile = viewModel.eventRepo.getProfileData(pubkey)
+                        ProfilePicture(
+                            url = profile?.picture,
+                            size = 44,
+                            onClick = {
+                                showOnlineSheet = false
+                                onProfileClick(pubkey)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     if (showRelayPicker) {
         RelayPickerDialog(
@@ -558,15 +628,8 @@ fun FeedScreen(
         Scaffold(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
-                TopAppBar(
+                CenterAlignedTopAppBar(
                     title = {
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
                             Box {
                                 Surface(
                                     onClick = { showFeedTypeDropdown = true },
@@ -670,8 +733,6 @@ fun FeedScreen(
                                     )
                                 }
                             }
-                            } // Row
-                        }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface
@@ -682,6 +743,32 @@ fun FeedScreen(
                         }
                     },
                     actions = {
+                        if (onlinePubkeys.isNotEmpty()) {
+                            Surface(
+                                onClick = { showOnlineSheet = true },
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Person,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = androidx.compose.ui.graphics.Color(0xFF4CAF50)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        "${onlinePubkeys.size}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(4.dp))
+                        }
                         Box {
                             Surface(
                                 onClick = { showRelayDropdown = true },
@@ -692,23 +779,16 @@ fun FeedScreen(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Box(
-                                        modifier = Modifier.size(8.dp),
-                                        contentAlignment = Alignment.Center
-                                        ) {
-                                        val repostColor = WispThemeColors.repostColor
-                                        androidx.compose.foundation.Canvas(
-                                            modifier = Modifier.size(8.dp)
-                                        ) {
-                                            drawCircle(
-                                                color = if (connectedCount > 0)
-                                                    repostColor
-                                                else
-                                                    androidx.compose.ui.graphics.Color(0xFFFF5252)
-                                            )
-                                        }
-                                    }
-                                    Spacer(Modifier.width(6.dp))
+                                    Icon(
+                                        Icons.Outlined.Hub,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = if (connectedCount > 0)
+                                            androidx.compose.ui.graphics.Color(0xFF4CAF50)
+                                        else
+                                            androidx.compose.ui.graphics.Color(0xFFFF5252)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
                                     Text(
                                         "$connectedCount",
                                         style = MaterialTheme.typography.labelMedium,

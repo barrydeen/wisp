@@ -59,6 +59,10 @@ import com.wisp.app.nostr.RelaySet
 import android.content.Context
 import com.wisp.app.nostr.Filter
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -294,6 +298,34 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         fetchMissingEmojiSets = { listCrud.fetchMissingEmojiSets() },
         getSigner = { signer }
     )
+
+    // -- Global online count from nostrarchives live-metrics --
+    private val _globalOnlineCount = MutableStateFlow<Int?>(null)
+    val globalOnlineCount: StateFlow<Int?> = _globalOnlineCount
+    private var liveMetricsSocket: okhttp3.WebSocket? = null
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            connectLiveMetrics()
+        }
+    }
+
+    private fun connectLiveMetrics() {
+        val client = HttpClientFactory.createRelayClient()
+        val req = okhttp3.Request.Builder()
+            .url("wss://api.nostrarchives.com/v1/ws/live-metrics")
+            .build()
+        liveMetricsSocket = client.newWebSocket(req, object : okhttp3.WebSocketListener() {
+            override fun onMessage(webSocket: okhttp3.WebSocket, text: String) {
+                try {
+                    val obj = kotlinx.serialization.json.Json.parseToJsonElement(text)
+                        as? kotlinx.serialization.json.JsonObject ?: return
+                    val online = obj["online"]?.jsonPrimitive?.intOrNull ?: return
+                    _globalOnlineCount.value = online
+                } catch (_: Exception) {}
+            }
+        })
+    }
 
     // -- Exposed state --
     val feed: StateFlow<List<NostrEvent>> = combine(
@@ -669,5 +701,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         nwcRepo.disconnect()
         sparkRepo.disconnect()
         relayPool.disconnectAll()
+        liveMetricsSocket?.close(1000, null)
     }
 }
