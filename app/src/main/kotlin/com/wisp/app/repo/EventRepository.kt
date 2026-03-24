@@ -242,6 +242,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (event.created_at > System.currentTimeMillis() / 1000 + 30) return  // reject future-dated notes (30s grace for clock skew)
         if (muteRepo?.isBlocked(event.pubkey) == true) return
         if ((event.kind == 1 || event.kind == 30023) && muteRepo?.containsMutedWord(event.content) == true) return
+        if (event.kind == 1) {
+            val threadRoot = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
+            if (muteRepo?.isThreadMuted(threadRoot) == true) return
+        }
         if (deletedEventsRepo?.isDeleted(event.id) == true) return
         // Track liveness: only count active-content kinds using the event's own timestamp,
         // so historical fetches and profile metadata don't inflate the online count.
@@ -980,6 +984,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             if (event.created_at < sinceTimestamp) continue
             if (muteRepo?.isBlocked(event.pubkey) == true) continue
             if (deletedEventsRepo?.isDeleted(event.id) == true) continue
+            val threadRoot = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
+            if (muteRepo?.isThreadMuted(threadRoot) == true) continue
             val isReply = Nip10.isReply(event)
             if (isReply) continue
             val sortTime = feedSortTime.get(event.id) ?: event.created_at
@@ -988,6 +994,24 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         }
         rebuildFilteredFeed()
         android.util.Log.d("RLC", "[EventRepo] rebuildFeedFromCache: $inserted events re-inserted from cache (since=$sinceTimestamp)")
+    }
+
+    fun purgeThread(rootEventId: String) {
+        val removed = mutableListOf<String>()
+        synchronized(feedList) {
+            val iter = feedList.iterator()
+            while (iter.hasNext()) {
+                val e = iter.next()
+                if (e.kind != 1) continue
+                val root = Nip10.getRootId(e) ?: Nip10.getReplyTarget(e) ?: e.id
+                if (root == rootEventId) {
+                    removed.add(e.id)
+                    iter.remove()
+                }
+            }
+            if (removed.isNotEmpty()) feedIds.removeAll(removed.toSet())
+        }
+        if (removed.isNotEmpty()) feedInserted.trySend(Unit)
     }
 
     // -- Isolated relay feed methods --
@@ -999,6 +1023,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
         when (event.kind) {
             1 -> {
+                val threadRoot = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
+                if (muteRepo?.isThreadMuted(threadRoot) == true) return
                 val isReply = Nip10.isReply(event)
                 if (!isReply) {
                     eventCache[event.id] = event
@@ -1051,6 +1077,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
         when (event.kind) {
             1 -> {
+                val threadRoot = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
+                if (muteRepo?.isThreadMuted(threadRoot) == true) return
                 val isReply = Nip10.isReply(event)
                 if (!isReply) {
                     eventCache[event.id] = event

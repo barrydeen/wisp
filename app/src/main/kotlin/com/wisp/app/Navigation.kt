@@ -269,7 +269,7 @@ fun WispNavHost(
         authViewModel.isAddingAccount = true
         feedViewModel.resetForAccountSwitch()
         walletViewModel.suspendForAccountSwitch()  // disconnect only, preserve credentials
-        navController.navigate(Routes.AUTH) {
+        navController.navigate(Routes.SPLASH) {
             popUpTo(0) { inclusive = true }
         }
     }
@@ -2018,19 +2018,23 @@ fun WispNavHost(
                 totalSelected = selectedPubkeys.size,
                 onContinue = {
                     scope.launch {
+                        feedViewModel.setFeedType(FeedType.FOLLOWS)
+                        feedViewModel.reloadForNewAccount()
+                        relayViewModel.reload()
+                        blossomServersViewModel.reload()
+                        composeViewModel.reloadBlossomRepo()
+                        walletViewModel.refreshState()
+                        // finishOnboarding must run after reloadForNewAccount so contactRepo
+                        // is already switched to the new pubkey-specific prefs file.
+                        // Otherwise the follow list is saved to the null-keyed prefs and
+                        // wiped when reloadForNewAccount reloads to the correct prefs.
                         onboardingViewModel.finishOnboarding(
                             relayPool = feedViewModel.relayPool,
                             contactRepo = feedViewModel.contactRepo,
                             selectedPubkeys = selectedPubkeys,
                             signer = activeSigner
                         )
-                        feedViewModel.setFeedType(FeedType.EXTENDED_FOLLOWS)
-                        feedViewModel.reloadForNewAccount()
-                        relayViewModel.reload()
-                        blossomServersViewModel.reload()
-                        composeViewModel.reloadBlossomRepo()
                         feedViewModel.initRelays()
-                        walletViewModel.refreshState()
                         navController.navigate(Routes.LOADING) {
                             popUpTo(0) { inclusive = true }
                         }

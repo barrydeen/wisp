@@ -675,19 +675,27 @@ class NotificationRepository(
                     else group.referencedEventId
                 }
                 is NotificationGroup.ReplyNotification -> {
-                    val referenced = eventRepo?.getEvent(group.referencedEventId ?: group.replyEventId)
-                    if (referenced != null) Nip10.getRootId(referenced) ?: referenced.id
+                    val replyEvent = eventRepo?.getEvent(group.replyEventId)
+                    if (replyEvent != null) Nip10.getRootId(replyEvent) ?: Nip10.getReplyTarget(replyEvent) ?: replyEvent.id
                     else group.referencedEventId ?: group.replyEventId
                 }
-                is NotificationGroup.QuoteNotification -> null
-                is NotificationGroup.MentionNotification -> null
+                is NotificationGroup.QuoteNotification -> {
+                    val quoteEvent = eventRepo?.getEvent(group.quoteEventId)
+                    if (quoteEvent != null) Nip10.getRootId(quoteEvent) ?: quoteEvent.id else null
+                }
+                is NotificationGroup.MentionNotification -> {
+                    val mentionEvent = eventRepo?.getEvent(group.eventId)
+                    if (mentionEvent != null) Nip10.getRootId(mentionEvent) ?: mentionEvent.id else null
+                }
             }
             if (root == rootEventId) toRemove.add(key)
         }
         if (toRemove.isNotEmpty()) {
             toRemove.forEach { groupMap.remove(it) }
             flatItems.removeAll { item ->
-                if (item.referencedEventId == rootEventId) { flatItemIds.remove(item.id); true } else false
+                val ref = eventRepo?.getEvent(item.referencedEventId)
+                val itemRoot = if (ref != null) Nip10.getRootId(ref) ?: ref.id else item.referencedEventId
+                if (itemRoot == rootEventId) { flatItemIds.remove(item.id); true } else false
             }
             rebuildSortedList()
         }

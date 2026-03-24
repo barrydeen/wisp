@@ -799,7 +799,24 @@ private fun ReferencedNotePostCard(
         onFollowAuthor = { params.onFollowToggle(event.pubkey) },
         onBlockAuthor = { params.onBlockUser(event.pubkey) },
         onMuteThread = {
-            val rootId = Nip10.getRootId(event) ?: event.id
+            val rootId = when (event.kind) {
+                1 -> Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
+                7, 6 -> {
+                    val refId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+                    if (refId != null) {
+                        val ref = params.eventRepo?.getEvent(refId)
+                        if (ref != null) Nip10.getRootId(ref) ?: refId else refId
+                    } else event.id
+                }
+                9735 -> {
+                    val refId = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+                    if (refId != null) {
+                        val ref = params.eventRepo?.getEvent(refId)
+                        if (ref != null) Nip10.getRootId(ref) ?: refId else refId
+                    } else event.id
+                }
+                else -> Nip10.getRootId(event) ?: event.id
+            }
             params.onMuteThread(rootId)
         },
         isFollowingAuthor = followingAuthor,

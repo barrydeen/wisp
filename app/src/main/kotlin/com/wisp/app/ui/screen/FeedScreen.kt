@@ -74,6 +74,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.FollowSet
+import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.EmojiLibrarySheet
@@ -1248,6 +1249,10 @@ private fun FeedItem(
         onRelayClick = onRelayClick,
         onFollowAuthor = { viewModel.toggleFollow(event.pubkey) },
         onBlockAuthor = { viewModel.blockUser(event.pubkey) },
+        onMuteThread = {
+            val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
+            viewModel.muteThread(rootId)
+        },
         isFollowingAuthor = isFollowing,
         isOwnEvent = event.pubkey == userPubkey,
         nip05Repo = viewModel.nip05Repo,
