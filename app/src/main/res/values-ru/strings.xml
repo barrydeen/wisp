@@ -199,7 +199,6 @@
     <string name="tab_list">Список</string>
     <string name="tab_hashtags">Хештеги</string>
     <string name="interests">Интересы</string>
-    <string name="tab_feed">Лента</string>
     <string name="loading_interest_sets">Загрузка наборов интересов…</string>
     <string name="no_interest_sets">Пока нет наборов интересов. Создайте один ниже или подпишитесь на хештеги со страниц лент.</string>
     <string name="no_hashtags_yet">Пока нет хештегов</string>
@@ -215,7 +214,6 @@
     <string name="tab_pinned">Закреплённые</string>
     <string name="tab_new_set">Новый набор</string>
     <string name="btn_new_set">+ Новый набор</string>
-    <string name="tab_all_relays">Все рилэи</string>
     <string name="tab_favorites">Избранное</string>
     <string name="tab_relay_sets">Наборы рилэев</string>
     <string name="tab_combined_feed">Комбинированная лента</string>
@@ -550,17 +548,11 @@
     <string name="wallet_choose_how">Выберите способ подключения кошелька Lightning для отправки и получения сат.</string>
     <string name="wallet_create_new">Создать Новый Кошелёк</string>
     <string name="wallet_create_description">Создайте новый кошелёк прямо в Wisp, средства защищены провайдерами Spark</string>
-    <string name="wallet_nwc">Nostr Wallet Connect</string>
     <string name="wallet_nwc_description">Подключите внешний кошелёк Lightning с помощью строки подключения NWC.</string>
-    <string name="wallet_connect_lightning">Подключите кошелёк Lightning для отправки и получения сат. Вставьте строку подключения NWC от вашего провайдера.</string>
-    <string name="wallet_recommended">Рекомендуемые кошельки</string>
     <string name="wallet_nwc_connection_string">Строка Подключения NWC</string>
-    <string name="wallet_connecting">Подключение…</string>
     <string name="wallet_connect">Подключить</string>
     <string name="wallet_spark">Кошелёк Spark</string>
-    <string name="wallet_tap_to_reveal">Нажмите, чтобы показать</string>
     <string name="wallet_set_up_lightning">Настроить Адрес Lightning</string>
-    <string name="wallet_get_username">Получите адрес пользователь@breez.tips</string>
     <string name="wallet_send">Отправить</string>
     <string name="wallet_receive">Получить</string>
     <string name="wallet_lightning_address_invoice">Адрес Lightning или счёт</string>

@@ -214,7 +214,6 @@
     <string name="tab_list">리스트</string>
     <string name="tab_hashtags">해시태그</string>
     <string name="interests">관심사</string>
-    <string name="tab_feed">피드</string>
     <string name="loading_interest_sets">관심사 세트 로딩 중…</string>
     <string name="no_interest_sets">아직 관심사 세트가 없습니다. 아래에서 만들거나 피드 페이지에서 해시태그를 팔로우하세요.</string>
     <string name="no_hashtags_yet">아직 해시태그 없음</string>
@@ -230,7 +229,6 @@
     <string name="tab_pinned">고정됨</string>
     <string name="tab_new_set">새 세트</string>
     <string name="btn_new_set">+ 새 세트</string>
-    <string name="tab_all_relays">전체 릴레이</string>
     <string name="tab_favorites">즐겨찾기</string>
     <string name="tab_relay_sets">릴레이 세트</string>
     <string name="tab_combined_feed">통합 피드</string>
@@ -589,17 +587,11 @@
     <string name="wallet_choose_how">사트를 보내고 받기 위한 라이트닝 지갑 연결 방법을 선택하세요.</string>
     <string name="wallet_create_new">새 지갑 만들기</string>
     <string name="wallet_create_description">Wisp에서 직접 새 지갑 만들기,资金은 Spark 제공자가 보호</string>
-    <string name="wallet_nwc">Nostr Wallet Connect</string>
     <string name="wallet_nwc_description">NWC 연결 문자열을 사용하여 외부 라이트닝 지갑을 연결합니다.</string>
-    <string name="wallet_connect_lightning">사트를 보내고 받기 위한 라이트닝 지갑을 연결하세요. 지갑 제공자의 NWC 연결 문자열을 붙여넣으세요.</string>
-    <string name="wallet_recommended">추천 지갑</string>
     <string name="wallet_nwc_connection_string">NWC 연결 문자열</string>
-    <string name="wallet_connecting">연결 중…</string>
     <string name="wallet_connect">연결</string>
     <string name="wallet_spark">Spark 지갑</string>
-    <string name="wallet_tap_to_reveal">탭하여 표시</string>
     <string name="wallet_set_up_lightning">라이트닝 주소 설정</string>
-    <string name="wallet_get_username">사용자@breez.tips 주소 받기</string>
     <string name="wallet_send">보내기</string>
     <string name="wallet_receive">받기</string>
     <string name="wallet_lightning_address_invoice">라이트닝 주소 또는 인보이스</string>

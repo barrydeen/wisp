@@ -202,7 +202,6 @@
     <string name="tab_list">List</string>
     <string name="tab_hashtags">Hashtags</string>
     <string name="interests">Interests</string>
-    <string name="tab_feed">Feed</string>
     <string name="loading_interest_sets">Loading interest sets…</string>
     <string name="no_interest_sets">No interest sets yet. Create one below, or follow hashtags from their feed pages.</string>
     <string name="no_hashtags_yet">No hashtags yet</string>
@@ -218,7 +217,6 @@
     <string name="tab_pinned">Pinned</string>
     <string name="tab_new_set">New Set</string>
     <string name="btn_new_set">+ New Set</string>
-    <string name="tab_all_relays">All relays</string>
     <string name="tab_favorites">Favorites</string>
     <string name="tab_relay_sets">Relay Sets</string>
     <string name="tab_combined_feed">Combined Feed</string>
@@ -421,6 +419,16 @@
     <string name="zap_both_parties_need_dm_relays">Both parties need DM relays</string>
     <string name="zap_x_sats">Zap %d sats</string>
     <string name="zap_failed">Zap Failed</string>
+<<<<<<< HEAD
+=======
+    <string name="wallet_nwc">Nostr Wallet Connect</string>
+    <string name="wallet_connect_lightning">Connect a Lightning wallet to send and receive sats. Paste a NWC connection string from your wallet provider.</string>
+    <string name="wallet_recommended">Recommended wallets</string>
+    <string name="wallet_connecting">Connecting…</string>
+    <string name="wallet_lightning_address_setup">Set up your Lightning Address</string>
+    <string name="wallet_get_username">Get a username@breez.tips address</string>
+    <string name="wallet_tap_to_reveal">Tap to reveal</string>
+>>>>>>> 48bd076 (fixed duplicates)
     <string name="dm_decrypting">Decrypting messages…</string>
     <string name="dm_mining">Mining…</string>
     <string name="dm_peer">Peer</string>
@@ -610,17 +618,11 @@
     <string name="wallet_choose_how">Choose how to connect a Lightning wallet for sending and receiving sats.</string>
     <string name="wallet_create_new">Create a New Wallet</string>
     <string name="wallet_create_description">Create a new wallet directly in Wisp, funds are secured by Spark providers</string>
-    <string name="wallet_nwc">Nostr Wallet Connect</string>
     <string name="wallet_nwc_description">Connect an external Lightning wallet using a NWC connection string.</string>
-    <string name="wallet_connect_lightning">Connect a Lightning wallet to send and receive sats. Paste a NWC connection string from your wallet provider.</string>
-    <string name="wallet_recommended">Recommended wallets</string>
     <string name="wallet_nwc_connection_string">NWC Connection String</string>
-    <string name="wallet_connecting">Connecting…</string>
     <string name="wallet_connect">Connect</string>
     <string name="wallet_spark">Spark Wallet</string>
-    <string name="wallet_tap_to_reveal">Tap to reveal</string>
     <string name="wallet_set_up_lightning">Set up your Lightning Address</string>
-    <string name="wallet_get_username">Get a username@breez.tips address</string>
     <string name="wallet_send">Send</string>
     <string name="wallet_receive">Receive</string>
     <string name="wallet_lightning_address_invoice">Lightning address or invoice</string>

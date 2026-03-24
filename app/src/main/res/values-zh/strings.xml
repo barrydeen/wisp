@@ -214,7 +214,6 @@
     <string name="tab_list">列表</string>
     <string name="tab_hashtags">话题</string>
     <string name="interests">兴趣</string>
-    <string name="tab_feed">动态</string>
     <string name="loading_interest_sets">正在加载兴趣集…</string>
     <string name="no_interest_sets">暂无兴趣集。在下方创建一个，或从动态页面关注话题标签。</string>
     <string name="no_hashtags_yet">暂无话题标签</string>
@@ -230,7 +229,6 @@
     <string name="tab_pinned">已固定</string>
     <string name="tab_new_set">新集合</string>
     <string name="btn_new_set">+ 新集合</string>
-    <string name="tab_all_relays">所有中继</string>
     <string name="tab_favorites">收藏</string>
     <string name="tab_relay_sets">中继集合</string>
     <string name="tab_combined_feed">合并动态</string>
@@ -589,17 +587,11 @@
     <string name="wallet_choose_how">选择如何连接Lightning钱包以发送和接收聪。</string>
     <string name="wallet_create_new">创建新钱包</string>
     <string name="wallet_create_description">直接在Wisp中创建新钱包，资金由Spark提供商保障</string>
-    <string name="wallet_nwc">Nostr钱包连接</string>
     <string name="wallet_nwc_description">使用NWC连接字符串连接外部Lightning钱包。</string>
-    <string name="wallet_connect_lightning">连接Lightning钱包以发送和接收聪。粘贴您钱包提供商的NWC连接字符串。</string>
-    <string name="wallet_recommended">推荐钱包</string>
     <string name="wallet_nwc_connection_string">NWC连接字符串</string>
-    <string name="wallet_connecting">连接中…</string>
     <string name="wallet_connect">连接</string>
     <string name="wallet_spark">Spark钱包</string>
-    <string name="wallet_tap_to_reveal">点击显示</string>
     <string name="wallet_set_up_lightning">设置Lightning地址</string>
-    <string name="wallet_get_username">获取用户名@breez.tips地址</string>
     <string name="wallet_send">发送</string>
     <string name="wallet_receive">接收</string>
     <string name="wallet_lightning_address_invoice">Lightning地址或发票</string>

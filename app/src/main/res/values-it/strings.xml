@@ -214,7 +214,6 @@
     <string name="tab_list">Lista</string>
     <string name="tab_hashtags">Hashtag</string>
     <string name="interests">Interessi</string>
-    <string name="tab_feed">Feed</string>
     <string name="loading_interest_sets">Caricamento insiemi di interessi…</string>
     <string name="no_interest_sets">Ancora nessun insieme di interessi. Creane uno qui sotto, o segui hashtag dalle loro pagine feed.</string>
     <string name="no_hashtags_yet">Nessun hashtag ancora</string>
@@ -230,7 +229,6 @@
     <string name="tab_pinned">Fissato</string>
     <string name="tab_new_set">Nuovo Set</string>
     <string name="btn_new_set">+ Nuovo Set</string>
-    <string name="tab_all_relays">Tutti i relay</string>
     <string name="tab_favorites">Preferiti</string>
     <string name="tab_relay_sets">Set di Relay</string>
     <string name="tab_combined_feed">Feed Combinato</string>
@@ -589,17 +587,11 @@
     <string name="wallet_choose_how">Scegli come connettere un portafoglio Lightning per inviare e ricevere sats.</string>
     <string name="wallet_create_new">Crea Nuovo Portafoglio</string>
     <string name="wallet_create_description">Crea un nuovo portafoglio direttamente in Wisp, i fondi sono protetti da provider Spark</string>
-    <string name="wallet_nwc">Nostr Wallet Connect</string>
     <string name="wallet_nwc_description">Connetti un portafoglio Lightning esterno usando una stringa di connessione NWC.</string>
-    <string name="wallet_connect_lightning">Connetti un portafoglio Lightning per inviare e ricevere sats. Incolla una stringa di connessione NWC dal tuo provider.</string>
-    <string name="wallet_recommended">Portafogli consigliati</string>
     <string name="wallet_nwc_connection_string">Stringa di Connessione NWC</string>
-    <string name="wallet_connecting">Connessione…</string>
     <string name="wallet_connect">Connetti</string>
     <string name="wallet_spark">Portafoglio Spark</string>
-    <string name="wallet_tap_to_reveal">Tocca per rivelare</string>
     <string name="wallet_set_up_lightning">Configura il tuo Indirizzo Lightning</string>
-    <string name="wallet_get_username">Ottieni un indirizzo utente@breez.tips</string>
     <string name="wallet_send">Invia</string>
     <string name="wallet_receive">Ricevi</string>
     <string name="wallet_lightning_address_invoice">Indirizzo Lightning o fattura</string>

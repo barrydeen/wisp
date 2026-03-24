@@ -214,7 +214,6 @@
     <string name="tab_list">Lijst</string>
     <string name="tab_hashtags">Hashtags</string>
     <string name="interests">Interesses</string>
-    <string name="tab_feed">Feed</string>
     <string name="loading_interest_sets">Interessesets laden…</string>
     <string name="no_interest_sets">Nog geen interessesets. Maak er een hieronder aan, of volg hashtags vanaf hun feed-pagina\'s.</string>
     <string name="no_hashtags_yet">Nog geen hashtags</string>
@@ -230,7 +229,6 @@
     <string name="tab_pinned">Vastgemaakt</string>
     <string name="tab_new_set">Nieuwe Set</string>
     <string name="btn_new_set">+ Nieuwe Set</string>
-    <string name="tab_all_relays">Alle relays</string>
     <string name="tab_favorites">Favorieten</string>
     <string name="tab_relay_sets">Relay Sets</string>
     <string name="tab_combined_feed">Gecombineerde Feed</string>
@@ -589,17 +587,11 @@
     <string name="wallet_choose_how">Kies hoe je een Lightning portemonnee verbindt voor het verzenden en ontvangen van sats.</string>
     <string name="wallet_create_new">Nieuwe Portemonnee Maken</string>
     <string name="wallet_create_description">Maak een nieuwe portemonnee direct in Wisp, fondsen zijn beveiligd door Spark providers</string>
-    <string name="wallet_nwc">Nostr Wallet Connect</string>
     <string name="wallet_nwc_description">Verbind een externe Lightning portemonnee met een NWC verbindingsreeks.</string>
-    <string name="wallet_connect_lightning">Verbind een Lightning portemonnee om sats te verzenden en ontvangen. Plak een NWC verbindingsreeks van je portemonnee provider.</string>
-    <string name="wallet_recommended">Aanbevolen portemonnees</string>
     <string name="wallet_nwc_connection_string">NWC Verbindingsreeks</string>
-    <string name="wallet_connecting">Verbinden…</string>
     <string name="wallet_connect">Verbinden</string>
     <string name="wallet_spark">Spark Portemonnee</string>
-    <string name="wallet_tap_to_reveal">Tik om te onthullen</string>
     <string name="wallet_set_up_lightning">Lightning Adres Instellen</string>
-    <string name="wallet_get_username">Krijg een gebruiker@breez.tips adres</string>
     <string name="wallet_send">Verzenden</string>
     <string name="wallet_receive">Ontvangen</string>
     <string name="wallet_lightning_address_invoice">Lightning adres of factuur</string>

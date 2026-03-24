@@ -214,7 +214,6 @@
     <string name="tab_list">Liste</string>
     <string name="tab_hashtags">Hashtags</string>
     <string name="interests">Interessen</string>
-    <string name="tab_feed">Feed</string>
     <string name="loading_interest_sets">Interest-Sets werden geladen…</string>
     <string name="no_interest_sets">Noch keine Interest-Sets. Erstelle eines unten, oder folge Hashtags von deren Feed-Seiten.</string>
     <string name="no_hashtags_yet">Noch keine Hashtags</string>
@@ -230,7 +229,6 @@
     <string name="tab_pinned">Angeheftet</string>
     <string name="tab_new_set">Neuer Set</string>
     <string name="btn_new_set">+ Neuer Set</string>
-    <string name="tab_all_relays">Alle Relays</string>
     <string name="tab_favorites">Favoriten</string>
     <string name="tab_relay_sets">Relay-Sets</string>
     <string name="tab_combined_feed">Kombinierter Feed</string>
@@ -589,17 +587,11 @@
     <string name="wallet_choose_how">Wählen Sie, wie Sie eine Lightning-Brieftasche zum Senden und Empfangen von Sats verbinden.</string>
     <string name="wallet_create_new">Neue Brieftasche Erstellen</string>
     <string name="wallet_create_description">Erstellen Sie eine neue Brieftasche direkt in Wisp, Gelder werden von Spark-Anbietern gesichert</string>
-    <string name="wallet_nwc">Nostr Wallet Connect</string>
     <string name="wallet_nwc_description">Verbinden Sie eine externe Lightning-Brieftasche mit einer NWC-Verbindungszeichenfolge.</string>
-    <string name="wallet_connect_lightning">Verbinden Sie eine Lightning-Brieftasche zum Senden und Empfangen von Sats. Fügen Sie eine NWC-Verbindungszeichenfolge von Ihrem Brieftaschenanbieter ein.</string>
-    <string name="wallet_recommended">Empfohlene Brieftaschen</string>
     <string name="wallet_nwc_connection_string">NWC-Verbindungszeichenfolge</string>
-    <string name="wallet_connecting">Verbinde…</string>
     <string name="wallet_connect">Verbinden</string>
     <string name="wallet_spark">Spark Brieftasche</string>
-    <string name="wallet_tap_to_reveal">Tippen zum Anzeigen</string>
     <string name="wallet_set_up_lightning">Lightning-Adresse Einrichten</string>
-    <string name="wallet_get_username">Holen Sie sich eine benutzer@breez.tips-Adresse</string>
     <string name="wallet_send">Senden</string>
     <string name="wallet_receive">Empfangen</string>
     <string name="wallet_lightning_address_invoice">Lightning-Adresse oder Rechnung</string>
