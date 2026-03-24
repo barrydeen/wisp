@@ -37,7 +37,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     var eventPersistence: EventPersistence? = null
     /** Set of current user's DM relay URLs — used to detect private zaps. */
     var dmRelayUrls: Set<String> = emptySet()
-    private val eventCache = LruCache<String, NostrEvent>(15000)
+    private val eventCache = ConcurrentHashMap<String, NostrEvent>()
     private val seenEventIds = ConcurrentHashMap.newKeySet<String>()  // thread-safe dedup that doesn't evict
     private val feedList = mutableListOf<NostrEvent>()
     private val feedIds = HashSet<String>()  // O(1) dedup that doesn't evict like LruCache
@@ -255,7 +255,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         // kind 0/1 events that screens actually navigate to.
         // Zap receipts (9735) are cached for the zap inspector debug feature.
         if (event.kind != 7 && event.kind != 6 && event.kind != Nip88.KIND_POLL_RESPONSE) {
-            eventCache.put(event.id, event)
+            eventCache[event.id] = event
         }
         eventPersistence?.persistEvent(event)
         relayHintStore?.extractHintsFromTags(event)
@@ -299,7 +299,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         val filter = _authorFilter.value
                         val reposterIsFollowed = filter == null || event.pubkey in filter
                         if (seenEventIds.add(inner.id)) {
-                            eventCache.put(inner.id, inner)
+                            eventCache[inner.id] = inner
                             if (!isReply) {
                                 if (reposterIsFollowed) {
                                     feedSortTime.put(inner.id, event.created_at)
@@ -328,7 +328,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             5 -> {
                 val deletedIds = Nip09.getDeletedEventIds(event)
                 for (id in deletedIds) {
-                    val target = eventCache.get(id)
+                    val target = eventCache[id]
                     if (target == null || target.pubkey == event.pubkey) {
                         deletedEventsRepo?.markDeleted(id)
                         removeEvent(id)
@@ -437,7 +437,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         }
 
         // Check if poll has ended
-        val pollEvent = eventCache.get(pollId)
+        val pollEvent = eventCache[pollId]
         if (pollEvent != null && Nip88.isPollEnded(pollEvent)) {
             Log.d("POLL", "[addPollVote] SKIP: poll ended for ${pollId.take(12)}")
             return
@@ -522,7 +522,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun getRecentEventIdsByAuthor(pubkey: String, limit: Int = 50): List<String> {
-        return eventCache.snapshot().values
+        return eventCache.values
             .asSequence()
             .filter { it.kind == 1 && it.pubkey == pubkey }
             .sortedByDescending { it.created_at }
@@ -532,16 +532,16 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun getLatestEventTimestamp(pubkey: String, kind: Int): Long? {
-        return eventCache.snapshot().values
+        return eventCache.values
             .asSequence()
             .filter { it.pubkey == pubkey && it.kind == kind }
             .maxOfOrNull { it.created_at }
     }
 
     fun cacheEvent(event: NostrEvent) {
-        if (eventCache.get(event.id) != null) return  // already cached
+        if (eventCache.containsKey(event.id)) return
         seenEventIds.add(event.id)
-        eventCache.put(event.id, event)
+        eventCache[event.id] = event
         eventPersistence?.persistEvent(event)
         relayHintStore?.extractHintsFromTags(event)
         if (event.kind == 0) {
@@ -584,15 +584,16 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun findAddressableEvent(kind: Int, author: String, dTag: String): NostrEvent? {
-        return eventCache.snapshot().values.firstOrNull { event ->
+        return eventCache.values.firstOrNull { event ->
             event.kind == kind && event.pubkey == author &&
                 event.tags.any { it.size >= 2 && it[0] == "d" && it[1] == dTag }
         }
     }
 
-    fun getEvent(id: String): NostrEvent? = eventCache.get(id)
+    fun getEvent(id: String): NostrEvent? =
+        eventCache[id] ?: eventPersistence?.getEvent(id)?.also { eventCache[id] = it }
 
-    fun getCacheSize(): Int = eventCache.size()
+    fun getCacheSize(): Int = eventCache.size
 
     fun bumpEventCacheVersion() { _eventCacheVersion.value++ }
 
@@ -754,7 +755,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         val replyIds = rootReplyIds[eventId] ?: return null
         var best: NostrEvent? = null
         for (replyId in replyIds) {
-            val event = eventCache.get(replyId) ?: continue
+            val event = eventCache[replyId] ?: continue
             if (event.pubkey == myPubkey && (best == null || event.created_at > best.created_at)) {
                 best = event
             }
@@ -768,14 +769,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         val queue = ArrayDeque<String>()
         queue.add(rootId)
         visited.add(rootId)
-        eventCache.get(rootId)?.let { result.add(it) }
+        eventCache[rootId]?.let { result.add(it) }
         while (queue.isNotEmpty()) {
             val parentId = queue.removeFirst()
             val childIds = rootReplyIds[parentId] ?: continue
             for (id in childIds) {
                 if (id in visited) continue
                 visited.add(id)
-                eventCache.get(id)?.let { result.add(it) }
+                eventCache[id]?.let { result.add(it) }
                 queue.add(id)
             }
         }
@@ -802,7 +803,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 result[id] = relay
             } else {
                 // Fall back to author's known relays from RelayHintStore
-                val event = eventCache.get(id) ?: continue
+                val event = eventCache[id] ?: continue
                 val authorHint = relayHintStore?.getHints(event.pubkey)?.firstOrNull()
                 if (authorHint != null) result[id] = authorHint
             }
@@ -908,7 +909,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             if (removed.isNotEmpty()) _relayFeed.value = relayFeedList.toList()
         }
         // Evict from eventCache so blocked content doesn't appear in threads/quotes
-        val snapshot = eventCache.snapshot()
+        val snapshot = eventCache
         for ((id, event) in snapshot) {
             if (event.pubkey == pubkey) {
                 eventCache.remove(id)
@@ -931,7 +932,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     fun searchNotes(query: String, limit: Int = 50): List<NostrEvent> {
         if (query.isBlank()) return emptyList()
         // Search LRU cache first
-        val cacheResults = eventCache.snapshot().values
+        val cacheResults = eventCache.values
             .asSequence()
             .filter { it.kind == 1 && it.content.contains(query, ignoreCase = true) }
             .sortedByDescending { it.created_at }
@@ -972,7 +973,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
      * events are re-inserted (defaults to 24h).
      */
     fun rebuildFeedFromCache(sinceTimestamp: Long = System.currentTimeMillis() / 1000 - 60 * 60 * 24) {
-        val snapshot = eventCache.snapshot()
+        val snapshot = eventCache
         var inserted = 0
         for ((_, event) in snapshot) {
             if (event.kind != 1) continue
@@ -1000,18 +1001,18 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             1 -> {
                 val isReply = Nip10.isReply(event)
                 if (!isReply) {
-                    eventCache.put(event.id, event)
+                    eventCache[event.id] = event
                     relayHintStore?.extractHintsFromTags(event)
                     relayFeedBinaryInsert(event)
                 }
             }
             Nip88.KIND_POLL -> {
-                eventCache.put(event.id, event)
+                eventCache[event.id] = event
                 relayHintStore?.extractHintsFromTags(event)
                 relayFeedBinaryInsert(event)
             }
             30023 -> {
-                eventCache.put(event.id, event)
+                eventCache[event.id] = event
                 relayHintStore?.extractHintsFromTags(event)
                 relayFeedBinaryInsert(event)
             }
@@ -1032,7 +1033,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         markVersionDirty()
                         val isReply = Nip10.isReply(inner)
                         if (!isReply) {
-                            eventCache.put(inner.id, inner)
+                            eventCache[inner.id] = inner
                             relayHintStore?.extractHintsFromTags(inner)
                             feedSortTime.put(inner.id, event.created_at)
                             relayFeedBinaryInsert(inner, sortTime = event.created_at)
@@ -1052,18 +1053,18 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             1 -> {
                 val isReply = Nip10.isReply(event)
                 if (!isReply) {
-                    eventCache.put(event.id, event)
+                    eventCache[event.id] = event
                     relayHintStore?.extractHintsFromTags(event)
                     trendingFeedAppend(event)
                 }
             }
             Nip88.KIND_POLL -> {
-                eventCache.put(event.id, event)
+                eventCache[event.id] = event
                 relayHintStore?.extractHintsFromTags(event)
                 trendingFeedAppend(event)
             }
             30023 -> {
-                eventCache.put(event.id, event)
+                eventCache[event.id] = event
                 relayHintStore?.extractHintsFromTags(event)
                 trendingFeedAppend(event)
             }
@@ -1083,7 +1084,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         markVersionDirty()
                         val isReply = Nip10.isReply(inner)
                         if (!isReply) {
-                            eventCache.put(inner.id, inner)
+                            eventCache[inner.id] = inner
                             relayHintStore?.extractHintsFromTags(inner)
                             feedSortTime.put(inner.id, event.created_at)
                             trendingFeedAppend(inner)
@@ -1132,7 +1133,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun clearFeed() {
         resetFeedDisplay()
-        eventCache.evictAll()
+        eventCache.clear()
         seenEventIds.clear()
     }
 
