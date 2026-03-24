@@ -25,7 +25,7 @@ object Nip10 {
      * Returns the reply target event ID paired with its relay hint (if present).
      */
     fun getReplyTargetWithHint(event: NostrEvent): Pair<String, String?>? {
-        val eTags = event.tags.filter { it.size >= 2 && it[0] == "e" }
+        val eTags = event.tags.filter { it.size >= 2 && it[0] == "e" && it.getOrNull(3) != "mention" }
         // Prefer marked reply tag
         eTags.firstOrNull { it.size >= 4 && it[3] == "reply" }?.let {
             return it[1] to it.getOrNull(2)?.takeIf { url -> url.startsWith("wss://") || url.startsWith("ws://") }
@@ -51,7 +51,7 @@ object Nip10 {
      * Returns the root event ID paired with its relay hint (if present).
      */
     fun getRootIdWithHint(event: NostrEvent): Pair<String, String?>? {
-        val eTags = event.tags.filter { it.size >= 2 && it[0] == "e" }
+        val eTags = event.tags.filter { it.size >= 2 && it[0] == "e" && it.getOrNull(3) != "mention" }
         eTags.firstOrNull { it.size >= 4 && it[3] == "root" }?.let {
             return it[1] to it.getOrNull(2)?.takeIf { url -> url.startsWith("wss://") || url.startsWith("ws://") }
         }
