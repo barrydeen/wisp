@@ -793,7 +793,7 @@ fun WispNavHost(
                             popUpTo(0) { inclusive = true }
                         }
                     } else {
-                        navController.navigate(Routes.AUTH) {
+                        navController.navigate(Routes.SPLASH) {
                             popUpTo(0) { inclusive = true }
                         }
                     }
