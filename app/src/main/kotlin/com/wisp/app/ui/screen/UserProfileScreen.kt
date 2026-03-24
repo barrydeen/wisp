@@ -167,6 +167,8 @@ fun UserProfileScreen(
     val followedBy by viewModel.followedBy.collectAsState()
     val followProfileVersion by viewModel.followProfileVersion.collectAsState()
     val myFollowList by contactRepo.followList.collectAsState()
+    val pendingFirstFollow by viewModel.pendingFirstFollow.collectAsState()
+    val firstFollowCheckDone by viewModel.firstFollowCheckDone.collectAsState()
 
     val nip05Version by nip05Repo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val reactionVersion by eventRepo?.reactionVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
@@ -224,6 +226,37 @@ fun UserProfileScreen(
             text = { Text(zapErrorMessage ?: "") },
             confirmButton = {
                 TextButton(onClick = { zapErrorMessage = null }) { Text("OK") }
+            }
+        )
+    }
+
+    if (pendingFirstFollow) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissFirstFollow() },
+            title = { Text(if (firstFollowCheckDone) "No follow list found" else "Checking follow list") },
+            text = {
+                if (!firstFollowCheckDone) {
+                    androidx.compose.foundation.layout.Row(
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            modifier = androidx.compose.ui.Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = androidx.compose.ui.Modifier.width(12.dp))
+                        Text("Checking relays for an existing follow list...")
+                    }
+                } else {
+                    Text("No existing follow list was found on your relays. If you follow this person, your follow list will start at 1. If you believe this is wrong, rebroadcast your follow list from another client first, then try again.")
+                }
+            },
+            confirmButton = {
+                if (firstFollowCheckDone) {
+                    TextButton(onClick = { viewModel.confirmFirstFollow() }) { Text("Follow anyway") }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissFirstFollow() }) { Text("Cancel") }
             }
         )
     }

@@ -372,6 +372,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val zapSuccess: SharedFlow<String> = socialActions.zapSuccess
     val zapError: SharedFlow<String> = socialActions.zapError
     val reactionSent: SharedFlow<Unit> = socialActions.reactionSent
+    val pendingFirstFollow: StateFlow<String?> = socialActions.pendingFirstFollow
+    val firstFollowCheckDone: StateFlow<Boolean> = socialActions.firstFollowCheckDone
 
     fun getUserPubkey(): String? = keyRepo.getPubkeyHex()
     fun resetNewNoteCount() = eventRepo.resetNewNoteCount()
@@ -460,6 +462,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     // -- Social action delegates --
     fun toggleFollow(pubkey: String) = socialActions.toggleFollow(pubkey)
+    fun confirmFirstFollow() = socialActions.confirmFirstFollow()
+    fun dismissFirstFollow() = socialActions.dismissFirstFollow()
     fun blockUser(pubkey: String) = socialActions.blockUser(pubkey)
     fun unblockUser(pubkey: String) = socialActions.unblockUser(pubkey)
     fun updateMutedWords() = socialActions.updateMutedWords()
