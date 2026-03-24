@@ -1,0 +1,426 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Navigation -->
+    <string name="nav_home">홈</string>
+    <string name="nav_wallet">지갑</string>
+    <string name="nav_search">검색</string>
+    <string name="nav_messages">메시지</string>
+    <string name="nav_notifications">알림</string>
+
+    <!-- Drawer Menu -->
+    <string name="drawer_my_profile">내 프로필</string>
+    <string name="drawer_feeds">피드</string>
+    <string name="drawer_lists">리스트</string>
+    <string name="drawer_drafts">임시 저장</string>
+    <string name="drawer_settings">설정</string>
+    <string name="drawer_interface">인터페이스</string>
+    <string name="drawer_relays">릴레이</string>
+    <string name="drawer_media_servers">미디어 서버</string>
+    <string name="drawer_keys">키</string>
+    <string name="drawer_safety">안전</string>
+    <string name="drawer_proof_of_work">작업 증명</string>
+    <string name="drawer_social_graph">소셜 그래프</string>
+    <string name="drawer_custom_emojis">커스텀 이모지</string>
+    <string name="drawer_relay_health">릴레이 상태</string>
+    <string name="drawer_console">콘솔</string>
+
+    <!-- Screen Titles -->
+    <string name="title_search">검색</string>
+    <string name="title_wallet">지갑</string>
+    <string name="title_relay_health">릴레이 상태</string>
+    <string name="title_relay_detail">릴레이 상세</string>
+    <string name="title_edit_profile">프로필 수정</string>
+    <string name="title_compose">작성 / 새 게시물</string>
+    <string name="title_reply">답글</string>
+    <string name="title_quote">인용</string>
+    <string name="title_keys">키</string>
+    <string name="title_safety">안전</string>
+    <string name="title_relays">릴레이</string>
+    <string name="title_zaps">잽</string>
+    <string name="title_interface">인터페이스</string>
+    <string name="title_chat">채팅</string>
+    <string name="title_list">리스트</string>
+    <string name="title_community">커뮤니티</string>
+
+    <!-- Auth Screen -->
+    <string name="auth_sign_up">회원가입</string>
+    <string name="auth_log_in">로그인</string>
+    <string name="auth_login_with_signer">서명으로 로그인</string>
+    <string name="auth_or_log_in_with_key">또는 키로 로그인</string>
+    <string name="auth_nsec_or_npub">nsec 또는 npub…</string>
+    <string name="auth_connect_via_tor">Tor로 연결</string>
+    <string name="auth_connecting_to_tor">Tor 연결 중…</string>
+    <string name="auth_connected_via_tor">Tor로 연결됨</string>
+    <string name="auth_tor_error">Tor 오류</string>
+    <string name="auth_wisp">wisp</string>
+    <string name="auth_tagline">게시물을 스크롤하는 작은 인터페이스</string>
+    <string name="auth_hide_key">키 숨기기</string>
+    <string name="auth_show_key">키 표시</string>
+
+    <!-- Buttons -->
+    <string name="btn_continue">계속</string>
+    <string name="btn_lets_go">시작하기</string>
+    <string name="btn_save_profile">프로필 저장</string>
+    <string name="btn_save_draft">임시 저장</string>
+    <string name="compose_new_post">새 게시물</string>
+    <string name="compose_reply">답글</string>
+    <string name="compose_quote">인용</string>
+    <string name="compose_placeholder">무슨 생각을 하고 있나요?</string>
+    <string name="compose_publish">게시</string>
+    <string name="compose_publishing">게시 중…</string>
+    <string name="compose_uploading">업로드 중…</string>
+    <string name="compose_mining">채굴 중…</string>
+    <string name="compose_post_now">지금 게시 (%d)</string>
+    <string name="compose_replying_to">답글 달기 </string>
+    <string name="btn_post_now">지금 게시</string>
+    <string name="btn_cancel">취소</string>
+    <string name="btn_save">저장</string>
+    <string name="btn_delete">삭제</string>
+    <string name="btn_create">만들기</string>
+    <string name="btn_add">추가</string>
+    <string name="btn_remove">제거</string>
+    <string name="btn_close">닫기</string>
+    <string name="btn_ok">확인</string>
+    <string name="btn_retry">재시도</string>
+    <string name="btn_go_to_social_graph">소셜 그래프로 이동</string>
+    <string name="btn_go_to_wallet">지갑으로 이동</string>
+    <string name="btn_reveal_private_key">개인 키 표시</string>
+    <string name="private_key_warning">비밀 키를 누구와도 공유하지 마세요!</string>
+    <string name="btn_connect">연결</string>
+    <string name="btn_scan_qr">QR 스캔</string>
+    <string name="btn_skip">건너뛰기</string>
+    <string name="btn_follow">팔로우</string>
+    <string name="btn_unfollow">언팔로우</string>
+    <string name="btn_follow_all">전체 팔로우</string>
+    <string name="btn_block">차단</string>
+    <string name="btn_unblock">차단 해제</string>
+    <string name="btn_mute_thread">스레드 음소거</string>
+    <string name="btn_add_to_list">리스트에 추가</string>
+    <string name="btn_pin_to_profile">프로필에 고정</string>
+    <string name="btn_unpin_from_profile">프로필에서 고정 해제</string>
+    <string name="btn_share">공유</string>
+    <string name="btn_copy_note_id">노트 ID 복사</string>
+    <string name="btn_copy_note_json">노트 JSON 복사</string>
+    <string name="btn_hide">숨기기</string>
+    <string name="btn_retweet">리포스트</string>
+    <string name="btn_vote">투표</string>
+    <string name="btn_anonymous">익명</string>
+    <string name="btn_private">비공개</string>
+    <string name="btn_custom">사용자 정의</string>
+    <string name="btn_done">완료</string>
+    <string name="btn_edit">편집</string>
+    <string name="btn_add_preset">프리셋 추가</string>
+    <string name="btn_paste">붙여넣기</string>
+    <string name="btn_back">뒤로</string>
+    <string name="btn_clear">지우기</string>
+    <string name="btn_load_more">더 보기</string>
+    <string name="btn_try_anyway">그래도 시도</string>
+    <string name="btn_reconnect">재연결</string>
+    <string name="btn_gallery">갤러리</string>
+    <string name="btn_go">이동</string>
+    <string name="btn_send">보내기</string>
+    <string name="btn_receive">받기</string>
+    <string name="btn_next">다음</string>
+    <string name="btn_logout">로그아웃</string>
+    <string name="btn_use_as_feed">피드로 사용</string>
+    <string name="btn_follow_all_members">전체 멤버 팔로우</string>
+    <string name="btn_copy_list_json">리스트 JSON 복사</string>
+    <string name="btn_delete_list">리스트 삭제</string>
+    <string name="btn_copy">복사</string>
+    <string name="btn_undo">실행 취소</string>
+
+    <!-- Placeholders / Labels -->
+    <string name="placeholder_whats_on_your_mind">무슨 생각을 하고 있나요?</string>
+    <string name="placeholder_new_set_name">새 세트 이름</string>
+    <string name="placeholder_set_name">세트 이름</string>
+    <string name="placeholder_hashtag">해시태그</string>
+    <string name="placeholder_add_photo">사진 추가</string>
+    <string name="placeholder_display_name">표시 이름</string>
+    <string name="placeholder_about">소개</string>
+    <string name="placeholder_name">이름</string>
+    <string name="placeholder_profile_picture_url">프로필 사진 URL</string>
+    <string name="placeholder_banner_url">배너 URL</string>
+    <string name="placeholder_nip05">NIP-05 (예: user@domain.com)</string>
+    <string name="placeholder_lightning_address">라이트닝 주소</string>
+    <string name="placeholder_relay_url">wss:// 또는 ws://.onion</string>
+    <string name="placeholder_search_users_notes">사용자와 노트 검색</string>
+    <string name="placeholder_search_relay">릴레이 검색</string>
+    <string name="placeholder_add_relay">wss://relay.example.com</string>
+    <string name="placeholder_message">메시지…</string>
+    <string name="placeholder_relay_example">relay.example.com</string>
+    <string name="placeholder_option_x">옵션 %d</string>
+    <string name="placeholder_add_option">+ 옵션 추가</string>
+    <string name="placeholder_nwc_connection">NWC 연결 문자열</string>
+    <string name="placeholder_nwc_url">nostr+walletconnect://…</string>
+    <string name="placeholder_lightning_or_invoice">라이트닝 주소 또는 인보이스</string>
+    <string name="placeholder_user_domain">user@domain.com 또는 lnbc…</string>
+    <string name="placeholder_amount_sats">금액 (사츠)</string>
+    <string name="placeholder_message_optional">메시지 (선택)</string>
+    <string name="placeholder_new_list_name">새 리스트 이름</string>
+    <string name="placeholder_add_word_phrase">단어 또는 문구 추가</string>
+    <string name="placeholder_filter_by_name">이름으로 필터</string>
+    <string name="placeholder_npub_or_hex">npub1… 또는 hex</string>
+    <string name="placeholder_or_add_npub">또는 npub/hex로 추가:</string>
+    <string name="placeholder_to">받는 사람</string>
+    <string name="placeholder_network">네트워크</string>
+    <string name="placeholder_total_spent">총 지출</string>
+
+    <!-- Relay Permissions -->
+    <string name="relay_read">읽기</string>
+    <string name="relay_write">쓰기</string>
+    <string name="relay_auth">인증</string>
+
+    <!-- Tabs / Filters -->
+    <string name="tab_status">상태</string>
+    <string name="tab_failures">실패</string>
+    <string name="tab_events">이벤트</string>
+    <string name="tab_name">이름</string>
+    <string name="tab_all">전체</string>
+    <string name="tab_bad_only">문제만</string>
+    <string name="tab_errors">오류</string>
+    <string name="tab_connected">연결됨</string>
+    <string name="tab_bad">문제</string>
+    <string name="tab_people">사람들</string>
+    <string name="tab_notes">노트</string>
+    <string name="tab_follows">팔로잉</string>
+    <string name="tab_extended">확장</string>
+    <string name="tab_trending">트렌딩</string>
+    <string name="tab_relay">릴레이</string>
+    <string name="tab_list">리스트</string>
+    <string name="tab_hashtags">해시태그</string>
+    <string name="tab_feed">피드</string>
+    <string name="tab_muted_words">음소거 단어</string>
+    <string name="tab_muted_users">음소거 사용자</string>
+    <string name="tab_replies">답글</string>
+    <string name="tab_media">미디어</string>
+    <string name="tab_following">팔로잉</string>
+    <string name="tab_relays">릴레이</string>
+    <string name="tab_recent">최근</string>
+    <string name="tab_earlier">이전</string>
+    <string name="tab_pinned">고정됨</string>
+    <string name="tab_new_set">새 세트</string>
+    <string name="tab_all_relays">전체 릴레이</string>
+
+    <!-- Content Descriptions -->
+    <string name="cd_back">뒤로</string>
+    <string name="cd_toggle_tor">Tor 전환</string>
+    <string name="cd_toggle_theme">테마 전환</string>
+    <string name="cd_show_qr_code">QR 코드 표시</string>
+    <string name="cd_lightning_address">라이트닝 주소</string>
+    <string name="cd_switch_account">계정 전환</string>
+    <string name="cd_add_account">계정 추가</string>
+    <string name="cd_active">활성</string>
+    <string name="cd_seen_on">에서 봄</string>
+    <string name="cd_sent_with">(으)로 전송</string>
+    <string name="cd_filter_notifications">알림 필터</string>
+    <string name="filter_all">전체</string>
+    <string name="filter_replies">답글</string>
+    <string name="filter_reactions">리액션</string>
+    <string name="filter_zaps">잽</string>
+    <string name="filter_reposts">리포스트</string>
+    <string name="filter_mentions">멘션</string>
+    <string name="cd_mute_notifications">알림 음소거</string>
+    <string name="cd_unmute_notifications">알림 음소거 해제</string>
+    <string name="cd_reposted">리포스트됨</string>
+    <string name="cd_private_zap">비공개 잽</string>
+    <string name="cd_verified">인증됨</string>
+    <string name="cd_retry_verification">인증 재시도</string>
+    <string name="cd_more_options">더 많은 옵션</string>
+    <string name="cd_content_warning">콘텐츠 경고</string>
+    <string name="cd_reply">답글</string>
+    <string name="cd_react">리액트</string>
+    <string name="cd_repost">리포스트</string>
+    <string name="cd_zaps">잽</string>
+    <string name="cd_add_to_list">리스트에 추가</string>
+    <string name="cd_profile_picture">프로필 사진</string>
+    <string name="cd_following">팔로잉</string>
+    <string name="cd_blocked">차단됨</string>
+    <string name="cd_dm_relays">DM 릴레이</string>
+    <string name="cd_attach_media">미디어 첨부</string>
+    <string name="cd_send">보내기</string>
+    <string name="cd_receive">받기</string>
+    <string name="cd_banner">배너</string>
+    <string name="cd_send_message">메시지 보내기</string>
+    <string name="cd_private">비공개</string>
+    <string name="cd_play_video">비디오 재생</string>
+    <string name="cd_backspace">백스페이스</string>
+    <string name="cd_confirm">확인</string>
+    <string name="cd_qr_code">QR 코드</string>
+    <string name="cd_copy_npub">npub 복사</string>
+    <string name="cd_copy_hex_pubkey">Hex 공개키 복사</string>
+    <string name="cd_new_post">새 게시물</string>
+    <string name="cd_delete">삭제</string>
+    <string name="cd_add_hashtag">해시태그 추가</string>
+    <string name="cd_change_timeframe">시간대 변경</string>
+    <string name="cd_cancel_mining">마이닝 취소</string>
+    <string name="cd_hashtag_picker">해시태그 선택</string>
+    <string name="cd_add_relay">릴레이 추가</string>
+    <string name="cd_add_word">단어 추가</string>
+    <string name="cd_upload_avatar">아바타 업로드</string>
+    <string name="cd_upload_banner">배너 업로드</string>
+    <string name="cd_remove_relay">릴레이 제거</string>
+    <string name="cd_add_new">새로 추가</string>
+    <string name="cd_create_emoji_set">이모지 세트 만들기</string>
+    <string name="cd_upload_image">이미지 업로드</string>
+    <string name="cd_preview">미리보기</string>
+    <string name="cd_check_relay_backups">릴레이 백업 확인</string>
+    <string name="cd_copy_address">주소 복사</string>
+    <string name="cd_copy_invoice">인보이스 복사</string>
+    <string name="cd_invoice_qr_code">인보이스 QR 코드</string>
+    <string name="cd_lightning_address_qr_code">라이트닝 주소 QR 코드</string>
+    <string name="cd_refresh_balance">잔액 새로고침</string>
+    <string name="cd_transaction_history">거래 내역</string>
+    <string name="cd_spark">Spark</string>
+    <string name="cd_breez">Breez</string>
+    <string name="cd_add_members">멤버 추가</string>
+    <string name="cd_already_added">이미 추가됨</string>
+    <string name="cd_close">닫기</string>
+    <string name="cd_collapse">접기</string>
+    <string name="cd_expand">펼치기</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_welcome_back">다시 오신 것을 환영합니다</string>
+    <string name="onboarding_lets_get_set_up">계정을 설정해 드릴게요</string>
+    <string name="onboarding_your_network_relays">당신의 네트워크, 당신의 릴레이</string>
+    <string name="onboarding_network_description">Wisp는 친구들이 실제로 사용하는 릴레이를 발견하고 직접 연결합니다. 이를 통해 더 빠른 전달과 누락된 게시물 감소—중앙 서버 불필요.</string>
+    <string name="onboarding_quick_follow">빠른 팔로우</string>
+    <string name="onboarding_long_press_hint">프로필 사진을 길게 누르면 팔로우/언팔로우 가능</string>
+    <string name="onboarding_utxo">utxo</string>
+    <string name="onboarding_try_it">사용해보세요— 위 사진을 길게 누르세요</string>
+    <string name="onboarding_lightning_wallet_info">Wisp는 내장 라이트닝 지갑 또는 Nostr Wallet Connect를 통한 잽을 지원합니다. 지갑 화면에서 언제든지 설정할 수 있습니다.</string>
+    <string name="onboarding_setting_things_up">설정 중</string>
+    <string name="onboarding_youre_all_set">준비 완료!</string>
+    <string name="onboarding_mapping_graph">소셜 그래프 매핑 중…</string>
+    <string name="onboarding_finding_relays">친구의 릴레이 찾는 중…</string>
+    <string name="onboarding_connecting_network">네트워크 연결 중…</string>
+    <string name="onboarding_locating_gm">gm 노트 찾는 중…</string>
+    <string name="onboarding_cheering_fiatjaf">fiatjaf 응원 중…</string>
+    <string name="onboarding_fun_bitcoins">비트코인과 놀아보세요…</string>
+    <string name="onboarding_one_time_setup">일회성 설정입니다, 시간 선호도를 낮추세요…</string>
+    <string name="onboarding_almost_there">거의 완료…</string>
+    <string name="onboarding_please_wait">잠시만 기다려주세요…</string>
+    <string name="onboarding_publishing">게시 중…</string>
+    <string name="onboarding_wisp_logo">Wisp 로고</string>
+    <string name="onboarding_follow_all_x">전체 팔로우 (%d)</string>
+
+    <!-- Zap / Wallet -->
+    <string name="zap_send">잽 보내기</string>
+    <string name="zap_sats">사츠</string>
+    <string name="zap_quick_amounts">빠른 금액</string>
+    <string name="zap_wallet_not_connected">지갑 미연결</string>
+    <string name="zap_connect_wallet">잽을 보내려면 라이트닝 지갑을 연결하세요.</string>
+    <string name="zap_both_parties_need_dm_relays">양쪽 모두 DM 릴레이 필요</string>
+    <string name="zap_x_sats">%d 사츠 잽</string>
+    <string name="zap_failed">잽 실패</string>
+    <string name="wallet_nwc">Nostr Wallet Connect</string>
+    <string name="wallet_connect_info">사츠를 주고받으려면 라이트닝 지갑을 연결하세요. 지갑 제공자의 NWC 연결 문자열을 붙여넣으세요.</string>
+    <string name="wallet_recommended_wallets">추천 지갑</string>
+    <string name="wallet_connecting">연결 중…</string>
+    <string name="wallet_lightning_address_setup">라이트닝 주소 설정</string>
+    <string name="wallet_get_username">username@breez.tips 주소 받기</string>
+    <string name="wallet_tap_to_reveal">탭하여 표시</string>
+    <string name="dm_decrypting">메시지 복호화 중…</string>
+    <string name="dm_mining">마이닝 중…</string>
+    <string name="dm_peer">피어</string>
+    <string name="dm_you">당신</string>
+    <string name="dm_inbox">받은 편지함</string>
+    <string name="dm_your_relays">당신의 릴레이</string>
+
+    <!-- Settings / Interface -->
+    <string name="settings_text_size">텍스트 크기</string>
+    <string name="settings_large_text">큰 텍스트</string>
+    <string name="settings_increase_text_size">앱 전체 텍스트 크기 확대</string>
+    <string name="settings_language">언어</string>
+    <string name="settings_popular_themes">인기 테마</string>
+    <string name="settings_choose_color_scheme">색상 조합 선택</string>
+    <string name="settings_accent_color">강조 색상</string>
+    <string name="settings_preview">미리보기</string>
+    <string name="settings_new_notes_button">새 노트 버튼</string>
+    <string name="settings_hide_new_notes_button">새 노트 버튼 숨기기</string>
+    <string name="settings_hide_new_notes_description">새 노트가 도착했을 때 나타나는 플로팅 버튼 숨기기</string>
+    <string name="new_notes_button">%d개의 새 노트</string>
+    <string name="new_notes_hide_temporary">앱 재시작 시까지 숨기기</string>
+    <string name="new_notes_hide_forever">영구 숨기기</string>
+    <string name="broadcast_mining">PoW 채굴 중 (%dk)…</string>
+    <string name="broadcast_cancel_mining">채굴 취소</string>
+    <string name="broadcast_broadcasting">브로드캐스트 중 (%d/%d)</string>
+    <string name="broadcast_published">%d개 릴레이에 게시됨</string>
+    <string name="broadcast_published_plural">%d개 릴레이에 게시됨</string>
+    <string name="settings_media">미디어</string>
+    <string name="settings_auto_load_media">미디어 자동 로드</string>
+    <string name="settings_auto_load_description">노트의 이미지 및 비디오 자동 다운로드. 꺼짐 시 탭하여 로드.</string>
+    <string name="settings_video_autoplay">비디오 자동 재생</string>
+    <string name="settings_video_autoplay_description">뷰로 스크롤될 때 비디오 자동 재생</string>
+    <string name="settings_client_tag">클라이언트 태그</string>
+    <string name="settings_tag_notes">Wisp로 노트 태그하기</string>
+    <string name="settings_tag_notes_description">Wisp를 클라이언트로 식별하는 태그 포함. 다른 사람에게 표시됨.</string>
+    <string name="settings_public_key">공개키</string>
+    <string name="settings_private_key">개인키</string>
+    <string name="settings_public_key_copied">공개키 복사됨</string>
+    <string name="settings_private_key_copied">개인키 복사됨</string>
+    <string name="settings_authenticate_view_key">개인키를 보려면 인증하세요</string>
+    <string name="settings_auth_failed">인증 실패: %s</string>
+    <string name="settings_never_share_key">개인키를 절대 공유하지 마세요. nsec을 가진 사람은 계정을 완전히 제어할 수 있습니다.</string>
+    <string name="settings_muted_words_description">이러한 단어가 포함된 노트는 피드에서 숨겨집니다.</string>
+    <string name="settings_no_muted_users">음소거된 사용자 없음</string>
+    <string name="settings_copy_profile_json">프로필 JSON 복사</string>
+    <string name="settings_profile_json_copied">프로필 JSON 복사됨</string>
+
+    <!-- Translation (UI for post content translation) -->
+    <string name="translate_sensitive_content">민감한 콘텐츠</string>
+    <string name="translate_tap_to_reveal">탭하여 표시</string>
+    <string name="translate_show_more">더 보기</string>
+    <string name="translate_show_less">줄이기</string>
+    <string name="translate_show_original">원본 표시</string>
+    <string name="translate_show_translation">번역 표시</string>
+    <string name="translate_same_language">같은 언어</string>
+    <string name="translate_translate">번역</string>
+    <string name="translate_detecting_language">언어 감지 중…</string>
+    <string name="translate_downloading_model">언어 모델 다운로드 중…</string>
+    <string name="translate_translating">번역 중…</string>
+    <string name="translate_translated_from">%s에서 번역됨</string>
+
+    <!-- Errors / Alerts -->
+    <string name="error_social_graph_required">소셜 그래프 필요</string>
+    <string name="error_extended_feed_description">확장 피드는 친구의 친구의 게시물을 보여줍니다. 먼저 소셜 그래프를 계산해야 합니다.</string>
+    <string name="error_couldnt_connect_relay">릴레이에 연결할 수 없습니다</string>
+    <string name="error_delete_set_hashtags">%s과 모든 해시태그를 삭제하시겠습니까?</string>
+    <string name="error_relay_broadcast">릴레이 목록 브로드캐스트</string>
+    <string name="error_broadcast_failed">브로드캐스트 실패</string>
+    <string name="error_no_results_found">결과 없음</string>
+    <string name="error_search_hint">릴레이에서 사용자 및 노트 검색</string>
+    <string name="error_no_notifications">아직 알림 없음</string>
+    <string name="error_list_not_found">리스트를 찾을 수 없음</string>
+    <string name="error_no_list_members">이 리스트에 멤버가 없습니다</string>
+
+    <!-- Dropdown / Menu Options -->
+    <string name="menu_add_to_relay_set">릴레이 세트에 추가</string>
+    <string name="menu_select_relay">릴레이 선택</string>
+    <string name="menu_select_list">리스트 선택</string>
+    <string name="menu_delete_set">세트 삭제</string>
+    <string name="menu_add_search_relay">검색 릴레이 추가</string>
+
+    <!-- Relay Broadcast -->
+    <string name="broadcast_nip65">릴레이 목록 브로드캐스트 (NIP-65)</string>
+    <string name="broadcast_dm_relays">DM 릴레이 브로드캐스트</string>
+    <string name="broadcast_search_relays">검색 릴레이 브로드캐스트</string>
+    <string name="broadcast_blocked_relays">차단된 릴레이 브로드캐스트</string>
+
+    <!-- Post Card -->
+    <string name="post_retweeted">리포스트됨</string>
+    <string name="post_and_others_retweeted">외 %d명이 리포스트함</string>
+    <string name="post_pow_x">PoW %d</string>
+    <string name="post_replying_to">%s에게 답글</string>
+    <string name="post_now_x">지금 게시 (%d초)</string>
+
+    <!-- QR Code Dialog -->
+    <string name="qr_npub">npub</string>
+    <string name="qr_hex">Hex</string>
+
+    <!-- Safety -->
+    <string name="safety_hide_until_restart">앱 재시작까지 숨기기</string>
+    <string name="safety_hide_forever">영구히 숨기기</string>
+
+    <!-- Time -->
+    <string name="time_24h">24시간</string>
+</resources>

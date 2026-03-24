@@ -1,0 +1,435 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_wallet">Portemonnee</string>
+    <string name="nav_search">Zoeken</string>
+    <string name="nav_messages">Berichten</string>
+    <string name="nav_notifications">Meldingen</string>
+
+    <!-- Drawer Menu -->
+    <string name="drawer_my_profile">Mijn Profiel</string>
+    <string name="drawer_feeds">Feeds</string>
+    <string name="drawer_lists">Lijsten</string>
+    <string name="drawer_drafts">Concepten</string>
+    <string name="drawer_settings">Instellingen</string>
+    <string name="drawer_interface">Interface</string>
+    <string name="drawer_relays">Relays</string>
+    <string name="drawer_media_servers">Mediaservers</string>
+    <string name="drawer_keys">Sleutels</string>
+    <string name="drawer_safety">Veiligheid</string>
+    <string name="drawer_proof_of_work">Proof of Work</string>
+    <string name="drawer_social_graph">Sociaal Graaf</string>
+    <string name="drawer_custom_emojis">Aangepaste Emoji\'s</string>
+    <string name="drawer_relay_health">Relay Gezondheid</string>
+    <string name="drawer_console">Console</string>
+
+    <!-- Screen Titles -->
+    <string name="title_search">Zoeken</string>
+    <string name="title_wallet">Portemonnee</string>
+    <string name="title_relay_health">Relay Gezondheid</string>
+    <string name="title_relay_detail">Relay Details</string>
+    <string name="title_edit_profile">Profiel Bewerken</string>
+    <string name="title_compose">Opstellen / Nieuwe Post</string>
+    <string name="title_reply">Reageren</string>
+    <string name="title_quote">Citeren</string>
+    <string name="title_keys">Sleutels</string>
+    <string name="title_safety">Veiligheid</string>
+    <string name="title_relays">Relays</string>
+    <string name="title_zaps">Zaps</string>
+    <string name="title_interface">Interface</string>
+    <string name="title_chat">Chat</string>
+    <string name="title_list">Lijst</string>
+    <string name="title_community">Gemeenschap</string>
+
+    <!-- Auth Screen -->
+    <string name="auth_sign_up">Aanmelden</string>
+    <string name="auth_log_in">Inloggen</string>
+    <string name="auth_login_with_signer">Inloggen met Signer</string>
+    <string name="auth_or_log_in_with_key">Of log in met je sleutel</string>
+    <string name="auth_nsec_or_npub">nsec of npub…</string>
+    <string name="auth_connect_via_tor">Verbind via Tor</string>
+    <string name="auth_connecting_to_tor">Verbinden met Tor…</string>
+    <string name="auth_connected_via_tor">Verbonden via Tor</string>
+    <string name="auth_tor_error">Tor fout</string>
+    <string name="auth_wisp">wisp</string>
+    <string name="auth_tagline">een kleine interface om door posts te scrollen</string>
+    <string name="auth_hide_key">Sleutel verbergen</string>
+    <string name="auth_show_key">Sleutel tonen</string>
+
+    <!-- Buttons -->
+    <string name="btn_continue">Doorgaan</string>
+    <string name="btn_lets_go">Laten we gaan</string>
+    <string name="btn_save_profile">Profiel Opslaan</string>
+    <string name="btn_save_draft">Concept Opslaan</string>
+    <string name="compose_new_post">Nieuw Bericht</string>
+    <string name="compose_reply">Reageren</string>
+    <string name="compose_quote">Citeren</string>
+    <string name="compose_placeholder">Waar denk je aan?</string>
+    <string name="compose_publish">Plaatsen</string>
+    <string name="compose_publishing">Plaatsen…</string>
+    <string name="compose_uploading">Uploaden…</string>
+    <string name="compose_mining">Minen…</string>
+    <string name="compose_post_now">Nu plaatsen (%d)</string>
+    <string name="compose_replying_to">Reageren op </string>
+    <string name="btn_post_now">Nu Plaatstellen</string>
+    <string name="btn_cancel">Annuleren</string>
+    <string name="btn_save">Opslaan</string>
+    <string name="btn_delete">Verwijderen</string>
+    <string name="btn_create">Maken</string>
+    <string name="btn_add">Toevoegen</string>
+    <string name="btn_remove">Verwijderen</string>
+    <string name="btn_close">Sluiten</string>
+    <string name="btn_ok">OK</string>
+    <string name="btn_retry">Opnieuw proberen</string>
+    <string name="btn_go_to_social_graph">Ga naar Sociaal Graaf</string>
+    <string name="btn_go_to_wallet">Ga naar Portemonnee</string>
+    <string name="btn_reveal_private_key">Privésleutel Tonen</string>
+    <string name="private_key_warning">Deel uw privésleutel nooit met iemand!</string>
+    <string name="btn_connect">Verbinden</string>
+    <string name="btn_scan_qr">QR Scannen</string>
+    <string name="btn_skip">Overslaan</string>
+    <string name="btn_follow">Volgen</string>
+    <string name="btn_unfollow">Ontvolgen</string>
+    <string name="btn_follow_all">Allen Volgen</string>
+    <string name="btn_block">Blokkeren</string>
+    <string name="btn_unblock">Deblokkeren</string>
+    <string name="btn_mute_thread">Thread Dempen</string>
+    <string name="btn_add_to_list">Aan Lijst Toevoegen</string>
+    <string name="btn_pin_to_profile">Aan Profiel Vastmaken</string>
+    <string name="btn_unpin_from_profile">Van Profiel Losmaken</string>
+    <string name="btn_share">Delen</string>
+    <string name="btn_copy_note_id">Notitie-ID Kopiëren</string>
+    <string name="btn_copy_note_json">Notitie-JSON Kopiëren</string>
+    <string name="btn_hide">Verbergen</string>
+    <string name="btn_retweet">Delen</string>
+    <string name="btn_vote">Stemmen</string>
+    <string name="btn_anonymous">Anoniem</string>
+    <string name="btn_private">Privé</string>
+    <string name="btn_custom">Aangepast</string>
+    <string name="btn_done">Klaar</string>
+    <string name="btn_edit">Bewerken</string>
+    <string name="btn_add_preset">Voorinstelling Toevoegen</string>
+    <string name="btn_paste">Plakken</string>
+    <string name="btn_back">Terug</string>
+    <string name="btn_clear">Wissen</string>
+    <string name="btn_load_more">Meer Laden</string>
+    <string name="btn_try_anyway">Toch Proberen</string>
+    <string name="btn_reconnect">Opnieuw Verbinden</string>
+    <string name="btn_gallery">Galerij</string>
+    <string name="btn_go">Ga</string>
+    <string name="btn_send">Verzenden</string>
+    <string name="btn_receive">Ontvangen</string>
+    <string name="btn_next">Volgende</string>
+    <string name="btn_logout">Uitloggen</string>
+    <string name="btn_use_as_feed">Als Feed Gebruiken</string>
+    <string name="btn_follow_all_members">Allen Volgen</string>
+    <string name="btn_copy_list_json">Lijst-JSON Kopiëren</string>
+    <string name="btn_delete_list">Lijst Verwijderen</string>
+    <string name="btn_copy">Kopiëren</string>
+    <string name="btn_undo">Ongedaan Maken</string>
+
+    <!-- Placeholders / Labels -->
+    <string name="placeholder_whats_on_your_mind">Waar denk je aan?</string>
+    <string name="placeholder_new_set_name">Naam nieuwe set</string>
+    <string name="placeholder_set_name">Setnaam</string>
+    <string name="placeholder_hashtag">hashtag</string>
+    <string name="placeholder_add_photo">Foto Toevoegen</string>
+    <string name="placeholder_display_name">Weergavenaam</string>
+    <string name="placeholder_about">Over</string>
+    <string name="placeholder_name">Naam</string>
+    <string name="placeholder_profile_picture_url">URL Profielfoto</string>
+    <string name="placeholder_banner_url">URL Banner</string>
+    <string name="placeholder_nip05">NIP-05 (bijv. gebruiker@domein.com)</string>
+    <string name="placeholder_lightning_address">Lightning Adres</string>
+    <string name="placeholder_relay_url">wss:// of ws://.onion</string>
+    <string name="placeholder_search_users_notes">Gebruikers en notities zoeken</string>
+    <string name="placeholder_search_relay">Relay zoeken</string>
+    <string name="placeholder_add_relay">wss://relay.voorbeeld.com</string>
+    <string name="placeholder_message">Bericht…</string>
+    <string name="placeholder_relay_example">relay.voorbeeld.com</string>
+    <string name="placeholder_option_x">Optie %d</string>
+    <string name="placeholder_add_option">+ Optie Toevoegen</string>
+    <string name="placeholder_nwc_connection">NWC Verbindingsreeks</string>
+    <string name="placeholder_nwc_url">nostr+walletconnect://…</string>
+    <string name="placeholder_lightning_or_invoice">Lightning adres of factuur</string>
+    <string name="placeholder_user_domain">gebruiker@domein.com of lnbc…</string>
+    <string name="placeholder_amount_sats">Bedrag (sats)</string>
+    <string name="placeholder_message_optional">Bericht (optioneel)</string>
+    <string name="placeholder_new_list_name">Nieuwe lijstnaam</string>
+    <string name="placeholder_add_word_phrase">Een woord of zin toevoegen</string>
+    <string name="placeholder_filter_by_name">Filteren op naam</string>
+    <string name="placeholder_npub_or_hex">npub1… of hex</string>
+    <string name="placeholder_or_add_npub">Of toevoegen per npub / hex:</string>
+    <string name="placeholder_to">Aan</string>
+    <string name="placeholder_network">Netwerk</string>
+    <string name="placeholder_total_spent">Totaal besteed</string>
+
+    <!-- Relay Permissions -->
+    <string name="relay_read">lezen</string>
+    <string name="relay_write">schrijven</string>
+    <string name="relay_auth">authenticatie</string>
+
+    <!-- Tabs / Filters -->
+    <string name="tab_status">Status</string>
+    <string name="tab_failures">Fouten</string>
+    <string name="tab_events">Evenementen</string>
+    <string name="tab_name">Naam</string>
+    <string name="tab_all">Alle</string>
+    <string name="tab_bad_only">Alleen Slechte</string>
+    <string name="tab_errors">Fouten</string>
+    <string name="tab_connected">Verbonden</string>
+    <string name="tab_bad">Slecht</string>
+    <string name="tab_people">Mensen</string>
+    <string name="tab_notes">Notities</string>
+    <string name="tab_follows">Volgend</string>
+    <string name="tab_extended">Uitgebreid</string>
+    <string name="tab_trending">Trending</string>
+    <string name="tab_relay">Relay</string>
+    <string name="tab_list">Lijst</string>
+    <string name="tab_hashtags">Hashtags</string>
+    <string name="tab_feed">Feed</string>
+    <string name="tab_muted_words">Gedempte Woorden</string>
+    <string name="tab_muted_users">Gedempte Gebruikers</string>
+    <string name="tab_replies">Antwoorden</string>
+    <string name="tab_media">Media</string>
+    <string name="tab_following">Volgend</string>
+    <string name="tab_relays">Relays</string>
+    <string name="tab_recent">Recent</string>
+    <string name="tab_earlier">Eerder</string>
+    <string name="tab_pinned">Vastgemaakt</string>
+    <string name="tab_new_set">Nieuwe Set</string>
+    <string name="tab_all_relays">Alle relays</string>
+
+    <!-- Content Descriptions -->
+    <string name="cd_back">Terug</string>
+    <string name="cd_toggle_tor">Tor Toggle</string>
+    <string name="cd_toggle_theme">Theme Toggle</string>
+    <string name="cd_show_qr_code">QR-code Tonen</string>
+    <string name="cd_lightning_address">Lightning Adres</string>
+    <string name="cd_switch_account">Account Wisselen</string>
+    <string name="cd_add_account">Account Toevoegen</string>
+    <string name="cd_active">Actief</string>
+    <string name="cd_seen_on">Gezien op</string>
+    <string name="cd_sent_with">Verzonden met</string>
+    <string name="cd_filter_notifications">Meldingen Filteren</string>
+    <string name="filter_all">Alles</string>
+    <string name="filter_replies">Antwoorden</string>
+    <string name="filter_reactions">Reacties</string>
+    <string name="filter_zaps">Zaps</string>
+    <string name="filter_reposts">Delen</string>
+    <string name="filter_mentions">Vermeldingen</string>
+    <string name="cd_mute_notifications">Meldingen Dempen</string>
+    <string name="cd_unmute_notifications">Meldingen Aanzetten</string>
+    <string name="cd_reposted">gedeeld</string>
+    <string name="cd_private_zap">Privé zap</string>
+    <string name="cd_verified">Geverifieerd</string>
+    <string name="cd_retry_verification">Verificatie Opnieuw</string>
+    <string name="cd_more_options">Meer Opties</string>
+    <string name="cd_content_warning">Inhoud Waarschuwing</string>
+    <string name="cd_reply">Reageren</string>
+    <string name="cd_react">Reageren</string>
+    <string name="cd_repost">Delen</string>
+    <string name="cd_zaps">Zaps</string>
+    <string name="cd_add_to_list">Aan Lijst Toevoegen</string>
+    <string name="cd_profile_picture">Profielfoto</string>
+    <string name="cd_following">Volgend</string>
+    <string name="cd_blocked">Geblokkeerd</string>
+    <string name="cd_dm_relays">DM Relays</string>
+    <string name="cd_attach_media">Media Bijvoegen</string>
+    <string name="cd_send">Verzenden</string>
+    <string name="cd_receive">Ontvangen</string>
+    <string name="cd_banner">Banner</string>
+    <string name="cd_send_message">Bericht Verzenden</string>
+    <string name="cd_private">Privé</string>
+    <string name="cd_play_video">Video Afspelen</string>
+    <string name="cd_backspace">Backspace</string>
+    <string name="cd_confirm">Bevestigen</string>
+    <string name="cd_qr_code">QR-code</string>
+    <string name="cd_copy_npub">npub Kopiëren</string>
+    <string name="cd_copy_hex_pubkey">Hex Pubkey Kopiëren</string>
+    <string name="cd_new_post">Nieuwe post</string>
+    <string name="cd_delete">Verwijderen</string>
+    <string name="cd_add_hashtag">Hashtag Toevoegen</string>
+    <string name="cd_change_timeframe">Tijdsperiode Veranderen</string>
+    <string name="cd_cancel_mining">Mining Annuleren</string>
+    <string name="cd_hashtag_picker">Hashtag Kiezer</string>
+    <string name="cd_add_relay">Relay Toevoegen</string>
+    <string name="cd_add_word">Woord Toevoegen</string>
+    <string name="cd_upload_avatar">Avatar Uploaden</string>
+    <string name="cd_upload_banner">Banner Uploaden</string>
+    <string name="cd_remove_relay">Relay Verwijderen</string>
+    <string name="cd_add_new">Nieuw Toevoegen</string>
+    <string name="cd_create_emoji_set">Emoji Set Maken</string>
+    <string name="cd_upload_image">Afbeelding Uploaden</string>
+    <string name="cd_preview">Voorbeeld</string>
+    <string name="cd_check_relay_backups">Relay Backups Controleren</string>
+    <string name="cd_copy_address">Adres Kopiëren</string>
+    <string name="cd_copy_invoice">Factuur Kopiëren</string>
+    <string name="cd_invoice_qr_code">Factuur QR-code</string>
+    <string name="cd_lightning_address_qr_code">Lightning Adres QR-code</string>
+    <string name="cd_refresh_balance">Saldo Vernieuwen</string>
+    <string name="cd_transaction_history">Transactiegeschiedenis</string>
+    <string name="cd_spark">Spark</string>
+    <string name="cd_breez">Breez</string>
+    <string name="cd_add_members">Leden Toevoegen</string>
+    <string name="cd_already_added">Al Toegevoegd</string>
+    <string name="cd_close">Sluiten</string>
+    <string name="cd_collapse">Inklappen</string>
+    <string name="cd_expand">Uitklappen</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_welcome_back">Welkom terug</string>
+    <string name="onboarding_lets_get_set_up">Laten we je account instellen</string>
+    <string name="onboarding_your_network_relays">Jouw netwerk, jouw relays</string>
+    <string name="onboarding_network_description">Wisp ontdekt welke relays je vrienden daadwerkelijk gebruiken en maakt rechtstreeks verbinding met die relays. Dit betekent snellere levering en minder gemiste posts — geen centrale server nodig.</string>
+    <string name="onboarding_quick_follow">Snel Volgen</string>
+    <string name="onboarding_long_press_hint">Houd een profielfoto lang ingedrukt om te volgen of te ontvolgen</string>
+    <string name="onboarding_utxo">utxo</string>
+    <string name="onboarding_try_it">Probeer het — houd de afbeelding hierboven lang ingedrukt</string>
+    <string name="onboarding_lightning_wallet_info">Wisp ondersteunt zaps met een ingebedde Lightning portemonnee of Nostr Wallet Connect. Je kunt dit altijd instellen via het Portemonnee scherm.</string>
+    <string name="onboarding_setting_things_up">Instellen bezig</string>
+    <string name="onboarding_youre_all_set">Je bent klaar!</string>
+    <string name="onboarding_mapping_graph">Je sociaal graaf in kaart brengen…</string>
+    <string name="onboarding_finding_relays">De relays van je vrienden zoeken…</string>
+    <string name="onboarding_connecting_network">Verbinden met je netwerk…</string>
+    <string name="onboarding_locating_gm">gm notities zoeken…</string>
+    <string name="onboarding_cheering_fiatjaf">fiatjaf aan het aanmoedigen…</string>
+    <string name="onboarding_fun_bitcoins">Plezier hebben met je bitcoins…</string>
+    <string name="onboarding_one_time_setup">Dit is een eenmalige instelling, verlaag je tijdvoorkeur…</string>
+    <string name="onboarding_almost_there">Bijna klaar…</string>
+    <string name="onboarding_please_wait">Even geduld…</string>
+    <string name="onboarding_publishing">Publiceren…</string>
+    <string name="onboarding_wisp_logo">Wisp logo</string>
+    <string name="onboarding_follow_all_x">Allen Volgen (%d)</string>
+
+    <!-- Zap / Wallet -->
+    <string name="zap_send">Zap Verzenden</string>
+    <string name="zap_sats">sats</string>
+    <string name="zap_quick_amounts">Snelle Bedragen</string>
+    <string name="zap_wallet_not_connected">Portemonnee Niet Verbonden</string>
+    <string name="zap_connect_wallet">Verbind een Lightning portemonnee om zaps te verzenden.</string>
+    <string name="zap_both_parties_need_dm_relays">Beide partijen hebben DM relays nodig</string>
+    <string name="zap_x_sats">Zap %d sats</string>
+    <string name="zap_failed">Zap Mislukt</string>
+    <string name="wallet_nwc">Nostr Wallet Connect</string>
+    <string name="wallet_connect_info">Verbind een Lightning portemonnee om sats te verzenden en ontvangen. Plak een NWC verbindingsreeks van je portemonnee-provider.</string>
+    <string name="wallet_recommended_wallets">Aanbevolen Portemonnees</string>
+    <string name="wallet_connecting">Verbinden…</string>
+    <string name="wallet_lightning_address_setup">Stel je Lightning Adres in</string>
+    <string name="wallet_get_username">Krijg een gebruiker@breez.tips adres</string>
+    <string name="wallet_tap_to_reveal">Tik om te onthullen</string>
+    <string name="dm_decrypting">Berichten Ontsleutelen…</string>
+    <string name="dm_mining">Mining…</string>
+    <string name="dm_peer">Peer</string>
+    <string name="dm_you">Jij</string>
+    <string name="dm_inbox">postvak in</string>
+    <string name="dm_your_relays">jouw relays</string>
+
+    <!-- Settings / Interface -->
+    <string name="settings_text_size">Tekstgrootte</string>
+    <string name="settings_large_text">Grote tekst</string>
+    <string name="settings_increase_text_size">Tekstgrootte in de hele app vergroten</string>
+    <string name="settings_language">Taal</string>
+    <string name="settings_popular_themes">Populaire Thema\'s</string>
+    <string name="settings_choose_color_scheme">Kies kleurenschema</string>
+    <string name="settings_accent_color">Accentkleur</string>
+    <string name="settings_preview">Voorbeeld</string>
+    <string name="settings_new_notes_button">Nieuwe Notities Knop</string>
+    <string name="settings_hide_new_notes_button">Nieuwe notities knop verbergen</string>
+    <string name="settings_hide_new_notes_description">De drijvende knop verbergen die verschijnt wanneer nieuwe notities arriveren</string>
+    <string name="new_notes_button">%d nieuwe notities</string>
+    <string name="new_notes_hide_temporary">Verbergen tot app opnieuw start</string>
+    <string name="new_notes_hide_forever">Voor altijd verbergen</string>
+    <string name="broadcast_mining">PoW minen (%dk)…</string>
+    <string name="broadcast_cancel_mining">Minen annuleren</string>
+    <string name="broadcast_broadcasting">Broadcasten (%d/%d)</string>
+    <string name="broadcast_published">Gepubliceerd naar %d relay</string>
+    <string name="broadcast_published_plural">Gepubliceerd naar %d relays</string>
+    <string name="settings_media">Media</string>
+    <string name="settings_auto_load_media">Media automatisch laden</string>
+    <string name="settings_auto_load_description">Afbeeldingen en video\'s in notities automatisch downloaden. Als uit, tik om te laden.</string>
+    <string name="settings_video_autoplay">Video automatisch afspelen</string>
+    <string name="settings_video_autoplay_description">Video\'s automatisch afspelen wanneer ze in beeld scrollen</string>
+    <string name="settings_client_tag">Client Tag</string>
+    <string name="settings_tag_notes">Notities taggen met Wisp</string>
+    <string name="settings_tag_notes_description">Voeg een tag toe die Wisp als client identificeert. Dit is zichtbaar voor anderen.</string>
+    <string name="settings_public_key">Publieke Sleutel</string>
+    <string name="settings_private_key">Privésleutel</string>
+    <string name="settings_public_key_copied">Publieke sleutel gekopieerd</string>
+    <string name="settings_private_key_copied">Privésleutel gekopieerd</string>
+    <string name="settings_authenticate_view_key">Authenticeer om je privéd sleutel te bekijken</string>
+    <string name="settings_auth_failed">Authenticatie mislukt: %s</string>
+    <string name="settings_never_share_key">Deel nooit je privéd sleutel. Iedereen met je nsec heeft volledige controle over je account.</string>
+    <string name="settings_muted_words_description">Notities met deze woorden worden verborgen uit je feed.</string>
+    <string name="settings_no_muted_users">Geen gedempte gebruikers</string>
+    <string name="settings_copy_profile_json">Profiel-JSON Kopiëren</string>
+    <string name="settings_profile_json_copied">Profiel-JSON gekopieerd</string>
+
+    <!-- Translation (UI for post content translation) -->
+    <string name="translate_sensitive_content">Gevoelige inhoud</string>
+    <string name="translate_tap_to_reveal">Tik om te onthullen</string>
+    <string name="translate_show_more">Meer Tonen</string>
+    <string name="translate_show_less">Minder Tonen</string>
+    <string name="translate_show_original">Origineel Tonen</string>
+    <string name="translate_show_translation">Vertaling Tonen</string>
+    <string name="translate_same_language">Zelfde Taal</string>
+    <string name="translate_translate">Vertalen</string>
+    <string name="translate_detecting_language">Taal detecteren…</string>
+    <string name="translate_downloading_model">Taalmodel downloaden…</string>
+    <string name="translate_translating">Vertalen…</string>
+    <string name="translate_translated_from">Vertaald uit het %s</string>
+
+    <!-- Errors / Alerts -->
+    <string name="error_social_graph_required">Sociaal graaf vereist</string>
+    <string name="error_extended_feed_description">De uitgebreide feed toont berichten van vrienden-van-vrienden. Je moet eerst je sociaal graaf berekenen.</string>
+    <string name="error_couldnt_connect_relay">Kon geen verbinding maken met relay</string>
+    <string name="error_delete_set_hashtags">%s en alle bijbehorende hashtags verwijderen?</string>
+    <string name="error_relay_broadcast">Relay lijst uitzenden</string>
+    <string name="error_broadcast_failed">Uitzenden mislukt</string>
+    <string name="error_no_results_found">Geen resultaten gevonden</string>
+    <string name="error_search_hint">Gebruikers en notities op relays zoeken</string>
+    <string name="error_no_notifications">Nog geen meldingen</string>
+    <string name="error_no_messages">Nog geen berichten</string>
+    <string name="error_send_message_hint">Stuur een bericht van iemands profiel</string>
+    <string name="loading_searching_profile">Zoeken naar je profiel…</string>
+    <string name="loading_finding_friends">Je vrienden zoeken…</string>
+    <string name="loading_finding_friends_progress">Je vrienden zoeken… %d/%d</string>
+    <string name="loading_discovering_network">Uitgebreid netwerk ontdekken… %d/%d</string>
+    <string name="loading_expanding_relays">Verbinden met %d uitgebreide relays…</string>
+    <string name="loading_subscribing">Abonneren op feed…</string>
+    <string name="loading_notes">Notities laden…</string>
+    <string name="error_list_not_found">Lijst niet gevonden</string>
+    <string name="error_no_list_members">Deze lijst heeft geen leden</string>
+
+    <!-- Dropdown / Menu Options -->
+    <string name="menu_add_to_relay_set">Aan Relay Set Toevoegen</string>
+    <string name="menu_select_relay">Relay Selecteren</string>
+    <string name="menu_select_list">Lijst Selecteren</string>
+    <string name="menu_delete_set">Set Verwijderen</string>
+    <string name="menu_add_search_relay">Zoek relay toevoegen</string>
+
+    <!-- Relay Broadcast -->
+    <string name="broadcast_nip65">Relay Lijst Uitzenden (NIP-65)</string>
+    <string name="broadcast_dm_relays">DM Relays Uitzenden</string>
+    <string name="broadcast_search_relays">Zoek Relays Uitzenden</string>
+    <string name="broadcast_blocked_relays">Geblokkeerde Relays Uitzenden</string>
+
+    <!-- Post Card -->
+    <string name="post_retweeted">gedeeld</string>
+    <string name="post_and_others_retweeted">en %d anderen deelden</string>
+    <string name="post_pow_x">PoW %d</string>
+    <string name="post_replying_to">Reageren op %s</string>
+    <string name="post_now_x">Nu plaatsen (%ds)</string>
+
+    <!-- QR Code Dialog -->
+    <string name="qr_npub">npub</string>
+    <string name="qr_hex">Hex</string>
+
+    <!-- Safety -->
+    <string name="safety_hide_until_restart">Verbergen tot app herstart</string>
+    <string name="safety_hide_forever">Voor altijd verbergen</string>
+
+    <!-- Time -->
+    <string name="time_24h">24u</string>
+</resources>
