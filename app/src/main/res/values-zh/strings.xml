@@ -1,0 +1,628 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Navigation -->
+    <string name="nav_home">首页</string>
+    <string name="nav_wallet">钱包</string>
+    <string name="nav_search">搜索</string>
+    <string name="nav_messages">消息</string>
+    <string name="nav_notifications">通知</string>
+
+    <!-- Drawer Menu -->
+    <string name="drawer_my_profile">我的资料</string>
+    <string name="drawer_feeds">动态</string>
+    <string name="drawer_lists">列表</string>
+    <string name="drawer_drafts">草稿 &amp; 定时</string>
+    <string name="drawer_settings">设置</string>
+
+    <!-- Drafts & Scheduled -->
+    <string name="drafts_scheduled_title">草稿 &amp; 定时</string>
+    <string name="drafts_tab">草稿</string>
+    <string name="scheduled_tab">定时</string>
+    <string name="no_drafts_saved">没有保存的草稿</string>
+    <string name="no_scheduled_posts">没有定时帖子</string>
+    <string name="draft_label">草稿</string>
+    <string name="reply_label">回复</string>
+    <string name="delete_draft">删除草稿</string>
+    <string name="empty_content">（空）</string>
+    <string name="remove_from_schedule">取消定时</string>
+    <string name="drawer_interface">界面</string>
+    <string name="drawer_relays">中继</string>
+    <string name="drawer_media_servers">媒体服务器</string>
+    <string name="drawer_keys">密钥</string>
+    <string name="drawer_safety">安全</string>
+    <string name="drawer_proof_of_work">工作量证明</string>
+    <string name="drawer_social_graph">社交图谱</string>
+    <string name="drawer_custom_emojis">自定义表情</string>
+    <string name="drawer_relay_health">中继健康</string>
+    <string name="drawer_console">控制台</string>
+
+    <!-- Screen Titles -->
+    <string name="title_search">搜索</string>
+    <string name="title_wallet">钱包</string>
+    <string name="title_relay_health">中继健康</string>
+    <string name="title_relay_detail">中继详情</string>
+    <string name="title_edit_profile">编辑资料</string>
+    <string name="title_compose">撰写 / 新帖子</string>
+    <string name="title_reply">回复</string>
+    <string name="title_quote">引用</string>
+    <string name="title_keys">密钥</string>
+    <string name="title_safety">安全</string>
+    <string name="title_relays">中继</string>
+    <string name="title_zaps">闪电支付</string>
+    <string name="title_interface">界面</string>
+    <string name="title_chat">聊天</string>
+    <string name="title_list">列表</string>
+    <string name="title_community">社区</string>
+
+    <!-- Auth Screen -->
+    <string name="auth_sign_up">注册</string>
+    <string name="auth_log_in">登录</string>
+    <string name="auth_login_with_signer">使用签名器登录</string>
+    <string name="auth_or_log_in_with_key">或使用密钥登录</string>
+    <string name="auth_nsec_or_npub">nsec 或 npub…</string>
+    <string name="auth_connect_via_tor">通过 Tor 连接</string>
+    <string name="auth_connecting_to_tor">正在连接 Tor…</string>
+    <string name="auth_connected_via_tor">已通过 Tor 连接</string>
+    <string name="auth_tor_error">Tor 错误</string>
+    <string name="auth_wisp">wisp</string>
+    <string name="auth_tagline">滚动帖子的轻量界面</string>
+    <string name="auth_hide_key">隐藏密钥</string>
+    <string name="auth_show_key">显示密钥</string>
+
+    <!-- Buttons -->
+    <string name="btn_continue">继续</string>
+    <string name="btn_lets_go">开始吧</string>
+    <string name="btn_save_profile">保存资料</string>
+    <string name="btn_save_draft">保存草稿</string>
+    <string name="compose_new_post">新帖子</string>
+    <string name="compose_reply">回复</string>
+    <string name="compose_quote">引用</string>
+    <string name="compose_placeholder">你在想什么？</string>
+    <string name="compose_publish">发布</string>
+    <string name="compose_publishing">发布中…</string>
+    <string name="compose_uploading">上传中…</string>
+    <string name="compose_mining">挖矿中…</string>
+    <string name="compose_post_now">立即发布 (%d)</string>
+    <string name="compose_replying_to">回复 </string>
+    <string name="content_marked_nsfw">标记为 NSFW</string>
+    <string name="btn_post_now">立即发布</string>
+    <string name="btn_cancel">取消</string>
+    <string name="btn_save">保存</string>
+    <string name="btn_delete">删除</string>
+    <string name="btn_create">创建</string>
+    <string name="btn_add">添加</string>
+    <string name="btn_remove">移除</string>
+    <string name="btn_close">关闭</string>
+    <string name="btn_ok">确定</string>
+    <string name="btn_retry">重试</string>
+    <string name="btn_go_to_social_graph">前往社交图谱</string>
+    <string name="btn_go_to_wallet">前往钱包</string>
+    <string name="btn_reveal_private_key">显示私钥</string>
+    <string name="private_key_warning">切勿与任何人分享您的私钥！</string>
+    <string name="btn_connect">连接</string>
+    <string name="btn_scan_qr">扫描二维码</string>
+    <string name="btn_skip">跳过</string>
+    <string name="btn_follow">关注</string>
+    <string name="btn_unfollow">取消关注</string>
+    <string name="btn_follow_all">全部关注</string>
+    <string name="btn_block">屏蔽</string>
+    <string name="btn_unblock">取消屏蔽</string>
+    <string name="btn_mute_thread">静音主题</string>
+    <string name="btn_add_to_list">添加到列表</string>
+    <string name="btn_pin_to_profile">固定到资料</string>
+    <string name="btn_unpin_from_profile">从资料取消固定</string>
+    <string name="btn_share">分享</string>
+    <string name="btn_copy_note_id">复制笔记 ID</string>
+    <string name="btn_copy_note_json">复制笔记 JSON</string>
+    <string name="btn_hide">隐藏</string>
+    <string name="btn_retweet">转发</string>
+    <string name="btn_vote">投票</string>
+    <string name="btn_anonymous">匿名</string>
+    <string name="btn_private">私密</string>
+    <string name="btn_custom">自定义</string>
+    <string name="btn_done">完成</string>
+    <string name="btn_edit">编辑</string>
+    <string name="btn_add_preset">添加预设</string>
+    <string name="btn_paste">粘贴</string>
+    <string name="btn_back">返回</string>
+    <string name="btn_clear">清除</string>
+    <string name="btn_load_more">加载更多</string>
+    <string name="btn_try_anyway">仍然尝试</string>
+    <string name="btn_reconnect">重新连接</string>
+    <string name="btn_gallery">图库</string>
+    <string name="btn_go">前往</string>
+    <string name="btn_send">发送</string>
+    <string name="btn_receive">接收</string>
+    <string name="btn_next">下一步</string>
+    <string name="btn_logout">退出</string>
+    <string name="btn_use_as_feed">用作动态</string>
+    <string name="btn_follow_all_members">关注所有成员</string>
+    <string name="btn_copy_list_json">复制列表 JSON</string>
+    <string name="btn_delete_list">删除列表</string>
+    <string name="btn_copy">复制</string>
+    <string name="btn_undo">撤销</string>
+
+    <!-- Placeholders / Labels -->
+    <string name="placeholder_whats_on_your_mind">你在想什么？</string>
+    <string name="placeholder_new_set_name">新集合名称</string>
+    <string name="placeholder_set_name">集合名称</string>
+    <string name="placeholder_hashtag">标签</string>
+    <string name="placeholder_add_photo">添加照片</string>
+    <string name="placeholder_display_name">显示名称</string>
+    <string name="placeholder_about">关于</string>
+    <string name="placeholder_name">名称</string>
+    <string name="placeholder_profile_picture_url">头像 URL</string>
+    <string name="placeholder_banner_url">横幅 URL</string>
+    <string name="placeholder_nip05">NIP-05（例如：user@domain.com）</string>
+    <string name="placeholder_lightning_address">闪电地址</string>
+    <string name="placeholder_relay_url">wss:// 或 ws://.onion</string>
+    <string name="placeholder_search_users_notes">搜索用户和笔记</string>
+    <string name="placeholder_search_relay">搜索中继</string>
+    <string name="placeholder_add_relay">wss://relay.example.com</string>
+    <string name="placeholder_message">消息…</string>
+    <string name="placeholder_relay_example">relay.example.com</string>
+    <string name="placeholder_option_x">选项 %d</string>
+    <string name="placeholder_add_option">+ 添加选项</string>
+    <string name="placeholder_nwc_connection">NWC 连接字符串</string>
+    <string name="placeholder_nwc_url">nostr+walletconnect://…</string>
+    <string name="placeholder_lightning_or_invoice">闪电地址或发票</string>
+    <string name="placeholder_user_domain">user@domain.com 或 lnbc…</string>
+    <string name="placeholder_amount_sats">金额（聪）</string>
+    <string name="placeholder_message_optional">消息（可选）</string>
+    <string name="placeholder_new_list_name">新列表名称</string>
+    <string name="placeholder_add_word_phrase">添加词语或短语</string>
+    <string name="placeholder_filter_by_name">按名称筛选</string>
+    <string name="placeholder_npub_or_hex">npub1… 或 hex</string>
+    <string name="placeholder_or_add_npub">或通过 npub / hex 添加：</string>
+    <string name="placeholder_to">发送给</string>
+    <string name="placeholder_network">网络</string>
+    <string name="placeholder_total_spent">总支出</string>
+
+    <!-- Relay Permissions -->
+    <string name="relay_read">读取</string>
+    <string name="relay_write">写入</string>
+    <string name="relay_auth">认证</string>
+
+    <!-- Tabs / Filters -->
+    <string name="tab_status">状态</string>
+    <string name="tab_failures">失败</string>
+    <string name="tab_events">事件</string>
+    <string name="tab_name">名称</string>
+    <string name="tab_all">全部</string>
+    <string name="tab_bad_only">仅问题</string>
+    <string name="tab_errors">错误</string>
+    <string name="tab_connected">已连接</string>
+    <string name="tab_bad">问题</string>
+    <string name="tab_people">用户</string>
+    <string name="tab_notes">笔记</string>
+    <string name="tab_follows">关注</string>
+    <string name="tab_extended">扩展</string>
+    <string name="tab_trending">热门</string>
+    <string name="tab_relay">中继</string>
+    <string name="tab_list">列表</string>
+    <string name="tab_hashtags">话题</string>
+    <string name="interests">兴趣</string>
+    <string name="tab_feed">动态</string>
+    <string name="loading_interest_sets">正在加载兴趣集…</string>
+    <string name="no_interest_sets">暂无兴趣集。在下方创建一个，或从动态页面关注话题标签。</string>
+    <string name="no_hashtags_yet">暂无话题标签</string>
+    <string name="delete_set">删除集</string>
+    <string name="tab_muted_words">静音词语</string>
+    <string name="tab_muted_users">静音用户</string>
+    <string name="tab_replies">回复</string>
+    <string name="tab_media">媒体</string>
+    <string name="tab_following">关注</string>
+    <string name="tab_relays">中继</string>
+    <string name="tab_recent">最近</string>
+    <string name="tab_earlier">更早</string>
+    <string name="tab_pinned">已固定</string>
+    <string name="tab_new_set">新集合</string>
+    <string name="btn_new_set">+ 新集合</string>
+    <string name="tab_all_relays">所有中继</string>
+    <string name="tab_favorites">收藏</string>
+    <string name="tab_relay_sets">中继集合</string>
+    <string name="tab_combined_feed">合并动态</string>
+    <string name="relay_count_format">%d 个中继</string>
+    <string name="relay_covers_format">覆盖 %d</string>
+    <string name="error_no_relay_scores">暂无中继评分</string>
+    <string name="btn_add_to_set">+集合</string>
+    <string name="btn_details">详情</string>
+
+    <!-- Content Descriptions -->
+    <string name="cd_back">返回</string>
+    <string name="cd_toggle_tor">切换 Tor</string>
+    <string name="cd_toggle_theme">切换主题</string>
+    <string name="cd_show_qr_code">显示二维码</string>
+    <string name="cd_lightning_address">闪电地址</string>
+    <string name="cd_switch_account">切换账户</string>
+    <string name="cd_add_account">添加账户</string>
+    <string name="cd_active">活跃</string>
+    <string name="cd_seen_on">发布于</string>
+    <string name="cd_sent_with">发送于</string>
+    <string name="cd_filter_notifications">筛选通知</string>
+    <string name="filter_all">全部</string>
+    <string name="filter_replies">回复</string>
+    <string name="filter_reactions">反应</string>
+    <string name="filter_zaps">闪电支付</string>
+    <string name="filter_reposts">转发</string>
+    <string name="filter_mentions">提及</string>
+    <string name="cd_mute_notifications">静音通知</string>
+    <string name="cd_unmute_notifications">取消静音通知</string>
+    <string name="cd_reposted">已转发</string>
+    <string name="cd_private_zap">私密闪电支付</string>
+    <string name="cd_verified">已验证</string>
+    <string name="cd_retry_verification">重试验证</string>
+    <string name="cd_more_options">更多选项</string>
+    <string name="cd_content_warning">内容警告</string>
+    <string name="cd_reply">回复</string>
+    <string name="cd_react">反应</string>
+    <string name="cd_repost">转发</string>
+    <string name="cd_zaps">闪电支付</string>
+    <string name="cd_add_to_list">添加到列表</string>
+    <string name="cd_profile_picture">头像</string>
+    <string name="cd_following">关注</string>
+    <string name="cd_blocked">已屏蔽</string>
+    <string name="cd_dm_relays">私信中继</string>
+    <string name="cd_attach_media">附加媒体</string>
+    <string name="cd_send">发送</string>
+    <string name="cd_receive">接收</string>
+    <string name="cd_banner">横幅</string>
+    <string name="cd_send_message">发送消息</string>
+    <string name="cd_private">私密</string>
+    <string name="cd_play_video">播放视频</string>
+    <string name="cd_backspace">退格</string>
+    <string name="cd_confirm">确认</string>
+    <string name="cd_qr_code">二维码</string>
+    <string name="cd_copy_npub">复制 npub</string>
+    <string name="cd_copy_hex_pubkey">复制十六进制公钥</string>
+    <string name="cd_new_post">新帖子</string>
+    <string name="cd_delete">删除</string>
+    <string name="cd_add_hashtag">添加话题</string>
+    <string name="cd_change_timeframe">更改时间段</string>
+    <string name="cd_cancel_mining">取消挖矿</string>
+    <string name="cd_hashtag_picker">话题选择器</string>
+    <string name="cd_add_relay">添加中继</string>
+    <string name="cd_add_word">添加词语</string>
+    <string name="cd_upload_avatar">上传头像</string>
+    <string name="cd_upload_banner">上传横幅</string>
+    <string name="cd_remove_relay">移除中继</string>
+    <string name="cd_add_new">新增</string>
+    <string name="cd_create_emoji_set">创建表情包</string>
+    <string name="cd_upload_image">上传图片</string>
+
+    <!-- Custom Emoji Screen -->
+    <string name="emoji_quick_reactions">快速反应</string>
+    <string name="emoji_quick_reactions_description">反应选择器中显示的Unicode表情</string>
+    <string name="emoji_custom_image_emojis">自定义图片表情</string>
+    <string name="emoji_custom_image_description">来自表情列表的图片表情 (kind 10030)</string>
+    <string name="emoji_available_custom">可用的自定义表情</string>
+    <string name="emoji_available_description">反应选择器中所有可用的自定义表情</string>
+    <string name="emoji_manage">管理</string>
+    <string name="emoji_remove">移除</string>
+    <string name="emoji_save_removed">保存（已移除 %d 个）</string>
+    <string name="emoji_my_sets">我的表情集</string>
+    <string name="emoji_no_sets_yet">还没有表情集。点击 + 创建一个。</string>
+    <string name="emoji_add_custom">添加自定义表情</string>
+    <string name="emoji_shortcode">短代码</string>
+    <string name="emoji_count_format">%d 个表情</string>
+    <string name="emoji_library_title">表情库</string>
+    <string name="emoji_add_from_keyboard">从键盘添加</string>
+    <string name="emoji_add_from_keyboard_hint">输入或粘贴表情</string>
+    <string name="emoji_dialog_add">添加</string>
+    <string name="emoji_dialog_cancel">取消</string>
+    <string name="emoji_done_format">完成 (%d)</string>
+
+    <!-- Blossom/Media Servers Screen -->
+    <string name="blossom_title">媒体服务器</string>
+    <string name="blossom_broadcast">广播服务器列表</string>
+    <string name="blossom_broadcast_sent">广播已发送</string>
+    <string name="blossom_drag_reorder">拖动以重新排序优先级</string>
+
+    <!-- PoW Screen -->
+    <string name="pow_description">工作量证明为你的活动挖掘哈希前缀，作为垃圾邮件威慑。难度越高需要越长时间，但表明更多努力。</string>
+    <string name="pow_notes">帖子</string>
+    <string name="pow_enable_notes">为帖子启用 PoW</string>
+    <string name="pow_notes_subtitle">在发布帖子前挖掘工作量证明</string>
+    <string name="pow_notes_difficulty">帖子难度</string>
+    <string name="pow_reactions">反应</string>
+    <string name="pow_enable_reactions">为反应启用 PoW</string>
+    <string name="pow_reactions_subtitle">在反应上挖掘工作量证明（低难度下不到一秒）</string>
+    <string name="pow_reactions_difficulty">反应难度</string>
+    <string name="pow_dms">私信</string>
+    <string name="pow_enable_dms">为私信启用 PoW</string>
+    <string name="pow_dms_subtitle">在发送私信前在 Gift Wraps 上挖掘工作量证明</string>
+    <string name="pow_dms_difficulty">私信难度</string>
+    <string name="pow_bits_format">%d bits</string>
+
+    <!-- Social Graph Screen -->
+    <string name="social_not_computed">社交图谱尚未计算。</string>
+
+    <!-- Console Screen -->
+    <string name="console_no_errors">无错误日志</string>
+
+    <!-- Poll -->
+    <string name="poll_option">选项 %d</string>
+    <string name="poll_add_option">+ 添加选项</string>
+    <string name="poll_single_choice">单选</string>
+    <string name="poll_multiple_choice">多选</string>
+    <string name="social_compute_now">立即计算</string>
+    <string name="social_fetching_follows">正在获取关注列表...</string>
+    <string name="social_building_graph">正在构建图谱...</string>
+    <string name="social_computing_network">正在计算网络...</string>
+    <string name="social_filtering">正在筛选...</string>
+    <string name="social_fetching_relays">正在获取中继列表...</string>
+    <string name="social_warning">这可能需要2\u20155分钟。请停留在此屏幕直至完成。</string>
+    <string name="social_top_accounts">热门账户</string>
+    <string name="social_qualified_from">%2$d关注中有%1$d个合格</string>
+    <string name="social_recompute">重新计算</string>
+    <string name="social_view_profile">查看资料</string>
+    <string name="social_followed_by">被%d人关注</string>
+    <string name="social_followed_by_yours">被你的%d个关注者关注</string>
+    <string name="social_complete">计算完成</string>
+    <string name="social_done">完成</string>
+    <string name="social_failed">发现失败</string>
+    <string name="social_retry">重试</string>
+    <string name="social_stat_follows">关注</string>
+    <string name="social_stat_2nd_degree">二度</string>
+    <string name="social_stat_qualified">合格</string>
+    <string name="social_stat_relays">中继</string>
+    <string name="social_stat_follows_1st">关注(一度)</string>
+    <string name="social_stat_2nd_users">二度用户</string>
+    <string name="social_stat_qualified_thresh">合格(阈值)</string>
+    <string name="social_stat_relays_covered">覆盖的中继</string>
+
+    <string name="cd_preview">预览</string>
+    <string name="cd_check_relay_backups">检查中继备份</string>
+    <string name="cd_copy_address">复制地址</string>
+    <string name="cd_copy_invoice">复制发票</string>
+    <string name="cd_invoice_qr_code">发票二维码</string>
+    <string name="cd_lightning_address_qr_code">闪电地址二维码</string>
+    <string name="cd_refresh_balance">刷新余额</string>
+    <string name="cd_transaction_history">交易历史</string>
+    <string name="cd_spark">Spark</string>
+    <string name="cd_breez">Breez</string>
+    <string name="cd_add_members">添加成员</string>
+    <string name="cd_already_added">已添加</string>
+    <string name="cd_close">关闭</string>
+    <string name="cd_collapse">收起</string>
+    <string name="cd_expand">展开</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_welcome_back">欢迎回来</string>
+    <string name="onboarding_lets_get_set_up">让我们设置你的账户</string>
+    <string name="onboarding_your_network_relays">你的网络，你的中继</string>
+    <string name="onboarding_network_description">Wisp 发现你朋友实际使用的中继，然后直接连接到这些中继。这意味着更快的投递和更少的帖子遗漏——无需中央服务器。</string>
+    <string name="onboarding_quick_follow">快速关注</string>
+    <string name="onboarding_long_press_hint">长按任意头像可关注或取消关注</string>
+    <string name="onboarding_utxo">utxo</string>
+    <string name="onboarding_try_it">试试看——长按上面的图片</string>
+    <string name="onboarding_lightning_wallet_info">Wisp 支持通过内置闪电钱包或 Nostr Wallet Connect 进行闪电支付。你可以随时在钱包页面设置。</string>
+    <string name="onboarding_setting_things_up">正在设置</string>
+    <string name="onboarding_youre_all_set">一切就绪！</string>
+    <string name="onboarding_mapping_graph">正在绘制你的社交图谱…</string>
+    <string name="onboarding_finding_relays">正在查找你朋友的 relay…</string>
+    <string name="onboarding_connecting_network">正在连接到你的网络…</string>
+    <string name="onboarding_locating_gm">正在定位 gm 帖子…</string>
+    <string name="onboarding_cheering_fiatjaf">正在为 fiatjaf 加油…</string>
+    <string name="onboarding_fun_bitcoins">尽情玩弄你的比特币吧…</string>
+    <string name="onboarding_one_time_setup">这是一次性设置，降低你的时间偏好…</string>
+    <string name="onboarding_almost_there">快完成了…</string>
+    <string name="onboarding_please_wait">请稍候…</string>
+    <string name="onboarding_publishing">正在发布…</string>
+    <string name="onboarding_wisp_logo">Wisp 标志</string>
+    <string name="onboarding_follow_all_x">全部关注（%d）</string>
+
+    <!-- Zap / Wallet -->
+    <string name="zap_send">发送闪电支付</string>
+    <string name="zap_sats">聪</string>
+    <string name="zap_quick_amounts">快速金额</string>
+    <string name="zap_wallet_not_connected">钱包未连接</string>
+    <string name="zap_connect_wallet">连接闪电钱包以发送闪电支付。</string>
+    <string name="zap_both_parties_need_dm_relays">双方都需要私信中继</string>
+    <string name="zap_x_sats">支付 %d 聪</string>
+    <string name="zap_failed">闪电支付失败</string>
+    <string name="dm_decrypting">正在解密消息…</string>
+    <string name="dm_mining">正在挖矿…</string>
+    <string name="dm_peer">对等方</string>
+    <string name="dm_you">你</string>
+    <string name="dm_inbox">收件箱</string>
+    <string name="dm_your_relays">你的中继</string>
+
+    <!-- Settings / Interface -->
+    <string name="settings_text_size">字体大小</string>
+    <string name="settings_large_text">大字体</string>
+    <string name="settings_increase_text_size">增大整个应用的字体</string>
+    <string name="settings_language">语言</string>
+    <string name="settings_popular_themes">热门主题</string>
+    <string name="settings_choose_color_scheme">选择配色方案</string>
+    <string name="settings_accent_color">强调色</string>
+    <string name="settings_preview">预览</string>
+    <string name="settings_new_notes_button">新帖子按钮</string>
+    <string name="settings_hide_new_notes_button">隐藏新帖子按钮</string>
+    <string name="settings_hide_new_notes_description">隐藏新帖子到达时出现的浮动按钮</string>
+    <string name="new_notes_button">%d 条新帖子</string>
+    <string name="new_notes_hide_temporary">隐藏直到应用重启</string>
+    <string name="new_notes_hide_forever">永久隐藏</string>
+    <string name="broadcast_mining">正在挖矿 PoW (%dk)…</string>
+    <string name="broadcast_cancel_mining">取消挖矿</string>
+    <string name="broadcast_broadcasting">广播中 (%d/%d)</string>
+    <string name="broadcast_published">已发布到 %d 个中继</string>
+    <string name="broadcast_published_plural">已发布到 %d 个中继</string>
+    <string name="settings_media">媒体</string>
+    <string name="settings_auto_load_media">自动加载媒体</string>
+    <string name="settings_auto_load_description">自动下载帖子中的图片和视频。关闭时，点击加载。</string>
+    <string name="settings_video_autoplay">视频自动播放</string>
+    <string name="settings_video_autoplay_description">当视频滚动到视图中时自动播放</string>
+    <string name="settings_client_tag">客户端标签</string>
+    <string name="settings_tag_notes">用 Wisp 标记帖子</string>
+    <string name="settings_tag_notes_description">包含标识 Wisp 为客户端的标签。这对其他人可见。</string>
+    <string name="settings_public_key">公钥</string>
+    <string name="settings_private_key">私钥</string>
+    <string name="settings_public_key_copied">公钥已复制</string>
+    <string name="settings_private_key_copied">私钥已复制</string>
+    <string name="settings_authenticate_view_key">验证身份以查看你的私钥</string>
+    <string name="settings_auth_failed">验证失败：%s</string>
+    <string name="settings_never_share_key">切勿分享你的私钥。拥有你的 nsec 的人可以完全控制你的账户。</string>
+    <string name="settings_muted_words_description">包含这些词语的帖子将从你的动态中隐藏。</string>
+    <string name="settings_no_muted_users">没有静音用户</string>
+    <string name="settings_copy_profile_json">复制资料 JSON</string>
+    <string name="settings_profile_json_copied">资料 JSON 已复制</string>
+
+    <!-- Translation (UI for post content translation) -->
+    <string name="translate_sensitive_content">敏感内容</string>
+    <string name="translate_tap_to_reveal">点击显示</string>
+    <string name="translate_show_more">展开更多</string>
+    <string name="translate_show_less">收起</string>
+    <string name="translate_show_original">显示原文</string>
+    <string name="translate_show_translation">显示翻译</string>
+    <string name="translate_same_language">相同语言</string>
+    <string name="translate_translate">翻译</string>
+    <string name="translate_detecting_language">正在检测语言…</string>
+    <string name="translate_downloading_model">正在下载语言模型…</string>
+    <string name="translate_translating">正在翻译…</string>
+    <string name="translate_translated_from">从 %s 翻译</string>
+
+    <!-- Errors / Alerts -->
+    <string name="error_social_graph_required">需要社交图谱</string>
+    <string name="error_extended_feed_description">扩展动态显示朋友的朋友的帖子。你需要先计算你的社交图谱。</string>
+    <string name="error_couldnt_connect_relay">无法连接到中继</string>
+    <string name="error_delete_set_hashtags">删除 %s 及其所有话题？</string>
+    <string name="error_relay_broadcast">中继列表广播</string>
+    <string name="error_broadcast_failed">广播失败</string>
+    <string name="error_no_results_found">未找到结果</string>
+    <string name="error_search_hint">在中继上搜索用户和笔记</string>
+    <string name="error_no_notifications">暂无通知</string>
+    <string name="error_no_messages">暂无消息</string>
+    <string name="error_send_message_hint">从某人资料发送消息</string>
+    <string name="loading_searching_profile">正在搜索您的资料…</string>
+    <string name="loading_finding_friends">正在查找您的朋友…</string>
+    <string name="loading_finding_friends_progress">正在查找您的朋友… %d/%d</string>
+    <string name="loading_discovering_network">正在发现扩展网络… %d/%d</string>
+    <string name="loading_expanding_relays">正在连接 %d 个扩展中继…</string>
+    <string name="loading_subscribing">正在订阅动态…</string>
+    <string name="loading_notes">正在加载帖子…</string>
+    <string name="loading_connecting_relays">正在连接中继…</string>
+    <string name="loading_finding_posts">正在寻找帖子…</string>
+    <string name="loading_preparing_feed">正在准备动态…</string>
+    <string name="error_list_not_found">未找到列表</string>
+    <string name="error_no_list_members">此列表没有成员</string>
+
+    <!-- Dropdown / Menu Options -->
+    <string name="menu_add_to_relay_set">添加到中继集合</string>
+    <string name="menu_select_relay">选择中继</string>
+    <string name="menu_select_list">选择列表</string>
+    <string name="menu_delete_set">删除集合</string>
+    <string name="menu_add_search_relay">添加搜索中继</string>
+
+    <!-- Relay Broadcast -->
+    <string name="broadcast_nip65">广播中继列表（NIP-65）</string>
+    <string name="broadcast_dm_relays">广播私信中继</string>
+    <string name="broadcast_search_relays">广播搜索中继</string>
+    <string name="broadcast_blocked_relays">广播屏蔽的中继</string>
+
+    <!-- Post Card -->
+    <string name="post_retweeted">已转发</string>
+    <string name="post_and_others_retweeted">等 %d 人转发</string>
+    <string name="post_pow_x">PoW %d</string>
+    <string name="post_replying_to">回复 %s</string>
+    <string name="post_now_x">立即发布（%d秒）</string>
+
+    <!-- QR Code Dialog -->
+    <string name="qr_npub">npub</string>
+    <string name="qr_hex">十六进制</string>
+
+    <!-- Safety -->
+    <string name="safety_hide_until_restart">应用重启前隐藏</string>
+    <string name="safety_hide_forever">永久隐藏</string>
+
+    <!-- Time -->
+    <string name="time_24h">24小时</string>
+
+    <!-- Profile -->
+    <string name="profile_tab_notes">帖子</string>
+    <string name="profile_tab_replies">回复</string>
+    <string name="profile_tab_media">媒体</string>
+    <string name="profile_tab_following">关注</string>
+    <string name="profile_tab_followers">粉丝</string>
+    <string name="profile_tab_relays">中继</string>
+    <string name="profile_sort_recent">最新</string>
+    <string name="profile_sort_likes">点赞</string>
+    <string name="profile_sort_reposts">转发</string>
+    <string name="profile_sort_zaps">打赏</string>
+    <string name="profile_sort_replies">回复</string>
+    <string name="profile_edit">编辑资料</string>
+    <string name="profile_follows_you">关注了你</string>
+    <string name="profile_copy_json">复制资料JSON</string>
+    <string name="profile_add_to_list">添加到列表</string>
+    <string name="profile_block">屏蔽</string>
+    <string name="profile_unblock">取消屏蔽</string>
+    <string name="profile_no_notes">暂无帖子</string>
+    <string name="profile_no_replies">暂无回复</string>
+    <string name="profile_no_media">暂无媒体</string>
+    <string name="profile_not_following">未关注任何人</string>
+    <string name="profile_no_followers">未找到粉丝</string>
+    <string name="profile_no_relays">未发布中继列表</string>
+    <string name="profile_relay_list">中继列表（NIP-65）</string>
+    <string name="profile_discovered_relays">发现的中继</string>
+    <string name="profile_other_discovered_relays">其他发现的中继</string>
+    <string name="profile_pinned">已置顶</string>
+    <string name="profile_json_copied">资料JSON已复制</string>
+    <string name="profile_send_message">发送消息</string>
+    <string name="profile_search_notes">搜索帖子</string>
+    <string name="profile_crawling_still">仍在抓取或账户太新</string>
+    <string name="profile_crawling_no_results">暂无排名结果。请稍后再试。</string>
+
+    <!-- Wallet -->
+    <string name="wallet_connect_wallet">连接钱包</string>
+    <string name="wallet_choose_how">选择如何连接Lightning钱包以发送和接收聪。</string>
+    <string name="wallet_create_new">创建新钱包</string>
+    <string name="wallet_create_description">直接在Wisp中创建新钱包，资金由Spark提供商保障</string>
+    <string name="wallet_nwc">Nostr钱包连接</string>
+    <string name="wallet_nwc_description">使用NWC连接字符串连接外部Lightning钱包。</string>
+    <string name="wallet_connect_lightning">连接Lightning钱包以发送和接收聪。粘贴您钱包提供商的NWC连接字符串。</string>
+    <string name="wallet_recommended">推荐钱包</string>
+    <string name="wallet_nwc_connection_string">NWC连接字符串</string>
+    <string name="wallet_connecting">连接中…</string>
+    <string name="wallet_connect">连接</string>
+    <string name="wallet_spark">Spark钱包</string>
+    <string name="wallet_tap_to_reveal">点击显示</string>
+    <string name="wallet_set_up_lightning">设置Lightning地址</string>
+    <string name="wallet_get_username">获取用户名@breez.tips地址</string>
+    <string name="wallet_send">发送</string>
+    <string name="wallet_receive">接收</string>
+    <string name="wallet_lightning_address_invoice">Lightning地址或发票</string>
+    <string name="wallet_paste">粘贴</string>
+    <string name="wallet_scan_qr">扫描二维码</string>
+    <string name="wallet_gallery">相册</string>
+    <string name="wallet_next">下一步</string>
+    <string name="wallet_scan_qr_code">扫描二维码</string>
+    <string name="wallet_camera_permission">需要相机权限</string>
+    <string name="wallet_grant_permission">授予权限</string>
+    <string name="wallet_point_camera">将相机对准Lightning发票或地址二维码</string>
+    <string name="wallet_send_to">发送到</string>
+    <string name="wallet_resolving">解析中…</string>
+    <string name="wallet_confirm_payment">确认付款</string>
+    <string name="wallet_sats">聪</string>
+    <string name="wallet_fees">费用</string>
+    <string name="wallet_total_spent">总支出</string>
+    <string name="wallet_pay">支付</string>
+    <string name="wallet_sending_payment">发送付款中…</string>
+    <string name="wallet_payment_received">已收到付款</string>
+    <string name="wallet_transactions">交易</string>
+    <string name="wallet_no_transactions">暂无交易</string>
+    <string name="wallet_load_more">加载更多</string>
+    <string name="wallet_received">已接收</string>
+    <string name="wallet_sent">已发送</string>
+    <string name="wallet_fee">费用: %,d 聪</string>
+    <string name="wallet_spark_sdk">SDK v%s</string>
+    <string name="wallet_not_supported">您的钱包不支持</string>
+    <string name="wallet_creating_invoice">创建发票中…</string>
+
+    <!-- Diagnostics -->
+    <string name="diagnostics_title">诊断</string>
+    <string name="diagnostic_mode">诊断模式</string>
+    <string name="diagnostic_mode_description">将事件处理决策记录到文件以进行调试</string>
+    <string name="share_logs">分享日志</string>
+    <string name="share_diagnostic_logs">分享诊断日志</string>
+    <string name="clear_logs">清除日志</string>
+</resources>

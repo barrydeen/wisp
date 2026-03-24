@@ -34,6 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.wisp.app.R
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.viewmodel.ProfileViewModel
 
@@ -71,10 +73,10 @@ fun ProfileEditScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Edit Profile") },
+                title = { Text(stringResource(R.string.title_edit_profile)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -93,7 +95,7 @@ fun ProfileEditScreen(
             OutlinedTextField(
                 value = name,
                 onValueChange = { viewModel.updateName(it) },
-                label = { Text("Name") },
+                label = { Text(stringResource(R.string.placeholder_name)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -101,7 +103,7 @@ fun ProfileEditScreen(
             OutlinedTextField(
                 value = about,
                 onValueChange = { viewModel.updateAbout(it) },
-                label = { Text("About") },
+                label = { Text(stringResource(R.string.placeholder_about)) },
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -113,7 +115,7 @@ fun ProfileEditScreen(
                 OutlinedTextField(
                     value = picture,
                     onValueChange = { viewModel.updatePicture(it) },
-                    label = { Text("Profile Picture URL") },
+                    label = { Text(stringResource(R.string.placeholder_profile_picture_url)) },
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
@@ -128,7 +130,7 @@ fun ProfileEditScreen(
                     if (uploading != null && uploading!!.contains("avatar")) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     } else {
-                        Icon(Icons.Outlined.FileUpload, contentDescription = "Upload avatar")
+                        Icon(Icons.Outlined.FileUpload, contentDescription = stringResource(R.string.cd_upload_avatar))
                     }
                 }
             }
@@ -140,7 +142,7 @@ fun ProfileEditScreen(
                 OutlinedTextField(
                     value = banner,
                     onValueChange = { viewModel.updateBanner(it) },
-                    label = { Text("Banner URL") },
+                    label = { Text(stringResource(R.string.placeholder_banner_url)) },
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
@@ -155,7 +157,7 @@ fun ProfileEditScreen(
                     if (uploading != null && uploading!!.contains("banner")) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     } else {
-                        Icon(Icons.Outlined.FileUpload, contentDescription = "Upload banner")
+                        Icon(Icons.Outlined.FileUpload, contentDescription = stringResource(R.string.cd_upload_banner))
                     }
                 }
             }
@@ -163,7 +165,7 @@ fun ProfileEditScreen(
             OutlinedTextField(
                 value = nip05,
                 onValueChange = { viewModel.updateNip05(it) },
-                label = { Text("NIP-05 (e.g. user@domain.com)") },
+                label = { Text(stringResource(R.string.placeholder_nip05)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -171,7 +173,7 @@ fun ProfileEditScreen(
             OutlinedTextField(
                 value = lud16,
                 onValueChange = { viewModel.updateLud16(it) },
-                label = { Text("Lightning Address") },
+                label = { Text(stringResource(R.string.placeholder_lightning_address)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -189,7 +191,7 @@ fun ProfileEditScreen(
                 enabled = !publishing,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (publishing) "Publishing..." else "Save Profile")
+                Text(if (publishing) stringResource(R.string.onboarding_publishing) else stringResource(R.string.btn_save_profile))
             }
         }
     }

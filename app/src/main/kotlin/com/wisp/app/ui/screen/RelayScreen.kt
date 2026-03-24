@@ -35,10 +35,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.relay.RelaySetType
+import com.wisp.app.R
 import com.wisp.app.viewmodel.RelayViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,10 +64,10 @@ fun RelayScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Relays") },
+                title = { Text(stringResource(R.string.title_relays)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -97,13 +99,13 @@ fun RelayScreen(
                     OutlinedTextField(
                         value = newRelayUrl,
                         onValueChange = { viewModel.updateNewRelayUrl(it) },
-                        label = { Text("wss:// or ws://.onion") },
+                        label = { Text(stringResource(R.string.placeholder_relay_url)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(Modifier.width(8.dp))
                     IconButton(onClick = { viewModel.addRelay() }) {
-                        Icon(Icons.Default.Add, "Add relay")
+                        Icon(Icons.Default.Add, stringResource(R.string.cd_add_relay))
                     }
                 }
 
@@ -111,15 +113,17 @@ fun RelayScreen(
 
                 if (relayPool != null) {
                     val buttonLabel = when (selectedTab) {
-                        RelaySetType.GENERAL -> "Broadcast Relay List (NIP-65)"
-                        RelaySetType.DM -> "Broadcast DM Relays"
-                        RelaySetType.SEARCH -> "Broadcast Search Relays"
-                        RelaySetType.BLOCKED -> "Broadcast Blocked Relays"
+                        RelaySetType.GENERAL -> stringResource(R.string.broadcast_nip65)
+                        RelaySetType.DM -> stringResource(R.string.broadcast_dm_relays)
+                        RelaySetType.SEARCH -> stringResource(R.string.broadcast_search_relays)
+                        RelaySetType.BLOCKED -> stringResource(R.string.broadcast_blocked_relays)
                     }
+                    val successMsg = stringResource(R.string.error_relay_broadcast)
+                    val failureMsg = stringResource(R.string.error_broadcast_failed)
                     Button(
                         onClick = {
                             val ok = viewModel.publishRelayList(relayPool, signer = signer)
-                            val msg = if (ok) "Relay list broadcast" else "Failed to broadcast"
+                            val msg = if (ok) successMsg else failureMsg
                             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.fillMaxWidth()
@@ -161,24 +165,24 @@ private fun GeneralRelayList(relays: List<RelayConfig>, viewModel: RelayViewMode
                         FilterChip(
                             selected = relay.read,
                             onClick = { viewModel.toggleRead(relay.url) },
-                            label = { Text("read") }
+                            label = { Text(stringResource(R.string.relay_read)) }
                         )
                         FilterChip(
                             selected = relay.write,
                             onClick = { viewModel.toggleWrite(relay.url) },
-                            label = { Text("write") }
+                            label = { Text(stringResource(R.string.relay_write)) }
                         )
                         FilterChip(
                             selected = relay.auth,
                             onClick = { viewModel.toggleAuth(relay.url) },
-                            label = { Text("auth") }
+                            label = { Text(stringResource(R.string.relay_auth)) }
                         )
                     }
                 }
                 IconButton(onClick = { viewModel.removeRelay(relay.url) }) {
                     Icon(
                         Icons.Default.Delete,
-                        contentDescription = "Remove",
+                        contentDescription = stringResource(R.string.cd_remove_relay),
                         tint = MaterialTheme.colorScheme.error
                     )
                 }
@@ -206,7 +210,7 @@ private fun SimpleRelayList(urls: List<String>, viewModel: RelayViewModel) {
                 IconButton(onClick = { viewModel.removeRelay(url) }) {
                     Icon(
                         Icons.Default.Delete,
-                        contentDescription = "Remove",
+                        contentDescription = stringResource(R.string.cd_remove_relay),
                         tint = MaterialTheme.colorScheme.error
                     )
                 }

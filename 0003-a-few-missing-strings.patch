@@ -1,0 +1,53 @@
+From b8d846c5c37989ff74d2ec381d1ddb70adb05eb9 Mon Sep 17 00:00:00 2001
+From: roguehashrate <roguehashrate@duck.com>
+Date: Fri, 20 Mar 2026 19:10:55 -0500
+Subject: [PATCH 3/3] a few missing strings
+
+---
+ app/src/main/res/values-it/strings.xml | 2 ++
+ app/src/main/res/values-ko/strings.xml | 2 ++
+ app/src/main/res/values-pt/strings.xml | 2 ++
+ 3 files changed, 6 insertions(+)
+
+diff --git a/app/src/main/res/values-it/strings.xml b/app/src/main/res/values-it/strings.xml
+index 7d16ecb..0441c5e 100644
+--- a/app/src/main/res/values-it/strings.xml
++++ b/app/src/main/res/values-it/strings.xml
+@@ -390,6 +390,8 @@
+     <string name="error_no_results_found">Nessun risultato trovato</string>
+     <string name="error_search_hint">Cerca utenti e note sui relay</string>
+     <string name="error_no_notifications">Nessuna notifica ancora</string>
++    <string name="error_no_messages">Nessun messaggio ancora</string>
++    <string name="error_send_message_hint">Invia un messaggio dal profilo di qualcuno</string>
+     <string name="error_list_not_found">Lista non trovata</string>
+     <string name="error_no_list_members">Questa lista non ha membri</string>
+ 
+diff --git a/app/src/main/res/values-ko/strings.xml b/app/src/main/res/values-ko/strings.xml
+index a949fa2..98b643f 100644
+--- a/app/src/main/res/values-ko/strings.xml
++++ b/app/src/main/res/values-ko/strings.xml
+@@ -390,6 +390,8 @@
+     <string name="error_no_results_found">결과 없음</string>
+     <string name="error_search_hint">릴레이에서 사용자 및 노트 검색</string>
+     <string name="error_no_notifications">아직 알림 없음</string>
++    <string name="error_no_messages">아직 메시지 없음</string>
++    <string name="error_send_message_hint">누군가의 프로필에서 메시지 보내기</string>
+     <string name="error_list_not_found">리스트를 찾을 수 없음</string>
+     <string name="error_no_list_members">이 리스트에 멤버가 없습니다</string>
+ 
+diff --git a/app/src/main/res/values-pt/strings.xml b/app/src/main/res/values-pt/strings.xml
+index ef4933b..f062088 100644
+--- a/app/src/main/res/values-pt/strings.xml
++++ b/app/src/main/res/values-pt/strings.xml
+@@ -390,6 +390,8 @@
+     <string name="error_no_results_found">Nenhum resultado encontrado</string>
+     <string name="error_search_hint">Pesquisar usuários e notas em relays</string>
+     <string name="error_no_notifications">Ainda não há notificações</string>
++    <string name="error_no_messages">Ainda não há mensagens</string>
++    <string name="error_send_message_hint">Envie uma mensagem do perfil de alguém</string>
+     <string name="error_list_not_found">Lista não encontrada</string>
+     <string name="error_no_list_members">Esta lista não tem membros</string>
+ 
+-- 
+2.53.0
+

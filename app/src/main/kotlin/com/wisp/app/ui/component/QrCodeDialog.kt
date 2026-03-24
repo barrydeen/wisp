@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -36,6 +37,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.hexToByteArray
+import com.wisp.app.R
 
 @Composable
 fun QrCodeDialog(pubkeyHex: String, onDismiss: () -> Unit) {
@@ -77,13 +79,13 @@ fun QrCodeDialog(pubkeyHex: String, onDismiss: () -> Unit) {
                     horizontalArrangement = Arrangement.End
                 ) {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, "Close")
+                        Icon(Icons.Default.Close, stringResource(R.string.cd_close))
                     }
                 }
 
                 Image(
                     bitmap = qrBitmap.asImageBitmap(),
-                    contentDescription = "QR Code",
+                    contentDescription = stringResource(R.string.cd_qr_code),
                     modifier = Modifier
                         .size(256.dp)
                         .background(androidx.compose.ui.graphics.Color.White)
@@ -94,7 +96,7 @@ fun QrCodeDialog(pubkeyHex: String, onDismiss: () -> Unit) {
 
                 // npub
                 Text(
-                    text = "npub",
+                    text = stringResource(R.string.qr_npub),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -115,7 +117,7 @@ fun QrCodeDialog(pubkeyHex: String, onDismiss: () -> Unit) {
                     }) {
                         Icon(
                             Icons.Default.ContentCopy,
-                            contentDescription = "Copy npub",
+                            contentDescription = stringResource(R.string.cd_copy_npub),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -123,7 +125,7 @@ fun QrCodeDialog(pubkeyHex: String, onDismiss: () -> Unit) {
 
                 // Hex pubkey
                 Text(
-                    text = "Hex",
+                    text = stringResource(R.string.qr_hex),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -144,7 +146,7 @@ fun QrCodeDialog(pubkeyHex: String, onDismiss: () -> Unit) {
                     }) {
                         Icon(
                             Icons.Default.ContentCopy,
-                            contentDescription = "Copy hex pubkey",
+                            contentDescription = stringResource(R.string.cd_copy_hex_pubkey),
                             modifier = Modifier.size(18.dp)
                         )
                     }

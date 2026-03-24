@@ -28,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
+import com.wisp.app.R
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.repo.EventRepository
@@ -468,7 +470,7 @@ fun SeenOnSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Seen on",
+                text = stringResource(R.string.cd_seen_on),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -515,7 +517,7 @@ fun ClientTagSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Sent with",
+                text = stringResource(R.string.cd_sent_with),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

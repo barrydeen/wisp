@@ -1,0 +1,628 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Navigation -->
+    <string name="nav_home">Inicio</string>
+    <string name="nav_wallet">Billetera</string>
+    <string name="nav_search">Buscar</string>
+    <string name="nav_messages">Mensajes</string>
+    <string name="nav_notifications">Notificaciones</string>
+
+    <!-- Drawer Menu -->
+    <string name="drawer_my_profile">Mi Perfil</string>
+    <string name="drawer_feeds">Feeds</string>
+    <string name="drawer_lists">Listas</string>
+    <string name="drawer_drafts">Borradores &amp; Programados</string>
+    <string name="drawer_settings">Ajustes</string>
+
+    <!-- Drafts & Scheduled -->
+    <string name="drafts_scheduled_title">Borradores &amp; Programados</string>
+    <string name="drafts_tab">Borradores</string>
+    <string name="scheduled_tab">Programados</string>
+    <string name="no_drafts_saved">No hay borradores guardados</string>
+    <string name="no_scheduled_posts">No hay publicaciones programadas</string>
+    <string name="draft_label">Borrador</string>
+    <string name="reply_label">Respuesta</string>
+    <string name="delete_draft">Eliminar borrador</string>
+    <string name="empty_content">(vacío)</string>
+    <string name="remove_from_schedule">Quitar de programación</string>
+    <string name="drawer_interface">Interfaz</string>
+    <string name="drawer_relays">Relays</string>
+    <string name="drawer_media_servers">Servidores de Medios</string>
+    <string name="drawer_keys">Claves</string>
+    <string name="drawer_safety">Seguridad</string>
+    <string name="drawer_proof_of_work">Prueba de Trabajo</string>
+    <string name="drawer_social_graph">Grafo Social</string>
+    <string name="drawer_custom_emojis">Emojis Personalizados</string>
+    <string name="drawer_relay_health">Salud del Relay</string>
+    <string name="drawer_console">Consola</string>
+
+    <!-- Screen Titles -->
+    <string name="title_search">Buscar</string>
+    <string name="title_wallet">Billetera</string>
+    <string name="title_relay_health">Salud del Relay</string>
+    <string name="title_relay_detail">Detalle del Relay</string>
+    <string name="title_edit_profile">Editar Perfil</string>
+    <string name="title_compose">Redactar / Nueva Publicación</string>
+    <string name="title_reply">Responder</string>
+    <string name="title_quote">Citar</string>
+    <string name="title_keys">Claves</string>
+    <string name="title_safety">Seguridad</string>
+    <string name="title_relays">Relays</string>
+    <string name="title_zaps">Zaps</string>
+    <string name="title_interface">Interfaz</string>
+    <string name="title_chat">Chat</string>
+    <string name="title_list">Lista</string>
+    <string name="title_community">Comunidad</string>
+
+    <!-- Auth Screen -->
+    <string name="auth_sign_up">Registrarse</string>
+    <string name="auth_log_in">Iniciar Sesión</string>
+    <string name="auth_login_with_signer">Iniciar sesión con Firmador</string>
+    <string name="auth_or_log_in_with_key">O inicia sesión con tu clave</string>
+    <string name="auth_nsec_or_npub">nsec o npub…</string>
+    <string name="auth_connect_via_tor">Conectar vía Tor</string>
+    <string name="auth_connecting_to_tor">Conectando a Tor…</string>
+    <string name="auth_connected_via_tor">Conectado vía Tor</string>
+    <string name="auth_tor_error">Error de Tor</string>
+    <string name="auth_wisp">wisp</string>
+    <string name="auth_tagline">una pequeña interfaz para desplazarte por publicaciones</string>
+    <string name="auth_hide_key">Ocultar clave</string>
+    <string name="auth_show_key">Mostrar clave</string>
+
+    <!-- Buttons -->
+    <string name="btn_continue">Continuar</string>
+    <string name="btn_lets_go">Vamos</string>
+    <string name="btn_save_profile">Guardar Perfil</string>
+    <string name="btn_save_draft">Guardar borrador</string>
+    <string name="compose_new_post">Nueva publicación</string>
+    <string name="compose_reply">Responder</string>
+    <string name="compose_quote">Citar</string>
+    <string name="compose_placeholder">¿Qué tienes en mente?</string>
+    <string name="compose_publish">Publicar</string>
+    <string name="compose_publishing">Publicando…</string>
+    <string name="compose_uploading">Subiendo…</string>
+    <string name="compose_mining">Minando…</string>
+    <string name="compose_post_now">Publicar ahora (%d)</string>
+    <string name="compose_replying_to">Respondiendo a </string>
+    <string name="content_marked_nsfw">Marcado como NSFW</string>
+    <string name="btn_post_now">Publicar ahora</string>
+    <string name="btn_cancel">Cancelar</string>
+    <string name="btn_save">Guardar</string>
+    <string name="btn_delete">Eliminar</string>
+    <string name="btn_create">Crear</string>
+    <string name="btn_add">Añadir</string>
+    <string name="btn_remove">Quitar</string>
+    <string name="btn_close">Cerrar</string>
+    <string name="btn_ok">OK</string>
+    <string name="btn_retry">Reintentar</string>
+    <string name="btn_go_to_social_graph">Ir al Grafo Social</string>
+    <string name="btn_go_to_wallet">Ir a la Billetera</string>
+    <string name="btn_reveal_private_key">Revelar Clave Privada</string>
+    <string name="private_key_warning">¡Nunca compartas tu clave privada con nadie!</string>
+    <string name="btn_connect">Conectar</string>
+    <string name="btn_scan_qr">Escanear QR</string>
+    <string name="btn_skip">Omitir</string>
+    <string name="btn_follow">Seguir</string>
+    <string name="btn_unfollow">Dejar de seguir</string>
+    <string name="btn_follow_all">Seguir a Todos</string>
+    <string name="btn_block">Bloquear</string>
+    <string name="btn_unblock">Desbloquear</string>
+    <string name="btn_mute_thread">Silenciar Hilo</string>
+    <string name="btn_add_to_list">Añadir a Lista</string>
+    <string name="btn_pin_to_profile">Fijar al Perfil</string>
+    <string name="btn_unpin_from_profile">Desfijar del Perfil</string>
+    <string name="btn_share">Compartir</string>
+    <string name="btn_copy_note_id">Copiar ID de Nota</string>
+    <string name="btn_copy_note_json">Copiar JSON de Nota</string>
+    <string name="btn_hide">Ocultar</string>
+    <string name="btn_retweet">Retweet</string>
+    <string name="btn_vote">Votar</string>
+    <string name="btn_anonymous">Anónimo</string>
+    <string name="btn_private">Privado</string>
+    <string name="btn_custom">Personalizado</string>
+    <string name="btn_done">Hecho</string>
+    <string name="btn_edit">Editar</string>
+    <string name="btn_add_preset">Añadir preestablecido</string>
+    <string name="btn_paste">Pegar</string>
+    <string name="btn_back">Atrás</string>
+    <string name="btn_clear">Limpiar</string>
+    <string name="btn_load_more">Cargar más</string>
+    <string name="btn_try_anyway">Probar de todos modos</string>
+    <string name="btn_reconnect">Reconectar</string>
+    <string name="btn_gallery">Galería</string>
+    <string name="btn_go">Ir</string>
+    <string name="btn_send">Enviar</string>
+    <string name="btn_receive">Recibir</string>
+    <string name="btn_next">Siguiente</string>
+    <string name="btn_logout">Cerrar Sesión</string>
+    <string name="btn_use_as_feed">Usar como Feed</string>
+    <string name="btn_follow_all_members">Seguir a Todos los Miembros</string>
+    <string name="btn_copy_list_json">Copiar JSON de Lista</string>
+    <string name="btn_delete_list">Eliminar Lista</string>
+    <string name="btn_copy">Copiar</string>
+    <string name="btn_undo">Deshacer</string>
+
+    <!-- Placeholders / Labels -->
+    <string name="placeholder_whats_on_your_mind">¿Qué estás pensando?</string>
+    <string name="placeholder_new_set_name">Nombre del nuevo conjunto</string>
+    <string name="placeholder_set_name">Nombre del conjunto</string>
+    <string name="placeholder_hashtag">etiqueta</string>
+    <string name="placeholder_add_photo">Añadir foto</string>
+    <string name="placeholder_display_name">Nombre para mostrar</string>
+    <string name="placeholder_about">Acerca de</string>
+    <string name="placeholder_name">Nombre</string>
+    <string name="placeholder_profile_picture_url">URL de Foto de Perfil</string>
+    <string name="placeholder_banner_url">URL de Banner</string>
+    <string name="placeholder_nip05">NIP-05 (ej. usuario@dominio.com)</string>
+    <string name="placeholder_lightning_address">Dirección Lightning</string>
+    <string name="placeholder_relay_url">wss:// o ws://.onion</string>
+    <string name="placeholder_search_users_notes">Buscar usuarios y notas</string>
+    <string name="placeholder_search_relay">Buscar relay</string>
+    <string name="placeholder_add_relay">wss://relay.ejemplo.com</string>
+    <string name="placeholder_message">Mensaje…</string>
+    <string name="placeholder_relay_example">relay.ejemplo.com</string>
+    <string name="placeholder_option_x">Opción %d</string>
+    <string name="placeholder_add_option">+ Añadir opción</string>
+    <string name="placeholder_nwc_connection">Cadena de Conexión NWC</string>
+    <string name="placeholder_nwc_url">nostr+walletconnect://…</string>
+    <string name="placeholder_lightning_or_invoice">Dirección Lightning o factura</string>
+    <string name="placeholder_user_domain">usuario@dominio.com o lnbc…</string>
+    <string name="placeholder_amount_sats">Cantidad (sats)</string>
+    <string name="placeholder_message_optional">Mensaje (opcional)</string>
+    <string name="placeholder_new_list_name">Nombre de nueva lista</string>
+    <string name="placeholder_add_word_phrase">Añadir una palabra o frase</string>
+    <string name="placeholder_filter_by_name">Filtrar por nombre</string>
+    <string name="placeholder_npub_or_hex">npub1… o hex</string>
+    <string name="placeholder_or_add_npub">O añadir por npub / hex:</string>
+    <string name="placeholder_to">Para</string>
+    <string name="placeholder_network">Red</string>
+    <string name="placeholder_total_spent">Total gastado</string>
+
+    <!-- Relay Permissions -->
+    <string name="relay_read">lectura</string>
+    <string name="relay_write">escritura</string>
+    <string name="relay_auth">autenticación</string>
+
+    <!-- Tabs / Filters -->
+    <string name="tab_status">Estado</string>
+    <string name="tab_failures">Fallos</string>
+    <string name="tab_events">Eventos</string>
+    <string name="tab_name">Nombre</string>
+    <string name="tab_all">Todo</string>
+    <string name="tab_bad_only">Solo Malos</string>
+    <string name="tab_errors">Errores</string>
+    <string name="tab_connected">Conectado</string>
+    <string name="tab_bad">Malo</string>
+    <string name="tab_people">Personas</string>
+    <string name="tab_notes">Notas</string>
+    <string name="tab_follows">Seguidos</string>
+    <string name="tab_extended">Extendido</string>
+    <string name="tab_trending">Tendencias</string>
+    <string name="tab_relay">Relay</string>
+    <string name="tab_list">Lista</string>
+    <string name="tab_hashtags">Etiquetas</string>
+    <string name="interests">Intereses</string>
+    <string name="tab_feed">Feed</string>
+    <string name="loading_interest_sets">Cargando conjuntos de intereses…</string>
+    <string name="no_interest_sets">Aún no hay conjuntos de intereses. Crea uno abajo, o sigue hashtags desde sus páginas de feed.</string>
+    <string name="no_hashtags_yet">Sin hashtags aún</string>
+    <string name="delete_set">Eliminar conjunto</string>
+    <string name="tab_muted_words">Palabras Silenciadas</string>
+    <string name="tab_muted_users">Usuarios Silenciados</string>
+    <string name="tab_replies">Respuestas</string>
+    <string name="tab_media">Medios</string>
+    <string name="tab_following">Siguiendo</string>
+    <string name="tab_relays">Relays</string>
+    <string name="tab_recent">Reciente</string>
+    <string name="tab_earlier">Anterior</string>
+    <string name="tab_pinned">Fijado</string>
+    <string name="tab_new_set">Nuevo Conjunto</string>
+    <string name="btn_new_set">+ Nuevo Conjunto</string>
+    <string name="tab_all_relays">Todos los relays</string>
+    <string name="tab_favorites">Favoritos</string>
+    <string name="tab_relay_sets">Conjuntos de Relays</string>
+    <string name="tab_combined_feed">Feed Combinado</string>
+    <string name="relay_count_format">%d relays</string>
+    <string name="relay_covers_format">cubre %d</string>
+    <string name="error_no_relay_scores">Aún no hay puntuaciones de relays disponibles</string>
+    <string name="btn_add_to_set">+Set</string>
+    <string name="btn_details">Detalles</string>
+
+    <!-- Content Descriptions -->
+    <string name="cd_back">Atrás</string>
+    <string name="cd_toggle_tor">Alternar Tor</string>
+    <string name="cd_toggle_theme">Alternar tema</string>
+    <string name="cd_show_qr_code">Mostrar código QR</string>
+    <string name="cd_lightning_address">Dirección Lightning</string>
+    <string name="cd_switch_account">Cambiar cuenta</string>
+    <string name="cd_add_account">Añadir cuenta</string>
+    <string name="cd_active">Activo</string>
+    <string name="cd_seen_on">Visto en</string>
+    <string name="cd_sent_with">Enviado con</string>
+    <string name="cd_filter_notifications">Filtrar notificaciones</string>
+    <string name="filter_all">Todo</string>
+    <string name="filter_replies">Respuestas</string>
+    <string name="filter_reactions">Reacciones</string>
+    <string name="filter_zaps">Zaps</string>
+    <string name="filter_reposts">Republicaciones</string>
+    <string name="filter_mentions">Menciones</string>
+    <string name="cd_mute_notifications">Silenciar notificaciones</string>
+    <string name="cd_unmute_notifications">Activar notificaciones</string>
+    <string name="cd_reposted">republicado</string>
+    <string name="cd_private_zap">Zap privado</string>
+    <string name="cd_verified">Verificado</string>
+    <string name="cd_retry_verification">Reintentar verificación</string>
+    <string name="cd_more_options">Más opciones</string>
+    <string name="cd_content_warning">Advertencia de contenido</string>
+    <string name="cd_reply">Responder</string>
+    <string name="cd_react">Reaccionar</string>
+    <string name="cd_repost">Republicar</string>
+    <string name="cd_zaps">Zaps</string>
+    <string name="cd_add_to_list">Añadir a Lista</string>
+    <string name="cd_profile_picture">Foto de perfil</string>
+    <string name="cd_following">Siguiendo</string>
+    <string name="cd_blocked">Bloqueado</string>
+    <string name="cd_dm_relays">Relays de MD</string>
+    <string name="cd_attach_media">Adjuntar medios</string>
+    <string name="cd_send">Enviar</string>
+    <string name="cd_receive">Recibir</string>
+    <string name="cd_banner">Banner</string>
+    <string name="cd_send_message">Enviar mensaje</string>
+    <string name="cd_private">Privado</string>
+    <string name="cd_play_video">Reproducir video</string>
+    <string name="cd_backspace">Retroceso</string>
+    <string name="cd_confirm">Confirmar</string>
+    <string name="cd_qr_code">Código QR</string>
+    <string name="cd_copy_npub">Copiar npub</string>
+    <string name="cd_copy_hex_pubkey">Copiar clave pública hex</string>
+    <string name="cd_new_post">Nueva publicación</string>
+    <string name="cd_delete">Eliminar</string>
+    <string name="cd_add_hashtag">Añadir etiqueta</string>
+    <string name="cd_change_timeframe">Cambiar período</string>
+    <string name="cd_cancel_mining">Cancelar minería</string>
+    <string name="cd_hashtag_picker">Selector de etiquetas</string>
+    <string name="cd_add_relay">Añadir relay</string>
+    <string name="cd_add_word">Añadir palabra</string>
+    <string name="cd_upload_avatar">Subir avatar</string>
+    <string name="cd_upload_banner">Subir banner</string>
+    <string name="cd_remove_relay">Quitar relay</string>
+    <string name="cd_add_new">Añadir nuevo</string>
+    <string name="cd_create_emoji_set">Crear Conjunto de Emojis</string>
+    <string name="cd_upload_image">Subir imagen</string>
+
+    <!-- Custom Emoji Screen -->
+    <string name="emoji_quick_reactions">Reacciones Rápidas</string>
+    <string name="emoji_quick_reactions_description">Emojis Unicode mostrados en el selector de reacciones</string>
+    <string name="emoji_custom_image_emojis">Emojis de Imagen Personalizados</string>
+    <string name="emoji_custom_image_description">Emojis de imagen de tu lista de emojis (kind 10030)</string>
+    <string name="emoji_available_custom">Emojis Personalizados Disponibles</string>
+    <string name="emoji_available_description">Todos los emojis personalizados disponibles en tu selector de reacciones</string>
+    <string name="emoji_manage">Gestionar</string>
+    <string name="emoji_remove">Eliminar</string>
+    <string name="emoji_save_removed">Guardar (%d eliminados)</string>
+    <string name="emoji_my_sets">Mis Conjuntos de Emojis</string>
+    <string name="emoji_no_sets_yet">Aún no hay conjuntos de emojis. Toca + para crear uno.</string>
+    <string name="emoji_add_custom">Añadir Emoji Personalizado</string>
+    <string name="emoji_shortcode">Shortcode</string>
+    <string name="emoji_count_format">%d emojis</string>
+    <string name="emoji_library_title">Biblioteca de Emoji</string>
+    <string name="emoji_add_from_keyboard">Añadir desde teclado</string>
+    <string name="emoji_add_from_keyboard_hint">Escribe o pega un emoji</string>
+    <string name="emoji_dialog_add">Añadir</string>
+    <string name="emoji_dialog_cancel">Cancelar</string>
+    <string name="emoji_done_format">Hecho (%d)</string>
+
+    <!-- Blossom/Media Servers Screen -->
+    <string name="blossom_title">Servidores de Medios</string>
+    <string name="blossom_broadcast">Publicar Lista de Servidores</string>
+    <string name="blossom_broadcast_sent">Publicación Enviada</string>
+    <string name="blossom_drag_reorder">Arrastra para reordenar prioridad</string>
+
+    <!-- PoW Screen -->
+    <string name="pow_description">Proof of Work mina un prefijo hash en tus eventos, actuando como spam. Mayor dificultad toma más tiempo pero indica más esfuerzo.</string>
+    <string name="pow_notes">Notas</string>
+    <string name="pow_enable_notes">Habilitar PoW para notas</string>
+    <string name="pow_notes_subtitle">Minar proof of work antes de publicar notas</string>
+    <string name="pow_notes_difficulty">Dificultad de nota</string>
+    <string name="pow_reactions">Reacciones</string>
+    <string name="pow_enable_reactions">Habilitar PoW para reacciones</string>
+    <string name="pow_reactions_subtitle">Minar proof of work en reacciones (menos de un segundo con baja dificultad)</string>
+    <string name="pow_reactions_difficulty">Dificultad de reacción</string>
+    <string name="pow_dms">Mensajes Directos</string>
+    <string name="pow_enable_dms">Habilitar PoW para DMs</string>
+    <string name="pow_dms_subtitle">Minar proof of work en gift wraps antes de enviar DMs</string>
+    <string name="pow_dms_difficulty">Dificultad de DM</string>
+    <string name="pow_bits_format">%d bits</string>
+
+    <!-- Social Graph Screen -->
+    <string name="social_not_computed">El grafo social aún no se ha calculado.</string>
+
+    <!-- Console Screen -->
+    <string name="console_no_errors">Sin errores registrados</string>
+
+    <!-- Poll -->
+    <string name="poll_option">Opción %d</string>
+    <string name="poll_add_option">+ Añadir opción</string>
+    <string name="poll_single_choice">Opción única</string>
+    <string name="poll_multiple_choice">Opciones múltiples</string>
+    <string name="social_compute_now">Calcular Ahora</string>
+    <string name="social_fetching_follows">Obteniendo listas de follows...</string>
+    <string name="social_building_graph">Construyendo grafo...</string>
+    <string name="social_computing_network">Calculando red...</string>
+    <string name="social_filtering">Filtrando...</string>
+    <string name="social_fetching_relays">Obteniendo listas de relays...</string>
+    <string name="social_warning">Esto puede tomar 2\u20135 minutos. Por favor mantente en esta pantalla hasta que termine.</string>
+    <string name="social_top_accounts">Cuentas Principales</string>
+    <string name="social_qualified_from">%1$d cualificados de %2$d follows</string>
+    <string name="social_recompute">Recalcular</string>
+    <string name="social_view_profile">Ver Perfil</string>
+    <string name="social_followed_by">seguido por %d</string>
+    <string name="social_followed_by_yours">Seguido por %d de tus follows</string>
+    <string name="social_complete">Cálculo completado</string>
+    <string name="social_done">Listo</string>
+    <string name="social_failed">Descubrimiento fallido</string>
+    <string name="social_retry">Reintentar</string>
+    <string name="social_stat_follows">Follows</string>
+    <string name="social_stat_2nd_degree">2º grado</string>
+    <string name="social_stat_qualified">Cualificados</string>
+    <string name="social_stat_relays">Relays</string>
+    <string name="social_stat_follows_1st">Follows (1er grado)</string>
+    <string name="social_stat_2nd_users">Usuarios 2º grado</string>
+    <string name="social_stat_qualified_thresh">Cualificados (umbral)</string>
+    <string name="social_stat_relays_covered">Relays cubiertos</string>
+
+    <string name="cd_preview">Vista previa</string>
+    <string name="cd_check_relay_backups">Verificar respaldos de relays</string>
+    <string name="cd_copy_address">Copiar dirección</string>
+    <string name="cd_copy_invoice">Copiar factura</string>
+    <string name="cd_invoice_qr_code">Código QR de Factura</string>
+    <string name="cd_lightning_address_qr_code">Código QR de Dirección Lightning</string>
+    <string name="cd_refresh_balance">Actualizar saldo</string>
+    <string name="cd_transaction_history">Historial de Transacciones</string>
+    <string name="cd_spark">Spark</string>
+    <string name="cd_breez">Breez</string>
+    <string name="cd_add_members">Añadir Miembros</string>
+    <string name="cd_already_added">Ya añadido</string>
+    <string name="cd_close">Cerrar</string>
+    <string name="cd_collapse">Contraer</string>
+    <string name="cd_expand">Expandir</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_welcome_back">Bienvenido de nuevo</string>
+    <string name="onboarding_lets_get_set_up">Configuremos tu cuenta</string>
+    <string name="onboarding_your_network_relays">Tu red, tus relays</string>
+    <string name="onboarding_network_description">Wisp descubre qué relays usan realmente tus amigos, y luego se conecta directamente a esos relays. Esto significa entregas más rápidas y menos publicaciones perdidas — sin servidor central.</string>
+    <string name="onboarding_quick_follow">Seguir rápido</string>
+    <string name="onboarding_long_press_hint">Mantén presionada cualquier foto de perfil para seguir o dejar de seguir</string>
+    <string name="onboarding_utxo">utxo</string>
+    <string name="onboarding_try_it">Pruébalo — mantén presionada la imagen de arriba</string>
+    <string name="onboarding_lightning_wallet_info">Wisp soporta zaps con una billetera Lightning integrada o Nostr Wallet Connect. Puedes configurarlo en cualquier momento desde la pantalla de Billetera.</string>
+    <string name="onboarding_setting_things_up">Configurando</string>
+    <string name="onboarding_youre_all_set">¡Todo listo!</string>
+    <string name="onboarding_mapping_graph">Mapeando tu grafo social…</string>
+    <string name="onboarding_finding_relays">Buscando los relays de tus amigos…</string>
+    <string name="onboarding_connecting_network">Conectando a tu red…</string>
+    <string name="onboarding_locating_gm">Buscando notas de gm…</string>
+    <string name="onboarding_cheering_fiatjaf">Animando a fiatjaf…</string>
+    <string name="onboarding_fun_bitcoins">Diviértete jugando con tus bitcoins…</string>
+    <string name="onboarding_one_time_setup">Esta es una configuración única, baja tu preferencia temporal…</string>
+    <string name="onboarding_almost_there">Ya casi…</string>
+    <string name="onboarding_please_wait">Por favor espera…</string>
+    <string name="onboarding_publishing">Publicando…</string>
+    <string name="onboarding_wisp_logo">Logo de Wisp</string>
+    <string name="onboarding_follow_all_x">Seguir a Todos (%d)</string>
+
+    <!-- Zap / Wallet -->
+    <string name="zap_send">Enviar Zap</string>
+    <string name="zap_sats">sats</string>
+    <string name="zap_quick_amounts">Cantidades Rápidas</string>
+    <string name="zap_wallet_not_connected">Billetera No Conectada</string>
+    <string name="zap_connect_wallet">Conecta una billetera Lightning para enviar zaps.</string>
+    <string name="zap_both_parties_need_dm_relays">Ambas partes necesitan relays de MD</string>
+    <string name="zap_x_sats">Zap %d sats</string>
+    <string name="zap_failed">Zap Fallido</string>
+    <string name="dm_decrypting">Descifrando mensajes…</string>
+    <string name="dm_mining">Minando…</string>
+    <string name="dm_peer">Pareja</string>
+    <string name="dm_you">Tú</string>
+    <string name="dm_inbox">bandeja de entrada</string>
+    <string name="dm_your_relays">tus relays</string>
+
+    <!-- Settings / Interface -->
+    <string name="settings_text_size">Tamaño de Texto</string>
+    <string name="settings_large_text">Texto grande</string>
+    <string name="settings_increase_text_size">Aumentar el tamaño del texto en toda la app</string>
+    <string name="settings_language">Idioma</string>
+    <string name="settings_popular_themes">Temas Populares</string>
+    <string name="settings_choose_color_scheme">Elegir esquema de colores</string>
+    <string name="settings_accent_color">Color de Acento</string>
+    <string name="settings_preview">Vista previa</string>
+    <string name="settings_new_notes_button">Botón de Nuevas Notas</string>
+    <string name="settings_hide_new_notes_button">Ocultar botón de nuevas notas</string>
+    <string name="settings_hide_new_notes_description">Ocultar el botón flotante que aparece cuando llegan nuevas notas</string>
+    <string name="new_notes_button">%d notas nuevas</string>
+    <string name="new_notes_hide_temporary">Ocultar hasta reiniciar la app</string>
+    <string name="new_notes_hide_forever">Ocultar para siempre</string>
+    <string name="broadcast_mining">Minería PoW (%dk)…</string>
+    <string name="broadcast_cancel_mining">Cancelar minería</string>
+    <string name="broadcast_broadcasting">Broadcasting (%d/%d)</string>
+    <string name="broadcast_published">Publicado en %d relay</string>
+    <string name="broadcast_published_plural">Publicado en %d relays</string>
+    <string name="settings_media">Medios</string>
+    <string name="settings_auto_load_media">Cargar medios automáticamente</string>
+    <string name="settings_auto_load_description">Descargar automáticamente imágenes y videos en notas. Cuando está desactivado, toca para cargar.</string>
+    <string name="settings_video_autoplay">Autoreproducción de video</string>
+    <string name="settings_video_autoplay_description">Reproducir videos automáticamente cuando se desplazan a la vista</string>
+    <string name="settings_client_tag">Etiqueta de Cliente</string>
+    <string name="settings_tag_notes">Etiquetar notas con Wisp</string>
+    <string name="settings_tag_notes_description">Incluir una etiqueta identificando Wisp como el cliente. Esto es visible para otros.</string>
+    <string name="settings_public_key">Clave Pública</string>
+    <string name="settings_private_key">Clave Privada</string>
+    <string name="settings_public_key_copied">Clave pública copiada</string>
+    <string name="settings_private_key_copied">Clave privada copiada</string>
+    <string name="settings_authenticate_view_key">Autentícate para ver tu clave privada</string>
+    <string name="settings_auth_failed">Autenticación fallida: %s</string>
+    <string name="settings_never_share_key">Nunca compartas tu clave privada. Cualquiera con tu nsec tiene control total de tu cuenta.</string>
+    <string name="settings_muted_words_description">Las notas que contengan estas palabras se ocultarán de tu feed.</string>
+    <string name="settings_no_muted_users">Sin usuarios silenciados</string>
+    <string name="settings_copy_profile_json">Copiar JSON de Perfil</string>
+    <string name="settings_profile_json_copied">JSON de perfil copiado</string>
+
+    <!-- Translation (UI for post content translation) -->
+    <string name="translate_sensitive_content">Contenido sensible</string>
+    <string name="translate_tap_to_reveal">Toca para revelar</string>
+    <string name="translate_show_more">Mostrar más</string>
+    <string name="translate_show_less">Mostrar menos</string>
+    <string name="translate_show_original">Mostrar Original</string>
+    <string name="translate_show_translation">Mostrar Traducción</string>
+    <string name="translate_same_language">Mismo Idioma</string>
+    <string name="translate_translate">Traducir</string>
+    <string name="translate_detecting_language">Detectando idioma…</string>
+    <string name="translate_downloading_model">Descargando modelo de idioma…</string>
+    <string name="translate_translating">Traduciendo…</string>
+    <string name="translate_translated_from">Traducido del %s</string>
+
+    <!-- Loading -->
+    <string name="loading_searching_profile">Buscando tu perfil…</string>
+    <string name="loading_finding_friends">Buscando tus amigos…</string>
+    <string name="loading_finding_friends_progress">Buscando tus amigos… %d/%d</string>
+    <string name="loading_discovering_network">Descubriendo red extendida… %d/%d</string>
+    <string name="loading_expanding_relays">Conectando a %d relays extendidos…</string>
+    <string name="loading_subscribing">Suscribiendo al feed…</string>
+    <string name="loading_notes">Cargando notas…</string>
+    <string name="loading_connecting_relays">Conectando a relays…</string>
+    <string name="loading_finding_posts">Buscando publicaciones…</string>
+    <string name="loading_preparing_feed">Preparando tu feed…</string>
+
+    <!-- Errors / Alerts -->
+    <string name="error_social_graph_required">Grafo social requerido</string>
+    <string name="error_extended_feed_description">El feed extendido muestra publicaciones de amigos-de-amigos. Primero necesitas calcular tu grafo social.</string>
+    <string name="error_couldnt_connect_relay">No se pudo conectar al relay</string>
+    <string name="error_delete_set_hashtags">¿Eliminar %s y todas sus etiquetas?</string>
+    <string name="error_relay_broadcast">Difusión de lista de relays</string>
+    <string name="error_broadcast_failed">Error al difundir</string>
+    <string name="error_no_results_found">No se encontraron resultados</string>
+    <string name="error_search_hint">Buscar usuarios y notas en relays</string>
+    <string name="error_no_notifications">Aún no hay notificaciones</string>
+    <string name="error_list_not_found">Lista no encontrada</string>
+    <string name="error_no_list_members">Esta lista no tiene miembros</string>
+
+    <!-- Dropdown / Menu Options -->
+    <string name="menu_add_to_relay_set">Añadir a Conjunto de Relays</string>
+    <string name="menu_select_relay">Seleccionar Relay</string>
+    <string name="menu_select_list">Seleccionar Lista</string>
+    <string name="menu_delete_set">Eliminar Conjunto</string>
+    <string name="menu_add_search_relay">Añadir relay de búsqueda</string>
+
+    <!-- Relay Broadcast -->
+    <string name="broadcast_nip65">Difundir Lista de Relays (NIP-65)</string>
+    <string name="broadcast_dm_relays">Difundir Relays de MD</string>
+    <string name="broadcast_search_relays">Difundir Relays de Búsqueda</string>
+    <string name="broadcast_blocked_relays">Difundir Relays Bloqueados</string>
+
+    <!-- Post Card -->
+    <string name="post_retweeted">republicado</string>
+    <string name="post_and_others_retweeted">y %d otros republicaron</string>
+    <string name="post_pow_x">PoW %d</string>
+    <string name="post_replying_to">Respondiendo a %s</string>
+    <string name="post_now_x">Publicar ahora (%ds)</string>
+
+    <!-- QR Code Dialog -->
+    <string name="qr_npub">npub</string>
+    <string name="qr_hex">Hex</string>
+
+    <!-- Safety -->
+    <string name="safety_hide_until_restart">Ocultar hasta reiniciar la app</string>
+    <string name="safety_hide_forever">Ocultar para siempre</string>
+
+    <!-- Time -->
+    <string name="time_24h">24h</string>
+
+    <!-- Profile -->
+    <string name="profile_tab_notes">Notas</string>
+    <string name="profile_tab_replies">Respuestas</string>
+    <string name="profile_tab_media">Medios</string>
+    <string name="profile_tab_following">Siguiendo</string>
+    <string name="profile_tab_followers">Seguidores</string>
+    <string name="profile_tab_relays">Relays</string>
+    <string name="profile_sort_recent">Reciente</string>
+    <string name="profile_sort_likes">Me gusta</string>
+    <string name="profile_sort_reposts">Republicaciones</string>
+    <string name="profile_sort_zaps">Zaps</string>
+    <string name="profile_sort_replies">Respuestas</string>
+    <string name="profile_edit">Editar Perfil</string>
+    <string name="profile_follows_you">Te sigue</string>
+    <string name="profile_copy_json">Copiar Perfil JSON</string>
+    <string name="profile_add_to_list">Añadir a Lista</string>
+    <string name="profile_block">Bloquear</string>
+    <string name="profile_unblock">Desbloquear</string>
+    <string name="profile_no_notes">Aún no hay notas</string>
+    <string name="profile_no_replies">Aún no hay respuestas</string>
+    <string name="profile_no_media">Aún no hay medios</string>
+    <string name="profile_not_following">No sigue a nadie</string>
+    <string name="profile_no_followers">No se encontraron seguidores</string>
+    <string name="profile_no_relays">No hay lista de relays publicada</string>
+    <string name="profile_relay_list">Lista de Relays (NIP-65)</string>
+    <string name="profile_discovered_relays">Relays Descubiertos</string>
+    <string name="profile_other_discovered_relays">Otros Relays Descubiertos</string>
+    <string name="profile_pinned">Fijado</string>
+    <string name="profile_json_copied">Perfil JSON copiado</string>
+    <string name="profile_send_message">Enviar mensaje</string>
+    <string name="profile_search_notes">Buscar notas</string>
+    <string name="profile_crawling_still">Aún rastreando o cuenta muy nueva</string>
+    <string name="profile_crawling_no_results">Sin resultados clasificados aún. Vuelve más tarde.</string>
+
+    <!-- Wallet -->
+    <string name="wallet_connect_wallet">Conectar Billetera</string>
+    <string name="wallet_choose_how">Elige cómo conectar una billetera Lightning para enviar y recibir sats.</string>
+    <string name="wallet_create_new">Crear Nueva Billetera</string>
+    <string name="wallet_create_description">Crea una nueva billetera directamente en Wisp, fondos asegurados por proveedores Spark</string>
+    <string name="wallet_nwc">Nostr Wallet Connect</string>
+    <string name="wallet_nwc_description">Conecta una billetera Lightning externa usando una cadena de conexión NWC.</string>
+    <string name="wallet_connect_lightning">Conecta una billetera Lightning para enviar y recibir sats. Pega una cadena de conexión NWC de tu proveedor de billetera.</string>
+    <string name="wallet_recommended">Billeteras recomendadas</string>
+    <string name="wallet_nwc_connection_string">Cadena de Conexión NWC</string>
+    <string name="wallet_connecting">Conectando…</string>
+    <string name="wallet_connect">Conectar</string>
+    <string name="wallet_spark">Billetera Spark</string>
+    <string name="wallet_tap_to_reveal">Toca para revelar</string>
+    <string name="wallet_set_up_lightning">Configurar tu Dirección Lightning</string>
+    <string name="wallet_get_username">Obtén una dirección usuario@breez.tips</string>
+    <string name="wallet_send">Enviar</string>
+    <string name="wallet_receive">Recibir</string>
+    <string name="wallet_lightning_address_invoice">Dirección Lightning o factura</string>
+    <string name="wallet_paste">Pegar</string>
+    <string name="wallet_scan_qr">Escanear QR</string>
+    <string name="wallet_gallery">Galería</string>
+    <string name="wallet_next">Siguiente</string>
+    <string name="wallet_scan_qr_code">Escanear Código QR</string>
+    <string name="wallet_camera_permission">Permiso de cámara requerido</string>
+    <string name="wallet_grant_permission">Otorgar Permiso</string>
+    <string name="wallet_point_camera">Apunta tu cámara al código QR de una factura o dirección Lightning</string>
+    <string name="wallet_send_to">Enviar a</string>
+    <string name="wallet_resolving">Resolviendo…</string>
+    <string name="wallet_confirm_payment">Confirmar Pago</string>
+    <string name="wallet_sats">sats</string>
+    <string name="wallet_fees">Comisiones</string>
+    <string name="wallet_total_spent">Total gastado</string>
+    <string name="wallet_pay">Pagar</string>
+    <string name="wallet_sending_payment">Enviando pago…</string>
+    <string name="wallet_payment_received">Pago Recibido</string>
+    <string name="wallet_transactions">Transacciones</string>
+    <string name="wallet_no_transactions">Aún no hay transacciones</string>
+    <string name="wallet_load_more">Cargar más</string>
+    <string name="wallet_received">Recibido</string>
+    <string name="wallet_sent">Enviado</string>
+    <string name="wallet_fee">comisión: %,d sats</string>
+    <string name="wallet_spark_sdk">SDK v%s</string>
+    <string name="wallet_not_supported">No soportado por tu billetera</string>
+    <string name="wallet_creating_invoice">Creando factura…</string>
+
+    <!-- Diagnostics -->
+    <string name="diagnostics_title">Diagnósticos</string>
+    <string name="diagnostic_mode">Modo diagnóstico</string>
+    <string name="diagnostic_mode_description">Registrar decisiones de procesamiento de eventos en un archivo para depuración</string>
+    <string name="share_logs">Compartir registros</string>
+    <string name="share_diagnostic_logs">Compartir registros de diagnóstico</string>
+    <string name="clear_logs">Borrar registros</string>
+</resources>

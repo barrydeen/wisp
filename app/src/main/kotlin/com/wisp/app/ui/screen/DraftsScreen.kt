@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.Nip30
@@ -51,6 +52,7 @@ import com.wisp.app.nostr.ProfileData
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
 import com.wisp.app.ui.component.parseImetaTags
+import com.wisp.app.R
 import com.wisp.app.viewmodel.DraftsViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -76,10 +78,10 @@ fun DraftsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Drafts & Scheduled") },
+                title = { Text(stringResource(R.string.drafts_scheduled_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -97,13 +99,13 @@ fun DraftsScreen(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("Drafts") },
+                    text = { Text(stringResource(R.string.drafts_tab)) },
                     icon = { Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(18.dp)) }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("Scheduled") },
+                    text = { Text(stringResource(R.string.scheduled_tab)) },
                     icon = { Icon(Icons.Outlined.Schedule, contentDescription = null, modifier = Modifier.size(18.dp)) }
                 )
             }
@@ -136,7 +138,7 @@ private fun DraftsTab(
     if (drafts.isEmpty()) {
         EmptyState(
             icon = { Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)) },
-            message = "No drafts saved"
+            message = stringResource(R.string.no_drafts_saved)
         )
     } else {
         LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -169,7 +171,7 @@ private fun ScheduledTab(
         posts.isEmpty() -> {
             EmptyState(
                 icon = { Icon(Icons.Outlined.Schedule, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)) },
-                message = "No scheduled posts"
+                message = stringResource(R.string.no_scheduled_posts)
             )
         }
         else -> {
@@ -195,7 +197,7 @@ private fun DraftItem(
     onDelete: () -> Unit
 ) {
     val isReply = draft.tags.any { it.size >= 2 && it[0] == "e" }
-    val displayName = userProfile?.displayString ?: "Draft"
+    val displayName = userProfile?.displayString ?: stringResource(R.string.draft_label)
     val emojiMap = remember(draft.dTag) { emptyMap<String, String>() }
     val imetaMap = remember(draft.dTag) { emptyMap<String, String>() }
 
@@ -233,7 +235,7 @@ private fun DraftItem(
                     shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(
-                        text = "Reply",
+                        text = stringResource(R.string.reply_label),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
@@ -249,7 +251,7 @@ private fun DraftItem(
             IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
                 Icon(
                     Icons.Outlined.Close,
-                    contentDescription = "Delete draft",
+                    contentDescription = stringResource(R.string.delete_draft),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )
@@ -260,7 +262,7 @@ private fun DraftItem(
 
         // Note content — full RichContent
         RichContent(
-            content = draft.content.ifBlank { "(empty)" },
+            content = draft.content.ifBlank { stringResource(R.string.empty_content) },
             style = MaterialTheme.typography.bodyLarge,
             color = if (draft.content.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant
                     else MaterialTheme.colorScheme.onSurface,
@@ -344,7 +346,7 @@ private fun ScheduledPostItem(
             IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
                 Icon(
                     Icons.Outlined.Close,
-                    contentDescription = "Remove from schedule",
+                    contentDescription = stringResource(R.string.remove_from_schedule),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )

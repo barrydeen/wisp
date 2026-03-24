@@ -63,6 +63,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.ProfileData
@@ -141,7 +142,7 @@ fun WispDrawerContent(
                         } else {
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_tor_onion),
-                                contentDescription = "Toggle Tor",
+                                contentDescription = stringResource(R.string.cd_toggle_tor),
                                 modifier = Modifier.size(24.dp),
                                 tint = when (torStatus) {
                                     TorStatus.CONNECTED -> MaterialTheme.colorScheme.primary
@@ -155,7 +156,7 @@ fun WispDrawerContent(
                 IconButton(onClick = onToggleTheme) {
                     Icon(
                         if (isDarkTheme) Icons.Outlined.DarkMode else Icons.Outlined.LightMode,
-                        contentDescription = "Toggle theme",
+                        contentDescription = stringResource(R.string.cd_toggle_theme),
                         modifier = Modifier.size(24.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -163,7 +164,7 @@ fun WispDrawerContent(
                 IconButton(onClick = { showQrDialog = true }) {
                     Icon(
                         Icons.Outlined.QrCode2,
-                        contentDescription = "Show QR code",
+                        contentDescription = stringResource(R.string.cd_show_qr_code),
                         modifier = Modifier.size(24.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -172,7 +173,7 @@ fun WispDrawerContent(
                     IconButton(onClick = { showLightningDialog = true }) {
                         Icon(
                             Icons.Outlined.CurrencyBitcoin,
-                            contentDescription = "Lightning address",
+                            contentDescription = stringResource(R.string.cd_lightning_address),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -194,10 +195,10 @@ fun WispDrawerContent(
                     modifier = Modifier.weight(1f, fill = false)
                 )
                 if (accounts.size > 1 || accounts.isNotEmpty()) {
-                    Icon(
-                        if (accountPickerExpanded) Icons.Outlined.KeyboardArrowDown
-                        else Icons.Outlined.KeyboardArrowRight,
-                        contentDescription = "Switch account",
+                        Icon(
+                            if (accountPickerExpanded) Icons.Outlined.KeyboardArrowDown
+                            else Icons.Outlined.KeyboardArrowRight,
+                            contentDescription = stringResource(R.string.cd_switch_account),
                         modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -256,7 +257,7 @@ fun WispDrawerContent(
                             if (isActive) {
                                 Icon(
                                     Icons.Filled.Check,
-                                    contentDescription = "Active",
+                                    contentDescription = stringResource(R.string.cd_active),
                                     modifier = Modifier.size(18.dp),
                                     tint = MaterialTheme.colorScheme.primary
                                 )
@@ -280,14 +281,14 @@ fun WispDrawerContent(
                         ) {
                             Icon(
                                 Icons.Filled.Add,
-                                contentDescription = "Add account",
+                                contentDescription = stringResource(R.string.cd_add_account),
                                 modifier = Modifier.size(20.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "Add account",
+                            text = stringResource(R.string.cd_add_account),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -307,49 +308,49 @@ fun WispDrawerContent(
 
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Person, contentDescription = null) },
-            label = { Text("My Profile") },
+            label = { Text(stringResource(R.string.drawer_my_profile)) },
             selected = false,
             onClick = onProfile,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Home, contentDescription = null) },
-            label = { Text("Feeds") },
+            label = { Text(stringResource(R.string.drawer_feeds)) },
             selected = false,
             onClick = onFeed,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-            label = { Text("Search") },
+            label = { Text(stringResource(R.string.title_search)) },
             selected = false,
             onClick = onSearch,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Email, contentDescription = null) },
-            label = { Text("Messages") },
+            label = { Text(stringResource(R.string.nav_messages)) },
             selected = false,
             onClick = onMessages,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.CurrencyBitcoin, contentDescription = null) },
-            label = { Text("Wallet") },
+            label = { Text(stringResource(R.string.nav_wallet)) },
             selected = false,
             onClick = onWallet,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.FormatListBulleted, contentDescription = null) },
-            label = { Text("Lists") },
+            label = { Text(stringResource(R.string.drawer_lists)) },
             selected = false,
             onClick = onLists,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
-            label = { Text("Drafts & Scheduled") },
+            label = { Text(stringResource(R.string.drawer_drafts)) },
             selected = false,
             onClick = onDrafts,
             modifier = Modifier.padding(horizontal = 12.dp)
@@ -357,7 +358,7 @@ fun WispDrawerContent(
         var settingsExpanded by remember { mutableStateOf(false) }
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
-            label = { Text("Settings") },
+            label = { Text(stringResource(R.string.drawer_settings)) },
             badge = {
                 Icon(
                     if (settingsExpanded) Icons.Outlined.KeyboardArrowDown
@@ -373,70 +374,70 @@ fun WispDrawerContent(
             Column {
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Palette, contentDescription = null) },
-                    label = { Text("Interface") },
+                    label = { Text(stringResource(R.string.drawer_interface)) },
                     selected = false,
                     onClick = onInterfaceSettings,
                     modifier = Modifier.padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
-                    label = { Text("Relays") },
+                    label = { Text(stringResource(R.string.drawer_relays)) },
                     selected = false,
                     onClick = onRelaySettings,
                     modifier = Modifier.padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Cloud, contentDescription = null) },
-                    label = { Text("Media Servers") },
+                    label = { Text(stringResource(R.string.drawer_media_servers)) },
                     selected = false,
                     onClick = onMediaServers,
                     modifier = Modifier.padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
-                    label = { Text("Keys") },
+                    label = { Text(stringResource(R.string.drawer_keys)) },
                     selected = false,
                     onClick = onKeys,
                     modifier = Modifier.padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Block, contentDescription = null) },
-                    label = { Text("Safety") },
+                    label = { Text(stringResource(R.string.drawer_safety)) },
                     selected = false,
                     onClick = onSafety,
                     modifier = Modifier.padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Shield, contentDescription = null) },
-                    label = { Text("Proof of Work") },
+                    label = { Text(stringResource(R.string.drawer_proof_of_work)) },
                     selected = false,
                     onClick = onPowSettings,
                     modifier = Modifier.padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Hub, contentDescription = null) },
-                    label = { Text("Social Graph") },
+                    label = { Text(stringResource(R.string.drawer_social_graph)) },
                     selected = false,
                     onClick = onSocialGraph,
                     modifier = Modifier.padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.EmojiEmotions, contentDescription = null) },
-                    label = { Text("Custom Emojis") },
+                    label = { Text(stringResource(R.string.drawer_custom_emojis)) },
                     selected = false,
                     onClick = onCustomEmojis,
                     modifier = Modifier.padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null) },
-                    label = { Text("Relay Health") },
+                    label = { Text(stringResource(R.string.drawer_relay_health)) },
                     selected = false,
                     onClick = onRelayHealth,
                     modifier = Modifier.padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.BugReport, contentDescription = null) },
-                    label = { Text("Console") },
+                    label = { Text(stringResource(R.string.drawer_console)) },
                     selected = false,
                     onClick = onConsole,
                     modifier = Modifier.padding(start = 36.dp, end = 12.dp)
@@ -457,7 +458,7 @@ fun WispDrawerContent(
                 )
             },
             label = {
-                Text("Logout", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.btn_logout), color = MaterialTheme.colorScheme.error)
             },
             selected = false,
             onClick = { showLogoutDialog = true },
@@ -467,21 +468,21 @@ fun WispDrawerContent(
         if (showLogoutDialog) {
             AlertDialog(
                 onDismissRequest = { showLogoutDialog = false },
-                title = { Text("Logout") },
+                title = { Text(stringResource(R.string.btn_logout)) },
                 text = {
-                    Text("Make sure you've backed up your private key before logging out. You can find it in Keys settings. Without it, you won't be able to recover your account.")
+                    Text(stringResource(R.string.logout_warning))
                 },
                 confirmButton = {
                     TextButton(onClick = {
                         showLogoutDialog = false
                         onLogout()
                     }) {
-                        Text("Logout", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.btn_logout), color = MaterialTheme.colorScheme.error)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showLogoutDialog = false }) {
-                        Text("Cancel")
+                        Text(stringResource(R.string.btn_cancel))
                     }
                 }
             )

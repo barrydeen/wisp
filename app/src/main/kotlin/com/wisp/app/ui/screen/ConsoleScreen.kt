@@ -27,6 +27,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.wisp.app.R
 import com.wisp.app.relay.ConsoleLogEntry
 import com.wisp.app.relay.ConsoleLogType
 import com.wisp.app.viewmodel.ConsoleViewModel
@@ -45,7 +47,7 @@ fun ConsoleScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Console") },
+                title = { Text(stringResource(R.string.drawer_console)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -69,7 +71,7 @@ fun ConsoleScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    "No errors logged",
+                    stringResource(R.string.console_no_errors),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }

@@ -43,8 +43,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.wisp.app.R
 import com.wisp.app.ui.theme.WispThemeColors
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
@@ -84,7 +86,7 @@ fun ActionBar(
         IconButton(onClick = onReply) {
             Icon(
                 Icons.AutoMirrored.Outlined.Reply,
-                contentDescription = "Reply",
+                contentDescription = stringResource(R.string.cd_reply),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -122,7 +124,7 @@ fun ActionBar(
                 } else {
                     Icon(
                         Icons.Outlined.FavoriteBorder,
-                        contentDescription = "React",
+                        contentDescription = stringResource(R.string.cd_react),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(22.dp)
                     )
@@ -149,7 +151,7 @@ fun ActionBar(
             IconButton(onClick = { showRepostMenu = true }) {
                 Icon(
                     Icons.Outlined.Repeat,
-                    contentDescription = "Repost",
+                    contentDescription = stringResource(R.string.cd_repost),
                     tint = if (hasUserReposted) WispThemeColors.repostColor else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(22.dp)
                 )
@@ -181,7 +183,7 @@ fun ActionBar(
                 } else {
                     Icon(
                         Icons.Outlined.CurrencyBitcoin,
-                        contentDescription = "Zaps",
+                        contentDescription = stringResource(R.string.cd_zaps),
                         tint = if (hasUserZapped) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(22.dp)
                     )
@@ -210,7 +212,7 @@ fun ActionBar(
         IconButton(onClick = onAddToList) {
             Icon(
                 if (isInList) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-                contentDescription = "Add to List",
+                contentDescription = stringResource(R.string.cd_add_to_list),
                 tint = if (isInList) WispThemeColors.bookmarkColor else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(22.dp)
             )
@@ -316,10 +318,10 @@ private fun RepostPopup(
         ) {
             Row(modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
                 TextButton(onClick = onRepost) {
-                    Text("Retweet")
+                    Text(stringResource(R.string.btn_retweet))
                 }
                 TextButton(onClick = onQuote) {
-                    Text("Quote")
+                    Text(stringResource(R.string.title_quote))
                 }
             }
         }

@@ -1,6 +1,5 @@
 package com.wisp.app.ui.screen
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,7 +9,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,8 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,11 +48,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
+import com.wisp.app.R
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
@@ -99,16 +97,12 @@ fun SearchScreen(
     val selectedRelayOption by viewModel.selectedRelayOption.collectAsState()
     val selectedRelayUrl by viewModel.selectedRelayUrl.collectAsState()
     val searchRelays by viewModel.searchRelays.collectAsState()
-    val authorFilter by viewModel.authorFilter.collectAsState()
-    val authorSearchResults by viewModel.authorSearchResults.collectAsState()
-    val isAuthorSearching by viewModel.isAuthorSearching.collectAsState()
-    var advancedExpanded by remember { mutableStateOf(authorFilter != null) }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text("Search") },
+                title = { Text(stringResource(R.string.title_search)) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
@@ -128,7 +122,7 @@ fun SearchScreen(
                 FilterChip(
                     selected = filter == SearchFilter.PEOPLE,
                     onClick = { viewModel.selectFilter(SearchFilter.PEOPLE) },
-                    label = { Text("People") },
+                    label = { Text(stringResource(R.string.tab_people)) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.primary,
                         selectedLabelColor = MaterialTheme.colorScheme.onPrimary
@@ -137,7 +131,7 @@ fun SearchScreen(
                 FilterChip(
                     selected = filter == SearchFilter.NOTES,
                     onClick = { viewModel.selectFilter(SearchFilter.NOTES) },
-                    label = { Text("Notes") },
+                    label = { Text(stringResource(R.string.tab_notes)) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.primary,
                         selectedLabelColor = MaterialTheme.colorScheme.onPrimary
@@ -145,55 +139,17 @@ fun SearchScreen(
                 )
             }
 
-            // Advanced search toggle
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { advancedExpanded = !advancedExpanded }
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "Advanced search",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Icon(
-                    if (advancedExpanded) Icons.Default.KeyboardArrowUp
-                    else Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            AnimatedVisibility(visible = advancedExpanded) {
-                Column {
-                    RelaySelector(
-                        searchRelays = searchRelays,
-                        selectedOption = selectedRelayOption,
-                        selectedRelayUrl = selectedRelayUrl,
-                        onSelectDefault = { viewModel.selectDefaultRelay() },
-                        onSelectAllRelays = { viewModel.selectAllRelays() },
-                        onSelectRelay = { viewModel.selectRelay(it) },
-                        onAddRelay = { viewModel.addSearchRelay(it) },
-                        onRemoveRelay = { viewModel.removeSearchRelay(it) }
-                    )
-
-                    // Author filter (Notes only)
-                    if (filter == SearchFilter.NOTES) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        AuthorFilter(
-                            authorFilter = authorFilter,
-                            authorSearchResults = authorSearchResults,
-                            isAuthorSearching = isAuthorSearching,
-                            onSearchAuthors = { viewModel.searchAuthors(it, relayPool, eventRepo) },
-                            onSelectAuthor = { viewModel.setAuthorFilter(it) },
-                            onClearAuthor = { viewModel.clearAuthorFilter() }
-                        )
-                    }
-                }
-            }
+            // Relay selector
+            RelaySelector(
+                searchRelays = searchRelays,
+                selectedOption = selectedRelayOption,
+                selectedRelayUrl = selectedRelayUrl,
+                onSelectDefault = { viewModel.selectDefaultRelay() },
+                onSelectAllRelays = { viewModel.selectAllRelays() },
+                onSelectRelay = { viewModel.selectRelay(it) },
+                onAddRelay = { viewModel.addSearchRelay(it) },
+                onRemoveRelay = { viewModel.removeSearchRelay(it) }
+            )
 
             // Search bar
             Row(
@@ -205,12 +161,12 @@ fun SearchScreen(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { viewModel.updateQuery(it) },
-                    placeholder = { Text("Search users and notes") },
+                    placeholder = { Text(stringResource(R.string.placeholder_search_users_notes)) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     trailingIcon = {
                         if (query.isNotEmpty()) {
                             IconButton(onClick = { viewModel.clear() }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.btn_clear))
                             }
                         }
                     },
@@ -224,7 +180,7 @@ fun SearchScreen(
                 IconButton(
                     onClick = { viewModel.search(query, relayPool, eventRepo, muteRepo) }
                 ) {
-                    Icon(Icons.Default.Search, contentDescription = "Search")
+                    Icon(Icons.Default.Search, contentDescription = stringResource(R.string.title_search))
                 }
             }
 
@@ -245,7 +201,7 @@ fun SearchScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "No results found",
+                            stringResource(R.string.error_no_results_found),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -257,7 +213,7 @@ fun SearchScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "Search for users and notes on relays",
+                            stringResource(R.string.error_search_hint),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -345,7 +301,7 @@ private fun RelaySelector(
 
     val displayText = when (selectedOption) {
         RelayOption.DEFAULT -> SearchViewModel.DEFAULT_SEARCH_RELAY.removePrefix("wss://")
-        RelayOption.ALL_RELAYS -> "All relays"
+        RelayOption.ALL_RELAYS -> stringResource(R.string.tab_all_relays)
         RelayOption.INDIVIDUAL -> selectedRelayUrl?.removePrefix("wss://") ?: ""
     }
 
@@ -358,7 +314,7 @@ private fun RelaySelector(
             value = displayText,
             onValueChange = {},
             readOnly = true,
-            label = { Text("Search relay") },
+            label = { Text(stringResource(R.string.placeholder_search_relay)) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier
                 .menuAnchor(MenuAnchorType.PrimaryNotEditable)
@@ -399,7 +355,7 @@ private fun RelaySelector(
                         ) {
                             Icon(
                                 Icons.Default.Close,
-                                contentDescription = "Remove relay",
+                                contentDescription = stringResource(R.string.cd_remove_relay),
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -415,7 +371,7 @@ private fun RelaySelector(
 
             // All relays option
             DropdownMenuItem(
-                text = { Text("All relays") },
+                text = { Text(stringResource(R.string.tab_all_relays)) },
                 onClick = {
                     onSelectAllRelays()
                     expanded = false
@@ -426,7 +382,7 @@ private fun RelaySelector(
 
             // Add new relay
             DropdownMenuItem(
-                text = { Text("Add new") },
+                text = { Text(stringResource(R.string.cd_add_new)) },
                 leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
                 onClick = {
                     expanded = false
@@ -457,12 +413,12 @@ private fun AddRelayDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add search relay") },
+        title = { Text(stringResource(R.string.menu_add_search_relay)) },
         text = {
             OutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
-                placeholder = { Text("wss://relay.example.com") },
+                placeholder = { Text(stringResource(R.string.placeholder_add_relay)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -471,134 +427,15 @@ private fun AddRelayDialog(
         },
         confirmButton = {
             TextButton(onClick = { onAdd(url) }) {
-                Text("Add")
+                Text(stringResource(R.string.btn_add))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.btn_cancel))
             }
         }
     )
-}
-
-@Composable
-private fun AuthorFilter(
-    authorFilter: ProfileData?,
-    authorSearchResults: List<ProfileData>,
-    isAuthorSearching: Boolean,
-    onSearchAuthors: (String) -> Unit,
-    onSelectAuthor: (ProfileData) -> Unit,
-    onClearAuthor: () -> Unit
-) {
-    var authorQuery by remember { mutableStateOf("") }
-
-    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-        Text(
-            "Author",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-
-        if (authorFilter != null) {
-            // Show selected author
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                ProfilePicture(url = authorFilter.picture, size = 32)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = authorFilter.displayString,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                IconButton(
-                    onClick = onClearAuthor,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "Clear author",
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-        } else {
-            // Author search input
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = authorQuery,
-                    onValueChange = { authorQuery = it },
-                    placeholder = { Text("Search for author") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(
-                        onSearch = { onSearchAuthors(authorQuery) }
-                    )
-                )
-                IconButton(onClick = { onSearchAuthors(authorQuery) }) {
-                    Icon(Icons.Default.Search, contentDescription = "Search authors")
-                }
-            }
-
-            // Author search results
-            if (isAuthorSearching) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-
-            authorSearchResults.forEach { profile ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            onSelectAuthor(profile)
-                            authorQuery = ""
-                        }
-                        .padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    ProfilePicture(url = profile.picture, size = 32)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = profile.displayString,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (!profile.nip05.isNullOrBlank()) {
-                            Text(
-                                text = profile.nip05,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable

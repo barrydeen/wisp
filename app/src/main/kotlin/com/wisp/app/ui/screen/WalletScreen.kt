@@ -110,6 +110,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -156,16 +157,16 @@ fun WalletScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
+            topBar = {
             TopAppBar(
-                title = { Text("Wallet") },
+                title = { Text(stringResource(R.string.title_wallet)) },
                 navigationIcon = {
                     IconButton(onClick = {
                         if (!viewModel.navigateBack()) {
                             onBack()
                         }
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -504,13 +505,13 @@ private fun WalletConnectionContent(
     Spacer(Modifier.height(16.dp))
 
     Text(
-        "Nostr Wallet Connect",
+        stringResource(R.string.wallet_nwc),
         style = MaterialTheme.typography.headlineSmall,
         color = MaterialTheme.colorScheme.onSurface
     )
     Spacer(Modifier.height(8.dp))
     Text(
-        "Connect a Lightning wallet to send and receive sats. Paste a NWC connection string from your wallet provider.",
+        stringResource(R.string.wallet_connect_lightning),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
@@ -518,7 +519,7 @@ private fun WalletConnectionContent(
     Spacer(Modifier.height(24.dp))
 
     Text(
-        "Recommended wallets",
+        stringResource(R.string.wallet_recommended),
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onSurface
     )
@@ -571,7 +572,7 @@ private fun WalletConnectionContent(
     OutlinedTextField(
         value = connectionString,
         onValueChange = onConnectionStringChange,
-        label = { Text("NWC Connection String") },
+        label = { Text(stringResource(R.string.wallet_nwc_connection_string)) },
         placeholder = { Text("nostr+walletconnect://...") },
         modifier = Modifier.fillMaxWidth(),
         singleLine = false,
@@ -602,9 +603,9 @@ private fun WalletConnectionContent(
                 strokeWidth = 2.dp
             )
             Spacer(Modifier.width(8.dp))
-            Text("Connecting...")
+            Text(stringResource(R.string.wallet_connecting))
         } else {
-            Text("Connect")
+            Text(stringResource(R.string.wallet_connect))
         }
     }
 
@@ -627,7 +628,7 @@ private fun WalletConnectionContent(
             onClick = onDisconnect,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Cancel")
+            Text(stringResource(R.string.btn_cancel))
         }
     }
 
@@ -705,7 +706,7 @@ private fun WalletHomeContent(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Tap to reveal",
+                    stringResource(R.string.wallet_tap_to_reveal),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -718,7 +719,7 @@ private fun WalletHomeContent(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "sats",
+                        stringResource(R.string.wallet_sats),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 4.dp)
@@ -730,7 +731,7 @@ private fun WalletHomeContent(
         IconButton(onClick = onRefresh) {
             Icon(
                 Icons.Default.Refresh,
-                contentDescription = "Refresh balance",
+                contentDescription = stringResource(R.string.cd_refresh_balance),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -762,12 +763,12 @@ private fun WalletHomeContent(
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Set up your Lightning Address",
+                            stringResource(R.string.wallet_set_up_lightning),
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            "Get a username@breez.tips address",
+                            stringResource(R.string.wallet_get_username),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -801,14 +802,14 @@ private fun WalletHomeContent(
                 ) {
                     Icon(
                         Icons.Default.ArrowUpward,
-                        contentDescription = "Send",
+                        contentDescription = stringResource(R.string.wallet_send),
                         modifier = Modifier.size(32.dp),
                         tint = MaterialTheme.colorScheme.onPrimary
                     )
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Send",
+                    stringResource(R.string.wallet_send),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -825,14 +826,14 @@ private fun WalletHomeContent(
                 ) {
                     Icon(
                         Icons.Default.ArrowDownward,
-                        contentDescription = "Receive",
+                        contentDescription = stringResource(R.string.wallet_receive),
                         modifier = Modifier.size(32.dp),
                         tint = MaterialTheme.colorScheme.onPrimary
                     )
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Receive",
+                    stringResource(R.string.wallet_receive),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -903,7 +904,7 @@ private fun SendInputContent(
         Spacer(Modifier.height(32.dp))
 
         Text(
-            "Send",
+            stringResource(R.string.wallet_send),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -913,8 +914,8 @@ private fun SendInputContent(
         OutlinedTextField(
             value = input,
             onValueChange = onInputChange,
-            label = { Text("Lightning address or invoice") },
-            placeholder = { Text("user@domain.com or lnbc...") },
+            label = { Text(stringResource(R.string.wallet_lightning_address_invoice)) },
+            placeholder = { Text(stringResource(R.string.placeholder_user_domain)) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = false,
             maxLines = 4,
@@ -922,7 +923,7 @@ private fun SendInputContent(
                 IconButton(onClick = {
                     clipboardManager.getText()?.text?.let { onInputChange(it) }
                 }) {
-                    Icon(Icons.Default.ContentPaste, contentDescription = "Paste")
+                    Icon(Icons.Default.ContentPaste, contentDescription = stringResource(R.string.wallet_paste))
                 }
             }
         )
@@ -953,7 +954,7 @@ private fun SendInputContent(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Scan QR")
+                Text(stringResource(R.string.wallet_scan_qr))
             }
             OutlinedButton(
                 onClick = { galleryLauncher.launch("image/*") },
@@ -965,7 +966,7 @@ private fun SendInputContent(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Gallery")
+                Text(stringResource(R.string.wallet_gallery))
             }
         }
 
@@ -976,7 +977,7 @@ private fun SendInputContent(
             modifier = Modifier.fillMaxWidth(),
             enabled = input.isNotBlank()
         ) {
-            Text("Next")
+            Text(stringResource(R.string.wallet_next))
         }
     }
 }
@@ -1015,7 +1016,7 @@ private fun ScanQRContent(
         Spacer(Modifier.height(16.dp))
 
         Text(
-            "Scan QR Code",
+            stringResource(R.string.wallet_scan_qr_code),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -1038,7 +1039,7 @@ private fun ScanQRContent(
                     )
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        "Camera permission required",
+                        stringResource(R.string.wallet_camera_permission),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1046,7 +1047,7 @@ private fun ScanQRContent(
                     Button(onClick = {
                         permissionLauncher.launch(Manifest.permission.CAMERA)
                     }) {
-                        Text("Grant Permission")
+                        Text(stringResource(R.string.wallet_grant_permission))
                     }
                 }
             }
@@ -1150,7 +1151,7 @@ private fun ScanQRContent(
         Spacer(Modifier.height(16.dp))
 
         Text(
-            "Point your camera at a Lightning invoice or address QR code",
+            stringResource(R.string.wallet_point_camera),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -1183,7 +1184,7 @@ private fun SendAmountContent(
         Spacer(Modifier.height(16.dp))
 
         Text(
-            "Send to",
+            stringResource(R.string.wallet_send_to),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1198,7 +1199,7 @@ private fun SendAmountContent(
         if (isLoading) {
             CircularProgressIndicator()
             Spacer(Modifier.height(8.dp))
-            Text("Resolving...", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.wallet_resolving), style = MaterialTheme.typography.bodyMedium)
         } else {
             SatsNumpad(
                 amount = amount,
@@ -1246,7 +1247,7 @@ private fun SendConfirmContent(
         Spacer(Modifier.height(32.dp))
 
         Text(
-            "Confirm Payment",
+            stringResource(R.string.wallet_confirm_payment),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -1255,7 +1256,7 @@ private fun SendConfirmContent(
 
         if (amountSats != null) {
             Text(
-                "%,d sats".format(amountSats),
+                "%,d ${stringResource(R.string.wallet_sats)}".format(amountSats),
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -1271,14 +1272,14 @@ private fun SendConfirmContent(
             Column(modifier = Modifier.padding(horizontal = 20.dp)) {
                 // To
                 SummaryRow(
-                    label = "To",
+                    label = stringResource(R.string.placeholder_to),
                     value = truncateInvoice(invoice)
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                 // Network
                 SummaryRow(
-                    label = "Network",
+                    label = stringResource(R.string.placeholder_network),
                     value = networkName
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -1292,7 +1293,7 @@ private fun SendConfirmContent(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Fees",
+                        stringResource(R.string.wallet_fees),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1302,7 +1303,7 @@ private fun SendConfirmContent(
                             strokeWidth = 2.dp
                         )
                         is FeeState.Estimated -> Text(
-                            "%,d sats".format(feeState.feeSats),
+                            "%,d ${stringResource(R.string.wallet_sats)}".format(feeState.feeSats),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -1317,8 +1318,8 @@ private fun SendConfirmContent(
 
                 // Total spent
                 SummaryRow(
-                    label = "Total spent",
-                    value = if (totalSats != null) "%,d sats".format(totalSats) else amountSats?.let { "%,d sats".format(it) } ?: "\u2014",
+                    label = stringResource(R.string.wallet_total_spent),
+                    value = if (totalSats != null) "%,d ${stringResource(R.string.wallet_sats)}".format(totalSats) else amountSats?.let { "%,d ${stringResource(R.string.wallet_sats)}".format(it) } ?: "\u2014",
                     bold = true
                 )
             }
@@ -1344,7 +1345,7 @@ private fun SendConfirmContent(
         ) {
             Icon(Icons.Default.ElectricBolt, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Pay")
+            Text(stringResource(R.string.wallet_pay))
         }
 
         Spacer(Modifier.height(8.dp))
@@ -1353,7 +1354,7 @@ private fun SendConfirmContent(
             onClick = onCancel,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Cancel")
+            Text(stringResource(R.string.btn_cancel))
         }
     }
 }
@@ -1434,7 +1435,7 @@ private fun SendingContent(modifier: Modifier = Modifier) {
         CircularProgressIndicator()
         Spacer(Modifier.height(16.dp))
         Text(
-            "Sending payment...",
+            stringResource(R.string.wallet_sending_payment),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1481,7 +1482,7 @@ private fun SendResultContent(
         )
         Spacer(Modifier.height(32.dp))
         Button(onClick = onDone) {
-            Text("Done")
+            Text(stringResource(R.string.btn_done))
         }
     }
 }
@@ -1506,7 +1507,7 @@ private fun ReceiveAmountContent(
         Spacer(Modifier.height(16.dp))
 
         Text(
-            "Receive",
+            stringResource(R.string.wallet_receive),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -1516,7 +1517,7 @@ private fun ReceiveAmountContent(
         if (isLoading) {
             CircularProgressIndicator()
             Spacer(Modifier.height(8.dp))
-            Text("Creating invoice...", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.wallet_creating_invoice), style = MaterialTheme.typography.bodyMedium)
         } else {
             SatsNumpad(
                 amount = amount,
@@ -1563,7 +1564,7 @@ private fun ReceiveInvoiceContent(
         Spacer(Modifier.height(16.dp))
 
         Text(
-            "%,d sats".format(amountSats),
+            "%,d ${stringResource(R.string.wallet_sats)}".format(amountSats),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -1572,7 +1573,7 @@ private fun ReceiveInvoiceContent(
 
         Image(
             bitmap = qrBitmap.asImageBitmap(),
-            contentDescription = "Invoice QR Code",
+            contentDescription = stringResource(R.string.cd_invoice_qr_code),
             modifier = Modifier
                 .size(280.dp)
                 .background(Color.White, RoundedCornerShape(12.dp))
@@ -1609,7 +1610,7 @@ private fun ReceiveInvoiceContent(
                 )) {
                     Icon(
                         Icons.Default.ContentCopy,
-                        contentDescription = "Copy invoice",
+                        contentDescription = stringResource(R.string.cd_copy_invoice),
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -1619,7 +1620,7 @@ private fun ReceiveInvoiceContent(
         Spacer(Modifier.height(24.dp))
 
         FilledTonalButton(onClick = onDone) {
-            Text("Done")
+            Text(stringResource(R.string.btn_done))
         }
 
         Spacer(Modifier.height(32.dp))
@@ -1748,7 +1749,7 @@ private fun ReceiveSuccessContent(
         Spacer(Modifier.height(24.dp))
 
         Text(
-            "Payment Received",
+            stringResource(R.string.wallet_payment_received),
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha.value)
         )
@@ -1756,7 +1757,7 @@ private fun ReceiveSuccessContent(
         Spacer(Modifier.height(8.dp))
 
         Text(
-            "%,d sats".format(amountSats),
+            "%,d ${stringResource(R.string.wallet_sats)}".format(amountSats),
             style = MaterialTheme.typography.headlineMedium,
             color = primary.copy(alpha = contentAlpha.value)
         )
@@ -1765,7 +1766,7 @@ private fun ReceiveSuccessContent(
 
         if (contentAlpha.value > 0.5f) {
             Button(onClick = onDone) {
-                Text("Done")
+                Text(stringResource(R.string.btn_done))
             }
         }
     }
@@ -1790,7 +1791,7 @@ private fun TransactionHistoryContent(
         modifier = modifier.fillMaxSize()
     ) {
         Text(
-            "Transactions",
+            stringResource(R.string.wallet_transactions),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
@@ -1815,7 +1816,7 @@ private fun TransactionHistoryContent(
                     Text(
                         if (error.contains("NOT_IMPLEMENTED", ignoreCase = true) ||
                             error.contains("not supported", ignoreCase = true))
-                            "Not supported by your wallet"
+                            stringResource(R.string.wallet_not_supported)
                         else error,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1831,7 +1832,7 @@ private fun TransactionHistoryContent(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        "No transactions yet",
+                        stringResource(R.string.wallet_no_transactions),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1861,7 +1862,7 @@ private fun TransactionHistoryContent(
                                     )
                                 } else {
                                     TextButton(onClick = onLoadMore) {
-                                        Text("Load more")
+                                        Text(stringResource(R.string.wallet_load_more))
                                     }
                                 }
                             }
@@ -1910,7 +1911,7 @@ private fun TransactionRow(
             ) {
                 Icon(
                     if (isIncoming) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
-                    contentDescription = if (isIncoming) "Received" else "Sent",
+                    contentDescription = if (isIncoming) stringResource(R.string.wallet_received) else stringResource(R.string.wallet_sent),
                     tint = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(20.dp)
                 )
@@ -1928,7 +1929,7 @@ private fun TransactionRow(
                 val desc = tx.description?.takeIf {
                     it.isNotBlank() && it != "null" && !it.trimStart().startsWith("{")
                 }
-                desc ?: if (isIncoming) "Received" else "Sent"
+                desc ?: if (isIncoming) stringResource(R.string.wallet_received) else stringResource(R.string.wallet_sent)
             }
             Text(
                 displayLabel,
@@ -1954,7 +1955,7 @@ private fun TransactionRow(
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    "sats",
+                    stringResource(R.string.wallet_sats),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1962,7 +1963,7 @@ private fun TransactionRow(
             if (!isIncoming && tx.feeMsats > 0) {
                 val feeSats = tx.feeMsats / 1000
                 Text(
-                    "fee: %,d sats".format(feeSats),
+                    stringResource(R.string.wallet_fee, feeSats),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1981,13 +1982,13 @@ private fun WalletModeSelectionContent(
     Spacer(Modifier.height(16.dp))
 
     Text(
-        "Connect a Wallet",
+        stringResource(R.string.wallet_connect_wallet),
         style = MaterialTheme.typography.headlineSmall,
         color = MaterialTheme.colorScheme.onSurface
     )
     Spacer(Modifier.height(8.dp))
     Text(
-        "Choose how to connect a Lightning wallet for sending and receiving sats.",
+        stringResource(R.string.wallet_choose_how),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
@@ -2005,13 +2006,13 @@ private fun WalletModeSelectionContent(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Create a New Wallet",
+                stringResource(R.string.wallet_create_new),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "Create a new wallet directly in Wisp, funds are secured by Spark providers",
+                stringResource(R.string.wallet_create_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -2030,13 +2031,13 @@ private fun WalletModeSelectionContent(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Nostr Wallet Connect",
+                stringResource(R.string.wallet_nwc),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "Connect an external Lightning wallet using a NWC connection string.",
+                stringResource(R.string.wallet_nwc_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -2070,7 +2071,7 @@ private fun SparkSetupContent(
     Spacer(Modifier.height(16.dp))
 
     Text(
-        "Spark Wallet",
+        stringResource(R.string.wallet_spark),
         style = MaterialTheme.typography.headlineSmall,
         color = MaterialTheme.colorScheme.onSurface
     )
@@ -2781,13 +2782,13 @@ private fun WalletSettingsContent(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "SDK v${BuildConfig.BREEZ_SDK_VERSION}",
+                    stringResource(R.string.wallet_spark_sdk, BuildConfig.BREEZ_SDK_VERSION),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
                 Text(
-                    "Nostr Wallet Connect",
+                    stringResource(R.string.wallet_nwc),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

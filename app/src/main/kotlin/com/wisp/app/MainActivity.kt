@@ -17,6 +17,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import com.wisp.app.repo.InterfacePreferences
+import com.wisp.app.repo.LocaleRepository
 import com.wisp.app.ui.component.LocalMediaSettings
 import com.wisp.app.ui.component.MediaSettings
 import com.wisp.app.ui.theme.WispTheme
@@ -26,8 +27,12 @@ class MainActivity : FragmentActivity() {
         private set
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val interfacePrefs = InterfacePreferences(this)
+        LocaleRepository.applyLanguage(this, interfacePrefs.getLanguage())
+
         installSplashScreen()
         super.onCreate(savedInstanceState)
+
         enableEdgeToEdge()
         deepLinkUri.value = intent?.data?.toString()
         setContent {

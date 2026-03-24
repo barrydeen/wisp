@@ -36,10 +36,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import com.wisp.app.R
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RelayIcon
 import com.wisp.app.ui.theme.WispThemeColors
@@ -61,10 +63,10 @@ fun RelayHealthScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Relay Health") },
+                title = { Text(stringResource(R.string.title_relay_health)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -87,12 +89,12 @@ fun RelayHealthScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     SummaryCard(
-                        label = "Connected",
+                        label = stringResource(R.string.tab_connected),
                         value = "${state.totalConnected}/${state.totalRelays}",
                         modifier = Modifier.weight(1f)
                     )
                     SummaryCard(
-                        label = "Bad",
+                        label = stringResource(R.string.tab_bad),
                         value = state.totalBad.toString(),
                         modifier = Modifier.weight(1f),
                         valueColor = if (state.totalBad > 0) Color(0xFFFF5252) else null
@@ -111,22 +113,22 @@ fun RelayHealthScreen(
                     FilterChip(
                         selected = state.sortMode == HealthSortMode.STATUS,
                         onClick = { viewModel.setSortMode(HealthSortMode.STATUS) },
-                        label = { Text("Status", style = MaterialTheme.typography.labelSmall) }
+                        label = { Text(stringResource(R.string.tab_status), style = MaterialTheme.typography.labelSmall) }
                     )
                     FilterChip(
                         selected = state.sortMode == HealthSortMode.FAILURES,
                         onClick = { viewModel.setSortMode(HealthSortMode.FAILURES) },
-                        label = { Text("Failures", style = MaterialTheme.typography.labelSmall) }
+                        label = { Text(stringResource(R.string.tab_failures), style = MaterialTheme.typography.labelSmall) }
                     )
                     FilterChip(
                         selected = state.sortMode == HealthSortMode.EVENTS,
                         onClick = { viewModel.setSortMode(HealthSortMode.EVENTS) },
-                        label = { Text("Events", style = MaterialTheme.typography.labelSmall) }
+                        label = { Text(stringResource(R.string.tab_events), style = MaterialTheme.typography.labelSmall) }
                     )
                     FilterChip(
                         selected = state.sortMode == HealthSortMode.NAME,
                         onClick = { viewModel.setSortMode(HealthSortMode.NAME) },
-                        label = { Text("Name", style = MaterialTheme.typography.labelSmall) }
+                        label = { Text(stringResource(R.string.tab_name), style = MaterialTheme.typography.labelSmall) }
                     )
                 }
                 Row(
@@ -138,17 +140,17 @@ fun RelayHealthScreen(
                     FilterChip(
                         selected = state.filter == HealthFilter.ALL,
                         onClick = { viewModel.setFilter(HealthFilter.ALL) },
-                        label = { Text("All", style = MaterialTheme.typography.labelSmall) }
+                        label = { Text(stringResource(R.string.tab_all), style = MaterialTheme.typography.labelSmall) }
                     )
                     FilterChip(
                         selected = state.filter == HealthFilter.BAD_ONLY,
                         onClick = { viewModel.setFilter(HealthFilter.BAD_ONLY) },
-                        label = { Text("Bad Only", style = MaterialTheme.typography.labelSmall) }
+                        label = { Text(stringResource(R.string.tab_bad_only), style = MaterialTheme.typography.labelSmall) }
                     )
                     FilterChip(
                         selected = state.filter == HealthFilter.ERRORS_ONLY,
                         onClick = { viewModel.setFilter(HealthFilter.ERRORS_ONLY) },
-                        label = { Text("Errors", style = MaterialTheme.typography.labelSmall) }
+                        label = { Text(stringResource(R.string.tab_errors), style = MaterialTheme.typography.labelSmall) }
                     )
                 }
             }

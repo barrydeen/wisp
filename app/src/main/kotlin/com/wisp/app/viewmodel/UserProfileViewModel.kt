@@ -33,12 +33,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
-enum class ProfileSortMode(val label: String) {
-    RECENCY("Recent"),
-    LIKES("Likes"),
-    REPOSTS("Reposts"),
-    ZAPS("Zaps"),
-    REPLIES("Replies")
+enum class ProfileSortMode(val labelResId: Int) {
+    RECENCY(com.wisp.app.R.string.profile_sort_recent),
+    LIKES(com.wisp.app.R.string.profile_sort_likes),
+    REPOSTS(com.wisp.app.R.string.profile_sort_reposts),
+    ZAPS(com.wisp.app.R.string.profile_sort_zaps),
+    REPLIES(com.wisp.app.R.string.profile_sort_replies)
 }
 
 private fun ProfileSortMode.relaySlug() = when (this) {

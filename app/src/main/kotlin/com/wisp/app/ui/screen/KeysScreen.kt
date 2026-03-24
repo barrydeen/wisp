@@ -38,11 +38,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import com.wisp.app.R
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.repo.KeyRepository
 
@@ -67,6 +69,9 @@ fun KeysScreen(
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
 
+    val revealPrivateKeyTitle = stringResource(R.string.btn_reveal_private_key)
+    val revealPrivateKeyDescription = stringResource(R.string.settings_authenticate_view_key)
+
     // Clear nsec from memory when the composable leaves composition
     DisposableEffect(Unit) {
         onDispose { nsec = null }
@@ -75,10 +80,10 @@ fun KeysScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Keys") },
+                title = { Text(stringResource(R.string.title_keys)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.btn_back))
                     }
                 }
             )
@@ -91,7 +96,7 @@ fun KeysScreen(
         ) {
             // Public key section
             Text(
-                text = "Public Key",
+                text = stringResource(R.string.settings_public_key),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -116,12 +121,12 @@ fun KeysScreen(
                     IconButton(onClick = {
                         npub?.let {
                             clipboardManager.setText(AnnotatedString(it))
-                            Toast.makeText(context, "Public key copied", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.settings_public_key_copied), Toast.LENGTH_SHORT).show()
                         }
                     }) {
                         Icon(
                             Icons.Outlined.ContentCopy,
-                            contentDescription = "Copy public key",
+                            contentDescription = stringResource(R.string.cd_copy_npub),
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -132,7 +137,7 @@ fun KeysScreen(
 
             // Private key section
             Text(
-                text = "Private Key",
+                text = stringResource(R.string.settings_private_key),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -166,12 +171,12 @@ fun KeysScreen(
                                 }
                                 val cm = context.getSystemService(ClipboardManager::class.java)
                                 cm.setPrimaryClip(clip)
-                                Toast.makeText(context, "Private key copied", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.settings_private_key_copied), Toast.LENGTH_SHORT).show()
                             }
                         }) {
                             Icon(
                                 Icons.Outlined.ContentCopy,
-                                contentDescription = "Copy private key",
+                                contentDescription = stringResource(R.string.btn_copy),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -203,14 +208,14 @@ fun KeysScreen(
                                 if (errorCode != BiometricPrompt.ERROR_USER_CANCELED &&
                                     errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON
                                 ) {
-                                    Toast.makeText(context, "Authentication failed: $errString", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.settings_auth_failed, errString), Toast.LENGTH_SHORT).show()
                                 }
                             }
                         }
 
                         val promptInfo = BiometricPrompt.PromptInfo.Builder()
-                            .setTitle("Reveal Private Key")
-                            .setDescription("Authenticate to view your private key")
+                            .setTitle(revealPrivateKeyTitle)
+                            .setDescription(revealPrivateKeyDescription)
                             .setAllowedAuthenticators(BiometricManager.Authenticators.DEVICE_CREDENTIAL)
                             .build()
 
@@ -220,13 +225,13 @@ fun KeysScreen(
                 ) {
                     Icon(Icons.Outlined.Visibility, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Reveal Private Key")
+                    Text(stringResource(R.string.btn_reveal_private_key))
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Never share your private key. Anyone with your nsec has full control of your account.",
+                text = stringResource(R.string.private_key_warning),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )
