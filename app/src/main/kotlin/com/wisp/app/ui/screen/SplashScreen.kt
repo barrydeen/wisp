@@ -127,7 +127,7 @@ fun SplashScreen(
                 .padding(bottom = 48.dp, start = 32.dp, end = 32.dp)
         ) {
             Image(
-                painter = painterResource(R.drawable.ic_logo_round),
+                painter = painterResource(R.drawable.wisp_logo_500x500),
                 contentDescription = stringResource(R.string.cd_wisp_logo),
                 modifier = Modifier.size(96.dp)
             )

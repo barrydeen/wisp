@@ -93,7 +93,7 @@ fun AuthScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Image(
-            painter = painterResource(R.drawable.ic_logo_round),
+            painter = painterResource(R.drawable.wisp_logo_500x500),
             contentDescription = stringResource(R.string.onboarding_wisp_logo),
             modifier = Modifier.size(108.dp)
         )
