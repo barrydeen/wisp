@@ -1866,9 +1866,8 @@ private fun HashtagPickerDialog(
     var confirmDeleteDTag by remember { mutableStateOf<String?>(null) }
     var showNewSetField by remember { mutableStateOf(false) }
     val newSetFocusRequester = remember { FocusRequester() }
-    // First set always expanded by default
     var expandedDTags by remember(sets.size) {
-        mutableStateOf(sets.firstOrNull()?.let { setOf(it.dTag) } ?: emptySet())
+        mutableStateOf(emptySet<String>())
     }
 
     AlertDialog(
@@ -1977,7 +1976,7 @@ private fun HashtagPickerDialog(
                                             }
                                         )
                                 )
-                                if (isExpanded && set.hashtags.isNotEmpty()) {
+                                if (set.hashtags.isNotEmpty()) {
                                     TextButton(
                                         onClick = { onViewSetFeed(set) },
                                         modifier = Modifier.heightIn(min = 32.dp),
@@ -2068,7 +2067,7 @@ private fun HashtagPickerDialog(
                                 }
                             }
                         }
-                        Spacer(Modifier.size(8.dp))
+                        Spacer(Modifier.size(6.dp))
                     }
                 }
                 if (showNewSetField) {
