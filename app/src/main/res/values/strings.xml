@@ -250,6 +250,7 @@
     <string name="filter_reactions">Reactions</string>
     <string name="filter_votes">Votes</string>
     <string name="filter_dms">DMs</string>
+    <string name="filter_zen">Zen</string>
     <string name="cd_mute_notifications">Mute notifications</string>
     <string name="cd_unmute_notifications">Unmute notifications</string>
     <string name="cd_reposted">reposted</string>
