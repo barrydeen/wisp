@@ -87,15 +87,21 @@ import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.TranslationRepository
 import com.wisp.app.ui.component.PostCard
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.content.MediaType
 import androidx.compose.foundation.content.ReceiveContentListener
 import androidx.compose.foundation.content.TransferableContent
 import androidx.compose.foundation.content.consume
 import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.content.hasMediaType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.theme.WispThemeColors
 import com.wisp.app.viewmodel.NotificationFilter
@@ -357,10 +363,10 @@ fun NotificationsScreen(
                         },
                         onProfileClick = onProfileClick,
                         onSendReply = { replyToEvent, content ->
-                            onSendReply(replyToEvent, content)
                             val key = item.replyEventId ?: ""
                             val existing = inlineReplies[key] ?: emptyList()
                             inlineReplies = inlineReplies + (key to (existing + content))
+                            onSendReply(replyToEvent, content)
                         },
                         onSendDm = { peerPubkey, content ->
                             onSendDm(peerPubkey, content)
@@ -667,18 +673,17 @@ private fun ReplyExpansion(
             )
         }
 
-        // User's inline replies
+        // User's inline replies — rendered instantly from content, no event lookup needed
         val userProfile = remember(profileVersion, userPubkey) {
             userPubkey?.let { resolveProfile(it) }
         }
         inlineReplies.forEach { content ->
-            InlineSentReply(
+            SentNoteCard(
                 content = content,
                 profile = userProfile,
                 eventRepo = postCardParams?.eventRepo,
                 onProfileClick = onProfileClick,
-                onNoteClick = postCardParams?.onNoteClick ?: {},
-                modifier = Modifier.padding(start = 48.dp, top = 4.dp, end = 16.dp)
+                onNoteClick = postCardParams?.onNoteClick ?: {}
             )
         }
 
@@ -908,57 +913,142 @@ private fun InlineSentReply(
     }
 }
 
+// ── Sent Note Card ─────────────────────────────────────────────────────
+
+@Composable
+private fun SentNoteCard(
+    content: String,
+    profile: ProfileData?,
+    eventRepo: EventRepository? = null,
+    onProfileClick: (String) -> Unit = {},
+    onNoteClick: (String) -> Unit = {}
+) {
+    val displayName = profile?.displayString ?: "You"
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 24.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ProfilePicture(url = profile?.picture)
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = displayName,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "now",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        com.wisp.app.ui.component.RichContent(
+            content = content,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            eventRepo = eventRepo,
+            onProfileClick = onProfileClick,
+            onNoteClick = onNoteClick
+        )
+    }
+}
+
 // ── Inline Reply Composer ──────────────────────────────────────────────
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun InlineReplyComposer(
     onSend: (String) -> Unit,
-    onUploadMedia: (List<Uri>, onUrl: (String) -> Unit) -> Unit = { _, _ -> },
+    onUploadMedia: ((List<Uri>, onUrl: (String) -> Unit) -> Unit)? = null,
     onFocused: () -> Unit = {},
     placeholder: String = "Reply...",
     modifier: Modifier = Modifier
 ) {
     val textFieldState = remember { TextFieldState() }
 
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isNotEmpty() && onUploadMedia != null) {
+            onUploadMedia(uris) { url ->
+                textFieldState.edit {
+                    val current = toString()
+                    val newText = if (current.isBlank()) url else "$current\n$url"
+                    replace(0, length, newText)
+                }
+            }
+        }
+    }
+
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (onUploadMedia != null) {
+            IconButton(
+                onClick = {
+                    photoPickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                    )
+                },
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    Icons.Outlined.Image,
+                    contentDescription = "Add media",
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+        }
+        var fieldModifier = Modifier
+            .weight(1f)
+            .onFocusChanged { if (it.isFocused) onFocused() }
+            .background(
+                MaterialTheme.colorScheme.surfaceVariant,
+                RoundedCornerShape(20.dp)
+            )
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+        if (onUploadMedia != null) {
+            fieldModifier = fieldModifier.contentReceiver(object : ReceiveContentListener {
+                override fun onReceive(
+                    transferableContent: TransferableContent
+                ): TransferableContent? {
+                    if (!transferableContent.hasMediaType(MediaType.Image)) {
+                        return transferableContent
+                    }
+                    val clipData = transferableContent.clipEntry.clipData
+                    val uris = (0 until clipData.itemCount)
+                        .mapNotNull { i -> clipData.getItemAt(i).uri }
+                    if (uris.isNotEmpty()) {
+                        onUploadMedia(uris) { url ->
+                            textFieldState.edit {
+                                val current = toString()
+                                val newText = if (current.isBlank()) url else "$current\n$url"
+                                replace(0, length, newText)
+                            }
+                        }
+                    }
+                    return transferableContent.consume { item -> item.uri != null }
+                }
+            })
+        }
         BasicTextField(
             state = textFieldState,
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            modifier = Modifier
-                .weight(1f)
-                .onFocusChanged { if (it.isFocused) onFocused() }
-                .background(
-                    MaterialTheme.colorScheme.surfaceVariant,
-                    RoundedCornerShape(20.dp)
-                )
-                .padding(horizontal = 14.dp, vertical = 10.dp)
-                .contentReceiver(object : ReceiveContentListener {
-                    override fun onReceive(
-                        transferableContent: TransferableContent
-                    ): TransferableContent? {
-                        if (!transferableContent.hasMediaType(MediaType.Image)) {
-                            return transferableContent
-                        }
-                        val clipData = transferableContent.clipEntry.clipData
-                        val uris = (0 until clipData.itemCount)
-                            .mapNotNull { i -> clipData.getItemAt(i).uri }
-                        if (uris.isNotEmpty()) {
-                            onUploadMedia(uris) { url ->
-                                textFieldState.edit {
-                                    val current = toString()
-                                    val newText = if (current.isBlank()) url else "$current\n$url"
-                                    replace(0, length, newText)
-                                }
-                            }
-                        }
-                        return transferableContent.consume { item -> item.uri != null }
-                    }
-                }),
+            modifier = fieldModifier,
             lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 6),
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Sentences
+            ),
             textStyle = MaterialTheme.typography.bodyMedium.copy(
                 color = MaterialTheme.colorScheme.onSurface
             ),
