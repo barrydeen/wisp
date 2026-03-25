@@ -96,7 +96,12 @@ class BlossomRepository(private val context: Context, pubkeyHex: String? = null)
         val body = fileBytes.toRequestBody(mediaType)
 
         // Build ordered server list with Primal as final fallback
-        val serverList = loadServers()
+        // nostr.build uses blossom.band for their Blossom endpoint — substitute transparently
+        val serverList = loadServers().map { url ->
+            if (url.trimEnd('/').equals("https://nostr.build", ignoreCase = true)) {
+                "https://blossom.band"
+            } else url
+        }
         val candidates = (serverList + Blossom.DEFAULT_SERVER).distinct()
 
         var lastException: Exception? = null
