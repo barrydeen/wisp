@@ -231,6 +231,38 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
     private val _dmSending = MutableStateFlow(false)
     val dmSending: StateFlow<Boolean> = _dmSending
 
+    fun sendDmReaction(peerPubkey: String, rumorId: String, senderPubkey: String, emoji: String, signer: NostrSigner? = null) {
+        if (rumorId.isBlank()) return
+        val pool = relayPool ?: return
+        val repo = dmRepo ?: return
+
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                val recipientDmRelays = fetchRecipientDmRelays(peerPubkey, pool, repo)
+                val deliveryRelays = resolveDeliveryRelays(peerPubkey, recipientDmRelays, pool)
+
+                if (signer != null) {
+                    val wrap = Nip17.createDmReactionRemote(signer, peerPubkey, rumorId, senderPubkey, emoji)
+                    sendToDeliveryRelays(pool, deliveryRelays, ClientMessage.event(wrap))
+                    val selfWrap = Nip17.createDmReactionRemote(signer, signer.pubkeyHex, rumorId, senderPubkey, emoji)
+                    if (pool.hasDmRelays()) pool.sendToDmRelays(ClientMessage.event(selfWrap))
+                    else pool.sendToWriteRelays(ClientMessage.event(selfWrap))
+                } else {
+                    val keypair = keyRepo.getKeypair() ?: return@launch
+                    val wrap = Nip17.createDmReaction(keypair.privkey, keypair.pubkey, peerPubkey.hexToByteArray(), rumorId, senderPubkey, emoji)
+                    sendToDeliveryRelays(pool, deliveryRelays, ClientMessage.event(wrap))
+                    val selfWrap = Nip17.createDmReaction(keypair.privkey, keypair.pubkey, keypair.pubkey, rumorId, senderPubkey, emoji)
+                    if (pool.hasDmRelays()) pool.sendToDmRelays(ClientMessage.event(selfWrap))
+                    else pool.sendToWriteRelays(ClientMessage.event(selfWrap))
+                }
+            } catch (e: SignerCancelledException) {
+                Log.w("NotifVM", "DM reaction signing cancelled", e)
+            } catch (e: Exception) {
+                Log.w("NotifVM", "DM reaction failed", e)
+            }
+        }
+    }
+
     fun sendDm(peerPubkey: String, content: String, signer: NostrSigner? = null) {
         val text = content.trim()
         if (text.isBlank() || _dmSending.value) return

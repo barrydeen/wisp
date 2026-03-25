@@ -122,7 +122,8 @@ class DmRepository(private val context: Context? = null, pubkeyHex: String? = nu
                         referencedEventId = msg.id,
                         timestamp = msg.createdAt,
                         dmContent = msg.content,
-                        dmPeerPubkey = peerPubkey
+                        dmPeerPubkey = peerPubkey,
+                        dmRumorId = msg.rumorId.ifEmpty { null }
                     ))
                     val sorted = dmNotifItems.sortedByDescending { it.timestamp }
                     _dmNotifications.value = if (sorted.size > 200) sorted.take(200) else sorted

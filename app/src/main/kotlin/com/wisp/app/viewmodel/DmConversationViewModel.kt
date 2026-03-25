@@ -674,6 +674,10 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch(Dispatchers.Default) {
             try {
+                val myPubkey = signer?.pubkeyHex ?: keyRepo.getKeypair()?.pubkey?.toHex() ?: return@launch
+                // Optimistic local update — show the reaction immediately
+                dmRepo?.addReaction(conversationKey, targetRumorId, DmReaction(myPubkey, emoji, System.currentTimeMillis() / 1000))
+
                 if (signer != null) {
                     for (recipient in participants) {
                         val wrap = Nip17.createDmReactionRemote(signer, recipient, targetRumorId, originalSenderPubkey, emoji)
@@ -697,9 +701,6 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                     val selfWrap = Nip17.createDmReaction(keypair.privkey, keypair.pubkey, keypair.pubkey, targetRumorId, originalSenderPubkey, emoji)
                     if (relayPool.hasDmRelays()) relayPool.sendToDmRelays(ClientMessage.event(selfWrap))
                     else relayPool.sendToWriteRelays(ClientMessage.event(selfWrap))
-                    // Optimistic local update
-                    val myPubkey = keypair.pubkey.toHex()
-                    dmRepo?.addReaction(conversationKey, targetRumorId, DmReaction(myPubkey, emoji, System.currentTimeMillis() / 1000))
                 }
             } catch (e: Exception) {
                 Log.w("DmConversation", "sendReaction failed", e)

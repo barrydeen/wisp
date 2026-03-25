@@ -18,6 +18,7 @@ data class FlatNotificationItem(
     val voteOptionIds: List<String> = emptyList(),
     val dmContent: String? = null,
     val dmPeerPubkey: String? = null,
+    val dmRumorId: String? = null,
 )
 
 data class NotificationSummary(

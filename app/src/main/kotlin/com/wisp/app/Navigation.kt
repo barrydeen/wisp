@@ -2151,6 +2151,11 @@ fun WispNavHost(
 
             val notifReplyScope = rememberCoroutineScope()
             var notifZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
+            data class NotifDmZapInfo(val peerPubkey: String, val rumorId: String, val senderPubkey: String)
+            var notifDmZapTarget by remember { mutableStateOf<NotifDmZapInfo?>(null) }
+            var notifDmZapPendingSats by remember { mutableStateOf(0L) }
+            var lastNotifDmZapSenderPubkey by remember { mutableStateOf<String?>(null) }
+            var notifDmZapSatsMap by remember { mutableStateOf(mapOf<String, Long>()) }
             val notifZapInProgress by feedViewModel.zapInProgress.collectAsState()
             var notifZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
             val notifSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
@@ -2162,6 +2167,12 @@ fun WispNavHost(
             LaunchedEffect(Unit) {
                 feedViewModel.zapSuccess.collect { eventId ->
                     notifZapAnimatingIds = notifZapAnimatingIds + eventId
+                    if (eventId == lastNotifDmZapSenderPubkey && notifDmZapPendingSats > 0) {
+                        notifDmZapSatsMap = notifDmZapSatsMap +
+                            (eventId to (notifDmZapSatsMap.getOrDefault(eventId, 0L) + notifDmZapPendingSats))
+                        lastNotifDmZapSenderPubkey = null
+                        notifDmZapPendingSats = 0L
+                    }
                     kotlinx.coroutines.delay(1500)
                     notifZapAnimatingIds = notifZapAnimatingIds - eventId
                 }
@@ -2188,6 +2199,24 @@ fun WispNavHost(
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
                     canPrivateZap = notifUserHasDmRelays && notifRecipientHasDmRelays
+                )
+            }
+
+            if (notifDmZapTarget != null) {
+                ZapDialog(
+                    isWalletConnected = isNwcConnected,
+                    onDismiss = { notifDmZapTarget = null },
+                    onZap = { amountMsats, message, isAnonymous, _ ->
+                        val target = notifDmZapTarget ?: return@ZapDialog
+                        notifDmZapTarget = null
+                        notifDmZapPendingSats = amountMsats / 1000
+                        lastNotifDmZapSenderPubkey = target.senderPubkey
+                        feedViewModel.socialActions.sendZapToPubkey(
+                            target.senderPubkey, amountMsats, message, isAnonymous,
+                            rumorId = target.rumorId.ifEmpty { null }
+                        )
+                    },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) }
                 )
             }
 
@@ -2299,6 +2328,13 @@ fun WispNavHost(
                 onSendDm = { peerPubkey, content ->
                     notificationsViewModel.sendDm(peerPubkey, content, activeSigner)
                 },
+                onDmReact = { peerPubkey, rumorId, senderPubkey, emoji ->
+                    notificationsViewModel.sendDmReaction(peerPubkey, rumorId, senderPubkey, emoji, activeSigner)
+                },
+                onDmZap = { peerPubkey, rumorId, senderPubkey ->
+                    notifDmZapTarget = NotifDmZapInfo(peerPubkey, rumorId, senderPubkey)
+                },
+                dmZapSats = { senderPubkey -> notifDmZapSatsMap[senderPubkey] ?: 0L },
                 onDmConversationClick = { conversationKey ->
                     if (conversationKey.contains(",")) {
                         navController.navigate("dm/group/${conversationKey.replace(",", "~")}")
