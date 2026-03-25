@@ -67,6 +67,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.res.stringResource
+import com.wisp.app.R
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.repo.DiscoveryState
@@ -135,7 +137,7 @@ fun SocialGraphScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Social Graph") },
+                title = { Text(stringResource(R.string.drawer_social_graph)) },
                 navigationIcon = {
                     IconButton(onClick = onBack, enabled = !isComputing) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -170,13 +172,13 @@ fun SocialGraphScreen(
                     ) {
                         Spacer(modifier = Modifier.height(48.dp))
                         Text(
-                            text = "Social graph has not been computed yet.",
+                            text = stringResource(R.string.social_not_computed),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(24.dp))
                         Button(onClick = { scope.launch { extendedNetworkRepo.discoverNetwork() } }) {
-                            Text("Compute Now")
+                            Text(stringResource(R.string.social_compute_now))
                         }
                     }
                 }
@@ -184,7 +186,7 @@ fun SocialGraphScreen(
             is DiscoveryState.FetchingFollowLists -> {
                 ProgressColumn(padding) {
                     ProgressContent(
-                        label = "Fetching follow lists...",
+                        label = stringResource(R.string.social_fetching_follows),
                         progress = if (state.total > 0) state.fetched.toFloat() / state.total else 0f,
                         detail = "${state.fetched} / ${state.total}"
                     )
@@ -194,7 +196,7 @@ fun SocialGraphScreen(
             is DiscoveryState.BuildingGraph -> {
                 ProgressColumn(padding) {
                     ProgressContent(
-                        label = "Building graph...",
+                        label = stringResource(R.string.social_building_graph),
                         progress = if (state.total > 0) state.processed.toFloat() / state.total else 0f,
                         detail = "${state.processed} / ${state.total}"
                     )
@@ -204,7 +206,7 @@ fun SocialGraphScreen(
             is DiscoveryState.ComputingNetwork -> {
                 ProgressColumn(padding) {
                     ProgressContent(
-                        label = "Computing network...",
+                        label = stringResource(R.string.social_computing_network),
                         detail = "${state.uniqueUsers} unique users"
                     )
                     ComputingWarning()
@@ -213,7 +215,7 @@ fun SocialGraphScreen(
             is DiscoveryState.Filtering -> {
                 ProgressColumn(padding) {
                     ProgressContent(
-                        label = "Filtering...",
+                        label = stringResource(R.string.social_filtering),
                         detail = "${state.qualified} qualified"
                     )
                     ComputingWarning()
@@ -222,7 +224,7 @@ fun SocialGraphScreen(
             is DiscoveryState.FetchingRelayLists -> {
                 ProgressColumn(padding) {
                     ProgressContent(
-                        label = "Fetching relay lists...",
+                        label = stringResource(R.string.social_fetching_relays),
                         progress = if (state.total > 0) state.fetched.toFloat() / state.total else 0f,
                         detail = "${state.fetched} / ${state.total}"
                     )
@@ -269,7 +271,7 @@ private fun ProgressColumn(
 private fun ComputingWarning() {
     Spacer(Modifier.height(24.dp))
     Text(
-        text = "This may take 2\u20135 minutes. Please stay on this screen until it finishes.",
+        text = stringResource(R.string.social_warning),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,
@@ -344,12 +346,12 @@ private fun GraphContent(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Top Accounts",
+                        text = stringResource(R.string.social_top_accounts),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "${cachedNetwork.stats.qualifiedCount} qualified from ${cachedNetwork.stats.firstDegreeCount} follows",
+                        text = stringResource(R.string.social_qualified_from, cachedNetwork.stats.qualifiedCount, cachedNetwork.stats.firstDegreeCount),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -378,7 +380,7 @@ private fun GraphContent(
                             horizontalArrangement = Arrangement.Center
                         ) {
                             OutlinedButton(onClick = onRecompute) {
-                                Text("Recompute")
+                                Text(stringResource(R.string.social_recompute))
                             }
                         }
                     }
@@ -548,10 +550,10 @@ private fun StatsRow(stats: NetworkStats) {
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
-        StatChip("Follows", stats.firstDegreeCount.toString())
-        StatChip("2nd degree", stats.totalSecondDegree.toString())
-        StatChip("Qualified", stats.qualifiedCount.toString())
-        StatChip("Relays", stats.relaysCovered.toString())
+        StatChip(stringResource(R.string.social_stat_follows), stats.firstDegreeCount.toString())
+        StatChip(stringResource(R.string.social_stat_2nd_degree), stats.totalSecondDegree.toString())
+        StatChip(stringResource(R.string.social_stat_qualified), stats.qualifiedCount.toString())
+        StatChip(stringResource(R.string.social_stat_relays), stats.relaysCovered.toString())
     }
 }
 
@@ -612,7 +614,7 @@ private fun TopAccountRow(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "followed by ${account.followerCount}",
+                text = stringResource(R.string.social_followed_by, account.followerCount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -668,7 +670,7 @@ private fun NodeDetailSheet(
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = "Followed by ${node.followerCount} of your follows",
+            text = stringResource(R.string.social_followed_by_yours, node.followerCount),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -704,7 +706,7 @@ private fun NodeDetailSheet(
         Spacer(modifier = Modifier.height(20.dp))
 
         Button(onClick = onViewProfile) {
-            Text("View Profile")
+            Text(stringResource(R.string.social_view_profile))
         }
     }
 }
@@ -753,7 +755,7 @@ private fun CompleteContent(
     Spacer(modifier = Modifier.height(24.dp))
 
     Text(
-        text = "Computation complete",
+        text = stringResource(R.string.social_complete),
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.primary
     )
@@ -766,16 +768,16 @@ private fun CompleteContent(
             .animateContentSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        StatDetailRow("Follows (1st degree)", stats.firstDegreeCount.toString())
-        StatDetailRow("2nd degree users", stats.totalSecondDegree.toString())
-        StatDetailRow("Qualified (threshold)", stats.qualifiedCount.toString())
-        StatDetailRow("Relays covered", stats.relaysCovered.toString())
+        StatDetailRow(stringResource(R.string.social_stat_follows_1st), stats.firstDegreeCount.toString())
+        StatDetailRow(stringResource(R.string.social_stat_2nd_users), stats.totalSecondDegree.toString())
+        StatDetailRow(stringResource(R.string.social_stat_qualified_thresh), stats.qualifiedCount.toString())
+        StatDetailRow(stringResource(R.string.social_stat_relays_covered), stats.relaysCovered.toString())
     }
 
     Spacer(modifier = Modifier.height(24.dp))
 
     OutlinedButton(onClick = onDone) {
-        Text("Done")
+        Text(stringResource(R.string.social_done))
     }
 }
 
@@ -806,7 +808,7 @@ private fun FailedContent(
     Spacer(modifier = Modifier.height(48.dp))
 
     Text(
-        text = "Discovery failed",
+        text = stringResource(R.string.social_failed),
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.error
     )
@@ -822,6 +824,6 @@ private fun FailedContent(
     Spacer(modifier = Modifier.height(24.dp))
 
     Button(onClick = onRetry) {
-        Text("Retry")
+        Text(stringResource(R.string.social_retry))
     }
 }

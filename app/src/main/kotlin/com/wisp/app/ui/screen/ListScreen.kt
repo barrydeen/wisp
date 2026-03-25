@@ -42,9 +42,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.wisp.app.R
 import com.wisp.app.nostr.FollowSet
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.Nip51
@@ -90,16 +92,16 @@ fun ListScreen(
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Delete List") },
+            title = { Text(stringResource(R.string.btn_delete_list)) },
             text = { Text("Are you sure you want to delete \"${followSet?.name}\"?") },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteConfirm = false
                     onDeleteList?.invoke()
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.btn_delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+                TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -107,16 +109,16 @@ fun ListScreen(
     if (showFollowAllConfirm && followSet != null) {
         AlertDialog(
             onDismissRequest = { showFollowAllConfirm = false },
-            title = { Text("Follow All") },
+            title = { Text(stringResource(R.string.btn_follow_all)) },
             text = { Text("Follow ${followSet.members.size} people from this list?") },
             confirmButton = {
                 TextButton(onClick = {
                     showFollowAllConfirm = false
                     onFollowAll?.invoke(followSet.members)
-                }) { Text("Follow All") }
+                }) { Text(stringResource(R.string.btn_follow_all)) }
             },
             dismissButton = {
-                TextButton(onClick = { showFollowAllConfirm = false }) { Text("Cancel") }
+                TextButton(onClick = { showFollowAllConfirm = false }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -133,18 +135,18 @@ fun ListScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
                     }
                 },
                 actions = {
                     if (isOwnList && onAddMember != null && contactRepo != null) {
                         IconButton(onClick = { showPickerDialog = true }) {
-                            Icon(Icons.Default.Add, "Add Members")
+                            Icon(Icons.Default.Add, stringResource(R.string.cd_add_members))
                         }
                     }
                     Box {
                         IconButton(onClick = { menuExpanded = true }) {
-                            Icon(Icons.Default.MoreVert, "More options")
+                            Icon(Icons.Default.MoreVert, stringResource(R.string.cd_more_options))
                         }
                         DropdownMenu(
                             expanded = menuExpanded,
@@ -152,7 +154,7 @@ fun ListScreen(
                         ) {
                             if (!isOwnList && onFollowAll != null) {
                                 DropdownMenuItem(
-                                    text = { Text("Follow All Members") },
+                                    text = { Text(stringResource(R.string.btn_follow_all_members)) },
                                     onClick = {
                                         menuExpanded = false
                                         showFollowAllConfirm = true
@@ -161,7 +163,7 @@ fun ListScreen(
                             }
                             if (followSet != null) {
                                 DropdownMenuItem(
-                                    text = { Text("Copy List JSON") },
+                                    text = { Text(stringResource(R.string.btn_copy_list_json)) },
                                     onClick = {
                                         menuExpanded = false
                                         val event = eventRepo.findAddressableEvent(Nip51.KIND_FOLLOW_SET, followSet.pubkey, followSet.dTag)
@@ -174,7 +176,7 @@ fun ListScreen(
                             }
                             if (isOwnList && onDeleteList != null) {
                                 DropdownMenuItem(
-                                    text = { Text("Delete List", color = MaterialTheme.colorScheme.error) },
+                                    text = { Text(stringResource(R.string.btn_delete_list), color = MaterialTheme.colorScheme.error) },
                                     onClick = {
                                         menuExpanded = false
                                         showDeleteConfirm = true
@@ -195,7 +197,7 @@ fun ListScreen(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                Text("List not found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.error_list_not_found), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             return@Scaffold
         }
@@ -218,13 +220,13 @@ fun ListScreen(
                     Row {
                         if (onUseAsFeed != null) {
                             OutlinedButton(onClick = onUseAsFeed) {
-                                Text("Use as Feed")
+                                Text(stringResource(R.string.btn_use_as_feed))
                             }
                         }
                         if (!isOwnList && onFollowAll != null && members.isNotEmpty()) {
                             Spacer(Modifier.width(8.dp))
                             OutlinedButton(onClick = { showFollowAllConfirm = true }) {
-                                Text("Follow All")
+                                Text(stringResource(R.string.btn_follow_all))
                             }
                         }
                     }
@@ -259,7 +261,7 @@ fun ListScreen(
                         IconButton(onClick = { onRemoveMember(pubkey) }) {
                             Icon(
                                 Icons.Default.Delete,
-                                contentDescription = "Remove",
+                                contentDescription = stringResource(R.string.btn_remove),
                                 tint = MaterialTheme.colorScheme.error
                             )
                         }
@@ -276,7 +278,7 @@ fun ListScreen(
                             .height(200.dp)
                     ) {
                         Text(
-                            "This list has no members",
+                            stringResource(R.string.error_no_list_members),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -314,13 +316,13 @@ private fun FollowPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add Members") },
+        title = { Text(stringResource(R.string.cd_add_members)) },
         text = {
             Column {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Filter by name") },
+                    placeholder = { Text(stringResource(R.string.placeholder_filter_by_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -353,7 +355,7 @@ private fun FollowPickerDialog(
                             if (isMember) {
                                 Icon(
                                     Icons.Default.Check,
-                                    contentDescription = "Already added",
+                                    contentDescription = stringResource(R.string.cd_already_added),
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             }
@@ -362,7 +364,7 @@ private fun FollowPickerDialog(
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Or add by npub / hex:",
+                    stringResource(R.string.placeholder_or_add_npub),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -371,7 +373,7 @@ private fun FollowPickerDialog(
                     OutlinedTextField(
                         value = manualInput,
                         onValueChange = { manualInput = it },
-                        placeholder = { Text("npub1... or hex") },
+                        placeholder = { Text(stringResource(R.string.placeholder_npub_or_hex)) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(
@@ -396,13 +398,13 @@ private fun FollowPickerDialog(
                         },
                         enabled = manualInput.isNotBlank()
                     ) {
-                        Text("Add")
+                        Text(stringResource(R.string.btn_add))
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Done") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.btn_done)) }
         },
         dismissButton = {}
     )

@@ -57,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -72,6 +73,7 @@ import com.wisp.app.ui.component.DmBubble
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.ZapDialog
 import com.wisp.app.nostr.NostrSigner
+import com.wisp.app.R
 import com.wisp.app.viewmodel.DeliveryRelaySource
 import com.wisp.app.viewmodel.DmConversationViewModel
 import com.wisp.app.viewmodel.PowStatus
@@ -195,7 +197,7 @@ fun DmConversationScreen(
                                 ProfilePicture(url = peerProfile?.picture, size = 32)
                                 Spacer(Modifier.width(10.dp))
                                 Text(
-                                    peerProfile?.displayString ?: "Chat",
+                                    peerProfile?.displayString ?: stringResource(R.string.title_chat),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -204,7 +206,7 @@ fun DmConversationScreen(
                     },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
                         }
                     },
                     actions = {
@@ -301,7 +303,7 @@ fun DmConversationScreen(
                                     ProfilePicture(url = userProfile?.picture, size = 20)
                                     Spacer(Modifier.width(8.dp))
                                     Text(
-                                        text = "You",
+                                        text = stringResource(R.string.dm_you),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
@@ -460,7 +462,7 @@ fun DmConversationScreen(
                 ) {
                     Icon(
                         Icons.Outlined.Image,
-                        contentDescription = "Attach media",
+                        contentDescription = stringResource(R.string.cd_attach_media),
                         tint = if (uploadProgress == null && !sending) MaterialTheme.colorScheme.onSurfaceVariant
                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
                     )
@@ -468,7 +470,7 @@ fun DmConversationScreen(
                 OutlinedTextField(
                     value = messageText,
                     onValueChange = { viewModel.updateMessageText(it) },
-                    placeholder = { Text("Message...") },
+                    placeholder = { Text(stringResource(R.string.placeholder_message)) },
                     singleLine = false,
                     maxLines = 4,
                     modifier = Modifier.weight(1f)
@@ -500,7 +502,7 @@ fun DmConversationScreen(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send",
+                            contentDescription = stringResource(R.string.cd_send),
                             tint = if (messageText.isNotBlank()) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )

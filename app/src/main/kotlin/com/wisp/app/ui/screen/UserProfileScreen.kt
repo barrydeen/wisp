@@ -68,9 +68,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.wisp.app.R
 import com.wisp.app.nostr.FollowSet
 import com.wisp.app.nostr.Nip02
 import com.wisp.app.nostr.NostrEvent
@@ -167,8 +169,6 @@ fun UserProfileScreen(
     val followedBy by viewModel.followedBy.collectAsState()
     val followProfileVersion by viewModel.followProfileVersion.collectAsState()
     val myFollowList by contactRepo.followList.collectAsState()
-    val pendingFirstFollow by viewModel.pendingFirstFollow.collectAsState()
-    val firstFollowCheckDone by viewModel.firstFollowCheckDone.collectAsState()
 
     val nip05Version by nip05Repo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val reactionVersion by eventRepo?.reactionVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
@@ -222,41 +222,10 @@ fun UserProfileScreen(
     if (zapErrorMessage != null) {
         AlertDialog(
             onDismissRequest = { zapErrorMessage = null },
-            title = { Text("Zap Failed") },
+            title = { Text(stringResource(R.string.zap_failed)) },
             text = { Text(zapErrorMessage ?: "") },
             confirmButton = {
-                TextButton(onClick = { zapErrorMessage = null }) { Text("OK") }
-            }
-        )
-    }
-
-    if (pendingFirstFollow) {
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissFirstFollow() },
-            title = { Text(if (firstFollowCheckDone) "No follow list found" else "Checking follow list") },
-            text = {
-                if (!firstFollowCheckDone) {
-                    androidx.compose.foundation.layout.Row(
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                    ) {
-                        androidx.compose.material3.CircularProgressIndicator(
-                            modifier = androidx.compose.ui.Modifier.size(16.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = androidx.compose.ui.Modifier.width(12.dp))
-                        Text("Checking relays for an existing follow list...")
-                    }
-                } else {
-                    Text("No existing follow list was found on your relays. If you follow this person, your follow list will start at 1. If you believe this is wrong, rebroadcast your follow list from another client first, then try again.")
-                }
-            },
-            confirmButton = {
-                if (firstFollowCheckDone) {
-                    TextButton(onClick = { viewModel.confirmFirstFollow() }) { Text("Follow anyway") }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.dismissFirstFollow() }) { Text("Cancel") }
+                TextButton(onClick = { zapErrorMessage = null }) { Text(stringResource(R.string.btn_ok)) }
             }
         )
     }
@@ -301,7 +270,14 @@ fun UserProfileScreen(
     var blockedContentRevealed by remember { mutableStateOf(false) }
     var fullScreenMediaImageUrl by remember { mutableStateOf<String?>(null) }
     var fullScreenMediaVideoUrl by remember { mutableStateOf<String?>(null) }
-    val tabTitles = listOf("Notes", "Replies", "Media", "Following", "Followers", "Relays")
+    val tabTitles = listOf(
+        stringResource(R.string.profile_tab_notes),
+        stringResource(R.string.profile_tab_replies),
+        stringResource(R.string.profile_tab_media),
+        stringResource(R.string.profile_tab_following),
+        stringResource(R.string.profile_tab_followers),
+        stringResource(R.string.profile_tab_relays)
+    )
 
     if (fullScreenMediaImageUrl != null) {
         FullScreenImageViewer(
@@ -336,22 +312,22 @@ fun UserProfileScreen(
                     val context = LocalContext.current
                     if (onSearchAuthor != null) {
                         IconButton(onClick = onSearchAuthor) {
-                            Icon(Icons.Default.Search, "Search notes")
+                            Icon(Icons.Default.Search, stringResource(R.string.profile_search_notes))
                         }
                     }
                     IconButton(onClick = { showQrDialog = true }) {
-                        Icon(Icons.Default.QrCode2, "QR Code")
+                        Icon(Icons.Default.QrCode2, stringResource(R.string.cd_show_qr_code))
                     }
                     var menuExpanded by remember { mutableStateOf(false) }
                     IconButton(onClick = { menuExpanded = true }) {
-                        Icon(Icons.Default.MoreVert, "More options")
+                        Icon(Icons.Default.MoreVert, stringResource(R.string.cd_more_options))
                     }
                     DropdownMenu(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Copy Profile JSON") },
+                            text = { Text(stringResource(R.string.profile_copy_json)) },
                             onClick = {
                                 menuExpanded = false
                                 profile?.let { p ->
@@ -366,13 +342,13 @@ fun UserProfileScreen(
                                     }.toString()
                                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                     clipboard.setPrimaryClip(ClipData.newPlainText("Profile JSON", json))
-                                    Toast.makeText(context, "Profile JSON copied", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.profile_json_copied), Toast.LENGTH_SHORT).show()
                                 }
                             }
                         )
                         if (!isOwnProfile) {
                             DropdownMenuItem(
-                                text = { Text("Add to List") },
+                                text = { Text(stringResource(R.string.profile_add_to_list)) },
                                 onClick = {
                                     menuExpanded = false
                                     showAddToListDialog = true
@@ -380,7 +356,7 @@ fun UserProfileScreen(
                             )
                             if (isBlocked) {
                                 DropdownMenuItem(
-                                    text = { Text("Unblock") },
+                                    text = { Text(stringResource(R.string.profile_unblock)) },
                                     onClick = {
                                         menuExpanded = false
                                         onUnblockUser?.invoke()
@@ -388,7 +364,7 @@ fun UserProfileScreen(
                                 )
                             } else {
                                 DropdownMenuItem(
-                                    text = { Text("Block") },
+                                    text = { Text(stringResource(R.string.profile_block)) },
                                     onClick = {
                                         menuExpanded = false
                                         onBlockUser?.invoke()
@@ -503,7 +479,7 @@ fun UserProfileScreen(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(currentSortMode.label, style = MaterialTheme.typography.labelLarge)
+                                    Text(stringResource(currentSortMode.labelResId), style = MaterialTheme.typography.labelLarge)
                                     Spacer(Modifier.width(2.dp))
                                     Icon(Icons.Default.ArrowDropDown, contentDescription = "Sort", modifier = Modifier.size(16.dp))
                                 }
@@ -514,7 +490,7 @@ fun UserProfileScreen(
                             ) {
                                 ProfileSortMode.entries.forEach { mode ->
                                     DropdownMenuItem(
-                                        text = { Text(mode.label) },
+                                        text = { Text(stringResource(mode.labelResId)) },
                                         onClick = {
                                             showSortDropdown = false
                                             if (selectedTab == 0) viewModel.setNotesSortMode(mode)
@@ -541,7 +517,7 @@ fun UserProfileScreen(
                     if (pinnedEvents.isNotEmpty()) {
                         item {
                             Text(
-                                "Pinned",
+                                stringResource(R.string.profile_pinned),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
@@ -601,7 +577,7 @@ fun UserProfileScreen(
                     } else if (notesSortMode != ProfileSortMode.RECENCY && sortedNotes.isEmpty() && !sortedNotesLoading) {
                         item { FeedCrawlingMessage() }
                     } else if (displayNotes.isEmpty() && pinnedEvents.isEmpty()) {
-                        item { EmptyTabContent("No notes yet") }
+                        item { EmptyTabContent(stringResource(R.string.profile_no_notes)) }
                     } else {
                         items(items = displayNotes, key = { it.id }) { event ->
                             if (event.kind == 30023) {
@@ -717,7 +693,7 @@ fun UserProfileScreen(
                     } else if (repliesSortMode != ProfileSortMode.RECENCY && sortedReplies.isEmpty() && !sortedRepliesLoading) {
                         item { FeedCrawlingMessage() }
                     } else if (displayReplies.isEmpty()) {
-                        item { EmptyTabContent("No replies yet") }
+                        item { EmptyTabContent(stringResource(R.string.profile_no_replies)) }
                     } else {
                         items(items = displayReplies, key = { it.id }) { event ->
                             val likeCount = reactionVersion.let { eventRepo?.getReactionCount(event.id) ?: 0 }
@@ -807,7 +783,7 @@ fun UserProfileScreen(
                 }
                 2 -> {
                     if (mediaItems.isEmpty()) {
-                        item { EmptyTabContent("No media yet") }
+                        item { EmptyTabContent(stringResource(R.string.profile_no_media)) }
                     } else {
                         items(items = mediaItems.chunked(3), key = { row -> row.first().url }) { row ->
                             MediaGridRow(
@@ -820,7 +796,7 @@ fun UserProfileScreen(
                 }
                 3 -> {
                     if (followList.isEmpty()) {
-                        item { EmptyTabContent("Not following anyone") }
+                        item { EmptyTabContent(stringResource(R.string.profile_not_following)) }
                     } else {
                         @Suppress("UNUSED_EXPRESSION")
                         followProfileVersion
@@ -845,7 +821,7 @@ fun UserProfileScreen(
                             }
                         }
                     } else if (followers.isEmpty()) {
-                        item { EmptyTabContent("No followers found") }
+                        item { EmptyTabContent(stringResource(R.string.profile_no_followers)) }
                     } else {
                         items(items = followers, key = { it.pubkey }) { followerProfile ->
                             FollowerRow(
@@ -859,11 +835,11 @@ fun UserProfileScreen(
                 }
                 5 -> {
                     if (relayList.isEmpty() && relayHints.isEmpty()) {
-                        item { EmptyTabContent("No relay list published") }
+                        item { EmptyTabContent(stringResource(R.string.profile_no_relays)) }
                     } else {
                         if (relayList.isNotEmpty()) {
                             item {
-                                SectionLabel("Relay List (NIP-65)")
+                                SectionLabel(stringResource(R.string.profile_relay_list))
                             }
                             items(items = relayList.distinctBy { it.url }, key = { it.url }) { relay ->
                                 RelayRow(relay)
@@ -874,7 +850,7 @@ fun UserProfileScreen(
                         val extraHints = relayHints.filter { it !in relayListUrls }.sorted()
                         if (extraHints.isNotEmpty()) {
                             item {
-                                SectionLabel(if (relayList.isEmpty()) "Discovered Relays" else "Other Discovered Relays")
+                                SectionLabel(stringResource(if (relayList.isEmpty()) R.string.profile_discovered_relays else R.string.profile_other_discovered_relays))
                             }
                             items(items = extraHints, key = { it }) { url ->
                                 HintRelayRow(url)
@@ -951,7 +927,7 @@ private fun ProfileHeader(
             Spacer(Modifier.weight(1f))
             if (isOwnProfile) {
                 OutlinedButton(onClick = onEditProfile) {
-                    Text("Edit Profile")
+                    Text(stringResource(R.string.profile_edit))
                 }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -959,7 +935,7 @@ private fun ProfileHeader(
                         IconButton(onClick = onSendDm) {
                             Icon(
                                 Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "Send message",
+                                contentDescription = stringResource(R.string.profile_send_message),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -983,7 +959,7 @@ private fun ProfileHeader(
             )
             if (followsYou) {
                 Text(
-                    text = "Follows you",
+                    text = stringResource(R.string.profile_follows_you),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
@@ -1455,12 +1431,12 @@ private fun FeedCrawlingMessage() {
             .padding(horizontal = 32.dp, vertical = 40.dp)
     ) {
         Text(
-            text = "Still crawling or account too new",
+            text = stringResource(R.string.profile_crawling_still),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface
         )
         Text(
-            text = "No ranked results yet. Check back later.",
+            text = stringResource(R.string.profile_crawling_no_results),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

@@ -30,11 +30,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.wisp.app.R
 import com.wisp.app.viewmodel.FeedViewModel
 import com.wisp.app.viewmodel.InitLoadingState
 import kotlinx.coroutines.delay
@@ -113,13 +115,12 @@ fun LoadingScreen(
         (initLoadingState is InitLoadingState.Done && stickyPicture != null && cachedProfile != null)
 
     // Rotating status text for warm start
-    val warmMessages = remember { listOf("Connecting to relays...", "Finding posts...", "Preparing your feed...") }
     var warmMessageIndex by remember { mutableStateOf(0) }
     if (isWarmStart) {
         LaunchedEffect(Unit) {
             while (true) {
                 delay(2000)
-                warmMessageIndex = (warmMessageIndex + 1) % warmMessages.size
+                warmMessageIndex = (warmMessageIndex + 1) % 3
             }
         }
     }
@@ -179,12 +180,17 @@ fun LoadingScreen(
                 if (isWarmStart) {
                     // Warm start: no progress bar, just rotating status text
                     AnimatedContent(
-                        targetState = warmMessages[warmMessageIndex],
+                        targetState = warmMessageIndex,
                         transitionSpec = { fadeIn() togetherWith fadeOut() },
                         label = "warm-status"
-                    ) { text ->
+                    ) { index ->
+                        val warmMessage = when (index) {
+                            0 -> stringResource(R.string.loading_connecting_relays)
+                            1 -> stringResource(R.string.loading_finding_posts)
+                            else -> stringResource(R.string.loading_preparing_feed)
+                        }
                         Text(
-                            text = text,
+                            text = warmMessage,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -211,15 +217,15 @@ fun LoadingScreen(
                         Spacer(Modifier.height(16.dp))
                     }
 
-                    val statusText = initLoadingText(initLoadingState)
-                    if (statusText.isNotEmpty()) {
+                    val (textRes, args) = initLoadingText(initLoadingState)
+                    if (textRes != 0) {
                         AnimatedContent(
-                            targetState = statusText,
+                            targetState = textRes to args,
                             transitionSpec = { fadeIn() togetherWith fadeOut() },
                             label = "status"
-                        ) { text ->
+                        ) { (resId, formatArgs) ->
                             Text(
-                                text = text,
+                                text = stringResource(resId, *formatArgs),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
@@ -251,18 +257,18 @@ internal fun initLoadingProgress(state: InitLoadingState): Float {
     }
 }
 
-internal fun initLoadingText(state: InitLoadingState): String {
+internal fun initLoadingText(state: InitLoadingState): Pair<Int, Array<Any>> {
     return when (state) {
-        is InitLoadingState.SearchingProfile -> "Searching for your profile..."
-        is InitLoadingState.FoundProfile -> ""
+        is InitLoadingState.SearchingProfile -> R.string.loading_searching_profile to emptyArray()
+        is InitLoadingState.FoundProfile -> 0 to emptyArray()
         is InitLoadingState.FindingFriends -> {
-            if (state.total > 0) "Finding your friends... ${state.found}/${state.total}"
-            else "Finding your friends..."
+            if (state.total > 0) R.string.loading_finding_friends_progress to arrayOf(state.found, state.total)
+            else R.string.loading_finding_friends to emptyArray()
         }
-        is InitLoadingState.DiscoveringNetwork -> "Discovering extended network... ${state.fetched}/${state.total}"
-        is InitLoadingState.ExpandingRelays -> "Connecting to ${state.relayCount} extended relays..."
-        is InitLoadingState.WarmLoading -> ""
-        is InitLoadingState.Subscribing -> "Subscribing to feed..."
-        is InitLoadingState.Done -> "Loading notes..."
+        is InitLoadingState.DiscoveringNetwork -> R.string.loading_discovering_network to arrayOf(state.fetched, state.total)
+        is InitLoadingState.ExpandingRelays -> R.string.loading_expanding_relays to arrayOf(state.relayCount)
+        is InitLoadingState.WarmLoading -> 0 to emptyArray()
+        is InitLoadingState.Subscribing -> R.string.loading_subscribing to emptyArray()
+        is InitLoadingState.Done -> R.string.loading_notes to emptyArray()
     }
 }

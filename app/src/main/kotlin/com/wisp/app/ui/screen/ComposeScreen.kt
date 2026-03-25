@@ -80,6 +80,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -89,6 +90,7 @@ import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.MentionCandidate
 import com.wisp.app.repo.ProfileRepository
+import com.wisp.app.R
 import com.wisp.app.ui.component.MentionOutputTransformation
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
@@ -107,21 +109,10 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.BarChart
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Tag
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberTimePickerState
 import com.wisp.app.nostr.Nip88
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -155,15 +146,9 @@ fun ComposeScreen(
     val pollEnabled by viewModel.pollEnabled.collectAsState()
     val pollOptions by viewModel.pollOptions.collectAsState()
     val pollType by viewModel.pollType.collectAsState()
-    val scheduleEnabled by viewModel.scheduleEnabled.collectAsState()
-    val scheduleTimestamp by viewModel.scheduleTimestamp.collectAsState()
     val powStatus = powManager?.status?.collectAsState()?.value ?: PowStatus.Idle
     val isMiningBusy = powStatus is PowStatus.Mining
     val context = LocalContext.current
-
-    var showDatePicker by remember { mutableStateOf(false) }
-    var showTimePicker by remember { mutableStateOf(false) }
-    var pendingDateMillis by remember { mutableStateOf<Long?>(null) }
 
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
 
@@ -189,14 +174,14 @@ fun ComposeScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
+                topBar = {
             TopAppBar(
                 title = {
                     Text(
                         when {
-                            quoteTo != null -> "Quote"
-                            replyTo != null -> "Reply"
-                            else -> "New Post"
+                            quoteTo != null -> stringResource(R.string.compose_quote)
+                            replyTo != null -> stringResource(R.string.compose_reply)
+                            else -> stringResource(R.string.compose_new_post)
                         }
                     )
                 },
@@ -251,7 +236,7 @@ fun ComposeScreen(
                                 ProfilePicture(url = replyProfile?.picture, size = 24)
                                 Spacer(Modifier.width(6.dp))
                                 Text(
-                                    text = "Replying to ",
+                                    text = stringResource(R.string.compose_replying_to),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -406,7 +391,7 @@ fun ComposeScreen(
                             singleLine = false,
                             visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
                             interactionSource = interactionSource,
-                            label = { Text("What's on your mind?") }
+                            label = { Text(stringResource(R.string.compose_placeholder)) }
                         )
                     }
                 )
@@ -455,22 +440,6 @@ fun ComposeScreen(
                         )
                     }
 
-                    IconButton(onClick = {
-                        if (scheduleEnabled) {
-                            viewModel.toggleSchedule()
-                        } else {
-                            viewModel.toggleSchedule()
-                            showDatePicker = true
-                        }
-                    }) {
-                        Icon(
-                            Icons.Outlined.Schedule,
-                            contentDescription = "Schedule post",
-                            tint = if (scheduleEnabled) MaterialTheme.colorScheme.primary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
                     if (uploadProgress != null) {
                         Spacer(Modifier.width(8.dp))
                         CircularProgressIndicator(
@@ -480,7 +449,7 @@ fun ComposeScreen(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = "Uploading...",
+                            stringResource(R.string.compose_uploading),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -488,11 +457,11 @@ fun ComposeScreen(
 
                     Spacer(Modifier.weight(1f))
 
-                    if (content.text.isNotBlank()) {
+                        if (content.text.isNotBlank()) {
                         TextButton(
                             onClick = onSaveDraft
                         ) {
-                            Text("Save draft")
+                            Text(stringResource(R.string.btn_save_draft))
                         }
                     }
                 }
@@ -558,7 +527,7 @@ fun ComposeScreen(
                                 OutlinedTextField(
                                     value = option,
                                     onValueChange = { viewModel.updatePollOption(index, it) },
-                                    label = { Text("Option ${index + 1}") },
+                                    label = { Text(stringResource(R.string.poll_option, index + 1)) },
                                     singleLine = true,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -583,7 +552,7 @@ fun ComposeScreen(
                         ) {
                             if (pollOptions.size < 10) {
                                 TextButton(onClick = { viewModel.addPollOption() }) {
-                                    Text("+ Add option")
+                                    Text(stringResource(R.string.poll_add_option))
                                 }
                             }
                             Spacer(Modifier.weight(1f))
@@ -592,8 +561,8 @@ fun ComposeScreen(
                                 onClick = { viewModel.togglePollType() },
                                 label = {
                                     Text(
-                                        if (pollType == Nip88.PollType.SINGLECHOICE) "Single choice"
-                                        else "Multiple choice"
+                                        if (pollType == Nip88.PollType.SINGLECHOICE) stringResource(R.string.poll_single_choice)
+                                        else stringResource(R.string.poll_multiple_choice)
                                     )
                                 }
                             )
@@ -626,56 +595,9 @@ fun ComposeScreen(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = "Marked as NSFW",
+                                text = stringResource(R.string.content_marked_nsfw),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
-                    }
-                }
-
-                // Schedule info banner
-                AnimatedVisibility(
-                    visible = scheduleEnabled && scheduleTimestamp != null,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clickable { showDatePicker = true }
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Icon(
-                                Icons.Outlined.Schedule,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            val formattedTime = scheduleTimestamp?.let {
-                                val fmt = SimpleDateFormat("MMM d, yyyy 'at' h:mm a", Locale.getDefault())
-                                fmt.format(Date(it * 1000))
-                            } ?: ""
-                            Text(
-                                text = "Scheduled for $formattedTime",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Icon(
-                                Icons.Filled.Close,
-                                contentDescription = "Remove schedule",
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier
-                                    .size(18.dp)
-                                    .clickable { viewModel.toggleSchedule() }
                             )
                         }
                     }
@@ -779,7 +701,7 @@ fun ComposeScreen(
 
             // Bottom bar — always visible above keyboard
             Column(modifier = Modifier.padding(horizontal = 16.dp).padding(top = 4.dp)) {
-                if (countdownSeconds != null) {
+                    if (countdownSeconds != null) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -790,14 +712,14 @@ fun ComposeScreen(
                                 contentColor = MaterialTheme.colorScheme.error
                             )
                         ) {
-                            Text("Undo")
+                            Text(stringResource(R.string.btn_undo))
                         }
                         Spacer(Modifier.width(8.dp))
                         Button(
                             onClick = { viewModel.publishNow() },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Post now (${countdownSeconds}s)")
+                            Text(stringResource(R.string.compose_post_now, countdownSeconds!!))
                         }
                     }
                 } else {
@@ -819,94 +741,14 @@ fun ComposeScreen(
                     ) {
                         Text(
                             when {
-                                isMiningBusy -> "Mining in progress..."
-                                publishing && scheduleEnabled -> "Scheduling..."
-                                publishing -> "Publishing..."
-                                scheduleEnabled -> "Schedule Post"
-                                else -> "Publish"
+                                isMiningBusy -> stringResource(R.string.compose_mining)
+                                publishing -> stringResource(R.string.compose_publishing)
+                                else -> stringResource(R.string.compose_publish)
                             }
                         )
                     }
                 }
             }
-        }
-
-        // Date picker dialog
-        if (showDatePicker) {
-            val datePickerState = rememberDatePickerState(
-                initialSelectedDateMillis = (scheduleTimestamp ?: (System.currentTimeMillis() / 1000 + 3600)) * 1000
-            )
-            DatePickerDialog(
-                onDismissRequest = {
-                    showDatePicker = false
-                    if (scheduleTimestamp == null) viewModel.toggleSchedule()
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        val selectedDate = datePickerState.selectedDateMillis
-                        if (selectedDate != null) {
-                            pendingDateMillis = selectedDate
-                            showDatePicker = false
-                            showTimePicker = true
-                        }
-                    }) { Text("Next") }
-                },
-                dismissButton = {
-                    TextButton(onClick = {
-                        showDatePicker = false
-                        if (scheduleTimestamp == null) viewModel.toggleSchedule()
-                    }) { Text("Cancel") }
-                }
-            ) {
-                DatePicker(state = datePickerState)
-            }
-        }
-
-        // Time picker dialog
-        if (showTimePicker) {
-            val cal = Calendar.getInstance().apply {
-                scheduleTimestamp?.let { timeInMillis = it * 1000 }
-            }
-            val timePickerState = rememberTimePickerState(
-                initialHour = cal.get(Calendar.HOUR_OF_DAY),
-                initialMinute = cal.get(Calendar.MINUTE)
-            )
-            androidx.compose.material3.AlertDialog(
-                onDismissRequest = {
-                    showTimePicker = false
-                    if (scheduleTimestamp == null) viewModel.toggleSchedule()
-                },
-                title = { Text("Select time") },
-                text = { TimePicker(state = timePickerState) },
-                confirmButton = {
-                    TextButton(onClick = {
-                        val datePart = pendingDateMillis ?: return@TextButton
-                        // DatePicker returns UTC midnight — extract date components in UTC
-                        val utcCal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
-                            timeInMillis = datePart
-                        }
-                        val calendar = Calendar.getInstance().apply {
-                            set(Calendar.YEAR, utcCal.get(Calendar.YEAR))
-                            set(Calendar.MONTH, utcCal.get(Calendar.MONTH))
-                            set(Calendar.DAY_OF_MONTH, utcCal.get(Calendar.DAY_OF_MONTH))
-                            set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                            set(Calendar.MINUTE, timePickerState.minute)
-                            set(Calendar.SECOND, 0)
-                            set(Calendar.MILLISECOND, 0)
-                        }
-                        viewModel.setScheduleTimestamp(calendar.timeInMillis / 1000)
-                        showTimePicker = false
-                        pendingDateMillis = null
-                    }) { Text("Confirm") }
-                },
-                dismissButton = {
-                    TextButton(onClick = {
-                        showTimePicker = false
-                        pendingDateMillis = null
-                        if (scheduleTimestamp == null) viewModel.toggleSchedule()
-                    }) { Text("Cancel") }
-                }
-            )
         }
     }
 }

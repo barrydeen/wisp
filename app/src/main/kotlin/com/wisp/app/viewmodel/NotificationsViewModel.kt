@@ -28,6 +28,7 @@ import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.NotificationRepository
 import com.wisp.app.repo.PowPreferences
 import com.wisp.app.repo.RelayListRepository
+import com.wisp.app.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -39,15 +40,15 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
-enum class NotificationFilter(val label: String) {
-    ALL("All"),
-    REPLIES("Replies"),
-    REACTIONS("Reactions"),
-    ZAPS("Zaps"),
-    REPOSTS("Reposts"),
-    MENTIONS("Mentions"),
-    VOTES("Votes"),
-    DMS("DMs")
+enum class NotificationFilter(val labelResId: Int) {
+    ALL(R.string.filter_all),
+    REPLIES(R.string.filter_replies),
+    REACTIONS(R.string.filter_reactions),
+    ZAPS(R.string.filter_zaps),
+    REPOSTS(R.string.filter_reposts),
+    MENTIONS(R.string.filter_mentions),
+    VOTES(R.string.filter_votes),
+    DMS(R.string.filter_dms)
 }
 
 class NotificationsViewModel(app: Application) : AndroidViewModel(app) {

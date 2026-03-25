@@ -72,10 +72,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.FollowSet
-import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.R
 import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.EmojiLibrarySheet
 import com.wisp.app.ui.component.PostCard
@@ -272,8 +273,6 @@ fun FeedScreen(
     val newNotesButtonHidden by viewModel.newNotesButtonHidden.collectAsState()
     val initLoadingState by viewModel.initLoadingState.collectAsState()
     val relayFeedStatus by viewModel.relayFeedStatus.collectAsState()
-    val pendingFirstFollow by viewModel.pendingFirstFollow.collectAsState()
-    val firstFollowCheckDone by viewModel.firstFollowCheckDone.collectAsState()
     val zapInProgress by viewModel.zapInProgress.collectAsState()
     val setListedIds by viewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
     val bookmarkedIds by viewModel.bookmarkRepo.bookmarkedIds.collectAsState()
@@ -358,7 +357,7 @@ fun FeedScreen(
                     .navigationBarsPadding()
             ) {
                 Text(
-                    "Online Now",
+                    stringResource(R.string.online_now),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -370,7 +369,7 @@ fun FeedScreen(
                     }
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "${onlinePubkeys.size} online in your network",
+                        stringResource(R.string.online_in_network, onlinePubkeys.size),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -383,7 +382,7 @@ fun FeedScreen(
                         }
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "$globalOnlineCount online across all of Nostr",
+                            stringResource(R.string.online_all_nostr, globalOnlineCount ?: 0),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -503,41 +502,10 @@ fun FeedScreen(
     if (zapErrorMessage != null) {
         AlertDialog(
             onDismissRequest = { zapErrorMessage = null },
-            title = { Text("Zap Failed") },
+            title = { Text(stringResource(R.string.zap_failed)) },
             text = { Text(zapErrorMessage ?: "") },
             confirmButton = {
-                TextButton(onClick = { zapErrorMessage = null }) { Text("OK") }
-            }
-        )
-    }
-
-    if (pendingFirstFollow != null) {
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissFirstFollow() },
-            title = { Text(if (firstFollowCheckDone) "No follow list found" else "Checking follow list") },
-            text = {
-                if (!firstFollowCheckDone) {
-                    androidx.compose.foundation.layout.Row(
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                    ) {
-                        androidx.compose.material3.CircularProgressIndicator(
-                            modifier = androidx.compose.ui.Modifier.size(16.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = androidx.compose.ui.Modifier.width(12.dp))
-                        Text("Checking relays for an existing follow list...")
-                    }
-                } else {
-                    Text("No existing follow list was found on your relays. If you follow this person, your follow list will start at 1. If you believe this is wrong, rebroadcast your follow list from another client first, then try again.")
-                }
-            },
-            confirmButton = {
-                if (firstFollowCheckDone) {
-                    TextButton(onClick = { viewModel.confirmFirstFollow() }) { Text("Follow anyway") }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.dismissFirstFollow() }) { Text("Cancel") }
+                TextButton(onClick = { zapErrorMessage = null }) { Text(stringResource(R.string.btn_ok)) }
             }
         )
     }
@@ -545,21 +513,21 @@ fun FeedScreen(
     if (showSocialGraphDialog) {
         AlertDialog(
             onDismissRequest = { showSocialGraphDialog = false },
-            title = { Text("Social graph required") },
+            title = { Text(stringResource(R.string.error_social_graph_required)) },
             text = {
-                Text("The extended feed shows posts from friends-of-friends. You need to compute your social graph first.")
+                Text(stringResource(R.string.error_extended_feed_description))
             },
             confirmButton = {
                 Button(onClick = {
                     showSocialGraphDialog = false
                     onSocialGraph()
                 }) {
-                    Text("Go to Social Graph")
+                    Text(stringResource(R.string.btn_go_to_social_graph))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showSocialGraphDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.btn_cancel))
                 }
             }
         )
@@ -675,15 +643,15 @@ fun FeedScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         val feedLabel = when (feedType) {
-                                            FeedType.FOLLOWS -> "Follows"
-                                            FeedType.EXTENDED_FOLLOWS -> "Extended"
+                                            FeedType.FOLLOWS -> stringResource(R.string.tab_follows)
+                                            FeedType.EXTENDED_FOLLOWS -> stringResource(R.string.tab_extended)
                                             FeedType.RELAY -> if (selectedRelay != null) {
                                                 selectedRelay!!.removePrefix("wss://").removeSuffix("/")
-                                            } else "Relay"
+                                            } else stringResource(R.string.tab_relay)
                                             FeedType.LIST -> if (selectedList != null) {
                                                 selectedList!!.name
-                                            } else "List"
-                                            FeedType.TRENDING -> "Trending"
+                                            } else stringResource(R.string.tab_list)
+                                            FeedType.TRENDING -> stringResource(R.string.tab_trending)
                                         }
                                         Text(
                                             feedLabel,
@@ -704,8 +672,8 @@ fun FeedScreen(
                                     expanded = showFeedTypeDropdown,
                                     onDismissRequest = { showFeedTypeDropdown = false }
                                 ) {
-                                    DropdownMenuItem(
-                                        text = { Text("Follows") },
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.tab_follows)) },
                                         onClick = {
                                             showFeedTypeDropdown = false
                                             viewModel.setFeedType(FeedType.FOLLOWS)
@@ -714,8 +682,8 @@ fun FeedScreen(
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                         }} else null
                                     )
-                                    DropdownMenuItem(
-                                        text = { Text("Extended") },
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.tab_extended)) },
                                         onClick = {
                                             showFeedTypeDropdown = false
                                             if (viewModel.extendedNetworkRepo.cachedNetwork.value == null) {
@@ -728,8 +696,8 @@ fun FeedScreen(
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                         }} else null
                                     )
-                                    DropdownMenuItem(
-                                        text = { Text("Trending") },
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.tab_trending)) },
                                         onClick = {
                                             showFeedTypeDropdown = false
                                             viewModel.setFeedType(FeedType.TRENDING)
@@ -738,8 +706,8 @@ fun FeedScreen(
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                         }} else null
                                     )
-                                    DropdownMenuItem(
-                                        text = { Text("Relay") },
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.tab_relay)) },
                                         onClick = {
                                             showFeedTypeDropdown = false
                                             showRelayPicker = true
@@ -748,8 +716,8 @@ fun FeedScreen(
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                         }} else null
                                     )
-                                    DropdownMenuItem(
-                                        text = { Text("List") },
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.tab_list)) },
                                         onClick = {
                                             showFeedTypeDropdown = false
                                             showListPicker = true
@@ -758,8 +726,8 @@ fun FeedScreen(
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                         }} else null
                                     )
-                                    DropdownMenuItem(
-                                        text = { Text("Hashtags") },
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.tab_hashtags)) },
                                         onClick = {
                                             showFeedTypeDropdown = false
                                             showHashtagPicker = true
@@ -954,7 +922,7 @@ fun FeedScreen(
                                     )
                                     Spacer(Modifier.height(12.dp))
                                     Button(onClick = { onSocialGraph() }) {
-                                        Text("Go to Social Graph")
+                                        Text(stringResource(R.string.btn_go_to_social_graph))
                                     }
                                 }
                             }
@@ -1076,7 +1044,7 @@ fun FeedScreen(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         TextButton(onClick = { viewModel.loadMore() }) {
-                                            Text("Load more")
+                                            Text(stringResource(R.string.btn_load_more))
                                         }
                                     }
                                 }
@@ -1249,10 +1217,6 @@ private fun FeedItem(
         onRelayClick = onRelayClick,
         onFollowAuthor = { viewModel.toggleFollow(event.pubkey) },
         onBlockAuthor = { viewModel.blockUser(event.pubkey) },
-        onMuteThread = {
-            val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
-            viewModel.muteThread(rootId)
-        },
         isFollowingAuthor = isFollowing,
         isOwnEvent = event.pubkey == userPubkey,
         nip05Repo = viewModel.nip05Repo,
@@ -1459,10 +1423,11 @@ private fun RelayPickerDialog(
     var showCreateSet by remember { mutableStateOf(false) }
     var newSetName by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    val couldntConnectError = stringResource(R.string.error_couldnt_connect_relay)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Select Relay") },
+        title = { Text(stringResource(R.string.menu_select_relay)) },
         text = {
             Column {
                 // URL bar
@@ -1472,7 +1437,7 @@ private fun RelayPickerDialog(
                         urlInput = it
                         probeError = null
                     },
-                    placeholder = { Text("relay.example.com") },
+                    placeholder = { Text(stringResource(R.string.placeholder_relay_example)) },
                     singleLine = true,
                     enabled = !isProbing,
                     trailingIcon = {
@@ -1499,14 +1464,14 @@ private fun RelayPickerDialog(
                                             if (result != null) {
                                                 onSelect(result)
                                             } else {
-                                                probeError = "Couldn't connect to relay"
+                                                probeError = couldntConnectError
                                             }
                                         }
                                     }
                                 },
                                 enabled = urlInput.isNotBlank()
                             ) {
-                                Text("Go", style = MaterialTheme.typography.labelMedium)
+                                Text(stringResource(R.string.btn_go), style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     },
@@ -1528,7 +1493,7 @@ private fun RelayPickerDialog(
                     if (favoriteRelays.isNotEmpty()) {
                         item {
                             Text(
-                                "Favorites",
+                                stringResource(R.string.tab_favorites),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -1569,7 +1534,7 @@ private fun RelayPickerDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                "Relay Sets",
+                                stringResource(R.string.tab_relay_sets),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -1581,7 +1546,7 @@ private fun RelayPickerDialog(
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                             ) {
                                 Text(
-                                    "+ New Set",
+                                    stringResource(R.string.btn_new_set),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -1598,7 +1563,7 @@ private fun RelayPickerDialog(
                                 androidx.compose.material3.OutlinedTextField(
                                     value = newSetName,
                                     onValueChange = { newSetName = it },
-                                    placeholder = { Text("Set name") },
+                                    placeholder = { Text(stringResource(R.string.placeholder_set_name)) },
                                     singleLine = true,
                                     modifier = Modifier.weight(1f),
                                     textStyle = MaterialTheme.typography.bodySmall
@@ -1617,7 +1582,7 @@ private fun RelayPickerDialog(
                                            else MaterialTheme.colorScheme.surfaceVariant
                                 ) {
                                     Text(
-                                        "Create",
+                                        stringResource(R.string.btn_create),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = if (newSetName.isNotBlank()) MaterialTheme.colorScheme.onPrimary
                                                else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1645,7 +1610,7 @@ private fun RelayPickerDialog(
                                         modifier = Modifier.weight(1f)
                                     )
                                     Text(
-                                        "${relaySet.relays.size} relays",
+                                        stringResource(R.string.relay_count_format, relaySet.relays.size),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1667,7 +1632,7 @@ private fun RelayPickerDialog(
                                     modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 2.dp, bottom = 2.dp)
                                 ) {
                                     Text(
-                                        "Combined Feed",
+                                        stringResource(R.string.tab_combined_feed),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.primary,
                                         fontWeight = FontWeight.Medium,
@@ -1709,7 +1674,7 @@ private fun RelayPickerDialog(
                     if (scoredRelays.isNotEmpty()) {
                         item {
                             Text(
-                                "All Relays",
+                                stringResource(R.string.tab_all_relays),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -1732,7 +1697,7 @@ private fun RelayPickerDialog(
                                         modifier = Modifier.weight(1f)
                                     )
                                     Text(
-                                        "covers ${scored.coverCount}",
+                                        stringResource(R.string.relay_covers_format, scored.coverCount),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1742,7 +1707,7 @@ private fun RelayPickerDialog(
                     } else if (favoriteRelays.isEmpty() && relaySets.isEmpty()) {
                         item {
                             Text(
-                                "No relay scores available yet",
+                                stringResource(R.string.error_no_relay_scores),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall
                             )
@@ -1863,8 +1828,9 @@ private fun HashtagPickerDialog(
     var confirmDeleteDTag by remember { mutableStateOf<String?>(null) }
     var showNewSetField by remember { mutableStateOf(false) }
     val newSetFocusRequester = remember { FocusRequester() }
+    // First set always expanded by default
     var expandedDTags by remember(sets.size) {
-        mutableStateOf(emptySet<String>())
+        mutableStateOf(sets.firstOrNull()?.let { setOf(it.dTag) } ?: emptySet())
     }
 
     AlertDialog(
@@ -1874,9 +1840,9 @@ private fun HashtagPickerDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Hashtags")
+                Text(stringResource(R.string.tab_hashtags))
                 TextButton(onClick = { showNewSetField = true }) {
-                    Text("New Set")
+                    Text(stringResource(R.string.tab_new_set))
                 }
                 Spacer(Modifier.weight(1f))
                 IconButton(
@@ -1885,7 +1851,7 @@ private fun HashtagPickerDialog(
                 ) {
                     Icon(
                         Icons.Default.Close,
-                        contentDescription = "Close",
+                        contentDescription = stringResource(R.string.btn_close),
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -1908,7 +1874,7 @@ private fun HashtagPickerDialog(
                     }
                 } else if (sets.isEmpty()) {
                     Text(
-                        "No interest sets yet. Create one below, or follow hashtags from their feed pages.",
+                        stringResource(R.string.no_interest_sets),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
@@ -1933,14 +1899,14 @@ private fun HashtagPickerDialog(
                                         onRenameSet(set.dTag, renameText.trim())
                                         renamingDTag = null
                                     }
-                                }) { Text("Save") }
+                                }) { Text(stringResource(R.string.btn_save)) }
                                 IconButton(
                                     onClick = { confirmDeleteDTag = set.dTag },
                                     modifier = Modifier.size(32.dp)
                                 ) {
                                     Icon(
                                         Icons.Default.Delete,
-                                        contentDescription = "Delete",
+                                        contentDescription = stringResource(R.string.btn_delete),
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -1973,13 +1939,13 @@ private fun HashtagPickerDialog(
                                             }
                                         )
                                 )
-                                if (set.hashtags.isNotEmpty()) {
+                                if (isExpanded && set.hashtags.isNotEmpty()) {
                                     TextButton(
                                         onClick = { onViewSetFeed(set) },
                                         modifier = Modifier.heightIn(min = 32.dp),
                                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                                     ) {
-                                        Text("Feed", style = MaterialTheme.typography.labelSmall)
+                                        Text(stringResource(R.string.tab_feed), style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
                                 if (isExpanded) {
@@ -1992,7 +1958,7 @@ private fun HashtagPickerDialog(
                                     ) {
                                         Icon(
                                             Icons.Default.Add,
-                                            contentDescription = "Add hashtag",
+                                            contentDescription = stringResource(R.string.cd_add_hashtag),
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
@@ -2012,7 +1978,7 @@ private fun HashtagPickerDialog(
                                     androidx.compose.material3.OutlinedTextField(
                                         value = newHashtagText,
                                         onValueChange = { newHashtagText = it },
-                                        placeholder = { Text("hashtag") },
+                                        placeholder = { Text(stringResource(R.string.placeholder_hashtag)) },
                                         singleLine = true,
                                         modifier = Modifier.weight(1f).focusRequester(focusRequester)
                                     )
@@ -2027,13 +1993,13 @@ private fun HashtagPickerDialog(
                                             }
                                         },
                                         enabled = newHashtagText.trim().removePrefix("#").isNotBlank()
-                                    ) { Text("Add") }
+                                    ) { Text(stringResource(R.string.btn_add)) }
                                 }
                             }
                             // Hashtags in this set
                             if (set.hashtags.isEmpty()) {
                                 Text(
-                                    "No hashtags yet",
+                                    stringResource(R.string.no_hashtags_yet),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(start = 12.dp, bottom = 4.dp)
@@ -2064,7 +2030,7 @@ private fun HashtagPickerDialog(
                                 }
                             }
                         }
-                        Spacer(Modifier.size(6.dp))
+                        Spacer(Modifier.size(8.dp))
                     }
                 }
                 if (showNewSetField) {
@@ -2078,7 +2044,7 @@ private fun HashtagPickerDialog(
                     androidx.compose.material3.OutlinedTextField(
                         value = newSetName,
                         onValueChange = { newSetName = it },
-                        placeholder = { Text("New set name") },
+                        placeholder = { Text(stringResource(R.string.placeholder_new_set_name)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f).focusRequester(newSetFocusRequester)
                     )
@@ -2093,7 +2059,7 @@ private fun HashtagPickerDialog(
                         },
                         enabled = newSetName.isNotBlank()
                     ) {
-                        Text("Create")
+                        Text(stringResource(R.string.btn_create))
                     }
                 }
             }
@@ -2108,16 +2074,16 @@ private fun HashtagPickerDialog(
         val setName = sets.find { it.dTag == dTag }?.name ?: dTag
         AlertDialog(
             onDismissRequest = { confirmDeleteDTag = null },
-            title = { Text("Delete Set") },
-            text = { Text("Delete \"$setName\" and all its hashtags?") },
+            title = { Text(stringResource(R.string.delete_set)) },
+            text = { Text(stringResource(R.string.error_delete_set_hashtags, setName)) },
             confirmButton = {
                 TextButton(onClick = {
                     onDeleteSet(dTag)
                     confirmDeleteDTag = null
-                }) { Text("Delete") }
+                }) { Text(stringResource(R.string.btn_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmDeleteDTag = null }) { Text("Cancel") }
+                TextButton(onClick = { confirmDeleteDTag = null }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -2162,7 +2128,7 @@ private fun NewNotesButton(
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        "$count new notes",
+                        stringResource(R.string.new_notes_button, count),
                         style = MaterialTheme.typography.labelMedium
                     )
                 }
@@ -2173,14 +2139,14 @@ private fun NewNotesButton(
                 onDismissRequest = { showMenu = false }
             ) {
                 DropdownMenuItem(
-                    text = { Text("Hide until app restart") },
+                    text = { Text(stringResource(R.string.new_notes_hide_temporary)) },
                     onClick = {
                         showMenu = false
                         onHide(false)
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("Hide forever") },
+                    text = { Text(stringResource(R.string.new_notes_hide_forever)) },
                     onClick = {
                         showMenu = false
                         onHide(true)
@@ -2543,7 +2509,7 @@ private fun RelayFeedBar(
                     color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Text(
-                        "+Set",
+                        stringResource(R.string.btn_add_to_set),
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2557,7 +2523,7 @@ private fun RelayFeedBar(
                     color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Text(
-                        "Details",
+                        stringResource(R.string.btn_details),
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2571,7 +2537,7 @@ private fun RelayFeedBar(
     if (showSetPicker) {
         AlertDialog(
             onDismissRequest = { showSetPicker = false },
-            title = { Text("Add to Relay Set") },
+            title = { Text(stringResource(R.string.menu_add_to_relay_set)) },
             text = {
                 Column {
                     if (relaySets.isNotEmpty()) {
@@ -2612,7 +2578,7 @@ private fun RelayFeedBar(
                     androidx.compose.material3.OutlinedTextField(
                         value = newSetName,
                         onValueChange = { newSetName = it },
-                        placeholder = { Text("New set name") },
+                        placeholder = { Text(stringResource(R.string.placeholder_new_set_name)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         trailingIcon = {
@@ -2622,7 +2588,7 @@ private fun RelayFeedBar(
                                     newSetName = ""
                                     showSetPicker = false
                                 }) {
-                                    Text("Create", style = MaterialTheme.typography.labelSmall)
+                                    Text(stringResource(R.string.btn_create), style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
@@ -2631,7 +2597,7 @@ private fun RelayFeedBar(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { showSetPicker = false }) { Text("Cancel") }
+                TextButton(onClick = { showSetPicker = false }) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
     }
@@ -2847,7 +2813,7 @@ fun BroadcastStatusBar(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "Mining PoW (${powStatus.attempts / 1000}k)...",
+                            text = stringResource(R.string.broadcast_mining, powStatus.attempts / 1000),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -2859,7 +2825,7 @@ fun BroadcastStatusBar(
                             ) {
                                 Icon(
                                     Icons.Default.Close,
-                                    contentDescription = "Cancel mining",
+                                    contentDescription = stringResource(R.string.broadcast_cancel_mining),
                                     modifier = Modifier.size(14.dp),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -2893,9 +2859,10 @@ fun BroadcastStatusBar(
                         }
                         Text(
                             text = if (state.accepted < state.sent) {
-                                "Broadcasting (${state.accepted}/${state.sent})"
+                                stringResource(R.string.broadcast_broadcasting, state.accepted, state.sent)
                             } else {
-                                "Published to ${state.accepted} relay${if (state.accepted != 1) "s" else ""}"
+                                if (state.accepted != 1) stringResource(R.string.broadcast_published_plural, state.accepted)
+                                else stringResource(R.string.broadcast_published, state.accepted)
                             },
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant

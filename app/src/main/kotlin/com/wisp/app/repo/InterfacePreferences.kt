@@ -25,4 +25,7 @@ class InterfacePreferences(context: Context) {
 
     fun isVideoAutoPlay(): Boolean = prefs.getBoolean("video_auto_play", true)
     fun setVideoAutoPlay(enabled: Boolean) = prefs.edit().putBoolean("video_auto_play", enabled).apply()
+
+    fun getLanguage(): String = prefs.getString("language", "system") ?: "system"
+    fun setLanguage(language: String) = prefs.edit().putString("language", language).apply()
 }

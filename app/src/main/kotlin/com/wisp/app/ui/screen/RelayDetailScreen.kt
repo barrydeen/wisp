@@ -37,10 +37,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.wisp.app.R
 import com.wisp.app.nostr.RelayInfo
 import com.wisp.app.relay.ConsoleLogEntry
 import com.wisp.app.relay.ConsoleLogType
@@ -103,7 +105,7 @@ fun RelayDetailScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -375,7 +377,7 @@ private fun RelayHeader(
                                     androidx.compose.material3.OutlinedTextField(
                                         value = newSetName,
                                         onValueChange = { newSetName = it },
-                                        placeholder = { Text("New set name") },
+                                        placeholder = { Text(stringResource(R.string.placeholder_new_set_name)) },
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth(),
                                         trailingIcon = {
@@ -385,7 +387,7 @@ private fun RelayHeader(
                                                     newSetName = ""
                                                     showSetPicker = false
                                                 }) {
-                                                    Text("Create", style = MaterialTheme.typography.labelSmall)
+                                                    Text(stringResource(R.string.btn_create), style = MaterialTheme.typography.labelSmall)
                                                 }
                                             }
                                         }
@@ -394,7 +396,7 @@ private fun RelayHeader(
                             },
                             confirmButton = {},
                             dismissButton = {
-                                TextButton(onClick = { showSetPicker = false }) { Text("Cancel") }
+                                TextButton(onClick = { showSetPicker = false }) { Text(stringResource(R.string.btn_cancel)) }
                             }
                         )
                     }

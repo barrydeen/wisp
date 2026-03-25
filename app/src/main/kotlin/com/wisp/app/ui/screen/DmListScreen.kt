@@ -34,9 +34,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.DmConversation
+import com.wisp.app.R
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.viewmodel.DmListViewModel
@@ -60,11 +62,11 @@ fun DmListScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text("Messages") },
+                title = { Text(stringResource(R.string.title_chat)) },
                 navigationIcon = {
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
                         }
                     }
                 },
@@ -89,12 +91,12 @@ fun DmListScreen(
             ) {
                 Spacer(Modifier.height(64.dp))
                 Text(
-                    "No messages yet",
+                    stringResource(R.string.error_no_messages),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    "Send a message from someone's profile",
+                    stringResource(R.string.error_send_message_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

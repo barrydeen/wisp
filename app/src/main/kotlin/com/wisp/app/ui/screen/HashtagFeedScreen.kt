@@ -38,8 +38,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.wisp.app.R
 import com.wisp.app.nostr.InterestSet
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.ui.component.NoteActions
@@ -89,21 +91,24 @@ fun HashtagFeedScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = setName ?: "#$hashtag",
+                        text = if (setName?.equals("Interests", ignoreCase = true) == true)
+                            stringResource(R.string.interests)
+                        else
+                            setName ?: "#$hashtag",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = onHashtagPicker) {
                         Icon(
                             Icons.Outlined.Tag,
-                            contentDescription = "Hashtag picker"
+                            contentDescription = stringResource(R.string.cd_hashtag_picker)
                         )
                     }
                     if (userPubkey != null) {
@@ -128,7 +133,7 @@ fun HashtagFeedScreen(
                             }) {
                                 Icon(
                                     if (isFollowing) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                    contentDescription = if (isFollowing) "Unfollow hashtag" else "Follow hashtag",
+                                    contentDescription = if (isFollowing) stringResource(R.string.btn_unfollow) else stringResource(R.string.btn_follow),
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             }
@@ -204,7 +209,7 @@ private fun InterestSetPickerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add to Set") },
+        title = { Text(stringResource(R.string.btn_add_to_list)) },
         text = {
             Column {
                 sets.forEach { set ->
@@ -234,7 +239,7 @@ private fun InterestSetPickerDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.btn_cancel)) }
         }
     )
 }

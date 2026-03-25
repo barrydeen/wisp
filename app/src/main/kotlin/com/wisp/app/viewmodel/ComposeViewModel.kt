@@ -29,6 +29,7 @@ import com.wisp.app.repo.MentionSearchRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.InterfacePreferences
 import com.wisp.app.repo.ProfileRepository
+import com.wisp.app.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -335,24 +336,24 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         val text = _content.value.text.trim()
 
         if (text.isBlank()) {
-            _error.value = "Post cannot be empty"
+            _error.value = getApplication<Application>().getString(R.string.error_post_empty)
             return
         }
 
         val s = signer
         if (s == null) {
-            _error.value = "Not logged in"
+            _error.value = getApplication<Application>().getString(R.string.error_not_logged_in)
             return
         }
 
         if (_scheduleEnabled.value) {
             val ts = _scheduleTimestamp.value
             if (ts == null) {
-                _error.value = "Pick a date and time to schedule"
+                _error.value = getApplication<Application>().getString(R.string.error_schedule_date_required)
                 return
             }
             if (ts <= System.currentTimeMillis() / 1000) {
-                _error.value = "Scheduled time must be in the future"
+                _error.value = getApplication<Application>().getString(R.string.error_schedule_future)
                 return
             }
         }
@@ -381,7 +382,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                     onNotePublished?.invoke()
                     onSuccess()
                 } catch (e: Exception) {
-                    _error.value = "Failed to publish: ${e.message}"
+                    _error.value = getApplication<Application>().getString(R.string.error_publish_failed, e.message ?: "Unknown error")
                     _publishing.value = false
                 }
             }
@@ -460,7 +461,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 .mapIndexed { i, label -> Nip88.PollOption(i.toString(), label.trim()) }
                 .filter { it.label.isNotBlank() }
             if (nonBlankOptions.size < 2) {
-                _error.value = "Poll needs at least 2 options"
+                _error.value = getApplication<Application>().getString(R.string.error_poll_options)
                 _publishing.value = false
                 return 0
             }
@@ -493,7 +494,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 if (relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)) sentCount++
             }
             if (sentCount == 0) {
-                _error.value = "Could not connect to scheduler relay"
+                _error.value = getApplication<Application>().getString(R.string.error_scheduler_relay)
                 _publishing.value = false
                 return 0
             }
@@ -555,7 +556,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             }
         }
         if (sentCount == 0) {
-            _error.value = "No relays connected — note was not published"
+            _error.value = getApplication<Application>().getString(R.string.error_no_relays_connected)
             _publishing.value = false
             return 0
         }

@@ -53,12 +53,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.Nip02
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
+import com.wisp.app.R
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
@@ -112,7 +114,6 @@ fun SearchScreen(
     val authorFilter by viewModel.authorFilter.collectAsState()
     val authorSearchResults by viewModel.authorSearchResults.collectAsState()
     val isAuthorSearching by viewModel.isAuthorSearching.collectAsState()
-    var advancedExpanded by remember { mutableStateOf(authorFilter != null) }
 
     val reactionVersion by eventRepo.reactionVersion.collectAsState()
     val repostVersion by eventRepo.repostVersion.collectAsState()
@@ -131,6 +132,7 @@ fun SearchScreen(
     }
 
     var filterMenuExpanded by remember { mutableStateOf(false) }
+    var advancedExpanded by remember { mutableStateOf(authorFilter != null) }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -141,7 +143,7 @@ fun SearchScreen(
                     Box {
                         TextButton(onClick = { filterMenuExpanded = true }) {
                             Text(
-                                if (filter == SearchFilter.PEOPLE) "Profiles" else "Notes",
+                                if (filter == SearchFilter.PEOPLE) stringResource(R.string.tab_people) else stringResource(R.string.tab_notes),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -157,14 +159,14 @@ fun SearchScreen(
                             onDismissRequest = { filterMenuExpanded = false }
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Profiles") },
+                                text = { Text(stringResource(R.string.tab_people)) },
                                 onClick = {
                                     viewModel.selectFilter(SearchFilter.PEOPLE)
                                     filterMenuExpanded = false
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Notes") },
+                                text = { Text(stringResource(R.string.tab_notes)) },
                                 onClick = {
                                     viewModel.selectFilter(SearchFilter.NOTES)
                                     filterMenuExpanded = false
@@ -177,12 +179,12 @@ fun SearchScreen(
                     TextField(
                         value = query,
                         onValueChange = { viewModel.updateQuery(it) },
-                        placeholder = { Text("Search...") },
+                        placeholder = { Text(stringResource(R.string.placeholder_search_users_notes)) },
                         singleLine = true,
                         trailingIcon = {
                             if (query.isNotEmpty()) {
                                 IconButton(onClick = { viewModel.clear() }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(18.dp))
+                                    Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.btn_clear), modifier = Modifier.size(18.dp))
                                 }
                             }
                         },
@@ -201,12 +203,12 @@ fun SearchScreen(
                 },
                 actions = {
                     IconButton(onClick = { viewModel.search(query, relayPool, eventRepo, muteRepo) }) {
-                        Icon(Icons.Default.Search, contentDescription = "Search")
+                        Icon(Icons.Default.Search, contentDescription = stringResource(R.string.title_search))
                     }
                     IconButton(onClick = { advancedExpanded = !advancedExpanded }) {
                         Icon(
                             Icons.Default.Tune,
-                            contentDescription = "Advanced",
+                            contentDescription = stringResource(R.string.title_search),
                             tint = if (advancedExpanded) MaterialTheme.colorScheme.primary
                                    else MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -267,7 +269,7 @@ fun SearchScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "No results found",
+                            stringResource(R.string.error_no_results_found),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -279,7 +281,7 @@ fun SearchScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "Search for users and notes on relays",
+                            stringResource(R.string.error_search_hint),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -456,7 +458,7 @@ private fun RelaySelector(
 
     val displayText = when (selectedOption) {
         RelayOption.DEFAULT -> SearchViewModel.DEFAULT_SEARCH_RELAY.removePrefix("wss://")
-        RelayOption.ALL_RELAYS -> "All relays"
+        RelayOption.ALL_RELAYS -> stringResource(R.string.tab_all_relays)
         RelayOption.INDIVIDUAL -> selectedRelayUrl?.removePrefix("wss://") ?: ""
     }
 
@@ -469,7 +471,7 @@ private fun RelaySelector(
             value = displayText,
             onValueChange = {},
             readOnly = true,
-            label = { Text("Search relay") },
+            label = { Text(stringResource(R.string.placeholder_search_relay)) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier
                 .menuAnchor(MenuAnchorType.PrimaryNotEditable)
@@ -510,7 +512,7 @@ private fun RelaySelector(
                         ) {
                             Icon(
                                 Icons.Default.Close,
-                                contentDescription = "Remove relay",
+                                contentDescription = stringResource(R.string.cd_remove_relay),
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -526,7 +528,7 @@ private fun RelaySelector(
 
             // All relays option
             DropdownMenuItem(
-                text = { Text("All relays") },
+                text = { Text(stringResource(R.string.tab_all_relays)) },
                 onClick = {
                     onSelectAllRelays()
                     expanded = false
@@ -537,7 +539,7 @@ private fun RelaySelector(
 
             // Add new relay
             DropdownMenuItem(
-                text = { Text("Add new") },
+                text = { Text(stringResource(R.string.cd_add_new)) },
                 leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
                 onClick = {
                     expanded = false
@@ -568,12 +570,12 @@ private fun AddRelayDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add search relay") },
+        title = { Text(stringResource(R.string.menu_add_search_relay)) },
         text = {
             OutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
-                placeholder = { Text("wss://relay.example.com") },
+                placeholder = { Text(stringResource(R.string.placeholder_add_relay)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -582,12 +584,12 @@ private fun AddRelayDialog(
         },
         confirmButton = {
             TextButton(onClick = { onAdd(url) }) {
-                Text("Add")
+                Text(stringResource(R.string.btn_add))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.btn_cancel))
             }
         }
     )

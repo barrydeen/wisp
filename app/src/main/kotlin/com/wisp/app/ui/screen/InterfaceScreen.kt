@@ -1,5 +1,7 @@
 package com.wisp.app.ui.screen
 
+import android.app.Activity
+import android.app.Application
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -52,18 +54,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import android.content.Intent
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
+import com.wisp.app.R
 import com.wisp.app.repo.DiagnosticLogger
 import com.wisp.app.repo.InterfacePreferences
+import com.wisp.app.repo.LocaleRepository
 import com.wisp.app.ui.theme.ThemePreset
 import com.wisp.app.ui.theme.Themes
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun InterfaceScreen(
+    application: Application,
     interfacePrefs: InterfacePreferences,
     onBack: () -> Unit,
     onChanged: () -> Unit
@@ -75,6 +81,8 @@ fun InterfaceScreen(
     var videoAutoPlay by remember { mutableStateOf(interfacePrefs.isVideoAutoPlay()) }
     var selectedTheme by remember { mutableStateOf(interfacePrefs.getTheme()) }
     var isCustomTheme by remember { mutableStateOf(selectedTheme == "custom") }
+    var selectedLanguage by remember { mutableStateOf(interfacePrefs.getLanguage()) }
+    var languagesExpanded by remember { mutableStateOf(false) }
 
     val savedColor = remember { Color(interfacePrefs.getAccentColor()) }
     val initialHsv = remember {
@@ -93,10 +101,10 @@ fun InterfaceScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Interface") },
+                title = { Text(stringResource(R.string.title_interface)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -112,9 +120,79 @@ fun InterfaceScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
+            // Language section
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { languagesExpanded = !languagesExpanded }
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = stringResource(R.string.settings_language),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = LocaleRepository.getLanguageDisplayName(selectedLanguage),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Text(
+                    text = if (languagesExpanded) "▲" else "▼",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (languagesExpanded) {
+                Spacer(Modifier.height(8.dp))
+                LocaleRepository.supportedLanguages.forEach { language ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                selectedLanguage = language.code
+                                interfacePrefs.setLanguage(language.code)
+                                LocaleRepository.applyLanguage(application, language.code)
+                                languagesExpanded = false
+                                (application as? android.app.Activity)?.let { activity ->
+                                    activity.finish()
+                                    activity.startActivity(activity.intent)
+                                }
+                            }
+                            .padding(vertical = 12.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = language.displayName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (selectedLanguage == language.code) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (selectedLanguage == language.code) {
+                            Text(
+                                text = "✓",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+
             // Text Size section
             Text(
-                text = "Text Size",
+                text = stringResource(R.string.settings_text_size),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -124,9 +202,9 @@ fun InterfaceScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Large text", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.settings_large_text), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Increase text size across the app",
+                        stringResource(R.string.settings_increase_text_size),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -156,12 +234,12 @@ fun InterfaceScreen(
             ) {
                 Column {
                     Text(
-                        text = "Popular Themes",
+                        text = stringResource(R.string.settings_popular_themes),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Choose a color scheme",
+                        text = stringResource(R.string.settings_choose_color_scheme),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -201,7 +279,7 @@ fun InterfaceScreen(
             if (isCustomTheme) {
                 // Accent Color section
                 Text(
-                    text = "Accent Color",
+                    text = stringResource(R.string.settings_accent_color),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -217,7 +295,7 @@ fun InterfaceScreen(
                     )
                     Spacer(Modifier.padding(start = 12.dp))
                     Text(
-                        text = "Preview",
+                        text = stringResource(R.string.cd_preview),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -259,7 +337,7 @@ fun InterfaceScreen(
 
             // New Notes Button section
             Text(
-                text = "New Notes Button",
+                text = stringResource(R.string.settings_new_notes_button),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -269,9 +347,9 @@ fun InterfaceScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Hide new notes button", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.settings_hide_new_notes_button), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Hide the floating button that appears when new notes arrive",
+                        stringResource(R.string.settings_hide_new_notes_description),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -290,7 +368,7 @@ fun InterfaceScreen(
 
             // Media section
             Text(
-                text = "Media",
+                text = stringResource(R.string.settings_media),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -300,9 +378,9 @@ fun InterfaceScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Auto-load media", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.settings_auto_load_media), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Automatically download images and videos in notes. When off, tap to load.",
+                        stringResource(R.string.settings_auto_load_description),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -322,9 +400,9 @@ fun InterfaceScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Video autoplay", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.settings_video_autoplay), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Automatically play videos when they scroll into view",
+                        stringResource(R.string.settings_video_autoplay_description),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -343,7 +421,7 @@ fun InterfaceScreen(
 
             // Client Tag section
             Text(
-                text = "Client Tag",
+                text = stringResource(R.string.settings_client_tag),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -353,9 +431,9 @@ fun InterfaceScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Tag notes with Wisp", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.settings_tag_notes), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "Include a tag identifying Wisp as the client. This is visible to others.",
+                        stringResource(R.string.settings_tag_notes_description),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -398,7 +476,7 @@ fun InterfaceScreen(
             if (diagnosticRevealed) {
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    text = "Diagnostics",
+                    text = stringResource(R.string.diagnostics_title),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -408,9 +486,9 @@ fun InterfaceScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Diagnostic mode", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.diagnostic_mode), style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            "Log event processing decisions to a file for debugging",
+                            stringResource(R.string.diagnostic_mode_description),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -431,7 +509,7 @@ fun InterfaceScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = "Share logs",
+                            text = stringResource(R.string.share_logs),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier
@@ -448,13 +526,13 @@ fun InterfaceScreen(
                                             putExtra(Intent.EXTRA_STREAM, uri)
                                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                         }
-                                        context.startActivity(Intent.createChooser(intent, "Share diagnostic logs"))
+                                        context.startActivity(Intent.createChooser(intent, context.getString(R.string.share_diagnostic_logs)))
                                     }
                                 }
                                 .padding(vertical = 8.dp)
                         )
                         Text(
-                            text = "Clear logs",
+                            text = stringResource(R.string.clear_logs),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier

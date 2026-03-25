@@ -33,12 +33,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
-enum class ProfileSortMode(val label: String) {
-    RECENCY("Recent"),
-    LIKES("Likes"),
-    REPOSTS("Reposts"),
-    ZAPS("Zaps"),
-    REPLIES("Replies")
+enum class ProfileSortMode(val labelResId: Int) {
+    RECENCY(com.wisp.app.R.string.profile_sort_recent),
+    LIKES(com.wisp.app.R.string.profile_sort_likes),
+    REPOSTS(com.wisp.app.R.string.profile_sort_reposts),
+    ZAPS(com.wisp.app.R.string.profile_sort_zaps),
+    REPLIES(com.wisp.app.R.string.profile_sort_replies)
 }
 
 private fun ProfileSortMode.relaySlug() = when (this) {
@@ -85,14 +85,6 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _followedBy = MutableStateFlow<List<String>>(emptyList())
     val followedBy: StateFlow<List<String>> = _followedBy
-
-    private val _pendingFirstFollow = MutableStateFlow(false)
-    val pendingFirstFollow: StateFlow<Boolean> = _pendingFirstFollow
-    private val _firstFollowCheckDone = MutableStateFlow(false)
-    val firstFollowCheckDone: StateFlow<Boolean> = _firstFollowCheckDone
-    private var pendingFollowContactRepo: ContactRepository? = null
-    private var pendingFollowSigner: NostrSigner? = null
-    private var followCheckJob: Job? = null
 
     private val _followProfileVersion = MutableStateFlow(0)
     val followProfileVersion: StateFlow<Int> = _followProfileVersion
@@ -688,51 +680,13 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         signer: NostrSigner? = null
     ) {
         val s = signer ?: keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) } ?: return
-        val isCurrentlyFollowing = contactRepo.isFollowing(targetPubkey)
         val currentList = contactRepo.getFollowList()
-
-        if (!isCurrentlyFollowing && currentList.isEmpty()) {
-            // Show dialog immediately to block the follow, then check relays in background.
-            pendingFollowContactRepo = contactRepo
-            pendingFollowSigner = s
-            _pendingFirstFollow.value = true
-            _firstFollowCheckDone.value = false
-
-            followCheckJob?.cancel()
-            followCheckJob = viewModelScope.launch {
-                val myPubkeyHex = keyRepo.getPubkeyHex() ?: return@launch
-                val subId = "check-fl-${myPubkeyHex.take(8)}"
-                relayPool.sendToReadRelays(ClientMessage.req(subId, Filter(kinds = listOf(3), authors = listOf(myPubkeyHex), limit = 1)))
-                val relayList = withTimeoutOrNull(5_000) {
-                    contactRepo.followList.first { it.isNotEmpty() }
-                }
-                relayPool.closeOnAllRelays(subId)
-                if (!_pendingFirstFollow.value) return@launch // user dismissed
-                if (!relayList.isNullOrEmpty()) {
-                    // Relay returned an existing follow list — add and publish silently.
-                    _pendingFirstFollow.value = false
-                    _firstFollowCheckDone.value = false
-                    pendingFollowContactRepo = null
-                    pendingFollowSigner = null
-                    followCheckJob = null
-                    val newList = Nip02.addFollow(relayList, targetPubkey)
-                    val tags = Nip02.buildFollowTags(newList)
-                    val event = s.signEvent(kind = 3, content = "", tags = tags)
-                    relayPool.sendToWriteRelays(ClientMessage.event(event))
-                    contactRepo.updateFromEvent(event)
-                    _isFollowing.value = contactRepo.isFollowing(targetPubkey)
-                } else {
-                    _firstFollowCheckDone.value = true
-                }
-            }
-            return
-        }
-
-        val newList = if (isCurrentlyFollowing) {
+        val newList = if (contactRepo.isFollowing(targetPubkey)) {
             Nip02.removeFollow(currentList, targetPubkey)
         } else {
             Nip02.addFollow(currentList, targetPubkey)
         }
+
         val tags = Nip02.buildFollowTags(newList)
         viewModelScope.launch {
             val event = s.signEvent(kind = 3, content = "", tags = tags)
@@ -740,35 +694,5 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
             contactRepo.updateFromEvent(event)
             _isFollowing.value = contactRepo.isFollowing(targetPubkey)
         }
-    }
-
-    fun confirmFirstFollow() {
-        val contactRepo = pendingFollowContactRepo ?: return
-        val s = pendingFollowSigner ?: return
-        val pool = relayPoolRef ?: return
-        _pendingFirstFollow.value = false
-        _firstFollowCheckDone.value = false
-        followCheckJob?.cancel()
-        followCheckJob = null
-        pendingFollowContactRepo = null
-        pendingFollowSigner = null
-        val currentList = contactRepo.getFollowList()
-        val newList = Nip02.addFollow(currentList, targetPubkey)
-        val tags = Nip02.buildFollowTags(newList)
-        viewModelScope.launch {
-            val event = s.signEvent(kind = 3, content = "", tags = tags)
-            pool.sendToWriteRelays(ClientMessage.event(event))
-            contactRepo.updateFromEvent(event)
-            _isFollowing.value = contactRepo.isFollowing(targetPubkey)
-        }
-    }
-
-    fun dismissFirstFollow() {
-        _pendingFirstFollow.value = false
-        _firstFollowCheckDone.value = false
-        followCheckJob?.cancel()
-        followCheckJob = null
-        pendingFollowContactRepo = null
-        pendingFollowSigner = null
     }
 }

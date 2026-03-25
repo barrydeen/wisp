@@ -67,12 +67,14 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.wisp.app.R
 import com.wisp.app.repo.ZapPreferences
 import com.wisp.app.repo.ZapPreset
 import kotlin.math.sin
@@ -96,18 +98,18 @@ fun ZapDialog(
     if (!isWalletConnected) {
         AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("Wallet Not Connected") },
-            text = { Text("Connect a Lightning wallet to send zaps.") },
+            title = { Text(stringResource(R.string.zap_wallet_not_connected)) },
+            text = { Text(stringResource(R.string.zap_connect_wallet)) },
             confirmButton = {
                 TextButton(onClick = {
                     onDismiss()
                     onGoToWallet()
                 }) {
-                    Text("Go to Wallet")
+                    Text(stringResource(R.string.btn_go_to_wallet))
                 }
             },
             dismissButton = {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.btn_cancel)) }
             }
         )
         return
@@ -162,7 +164,7 @@ fun ZapDialog(
                     Spacer(Modifier.height(8.dp))
 
                     Text(
-                        text = "Send Zap",
+                        text = stringResource(R.string.zap_send),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -180,7 +182,7 @@ fun ZapDialog(
                             modifier = Modifier.padding(vertical = 4.dp)
                         )
                         Text(
-                            text = "sats",
+                            text = stringResource(R.string.zap_sats),
                             style = MaterialTheme.typography.labelLarge,
                             color = LightningOrange.copy(alpha = 0.7f)
                         )
@@ -195,14 +197,14 @@ fun ZapDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Quick Amounts",
+                            text = stringResource(R.string.zap_quick_amounts),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Row {
                             if (editMode) {
                                 TextButton(onClick = { editMode = false }) {
-                                    Text("Done", color = LightningOrange, fontSize = 12.sp)
+                                    Text(stringResource(R.string.btn_done), color = LightningOrange, fontSize = 12.sp)
                                 }
                             } else {
                                 IconButton(
@@ -210,7 +212,7 @@ fun ZapDialog(
                                     modifier = Modifier.size(32.dp)
                                 ) {
                                     Text(
-                                        "Edit",
+                                        stringResource(R.string.btn_edit),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -268,13 +270,13 @@ fun ZapDialog(
                             ) {
                                 Icon(
                                     Icons.Filled.Add,
-                                    contentDescription = "Add preset",
+                                    contentDescription = stringResource(R.string.btn_add_preset),
                                     modifier = Modifier.size(16.dp),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Spacer(Modifier.width(4.dp))
                                 Text(
-                                    "Save",
+                                    stringResource(R.string.btn_save),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -283,7 +285,7 @@ fun ZapDialog(
 
                         // Custom amount chip
                         ZapChipButton(
-                            label = "Custom",
+                            label = stringResource(R.string.btn_custom),
                             isSelected = isCustom,
                             onClick = { isCustom = true }
                         )
@@ -301,7 +303,7 @@ fun ZapDialog(
                             OutlinedTextField(
                                 value = customAmount,
                                 onValueChange = { customAmount = it.filter { c -> c.isDigit() } },
-                                label = { Text("Amount (sats)") },
+                                label = { Text(stringResource(R.string.placeholder_amount_sats)) },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
@@ -320,7 +322,7 @@ fun ZapDialog(
                     OutlinedTextField(
                         value = message,
                         onValueChange = { message = it },
-                        label = { Text("Message (optional)") },
+                        label = { Text(stringResource(R.string.placeholder_message_optional)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         shape = RoundedCornerShape(16.dp),
@@ -352,7 +354,7 @@ fun ZapDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Anonymous",
+                            text = stringResource(R.string.btn_anonymous),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -377,14 +379,14 @@ fun ZapDialog(
                     ) {
                         Column {
                             Text(
-                                text = "Private",
+                                text = stringResource(R.string.btn_private),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = if (canPrivateZap) MaterialTheme.colorScheme.onSurface
                                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                             )
                             if (!canPrivateZap) {
                                 Text(
-                                    text = "Both parties need DM relays",
+                                    text = stringResource(R.string.zap_both_parties_need_dm_relays),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                 )
@@ -415,7 +417,7 @@ fun ZapDialog(
                             onClick = onDismiss,
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Cancel")
+                            Text(stringResource(R.string.btn_cancel))
                         }
 
                         Button(
@@ -437,7 +439,7 @@ fun ZapDialog(
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                "Zap ${formatDisplayAmount(effectiveAmount)}",
+                                stringResource(R.string.zap_x_sats, effectiveAmount),
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -665,7 +667,7 @@ private fun ZapPresetChip(
             ) {
                 Icon(
                     Icons.Filled.Close,
-                    contentDescription = "Remove",
+                    contentDescription = stringResource(R.string.btn_remove),
                     modifier = Modifier
                         .padding(2.dp)
                         .size(16.dp),
@@ -726,7 +728,7 @@ private fun SaveZapPresetDialog(
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Save Zap Preset")
+                Text(stringResource(R.string.btn_save))
             }
         },
         text = {
@@ -734,7 +736,7 @@ private fun SaveZapPresetDialog(
                 OutlinedTextField(
                     value = amount,
                     onValueChange = { amount = it.filter { c -> c.isDigit() } },
-                    label = { Text("Amount (sats)") },
+                    label = { Text(stringResource(R.string.placeholder_amount_sats)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
@@ -749,7 +751,7 @@ private fun SaveZapPresetDialog(
                 OutlinedTextField(
                     value = presetMessage,
                     onValueChange = { presetMessage = it },
-                    label = { Text("Default message (optional)") },
+                    label = { Text(stringResource(R.string.placeholder_message_optional)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
@@ -770,11 +772,11 @@ private fun SaveZapPresetDialog(
                 enabled = (amount.toLongOrNull() ?: 0L) > 0,
                 colors = ButtonDefaults.buttonColors(containerColor = LightningOrange)
             ) {
-                Text("Save", fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.btn_save), fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.btn_cancel)) }
         }
     )
 }

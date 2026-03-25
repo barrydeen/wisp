@@ -38,6 +38,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import coil3.compose.AsyncImage
 import com.wisp.app.R
 import com.wisp.app.relay.TorStatus
@@ -127,7 +128,7 @@ fun SplashScreen(
         ) {
             Image(
                 painter = painterResource(R.drawable.ic_logo_round),
-                contentDescription = "Wisp logo",
+                contentDescription = stringResource(R.string.cd_wisp_logo),
                 modifier = Modifier.size(96.dp)
             )
             Text(
@@ -145,20 +146,18 @@ fun SplashScreen(
 
             Button(
                 onClick = onSignUp,
-                enabled = torStatus != TorStatus.STARTING,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Create Account")
+                Text(stringResource(R.string.splash_create_account))
             }
 
             Spacer(Modifier.height(8.dp))
 
             OutlinedButton(
                 onClick = onLogIn,
-                enabled = torStatus != TorStatus.STARTING,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Log In")
+                Text(stringResource(R.string.splash_log_in))
             }
 
             Spacer(Modifier.height(16.dp))
@@ -186,7 +185,7 @@ fun SplashScreen(
                     } else {
                         Icon(
                             painter = painterResource(id = R.drawable.ic_tor_onion),
-                            contentDescription = "Toggle Tor",
+                            contentDescription = stringResource(R.string.cd_toggle_tor),
                             modifier = Modifier.size(18.dp),
                             tint = when (torStatus) {
                                 TorStatus.CONNECTED -> MaterialTheme.colorScheme.primary
@@ -199,10 +198,10 @@ fun SplashScreen(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = when (torStatus) {
-                        TorStatus.STARTING -> "Connecting to Tor..."
-                        TorStatus.CONNECTED -> "Connected via Tor"
-                        TorStatus.ERROR -> "Tor error"
-                        else -> "Connect via Tor"
+                        TorStatus.STARTING -> stringResource(R.string.splash_connecting_tor)
+                        TorStatus.CONNECTED -> stringResource(R.string.splash_connected_tor)
+                        TorStatus.ERROR -> stringResource(R.string.splash_tor_error)
+                        else -> stringResource(R.string.splash_connect_tor)
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = when (torStatus) {
@@ -232,7 +231,7 @@ private fun OnlineCard(metrics: LiveMetrics) {
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "${formatCount(metrics.online)} people online now",
+                text = stringResource(R.string.splash_people_online, metrics.online),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )

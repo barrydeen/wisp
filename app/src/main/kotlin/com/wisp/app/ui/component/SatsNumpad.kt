@@ -20,7 +20,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.wisp.app.R
 
 @Composable
 fun SatsNumpad(
@@ -43,7 +45,7 @@ fun SatsNumpad(
             color = MaterialTheme.colorScheme.onSurface
         )
         Text(
-            text = "sats",
+            text = stringResource(R.string.zap_sats),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -79,7 +81,7 @@ fun SatsNumpad(
                             ) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.Backspace,
-                                    contentDescription = "Backspace",
+                                    contentDescription = stringResource(R.string.cd_backspace),
                                     modifier = Modifier.size(24.dp)
                                 )
                             }
@@ -97,7 +99,7 @@ fun SatsNumpad(
                             ) {
                                 Icon(
                                     Icons.Default.Check,
-                                    contentDescription = "Confirm",
+                                    contentDescription = stringResource(R.string.cd_confirm),
                                     modifier = Modifier.size(24.dp)
                                 )
                             }

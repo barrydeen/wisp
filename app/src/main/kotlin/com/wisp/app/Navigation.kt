@@ -1820,8 +1820,10 @@ fun WispNavHost(
 
         composable(Routes.INTERFACE_SETTINGS) {
             val context = LocalContext.current
+            val app = context.applicationContext as android.app.Application
             val interfacePrefs = remember { com.wisp.app.repo.InterfacePreferences(context) }
             InterfaceScreen(
+                application = app,
                 interfacePrefs = interfacePrefs,
                 onBack = { navController.popBackStack() },
                 onChanged = onInterfaceChanged

@@ -42,6 +42,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.res.stringResource
+import com.wisp.app.R
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.viewmodel.BlossomServersViewModel
 import kotlin.math.roundToInt
@@ -67,7 +69,7 @@ fun BlossomServersScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Media Servers") },
+                title = { Text(stringResource(R.string.blossom_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
@@ -118,14 +120,14 @@ fun BlossomServersScreen(
                 onClick = { viewModel.publishServerList(relayPool, signer = signer) },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (published) "Broadcast Sent" else "Broadcast Server List")
+                Text(if (published) stringResource(R.string.blossom_broadcast_sent) else stringResource(R.string.blossom_broadcast))
             }
 
             Spacer(Modifier.height(8.dp))
 
             if (servers.size > 1) {
                 Text(
-                    text = "Drag to reorder priority",
+                    text = stringResource(R.string.blossom_drag_reorder),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -143,7 +144,7 @@ private fun WelcomeStep(onContinue: () -> Unit) {
         ) {
             AsyncImage(
                 model = null,
-                contentDescription = "Wisp logo",
+                contentDescription = stringResource(R.string.onboarding_wisp_logo),
                 placeholder = painterResource(R.drawable.ic_profile_placeholder),
                 fallback = painterResource(R.drawable.ic_profile_placeholder),
                 error = painterResource(R.drawable.ic_profile_placeholder),
@@ -153,7 +154,7 @@ private fun WelcomeStep(onContinue: () -> Unit) {
             Spacer(Modifier.height(24.dp))
 
             Text(
-                text = "Welcome back",
+                text = stringResource(R.string.onboarding_welcome_back),
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -163,7 +164,7 @@ private fun WelcomeStep(onContinue: () -> Unit) {
             Spacer(Modifier.height(8.dp))
 
             Text(
-                text = "Let's get you set up",
+                text = stringResource(R.string.onboarding_lets_get_set_up),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -186,7 +187,7 @@ private fun DecentralizationStep(onContinue: () -> Unit) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                text = "Your network, your relays",
+                text = stringResource(R.string.onboarding_your_network_relays),
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -196,9 +197,7 @@ private fun DecentralizationStep(onContinue: () -> Unit) {
             Spacer(Modifier.height(16.dp))
 
             Text(
-                text = "Wisp discovers which relays your friends actually use, " +
-                    "then connects directly to those relays. This means faster delivery " +
-                    "and fewer missed posts — no central server needed.",
+                text = stringResource(R.string.onboarding_network_description),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -208,7 +207,7 @@ private fun DecentralizationStep(onContinue: () -> Unit) {
             Spacer(Modifier.height(40.dp))
 
             Button(onClick = onContinue) {
-                Text("Continue")
+                Text(stringResource(R.string.btn_continue))
             }
         }
     }
@@ -231,7 +230,7 @@ private fun LongPressDemoStep(onContinue: () -> Unit) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                text = "Quick follow",
+                text = stringResource(R.string.onboarding_quick_follow),
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -241,7 +240,7 @@ private fun LongPressDemoStep(onContinue: () -> Unit) {
             Spacer(Modifier.height(8.dp))
 
             Text(
-                text = "Long-press any profile picture to follow or unfollow",
+                text = stringResource(R.string.onboarding_long_press_hint),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -264,7 +263,7 @@ private fun LongPressDemoStep(onContinue: () -> Unit) {
             Spacer(Modifier.height(12.dp))
 
             Text(
-                text = "utxo",
+                text = stringResource(R.string.onboarding_utxo),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -273,7 +272,7 @@ private fun LongPressDemoStep(onContinue: () -> Unit) {
 
             AnimatedVisibility(visible = !hasLongPressed) {
                 Text(
-                    text = "Try it — long-press the picture above",
+                    text = stringResource(R.string.onboarding_try_it),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -283,11 +282,11 @@ private fun LongPressDemoStep(onContinue: () -> Unit) {
 
             if (hasLongPressed) {
                 Button(onClick = onContinue) {
-                    Text("Continue")
+                    Text(stringResource(R.string.btn_continue))
                 }
             } else {
                 OutlinedButton(onClick = onContinue) {
-                    Text("Continue")
+                    Text(stringResource(R.string.btn_continue))
                 }
             }
         }
@@ -308,7 +307,7 @@ private fun NwcInfoStep(onContinue: () -> Unit) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                text = "Zaps",
+                text = stringResource(R.string.title_zaps),
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -318,9 +317,7 @@ private fun NwcInfoStep(onContinue: () -> Unit) {
             Spacer(Modifier.height(16.dp))
 
             Text(
-                text = "Wisp supports zaps with an embedded Lightning wallet " +
-                    "or Nostr Wallet Connect. You can set this up anytime " +
-                    "from the Wallet screen.",
+                text = stringResource(R.string.onboarding_lightning_wallet_info),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -330,7 +327,7 @@ private fun NwcInfoStep(onContinue: () -> Unit) {
             Spacer(Modifier.height(40.dp))
 
             Button(onClick = onContinue) {
-                Text("Continue")
+                Text(stringResource(R.string.btn_continue))
             }
         }
     }
@@ -344,18 +341,16 @@ private fun WaitingStep(
     var minTimeElapsed by remember { mutableStateOf(false) }
     var hasNavigated by remember { mutableStateOf(false) }
 
-    val messages = remember {
-        listOf(
-            "Mapping your social graph...",
-            "Finding your friends' relays...",
-            "Connecting to your network...",
-            "Locating gm notes...",
-            "Cheering up fiatjaf...",
-            "Have fun playing with your bitcoins...",
-            "This is a one time setup, lower your time preference...",
-            "Almost there..."
-        )
-    }
+    val messages = listOf(
+        stringResource(R.string.onboarding_mapping_graph),
+        stringResource(R.string.onboarding_finding_relays),
+        stringResource(R.string.onboarding_connecting_network),
+        stringResource(R.string.onboarding_locating_gm),
+        stringResource(R.string.onboarding_cheering_fiatjaf),
+        stringResource(R.string.onboarding_fun_bitcoins),
+        stringResource(R.string.onboarding_one_time_setup),
+        stringResource(R.string.onboarding_almost_there)
+    )
     var messageIndex by remember { mutableIntStateOf(0) }
 
     // Minimum display time
@@ -403,7 +398,7 @@ private fun WaitingStep(
         ) {
             if (backgroundReady) {
                 Text(
-                    text = "You're all set!",
+                    text = stringResource(R.string.onboarding_youre_all_set),
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -418,7 +413,7 @@ private fun WaitingStep(
                         onReady()
                     }
                 }) {
-                    Text("Let's go")
+                    Text(stringResource(R.string.btn_lets_go))
                 }
             } else {
                 CircularProgressIndicator(
@@ -430,7 +425,7 @@ private fun WaitingStep(
                 Spacer(Modifier.height(24.dp))
 
                 Text(
-                    text = "Setting things up",
+                    text = stringResource(R.string.onboarding_setting_things_up),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onBackground,
