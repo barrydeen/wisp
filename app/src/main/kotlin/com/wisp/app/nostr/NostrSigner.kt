@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -68,26 +70,49 @@ class RemoteSigner(
 
     private val npub: String = Nip19.npubEncode(pubkeyHex.hexToByteArray())
 
+    companion object {
+        /**
+         * Serializes intent-based signing requests across all RemoteSigner instances so
+         * only one Amber prompt is shown at a time. The mutex lives here (not in
+         * SignerIntentBridge) so that each queued request can retry the ContentResolver
+         * inside the lock — permissions granted during the previous intent may allow the
+         * next request to succeed silently without showing another prompt.
+         */
+        val intentMutex = Mutex()
+    }
+
     override suspend fun signEvent(kind: Int, content: String, tags: List<List<String>>, createdAt: Long): NostrEvent {
         val unsigned = NostrEvent.createUnsigned(pubkeyHex, kind, content, tags, createdAt)
         val eventJson = unsigned.toJson()
 
-        // Try silent ContentResolver first
+        // Try silent ContentResolver first (no lock needed — concurrent CR calls are fine).
         val crResult = tryContentResolverSign(eventJson, unsigned)
         if (crResult != null) return crResult
 
-        // Fall back to intent-based signing
-        return signEventViaIntent(eventJson, unsigned)
+        // Serialize intent-based signing so only one Amber prompt is shown at a time.
+        // The lock lives here (not in SignerIntentBridge) so that nip44 operations can
+        // retry CR inside the lock. For signEvent we go straight to the intent — a second
+        // CR call here can start the signer process in the background and race with the
+        // intent launch on fresh installs where no permissions have been granted yet.
+        return intentMutex.withLock {
+            signEventViaIntent(eventJson, unsigned)
+        }
     }
 
     override suspend fun nip44Encrypt(plaintext: String, peerPubkeyHex: String): String {
         return tryContentResolver("NIP44_ENCRYPT", plaintext, peerPubkeyHex)
-            ?: nip44ViaIntent("nip44_encrypt", plaintext, peerPubkeyHex)
+            ?: intentMutex.withLock {
+                tryContentResolver("NIP44_ENCRYPT", plaintext, peerPubkeyHex)
+                    ?: nip44ViaIntent("nip44_encrypt", plaintext, peerPubkeyHex)
+            }
     }
 
     override suspend fun nip44Decrypt(ciphertext: String, peerPubkeyHex: String): String {
         return tryContentResolver("NIP44_DECRYPT", ciphertext, peerPubkeyHex)
-            ?: nip44ViaIntent("nip44_decrypt", ciphertext, peerPubkeyHex)
+            ?: intentMutex.withLock {
+                tryContentResolver("NIP44_DECRYPT", ciphertext, peerPubkeyHex)
+                    ?: nip44ViaIntent("nip44_decrypt", ciphertext, peerPubkeyHex)
+            }
     }
 
     // --- ContentResolver (silent mode) ---

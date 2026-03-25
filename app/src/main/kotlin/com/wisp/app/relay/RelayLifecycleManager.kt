@@ -39,6 +39,13 @@ class RelayLifecycleManager(
         private const val DEBOUNCE_MS = 5_000L
         /** How long after a resume to suppress network-change-triggered reconnects. */
         private const val RESUME_SUPPRESSION_MS = 10_000L
+        /**
+         * Minimum pause duration before triggering any relay reconnect on resume.
+         * Brief pauses (e.g. switching to Amber/signer app and back) should not cause
+         * a full disconnect/reconnect cycle — that would trigger new AUTH challenges
+         * from relays like auth.nostr1, creating an auth loop.
+         */
+        private const val MIN_RECONNECT_PAUSE_MS = 5_000L
     }
 
     /**
@@ -103,12 +110,21 @@ class RelayLifecycleManager(
     /**
      * App returned to foreground. Reconnects relays based on pause duration.
      * Long pause (≥30s): force reconnect all + full re-subscribe.
-     * Short pause (<30s): lightweight reconnect + resume existing subscriptions.
+     * Short pause (5–30s): lightweight reconnect + resume existing subscriptions.
+     * Very short pause (<5s): skip reconnect entirely — relays are still alive and
+     *   reconnecting would tear them down and trigger new AUTH challenges (auth loop).
      */
     fun onAppResume(pausedMs: Long) {
         if (!started) return
+        Log.d("RLC", "[Lifecycle] onAppResume — paused ${pausedMs/1000}s, connectedCount=${relayPool.connectedCount.value}")
+        if (pausedMs < MIN_RECONNECT_PAUSE_MS) {
+            // Very brief pause (e.g. switching to signer app) — relays are still connected.
+            // Just restore appIsActive without disconnecting anything.
+            Log.d("RLC", "[Lifecycle] very short pause — skipping reconnect, restoring appIsActive")
+            relayPool.appIsActive = true
+            return
+        }
         val force = pausedMs >= FORCE_THRESHOLD_MS
-        Log.d("RLC", "[Lifecycle] onAppResume — paused ${pausedMs/1000}s, force=$force, connectedCount=${relayPool.connectedCount.value}")
         // Set suppression window to prevent network-change reconnects from
         // firing shortly after this resume and causing a double reconnect.
         resumeReconnectUntilMs = System.currentTimeMillis() + RESUME_SUPPRESSION_MS
