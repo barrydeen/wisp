@@ -588,6 +588,9 @@
     <string name="splash_connected_tor">Подключено через Tor</string>
     <string name="splash_tor_error">Ошибка Tor</string>
     <string name="splash_connect_tor">Подключиться через Tor</string>
+    <string name="online_now">Сейчас онлайн</string>
+    <string name="online_in_network">%d онлайн в вашей сети</string>
+    <string name="online_all_nostr">%d онлайн во всём Nostr</string>
     <string name="splash_people_online">%d человек онлайн</string>
     <string name="cd_wisp_logo">Логотип Wisp</string>
 </resources>

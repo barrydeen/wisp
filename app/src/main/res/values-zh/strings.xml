@@ -627,6 +627,9 @@
     <string name="splash_connected_tor">已通过Tor连接</string>
     <string name="splash_tor_error">Tor错误</string>
     <string name="splash_connect_tor">通过Tor连接</string>
+    <string name="online_now">当前在线</string>
+    <string name="online_in_network">你的网络中有%d人在线</string>
+    <string name="online_all_nostr">整个Nostr有%d人在线</string>
     <string name="splash_people_online">%d人在线</string>
     <string name="cd_wisp_logo">Wisp标志</string>
 </resources>

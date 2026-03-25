@@ -627,6 +627,9 @@
     <string name="splash_connected_tor">Verbonden via Tor</string>
     <string name="splash_tor_error">Tor-fout</string>
     <string name="splash_connect_tor">Verbinden via Tor</string>
+    <string name="online_now">Nu online</string>
+    <string name="online_in_network">%d online in je netwerk</string>
+    <string name="online_all_nostr">%d online overal op Nostr</string>
     <string name="splash_people_online">%d mensen online</string>
     <string name="cd_wisp_logo">Wisp-logo</string>
 </resources>

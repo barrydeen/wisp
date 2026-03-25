@@ -627,6 +627,9 @@
     <string name="splash_connected_tor">Connecté via Tor</string>
     <string name="splash_tor_error">Erreur Tor</string>
     <string name="splash_connect_tor">Se connecter via Tor</string>
+    <string name="online_now">En ligne maintenant</string>
+    <string name="online_in_network">%d en ligne dans votre réseau</string>
+    <string name="online_all_nostr">%d en ligne sur tout Nostr</string>
     <string name="splash_people_online">%d personnes en ligne</string>
     <string name="cd_wisp_logo">Logo Wisp</string>
 </resources>
