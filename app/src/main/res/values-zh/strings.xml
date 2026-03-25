@@ -618,4 +618,13 @@
     <string name="share_logs">分享日志</string>
     <string name="share_diagnostic_logs">分享诊断日志</string>
     <string name="clear_logs">清除日志</string>
+    <!-- Splash Screen -->
+    <string name="splash_create_account">创建账户</string>
+    <string name="splash_log_in">登录</string>
+    <string name="splash_connecting_tor">正在连接Tor…</string>
+    <string name="splash_connected_tor">已通过Tor连接</string>
+    <string name="splash_tor_error">Tor错误</string>
+    <string name="splash_connect_tor">通过Tor连接</string>
+    <string name="splash_people_online">%d人在线</string>
+    <string name="cd_wisp_logo">Wisp标志</string>
 </resources>

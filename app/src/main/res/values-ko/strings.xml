@@ -618,4 +618,13 @@
     <string name="share_logs">로그 공유</string>
     <string name="share_diagnostic_logs">진단 로그 공유</string>
     <string name="clear_logs">로그 지우기</string>
+    <!-- Splash Screen -->
+    <string name="splash_create_account">계정 만들기</string>
+    <string name="splash_log_in">로그인</string>
+    <string name="splash_connecting_tor">Tor 연결 중…</string>
+    <string name="splash_connected_tor">Tor로 연결됨</string>
+    <string name="splash_tor_error">Tor 오류</string>
+    <string name="splash_connect_tor">Tor로 연결</string>
+    <string name="splash_people_online">%d명 온라인</string>
+    <string name="cd_wisp_logo">Wisp 로고</string>
 </resources>

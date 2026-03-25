@@ -618,4 +618,13 @@
     <string name="share_logs">Partager les logs</string>
     <string name="share_diagnostic_logs">Partager les logs de diagnostic</string>
     <string name="clear_logs">Effacer les logs</string>
+    <!-- Splash Screen -->
+    <string name="splash_create_account">Créer un compte</string>
+    <string name="splash_log_in">Se connecter</string>
+    <string name="splash_connecting_tor">Connexion à Tor…</string>
+    <string name="splash_connected_tor">Connecté via Tor</string>
+    <string name="splash_tor_error">Erreur Tor</string>
+    <string name="splash_connect_tor">Se connecter via Tor</string>
+    <string name="splash_people_online">%d personnes en ligne</string>
+    <string name="cd_wisp_logo">Logo Wisp</string>
 </resources>

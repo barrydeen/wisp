@@ -579,4 +579,13 @@
     <string name="share_logs">Поделиться логами</string>
     <string name="share_diagnostic_logs">Поделиться диагностическими логами</string>
     <string name="clear_logs">Очистить логи</string>
+    <!-- Splash Screen -->
+    <string name="splash_create_account">Создать аккаунт</string>
+    <string name="splash_log_in">Войти</string>
+    <string name="splash_connecting_tor">Подключение к Tor…</string>
+    <string name="splash_connected_tor">Подключено через Tor</string>
+    <string name="splash_tor_error">Ошибка Tor</string>
+    <string name="splash_connect_tor">Подключиться через Tor</string>
+    <string name="splash_people_online">%d человек онлайн</string>
+    <string name="cd_wisp_logo">Логотип Wisp</string>
 </resources>

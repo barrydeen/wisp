@@ -618,4 +618,13 @@
     <string name="share_logs">ログを共有</string>
     <string name="share_diagnostic_logs">診断ログを共有</string>
     <string name="clear_logs">ログをクリア</string>
+    <!-- Splash Screen -->
+    <string name="splash_create_account">アカウント作成</string>
+    <string name="splash_log_in">ログイン</string>
+    <string name="splash_connecting_tor">Torに接続中…</string>
+    <string name="splash_connected_tor">Tor経由で接続済み</string>
+    <string name="splash_tor_error">Torエラー</string>
+    <string name="splash_connect_tor">Tor経由で接続</string>
+    <string name="splash_people_online">%d人がオンライン</string>
+    <string name="cd_wisp_logo">Wispロゴ</string>
 </resources>
