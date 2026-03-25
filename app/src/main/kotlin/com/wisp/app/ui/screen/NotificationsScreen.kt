@@ -56,6 +56,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -77,6 +78,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import coil3.compose.AsyncImage
 import com.wisp.app.nostr.FlatNotificationItem
 import com.wisp.app.nostr.Nip10
@@ -110,6 +112,7 @@ import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.theme.WispThemeColors
 import com.wisp.app.viewmodel.NotificationFilter
 import com.wisp.app.viewmodel.NotificationsViewModel
+import com.wisp.app.R
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -226,10 +229,10 @@ fun NotificationsScreen(
     if (zapErrorMessage != null) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { zapErrorMessage = null },
-            title = { Text("Zap Failed") },
+            title = { Text(stringResource(R.string.zap_failed)) },
             text = { Text(zapErrorMessage ?: "") },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { zapErrorMessage = null }) { Text("OK") }
+                TextButton(onClick = { zapErrorMessage = null }) { Text(stringResource(R.string.btn_ok)) }
             }
         )
     }
@@ -271,7 +274,7 @@ fun NotificationsScreen(
                                     Spacer(Modifier.width(4.dp))
                                     Icon(
                                         Icons.Default.ArrowDropDown,
-                                        contentDescription = "Filter notifications",
+                                        contentDescription = stringResource(R.string.cd_filter_notifications),
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
@@ -298,14 +301,14 @@ fun NotificationsScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = onToggleNotifSound) {
                         Icon(
                             if (notifSoundEnabled) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
-                            contentDescription = if (notifSoundEnabled) "Mute notifications" else "Unmute notifications"
+                            contentDescription = if (notifSoundEnabled) stringResource(R.string.cd_mute_notifications) else stringResource(R.string.cd_unmute_notifications)
                         )
                     }
                 },
@@ -331,7 +334,7 @@ fun NotificationsScreen(
             ) {
                 Spacer(Modifier.height(64.dp))
                 Text(
-                    "No notifications yet",
+                    stringResource(R.string.error_no_notifications),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -704,7 +707,7 @@ private fun DmExpansion(
             onSend = { content -> onSendDm(peerPubkey, content) },
             onUploadMedia = onUploadMedia,
             onFocused = onFocused,
-            placeholder = "Message...",
+            placeholder = stringResource(R.string.placeholder_message),
             modifier = Modifier.padding(start = 48.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)
         )
 
@@ -799,6 +802,7 @@ private fun ReplyExpansion(
                 onSend = { content -> onSendReply(replyEvent, content) },
                 onUploadMedia = onUploadMedia,
                 onFocused = onReplyFocused,
+                placeholder = stringResource(R.string.reply_placeholder),
                 modifier = Modifier.padding(start = 48.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)
             )
         }
@@ -1187,7 +1191,7 @@ private fun InlineReplyComposer(
         ) {
             Icon(
                 Icons.AutoMirrored.Filled.Send,
-                contentDescription = "Send reply",
+                contentDescription = stringResource(R.string.cd_send_reply),
                 modifier = Modifier.size(14.dp),
                 tint = MaterialTheme.colorScheme.onPrimary
             )
@@ -1202,7 +1206,7 @@ private fun NotificationTypeIcon(item: FlatNotificationItem, showSats: Boolean =
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
                 Icons.Outlined.CurrencyBitcoin,
-                contentDescription = "Zap",
+                contentDescription = stringResource(R.string.cd_send_zap),
                 modifier = Modifier.size(iconSize),
                 tint = WispThemeColors.zapColor
             )
@@ -1237,7 +1241,7 @@ private fun NotificationTypeIcon(item: FlatNotificationItem, showSats: Boolean =
                     } else {
                         Icon(
                             Icons.Outlined.FavoriteBorder,
-                            contentDescription = "Reaction",
+                            contentDescription = stringResource(R.string.cd_reaction),
                             modifier = Modifier.size(iconSize),
                             tint = MaterialTheme.colorScheme.error
                         )
@@ -1256,7 +1260,7 @@ private fun NotificationTypeIcon(item: FlatNotificationItem, showSats: Boolean =
         NotificationType.REPOST -> {
             Icon(
                 Icons.Outlined.Repeat,
-                contentDescription = "Repost",
+                contentDescription = stringResource(R.string.cd_repost),
                 modifier = Modifier.size(iconSize),
                 tint = WispThemeColors.repostColor
             )
@@ -1264,7 +1268,7 @@ private fun NotificationTypeIcon(item: FlatNotificationItem, showSats: Boolean =
         NotificationType.REPLY -> {
             Icon(
                 Icons.Outlined.ChatBubbleOutline,
-                contentDescription = "Reply",
+                contentDescription = stringResource(R.string.cd_reply),
                 modifier = Modifier.size(iconSize),
                 tint = MaterialTheme.colorScheme.primary
             )
@@ -1279,7 +1283,7 @@ private fun NotificationTypeIcon(item: FlatNotificationItem, showSats: Boolean =
         NotificationType.MENTION -> {
             Icon(
                 Icons.Outlined.AlternateEmail,
-                contentDescription = "Mention",
+                contentDescription = stringResource(R.string.cd_mention),
                 modifier = Modifier.size(iconSize),
                 tint = MaterialTheme.colorScheme.primary
             )
@@ -1314,7 +1318,7 @@ private fun NotificationTypeIcon(item: FlatNotificationItem, showSats: Boolean =
         NotificationType.VOTE -> {
             Icon(
                 Icons.Outlined.BarChart,
-                contentDescription = "Vote",
+                contentDescription = stringResource(R.string.cd_vote),
                 modifier = Modifier.size(iconSize),
                 tint = MaterialTheme.colorScheme.primary
             )

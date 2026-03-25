@@ -128,7 +128,7 @@ fun SplashScreen(
         ) {
             Image(
                 painter = painterResource(R.drawable.ic_logo_round),
-                contentDescription = "Wisp logo",
+                contentDescription = stringResource(R.string.cd_wisp_logo),
                 modifier = Modifier.size(96.dp)
             )
             Text(
@@ -185,7 +185,7 @@ fun SplashScreen(
                     } else {
                         Icon(
                             painter = painterResource(id = R.drawable.ic_tor_onion),
-                            contentDescription = "Toggle Tor",
+                            contentDescription = stringResource(R.string.cd_toggle_tor),
                             modifier = Modifier.size(18.dp),
                             tint = when (torStatus) {
                                 TorStatus.CONNECTED -> MaterialTheme.colorScheme.primary

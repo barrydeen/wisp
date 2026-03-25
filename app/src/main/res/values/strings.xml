@@ -50,6 +50,7 @@
     <string name="splash_tor_error">Tor error</string>
     <string name="splash_connect_tor">Connect via Tor</string>
     <string name="splash_people_online">%d people online now</string>
+    <string name="cd_wisp_logo">Wisp logo</string>
 
     <!-- Auth Screen -->
     <string name="auth_sign_up">Sign Up</string>
@@ -157,6 +158,7 @@
     <string name="placeholder_search_relay">Search relay</string>
     <string name="placeholder_add_relay">wss://relay.example.com</string>
     <string name="placeholder_message">Message…</string>
+    <string name="reply_placeholder">Reply…</string>
     <string name="placeholder_relay_example">relay.example.com</string>
     <string name="placeholder_option_x">Option %d</string>
     <string name="placeholder_add_option">+ Add option</string>
@@ -256,6 +258,11 @@
     <string name="cd_react">React</string>
     <string name="cd_repost">Repost</string>
     <string name="cd_zaps">Zaps</string>
+    <string name="cd_reaction">Reaction</string>
+    <string name="cd_mention">Mention</string>
+    <string name="cd_vote">Vote</string>
+    <string name="cd_send_reply">Send reply</string>
+    <string name="cd_send_zap">Send zap</string>
     <string name="cd_add_to_list">Add to List</string>
     <string name="cd_profile_picture">Profile picture</string>
     <string name="cd_following">Following</string>
