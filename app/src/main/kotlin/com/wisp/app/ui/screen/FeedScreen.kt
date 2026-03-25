@@ -75,6 +75,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.FollowSet
+import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.R
 import com.wisp.app.ui.component.NoteActions
@@ -273,6 +274,8 @@ fun FeedScreen(
     val newNotesButtonHidden by viewModel.newNotesButtonHidden.collectAsState()
     val initLoadingState by viewModel.initLoadingState.collectAsState()
     val relayFeedStatus by viewModel.relayFeedStatus.collectAsState()
+    val pendingFirstFollow by viewModel.pendingFirstFollow.collectAsState()
+    val firstFollowCheckDone by viewModel.firstFollowCheckDone.collectAsState()
     val zapInProgress by viewModel.zapInProgress.collectAsState()
     val setListedIds by viewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
     val bookmarkedIds by viewModel.bookmarkRepo.bookmarkedIds.collectAsState()
@@ -506,6 +509,37 @@ fun FeedScreen(
             text = { Text(zapErrorMessage ?: "") },
             confirmButton = {
                 TextButton(onClick = { zapErrorMessage = null }) { Text(stringResource(R.string.btn_ok)) }
+            }
+        )
+    }
+
+    if (pendingFirstFollow != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissFirstFollow() },
+            title = { Text(if (firstFollowCheckDone) "No follow list found" else "Checking follow list") },
+            text = {
+                if (!firstFollowCheckDone) {
+                    androidx.compose.foundation.layout.Row(
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            modifier = androidx.compose.ui.Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = androidx.compose.ui.Modifier.width(12.dp))
+                        Text("Checking relays for an existing follow list...")
+                    }
+                } else {
+                    Text("No existing follow list was found on your relays. If you follow this person, your follow list will start at 1. If you believe this is wrong, rebroadcast your follow list from another client first, then try again.")
+                }
+            },
+            confirmButton = {
+                if (firstFollowCheckDone) {
+                    TextButton(onClick = { viewModel.confirmFirstFollow() }) { Text("Follow anyway") }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissFirstFollow() }) { Text("Cancel") }
             }
         )
     }
@@ -1217,6 +1251,10 @@ private fun FeedItem(
         onRelayClick = onRelayClick,
         onFollowAuthor = { viewModel.toggleFollow(event.pubkey) },
         onBlockAuthor = { viewModel.blockUser(event.pubkey) },
+        onMuteThread = {
+            val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
+            viewModel.muteThread(rootId)
+        },
         isFollowingAuthor = isFollowing,
         isOwnEvent = event.pubkey == userPubkey,
         nip05Repo = viewModel.nip05Repo,
