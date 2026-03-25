@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -38,8 +39,11 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.AddReaction
 import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.Repeat
+import com.wisp.app.ui.component.EmojiReactionPopup
+import com.wisp.app.ui.component.LightningAnimation
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -146,6 +150,9 @@ fun NotificationsScreen(
     onPollVote: (String, List<String>) -> Unit = { _, _ -> },
     onUploadMedia: (List<Uri>, onUrl: (String) -> Unit) -> Unit = { _, _ -> },
     onSendDm: (peerPubkey: String, content: String) -> Unit = { _, _ -> },
+    onDmReact: (peerPubkey: String, rumorId: String, senderPubkey: String, emoji: String) -> Unit = { _, _, _, _ -> },
+    onDmZap: (peerPubkey: String, rumorId: String, senderPubkey: String) -> Unit = { _, _, _ -> },
+    dmZapSats: (senderPubkey: String) -> Long = { 0L },
     onDmConversationClick: (conversationKey: String) -> Unit = {},
 ) {
     val notifications by viewModel.filteredFlatNotifications.collectAsState()
@@ -373,6 +380,9 @@ fun NotificationsScreen(
                             val existing = inlineDmReplies[peerPubkey] ?: emptyList()
                             inlineDmReplies = inlineDmReplies + (peerPubkey to (existing + content))
                         },
+                        onDmReact = onDmReact,
+                        onDmZap = onDmZap,
+                        dmZapSats = dmZapSats,
                         onUploadMedia = onUploadMedia,
                         onReplyFocused = {
                             coroutineScope.launch {
@@ -416,6 +426,9 @@ private fun ZenNotificationRow(
     onProfileClick: (String) -> Unit,
     onSendReply: (NostrEvent, String) -> Unit = { _, _ -> },
     onSendDm: (String, String) -> Unit = { _, _ -> },
+    onDmReact: (String, String, String, String) -> Unit = { _, _, _, _ -> },
+    onDmZap: (String, String, String) -> Unit = { _, _, _ -> },
+    dmZapSats: (String) -> Long = { 0L },
     onUploadMedia: (List<Uri>, onUrl: (String) -> Unit) -> Unit = { _, _ -> },
     onReplyFocused: () -> Unit = {}
 ) {
@@ -501,11 +514,18 @@ private fun ZenNotificationRow(
                     item = item,
                     resolveProfile = resolveProfile,
                     profileVersion = profileVersion,
+                    eventRepo = eventRepo,
                     inlineDmReplies = inlineDmReplies,
                     userPubkey = userPubkey,
                     onSendDm = onSendDm,
+                    onUploadMedia = onUploadMedia,
                     onProfileClick = onProfileClick,
-                    onFocused = onReplyFocused
+                    onFocused = onReplyFocused,
+                    onDmReact = onDmReact,
+                    onDmZap = onDmZap,
+                    isDmZapInProgress = postCardParams?.isZapInProgress?.invoke(item.actorPubkey) ?: false,
+                    isDmZapAnimating = postCardParams?.isZapAnimating?.invoke(item.actorPubkey) ?: false,
+                    dmZapSats = dmZapSats(item.actorPubkey)
                 )
             } else if (item.type == NotificationType.REPLY) {
                 ReplyExpansion(
@@ -563,20 +583,30 @@ private fun DmExpansion(
     item: FlatNotificationItem,
     resolveProfile: (String) -> ProfileData?,
     profileVersion: Int,
+    eventRepo: EventRepository? = null,
     inlineDmReplies: List<String> = emptyList(),
     userPubkey: String? = null,
     onSendDm: (String, String) -> Unit = { _, _ -> },
+    onUploadMedia: (List<Uri>, onUrl: (String) -> Unit) -> Unit = { _, _ -> },
     onProfileClick: (String) -> Unit = {},
-    onFocused: () -> Unit = {}
+    onFocused: () -> Unit = {},
+    onDmReact: (peerPubkey: String, rumorId: String, senderPubkey: String, emoji: String) -> Unit = { _, _, _, _ -> },
+    onDmZap: (peerPubkey: String, rumorId: String, senderPubkey: String) -> Unit = { _, _, _ -> },
+    isDmZapInProgress: Boolean = false,
+    isDmZapAnimating: Boolean = false,
+    dmZapSats: Long = 0L
 ) {
     val peerPubkey = item.dmPeerPubkey ?: return
+    val rumorId = item.dmRumorId ?: ""
+    var showEmojiPicker by remember { mutableStateOf(false) }
+    var sentReactionEmoji by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 8.dp)
     ) {
-        // Their message
+        // Their message bubble — uses RichContent to render image/video URLs
         Surface(
             shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
@@ -584,12 +614,75 @@ private fun DmExpansion(
                 .fillMaxWidth()
                 .padding(start = 68.dp, end = 16.dp)
         ) {
-            Text(
-                text = item.dmContent ?: "",
+            com.wisp.app.ui.component.RichContent(
+                content = item.dmContent ?: "",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                eventRepo = eventRepo,
+                onProfileClick = onProfileClick,
+                onNoteClick = {},
                 modifier = Modifier.padding(12.dp)
             )
+        }
+
+        // DM action bar — react and zap
+        Row(
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(end = 16.dp, top = 2.dp)
+        ) {
+            IconButton(
+                onClick = { showEmojiPicker = true },
+                modifier = Modifier.size(36.dp)
+            ) {
+                if (sentReactionEmoji != null) {
+                    Text(text = sentReactionEmoji!!, fontSize = 16.sp)
+                } else {
+                    Icon(
+                        Icons.Outlined.AddReaction,
+                        contentDescription = "React",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            Box {
+                IconButton(
+                    onClick = { if (!isDmZapInProgress) onDmZap(peerPubkey, rumorId, item.actorPubkey) },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    if (isDmZapInProgress) {
+                        LightningAnimation(modifier = Modifier.size(18.dp))
+                    } else {
+                        Icon(
+                            Icons.Outlined.CurrencyBitcoin,
+                            contentDescription = "Zap",
+                            tint = if (dmZapSats > 0) WispThemeColors.zapColor
+                                   else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .wrapContentSize(unbounded = true, align = Alignment.Center)
+                ) {
+                    com.wisp.app.ui.component.ZapBurstEffect(
+                        isActive = isDmZapAnimating,
+                        modifier = Modifier.size(100.dp)
+                    )
+                }
+            }
+            if (dmZapSats > 0 && !isDmZapInProgress) {
+                Text(
+                    text = formatSatsCompact(dmZapSats),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = WispThemeColors.zapColor
+                )
+            }
         }
 
         // User's inline DM replies
@@ -606,13 +699,26 @@ private fun DmExpansion(
             )
         }
 
-        // Inline DM composer
+        // Inline DM composer — with media upload and GIF keyboard support
         InlineReplyComposer(
             onSend = { content -> onSendDm(peerPubkey, content) },
+            onUploadMedia = onUploadMedia,
             onFocused = onFocused,
             placeholder = "Message...",
             modifier = Modifier.padding(start = 48.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)
         )
+
+        // Emoji reaction popup
+        if (showEmojiPicker) {
+            EmojiReactionPopup(
+                onSelect = { emoji ->
+                    onDmReact(peerPubkey, rumorId, item.actorPubkey, emoji)
+                    sentReactionEmoji = emoji
+                    showEmojiPicker = false
+                },
+                onDismiss = { showEmojiPicker = false }
+            )
+        }
     }
 }
 

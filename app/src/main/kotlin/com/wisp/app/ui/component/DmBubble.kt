@@ -35,7 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.AddReaction
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.ElectricBolt
+import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.Icon
@@ -102,7 +102,7 @@ fun DmBubble(
         label = "swipe"
     )
 
-    val bubbleColor = if (isSent) MaterialTheme.colorScheme.primary
+    val bubbleColor = if (isSent) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
     else MaterialTheme.colorScheme.surfaceVariant
     val textColor = if (isSent) MaterialTheme.colorScheme.onPrimary
     else MaterialTheme.colorScheme.onSurface
@@ -155,7 +155,7 @@ fun DmBubble(
         @OptIn(ExperimentalFoundationApi::class)
         Box(
             modifier = Modifier
-                .widthIn(max = 280.dp)
+                .widthIn(min = 160.dp, max = 280.dp)
                 .clip(
                     RoundedCornerShape(
                         topStart = 16.dp,
@@ -201,6 +201,15 @@ fun DmBubble(
                         else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                if (message.reactions.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    ReactionChips(
+                        reactions = message.reactions,
+                        isSent = true,
+                        onToggle = { emoji -> onReact(message, emoji) }
+                    )
+                }
             }
         }
         // Reply hint shown while swiping
@@ -217,17 +226,17 @@ fun DmBubble(
             )
         }
         } // end swipe Box
-        } // end avatar Row
-
-        // --- Reaction chips (always visible when reactions present) ---
-        if (message.reactions.isNotEmpty()) {
-            Spacer(Modifier.height(2.dp))
-            ReactionChips(
-                reactions = message.reactions,
-                isSent = isSent,
-                onToggle = { emoji -> onReact(message, emoji) }
+        if (isSent) {
+            val senderProfile = remember(message.senderPubkey) {
+                eventRepo?.getProfileData(message.senderPubkey)
+            }
+            ProfilePicture(
+                url = senderProfile?.picture,
+                size = 28,
+                modifier = Modifier.padding(start = 4.dp)
             )
         }
+        } // end avatar Row
 
         // --- Action bar (always visible) ---
         Row(
@@ -251,7 +260,7 @@ fun DmBubble(
                     LightningAnimation(modifier = Modifier.size(18.dp))
                 } else {
                     Icon(
-                        Icons.Outlined.ElectricBolt,
+                        Icons.Outlined.CurrencyBitcoin,
                         "Zap",
                         tint = if (zapSats > 0) WispThemeColors.zapColor
                                else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -407,12 +416,6 @@ private fun DmExpandedDetails(
     ) {
         // Relay chips
         if (relayIcons.isNotEmpty()) {
-            Text(
-                "Seen on",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 4.dp)
-            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
