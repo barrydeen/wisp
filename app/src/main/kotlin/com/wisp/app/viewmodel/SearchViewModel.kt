@@ -74,6 +74,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private var userSubId = "search-users-0"
     private var noteSubId = "search-notes-0"
     private var authorSubId = "search-author-0"
+    private var metricsSubId = "engage-search-0"
 
     fun selectFilter(filter: SearchFilter) {
         _filter.value = filter
@@ -207,6 +208,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         searchCounter++
         userSubId = "search-users-$searchCounter"
         noteSubId = "search-notes-$searchCounter"
+        metricsSubId = "engage-search-$searchCounter"
 
         _query.value = trimmed
         _isSearching.value = true
@@ -283,6 +285,23 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 relayPool.eoseSignals.collect { subId ->
                     if (subId == activeSubId) {
                         _isSearching.value = false
+                        // After notes arrive, fetch reactions + reposts from read relays.
+                        // Search relays (NIP-50) only store notes, not engagement events,
+                        // so we must query the user's regular read relay pool.
+                        if (activeFilter == SearchFilter.NOTES) {
+                            val noteIds = seenNoteIds.toList()
+                            if (noteIds.isNotEmpty()) {
+                                noteIds.chunked(100).forEachIndexed { i, chunk ->
+                                    val chunkSubId = if (i == 0) metricsSubId else "$metricsSubId-$i"
+                                    val engageFilter = Filter(
+                                        kinds = listOf(7, 6, 9735),
+                                        eTags = chunk,
+                                        limit = 500
+                                    )
+                                    relayPool.sendToReadRelays(ClientMessage.req(chunkSubId, engageFilter))
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -316,5 +335,6 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         relayPool.closeOnAllRelays(userSubId)
         relayPool.closeOnAllRelays(noteSubId)
         relayPool.closeOnAllRelays(authorSubId)
+        relayPool.closeOnAllRelays(metricsSubId)
     }
 }

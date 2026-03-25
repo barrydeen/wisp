@@ -2,7 +2,6 @@ package com.wisp.app.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,19 +19,18 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,8 +40,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -55,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.wisp.app.nostr.Nip02
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.relay.RelayPool
@@ -62,12 +64,15 @@ import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.MuteRepository
 import com.wisp.app.repo.TranslationRepository
+import com.wisp.app.repo.TranslationState
 import com.wisp.app.ui.component.FollowButton
+import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.viewmodel.RelayOption
 import com.wisp.app.viewmodel.SearchFilter
 import com.wisp.app.viewmodel.SearchViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,7 +87,12 @@ fun SearchScreen(
     onQuotedNoteClick: ((String) -> Unit)? = null,
     onReply: (NostrEvent) -> Unit = {},
     onReact: (NostrEvent, String) -> Unit = { _, _ -> },
+    onRepost: (NostrEvent) -> Unit = {},
+    onZap: (NostrEvent) -> Unit = {},
+    zapInProgress: Set<String> = emptySet(),
+    zapAnimatingIds: Set<String> = emptySet(),
     onToggleFollow: (String) -> Unit = {},
+    onHashtagClick: ((String) -> Unit)? = null,
     onBlockUser: (String) -> Unit = {},
     userPubkey: String? = null,
     listedIds: Set<String> = emptySet(),
@@ -104,11 +114,104 @@ fun SearchScreen(
     val isAuthorSearching by viewModel.isAuthorSearching.collectAsState()
     var advancedExpanded by remember { mutableStateOf(authorFilter != null) }
 
+    val reactionVersion by eventRepo.reactionVersion.collectAsState()
+    val repostVersion by eventRepo.repostVersion.collectAsState()
+    val zapVersion by eventRepo.zapVersion.collectAsState()
+    val followList by remember(contactRepo) {
+        contactRepo?.followList ?: MutableStateFlow<List<Nip02.FollowEntry>>(emptyList())
+    }.collectAsState()
+
+    val noteActions = remember(userPubkey, onHashtagClick) {
+        NoteActions(
+            onHashtagClick = onHashtagClick,
+            onProfileClick = onProfileClick,
+            onNoteClick = { eventId -> onQuotedNoteClick?.invoke(eventId) },
+            userPubkey = userPubkey,
+        )
+    }
+
+    var filterMenuExpanded by remember { mutableStateOf(false) }
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text("Search") },
+                navigationIcon = {
+                    // Filter type dropdown
+                    Box {
+                        TextButton(onClick = { filterMenuExpanded = true }) {
+                            Text(
+                                if (filter == SearchFilter.PEOPLE) "Profiles" else "Notes",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Icon(
+                                Icons.Default.ArrowDropDown,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = filterMenuExpanded,
+                            onDismissRequest = { filterMenuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Profiles") },
+                                onClick = {
+                                    viewModel.selectFilter(SearchFilter.PEOPLE)
+                                    filterMenuExpanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Notes") },
+                                onClick = {
+                                    viewModel.selectFilter(SearchFilter.NOTES)
+                                    filterMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                },
+                title = {
+                    TextField(
+                        value = query,
+                        onValueChange = { viewModel.updateQuery(it) },
+                        placeholder = { Text("Search...") },
+                        singleLine = true,
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { viewModel.clear() }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                        ),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(
+                            onSearch = { viewModel.search(query, relayPool, eventRepo, muteRepo) }
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.search(query, relayPool, eventRepo, muteRepo) }) {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    }
+                    IconButton(onClick = { advancedExpanded = !advancedExpanded }) {
+                        Icon(
+                            Icons.Default.Tune,
+                            contentDescription = "Advanced",
+                            tint = if (advancedExpanded) MaterialTheme.colorScheme.primary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
@@ -120,53 +223,6 @@ fun SearchScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Filter chips
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(
-                    selected = filter == SearchFilter.PEOPLE,
-                    onClick = { viewModel.selectFilter(SearchFilter.PEOPLE) },
-                    label = { Text("People") },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primary,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                    )
-                )
-                FilterChip(
-                    selected = filter == SearchFilter.NOTES,
-                    onClick = { viewModel.selectFilter(SearchFilter.NOTES) },
-                    label = { Text("Notes") },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primary,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                    )
-                )
-            }
-
-            // Advanced search toggle
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { advancedExpanded = !advancedExpanded }
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "Advanced search",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Icon(
-                    if (advancedExpanded) Icons.Default.KeyboardArrowUp
-                    else Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
             AnimatedVisibility(visible = advancedExpanded) {
                 Column {
                     RelaySelector(
@@ -179,8 +235,6 @@ fun SearchScreen(
                         onAddRelay = { viewModel.addSearchRelay(it) },
                         onRemoveRelay = { viewModel.removeSearchRelay(it) }
                     )
-
-                    // Author filter (Notes only)
                     if (filter == SearchFilter.NOTES) {
                         Spacer(modifier = Modifier.height(8.dp))
                         AuthorFilter(
@@ -192,39 +246,7 @@ fun SearchScreen(
                             onClearAuthor = { viewModel.clearAuthorFilter() }
                         )
                     }
-                }
-            }
-
-            // Search bar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { viewModel.updateQuery(it) },
-                    placeholder = { Text("Search users and notes") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.clear() }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear")
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(
-                        onSearch = { viewModel.search(query, relayPool, eventRepo, muteRepo) }
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(
-                    onClick = { viewModel.search(query, relayPool, eventRepo, muteRepo) }
-                ) {
-                    Icon(Icons.Default.Search, contentDescription = "Search")
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
 
@@ -267,56 +289,63 @@ fun SearchScreen(
                     val translationVersion by translationRepo?.version?.collectAsState()
                         ?: remember { androidx.compose.runtime.mutableIntStateOf(0) }
                     val pollVoteVersion by eventRepo.pollVoteVersion.collectAsState()
+                    val sortedUsers = remember(users) {
+                        users.sortedByDescending { contactRepo?.isFollowing(it.pubkey) == true }
+                    }
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         if (filter == SearchFilter.PEOPLE) {
-                            val sortedUsers = users.sortedByDescending {
-                                contactRepo?.isFollowing(it.pubkey) == true
-                            }
                             items(sortedUsers, key = { it.pubkey }, contentType = { "user" }) { profile ->
                                 UserResultItem(
                                     profile = profile,
-                                    isFollowing = contactRepo?.isFollowing(profile.pubkey) == true,
+                                    isFollowing = followList.any { it.pubkey == profile.pubkey },
                                     onClick = { onProfileClick(profile.pubkey) },
                                     onToggleFollow = { onToggleFollow(profile.pubkey) }
                                 )
                             }
                         } else {
                             items(notes, key = { it.id }, contentType = { "post" }) { event ->
-                                val profile = eventRepo.getProfileData(event.pubkey)
                                 val translationState = remember(translationVersion, event.id) {
-                                    translationRepo?.getState(event.id)
-                                        ?: com.wisp.app.repo.TranslationState()
+                                    translationRepo?.getState(event.id) ?: TranslationState()
                                 }
-                                val searchPollVoteCounts = remember(pollVoteVersion, event.id) {
+                                val pollVoteCounts = remember(pollVoteVersion, event.id) {
                                     if (event.kind == 1068) eventRepo.getPollVoteCounts(event.id) else emptyMap()
                                 }
-                                val searchPollTotalVotes = remember(pollVoteVersion, event.id) {
+                                val pollTotalVotes = remember(pollVoteVersion, event.id) {
                                     if (event.kind == 1068) eventRepo.getPollTotalVotes(event.id) else 0
                                 }
-                                val searchUserPollVotes = remember(pollVoteVersion, event.id) {
+                                val userPollVotes = remember(pollVoteVersion, event.id) {
                                     if (event.kind == 1068) eventRepo.getUserPollVotes(event.id) else emptyList()
                                 }
-                                PostCard(
+                                SearchNoteItem(
                                     event = event,
-                                    profile = profile,
+                                    eventRepo = eventRepo,
+                                    reactionVersion = reactionVersion,
+                                    repostVersion = repostVersion,
+                                    zapVersion = zapVersion,
+                                    isZapAnimating = event.id in zapAnimatingIds,
+                                    isZapInProgress = event.id in zapInProgress,
+                                    followList = followList,
+                                    contactRepo = contactRepo,
+                                    userPubkey = userPubkey,
+                                    isOwnEvent = event.pubkey == userPubkey,
+                                    noteActions = noteActions,
                                     onReply = { onReply(event) },
                                     onProfileClick = { onProfileClick(event.pubkey) },
-                                    onNavigateToProfile = onProfileClick,
                                     onNoteClick = { onNoteClick(event) },
                                     onQuotedNoteClick = onQuotedNoteClick,
                                     onReact = { emoji -> onReact(event, emoji) },
-                                    eventRepo = eventRepo,
+                                    onRepost = { onRepost(event) },
+                                    onZap = { onZap(event) },
                                     onFollowAuthor = { onToggleFollow(event.pubkey) },
                                     onBlockAuthor = { onBlockUser(event.pubkey) },
-                                    isOwnEvent = event.pubkey == userPubkey,
                                     onAddToList = { onAddToList(event.id) },
                                     isInList = event.id in listedIds,
                                     onDelete = { onDeleteEvent(event.id, event.kind) },
                                     translationState = translationState,
                                     onTranslate = { translationRepo?.translate(event.id, event.content) },
-                                    pollVoteCounts = searchPollVoteCounts,
-                                    pollTotalVotes = searchPollTotalVotes,
-                                    userPollVotes = searchUserPollVotes,
+                                    pollVoteCounts = pollVoteCounts,
+                                    pollTotalVotes = pollTotalVotes,
+                                    userPollVotes = userPollVotes,
                                     onPollVote = { optionIds -> onPollVote(event.id, optionIds) }
                                 )
                             }
@@ -326,6 +355,88 @@ fun SearchScreen(
             }
         }
     }
+}
+
+@Composable
+private fun SearchNoteItem(
+    event: NostrEvent,
+    eventRepo: EventRepository,
+    reactionVersion: Int,
+    repostVersion: Int,
+    zapVersion: Int,
+    isZapAnimating: Boolean,
+    isZapInProgress: Boolean,
+    followList: List<Nip02.FollowEntry>,
+    contactRepo: ContactRepository?,
+    userPubkey: String?,
+    isOwnEvent: Boolean,
+    noteActions: NoteActions?,
+    onReply: () -> Unit,
+    onProfileClick: () -> Unit,
+    onNoteClick: () -> Unit,
+    onQuotedNoteClick: ((String) -> Unit)?,
+    onReact: (String) -> Unit,
+    onRepost: () -> Unit,
+    onZap: () -> Unit,
+    onFollowAuthor: () -> Unit,
+    onBlockAuthor: () -> Unit,
+    onAddToList: () -> Unit,
+    isInList: Boolean,
+    onDelete: () -> Unit,
+    translationState: TranslationState,
+    onTranslate: () -> Unit,
+    pollVoteCounts: Map<String, Int>,
+    pollTotalVotes: Int,
+    userPollVotes: List<String>,
+    onPollVote: (List<String>) -> Unit,
+) {
+    val profile = eventRepo.getProfileData(event.pubkey)
+    val likeCount = remember(reactionVersion, event.id) { eventRepo.getReactionCount(event.id) }
+    val userEmojis = remember(reactionVersion, event.id, userPubkey) {
+        userPubkey?.let { eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet()
+    }
+    val repostCount = remember(repostVersion, event.id) { eventRepo.getRepostCount(event.id) }
+    val hasUserReposted = remember(repostVersion, event.id) { eventRepo.hasUserReposted(event.id) }
+    val zapSats = remember(zapVersion, event.id) { eventRepo.getZapSats(event.id) }
+    val hasUserZapped = remember(zapVersion, event.id) { eventRepo.hasUserZapped(event.id) }
+    val isFollowingAuthor = remember(followList, event.pubkey) {
+        contactRepo?.isFollowing(event.pubkey) == true
+    }
+    PostCard(
+        event = event,
+        profile = profile,
+        likeCount = likeCount,
+        userReactionEmojis = userEmojis,
+        repostCount = repostCount,
+        hasUserReposted = hasUserReposted,
+        isFollowingAuthor = isFollowingAuthor,
+        onReply = onReply,
+        onProfileClick = onProfileClick,
+        onNavigateToProfile = noteActions?.onProfileClick,
+        onNoteClick = onNoteClick,
+        onQuotedNoteClick = onQuotedNoteClick,
+        onReact = onReact,
+        onRepost = onRepost,
+        onZap = onZap,
+        hasUserZapped = hasUserZapped,
+        zapSats = zapSats,
+        isZapAnimating = isZapAnimating,
+        isZapInProgress = isZapInProgress,
+        eventRepo = eventRepo,
+        isOwnEvent = isOwnEvent,
+        onFollowAuthor = onFollowAuthor,
+        onBlockAuthor = onBlockAuthor,
+        onAddToList = onAddToList,
+        isInList = isInList,
+        onDelete = onDelete,
+        translationState = translationState,
+        onTranslate = onTranslate,
+        pollVoteCounts = pollVoteCounts,
+        pollTotalVotes = pollTotalVotes,
+        userPollVotes = userPollVotes,
+        onPollVote = onPollVote,
+        noteActions = noteActions,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

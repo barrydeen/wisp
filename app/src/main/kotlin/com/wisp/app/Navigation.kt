@@ -111,6 +111,7 @@ import com.wisp.app.viewmodel.OnboardingViewModel
 import com.wisp.app.viewmodel.PowStatus
 import com.wisp.app.viewmodel.SplashViewModel
 import com.wisp.app.viewmodel.WalletViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 object Routes {
@@ -1111,6 +1112,39 @@ fun WispNavHost(
             val searchSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
             val searchBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
             val searchListedIds = remember(searchSetListedIds, searchBookmarkedIds) { searchSetListedIds + searchBookmarkedIds }
+            var searchZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
+            val searchZapInProgress by feedViewModel.zapInProgress.collectAsState()
+            var searchZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
+            LaunchedEffect(Unit) {
+                feedViewModel.zapSuccess.collect { eventId ->
+                    searchZapAnimatingIds = searchZapAnimatingIds + eventId
+                    delay(1500)
+                    searchZapAnimatingIds = searchZapAnimatingIds - eventId
+                }
+            }
+            if (searchZapTarget != null) {
+                val zapRecipient = searchZapTarget!!.pubkey
+                val userHasDmRelays = feedViewModel.relayPool.hasDmRelays()
+                var recipientHasDmRelays by remember(zapRecipient) {
+                    mutableStateOf(feedViewModel.relayListRepo.hasDmRelays(zapRecipient))
+                }
+                if (userHasDmRelays && !recipientHasDmRelays) {
+                    LaunchedEffect(zapRecipient) {
+                        recipientHasDmRelays = feedViewModel.fetchDmRelaysIfMissing(zapRecipient)
+                    }
+                }
+                ZapDialog(
+                    isWalletConnected = feedViewModel.activeWalletProvider.hasConnection(),
+                    onDismiss = { searchZapTarget = null },
+                    onZap = { amountMsats, message, isAnonymous, isPrivate ->
+                        val event = searchZapTarget ?: return@ZapDialog
+                        searchZapTarget = null
+                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
+                    },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
+                    canPrivateZap = userHasDmRelays && recipientHasDmRelays
+                )
+            }
             SearchScreen(
                 viewModel = searchViewModel,
                 relayPool = feedViewModel.relayPool,
@@ -1135,8 +1169,19 @@ fun WispNavHost(
                 onReact = { event, emoji ->
                     feedViewModel.toggleReaction(event, emoji)
                 },
+                onRepost = { event ->
+                    feedViewModel.sendRepost(event)
+                },
+                onZap = { event ->
+                    searchZapTarget = event
+                },
+                zapInProgress = searchZapInProgress,
+                zapAnimatingIds = searchZapAnimatingIds,
                 onToggleFollow = { pubkey ->
                     feedViewModel.toggleFollow(pubkey)
+                },
+                onHashtagClick = { tag ->
+                    navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
                 },
                 onBlockUser = { pubkey ->
                     feedViewModel.blockUser(pubkey)
