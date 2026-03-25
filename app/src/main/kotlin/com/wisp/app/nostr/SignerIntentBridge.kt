@@ -4,8 +4,6 @@ import android.content.Intent
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 sealed class SignResult {
     data class Success(val result: String, val event: String? = null) : SignResult()
@@ -20,24 +18,27 @@ data class SignRequest(
 
 /**
  * Bridges the domain-layer RemoteSigner (which can't launch activities) with the
- * Compose UI layer (which owns the ActivityResultLauncher). Concurrent signing
- * requests are serialized by a mutex so only one Amber prompt is shown at a time.
+ * Compose UI layer (which owns the ActivityResultLauncher).
+ *
+ * Serialization of concurrent signing requests is handled by [RemoteSigner] via its
+ * own mutex, so only one Amber prompt is shown at a time. The mutex lives there so
+ * that each queued request can retry the ContentResolver first (in case the prior
+ * intent signing granted silent permissions).
  */
 object SignerIntentBridge {
     private val _pendingRequest = MutableStateFlow<SignRequest?>(null)
     val pendingRequest: StateFlow<SignRequest?> = _pendingRequest
 
-    private val mutex = Mutex()
-
     /**
      * Posts an intent-based signing request and suspends until the UI delivers a result.
-     * Only one request is active at a time (mutex-serialized).
+     * Callers must hold [RemoteSigner.intentMutex] before calling this to ensure only
+     * one Amber prompt is active at a time.
      */
-    suspend fun requestSign(intent: Intent): SignResult = mutex.withLock {
+    suspend fun requestSign(intent: Intent): SignResult {
         val deferred = CompletableDeferred<SignResult>()
         val request = SignRequest(intent, deferred)
         _pendingRequest.value = request
-        try {
+        return try {
             deferred.await()
         } finally {
             _pendingRequest.value = null

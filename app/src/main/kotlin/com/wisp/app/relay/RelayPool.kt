@@ -54,6 +54,11 @@ class RelayPool {
     /** Session-scoped set of relay URLs the user has approved for AUTH. */
     private val userApprovedAuthRelays: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
+    /** Relay URL → timestamp when a temporary denial expires. Prevents re-prompting on
+     *  immediate reconnect after the user dismisses an auth dialog without "reject forever". */
+    private val authDeniedUntilMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val AUTH_DENY_COOLDOWN_MS = 60_000L
+
     data class PendingAuthRequest(val relayUrl: String, val challenge: String)
 
     private val _pendingAuthRequest = MutableStateFlow<PendingAuthRequest?>(null)
@@ -79,10 +84,11 @@ class RelayPool {
         }
     }
 
-    /** Deny a pending AUTH request. */
+    /** Deny a pending AUTH request (temporary — cooldown before re-prompting). */
     fun denyAuth(request: PendingAuthRequest) {
         _pendingAuthRequest.value = null
-        Log.d("RelayPool", "AUTH denied for ${request.relayUrl}")
+        authDeniedUntilMs[request.relayUrl] = System.currentTimeMillis() + AUTH_DENY_COOLDOWN_MS
+        Log.d("RelayPool", "AUTH denied for ${request.relayUrl} — suppressed for ${AUTH_DENY_COOLDOWN_MS / 1000}s")
     }
 
     fun isAuthenticated(url: String): Boolean = url in authenticatedRelays
@@ -499,8 +505,13 @@ class RelayPool {
                             Log.e("RelayPool", "AUTH failed for approved DM delivery relay $url: ${e.message}")
                         }
                     } else {
-                        Log.d("RelayPool", "AUTH challenge from DM delivery relay $url — prompting user")
-                        _pendingAuthRequest.value = PendingAuthRequest(url, challenge)
+                        val deniedUntil = authDeniedUntilMs[url] ?: 0L
+                        if (System.currentTimeMillis() < deniedUntil) {
+                            Log.d("RelayPool", "AUTH challenge from $url suppressed — recently denied, ${(deniedUntil - System.currentTimeMillis()) / 1000}s remaining")
+                        } else {
+                            Log.d("RelayPool", "AUTH challenge from DM delivery relay $url — prompting user")
+                            _pendingAuthRequest.value = PendingAuthRequest(url, challenge)
+                        }
                     }
                     return@collect
                 }
