@@ -159,7 +159,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    val relayPool = RelayPool()
+    val relayPool = RelayPool(
+        prefs = app.getSharedPreferences("relay_auth_prefs_$pubkeyHex", android.content.Context.MODE_PRIVATE)
+    )
     val healthTracker = RelayHealthTracker(app, pubkeyHex)
     val profileRepo = ProfileRepository(app)
     val muteRepo = MuteRepository(app, pubkeyHex)

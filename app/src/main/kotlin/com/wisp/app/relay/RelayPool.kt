@@ -1,5 +1,6 @@
 package com.wisp.app.relay
 
+import android.content.SharedPreferences
 import android.util.Log
 import android.util.LruCache
 import com.wisp.app.nostr.ClientMessage
@@ -28,7 +29,7 @@ data class RelayEvent(val event: NostrEvent, val relayUrl: String, val subscript
 data class PublishResult(val relayUrl: String, val eventId: String, val accepted: Boolean, val message: String)
 data class BroadcastState(val accepted: Int, val sent: Int)
 
-class RelayPool {
+class RelayPool(private val prefs: SharedPreferences? = null) {
     /** Incremented on every reconnectAll()/forceReconnectAll(). Allows SubscriptionManager
      *  to detect stale EOSE signals from pre-reconnect subscriptions. */
     @Volatile var reconnectGeneration: Long = 0
@@ -51,8 +52,10 @@ class RelayPool {
     /** Mark a relay URL as a DM delivery target (tier 2 AUTH). */
     fun markDmDeliveryTarget(url: String) { dmDeliveryTargets.add(url) }
 
-    /** Session-scoped set of relay URLs the user has approved for AUTH. */
-    private val userApprovedAuthRelays: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    /** Relay URLs the user has approved for AUTH — persisted across sessions. */
+    private val userApprovedAuthRelays: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet<String>().also { set ->
+        prefs?.getStringSet(PREF_APPROVED_AUTH_RELAYS, emptySet())?.let { set.addAll(it) }
+    }
 
     data class PendingAuthRequest(val relayUrl: String, val challenge: String)
 
@@ -60,9 +63,10 @@ class RelayPool {
     /** Emitted when a tier-2 (DM delivery) relay needs user approval to authenticate. */
     val pendingAuthRequest: StateFlow<PendingAuthRequest?> = _pendingAuthRequest
 
-    /** Approve a pending AUTH request — signs and sends AUTH, remembers for session. */
+    /** Approve a pending AUTH request — signs and sends AUTH, persists approval. */
     fun approveAuth(request: PendingAuthRequest) {
         userApprovedAuthRelays.add(request.relayUrl)
+        prefs?.edit()?.putStringSet(PREF_APPROVED_AUTH_RELAYS, userApprovedAuthRelays.toSet())?.apply()
         _pendingAuthRequest.value = null
         scope.launch {
             val signer = authSigner ?: return@launch
@@ -129,6 +133,7 @@ class RelayPool {
         const val COOLDOWN_REJECTED_MS = 1 * 60 * 1000L // 1 min — 4xx like 401/403/429
         const val COOLDOWN_NETWORK_MS = 5_000L           // 5s — DNS/network failures on persistent relays
         private const val UNSUPPORTED_THRESHOLD = 3      // Disconnect after N "unsupported" notices
+        const val PREF_APPROVED_AUTH_RELAYS = "approved_auth_relays"
     }
 
     /** Tracks consecutive "unsupported message" NOTICEs per relay URL. */

@@ -123,122 +123,126 @@ fun DmBubble(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = if (isSent) Arrangement.End else Arrangement.Start
         ) {
-        if (!isSent) {
-            val senderProfile = remember(message.senderPubkey) {
-                eventRepo?.getProfileData(message.senderPubkey)
+            if (!isSent) {
+                val senderProfile = remember(message.senderPubkey) {
+                    eventRepo?.getProfileData(message.senderPubkey)
+                }
+                ProfilePicture(
+                    url = senderProfile?.picture,
+                    size = 28,
+                    modifier = Modifier.padding(end = 4.dp)
+                )
             }
-            ProfilePicture(
-                url = senderProfile?.picture,
-                size = 28,
-                modifier = Modifier.padding(end = 4.dp)
-            )
-        }
-        Box(
-            modifier = Modifier
-                .offset { IntOffset(animatedSwipe.roundToInt(), 0) }
-                .draggable(
-                    orientation = Orientation.Horizontal,
-                    state = rememberDraggableState { delta ->
-                        val newOffset = (swipeOffsetPx + delta).coerceIn(0f, swipeThresholdPx * 1.3f)
-                        swipeOffsetPx = newOffset
-                        if (!swipeTriggered && newOffset >= swipeThresholdPx) {
-                            swipeTriggered = true
-                            onReply(message)
-                        }
-                    },
-                    onDragStopped = {
-                        swipeTriggered = false
-                        swipeOffsetPx = 0f
-                    }
-                )
-        ) {
-        @OptIn(ExperimentalFoundationApi::class)
-        Box(
-            modifier = Modifier
-                .widthIn(min = 160.dp, max = 280.dp)
-                .clip(
-                    RoundedCornerShape(
-                        topStart = 16.dp,
-                        topEnd = 16.dp,
-                        bottomStart = if (isSent) 16.dp else 4.dp,
-                        bottomEnd = if (isSent) 4.dp else 16.dp
-                    )
-                )
-                .background(bubbleColor)
-                .combinedClickable(
-                    onClick = { onSelect() },
-                    onDoubleClick = { onDebugTap?.invoke(message) }
-                )
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            Column {
-                // Quoted reply header
-                if (quotedMessage != null) {
-                    QuotedDmPreview(
-                        message = quotedMessage,
-                        isSentByMe = quotedMessage.senderPubkey == message.senderPubkey,
-                        eventRepo = eventRepo,
-                        parentIsSent = isSent
-                    )
-                    Spacer(Modifier.height(6.dp))
-                }
-
-                RichContent(
-                    content = message.content,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = textColor,
-                    linkColor = textColor,
-                    eventRepo = eventRepo,
-                    onProfileClick = onProfileClick,
-                    onNoteClick = onNoteClick
-                )
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = formatTime(message.createdAt),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isSent) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                if (message.reactions.isNotEmpty()) {
-                    Spacer(Modifier.height(4.dp))
-                    ReactionChips(
-                        reactions = message.reactions,
-                        isSent = true,
-                        onToggle = { emoji -> onReact(message, emoji) }
-                    )
-                }
-            }
-        }
-        // Reply hint shown while swiping
-        if (animatedSwipe > 4f) {
-            Icon(
-                Icons.AutoMirrored.Outlined.Reply,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            Box(
                 modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .size(20.dp)
-                    .offset { IntOffset((-animatedSwipe * 0.6f).roundToInt(), 0) }
-                    .alpha((animatedSwipe / swipeThresholdPx).coerceIn(0f, 1f))
-            )
-        }
-        } // end swipe Box
-        if (isSent) {
-            val senderProfile = remember(message.senderPubkey) {
-                eventRepo?.getProfileData(message.senderPubkey)
+                    .offset { IntOffset(animatedSwipe.roundToInt(), 0) }
+                    .draggable(
+                        orientation = Orientation.Horizontal,
+                        state = rememberDraggableState { delta ->
+                            val newOffset = (swipeOffsetPx + delta).coerceIn(0f, swipeThresholdPx * 1.3f)
+                            swipeOffsetPx = newOffset
+                            if (!swipeTriggered && newOffset >= swipeThresholdPx) {
+                                swipeTriggered = true
+                                onReply(message)
+                            }
+                        },
+                        onDragStopped = {
+                            swipeTriggered = false
+                            swipeOffsetPx = 0f
+                        }
+                    )
+            ) {
+            @OptIn(ExperimentalFoundationApi::class)
+            Box(
+                modifier = Modifier
+                    .widthIn(min = 160.dp, max = 280.dp)
+                    .clip(
+                        RoundedCornerShape(
+                            topStart = 16.dp,
+                            topEnd = 16.dp,
+                            bottomStart = if (isSent) 16.dp else 4.dp,
+                            bottomEnd = if (isSent) 4.dp else 16.dp
+                        )
+                    )
+                    .background(bubbleColor)
+                    .combinedClickable(
+                        onClick = { onSelect() },
+                        onDoubleClick = { onDebugTap?.invoke(message) }
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Column {
+                    // Quoted reply header
+                    if (quotedMessage != null) {
+                        QuotedDmPreview(
+                            message = quotedMessage,
+                            isSentByMe = quotedMessage.senderPubkey == message.senderPubkey,
+                            eventRepo = eventRepo,
+                            parentIsSent = isSent
+                        )
+                        Spacer(Modifier.height(6.dp))
+                    }
+
+                    RichContent(
+                        content = message.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = textColor,
+                        linkColor = textColor,
+                        eventRepo = eventRepo,
+                        onProfileClick = onProfileClick,
+                        onNoteClick = onNoteClick
+                    )
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = formatTime(message.createdAt),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isSent) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    if (message.reactions.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        ReactionChips(
+                            reactions = message.reactions,
+                            eventRepo = eventRepo,
+                            isSent = isSent,
+                            onToggle = { emoji -> onReact(message, emoji) }
+                        )
+                    }
+                }
             }
-            ProfilePicture(
-                url = senderProfile?.picture,
-                size = 28,
-                modifier = Modifier.padding(start = 4.dp)
-            )
-        }
+            // Reply hint shown while swiping
+            if (animatedSwipe > 4f) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.Reply,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .size(20.dp)
+                        .offset { IntOffset((-animatedSwipe * 0.6f).roundToInt(), 0) }
+                        .alpha((animatedSwipe / swipeThresholdPx).coerceIn(0f, 1f))
+                )
+            }
+            } // end swipe Box
+
+            if (isSent) {
+                val senderProfile = remember(message.senderPubkey) {
+                    eventRepo?.getProfileData(message.senderPubkey)
+                }
+                ProfilePicture(
+                    url = senderProfile?.picture,
+                    size = 28,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
         } // end avatar Row
 
         // --- Action bar (always visible) ---
+        // For sent messages: Reply · React · Zap · Expand (expand closest to bubble on right)
+        // For received messages: Expand · Zap · React · Reply (expand closest to bubble on left)
         Row(
             horizontalArrangement = if (isSent) Arrangement.End else Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically,
@@ -246,45 +250,69 @@ fun DmBubble(
                 .fillMaxWidth()
                 .padding(top = 2.dp)
         ) {
-            IconButton(onClick = { onReply(message) }, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Outlined.ChatBubbleOutline, "Reply", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-            }
-            IconButton(onClick = { showEmojiPicker = true }, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Outlined.AddReaction, "React", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-            }
-            IconButton(
-                onClick = { if (!isZapInProgress) onZap(message) },
-                modifier = Modifier.size(36.dp)
-            ) {
-                if (isZapInProgress) {
-                    LightningAnimation(modifier = Modifier.size(18.dp))
-                } else {
+            val expandButton: @Composable () -> Unit = {
+                IconButton(
+                    onClick = { showDetails = !showDetails },
+                    modifier = Modifier.size(36.dp)
+                ) {
                     Icon(
-                        Icons.Outlined.CurrencyBitcoin,
-                        "Zap",
-                        tint = if (zapSats > 0) WispThemeColors.zapColor
-                               else MaterialTheme.colorScheme.onSurfaceVariant,
+                        if (showDetails) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                        contentDescription = if (showDetails) "Collapse" else "Expand",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
                     )
                 }
             }
-            if (zapSats > 0 && !isZapInProgress) {
-                Text(
-                    text = if (zapSats >= 1000) "${zapSats / 1000}k" else "$zapSats",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = WispThemeColors.zapColor
-                )
+            val zapButton: @Composable () -> Unit = {
+                IconButton(
+                    onClick = { if (!isZapInProgress) onZap(message) },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    if (isZapInProgress) {
+                        LightningAnimation(modifier = Modifier.size(18.dp))
+                    } else {
+                        Icon(
+                            Icons.Outlined.CurrencyBitcoin,
+                            "Zap",
+                            tint = if (zapSats > 0) WispThemeColors.zapColor
+                                   else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
             }
-            IconButton(
-                onClick = { showDetails = !showDetails },
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    if (showDetails) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                    contentDescription = if (showDetails) "Collapse" else "Expand",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
+            val zapLabel: @Composable () -> Unit = {
+                if (zapSats > 0 && !isZapInProgress) {
+                    Text(
+                        text = if (zapSats >= 1000) "${zapSats / 1000}k" else "$zapSats",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = WispThemeColors.zapColor
+                    )
+                }
+            }
+            val reactButton: @Composable () -> Unit = {
+                IconButton(onClick = { showEmojiPicker = true }, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Outlined.AddReaction, "React", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+            }
+            val replyButton: @Composable () -> Unit = {
+                IconButton(onClick = { onReply(message) }, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Outlined.ChatBubbleOutline, "Reply", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+            }
+
+            if (isSent) {
+                replyButton()
+                reactButton()
+                zapButton()
+                zapLabel()
+                expandButton()
+            } else {
+                expandButton()
+                zapButton()
+                zapLabel()
+                reactButton()
+                replyButton()
             }
         }
 
@@ -368,33 +396,38 @@ private fun QuotedDmPreview(
 @Composable
 private fun ReactionChips(
     reactions: List<DmReaction>,
+    eventRepo: EventRepository?,
     isSent: Boolean,
     onToggle: (String) -> Unit
 ) {
-    val grouped = remember(reactions) {
-        reactions.groupBy { it.emoji }
-    }
+    val grouped = remember(reactions) { reactions.groupBy { it.emoji } }
+    val pillColor = if (isSent) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f)
+                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
 
     Row(
-        horizontalArrangement = if (isSent) Arrangement.End else Arrangement.Start,
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.horizontalScroll(rememberScrollState())
     ) {
         grouped.forEach { (emoji, list) ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
-                    .padding(end = 6.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(pillColor)
                     .clickable { onToggle(emoji) }
+                    .padding(horizontal = 6.dp, vertical = 3.dp)
             ) {
-                Text(emoji, fontSize = 16.sp)
-                if (list.size > 1) {
-                    Spacer(Modifier.width(2.dp))
-                    Text(
-                        "${list.size}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Text(emoji, fontSize = 14.sp)
+                Spacer(Modifier.width(3.dp))
+                // Stack up to 3 reactor avatars
+                list.take(3).forEachIndexed { index, reaction ->
+                    val profile = remember(reaction.authorPubkey) {
+                        eventRepo?.getProfileData(reaction.authorPubkey)
+                    }
+                    ProfilePicture(
+                        url = profile?.picture,
+                        size = 14,
+                        modifier = if (index > 0) Modifier.offset(x = (-4).dp) else Modifier
                     )
                 }
             }
