@@ -334,12 +334,7 @@ fun RichContent(
     noteActions: NoteActions? = null,
     modifier: Modifier = Modifier
 ) {
-    val segments = remember(content, emojiMap, imetaMap) {
-        val normalized = content.trimEnd('\n', '\r')
-            .replace("\r\n", "\n")
-            .replace(Regex("\n{2,}"), "\n")
-        parseContent(normalized, emojiMap, imetaMap)
-    }
+    val segments = remember(content, emojiMap, imetaMap) { parseContent(content.trimEnd('\n', '\r'), emojiMap, imetaMap) }
     val profileVer = eventRepo?.profileVersion?.collectAsState()?.value ?: 0
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
     var fullScreenVideoUrl by remember { mutableStateOf<String?>(null) }
