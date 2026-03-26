@@ -95,7 +95,7 @@ fun ActionBar(
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(12.dp))
         Box {
             Box(
                 contentAlignment = Alignment.Center,
@@ -146,7 +146,7 @@ fun ActionBar(
             style = MaterialTheme.typography.labelSmall,
             color = if (userReactionEmojis.isNotEmpty()) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(12.dp))
         Box {
             IconButton(onClick = { showRepostMenu = true }) {
                 Icon(
@@ -175,7 +175,7 @@ fun ActionBar(
             style = MaterialTheme.typography.labelSmall,
             color = if (hasUserReposted) WispThemeColors.repostColor else MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(12.dp))
         Box {
             IconButton(onClick = onZap, enabled = !isZapInProgress) {
                 if (isZapInProgress) {
@@ -208,7 +208,7 @@ fun ActionBar(
                 color = if (hasUserZapped) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(12.dp))
         IconButton(onClick = onAddToList) {
             Icon(
                 if (isInList) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,

@@ -168,7 +168,7 @@ fun PostCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onNoteClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         if (repostPubkeys.isNotEmpty()) {
             val maxAvatars = 10
@@ -435,7 +435,8 @@ fun PostCard(
                 }
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Column(modifier = Modifier.padding(start = 50.dp)) {
+        Spacer(Modifier.height(10.dp))
 
         if (contentWarning != null && !contentRevealed) {
             // Content warning overlay
@@ -655,6 +656,7 @@ fun PostCard(
             }
         }
 
+        Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             ActionBar(
                 onReply = onReply,
@@ -718,8 +720,9 @@ fun PostCard(
                 }
             }
         }
+        } // end indented content column
         if (showDivider) {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), thickness = 0.5.dp)
         }
     }
 }
