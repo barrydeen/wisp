@@ -445,7 +445,7 @@ private fun ZenNotificationRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onClick)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Type icon / emoji on the left (with sats below for zaps)
@@ -453,7 +453,7 @@ private fun ZenNotificationRow(
             Spacer(Modifier.width(8.dp))
             ProfilePicture(
                 url = profile?.picture,
-                size = 32,
+                size = 28,
                 modifier = Modifier.clickable { onProfileClick(item.actorPubkey) }
             )
             Spacer(Modifier.width(8.dp))
@@ -1201,7 +1201,7 @@ private fun InlineReplyComposer(
 
 @Composable
 private fun NotificationTypeIcon(item: FlatNotificationItem, showSats: Boolean = false) {
-    val iconSize = 28.dp
+    val iconSize = 22.dp
     if (item.type == NotificationType.ZAP || item.type == NotificationType.DM_ZAP) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
@@ -1236,7 +1236,7 @@ private fun NotificationTypeIcon(item: FlatNotificationItem, showSats: Boolean =
                     if (shortcode == null) {
                         Text(
                             text = displayEmoji,
-                            fontSize = 22.sp
+                            fontSize = 18.sp
                         )
                     } else {
                         Icon(
@@ -1276,7 +1276,7 @@ private fun NotificationTypeIcon(item: FlatNotificationItem, showSats: Boolean =
         NotificationType.QUOTE -> {
             Text(
                 text = "\u201C\u201D",
-                fontSize = 20.sp,
+                fontSize = 17.sp,
                 color = MaterialTheme.colorScheme.primary
             )
         }
