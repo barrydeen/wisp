@@ -75,6 +75,7 @@
     <string name="btn_save_profile">프로필 저장</string>
     <string name="btn_save_draft">임시 저장</string>
     <string name="compose_new_post">새 게시물</string>
+    <string name="new_group_dm">새 그룹 DM</string>
     <string name="compose_reply">답글</string>
     <string name="compose_quote">인용</string>
     <string name="compose_placeholder">무슨 생각을 하고 있나요?</string>
