@@ -7,17 +7,16 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.CurrencyBitcoin
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.TravelExplore
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
-import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.TravelExplore
+import androidx.compose.material.icons.outlined.Whatshot
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -40,10 +39,10 @@ enum class BottomTab(
     val unselectedIcon: ImageVector
 ) {
     HOME(Routes.FEED, R.string.nav_home, Icons.Filled.Home, Icons.Outlined.Home),
-    WALLET(Routes.WALLET, R.string.nav_wallet, Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet),
-    SEARCH(Routes.SEARCH, R.string.nav_search, Icons.Filled.Search, Icons.Outlined.Search),
-    MESSAGES(Routes.DM_LIST, R.string.nav_messages, Icons.Filled.Email, Icons.Outlined.Email),
-    NOTIFICATIONS(Routes.NOTIFICATIONS, R.string.nav_notifications, Icons.Filled.Notifications, Icons.Outlined.Notifications)
+    WALLET(Routes.WALLET, R.string.nav_wallet, Icons.Filled.CurrencyBitcoin, Icons.Outlined.CurrencyBitcoin),
+    SEARCH(Routes.SEARCH, R.string.nav_search, Icons.Filled.TravelExplore, Icons.Outlined.TravelExplore),
+    MESSAGES(Routes.DM_LIST, R.string.nav_messages, Icons.Filled.Forum, Icons.Outlined.Forum),
+    NOTIFICATIONS(Routes.NOTIFICATIONS, R.string.nav_notifications, Icons.Filled.Whatshot, Icons.Outlined.Whatshot)
 }
 
 @Composable
