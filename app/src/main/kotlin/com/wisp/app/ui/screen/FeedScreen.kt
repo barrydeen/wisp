@@ -360,7 +360,8 @@ fun FeedScreen(
 
     if (showOnlineSheet) {
         androidx.compose.material3.ModalBottomSheet(
-            onDismissRequest = { showOnlineSheet = false }
+            onDismissRequest = { showOnlineSheet = false },
+            containerColor = MaterialTheme.colorScheme.surface
         ) {
             Column(
                 modifier = Modifier
@@ -374,10 +375,10 @@ fun FeedScreen(
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.height(8.dp))
-                val greenDot = androidx.compose.ui.graphics.Color(0xFF4CAF50)
+                val greenColor = WispThemeColors.repostColor
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     androidx.compose.foundation.Canvas(modifier = Modifier.size(8.dp)) {
-                        drawCircle(color = greenDot)
+                        drawCircle(color = greenColor)
                     }
                     Spacer(Modifier.width(8.dp))
                     Text(
@@ -390,7 +391,7 @@ fun FeedScreen(
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.foundation.Canvas(modifier = Modifier.size(8.dp)) {
-                            drawCircle(color = greenDot)
+                            drawCircle(color = greenColor)
                         }
                         Spacer(Modifier.width(8.dp))
                         Text(
@@ -804,7 +805,7 @@ fun FeedScreen(
                                         Icons.Outlined.Person,
                                         contentDescription = null,
                                         modifier = Modifier.size(14.dp),
-                                        tint = androidx.compose.ui.graphics.Color(0xFF4CAF50)
+                                        tint = WispThemeColors.repostColor
                                     )
                                     Spacer(Modifier.width(4.dp))
                                     Text(
@@ -831,7 +832,7 @@ fun FeedScreen(
                                         contentDescription = null,
                                         modifier = Modifier.size(14.dp),
                                         tint = if (connectedCount > 0)
-                                            androidx.compose.ui.graphics.Color(0xFF4CAF50)
+                                            WispThemeColors.repostColor
                                         else
                                             androidx.compose.ui.graphics.Color(0xFFFF5252)
                                     )

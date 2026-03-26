@@ -73,6 +73,7 @@
     <string name="btn_add">Добавить</string>
     <string name="btn_remove">Удалить</string>
     <string name="compose_new_post">Новая заметка</string>
+    <string name="new_group_dm">Новая групповая беседа</string>
     <string name="compose_reply">Ответить</string>
     <string name="compose_quote">Цитировать</string>
     <string name="compose_placeholder">О чём думаете?</string>
