@@ -876,7 +876,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun getNewestFeedEventTimestamp(): Long? {
         return synchronized(feedList) {
-            feedList.maxOfOrNull { it.created_at }
+            feedList.maxOfOrNull { effectiveSortTime(it) }
         }
     }
 
