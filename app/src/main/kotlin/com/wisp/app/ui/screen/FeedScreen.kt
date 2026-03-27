@@ -2017,7 +2017,9 @@ private fun HashtagPickerDialog(
                                 ) {
                                     androidx.compose.material3.OutlinedTextField(
                                         value = newHashtagText,
-                                        onValueChange = { newHashtagText = it },
+                                        onValueChange = { input ->
+                                            newHashtagText = input.removePrefix("#").filter { c -> c.isLetterOrDigit() || c == '_' }
+                                        },
                                         placeholder = { Text(stringResource(R.string.placeholder_hashtag)) },
                                         singleLine = true,
                                         modifier = Modifier.weight(1f).focusRequester(focusRequester)
@@ -2025,14 +2027,14 @@ private fun HashtagPickerDialog(
                                     Spacer(Modifier.width(8.dp))
                                     TextButton(
                                         onClick = {
-                                            val cleaned = newHashtagText.trim().removePrefix("#").lowercase()
+                                            val cleaned = newHashtagText.lowercase()
                                             if (cleaned.isNotBlank()) {
                                                 onAddHashtag(cleaned, set.dTag)
                                                 newHashtagText = ""
                                                 addingToDTag = null
                                             }
                                         },
-                                        enabled = newHashtagText.trim().removePrefix("#").isNotBlank()
+                                        enabled = newHashtagText.isNotBlank()
                                     ) { Text(stringResource(R.string.btn_add)) }
                                 }
                             }
