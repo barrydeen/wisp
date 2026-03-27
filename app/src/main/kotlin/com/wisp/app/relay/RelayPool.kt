@@ -902,6 +902,7 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
                     ephemeralRelays.remove(relay.config.url)
                     ephemeralLastUsed.remove(relay.config.url)
                     relayIndex.remove(relay.config.url)
+                    authenticatedRelays.remove(relay.config.url)
                     Log.d("RelayPool", "Cooldown ${cooldownMs / 1000}s for ephemeral ${relay.config.url} (http=${failure.httpCode})")
                 } else {
                     Log.d("RelayPool", "Failure on persistent relay ${relay.config.url} (http=${failure.httpCode}), will retry in 3s")
@@ -988,6 +989,7 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
             cancelRelayJobs(url)
             activeSubscriptions.remove(url)
             subscriptionTracker.untrackRelay(url)
+            authenticatedRelays.remove(url)
         }
         ephemeralRelays.clear()
         ephemeralLastUsed.clear()
@@ -1038,6 +1040,7 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
             relay.disconnect()
             relayIndex.remove(url)
             cancelRelayJobs(url)
+            authenticatedRelays.remove(url)
         }
         ephemeralRelays.clear()
         ephemeralLastUsed.clear()
@@ -1095,6 +1098,7 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
             cancelRelayJobs(url)
             activeSubscriptions.remove(url)
             subscriptionTracker.untrackRelay(url)
+            authenticatedRelays.remove(url)
         }
         // Clear expired cooldowns
         val expiredCooldowns = relayCooldowns.filter { now >= it.value }.keys
@@ -1130,6 +1134,7 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         dmRelays.removeAll { it.config.url == url }
         ephemeralRelays.remove(url)
         ephemeralLastUsed.remove(url)
+        authenticatedRelays.remove(url)
         subscriptionTracker.untrackRelay(url)
         cancelRelayJobs(url)
         updateConnectedCount()

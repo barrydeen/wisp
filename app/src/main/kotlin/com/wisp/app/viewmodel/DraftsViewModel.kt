@@ -85,7 +85,11 @@ class DraftsViewModel(app: Application) : AndroidViewModel(app) {
         // Cancel previous collector to avoid stacking up collectors on every screen visit
         scheduledJob?.cancel()
 
-        // Only show spinner if we have nothing to display yet
+        // Evict any stale relay (disconnected after scheduling, stuck with autoReconnect=false)
+        // so connectEphemeralRelay always creates a fresh connection with a clean auth handshake.
+        relayPool.disconnectRelay(SCHEDULER_RELAY)
+
+        // Only show spinner if we have nothing to display yet — keep existing posts visible while refreshing
         if (_scheduledPosts.value.isEmpty()) _scheduledLoading.value = true
 
         val subId = "scheduled_${System.currentTimeMillis()}"
@@ -100,11 +104,9 @@ class DraftsViewModel(app: Application) : AndroidViewModel(app) {
                 limit = 100
             )
 
-            // Skip auth wait if relay is already authenticated from a previous load
-            if (!relayPool.isAuthenticated(SCHEDULER_RELAY)) {
-                withTimeoutOrNull(5_000) {
-                    relayPool.authCompleted.first { it == SCHEDULER_RELAY }
-                }
+            // Wait for AUTH — always required on a fresh connection
+            withTimeoutOrNull(5_000) {
+                relayPool.authCompleted.first { it == SCHEDULER_RELAY }
             }
             relayPool.sendToRelayOrEphemeral(SCHEDULER_RELAY, ClientMessage.req(subId, filter), skipBadCheck = true)
 
@@ -126,7 +128,7 @@ class DraftsViewModel(app: Application) : AndroidViewModel(app) {
                 val current = _scheduledPosts.value.toMutableList()
                 if (current.none { it.id == event.id }) {
                     current.add(event)
-                    _scheduledPosts.value = current.sortedBy { it.created_at }
+                    _scheduledPosts.value = current.sortedByDescending { it.created_at }
                 }
             }
         }
