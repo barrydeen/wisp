@@ -374,6 +374,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val zapSuccess: SharedFlow<String> = socialActions.zapSuccess
     val zapError: SharedFlow<String> = socialActions.zapError
     val reactionSent: SharedFlow<Unit> = socialActions.reactionSent
+
+    suspend fun payInvoice(bolt11: String): Boolean =
+        activeWalletProvider.payInvoice(bolt11).isSuccess
     val pendingFirstFollow: StateFlow<String?> = socialActions.pendingFirstFollow
     val firstFollowCheckDone: StateFlow<Boolean> = socialActions.firstFollowCheckDone
 

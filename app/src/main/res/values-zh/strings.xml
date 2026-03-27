@@ -422,6 +422,13 @@
     <string name="zap_both_parties_need_dm_relays">双方都需要私信中继</string>
     <string name="zap_x_sats">支付 %d 聪</string>
     <string name="zap_failed">闪电支付失败</string>
+    <string name="lightning_invoice_pay_now">立即支付</string>
+    <string name="lightning_invoice_expired">已过期</string>
+    <string name="lightning_invoice_any_amount">任意金额</string>
+    <string name="lightning_invoice_dialog_title">支付账单</string>
+    <string name="lightning_invoice_btn_pay">支付</string>
+    <string name="lightning_invoice_paid">已支付</string>
+    <string name="lightning_payment_failed">支付失败</string>
     <string name="dm_decrypting">正在解密消息…</string>
     <string name="dm_mining">正在挖矿…</string>
     <string name="dm_peer">对等方</string>

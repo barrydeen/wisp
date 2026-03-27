@@ -422,6 +422,13 @@
     <string name="zap_both_parties_need_dm_relays">Beide partijen hebben DM relays nodig</string>
     <string name="zap_x_sats">Zap %d sats</string>
     <string name="zap_failed">Zap Mislukt</string>
+    <string name="lightning_invoice_pay_now">Nu betalen</string>
+    <string name="lightning_invoice_expired">Verlopen</string>
+    <string name="lightning_invoice_any_amount">Elk bedrag</string>
+    <string name="lightning_invoice_dialog_title">Factuur betalen</string>
+    <string name="lightning_invoice_btn_pay">Betalen</string>
+    <string name="lightning_invoice_paid">Betaald</string>
+    <string name="lightning_payment_failed">Betaling mislukt</string>
     <string name="dm_decrypting">Berichten Ontsleutelen…</string>
     <string name="dm_mining">Mining…</string>
     <string name="dm_peer">Peer</string>

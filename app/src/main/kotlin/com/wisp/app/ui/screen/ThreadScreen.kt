@@ -82,6 +82,7 @@ fun ThreadScreen(
     onHashtagClick: ((String) -> Unit)? = null,
     onRelayClick: ((String) -> Unit)? = null,
     onArticleClick: ((Int, String, String) -> Unit)? = null,
+    onPayInvoice: (suspend (String) -> Boolean)? = null,
     translationRepo: TranslationRepository? = null,
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
@@ -151,7 +152,8 @@ fun ThreadScreen(
             nip05Repo = nip05Repo,
             onHashtagClick = onHashtagClick,
             onRelayClick = onRelayClick,
-            onArticleClick = onArticleClick
+            onArticleClick = onArticleClick,
+            onPayInvoice = onPayInvoice
         )
     }
 

@@ -165,8 +165,12 @@ fun UserProfileScreen(
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
     onOpenEmojiLibrary: (() -> Unit)? = null,
-    onSearchAuthor: (() -> Unit)? = null
+    onSearchAuthor: (() -> Unit)? = null,
+    onPayInvoice: (suspend (String) -> Boolean)? = null
 ) {
+    val invoiceNoteActions = remember(onPayInvoice) {
+        onPayInvoice?.let { com.wisp.app.ui.component.NoteActions(onPayInvoice = it) }
+    }
     val profile by viewModel.profile.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()
     val rootNotes by viewModel.rootNotes.collectAsState()
@@ -629,7 +633,8 @@ fun UserProfileScreen(
                                 onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
                                 resolvedEmojis = resolvedEmojis,
                                 unicodeEmojis = unicodeEmojis,
-                                onOpenEmojiLibrary = onOpenEmojiLibrary
+                                onOpenEmojiLibrary = onOpenEmojiLibrary,
+                                noteActions = invoiceNoteActions
                             )
                         }
                     }
@@ -737,7 +742,8 @@ fun UserProfileScreen(
                                 onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
                                 resolvedEmojis = resolvedEmojis,
                                 unicodeEmojis = unicodeEmojis,
-                                onOpenEmojiLibrary = onOpenEmojiLibrary
+                                onOpenEmojiLibrary = onOpenEmojiLibrary,
+                                noteActions = invoiceNoteActions
                             )
                         }
                         if (rootNotes.isNotEmpty() && notesSortMode == ProfileSortMode.RECENCY) {
@@ -838,7 +844,8 @@ fun UserProfileScreen(
                                 onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
                                 resolvedEmojis = resolvedEmojis,
                                 unicodeEmojis = unicodeEmojis,
-                                onOpenEmojiLibrary = onOpenEmojiLibrary
+                                onOpenEmojiLibrary = onOpenEmojiLibrary,
+                                noteActions = invoiceNoteActions
                             )
                         }
                         if (repliesSortMode == ProfileSortMode.RECENCY) {

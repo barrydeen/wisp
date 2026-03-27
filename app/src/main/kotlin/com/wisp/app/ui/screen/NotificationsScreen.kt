@@ -157,6 +157,7 @@ fun NotificationsScreen(
     onDmZap: (peerPubkey: String, rumorId: String, senderPubkey: String) -> Unit = { _, _, _ -> },
     dmZapSats: (senderPubkey: String) -> Long = { 0L },
     onDmConversationClick: (conversationKey: String) -> Unit = {},
+    onPayInvoice: (suspend (String) -> Boolean)? = null,
 ) {
     val notifications by viewModel.filteredFlatNotifications.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -218,7 +219,8 @@ fun NotificationsScreen(
             isInList = isInList,
             translationRepo = translationRepo,
             pollVoteVersion = pollVoteVersion,
-            onPollVote = onPollVote
+            onPollVote = onPollVote,
+            onPayInvoice = onPayInvoice
         )
     }
 
@@ -974,6 +976,7 @@ private fun ReferencedNotePostCard(
         pollTotalVotes = pollTotalVotes,
         userPollVotes = userPollVotes,
         onPollVote = { optionIds -> params.onPollVote(event.id, optionIds) },
+        noteActions = params.onPayInvoice?.let { com.wisp.app.ui.component.NoteActions(onPayInvoice = it) },
         showDivider = false
     )
 }
@@ -1010,7 +1013,8 @@ private data class NotifPostCardParams(
     val isInList: (String) -> Boolean,
     val translationRepo: TranslationRepository? = null,
     val pollVoteVersion: Int = 0,
-    val onPollVote: (String, List<String>) -> Unit = { _, _ -> }
+    val onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    val onPayInvoice: (suspend (String) -> Boolean)? = null
 )
 
 // ── Inline Sent Reply ──────────────────────────────────────────────────

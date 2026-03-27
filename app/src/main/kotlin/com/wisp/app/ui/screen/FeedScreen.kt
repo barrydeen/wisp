@@ -311,7 +311,8 @@ fun FeedScreen(
                 viewModel.setSelectedRelay(url)
                 viewModel.setFeedType(FeedType.RELAY)
             },
-            onArticleClick = onArticleClick
+            onArticleClick = onArticleClick,
+            onPayInvoice = { bolt11 -> viewModel.payInvoice(bolt11) }
         )
     }
 
@@ -330,6 +331,7 @@ fun FeedScreen(
             zapErrorMessage = error
         }
     }
+
 
     val isAtTop by remember {
         derivedStateOf {
@@ -512,6 +514,7 @@ fun FeedScreen(
             }
         )
     }
+
 
     if (pendingFirstFollow != null) {
         AlertDialog(

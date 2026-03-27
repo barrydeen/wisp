@@ -401,6 +401,13 @@
     <string name="zap_both_parties_need_dm_relays">Обеим сторонам нужны рилэи ЛС</string>
     <string name="zap_x_sats">Зап %d сатоши</string>
     <string name="zap_failed">Zap не удался</string>
+    <string name="lightning_invoice_pay_now">Оплатить сейчас</string>
+    <string name="lightning_invoice_expired">Истёк</string>
+    <string name="lightning_invoice_any_amount">Любая сумма</string>
+    <string name="lightning_invoice_dialog_title">Оплатить счёт</string>
+    <string name="lightning_invoice_btn_pay">Оплатить</string>
+    <string name="lightning_invoice_paid">Оплачено</string>
+    <string name="lightning_payment_failed">Платёж не выполнен</string>
     <string name="dm_decrypting">Расшифровка сообщений…</string>
     <string name="dm_mining">Майнинг…</string>
     <string name="dm_peer">Пир</string>

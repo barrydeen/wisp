@@ -422,6 +422,13 @@
     <string name="zap_both_parties_need_dm_relays">両者ともDMリレーが必要です</string>
     <string name="zap_x_sats">%dサッツをサップ</string>
     <string name="zap_failed">サップ失敗</string>
+    <string name="lightning_invoice_pay_now">今すぐ支払う</string>
+    <string name="lightning_invoice_expired">期限切れ</string>
+    <string name="lightning_invoice_any_amount">任意の金額</string>
+    <string name="lightning_invoice_dialog_title">請求書を支払う</string>
+    <string name="lightning_invoice_btn_pay">支払う</string>
+    <string name="lightning_invoice_paid">支払い済み</string>
+    <string name="lightning_payment_failed">支払いに失敗しました</string>
     <string name="dm_decrypting">メッセージを復号中…</string>
     <string name="dm_mining">マイニング中…</string>
     <string name="dm_peer">ピア</string>

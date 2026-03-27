@@ -1098,7 +1098,8 @@ fun WispNavHost(
                         launchSingleTop = true
                         restoreState = true
                     }
-                }
+                },
+                onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) }
             )
             if (showProfileEmojiLibrary) {
                 com.wisp.app.ui.component.EmojiLibrarySheet(
@@ -1461,7 +1462,8 @@ fun WispNavHost(
                 resolvedEmojis = threadResolvedEmojis,
                 unicodeEmojis = threadUnicodeEmojis,
                 onOpenEmojiLibrary = { showThreadEmojiLibrary = true },
-                onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) }
+                onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
+                onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) }
             )
 
             if (showThreadEmojiLibrary) {
@@ -1526,7 +1528,8 @@ fun WispNavHost(
                     },
                     onArticleClick = { kind, author, dTag ->
                         navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
-                    }
+                    },
+                    onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) }
                 )
             }
             val interestSets by feedViewModel.interestRepo.sets.collectAsState()
@@ -1617,7 +1620,8 @@ fun WispNavHost(
                     },
                     onArticleClick = { kind, author, dTag ->
                         navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
-                    }
+                    },
+                    onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) }
                 )
             }
             val interestSets by feedViewModel.interestRepo.sets.collectAsState()
@@ -1755,7 +1759,8 @@ fun WispNavHost(
                     },
                     onArticleClick = { k, a, d ->
                         navController.navigate("article/$k/$a/${java.net.URLEncoder.encode(d, "UTF-8")}")
-                    }
+                    },
+                    onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) }
                 )
             }
 
@@ -2391,7 +2396,8 @@ fun WispNavHost(
                     } else {
                         navController.navigate("dm/$conversationKey")
                     }
-                }
+                },
+                onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) }
             )
 
             if (showNotifEmojiLibrary) {

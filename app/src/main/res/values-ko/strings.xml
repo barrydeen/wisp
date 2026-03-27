@@ -422,6 +422,13 @@
     <string name="zap_both_parties_need_dm_relays">양쪽 모두 DM 릴레이 필요</string>
     <string name="zap_x_sats">%d 사츠 잽</string>
     <string name="zap_failed">잽 실패</string>
+    <string name="lightning_invoice_pay_now">지금 결제</string>
+    <string name="lightning_invoice_expired">만료됨</string>
+    <string name="lightning_invoice_any_amount">임의 금액</string>
+    <string name="lightning_invoice_dialog_title">청구서 결제</string>
+    <string name="lightning_invoice_btn_pay">결제</string>
+    <string name="lightning_invoice_paid">결제 완료</string>
+    <string name="lightning_payment_failed">결제 실패</string>
     <string name="dm_decrypting">메시지 복호화 중…</string>
     <string name="dm_mining">마이닝 중…</string>
     <string name="dm_peer">피어</string>

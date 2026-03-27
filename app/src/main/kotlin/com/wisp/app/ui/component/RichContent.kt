@@ -57,6 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -80,9 +81,16 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.wisp.app.relay.HttpClientFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import coil3.compose.AsyncImage
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.TextButton
 import com.wisp.app.R
+import com.wisp.app.nostr.Bolt11
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.toHex
 import com.wisp.app.nostr.NostrEvent
@@ -130,6 +138,7 @@ data class NoteActions(
     val onHashtagClick: ((String) -> Unit)? = null,
     val onRelayClick: ((String) -> Unit)? = null,
     val onArticleClick: ((Int, String, String) -> Unit)? = null,
+    val onPayInvoice: (suspend (String) -> Boolean)? = null,
 )
 
 internal sealed interface ContentSegment {
@@ -145,6 +154,7 @@ internal sealed interface ContentSegment {
     data class NostrAddressableSegment(val dTag: String, val relays: List<String>, val author: String?, val kind: Int?) : ContentSegment
     data class CustomEmojiSegment(val shortcode: String, val url: String) : ContentSegment
     data class HashtagSegment(val tag: String) : ContentSegment
+    data class LightningInvoiceSegment(val invoice: String, val decoded: Bolt11.DecodedInvoice) : ContentSegment
 }
 
 private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp")
@@ -286,14 +296,54 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
     }
 
     // Second pass: split TextSegments that contain :shortcode: where shortcode is in emojiMap
-    if (emojiMap.isEmpty()) return segments
-    val result = mutableListOf<ContentSegment>()
-    for (segment in segments) {
-        if (segment is ContentSegment.TextSegment) {
-            result.addAll(splitTextForEmojis(segment.text, emojiMap))
-        } else {
-            result.add(segment)
+    val afterEmoji = if (emojiMap.isEmpty()) {
+        segments
+    } else {
+        val result = mutableListOf<ContentSegment>()
+        for (segment in segments) {
+            if (segment is ContentSegment.TextSegment) {
+                result.addAll(splitTextForEmojis(segment.text, emojiMap))
+            } else {
+                result.add(segment)
+            }
         }
+        result
+    }
+
+    // Third pass: detect lightning invoices in text segments
+    val finalResult = mutableListOf<ContentSegment>()
+    for (segment in afterEmoji) {
+        if (segment is ContentSegment.TextSegment) {
+            finalResult.addAll(splitTextForInvoices(segment.text))
+        } else {
+            finalResult.add(segment)
+        }
+    }
+    return finalResult
+}
+
+private val bolt11Regex = Regex("""(?i)(lightning:)?(lnbc|lntb|lnbcrt)[0-9a-z]{50,}""")
+
+private fun splitTextForInvoices(text: String): List<ContentSegment> {
+    val matches = bolt11Regex.findAll(text).toList()
+    if (matches.isEmpty()) return listOf(ContentSegment.TextSegment(text))
+    val result = mutableListOf<ContentSegment>()
+    var lastEnd = 0
+    var anyFound = false
+    for (match in matches) {
+        val raw = match.value
+        val invoice = raw.removePrefix("lightning:").removePrefix("LIGHTNING:").lowercase()
+        val decoded = Bolt11.decode(invoice) ?: continue
+        anyFound = true
+        if (match.range.first > lastEnd) {
+            result.add(ContentSegment.TextSegment(text.substring(lastEnd, match.range.first)))
+        }
+        result.add(ContentSegment.LightningInvoiceSegment(invoice, decoded))
+        lastEnd = match.range.last + 1
+    }
+    if (!anyFound) return listOf(ContentSegment.TextSegment(text))
+    if (lastEnd < text.length) {
+        result.add(ContentSegment.TextSegment(text.substring(lastEnd)))
     }
     return result
 }
@@ -316,6 +366,148 @@ private fun splitTextForEmojis(text: String, emojiMap: Map<String, String>): Lis
         result.add(ContentSegment.TextSegment(text))
     }
     return result
+}
+
+private enum class InvoicePayState { Idle, Paying, Success, Failed }
+
+@Composable
+private fun LightningInvoiceCard(
+    invoice: String,
+    decoded: Bolt11.DecodedInvoice,
+    onPayInvoice: (suspend (String) -> Boolean)?
+) {
+    val primary = MaterialTheme.colorScheme.primary
+    val onPrimary = MaterialTheme.colorScheme.onPrimary
+    val isExpired = decoded.isExpired()
+    var showConfirm by remember { mutableStateOf(false) }
+    var payState by remember { mutableStateOf(InvoicePayState.Idle) }
+    val scope = rememberCoroutineScope()
+
+    if (showConfirm) {
+        AlertDialog(
+            onDismissRequest = { showConfirm = false },
+            title = { Text(stringResource(com.wisp.app.R.string.lightning_invoice_dialog_title)) },
+            text = {
+                Column {
+                    if (decoded.amountSats != null) {
+                        Text("%,d sats".format(decoded.amountSats))
+                    } else {
+                        Text(stringResource(com.wisp.app.R.string.lightning_invoice_any_amount))
+                    }
+                    if (!decoded.description.isNullOrBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = decoded.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showConfirm = false
+                        if (onPayInvoice != null) {
+                            scope.launch {
+                                payState = InvoicePayState.Paying
+                                val success = onPayInvoice(invoice)
+                                payState = if (success) InvoicePayState.Success else InvoicePayState.Failed
+                                delay(3000)
+                                payState = InvoicePayState.Idle
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = primary,
+                        contentColor = onPrimary
+                    )
+                ) { Text(stringResource(com.wisp.app.R.string.lightning_invoice_btn_pay)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirm = false }) {
+                    Text(stringResource(com.wisp.app.R.string.btn_cancel))
+                }
+            }
+        )
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, primary.copy(alpha = 0.4f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "\u26A1",
+                style = MaterialTheme.typography.titleMedium,
+                color = primary
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = if (decoded.amountSats != null) "%,d sats".format(decoded.amountSats)
+                           else stringResource(com.wisp.app.R.string.lightning_invoice_any_amount),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = primary
+                )
+                if (!decoded.description.isNullOrBlank()) {
+                    Text(
+                        text = decoded.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2
+                    )
+                }
+                if (isExpired) {
+                    Text(
+                        text = stringResource(com.wisp.app.R.string.lightning_invoice_expired),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            if (onPayInvoice != null) {
+                Spacer(Modifier.width(8.dp))
+                when (payState) {
+                    InvoicePayState.Paying -> CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = primary,
+                        strokeWidth = 2.dp
+                    )
+                    InvoicePayState.Success -> Text(
+                        text = "✓ ${stringResource(com.wisp.app.R.string.lightning_invoice_paid)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = primary
+                    )
+                    InvoicePayState.Failed -> Text(
+                        text = "✗ ${stringResource(com.wisp.app.R.string.lightning_payment_failed)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    InvoicePayState.Idle -> Button(
+                        onClick = { if (!isExpired) showConfirm = true },
+                        enabled = !isExpired,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = primary,
+                            contentColor = onPrimary
+                        )
+                    ) {
+                        Text(
+                            if (isExpired) stringResource(com.wisp.app.R.string.lightning_invoice_expired)
+                            else stringResource(com.wisp.app.R.string.lightning_invoice_pay_now)
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -624,6 +816,13 @@ fun RichContent(
                             }
                             else -> UnsupportedKindBadge(kind = kind, style = style)
                         }
+                    }
+                    is ContentSegment.LightningInvoiceSegment -> {
+                        LightningInvoiceCard(
+                            invoice = segment.invoice,
+                            decoded = segment.decoded,
+                            onPayInvoice = noteActions?.onPayInvoice
+                        )
                     }
                     else -> {}
                 }

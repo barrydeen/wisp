@@ -433,6 +433,13 @@
     <string name="zap_both_parties_need_dm_relays">Both parties need DM relays</string>
     <string name="zap_x_sats">Zap %d sats</string>
     <string name="zap_failed">Zap Failed</string>
+    <string name="lightning_invoice_pay_now">Pay Now</string>
+    <string name="lightning_invoice_expired">Expired</string>
+    <string name="lightning_invoice_any_amount">Any amount</string>
+    <string name="lightning_invoice_dialog_title">Pay Invoice</string>
+    <string name="lightning_invoice_btn_pay">Pay</string>
+    <string name="lightning_invoice_paid">Paid</string>
+    <string name="lightning_payment_failed">Payment Failed</string>
     <string name="wallet_nwc">Nostr Wallet Connect</string>
     <string name="wallet_connect_lightning">Connect a Lightning wallet to send and receive sats. Paste a NWC connection string from your wallet provider.</string>
     <string name="wallet_recommended">Recommended wallets</string>

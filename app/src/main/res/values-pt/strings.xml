@@ -422,6 +422,13 @@
     <string name="zap_both_parties_need_dm_relays">Ambas as partes precisam de relays de MD</string>
     <string name="zap_x_sats">Zap %d sats</string>
     <string name="zap_failed">Zap Falhou</string>
+    <string name="lightning_invoice_pay_now">Pagar agora</string>
+    <string name="lightning_invoice_expired">Expirada</string>
+    <string name="lightning_invoice_any_amount">Qualquer valor</string>
+    <string name="lightning_invoice_dialog_title">Pagar fatura</string>
+    <string name="lightning_invoice_btn_pay">Pagar</string>
+    <string name="lightning_invoice_paid">Pago</string>
+    <string name="lightning_payment_failed">Pagamento falhou</string>
     <string name="dm_decrypting">Descriptografando mensagens…</string>
     <string name="dm_mining">Mineração…</string>
     <string name="dm_peer">Par</string>
