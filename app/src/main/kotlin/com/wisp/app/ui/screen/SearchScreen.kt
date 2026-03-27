@@ -46,6 +46,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +54,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -131,6 +134,9 @@ fun SearchScreen(
         )
     }
 
+    val searchFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { searchFocusRequester.requestFocus() }
+
     var filterMenuExpanded by remember { mutableStateOf(false) }
     var advancedExpanded by remember { mutableStateOf(authorFilter != null) }
 
@@ -143,7 +149,7 @@ fun SearchScreen(
                     Box {
                         TextButton(onClick = { filterMenuExpanded = true }) {
                             Text(
-                                if (filter == SearchFilter.PEOPLE) stringResource(R.string.tab_people) else stringResource(R.string.tab_notes),
+                                if (filter == SearchFilter.PEOPLE) "Profiles" else stringResource(R.string.tab_notes),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -158,20 +164,24 @@ fun SearchScreen(
                             expanded = filterMenuExpanded,
                             onDismissRequest = { filterMenuExpanded = false }
                         ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.tab_people)) },
-                                onClick = {
-                                    viewModel.selectFilter(SearchFilter.PEOPLE)
-                                    filterMenuExpanded = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.tab_notes)) },
-                                onClick = {
-                                    viewModel.selectFilter(SearchFilter.NOTES)
-                                    filterMenuExpanded = false
-                                }
-                            )
+                            if (filter != SearchFilter.PEOPLE) {
+                                DropdownMenuItem(
+                                    text = { Text("Profiles") },
+                                    onClick = {
+                                        viewModel.selectFilter(SearchFilter.PEOPLE)
+                                        filterMenuExpanded = false
+                                    }
+                                )
+                            }
+                            if (filter != SearchFilter.NOTES) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.tab_notes)) },
+                                    onClick = {
+                                        viewModel.selectFilter(SearchFilter.NOTES)
+                                        filterMenuExpanded = false
+                                    }
+                                )
+                            }
                         }
                     }
                 },
@@ -179,7 +189,6 @@ fun SearchScreen(
                     TextField(
                         value = query,
                         onValueChange = { viewModel.updateQuery(it) },
-                        placeholder = { Text(stringResource(R.string.placeholder_search_users_notes)) },
                         singleLine = true,
                         trailingIcon = {
                             if (query.isNotEmpty()) {
@@ -189,16 +198,17 @@ fun SearchScreen(
                             }
                         },
                         colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             focusedIndicatorColor = Color.Transparent,
                             unfocusedIndicatorColor = Color.Transparent,
                         ),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(
                             onSearch = { viewModel.search(query, relayPool, eventRepo, muteRepo) }
                         ),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().height(46.dp).focusRequester(searchFocusRequester)
                     )
                 },
                 actions = {
