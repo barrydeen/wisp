@@ -39,6 +39,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.repo.ContactRepository
@@ -215,56 +218,76 @@ fun ThreadScreen(
                         val userPollVotes = remember(pollVoteVersion, event.id) {
                             if (event.kind == 1068) eventRepo.getUserPollVotes(event.id) else emptyList()
                         }
-                        PostCard(
-                            event = event,
-                            profile = profileData,
-                            onReply = { onReply(event) },
-                            onProfileClick = { onProfileClick(event.pubkey) },
-                            onNavigateToProfile = onProfileClick,
-                            onNoteClick = { onNoteClick(event) },
-                            onReact = { emoji -> onReact(event, emoji) },
-                            userReactionEmojis = userEmojis,
-                            onRepost = { onRepost(event) },
-                            onQuote = { onQuote(event) },
-                            hasUserReposted = hasUserReposted,
-                            repostCount = repostCount,
-                            onZap = { onZap(event) },
-                            hasUserZapped = hasUserZapped,
-                            likeCount = likeCount,
-                            replyCount = replyCount,
-                            zapSats = zapSats,
-                            isZapAnimating = event.id in zapAnimatingIds,
-                            isZapInProgress = event.id in zapInProgressIds,
-                            eventRepo = eventRepo,
-                            reactionDetails = reactionDetails,
-                            zapDetails = zapDetailsList,
-                            repostDetails = repostPubkeys,
-                            reactionEmojiUrls = eventReactionEmojiUrls,
-                            resolvedEmojis = resolvedEmojis,
-                            unicodeEmojis = unicodeEmojis,
-                            onOpenEmojiLibrary = onOpenEmojiLibrary,
-                            relayIcons = relayIcons,
-                            onNavigateToProfileFromDetails = onProfileClick,
-                            onFollowAuthor = { onToggleFollow(event.pubkey) },
-                            onBlockAuthor = { onBlockUser(event.pubkey) },
-                            isFollowingAuthor = followList.let { contactRepo.isFollowing(event.pubkey) },
-                            isOwnEvent = event.pubkey == userPubkey,
-                            onAddToList = { onAddToList(event.id) },
-                            isInList = event.id in listedIds,
-                            onPin = { onTogglePin(event.id) },
-                            isPinned = event.id in pinnedIds,
-                            onDelete = { onDeleteEvent(event.id, event.kind) },
-                            nip05Repo = nip05Repo,
-                            onQuotedNoteClick = onQuotedNoteClick,
-                            noteActions = noteActions,
-                            translationState = translationState,
-                            onTranslate = { translationRepo?.translate(event.id, event.content) },
-                            pollVoteCounts = pollVoteCounts,
-                            pollTotalVotes = pollTotalVotes,
-                            userPollVotes = userPollVotes,
-                            onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
-                            modifier = Modifier.padding(start = (min(depth, 4) * 24).dp)
-                        )
+                        val indentDp = 12
+                        val clampedDepth = min(depth, 8)
+                        val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .drawBehind {
+                                    val indentPx = indentDp.dp.toPx()
+                                    for (level in 0 until clampedDepth) {
+                                        val x = level * indentPx + indentPx / 2f
+                                        drawLine(
+                                            color = lineColor,
+                                            start = Offset(x, 0f),
+                                            end = Offset(x, size.height),
+                                            strokeWidth = 1.5.dp.toPx()
+                                        )
+                                    }
+                                }
+                        ) {
+                            PostCard(
+                                event = event,
+                                profile = profileData,
+                                onReply = { onReply(event) },
+                                onProfileClick = { onProfileClick(event.pubkey) },
+                                onNavigateToProfile = onProfileClick,
+                                onNoteClick = { onNoteClick(event) },
+                                onReact = { emoji -> onReact(event, emoji) },
+                                userReactionEmojis = userEmojis,
+                                onRepost = { onRepost(event) },
+                                onQuote = { onQuote(event) },
+                                hasUserReposted = hasUserReposted,
+                                repostCount = repostCount,
+                                onZap = { onZap(event) },
+                                hasUserZapped = hasUserZapped,
+                                likeCount = likeCount,
+                                replyCount = replyCount,
+                                zapSats = zapSats,
+                                isZapAnimating = event.id in zapAnimatingIds,
+                                isZapInProgress = event.id in zapInProgressIds,
+                                eventRepo = eventRepo,
+                                reactionDetails = reactionDetails,
+                                zapDetails = zapDetailsList,
+                                repostDetails = repostPubkeys,
+                                reactionEmojiUrls = eventReactionEmojiUrls,
+                                resolvedEmojis = resolvedEmojis,
+                                unicodeEmojis = unicodeEmojis,
+                                onOpenEmojiLibrary = onOpenEmojiLibrary,
+                                relayIcons = relayIcons,
+                                onNavigateToProfileFromDetails = onProfileClick,
+                                onFollowAuthor = { onToggleFollow(event.pubkey) },
+                                onBlockAuthor = { onBlockUser(event.pubkey) },
+                                isFollowingAuthor = followList.let { contactRepo.isFollowing(event.pubkey) },
+                                isOwnEvent = event.pubkey == userPubkey,
+                                onAddToList = { onAddToList(event.id) },
+                                isInList = event.id in listedIds,
+                                onPin = { onTogglePin(event.id) },
+                                isPinned = event.id in pinnedIds,
+                                onDelete = { onDeleteEvent(event.id, event.kind) },
+                                nip05Repo = nip05Repo,
+                                onQuotedNoteClick = onQuotedNoteClick,
+                                noteActions = noteActions,
+                                translationState = translationState,
+                                onTranslate = { translationRepo?.translate(event.id, event.content) },
+                                pollVoteCounts = pollVoteCounts,
+                                pollTotalVotes = pollTotalVotes,
+                                userPollVotes = userPollVotes,
+                                onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                                modifier = Modifier.padding(start = (clampedDepth * indentDp).dp)
+                            )
+                        }
                     }
                 }
                 AnimatedVisibility(
