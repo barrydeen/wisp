@@ -191,6 +191,7 @@ fun SearchScreen(
                         value = query,
                         onValueChange = { viewModel.updateQuery(it) },
                         singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium,
                         trailingIcon = {
                             if (query.isNotEmpty()) {
                                 IconButton(onClick = { viewModel.clear() }) {
