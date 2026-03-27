@@ -209,7 +209,7 @@ private fun isBlossomUrl(url: String): Boolean {
     }
 }
 
-private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w|\.[a-zA-Z])|(?:https?|wss?)://\S+|(?<!\w)([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|net|org|io|dev|app|pro|ai|co|me|info|xyz|cc|tv|to|gg|sh|im|is|it|rs|ly|site|online|store|tech|cloud|social|world|earth|space|lol|wtf|family|life|art|design|blog|news|live|video|media|chat|games|money|finance|agency|studio|build|run|codes|systems|network|zone|pub|blue|limo|fyi|wiki|page|link|click|exchange|markets|fun|club|today)(?:/\S*)?)(?!\w)|(?<!\w)#([a-zA-Z0-9_][a-zA-Z0-9_-]*)""", RegexOption.IGNORE_CASE)
+private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w|\.[a-zA-Z])|(?:https?|wss?)://\S+|(?<!\w)([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|net|org|io|dev|app|pro|ai|co|me|info|xyz|cc|tv|to|gg|sh|im|is|it|rs|ly|site|online|store|tech|cloud|social|world|earth|space|lol|wtf|family|life|art|design|blog|news|live|video|media|chat|games|money|finance|agency|studio|build|run|codes|systems|network|zone|pub|blue|limo|fyi|wiki|page|link|click|exchange|markets|fun|club|today)(?:/\S*)?)(?!\w)|(?<!\w)#([a-zA-Z0-9_][a-zA-Z0-9_-]*)|(?<!\w)((?:note1|nevent1|nprofile1|naddr1)[a-z0-9]{10,})(?!\w)""", RegexOption.IGNORE_CASE)
 
 private val emojiShortcodeRegex = Regex(""":([a-zA-Z0-9_]+):""")
 
@@ -263,12 +263,16 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
                 is NostrUriData.AddressRef -> segments.add(ContentSegment.NostrAddressableSegment(decoded.dTag, decoded.relays, decoded.author, decoded.kind))
                 null -> segments.add(ContentSegment.TextSegment(token))
             }
-        } else if (token.startsWith("npub1", ignoreCase = true)) {
-            val pubkey = try { Nip19.npubDecode(token).toHex() } catch (_: Exception) { null }
-            if (pubkey != null) {
-                segments.add(ContentSegment.NostrProfileSegment(pubkey))
-            } else {
-                segments.add(ContentSegment.TextSegment(token))
+        } else if (token.startsWith("npub1", ignoreCase = true) ||
+                   token.startsWith("note1", ignoreCase = true) ||
+                   token.startsWith("nevent1", ignoreCase = true) ||
+                   token.startsWith("nprofile1", ignoreCase = true) ||
+                   token.startsWith("naddr1", ignoreCase = true)) {
+            when (val decoded = Nip19.decodeNostrUri("nostr:$token")) {
+                is NostrUriData.NoteRef -> segments.add(ContentSegment.NostrNoteSegment(decoded.eventId, decoded.relays))
+                is NostrUriData.ProfileRef -> segments.add(ContentSegment.NostrProfileSegment(decoded.pubkey, decoded.relays))
+                is NostrUriData.AddressRef -> segments.add(ContentSegment.NostrAddressableSegment(decoded.dTag, decoded.relays, decoded.author, decoded.kind))
+                null -> segments.add(ContentSegment.TextSegment(token))
             }
         } else {
             val url = token.trimEnd('.', ',', ')', ']', ';', ':', '!', '?')

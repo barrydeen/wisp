@@ -13,6 +13,7 @@ import com.wisp.app.nostr.DmReaction
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip13
 import com.wisp.app.nostr.Nip17
+import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.nostr.SignerCancelledException
@@ -36,6 +37,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+
+private val DM_BARE_BECH32_REGEX = Regex("(?<!nostr:)(?<![a-z0-9/.:#])((note1|nevent1|npub1|nprofile1)[a-z0-9]{10,})")
 
 enum class DeliveryRelaySource { DM_RELAYS, READ_RELAYS, WRITE_RELAYS, OWN_RELAYS }
 
@@ -273,7 +276,13 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun updateMessageText(value: String) {
-        _messageText.value = value
+        val prefixed = DM_BARE_BECH32_REGEX.find(value)?.let { match ->
+            val bare = match.groupValues[1]
+            val valid = try { Nip19.decodeNostrUri("nostr:$bare") != null } catch (_: Exception) { false }
+            if (valid) value.substring(0, match.range.first) + "nostr:" + value.substring(match.range.first)
+            else value
+        } ?: value
+        _messageText.value = prefixed
     }
 
     fun clearSendError() {
