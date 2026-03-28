@@ -639,4 +639,44 @@
     <string name="online_all_nostr">%d online su tutto Nostr</string>
     <string name="splash_people_online">%d persone online</string>
     <string name="cd_wisp_logo">Logo Wisp</string>
+
+    <!-- NIP-29 Chat Rooms -->
+    <string name="tab_direct_messages">Messaggi diretti</string>
+    <string name="tab_chat_rooms">Stanze di chat</string>
+    <string name="title_join_chat_room">Unisciti alla stanza di chat</string>
+    <string name="title_create_group">Crea stanza di chat</string>
+    <string name="label_relay_url">URL del relay</string>
+    <string name="label_group_id">ID stanza</string>
+    <string name="label_group_name">Nome stanza</string>
+    <string name="action_join">Unisciti</string>
+    <string name="action_cancel">Annulla</string>
+    <string name="action_create">Crea</string>
+    <string name="action_join_group">Unisciti a una stanza di chat esistente</string>
+    <string name="action_create_group">Crea nuova stanza di chat</string>
+    <string name="error_no_chat_rooms">Nessuna stanza di chat ancora</string>
+    <string name="error_join_room_hint">Tocca + per unirti o creare una stanza di chat</string>
+    <string name="cd_join_group">Unisciti alla stanza di chat</string>
+    <string name="cd_new_group_dm">Nuovo DM di gruppo</string>
+    <string name="cd_group_actions">Azioni stanza di chat</string>
+    <string name="title_group_detail">Info stanza di chat</string>
+    <string name="cd_edit_group">Modifica stanza di chat</string>
+    <string name="label_invite_link">Link di invito</string>
+    <string name="cd_copy_link">Copia link</string>
+    <string name="label_members_count">Membri (%d)</string>
+    <string name="label_members_unavailable">Elenco membri non disponibile</string>
+    <string name="title_remove_user">Rimuovi utente</string>
+    <string name="msg_remove_user_confirm">Rimuovere %s da questo gruppo?</string>
+    <string name="action_remove">Rimuovi</string>
+    <string name="title_edit_group">Modifica stanza di chat</string>
+    <string name="label_group_about">Informazioni</string>
+    <string name="action_save">Salva</string>
+    <string name="cd_remove_user">Rimuovi utente</string>
+    <string name="label_group_picture">URL immagine</string>
+    <string name="cd_upload_group_picture">Carica immagine del gruppo</string>
+    <string name="action_leave_group">Lascia stanza di chat</string>
+    <string name="title_leave_group">Lascia stanza di chat</string>
+    <string name="msg_leave_group_confirm">Lasciare questa stanza di chat? Puoi riunirti in seguito usando il link di invito.</string>
+    <string name="action_delete_group">Elimina stanza di chat</string>
+    <string name="title_delete_group">Elimina stanza di chat</string>
+    <string name="msg_delete_group_confirm">Eliminare definitivamente questa stanza di chat? Questa azione non può essere annullata.</string>
 </resources>

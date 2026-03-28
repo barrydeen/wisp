@@ -639,4 +639,44 @@
     <string name="online_all_nostr">Nostr全体で%d人がオンライン</string>
     <string name="splash_people_online">%d人がオンライン</string>
     <string name="cd_wisp_logo">Wispロゴ</string>
+
+    <!-- NIP-29 Chat Rooms -->
+    <string name="tab_direct_messages">ダイレクトメッセージ</string>
+    <string name="tab_chat_rooms">チャットルーム</string>
+    <string name="title_join_chat_room">チャットルームに参加</string>
+    <string name="title_create_group">チャットルームを作成</string>
+    <string name="label_relay_url">リレーURL</string>
+    <string name="label_group_id">ルームID</string>
+    <string name="label_group_name">ルーム名</string>
+    <string name="action_join">参加</string>
+    <string name="action_cancel">キャンセル</string>
+    <string name="action_create">作成</string>
+    <string name="action_join_group">既存のチャットルームに参加</string>
+    <string name="action_create_group">新しいチャットルームを作成</string>
+    <string name="error_no_chat_rooms">チャットルームはまだありません</string>
+    <string name="error_join_room_hint">+をタップしてチャットルームに参加または作成</string>
+    <string name="cd_join_group">チャットルームに参加</string>
+    <string name="cd_new_group_dm">新しいグループDM</string>
+    <string name="cd_group_actions">チャットルームのアクション</string>
+    <string name="title_group_detail">チャットルーム情報</string>
+    <string name="cd_edit_group">チャットルームを編集</string>
+    <string name="label_invite_link">招待リンク</string>
+    <string name="cd_copy_link">リンクをコピー</string>
+    <string name="label_members_count">メンバー（%d）</string>
+    <string name="label_members_unavailable">メンバーリストは利用できません</string>
+    <string name="title_remove_user">ユーザーを削除</string>
+    <string name="msg_remove_user_confirm">このグループから%sを削除しますか？</string>
+    <string name="action_remove">削除</string>
+    <string name="title_edit_group">チャットルームを編集</string>
+    <string name="label_group_about">紹介</string>
+    <string name="action_save">保存</string>
+    <string name="cd_remove_user">ユーザーを削除</string>
+    <string name="label_group_picture">画像URL</string>
+    <string name="cd_upload_group_picture">グループ画像をアップロード</string>
+    <string name="action_leave_group">チャットルームを退出</string>
+    <string name="title_leave_group">チャットルームを退出</string>
+    <string name="msg_leave_group_confirm">このチャットルームを退出しますか？招待リンクを使って後で再参加できます。</string>
+    <string name="action_delete_group">チャットルームを削除</string>
+    <string name="title_delete_group">チャットルームを削除</string>
+    <string name="msg_delete_group_confirm">このチャットルームを完全に削除しますか？この操作は元に戻せません。</string>
 </resources>

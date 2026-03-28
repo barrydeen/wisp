@@ -639,4 +639,44 @@
     <string name="online_all_nostr">%d online überall auf Nostr</string>
     <string name="splash_people_online">%d Personen online</string>
     <string name="cd_wisp_logo">Wisp-Logo</string>
+
+    <!-- NIP-29 Chat Rooms -->
+    <string name="tab_direct_messages">Direktnachrichten</string>
+    <string name="tab_chat_rooms">Chatrooms</string>
+    <string name="title_join_chat_room">Chatroom beitreten</string>
+    <string name="title_create_group">Chatroom erstellen</string>
+    <string name="label_relay_url">Relay-URL</string>
+    <string name="label_group_id">Raum-ID</string>
+    <string name="label_group_name">Raumname</string>
+    <string name="action_join">Beitreten</string>
+    <string name="action_cancel">Abbrechen</string>
+    <string name="action_create">Erstellen</string>
+    <string name="action_join_group">Vorhandenem Chatroom beitreten</string>
+    <string name="action_create_group">Neuen Chatroom erstellen</string>
+    <string name="error_no_chat_rooms">Noch keine Chatrooms</string>
+    <string name="error_join_room_hint">Tippe auf +, um einem Chatroom beizutreten oder einen zu erstellen</string>
+    <string name="cd_join_group">Chatroom beitreten</string>
+    <string name="cd_new_group_dm">Neue Gruppen-DM</string>
+    <string name="cd_group_actions">Chatroom-Aktionen</string>
+    <string name="title_group_detail">Chatroom-Info</string>
+    <string name="cd_edit_group">Chatroom bearbeiten</string>
+    <string name="label_invite_link">Einladungslink</string>
+    <string name="cd_copy_link">Link kopieren</string>
+    <string name="label_members_count">Mitglieder (%d)</string>
+    <string name="label_members_unavailable">Mitgliederliste nicht verfügbar</string>
+    <string name="title_remove_user">Benutzer entfernen</string>
+    <string name="msg_remove_user_confirm">%s aus dieser Gruppe entfernen?</string>
+    <string name="action_remove">Entfernen</string>
+    <string name="title_edit_group">Chatroom bearbeiten</string>
+    <string name="label_group_about">Info</string>
+    <string name="action_save">Speichern</string>
+    <string name="cd_remove_user">Benutzer entfernen</string>
+    <string name="label_group_picture">Bild-URL</string>
+    <string name="cd_upload_group_picture">Gruppenbild hochladen</string>
+    <string name="action_leave_group">Chatroom verlassen</string>
+    <string name="title_leave_group">Chatroom verlassen</string>
+    <string name="msg_leave_group_confirm">Diesen Chatroom verlassen? Du kannst später über den Einladungslink wieder beitreten.</string>
+    <string name="action_delete_group">Chatroom löschen</string>
+    <string name="title_delete_group">Chatroom löschen</string>
+    <string name="msg_delete_group_confirm">Diesen Chatroom dauerhaft löschen? Dies kann nicht rückgängig gemacht werden.</string>
 </resources>

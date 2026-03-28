@@ -639,4 +639,44 @@
     <string name="online_all_nostr">%d en línea en todo Nostr</string>
     <string name="splash_people_online">%d personas en línea</string>
     <string name="cd_wisp_logo">Logo de Wisp</string>
+
+    <!-- NIP-29 Chat Rooms -->
+    <string name="tab_direct_messages">Mensajes directos</string>
+    <string name="tab_chat_rooms">Salas de chat</string>
+    <string name="title_join_chat_room">Unirse a la sala de chat</string>
+    <string name="title_create_group">Crear sala de chat</string>
+    <string name="label_relay_url">URL del relay</string>
+    <string name="label_group_id">ID de la sala</string>
+    <string name="label_group_name">Nombre de la sala</string>
+    <string name="action_join">Unirse</string>
+    <string name="action_cancel">Cancelar</string>
+    <string name="action_create">Crear</string>
+    <string name="action_join_group">Unirse a una sala de chat existente</string>
+    <string name="action_create_group">Crear nueva sala de chat</string>
+    <string name="error_no_chat_rooms">Aún no hay salas de chat</string>
+    <string name="error_join_room_hint">Toca + para unirte o crear una sala de chat</string>
+    <string name="cd_join_group">Unirse a la sala de chat</string>
+    <string name="cd_new_group_dm">Nuevo mensaje de grupo</string>
+    <string name="cd_group_actions">Acciones de la sala de chat</string>
+    <string name="title_group_detail">Info de la sala de chat</string>
+    <string name="cd_edit_group">Editar sala de chat</string>
+    <string name="label_invite_link">Enlace de invitación</string>
+    <string name="cd_copy_link">Copiar enlace</string>
+    <string name="label_members_count">Miembros (%d)</string>
+    <string name="label_members_unavailable">Lista de miembros no disponible</string>
+    <string name="title_remove_user">Eliminar usuario</string>
+    <string name="msg_remove_user_confirm">¿Eliminar a %s de este grupo?</string>
+    <string name="action_remove">Eliminar</string>
+    <string name="title_edit_group">Editar sala de chat</string>
+    <string name="label_group_about">Acerca de</string>
+    <string name="action_save">Guardar</string>
+    <string name="cd_remove_user">Eliminar usuario</string>
+    <string name="label_group_picture">URL de imagen</string>
+    <string name="cd_upload_group_picture">Subir imagen del grupo</string>
+    <string name="action_leave_group">Abandonar sala de chat</string>
+    <string name="title_leave_group">Abandonar sala de chat</string>
+    <string name="msg_leave_group_confirm">¿Abandonar esta sala de chat? Puedes volver a unirte más tarde usando el enlace de invitación.</string>
+    <string name="action_delete_group">Eliminar sala de chat</string>
+    <string name="title_delete_group">Eliminar sala de chat</string>
+    <string name="msg_delete_group_confirm">¿Eliminar permanentemente esta sala de chat? Esta acción no se puede deshacer.</string>
 </resources>
