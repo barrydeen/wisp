@@ -135,7 +135,8 @@ fun GroupRoomScreen(
     peerEmojiMaps: Map<String, Map<String, String>> = emptyMap(),
     zapVersion: Int = 0,
     zapAnimatingIds: Set<String> = emptySet(),
-    zapInProgressIds: Set<String> = emptySet()
+    zapInProgressIds: Set<String> = emptySet(),
+    onOpenEmojiLibrary: (() -> Unit)? = null
 ) {
     val textFieldFocus = remember { FocusRequester() }
 
@@ -297,7 +298,8 @@ fun GroupRoomScreen(
                             onReact = { msgId, pubkey, emoji ->
                                 viewModel.sendReaction(msgId, pubkey, emoji, signer, relayPool, resolvedEmojis)
                             },
-                            onZap = onZap
+                            onZap = onZap,
+                            onOpenEmojiLibrary = onOpenEmojiLibrary
                         )
                     }
                 }
@@ -727,7 +729,8 @@ private fun GroupMessageBubble(
     onProfileClick: (String) -> Unit,
     onReply: (GroupMessage) -> Unit,
     onReact: (messageId: String, senderPubkey: String, emoji: String) -> Unit,
-    onZap: ((messageId: String, senderPubkey: String) -> Unit)? = null
+    onZap: ((messageId: String, senderPubkey: String) -> Unit)? = null,
+    onOpenEmojiLibrary: (() -> Unit)? = null
 ) {
     val profile = remember(message.senderPubkey) { eventRepo.getProfileData(message.senderPubkey) }
     val displayName = profile?.displayString ?: (message.senderPubkey.take(8) + "…")
@@ -1001,7 +1004,8 @@ private fun GroupMessageBubble(
                         onDismiss = { showEmojiPicker = false },
                         selectedEmojis = myReactions,
                         resolvedEmojis = resolvedEmojis,
-                        unicodeEmojis = unicodeEmojis
+                        unicodeEmojis = unicodeEmojis,
+                        onOpenEmojiLibrary = onOpenEmojiLibrary?.let { { showEmojiPicker = false; it() } }
                     )
                 }
             }

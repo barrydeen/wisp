@@ -1404,6 +1404,7 @@ fun WispNavHost(
             val groupRoomUploadScope = rememberCoroutineScope()
             var groupRoomUploadProgress by remember { mutableStateOf<String?>(null) }
             var groupRoomZapTarget by remember { mutableStateOf<com.wisp.app.nostr.NostrEvent?>(null) }
+            var showGroupRoomEmojiLibrary by remember { mutableStateOf(false) }
             val groupRoomResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
             val groupRoomUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
             val groupRoomPeerEmojiMaps by groupListViewModel.peerEmojiMaps.collectAsState()
@@ -1526,8 +1527,19 @@ fun WispNavHost(
                 peerEmojiMaps = groupRoomPeerEmojiMaps,
                 zapVersion = groupRoomZapVersion,
                 zapAnimatingIds = groupRoomZapAnimatingIds,
-                zapInProgressIds = groupRoomZapInProgress
+                zapInProgressIds = groupRoomZapInProgress,
+                onOpenEmojiLibrary = { showGroupRoomEmojiLibrary = true }
             )
+            if (showGroupRoomEmojiLibrary) {
+                val groupRoomSheetUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+                com.wisp.app.ui.component.EmojiLibrarySheet(
+                    currentEmojis = groupRoomSheetUnicodeEmojis,
+                    onAddEmojis = { emojis ->
+                        emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                    },
+                    onDismiss = { showGroupRoomEmojiLibrary = false }
+                )
+            }
         }
 
         composable(
