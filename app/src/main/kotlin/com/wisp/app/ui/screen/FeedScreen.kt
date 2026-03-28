@@ -358,7 +358,8 @@ fun FeedScreen(
 
     if (showOnlineSheet) {
         androidx.compose.material3.ModalBottomSheet(
-            onDismissRequest = { showOnlineSheet = false }
+            onDismissRequest = { showOnlineSheet = false },
+            containerColor = MaterialTheme.colorScheme.surface
         ) {
             Column(
                 modifier = Modifier
@@ -372,10 +373,10 @@ fun FeedScreen(
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.height(8.dp))
-                val greenDot = androidx.compose.ui.graphics.Color(0xFF4CAF50)
+                val greenColor = WispThemeColors.repostColor
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     androidx.compose.foundation.Canvas(modifier = Modifier.size(8.dp)) {
-                        drawCircle(color = greenDot)
+                        drawCircle(color = greenColor)
                     }
                     Spacer(Modifier.width(8.dp))
                     Text(
@@ -388,7 +389,7 @@ fun FeedScreen(
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.foundation.Canvas(modifier = Modifier.size(8.dp)) {
-                            drawCircle(color = greenDot)
+                            drawCircle(color = greenColor)
                         }
                         Spacer(Modifier.width(8.dp))
                         Text(
@@ -512,6 +513,7 @@ fun FeedScreen(
     if (zapErrorMessage != null) {
         AlertDialog(
             onDismissRequest = { zapErrorMessage = null },
+            containerColor = MaterialTheme.colorScheme.surface,
             title = { Text(stringResource(R.string.zap_failed)) },
             text = { Text(zapErrorMessage ?: "") },
             confirmButton = {
@@ -524,6 +526,7 @@ fun FeedScreen(
     if (pendingFirstFollow != null) {
         AlertDialog(
             onDismissRequest = { viewModel.dismissFirstFollow() },
+            containerColor = MaterialTheme.colorScheme.surface,
             title = { Text(if (firstFollowCheckDone) "No follow list found" else "Checking follow list") },
             text = {
                 if (!firstFollowCheckDone) {
@@ -555,6 +558,7 @@ fun FeedScreen(
     if (showSocialGraphDialog) {
         AlertDialog(
             onDismissRequest = { showSocialGraphDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
             title = { Text(stringResource(R.string.error_social_graph_required)) },
             text = {
                 Text(stringResource(R.string.error_extended_feed_description))
@@ -712,10 +716,11 @@ fun FeedScreen(
                                 }
                                 DropdownMenu(
                                     expanded = showFeedTypeDropdown,
-                                    onDismissRequest = { showFeedTypeDropdown = false }
+                                    onDismissRequest = { showFeedTypeDropdown = false },
+                                    containerColor = MaterialTheme.colorScheme.surface
                                 ) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.tab_follows)) },
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.tab_follows)) },
                                         onClick = {
                                             showFeedTypeDropdown = false
                                             viewModel.setFeedType(FeedType.FOLLOWS)
@@ -724,8 +729,8 @@ fun FeedScreen(
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                         }} else null
                                     )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.tab_extended)) },
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.tab_extended)) },
                                         onClick = {
                                             showFeedTypeDropdown = false
                                             if (viewModel.extendedNetworkRepo.cachedNetwork.value == null) {
@@ -738,8 +743,8 @@ fun FeedScreen(
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                         }} else null
                                     )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.tab_trending)) },
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.tab_trending)) },
                                         onClick = {
                                             showFeedTypeDropdown = false
                                             viewModel.setFeedType(FeedType.TRENDING)
@@ -748,8 +753,8 @@ fun FeedScreen(
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                         }} else null
                                     )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.tab_relay)) },
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.tab_relay)) },
                                         onClick = {
                                             showFeedTypeDropdown = false
                                             showRelayPicker = true
@@ -758,8 +763,8 @@ fun FeedScreen(
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                         }} else null
                                     )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.tab_list)) },
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.tab_list)) },
                                         onClick = {
                                             showFeedTypeDropdown = false
                                             showListPicker = true
@@ -768,8 +773,8 @@ fun FeedScreen(
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                         }} else null
                                     )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.tab_hashtags)) },
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.tab_hashtags)) },
                                         onClick = {
                                             showFeedTypeDropdown = false
                                             showHashtagPicker = true
@@ -801,7 +806,7 @@ fun FeedScreen(
                                         Icons.Outlined.Person,
                                         contentDescription = null,
                                         modifier = Modifier.size(14.dp),
-                                        tint = androidx.compose.ui.graphics.Color(0xFF4CAF50)
+                                        tint = WispThemeColors.repostColor
                                     )
                                     Spacer(Modifier.width(4.dp))
                                     Text(
@@ -828,7 +833,7 @@ fun FeedScreen(
                                         contentDescription = null,
                                         modifier = Modifier.size(14.dp),
                                         tint = if (connectedCount > 0)
-                                            androidx.compose.ui.graphics.Color(0xFF4CAF50)
+                                            WispThemeColors.repostColor
                                         else
                                             androidx.compose.ui.graphics.Color(0xFFFF5252)
                                     )
@@ -1473,6 +1478,7 @@ private fun RelayPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
         title = { Text(stringResource(R.string.menu_select_relay)) },
         text = {
             Column {
@@ -1781,6 +1787,7 @@ private fun ListPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
         title = { Text("Select List") },
         text = {
             Column {
@@ -1880,6 +1887,7 @@ private fun HashtagPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
         title = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2121,6 +2129,7 @@ private fun HashtagPickerDialog(
         val setName = sets.find { it.dTag == dTag }?.name ?: dTag
         AlertDialog(
             onDismissRequest = { confirmDeleteDTag = null },
+            containerColor = MaterialTheme.colorScheme.surface,
             title = { Text(stringResource(R.string.delete_set)) },
             text = { Text(stringResource(R.string.error_delete_set_hashtags, setName)) },
             confirmButton = {
@@ -2584,6 +2593,7 @@ private fun RelayFeedBar(
     if (showSetPicker) {
         AlertDialog(
             onDismissRequest = { showSetPicker = false },
+            containerColor = MaterialTheme.colorScheme.surface,
             title = { Text(stringResource(R.string.menu_add_to_relay_set)) },
             text = {
                 Column {

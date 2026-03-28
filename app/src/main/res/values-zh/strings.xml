@@ -75,6 +75,7 @@
     <string name="btn_save_profile">保存资料</string>
     <string name="btn_save_draft">保存草稿</string>
     <string name="compose_new_post">新帖子</string>
+    <string name="new_group_dm">新建群组私信</string>
     <string name="compose_reply">回复</string>
     <string name="compose_quote">引用</string>
     <string name="compose_placeholder">你在想什么？</string>

@@ -75,6 +75,7 @@
     <string name="btn_save_profile">Enregistrer le Profil</string>
     <string name="btn_save_draft">Enregistrer le brouillon</string>
     <string name="compose_new_post">Nouveau post</string>
+    <string name="new_group_dm">Nouveau Groupe DM</string>
     <string name="compose_reply">Répondre</string>
     <string name="compose_quote">Citer</string>
     <string name="compose_placeholder">À quoi pensez-vous ?</string>

@@ -105,7 +105,8 @@ fun DmListScreen(
                     onClick = {
                         if (selectedTab == 0) onNewGroupDm()
                         else showFabMenu = true
-                    }
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary
                 ) {
                     if (selectedTab == 0) {
                         Icon(Icons.Outlined.GroupAdd, contentDescription = stringResource(R.string.cd_new_group_dm))

@@ -75,6 +75,7 @@
     <string name="btn_save_profile">Profil speichern</string>
     <string name="btn_save_draft">Entwurf speichern</string>
     <string name="compose_new_post">Neuer Beitrag</string>
+    <string name="new_group_dm">Neue Gruppe DM</string>
     <string name="compose_reply">Antworten</string>
     <string name="compose_quote">Zitat</string>
     <string name="compose_placeholder">Was hast du auf dem Herzen?</string>
