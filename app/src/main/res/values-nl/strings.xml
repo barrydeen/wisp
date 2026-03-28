@@ -639,4 +639,44 @@
     <string name="online_all_nostr">%d online overal op Nostr</string>
     <string name="splash_people_online">%d mensen online</string>
     <string name="cd_wisp_logo">Wisp-logo</string>
+
+    <!-- NIP-29 Chat Rooms -->
+    <string name="tab_direct_messages">Directe berichten</string>
+    <string name="tab_chat_rooms">Chatruimten</string>
+    <string name="title_join_chat_room">Chatruimte samenvoegen</string>
+    <string name="title_create_group">Chatruimte maken</string>
+    <string name="label_relay_url">Relay-URL</string>
+    <string name="label_group_id">Kamer-ID</string>
+    <string name="label_group_name">Kamernaam</string>
+    <string name="action_join">Deelnemen</string>
+    <string name="action_cancel">Annuleren</string>
+    <string name="action_create">Maken</string>
+    <string name="action_join_group">Word lid van een bestaande chatruimte</string>
+    <string name="action_create_group">Nieuwe chatruimte maken</string>
+    <string name="error_no_chat_rooms">Nog geen chatruimten</string>
+    <string name="error_join_room_hint">Tik op + om een chatruimte te joinen of te maken</string>
+    <string name="cd_join_group">Chatruimte samenvoegen</string>
+    <string name="cd_new_group_dm">Nieuw groeps-DM</string>
+    <string name="cd_group_actions">Chatruimte-acties</string>
+    <string name="title_group_detail">Chatruimte-info</string>
+    <string name="cd_edit_group">Chatruimte bewerken</string>
+    <string name="label_invite_link">Uitnodigingslink</string>
+    <string name="cd_copy_link">Link kopiëren</string>
+    <string name="label_members_count">Leden (%d)</string>
+    <string name="label_members_unavailable">Ledenlijst niet beschikbaar</string>
+    <string name="title_remove_user">Gebruiker verwijderen</string>
+    <string name="msg_remove_user_confirm">%s uit deze groep verwijderen?</string>
+    <string name="action_remove">Verwijderen</string>
+    <string name="title_edit_group">Chatruimte bewerken</string>
+    <string name="label_group_about">Over</string>
+    <string name="action_save">Opslaan</string>
+    <string name="cd_remove_user">Gebruiker verwijderen</string>
+    <string name="label_group_picture">Afbeeldings-URL</string>
+    <string name="cd_upload_group_picture">Groepsafbeelding uploaden</string>
+    <string name="action_leave_group">Chatruimte verlaten</string>
+    <string name="title_leave_group">Chatruimte verlaten</string>
+    <string name="msg_leave_group_confirm">Deze chatruimte verlaten? Je kunt later opnieuw deelnemen via de uitnodigingslink.</string>
+    <string name="action_delete_group">Chatruimte verwijderen</string>
+    <string name="title_delete_group">Chatruimte verwijderen</string>
+    <string name="msg_delete_group_confirm">Deze chatruimte definitief verwijderen? Dit kan niet ongedaan worden gemaakt.</string>
 </resources>
