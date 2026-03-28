@@ -639,4 +639,44 @@
     <string name="online_all_nostr">Nostr 전체에서 %d명 온라인</string>
     <string name="splash_people_online">%d명 온라인</string>
     <string name="cd_wisp_logo">Wisp 로고</string>
+
+    <!-- NIP-29 Chat Rooms -->
+    <string name="tab_direct_messages">다이렉트 메시지</string>
+    <string name="tab_chat_rooms">채팅방</string>
+    <string name="title_join_chat_room">채팅방 참여</string>
+    <string name="title_create_group">채팅방 만들기</string>
+    <string name="label_relay_url">릴레이 URL</string>
+    <string name="label_group_id">방 ID</string>
+    <string name="label_group_name">방 이름</string>
+    <string name="action_join">참여</string>
+    <string name="action_cancel">취소</string>
+    <string name="action_create">만들기</string>
+    <string name="action_join_group">기존 채팅방 참여</string>
+    <string name="action_create_group">새 채팅방 만들기</string>
+    <string name="error_no_chat_rooms">아직 채팅방이 없습니다</string>
+    <string name="error_join_room_hint">+를 눌러 채팅방에 참여하거나 만드세요</string>
+    <string name="cd_join_group">채팅방 참여</string>
+    <string name="cd_new_group_dm">새 그룹 DM</string>
+    <string name="cd_group_actions">채팅방 작업</string>
+    <string name="title_group_detail">채팅방 정보</string>
+    <string name="cd_edit_group">채팅방 수정</string>
+    <string name="label_invite_link">초대 링크</string>
+    <string name="cd_copy_link">링크 복사</string>
+    <string name="label_members_count">멤버 (%d)</string>
+    <string name="label_members_unavailable">멤버 목록을 사용할 수 없습니다</string>
+    <string name="title_remove_user">사용자 제거</string>
+    <string name="msg_remove_user_confirm">이 그룹에서 %s을(를) 제거하시겠습니까?</string>
+    <string name="action_remove">제거</string>
+    <string name="title_edit_group">채팅방 수정</string>
+    <string name="label_group_about">소개</string>
+    <string name="action_save">저장</string>
+    <string name="cd_remove_user">사용자 제거</string>
+    <string name="label_group_picture">사진 URL</string>
+    <string name="cd_upload_group_picture">그룹 사진 업로드</string>
+    <string name="action_leave_group">채팅방 나가기</string>
+    <string name="title_leave_group">채팅방 나가기</string>
+    <string name="msg_leave_group_confirm">이 채팅방을 나가시겠습니까? 초대 링크를 사용하여 나중에 다시 참여할 수 있습니다.</string>
+    <string name="action_delete_group">채팅방 삭제</string>
+    <string name="title_delete_group">채팅방 삭제</string>
+    <string name="msg_delete_group_confirm">이 채팅방을 영구적으로 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.</string>
 </resources>

@@ -600,4 +600,44 @@
     <string name="online_all_nostr">%d онлайн во всём Nostr</string>
     <string name="splash_people_online">%d человек онлайн</string>
     <string name="cd_wisp_logo">Логотип Wisp</string>
+
+    <!-- NIP-29 Chat Rooms -->
+    <string name="tab_direct_messages">Личные сообщения</string>
+    <string name="tab_chat_rooms">Чат-комнаты</string>
+    <string name="title_join_chat_room">Войти в чат-комнату</string>
+    <string name="title_create_group">Создать чат-комнату</string>
+    <string name="label_relay_url">URL ретранслятора</string>
+    <string name="label_group_id">ID комнаты</string>
+    <string name="label_group_name">Название комнаты</string>
+    <string name="action_join">Войти</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="action_create">Создать</string>
+    <string name="action_join_group">Войти в существующую чат-комнату</string>
+    <string name="action_create_group">Создать новую чат-комнату</string>
+    <string name="error_no_chat_rooms">Чат-комнат пока нет</string>
+    <string name="error_join_room_hint">Нажмите +, чтобы войти или создать чат-комнату</string>
+    <string name="cd_join_group">Войти в чат-комнату</string>
+    <string name="cd_new_group_dm">Новое групповое сообщение</string>
+    <string name="cd_group_actions">Действия чат-комнаты</string>
+    <string name="title_group_detail">Информация о чат-комнате</string>
+    <string name="cd_edit_group">Изменить чат-комнату</string>
+    <string name="label_invite_link">Ссылка-приглашение</string>
+    <string name="cd_copy_link">Скопировать ссылку</string>
+    <string name="label_members_count">Участники (%d)</string>
+    <string name="label_members_unavailable">Список участников недоступен</string>
+    <string name="title_remove_user">Удалить пользователя</string>
+    <string name="msg_remove_user_confirm">Удалить %s из этой группы?</string>
+    <string name="action_remove">Удалить</string>
+    <string name="title_edit_group">Изменить чат-комнату</string>
+    <string name="label_group_about">О комнате</string>
+    <string name="action_save">Сохранить</string>
+    <string name="cd_remove_user">Удалить пользователя</string>
+    <string name="label_group_picture">URL изображения</string>
+    <string name="cd_upload_group_picture">Загрузить изображение группы</string>
+    <string name="action_leave_group">Покинуть чат-комнату</string>
+    <string name="title_leave_group">Покинуть чат-комнату</string>
+    <string name="msg_leave_group_confirm">Покинуть эту чат-комнату? Вы можете вернуться позже, используя ссылку-приглашение.</string>
+    <string name="action_delete_group">Удалить чат-комнату</string>
+    <string name="title_delete_group">Удалить чат-комнату</string>
+    <string name="msg_delete_group_confirm">Навсегда удалить эту чат-комнату? Это действие нельзя отменить.</string>
 </resources>

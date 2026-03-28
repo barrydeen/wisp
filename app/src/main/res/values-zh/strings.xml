@@ -639,4 +639,44 @@
     <string name="online_all_nostr">整个Nostr有%d人在线</string>
     <string name="splash_people_online">%d人在线</string>
     <string name="cd_wisp_logo">Wisp标志</string>
+
+    <!-- NIP-29 Chat Rooms -->
+    <string name="tab_direct_messages">私信</string>
+    <string name="tab_chat_rooms">聊天室</string>
+    <string name="title_join_chat_room">加入聊天室</string>
+    <string name="title_create_group">创建聊天室</string>
+    <string name="label_relay_url">中继 URL</string>
+    <string name="label_group_id">房间 ID</string>
+    <string name="label_group_name">房间名称</string>
+    <string name="action_join">加入</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_create">创建</string>
+    <string name="action_join_group">加入现有聊天室</string>
+    <string name="action_create_group">创建新聊天室</string>
+    <string name="error_no_chat_rooms">暂无聊天室</string>
+    <string name="error_join_room_hint">点击 + 加入或创建聊天室</string>
+    <string name="cd_join_group">加入聊天室</string>
+    <string name="cd_new_group_dm">新群组私信</string>
+    <string name="cd_group_actions">聊天室操作</string>
+    <string name="title_group_detail">聊天室信息</string>
+    <string name="cd_edit_group">编辑聊天室</string>
+    <string name="label_invite_link">邀请链接</string>
+    <string name="cd_copy_link">复制链接</string>
+    <string name="label_members_count">成员（%d）</string>
+    <string name="label_members_unavailable">成员列表不可用</string>
+    <string name="title_remove_user">移除用户</string>
+    <string name="msg_remove_user_confirm">从此群组中移除 %s？</string>
+    <string name="action_remove">移除</string>
+    <string name="title_edit_group">编辑聊天室</string>
+    <string name="label_group_about">简介</string>
+    <string name="action_save">保存</string>
+    <string name="cd_remove_user">移除用户</string>
+    <string name="label_group_picture">图片 URL</string>
+    <string name="cd_upload_group_picture">上传群组图片</string>
+    <string name="action_leave_group">离开聊天室</string>
+    <string name="title_leave_group">离开聊天室</string>
+    <string name="msg_leave_group_confirm">离开此聊天室？您可以稍后使用邀请链接重新加入。</string>
+    <string name="action_delete_group">删除聊天室</string>
+    <string name="title_delete_group">删除聊天室</string>
+    <string name="msg_delete_group_confirm">永久删除此聊天室？此操作无法撤销。</string>
 </resources>
