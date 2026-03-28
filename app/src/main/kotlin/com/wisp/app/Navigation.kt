@@ -1481,6 +1481,23 @@ fun WispNavHost(
                         )
                     )
                 },
+                onUploadMedia = { uris, onUrl ->
+                    groupRoomUploadScope.launch {
+                        val total = uris.size
+                        for ((index, uri) in uris.withIndex()) {
+                            try {
+                                groupRoomUploadProgress = if (total > 1) "Uploading ${index + 1}/$total..." else "Uploading..."
+                                val bytes = groupRoomContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                                    ?: continue
+                                val mimeType = groupRoomContext.contentResolver.getType(uri) ?: "application/octet-stream"
+                                val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "bin"
+                                val url = feedViewModel.blossomRepo.uploadMedia(bytes, mimeType, ext, activeSigner)
+                                onUrl(url)
+                            } catch (_: Exception) { }
+                        }
+                        groupRoomUploadProgress = null
+                    }
+                },
                 uploadProgress = groupRoomUploadProgress,
                 myPubkey = feedViewModel.getUserPubkey(),
                 onZap = { msgId, senderPubkey ->
