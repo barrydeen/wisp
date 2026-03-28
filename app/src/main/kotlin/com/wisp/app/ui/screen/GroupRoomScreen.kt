@@ -30,7 +30,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.content.MediaType
+import androidx.compose.foundation.content.ReceiveContentListener
+import androidx.compose.foundation.content.TransferableContent
+import androidx.compose.foundation.content.consume
+import androidx.compose.foundation.content.contentReceiver
+import androidx.compose.foundation.content.hasMediaType
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -46,7 +56,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -60,9 +70,12 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import android.net.Uri
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
@@ -98,7 +111,7 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun GroupRoomScreen(
     viewModel: GroupRoomViewModel,
@@ -110,6 +123,7 @@ fun GroupRoomScreen(
     onProfileClick: (String) -> Unit,
     onGroupDetail: () -> Unit = {},
     onPickMedia: (() -> Unit)? = null,
+    onUploadMedia: ((List<Uri>, onUrl: (String) -> Unit) -> Unit)? = null,
     uploadProgress: String? = null,
     onJoin: (() -> Unit)? = null,
     onAlreadyMember: (() -> Unit)? = null,
@@ -136,12 +150,35 @@ fun GroupRoomScreen(
     val relayError by viewModel.relayError.collectAsState()
     val replyTarget by viewModel.replyTarget.collectAsState()
 
-    // TextFieldValue for cursor-aware autocomplete detection
+    // BasicTextField state for GIF keyboard support via contentReceiver
+    val textFieldState = remember { TextFieldState() }
+    val interactionSource = remember { MutableInteractionSource() }
+
+    // TextFieldValue mirror for cursor-aware autocomplete detection
     var tfv by remember { mutableStateOf(TextFieldValue()) }
-    // Sync ViewModel text into local TFV (for appendToText/external clears)
+
+    // Sync ViewModel → TextFieldState (for appendToText / external clears)
     LaunchedEffect(messageText) {
+        if (textFieldState.text.toString() != messageText) {
+            textFieldState.edit {
+                replace(0, length, messageText)
+                selection = TextRange(messageText.length)
+            }
+        }
         if (tfv.text != messageText) {
             tfv = TextFieldValue(messageText, TextRange(messageText.length))
+        }
+    }
+
+    // Sync TextFieldState → ViewModel (user typing / GIF keyboard insertions)
+    LaunchedEffect(textFieldState) {
+        snapshotFlow {
+            textFieldState.text.toString() to textFieldState.selection
+        }.collect { (text, selection) ->
+            if (text != messageText) {
+                viewModel.updateText(text)
+                tfv = TextFieldValue(text, selection)
+            }
         }
     }
 
@@ -465,21 +502,47 @@ fun GroupRoomScreen(
                             )
                         }
                     }
-                    OutlinedTextField(
-                        value = if (uploadProgress != null) TextFieldValue(uploadProgress) else tfv,
-                        onValueChange = { newTfv ->
-                            if (uploadProgress == null) {
-                                tfv = newTfv
-                                viewModel.updateText(newTfv.text)
-                            }
-                        },
-                        placeholder = { Text(stringResource(R.string.placeholder_message)) },
+                    BasicTextField(
+                        state = textFieldState,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         modifier = Modifier
                             .weight(1f)
-                            .focusRequester(textFieldFocus),
-                        maxLines = 5,
+                            .focusRequester(textFieldFocus)
+                            .then(
+                                if (onUploadMedia != null) Modifier.contentReceiver(object : ReceiveContentListener {
+                                    override fun onReceive(
+                                        transferableContent: TransferableContent
+                                    ): TransferableContent? {
+                                        if (!transferableContent.hasMediaType(MediaType.Image)) {
+                                            return transferableContent
+                                        }
+                                        val clipData = transferableContent.clipEntry.clipData
+                                        val uris = (0 until clipData.itemCount)
+                                            .mapNotNull { i -> clipData.getItemAt(i).uri }
+                                        if (uris.isNotEmpty()) {
+                                            onUploadMedia(uris) { url -> viewModel.appendToText(url) }
+                                        }
+                                        return transferableContent.consume { item -> item.uri != null }
+                                    }
+                                }) else Modifier
+                            ),
                         enabled = uploadProgress == null,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            color = MaterialTheme.colorScheme.onSurface
+                        ),
+                        decorator = { innerTextField ->
+                            OutlinedTextFieldDefaults.DecorationBox(
+                                value = textFieldState.text.toString(),
+                                innerTextField = innerTextField,
+                                enabled = uploadProgress == null,
+                                singleLine = false,
+                                visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+                                interactionSource = interactionSource,
+                                placeholder = { Text(stringResource(R.string.placeholder_message)) }
+                            )
+                        }
                     )
                     Spacer(Modifier.width(8.dp))
                     if (sending || uploadProgress != null) {
