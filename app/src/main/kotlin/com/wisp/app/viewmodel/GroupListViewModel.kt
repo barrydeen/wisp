@@ -1,0 +1,404 @@
+package com.wisp.app.viewmodel
+
+import android.app.Application
+import android.util.Log
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.wisp.app.nostr.ClientMessage
+import com.wisp.app.nostr.Filter
+import com.wisp.app.nostr.Nip29
+import com.wisp.app.nostr.Nip30
+import com.wisp.app.nostr.NostrSigner
+import com.wisp.app.relay.RelayPool
+import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.GroupMessage
+import com.wisp.app.repo.GroupPreview
+import com.wisp.app.repo.GroupRepository
+import com.wisp.app.repo.GroupRoom
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.onSubscription
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+
+class GroupListViewModel(app: Application) : AndroidViewModel(app) {
+
+    private var groupRepo: GroupRepository? = null
+    private var relayPool: RelayPool? = null
+    private var eventRepo: EventRepository? = null
+
+    /** Groups that currently have an open relay connection and active subscriptions. */
+    private val subscribedGroups = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    val groups: StateFlow<List<GroupRoom>>
+        get() = groupRepo?.joinedGroups ?: MutableStateFlow(emptyList())
+
+    /** Clears all refs so init() can run again after an account switch. */
+    fun reset() {
+        subscribedGroups.clear()
+        groupRepo = null
+        relayPool = null
+        eventRepo = null
+    }
+
+    fun init(repository: GroupRepository, pool: RelayPool, evRepo: EventRepository? = null) {
+        if (groupRepo != null) return
+        groupRepo = repository
+        relayPool = pool
+        eventRepo = evRepo
+        // No startup subscriptions — connections are made on-demand when a room is opened.
+        collectRelayEvents()
+    }
+
+    fun subscribeToGroup(relayUrl: String, groupId: String) {
+        val pool = relayPool ?: return
+        val key = "$relayUrl|$groupId"
+        if (!subscribedGroups.add(key)) return  // already subscribed this session
+        Log.d("GroupListVM", "[subscribe] relay=$relayUrl group=$groupId")
+        pool.ensureGroupRelay(relayUrl)
+        sendGroupReqs(relayUrl, groupId)
+    }
+
+    /** Send all 6 group subscription REQs without touching the subscribedGroups guard. */
+    private fun sendGroupReqs(relayUrl: String, groupId: String) {
+        val pool = relayPool ?: return
+        pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(
+            subscriptionId = subId("msg", groupId),
+            filter = Filter(kinds = listOf(Nip29.KIND_CHAT_MESSAGE), hTags = listOf(groupId), limit = 100)
+        ), skipBadCheck = true)
+        pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(
+            subscriptionId = subId("meta", groupId),
+            filter = Filter(kinds = listOf(Nip29.KIND_GROUP_METADATA), dTags = listOf(groupId))
+        ), skipBadCheck = true)
+        pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(
+            subscriptionId = subId("admins", groupId),
+            filter = Filter(kinds = listOf(Nip29.KIND_GROUP_ADMINS), dTags = listOf(groupId))
+        ), skipBadCheck = true)
+        pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(
+            subscriptionId = subId("members", groupId),
+            filter = Filter(kinds = listOf(Nip29.KIND_GROUP_MEMBERS), dTags = listOf(groupId))
+        ), skipBadCheck = true)
+        pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(
+            subscriptionId = subId("react", groupId),
+            filter = Filter(kinds = listOf(7), hTags = listOf(groupId), limit = 500)
+        ), skipBadCheck = true)
+        pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(
+            subscriptionId = subId("zap", groupId),
+            filter = Filter(kinds = listOf(9735), hTags = listOf(groupId), limit = 200)
+        ), skipBadCheck = true)
+    }
+
+    /** Close subscriptions for a room and disconnect its relay if no other rooms use it. */
+    fun unsubscribeFromGroup(relayUrl: String, groupId: String) {
+        val key = "$relayUrl|$groupId"
+        subscribedGroups.remove(key)
+        val pool = relayPool ?: return
+        Log.d("GroupListVM", "[unsubscribe] relay=$relayUrl group=$groupId")
+        listOf("msg", "meta", "admins", "members", "react", "zap").forEach { type ->
+            pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.close(subId(type, groupId)), skipBadCheck = true)
+        }
+        // Disconnect relay only if no other open rooms share it
+        val otherRoomsOnRelay = subscribedGroups.any { it.startsWith("$relayUrl|") }
+        if (!otherRoomsOnRelay) {
+            pool.removeGroupRelay(relayUrl)
+        }
+    }
+
+    private fun collectRelayEvents() {
+        val pool = relayPool ?: return
+        viewModelScope.launch(Dispatchers.Default) {
+            pool.relayEvents.collect { relayEvent ->
+                val subId = relayEvent.subscriptionId
+                // Pass zap receipts from group relays through to EventRepository
+                if (subId.startsWith("zap-rcpt-grp-")) {
+                    eventRepo?.addEvent(relayEvent.event)
+                    return@collect
+                }
+                if (!subId.startsWith(SUB_PREFIX)) return@collect
+                val event = relayEvent.event
+                val repo = groupRepo ?: return@collect
+                val relayUrl = relayEvent.relayUrl
+
+                when (event.kind) {
+                    Nip29.KIND_CHAT_MESSAGE -> {
+                        val groupId = event.tags.firstOrNull { it.size >= 2 && it[0] == "h" }?.get(1)
+                            ?: return@collect
+                        repo.getRoom(relayUrl, groupId) ?: return@collect
+                        // q tag is the NIP-29 convention for replies; e "reply" marker as fallback
+                        val replyToId = event.tags.firstOrNull { it.size >= 2 && it[0] == "q" }?.get(1)
+                            ?: event.tags.firstOrNull { it.size >= 4 && it[0] == "e" && it[3] == "reply" }?.get(1)
+                            ?: event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+                        repo.addMessage(relayUrl, groupId, GroupMessage(
+                            id = event.id,
+                            senderPubkey = event.pubkey,
+                            content = event.content,
+                            createdAt = event.created_at,
+                            replyToId = replyToId,
+                            emojiTags = Nip30.parseEmojiTags(event)
+                        ))
+                    }
+                    7 -> {
+                        val messageId = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+                            ?: return@collect
+                        val groupId = event.tags.firstOrNull { it.size >= 2 && it[0] == "h" }?.get(1)
+                            ?: return@collect
+                        repo.getRoom(relayUrl, groupId) ?: return@collect
+                        val emoji = event.content.ifEmpty { "+" }
+                        // Extract URL for custom emoji reactions (e.g. content=":partying:", tag=["emoji","partying","https://..."])
+                        val emojiUrl = if (emoji.startsWith(":") && emoji.endsWith(":")) {
+                            val shortcode = emoji.removeSurrounding(":")
+                            event.tags.firstOrNull { it.size >= 3 && it[0] == "emoji" && it[1] == shortcode }?.get(2)
+                        } else null
+                        repo.addReaction(relayUrl, groupId, messageId, event.pubkey, emoji, emojiUrl)
+                    }
+                    Nip29.KIND_GROUP_METADATA -> {
+                        val metadata = Nip29.parseGroupMetadata(event) ?: return@collect
+                        repo.getRoom(relayUrl, metadata.groupId) ?: return@collect
+                        repo.updateMetadata(relayUrl, metadata.groupId, metadata)
+                    }
+                    Nip29.KIND_GROUP_ADMINS -> {
+                        val groupId = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)
+                            ?: return@collect
+                        repo.getRoom(relayUrl, groupId) ?: return@collect
+                        repo.updateAdmins(relayUrl, groupId, Nip29.parseGroupAdmins(event))
+                    }
+                    Nip29.KIND_GROUP_MEMBERS -> {
+                        val groupId = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)
+                            ?: return@collect
+                        repo.getRoom(relayUrl, groupId) ?: return@collect
+                        repo.updateMembers(relayUrl, groupId, Nip29.parseGroupMembers(event))
+                    }
+                    9735 -> {
+                        // Zap receipt — route through EventRepository for zap tracking
+                        eventRepo?.addEvent(event)
+                    }
+                }
+            }
+        }
+    }
+
+    fun joinGroup(relayUrl: String, groupId: String, signer: NostrSigner?) {
+        val repo = groupRepo ?: return
+        val pool = relayPool ?: return
+        val relayUrl = relayUrl.lowercase().trimEnd('/')
+        repo.addGroup(relayUrl, groupId)
+        subscribeToGroup(relayUrl, groupId)
+        viewModelScope.launch(Dispatchers.Default) {
+            signer?.let { s ->
+                try {
+                    val event = s.signEvent(
+                        kind = Nip29.KIND_JOIN_REQUEST,
+                        content = "",
+                        tags = listOf(listOf("h", groupId))
+                    )
+                    pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.event(event), skipBadCheck = true)
+                } catch (_: Exception) { }
+            }
+            // Re-request all subscriptions after a short delay — private relays close the initial
+            // REQs with "restricted: not a member" and only respond after the join is processed.
+            kotlinx.coroutines.delay(2_000)
+            sendGroupReqs(relayUrl, groupId)
+        }
+    }
+
+    fun createGroup(relayUrl: String, name: String, signer: NostrSigner?) {
+        val repo = groupRepo ?: return
+        val pool = relayPool ?: return
+        val relayUrl = relayUrl.lowercase().trimEnd('/')
+        val groupId = Nip29.generateGroupId()
+        // Store name locally — avoids a second signing operation at create time which
+        // causes an infinite loop in the remote signer bridge after "Always allow" is granted.
+        repo.addGroup(relayUrl, groupId, localName = name.trim().ifEmpty { null })
+        subscribeToGroup(relayUrl, groupId)
+        signer?.let { s ->
+            viewModelScope.launch(Dispatchers.Default) {
+                try {
+                    val createEvent = s.signEvent(
+                        kind = Nip29.KIND_CREATE_GROUP,
+                        content = "",
+                        tags = listOf(listOf("h", groupId))
+                    )
+                    pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.event(createEvent), skipBadCheck = true)
+                } catch (_: Exception) { }
+            }
+        }
+    }
+
+    /** Admin action: update group name/about/picture on the relay (kind 9002). Single signing operation. */
+    fun updateMetadataOnRelay(
+        relayUrl: String,
+        groupId: String,
+        name: String,
+        about: String,
+        picture: String = "",
+        signer: NostrSigner?
+    ) {
+        val pool = relayPool ?: return
+        val repo = groupRepo ?: return
+        signer ?: return
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                val tags = mutableListOf(listOf("h", groupId))
+                if (name.isNotBlank()) tags.add(listOf("name", name.trim()))
+                if (about.isNotBlank()) tags.add(listOf("about", about.trim()))
+                if (picture.isNotBlank()) tags.add(listOf("picture", picture.trim()))
+                val event = signer.signEvent(
+                    kind = Nip29.KIND_EDIT_METADATA,
+                    content = "",
+                    tags = tags
+                )
+                pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.event(event), skipBadCheck = true)
+                // Optimistically update local metadata
+                val existing = repo.getRoom(relayUrl, groupId)?.metadata
+                repo.updateMetadata(relayUrl, groupId, Nip29.GroupMetadata(
+                    groupId = groupId,
+                    name = name.trim().ifEmpty { existing?.name },
+                    picture = picture.trim().ifEmpty { existing?.picture },
+                    about = about.trim().ifEmpty { existing?.about },
+                    isPrivate = existing?.isPrivate ?: false,
+                    isClosed = existing?.isClosed ?: false
+                ))
+                // Persist updated name locally
+                if (name.isNotBlank()) {
+                    repo.addGroup(relayUrl, groupId, localName = name.trim())
+                }
+            } catch (_: Exception) { }
+        }
+    }
+
+    /** Leave a group: send kind 9022, remove locally, clean up relay. */
+    fun leaveGroup(relayUrl: String, groupId: String, signer: NostrSigner?) {
+        val pool = relayPool ?: return
+        signer?.let { s ->
+            viewModelScope.launch(Dispatchers.Default) {
+                try {
+                    val event = s.signEvent(
+                        kind = Nip29.KIND_LEAVE_REQUEST,
+                        content = "",
+                        tags = listOf(listOf("h", groupId))
+                    )
+                    pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.event(event), skipBadCheck = true)
+                } catch (_: Exception) { }
+            }
+        }
+        groupRepo?.removeGroup(relayUrl, groupId)
+        unsubscribeFromGroup(relayUrl, groupId)
+    }
+
+    /** Admin action: delete a group (kind 9008), remove locally, clean up relay. */
+    fun deleteGroup(relayUrl: String, groupId: String, signer: NostrSigner?) {
+        val pool = relayPool ?: return
+        signer?.let { s ->
+            viewModelScope.launch(Dispatchers.Default) {
+                try {
+                    val event = s.signEvent(
+                        kind = Nip29.KIND_DELETE_GROUP,
+                        content = "",
+                        tags = listOf(listOf("h", groupId))
+                    )
+                    pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.event(event), skipBadCheck = true)
+                } catch (_: Exception) { }
+            }
+        }
+        groupRepo?.removeGroup(relayUrl, groupId)
+        unsubscribeFromGroup(relayUrl, groupId)
+    }
+
+    /** Admin action: remove a user from the group (kind 9001). */
+    fun removeUser(
+        relayUrl: String,
+        groupId: String,
+        targetPubkey: String,
+        signer: NostrSigner?
+    ) {
+        val pool = relayPool ?: return
+        signer ?: return
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                val event = signer.signEvent(
+                    kind = 9001,
+                    content = "",
+                    tags = listOf(listOf("h", groupId), listOf("p", targetPubkey))
+                )
+                pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.event(event), skipBadCheck = true)
+            } catch (_: Exception) { }
+        }
+    }
+
+    /** One-shot preview fetch (metadata + members) for rooms not yet joined. Returns cached data immediately if available. */
+    suspend fun fetchGroupPreview(relayUrl: String, groupId: String): GroupPreview {
+        groupRepo?.getRoom(relayUrl, groupId)?.let { room ->
+            if (room.metadata != null || room.members.isNotEmpty()) {
+                Log.d("GroupListVM", "[preview] cache hit relay=$relayUrl group=$groupId name=${room.metadata?.name}")
+                return GroupPreview(room.metadata, room.members)
+            }
+        }
+        if (relayUrl.isEmpty() || groupId.isEmpty()) {
+            Log.w("GroupListVM", "[preview] called with empty relay or group — ignoring")
+            return GroupPreview(null, emptyList())
+        }
+        val pool = relayPool ?: run {
+            Log.w("GroupListVM", "[preview] relayPool is null — init() not called yet for relay=$relayUrl group=$groupId")
+            return GroupPreview(null, emptyList())
+        }
+        val metaSubId = "grp-preview-meta-$groupId"
+        val membersSubId = "grp-preview-members-$groupId"
+
+        val metaDeferred = CompletableDeferred<Nip29.GroupMetadata?>()
+        val membersDeferred = CompletableDeferred<List<String>>()
+
+        Log.d("GroupListVM", "[preview] starting fetch relay=$relayUrl group=$groupId")
+        return coroutineScope {
+            // Subscribe BEFORE sending REQs — relayEvents has no replay, so events
+            // arriving before collect() is active would be silently missed.
+            val collectorReady = CompletableDeferred<Unit>()
+            val collectJob = launch(Dispatchers.Default) {
+                pool.relayEvents
+                    .onSubscription { collectorReady.complete(Unit) }
+                    .collect { ev ->
+                        when {
+                            ev.subscriptionId == metaSubId && ev.event.kind == Nip29.KIND_GROUP_METADATA -> {
+                                val parsed = Nip29.parseGroupMetadata(ev.event)
+                                Log.d("GroupListVM", "[preview] got metadata name=${parsed?.name} from ${ev.relayUrl}")
+                                metaDeferred.complete(parsed)
+                            }
+                            ev.subscriptionId == membersSubId && ev.event.kind == Nip29.KIND_GROUP_MEMBERS -> {
+                                val members = Nip29.parseGroupMembers(ev.event)
+                                Log.d("GroupListVM", "[preview] got members count=${members.size} from ${ev.relayUrl}")
+                                membersDeferred.complete(members)
+                            }
+                        }
+                    }
+            }
+
+            // Wait until the collector is actually subscribed, then send REQs
+            collectorReady.await()
+            val sentMeta = pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(
+                subscriptionId = metaSubId,
+                filter = Filter(kinds = listOf(Nip29.KIND_GROUP_METADATA), dTags = listOf(groupId))
+            ), skipBadCheck = true)
+            val sentMembers = pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(
+                subscriptionId = membersSubId,
+                filter = Filter(kinds = listOf(Nip29.KIND_GROUP_MEMBERS), dTags = listOf(groupId))
+            ), skipBadCheck = true)
+            Log.d("GroupListVM", "[preview] REQs sent sentMeta=$sentMeta sentMembers=$sentMembers relay=$relayUrl")
+
+            val metadata = withTimeoutOrNull(5_000) { metaDeferred.await() }
+            Log.d("GroupListVM", "[preview] metadata result=${metadata?.name} (${if (metadata == null) "timed out" else "ok"})")
+            val members = withTimeoutOrNull(1_000) { membersDeferred.await() } ?: emptyList()
+            Log.d("GroupListVM", "[preview] members result=${members.size}")
+
+            collectJob.cancel()
+            GroupPreview(metadata, members)
+        }
+    }
+
+    private fun subId(type: String, groupId: String) = "$SUB_PREFIX$type-$groupId"
+
+    companion object {
+        private const val SUB_PREFIX = "grp-"
+    }
+}

@@ -127,6 +127,8 @@ object Routes {
     const val DM_CONVERSATION = "dm/{pubkey}"
     const val DM_CONVERSATION_GROUP = "dm/group/{conversationKey}"
     const val CONTACT_PICKER = "contact_picker"
+    const val GROUP_ROOM = "group_room/{encodedRelay}/{groupId}"
+    const val GROUP_DETAIL = "group_detail/{encodedRelay}/{groupId}"
     const val NOTIFICATIONS = "notifications"
     const val BLOSSOM_SERVERS = "blossom_servers"
     const val WALLET = "wallet"
@@ -171,6 +173,7 @@ fun WispNavHost(
     val relayViewModel: RelayViewModel = viewModel()
     val profileViewModel: ProfileViewModel = viewModel()
     val dmListViewModel: DmListViewModel = viewModel()
+    val groupListViewModel: com.wisp.app.viewmodel.GroupListViewModel = viewModel()
     val blossomServersViewModel: BlossomServersViewModel = viewModel()
     val appContext = LocalContext.current.applicationContext
     val walletViewModel: WalletViewModel = viewModel(
@@ -252,17 +255,20 @@ fun WispNavHost(
 
     // Multi-account state
     val accounts by authViewModel.accountsFlow.collectAsState()
+    var groupListInitKey by rememberSaveable { mutableStateOf(0) }
 
     val onSwitchAccount: (String) -> Unit = { pubkeyHex ->
         feedViewModel.clearSigner()
         feedViewModel.resetForAccountSwitch()
         walletViewModel.suspendForAccountSwitch()  // disconnect only, preserve credentials
+        groupListViewModel.reset()
         authViewModel.switchAccount(pubkeyHex)
         feedViewModel.reloadForNewAccount()
         relayViewModel.reload()
         blossomServersViewModel.reload()
         composeViewModel.reloadBlossomRepo()
         walletViewModel.refreshState()
+        groupListInitKey++
         // initRelays() is called by the LOADING composable's LaunchedEffect
         navController.navigate(Routes.LOADING) {
             popUpTo(0) { inclusive = true }
@@ -370,6 +376,11 @@ fun WispNavHost(
         dmListViewModel.init(feedViewModel.dmRepo, feedViewModel.muteRepo)
     }
 
+    // Initialize group list viewmodel with shared repo; key changes on account switch to re-init
+    LaunchedEffect(groupListInitKey) {
+        groupListViewModel.init(feedViewModel.groupRepo, feedViewModel.relayPool, feedViewModel.eventRepo)
+    }
+
     // Initialize notifications viewmodel with shared repos
     LaunchedEffect(Unit) {
         notificationsViewModel.init(
@@ -410,7 +421,7 @@ fun WispNavHost(
     val currentRoute = navBackStackEntry?.destination?.route
 
     val nonAppRoutes = setOf(Routes.SPLASH, Routes.AUTH, Routes.LOADING, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS, Routes.EXISTING_USER_ONBOARDING)
-    val hideBottomBarRoutes = nonAppRoutes + Routes.DM_CONVERSATION + Routes.DM_CONVERSATION_GROUP + Routes.CONTACT_PICKER
+    val hideBottomBarRoutes = nonAppRoutes + Routes.DM_CONVERSATION + Routes.DM_CONVERSATION_GROUP + Routes.CONTACT_PICKER + Routes.GROUP_ROOM + Routes.GROUP_DETAIL
     val socialGraphDiscoveryState by feedViewModel.extendedNetworkRepo.discoveryState.collectAsState()
     val socialGraphComputing = currentRoute == Routes.SOCIAL_GRAPH && (
         socialGraphDiscoveryState is com.wisp.app.repo.DiscoveryState.FetchingFollowLists ||
@@ -859,6 +870,16 @@ fun WispNavHost(
                 },
                 onArticleClick = { kind, author, dTag ->
                     navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
+                },
+                onGroupRoom = { relayUrl, groupId ->
+                    val encoded = android.util.Base64.encodeToString(
+                        relayUrl.toByteArray(Charsets.UTF_8),
+                        android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
+                    )
+                    navController.navigate("group_room/$encoded/$groupId")
+                },
+                fetchGroupPreview = { relayUrl, groupId ->
+                    groupListViewModel.fetchGroupPreview(relayUrl, groupId)
                 }
             )
         }
@@ -1099,7 +1120,12 @@ fun WispNavHost(
                         restoreState = true
                     }
                 },
-                onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) }
+                onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
+                onGroupRoom = { relayUrl, groupId ->
+                    val encodedRelay = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(relayUrl.toByteArray())
+                    navController.navigate("group_room/$encodedRelay/$groupId")
+                },
+                fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) }
             )
             if (showProfileEmojiLibrary) {
                 com.wisp.app.ui.component.EmojiLibrarySheet(
@@ -1213,8 +1239,10 @@ fun WispNavHost(
             }
             DmListScreen(
                 viewModel = dmListViewModel,
+                groupListViewModel = groupListViewModel,
                 eventRepo = feedViewModel.eventRepo,
                 userPubkey = feedViewModel.getUserPubkey(),
+                signer = activeSigner,
                 onBack = null,
                 onConversation = { convo ->
                     if (convo.isGroup) {
@@ -1225,6 +1253,13 @@ fun WispNavHost(
                 },
                 onNewGroupDm = {
                     navController.navigate(Routes.CONTACT_PICKER)
+                },
+                onGroupRoom = { relayUrl, groupId ->
+                    val encoded = android.util.Base64.encodeToString(
+                        relayUrl.toByteArray(Charsets.UTF_8),
+                        android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
+                    )
+                    navController.navigate("group_room/$encoded/$groupId")
                 }
             )
         }
@@ -1328,6 +1363,208 @@ fun WispNavHost(
                 socialActionManager = feedViewModel.socialActions,
                 isWalletConnected = feedViewModel.activeWalletProvider.hasConnection(),
                 onGoToWallet = { navController.navigate(Routes.WALLET) }
+            )
+        }
+
+        composable(
+            Routes.GROUP_ROOM,
+            arguments = listOf(
+                navArgument("encodedRelay") { type = NavType.StringType },
+                navArgument("groupId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val encodedRelay = backStackEntry.arguments?.getString("encodedRelay") ?: return@composable
+            val groupId = backStackEntry.arguments?.getString("groupId") ?: return@composable
+            val relayUrl = String(
+                android.util.Base64.decode(encodedRelay, android.util.Base64.URL_SAFE),
+                Charsets.UTF_8
+            )
+            val groupRoomViewModel: com.wisp.app.viewmodel.GroupRoomViewModel = viewModel()
+            // Pre-compute from current repo state so the first composition doesn't flash
+            // the join screen for groups the user has already joined.
+            val initialRoom = remember(relayUrl, groupId) {
+                feedViewModel.groupRepo.getRoom(relayUrl, groupId)
+            }
+            LaunchedEffect(relayUrl, groupId) {
+                groupRoomViewModel.init(groupId, relayUrl, feedViewModel.groupRepo, feedViewModel.relayPool)
+                feedViewModel.metadataFetcher.queueProfileFetch(feedViewModel.getUserPubkey() ?: "")
+            }
+            DisposableEffect(relayUrl, groupId) {
+                groupListViewModel.subscribeToGroup(relayUrl, groupId)
+                onDispose {
+                    groupListViewModel.unsubscribeFromGroup(relayUrl, groupId)
+                }
+            }
+            val groupRoomContext = LocalContext.current
+            val groupRoomUploadScope = rememberCoroutineScope()
+            var groupRoomUploadProgress by remember { mutableStateOf<String?>(null) }
+            var groupRoomZapTarget by remember { mutableStateOf<com.wisp.app.nostr.NostrEvent?>(null) }
+            val groupRoomResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
+            val groupRoomUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+            val groupRoomZapVersion by feedViewModel.eventRepo.zapVersion.collectAsState()
+            val groupRoomZapInProgress by feedViewModel.zapInProgress.collectAsState()
+            var groupRoomZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
+            LaunchedEffect(Unit) {
+                feedViewModel.zapSuccess.collect { eventId ->
+                    groupRoomZapAnimatingIds = groupRoomZapAnimatingIds + eventId
+                    kotlinx.coroutines.delay(1500)
+                    groupRoomZapAnimatingIds = groupRoomZapAnimatingIds - eventId
+                }
+            }
+            val isNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
+
+            if (groupRoomZapTarget != null) {
+                val zapRecipient = groupRoomZapTarget!!.pubkey
+                var recipientHasDmRelays by remember(zapRecipient) {
+                    mutableStateOf(feedViewModel.relayListRepo.hasDmRelays(zapRecipient))
+                }
+                if (feedViewModel.relayPool.hasDmRelays() && !recipientHasDmRelays) {
+                    LaunchedEffect(zapRecipient) {
+                        recipientHasDmRelays = feedViewModel.fetchDmRelaysIfMissing(zapRecipient)
+                    }
+                }
+                ZapDialog(
+                    isWalletConnected = isNwcConnected,
+                    onDismiss = { groupRoomZapTarget = null },
+                    onZap = { amountMsats, message, isAnonymous, isPrivate ->
+                        val event = groupRoomZapTarget ?: return@ZapDialog
+                        groupRoomZapTarget = null
+                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
+                    },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
+                    canPrivateZap = feedViewModel.relayPool.hasDmRelays() && recipientHasDmRelays
+                )
+            }
+            val groupRoomMediaLauncher = rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia()
+            ) { uris ->
+                if (uris.isNotEmpty()) {
+                    groupRoomUploadScope.launch {
+                        val total = uris.size
+                        for ((index, uri) in uris.withIndex()) {
+                            try {
+                                groupRoomUploadProgress = if (total > 1) "Uploading ${index + 1}/$total..." else "Uploading..."
+                                val bytes = groupRoomContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                                    ?: continue
+                                val mimeType = groupRoomContext.contentResolver.getType(uri) ?: "application/octet-stream"
+                                val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "bin"
+                                val url = feedViewModel.blossomRepo.uploadMedia(bytes, mimeType, ext, activeSigner)
+                                groupRoomViewModel.appendToText(url)
+                            } catch (_: Exception) { }
+                        }
+                        groupRoomUploadProgress = null
+                    }
+                }
+            }
+            com.wisp.app.ui.screen.GroupRoomScreen(
+                viewModel = groupRoomViewModel,
+                initialRoom = initialRoom,
+                relayPool = feedViewModel.relayPool,
+                eventRepo = feedViewModel.eventRepo,
+                signer = activeSigner,
+                onBack = { navController.popBackStack() },
+                onProfileClick = { pk -> navController.navigate("profile/$pk") },
+                onGroupDetail = { navController.navigate("group_detail/$encodedRelay/$groupId") },
+                onJoin = { groupListViewModel.joinGroup(relayUrl, groupId, activeSigner) },
+                fetchGroupPreview = { rUrl, gId -> groupListViewModel.fetchGroupPreview(rUrl, gId) },
+                onPickMedia = {
+                    groupRoomMediaLauncher.launch(
+                        androidx.activity.result.PickVisualMediaRequest(
+                            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageAndVideo
+                        )
+                    )
+                },
+                uploadProgress = groupRoomUploadProgress,
+                myPubkey = feedViewModel.getUserPubkey(),
+                onZap = { msgId, senderPubkey ->
+                    groupRoomZapTarget = com.wisp.app.nostr.NostrEvent(
+                        id = msgId,
+                        pubkey = senderPubkey,
+                        created_at = 0L,
+                        kind = com.wisp.app.nostr.Nip29.KIND_CHAT_MESSAGE,
+                        tags = listOf(listOf("h", groupId)),
+                        content = "",
+                        sig = ""
+                    )
+                    // Subscribe to zap receipt on the group relay too, in case the
+                    // LNURL provider publishes it there
+                    feedViewModel.relayPool.sendToRelayOrEphemeral(
+                        relayUrl,
+                        com.wisp.app.nostr.ClientMessage.req(
+                            subscriptionId = "zap-rcpt-grp-${msgId.take(12)}",
+                            filter = com.wisp.app.nostr.Filter(kinds = listOf(9735), eTags = listOf(msgId))
+                        ),
+                        skipBadCheck = true
+                    )
+                },
+                resolvedEmojis = groupRoomResolvedEmojis,
+                unicodeEmojis = groupRoomUnicodeEmojis,
+                zapVersion = groupRoomZapVersion,
+                zapAnimatingIds = groupRoomZapAnimatingIds,
+                zapInProgressIds = groupRoomZapInProgress
+            )
+        }
+
+        composable(
+            Routes.GROUP_DETAIL,
+            arguments = listOf(
+                navArgument("encodedRelay") { type = NavType.StringType },
+                navArgument("groupId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val encodedRelay = backStackEntry.arguments?.getString("encodedRelay") ?: return@composable
+            val groupId = backStackEntry.arguments?.getString("groupId") ?: return@composable
+            val relayUrl = String(
+                android.util.Base64.decode(encodedRelay, android.util.Base64.URL_SAFE),
+                Charsets.UTF_8
+            )
+            val groupDetailContext = LocalContext.current
+            val groupPictureUploadScope = rememberCoroutineScope()
+            var pendingPictureCallback by remember { mutableStateOf<((String) -> Unit)?>(null) }
+            val groupPictureLauncher = rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+            ) { uri ->
+                val callback = pendingPictureCallback ?: return@rememberLauncherForActivityResult
+                pendingPictureCallback = null
+                uri ?: run { callback(""); return@rememberLauncherForActivityResult }
+                groupPictureUploadScope.launch {
+                    try {
+                        val bytes = groupDetailContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                            ?: return@launch
+                        val mimeType = groupDetailContext.contentResolver.getType(uri) ?: "image/jpeg"
+                        val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "jpg"
+                        val url = feedViewModel.blossomRepo.uploadMedia(bytes, mimeType, ext, activeSigner)
+                        callback(url)
+                    } catch (_: Exception) { callback("") }
+                }
+            }
+            com.wisp.app.ui.screen.GroupDetailScreen(
+                groupId = groupId,
+                relayUrl = relayUrl,
+                groupListViewModel = groupListViewModel,
+                eventRepo = feedViewModel.eventRepo,
+                myPubkey = feedViewModel.getUserPubkey(),
+                signer = activeSigner,
+                relayPool = feedViewModel.relayPool,
+                onBack = { navController.popBackStack() },
+                onLeave = {
+                    navController.navigate(Routes.DM_LIST) {
+                        popUpTo(Routes.DM_LIST) { inclusive = false }
+                    }
+                },
+                onDelete = {
+                    navController.navigate(Routes.DM_LIST) {
+                        popUpTo(Routes.DM_LIST) { inclusive = false }
+                    }
+                },
+                onPickPicture = { callback ->
+                    pendingPictureCallback = callback
+                    groupPictureLauncher.launch(
+                        androidx.activity.result.PickVisualMediaRequest(
+                            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                        )
+                    )
+                }
             )
         }
 
@@ -1463,7 +1700,12 @@ fun WispNavHost(
                 unicodeEmojis = threadUnicodeEmojis,
                 onOpenEmojiLibrary = { showThreadEmojiLibrary = true },
                 onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
-                onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) }
+                onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
+                onGroupRoom = { relayUrl, groupId ->
+                    val encodedRelay = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(relayUrl.toByteArray())
+                    navController.navigate("group_room/$encodedRelay/$groupId")
+                },
+                fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) }
             )
 
             if (showThreadEmojiLibrary) {
@@ -1529,7 +1771,16 @@ fun WispNavHost(
                     onArticleClick = { kind, author, dTag ->
                         navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
                     },
-                    onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) }
+                    onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
+                    onGroupRoom = { relayUrl, groupId ->
+                        val encoded = android.util.Base64.encodeToString(
+                            relayUrl.toByteArray(Charsets.UTF_8),
+                            android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
+                        )
+                        navController.navigate("group_room/$encoded/$groupId")
+                    },
+                    groupMetadataProvider = { relayUrl, groupId -> feedViewModel.groupRepo.getRoom(relayUrl, groupId)?.metadata },
+                    fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) }
                 )
             }
             val interestSets by feedViewModel.interestRepo.sets.collectAsState()
@@ -1621,7 +1872,16 @@ fun WispNavHost(
                     onArticleClick = { kind, author, dTag ->
                         navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
                     },
-                    onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) }
+                    onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
+                    onGroupRoom = { relayUrl, groupId ->
+                        val encoded = android.util.Base64.encodeToString(
+                            relayUrl.toByteArray(Charsets.UTF_8),
+                            android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
+                        )
+                        navController.navigate("group_room/$encoded/$groupId")
+                    },
+                    groupMetadataProvider = { relayUrl, groupId -> feedViewModel.groupRepo.getRoom(relayUrl, groupId)?.metadata },
+                    fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) }
                 )
             }
             val interestSets by feedViewModel.interestRepo.sets.collectAsState()
@@ -1760,7 +2020,16 @@ fun WispNavHost(
                     onArticleClick = { k, a, d ->
                         navController.navigate("article/$k/$a/${java.net.URLEncoder.encode(d, "UTF-8")}")
                     },
-                    onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) }
+                    onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
+                    onGroupRoom = { relayUrl, groupId ->
+                        val encoded = android.util.Base64.encodeToString(
+                            relayUrl.toByteArray(Charsets.UTF_8),
+                            android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
+                        )
+                        navController.navigate("group_room/$encoded/$groupId")
+                    },
+                    groupMetadataProvider = { relayUrl, groupId -> feedViewModel.groupRepo.getRoom(relayUrl, groupId)?.metadata },
+                    fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) }
                 )
             }
 
@@ -2397,7 +2666,12 @@ fun WispNavHost(
                         navController.navigate("dm/$conversationKey")
                     }
                 },
-                onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) }
+                onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
+                onGroupRoom = { relayUrl, groupId ->
+                    val encodedRelay = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(relayUrl.toByteArray())
+                    navController.navigate("group_room/$encodedRelay/$groupId")
+                },
+                fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) }
             )
 
             if (showNotifEmojiLibrary) {

@@ -22,6 +22,7 @@ import com.wisp.app.repo.BookmarkRepository
 import com.wisp.app.repo.BookmarkSetRepository
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.DmRepository
+import com.wisp.app.repo.GroupRepository
 import com.wisp.app.db.EventPersistence
 import com.wisp.app.db.WispObjectBox
 import com.wisp.app.repo.EventRepository
@@ -179,6 +180,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val contactRepo = ContactRepository(app, pubkeyHex)
     val listRepo = ListRepository(app, pubkeyHex)
     val dmRepo = DmRepository(app, pubkeyHex)
+    val groupRepo = GroupRepository(app, pubkeyHex)
     val notifRepo = NotificationRepository(app, pubkeyHex, muteRepo, eventRepo)
     val relayListRepo = RelayListRepository(app)
     val bookmarkRepo = BookmarkRepository(app, pubkeyHex)
@@ -389,8 +391,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     // -- Startup delegates --
     fun initRelays() = startup.initRelays()
-    fun resetForAccountSwitch() = startup.resetForAccountSwitch()
-    fun reloadForNewAccount() = startup.reloadForNewAccount()
+    fun resetForAccountSwitch() {
+        startup.resetForAccountSwitch()
+        groupRepo.clear()
+    }
+    fun reloadForNewAccount() {
+        startup.reloadForNewAccount()
+        groupRepo.reload(getUserPubkey())
+    }
     fun onAppPause() = startup.onAppPause()
     fun onAppResume(pausedMs: Long) = startup.onAppResume(pausedMs)
     fun refreshRelays() = startup.refreshRelays()

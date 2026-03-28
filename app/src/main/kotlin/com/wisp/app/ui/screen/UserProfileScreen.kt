@@ -166,10 +166,18 @@ fun UserProfileScreen(
     unicodeEmojis: List<String> = emptyList(),
     onOpenEmojiLibrary: (() -> Unit)? = null,
     onSearchAuthor: (() -> Unit)? = null,
-    onPayInvoice: (suspend (String) -> Boolean)? = null
+    onPayInvoice: (suspend (String) -> Boolean)? = null,
+    onGroupRoom: ((String, String) -> Unit)? = null,
+    fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null
 ) {
-    val invoiceNoteActions = remember(onPayInvoice) {
-        onPayInvoice?.let { com.wisp.app.ui.component.NoteActions(onPayInvoice = it) }
+    val invoiceNoteActions = remember(onPayInvoice, onGroupRoom, fetchGroupPreview) {
+        if (onPayInvoice != null || onGroupRoom != null || fetchGroupPreview != null) {
+            com.wisp.app.ui.component.NoteActions(
+                onPayInvoice = onPayInvoice,
+                onGroupRoom = onGroupRoom,
+                fetchGroupPreview = fetchGroupPreview
+            )
+        } else null
     }
     val profile by viewModel.profile.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()

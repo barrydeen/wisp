@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -95,7 +96,9 @@ import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.toHex
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrUriData
+import com.wisp.app.nostr.Nip29
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.GroupPreview
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.util.MediaDownloader
 import androidx.compose.runtime.compositionLocalOf
@@ -139,6 +142,9 @@ data class NoteActions(
     val onRelayClick: ((String) -> Unit)? = null,
     val onArticleClick: ((Int, String, String) -> Unit)? = null,
     val onPayInvoice: (suspend (String) -> Boolean)? = null,
+    val onGroupRoom: ((String, String) -> Unit)? = null,
+    val groupMetadataProvider: ((String, String) -> Nip29.GroupMetadata?)? = null,
+    val fetchGroupPreview: (suspend (String, String) -> GroupPreview?)? = null,
 )
 
 internal sealed interface ContentSegment {
@@ -155,6 +161,7 @@ internal sealed interface ContentSegment {
     data class CustomEmojiSegment(val shortcode: String, val url: String) : ContentSegment
     data class HashtagSegment(val tag: String) : ContentSegment
     data class LightningInvoiceSegment(val invoice: String, val decoded: Bolt11.DecodedInvoice) : ContentSegment
+    data class GroupInviteSegment(val relayUrl: String, val groupId: String) : ContentSegment
 }
 
 private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp")
@@ -286,6 +293,11 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
                 ext in imageExtensions -> segments.add(ContentSegment.ImageSegment(url))
                 ext in videoExtensions -> segments.add(ContentSegment.VideoSegment(url))
                 ext in audioExtensions -> segments.add(ContentSegment.AudioSegment(url))
+                isWebSocket && '\'' in url -> {
+                    val parsed = Nip29.parseGroupIdentifier(url)
+                    if (parsed != null) segments.add(ContentSegment.GroupInviteSegment(parsed.first, parsed.second))
+                    else segments.add(ContentSegment.InlineLinkSegment(url))
+                }
                 isWebSocket -> segments.add(ContentSegment.InlineLinkSegment(url))
                 isBlossomUrl(url) -> segments.add(ContentSegment.UnknownMediaSegment(url))
                 isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
@@ -826,6 +838,16 @@ fun RichContent(
                             invoice = segment.invoice,
                             decoded = segment.decoded,
                             onPayInvoice = noteActions?.onPayInvoice
+                        )
+                    }
+                    is ContentSegment.GroupInviteSegment -> {
+                        GroupInviteCard(
+                            relayUrl = segment.relayUrl,
+                            groupId = segment.groupId,
+                            initialMetadata = noteActions?.groupMetadataProvider?.invoke(segment.relayUrl, segment.groupId),
+                            onGroupRoom = noteActions?.onGroupRoom,
+                            onFetchPreview = noteActions?.fetchGroupPreview,
+                            eventRepo = eventRepo
                         )
                     }
                     else -> {}
@@ -2159,5 +2181,100 @@ private fun LinkPreview(url: String) {
                 .padding(vertical = 2.dp)
                 .clickable { uriHandler.openUri(url) }
         )
+    }
+}
+
+@Composable
+private fun GroupInviteCard(
+    relayUrl: String,
+    groupId: String,
+    initialMetadata: Nip29.GroupMetadata?,
+    onGroupRoom: ((String, String) -> Unit)?,
+    onFetchPreview: (suspend (String, String) -> GroupPreview?)? = null,
+    eventRepo: EventRepository? = null
+) {
+    var metadata by remember(relayUrl, groupId) { mutableStateOf(initialMetadata) }
+    var members by remember(relayUrl, groupId) { mutableStateOf(emptyList<String>()) }
+
+    LaunchedEffect(relayUrl, groupId) {
+        if ((metadata == null || members.isEmpty()) && onFetchPreview != null) {
+            val preview = onFetchPreview(relayUrl, groupId) ?: return@LaunchedEffect
+            if (metadata == null) metadata = preview.metadata
+            if (members.isEmpty()) members = preview.members
+        }
+    }
+
+    val host = relayUrl.removePrefix("wss://").removePrefix("ws://").trimEnd('/')
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .then(
+                if (onGroupRoom != null) Modifier.clickable { onGroupRoom(relayUrl, groupId) }
+                else Modifier
+            )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ProfilePicture(url = metadata?.picture, size = 48)
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = host.uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = metadata?.name ?: groupId,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                    metadata?.about?.takeIf { it.isNotEmpty() }?.let { about ->
+                        Text(
+                            text = about,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+                }
+            }
+            if (members.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                val displayed = members.take(6)
+                val overflow = members.size - displayed.size
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .height(20.dp)
+                            .width(((displayed.size - 1) * 14 + 20).dp)
+                    ) {
+                        displayed.forEachIndexed { index, pubkey ->
+                            val picture = remember(pubkey) { eventRepo?.getProfileData(pubkey)?.picture }
+                            Box(modifier = Modifier.offset(x = (index * 14).dp)) {
+                                ProfilePicture(url = picture, size = 20)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (overflow > 0) "and $overflow more in this chat room"
+                               else "${members.size} in this chat room",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }
