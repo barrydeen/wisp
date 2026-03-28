@@ -172,6 +172,8 @@ fun FeedScreen(
     onHashtagClick: ((String) -> Unit)? = null,
     onViewSetFeed: ((com.wisp.app.nostr.InterestSet) -> Unit)? = null,
     onArticleClick: ((Int, String, String) -> Unit)? = null,
+    onGroupRoom: ((String, String) -> Unit)? = null,
+    fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null,
     scrollToTopTrigger: Int = 0
 ) {
     val feed by viewModel.feed.collectAsState()
@@ -312,7 +314,10 @@ fun FeedScreen(
                 viewModel.setFeedType(FeedType.RELAY)
             },
             onArticleClick = onArticleClick,
-            onPayInvoice = { bolt11 -> viewModel.payInvoice(bolt11) }
+            onPayInvoice = { bolt11 -> viewModel.payInvoice(bolt11) },
+            onGroupRoom = onGroupRoom,
+            groupMetadataProvider = { relayUrl, groupId -> viewModel.groupRepo.getRoom(relayUrl, groupId)?.metadata },
+            fetchGroupPreview = fetchGroupPreview
         )
     }
 

@@ -158,6 +158,8 @@ fun NotificationsScreen(
     dmZapSats: (senderPubkey: String) -> Long = { 0L },
     onDmConversationClick: (conversationKey: String) -> Unit = {},
     onPayInvoice: (suspend (String) -> Boolean)? = null,
+    onGroupRoom: ((String, String) -> Unit)? = null,
+    fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null,
 ) {
     val notifications by viewModel.filteredFlatNotifications.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -220,7 +222,9 @@ fun NotificationsScreen(
             translationRepo = translationRepo,
             pollVoteVersion = pollVoteVersion,
             onPollVote = onPollVote,
-            onPayInvoice = onPayInvoice
+            onPayInvoice = onPayInvoice,
+            onGroupRoom = onGroupRoom,
+            fetchGroupPreview = fetchGroupPreview
         )
     }
 
@@ -976,7 +980,16 @@ private fun ReferencedNotePostCard(
         pollTotalVotes = pollTotalVotes,
         userPollVotes = userPollVotes,
         onPollVote = { optionIds -> params.onPollVote(event.id, optionIds) },
-        noteActions = params.onPayInvoice?.let { com.wisp.app.ui.component.NoteActions(onPayInvoice = it) },
+        noteActions = run {
+            val p = params
+            if (p.onPayInvoice != null || p.onGroupRoom != null || p.fetchGroupPreview != null) {
+                com.wisp.app.ui.component.NoteActions(
+                    onPayInvoice = p.onPayInvoice,
+                    onGroupRoom = p.onGroupRoom,
+                    fetchGroupPreview = p.fetchGroupPreview
+                )
+            } else null
+        },
         showDivider = false
     )
 }
@@ -1014,7 +1027,9 @@ private data class NotifPostCardParams(
     val translationRepo: TranslationRepository? = null,
     val pollVoteVersion: Int = 0,
     val onPollVote: (String, List<String>) -> Unit = { _, _ -> },
-    val onPayInvoice: (suspend (String) -> Boolean)? = null
+    val onPayInvoice: (suspend (String) -> Boolean)? = null,
+    val onGroupRoom: ((String, String) -> Unit)? = null,
+    val fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null
 )
 
 // ── Inline Sent Reply ──────────────────────────────────────────────────

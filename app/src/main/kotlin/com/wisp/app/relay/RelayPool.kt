@@ -39,6 +39,8 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
     private var clientBuiltWithTor: Boolean = TorManager.isEnabled()
     private val relays = CopyOnWriteArrayList<Relay>()
     private val dmRelays = CopyOnWriteArrayList<Relay>()
+    /** Persistent connections for NIP-29 group chat relays — auto-reconnect enabled. */
+    private val groupRelays = java.util.concurrent.ConcurrentHashMap<String, Relay>()
     private val ephemeralRelays = java.util.concurrent.ConcurrentHashMap<String, Relay>()
     private val ephemeralLastUsed = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val relayCooldowns = java.util.concurrent.ConcurrentHashMap<String, Long>()
@@ -187,6 +189,12 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
     private val _eoseSignals = MutableSharedFlow<String>(extraBufferCapacity = 64)
     val eoseSignals: SharedFlow<String> = _eoseSignals
 
+    /** Emitted when a relay sends CLOSED for a group subscription (subId starts with "grp-"). */
+    val groupRelayErrors = MutableSharedFlow<Triple<String, String, String>>(
+        extraBufferCapacity = 16,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
+    )
+
     private val _connectedCount = MutableStateFlow(0)
     val connectedCount: StateFlow<Int> = _connectedCount
 
@@ -297,6 +305,33 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         }
     }
 
+    /**
+     * Ensure a persistent (auto-reconnect) connection to a group chat relay exists.
+     * Must be called before sending subscriptions so the relay survives disconnection.
+     */
+    fun ensureGroupRelay(url: String) {
+        ensureClientCurrent()
+        if (url in blockedUrls || !RelayConfig.isConnectableUrl(url)) return
+        if (groupRelays.containsKey(url)) return
+        val relay = Relay(RelayConfig(url, read = true, write = true), client, scope)
+        // autoReconnect defaults to true — subscriptions will be re-sent on reconnect
+        wireByteTracking(relay)
+        groupRelays[url] = relay
+        relayIndex[url] = relay
+        collectMessages(relay)
+        relay.connect()
+        updateConnectedCount()
+    }
+
+    fun removeGroupRelay(url: String) {
+        groupRelays.remove(url)?.disconnect()
+        relayIndex.remove(url)
+        cancelRelayJobs(url)
+        activeSubscriptions.remove(url)
+        subscriptionTracker.untrackRelay(url)
+        updateConnectedCount()
+    }
+
     fun sendToDmRelays(message: String) {
         val subId = extractSubId(message)
         for (relay in dmRelays) {
@@ -319,6 +354,7 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
     private fun setReconnectEnabled(enabled: Boolean) {
         for (relay in relays) relay.reconnectEnabled = enabled
         for (relay in dmRelays) relay.reconnectEnabled = enabled
+        for (relay in groupRelays.values) relay.reconnectEnabled = enabled
         for (relay in ephemeralRelays.values.toList()) relay.reconnectEnabled = enabled
         if (!enabled) Log.d("RLC", "[Pool] auto-reconnect suppressed (app backgrounded)")
     }
@@ -438,6 +474,11 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
                         if (appIsActive && isRateLimitMessage(msg.message)) {
                             healthTracker?.onRateLimitHit(relay.config.url)
                         }
+                        if (msg.subscriptionId.startsWith("grp-")) {
+                            scope.launch {
+                                groupRelayErrors.emit(Triple(relay.config.url, msg.subscriptionId, msg.message))
+                            }
+                        }
                     }
                     else -> {}
                 }
@@ -519,12 +560,13 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
     private fun updateConnectedCount() {
         val permanent = relays.count { it.isConnected }
         val dm = dmRelays.count { it.isConnected }
+        val group = groupRelays.values.count { it.isConnected }
         val ephemeral = ephemeralRelays.values.count { it.isConnected }
-        val total = permanent + dm + ephemeral
+        val total = permanent + dm + group + ephemeral
         val prev = _connectedCount.value
         _connectedCount.value = total
         if (total != prev) {
-            Log.d("RLC", "[Pool] connectedCount $prev → $total (persistent=$permanent/${relays.size} dm=$dm/${dmRelays.size} ephemeral=$ephemeral/${ephemeralRelays.size}) appIsActive=$appIsActive")
+            Log.d("RLC", "[Pool] connectedCount $prev → $total (persistent=$permanent/${relays.size} dm=$dm/${dmRelays.size} group=$group/${groupRelays.size} ephemeral=$ephemeral/${ephemeralRelays.size}) appIsActive=$appIsActive")
         }
     }
 
@@ -960,7 +1002,7 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         relayCooldowns.clear()
         // Only keep long-lived subscriptions that won't be re-established by onReconnected.
         // Feed, engagement, loadmore, etc. are transient and will be resent fresh.
-        val keepPrefixes = listOf("dms", "notif")
+        val keepPrefixes = listOf("dms", "notif", "grp-")
         for (relayMap in activeSubscriptions.values) {
             relayMap.keys.retainAll { subId -> keepPrefixes.any { subId.startsWith(it) } }
         }
@@ -974,6 +1016,13 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
             relay.reconnectEnabled = true
         }
         for (relay in dmRelays) {
+            relay.resetBackoff()
+            relay.disconnect()
+            subscriptionTracker.untrackRelay(relay.config.url)
+            relay.connect()
+            relay.reconnectEnabled = true
+        }
+        for (relay in groupRelays.values) {
             relay.resetBackoff()
             relay.disconnect()
             subscriptionTracker.untrackRelay(relay.config.url)
@@ -1028,6 +1077,14 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         }
         // Tear down and reconnect DM relays
         for (relay in dmRelays) {
+            relay.resetBackoff()
+            relay.reconnectEnabled = false  // Suppress onFailure errors from disconnect()
+            relay.disconnect()
+            relay.connect()
+            relay.reconnectEnabled = true
+        }
+        // Tear down and reconnect group chat relays
+        for (relay in groupRelays.values) {
             relay.resetBackoff()
             relay.reconnectEnabled = false  // Suppress onFailure errors from disconnect()
             relay.disconnect()
@@ -1208,6 +1265,8 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         relays.clear()
         dmRelays.forEach { it.forceDisconnect() }
         dmRelays.clear()
+        groupRelays.values.forEach { it.forceDisconnect() }
+        groupRelays.clear()
         ephemeralRelays.values.forEach { it.forceDisconnect() }
         ephemeralRelays.clear()
         ephemeralLastUsed.clear()

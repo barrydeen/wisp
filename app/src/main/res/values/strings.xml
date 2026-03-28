@@ -670,4 +670,44 @@
     <string name="wallet_spark_sdk">SDK v%s</string>
     <string name="wallet_not_supported">Not supported by your wallet</string>
     <string name="wallet_creating_invoice">Creating invoice…</string>
+
+    <!-- NIP-29 Chat Rooms -->
+    <string name="tab_direct_messages">Direct Messages</string>
+    <string name="tab_chat_rooms">Chat Rooms</string>
+    <string name="title_join_chat_room">Join Chat Room</string>
+    <string name="title_create_group">Create Chat Room</string>
+    <string name="label_relay_url">Relay URL</string>
+    <string name="label_group_id">Room ID</string>
+    <string name="label_group_name">Room Name</string>
+    <string name="action_join">Join</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_create">Create</string>
+    <string name="action_join_group">Join existing chat room</string>
+    <string name="action_create_group">Create new chat room</string>
+    <string name="error_no_chat_rooms">No chat rooms yet</string>
+    <string name="error_join_room_hint">Tap + to join or create a chat room</string>
+    <string name="cd_join_group">Join chat room</string>
+    <string name="cd_new_group_dm">New group DM</string>
+    <string name="cd_group_actions">Chat room actions</string>
+    <string name="title_group_detail">Chat Room Info</string>
+    <string name="cd_edit_group">Edit chat room</string>
+    <string name="label_invite_link">Invite Link</string>
+    <string name="cd_copy_link">Copy link</string>
+    <string name="label_members_count">Members (%d)</string>
+    <string name="label_members_unavailable">Member list not available</string>
+    <string name="title_remove_user">Remove User</string>
+    <string name="msg_remove_user_confirm">Remove %s from this group?</string>
+    <string name="action_remove">Remove</string>
+    <string name="title_edit_group">Edit Chat Room</string>
+    <string name="label_group_about">About</string>
+    <string name="action_save">Save</string>
+    <string name="cd_remove_user">Remove user</string>
+    <string name="label_group_picture">Picture URL</string>
+    <string name="cd_upload_group_picture">Upload group picture</string>
+    <string name="action_leave_group">Leave Chat Room</string>
+    <string name="title_leave_group">Leave Chat Room</string>
+    <string name="msg_leave_group_confirm">Leave this chat room? You can rejoin later using the invite link.</string>
+    <string name="action_delete_group">Delete Chat Room</string>
+    <string name="title_delete_group">Delete Chat Room</string>
+    <string name="msg_delete_group_confirm">Permanently delete this chat room? This cannot be undone.</string>
 </resources>

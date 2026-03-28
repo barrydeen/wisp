@@ -62,10 +62,138 @@
         }
       ],
       "relations": []
+    },
+    {
+      "id": "2:2141392782912771445",
+      "lastPropertyId": "7:7365873607391821510",
+      "name": "GroupMessageEntity",
+      "properties": [
+        {
+          "id": "1:2786703443318537442",
+          "name": "dbId",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:4361531533672154727",
+          "name": "eventId",
+          "indexId": "4:730659032884888490",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:7859248255243614592",
+          "name": "roomKey",
+          "indexId": "5:3530430297049641744",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "4:837629569078174530",
+          "name": "senderPubkey",
+          "type": 9
+        },
+        {
+          "id": "5:3750175271752362304",
+          "name": "content",
+          "type": 9
+        },
+        {
+          "id": "6:6662940452783824722",
+          "name": "createdAt",
+          "indexId": "6:1136372787810734727",
+          "type": 6,
+          "flags": 8
+        },
+        {
+          "id": "7:7365873607391821510",
+          "name": "replyToId",
+          "type": 9
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "3:4980149860826606366",
+      "lastPropertyId": "13:2695266999059672518",
+      "name": "GroupMetaEntity",
+      "properties": [
+        {
+          "id": "1:5225892304526232633",
+          "name": "dbId",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:6348721888394645385",
+          "name": "roomKey",
+          "indexId": "7:1738310882621967860",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "3:6719232897229027439",
+          "name": "ownerPubkey",
+          "indexId": "8:8850647956925906315",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "4:79535940316799387",
+          "name": "relayUrl",
+          "type": 9
+        },
+        {
+          "id": "5:8901948487462359440",
+          "name": "groupId",
+          "type": 9
+        },
+        {
+          "id": "6:2179320965985223770",
+          "name": "name",
+          "type": 9
+        },
+        {
+          "id": "7:6603501369966295752",
+          "name": "picture",
+          "type": 9
+        },
+        {
+          "id": "8:1188652615133508647",
+          "name": "about",
+          "type": 9
+        },
+        {
+          "id": "9:1784012010631279003",
+          "name": "isPrivate",
+          "type": 1
+        },
+        {
+          "id": "10:4501155107145786277",
+          "name": "isClosed",
+          "type": 1
+        },
+        {
+          "id": "11:3330465102865895006",
+          "name": "adminsJson",
+          "type": 9
+        },
+        {
+          "id": "12:2841542968064092828",
+          "name": "membersJson",
+          "type": 9
+        },
+        {
+          "id": "13:2695266999059672518",
+          "name": "lastMessageAt",
+          "type": 6
+        }
+      ],
+      "relations": []
     }
   ],
-  "lastEntityId": "1:8041604479547442110",
-  "lastIndexId": "3:8412262979559058976",
+  "lastEntityId": "3:4980149860826606366",
+  "lastIndexId": "8:8850647956925906315",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

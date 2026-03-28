@@ -90,7 +90,9 @@ fun ThreadScreen(
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
     onOpenEmojiLibrary: (() -> Unit)? = null,
-    onPollVote: (String, List<String>) -> Unit = { _, _ -> }
+    onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    onGroupRoom: ((String, String) -> Unit)? = null,
+    fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null
 ) {
     val flatThread by viewModel.flatThread.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -156,7 +158,9 @@ fun ThreadScreen(
             onHashtagClick = onHashtagClick,
             onRelayClick = onRelayClick,
             onArticleClick = onArticleClick,
-            onPayInvoice = onPayInvoice
+            onPayInvoice = onPayInvoice,
+            onGroupRoom = onGroupRoom,
+            fetchGroupPreview = fetchGroupPreview
         )
     }
 
