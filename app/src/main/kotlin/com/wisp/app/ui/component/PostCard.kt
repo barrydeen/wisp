@@ -208,11 +208,11 @@ fun PostCard(
                 val labelText = if (repostPubkeys.size == 1) {
                     val name = eventRepo?.getProfileData(repostPubkeys.first())?.displayString
                         ?: (repostPubkeys.first().take(8) + "...")
-                    "$name retweeted"
+                    "$name reposted"
                 } else if (overflow > 0) {
-                    "and $overflow others retweeted"
+                    "and $overflow others reposted"
                 } else {
-                    "retweeted"
+                    "reposted"
                 }
                 Text(
                     text = labelText,

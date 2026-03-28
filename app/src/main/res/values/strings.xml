@@ -118,7 +118,7 @@
     <string name="btn_copy_note_id">Copy Note ID</string>
     <string name="btn_copy_note_json">Copy Note JSON</string>
     <string name="btn_hide">Hide</string>
-    <string name="btn_retweet">Retweet</string>
+    <string name="btn_retweet">Repost</string>
     <string name="btn_vote">Vote</string>
     <string name="btn_anonymous">Anonymous</string>
     <string name="btn_private">Private</string>
@@ -547,8 +547,8 @@
     <string name="broadcast_blocked_relays">Broadcast Blocked Relays</string>
 
     <!-- Post Card -->
-    <string name="post_retweeted">retweeted</string>
-    <string name="post_and_others_retweeted">and %d others retweeted</string>
+    <string name="post_retweeted">reposted</string>
+    <string name="post_and_others_retweeted">and %d others reposted</string>
     <string name="post_pow_x">PoW %d</string>
     <string name="post_replying_to">Replying to %s</string>
     <string name="post_now_x">Post now (%ds)</string>

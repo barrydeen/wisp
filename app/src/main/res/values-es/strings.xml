@@ -115,7 +115,7 @@
     <string name="btn_copy_note_id">Copiar ID de Nota</string>
     <string name="btn_copy_note_json">Copiar JSON de Nota</string>
     <string name="btn_hide">Ocultar</string>
-    <string name="btn_retweet">Retweet</string>
+    <string name="btn_retweet">Repostear</string>
     <string name="btn_vote">Votar</string>
     <string name="btn_anonymous">Anónimo</string>
     <string name="btn_private">Privado</string>
