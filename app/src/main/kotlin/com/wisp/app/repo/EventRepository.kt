@@ -317,8 +317,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                                 val sortTime = if (reposterIsFollowed) event.created_at else inner.created_at
                                 binaryInsert(inner, sortTime = sortTime, fromFeed = true)
                             }
-                        } else if (!isReply && reposterIsFollowed) {
+                        } else if (!isReply && reposterIsFollowed && event.pubkey != currentUserPubkey) {
                             // Already seen — update sort time if repost is newer so it surfaces to top
+                            // Skip re-sort for the user's own reposts to avoid jarring viewport jumps
                             val prevTime = feedSortTime.get(inner.id) ?: inner.created_at
                             if (event.created_at > prevTime) {
                                 feedSortTime.put(inner.id, event.created_at)
