@@ -172,6 +172,7 @@ internal sealed interface ContentSegment {
 
 private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp")
 private val globalMuted = MutableStateFlow(true)
+private val activeVideoUrl = MutableStateFlow<String?>(null)
 
 private val videoExtensions = setOf("mp4", "mov", "webm")
 private val audioExtensions = setOf("mp3", "wav", "ogg", "m4a", "flac", "aac")
@@ -1762,6 +1763,7 @@ private fun InlineVideoPlayerWithFullscreen(url: String, onFullScreen: (position
         exoPlayer.addListener(listener)
         onDispose {
             exoPlayer.removeListener(listener)
+            activeVideoUrl.compareAndSet(url, null)
             exoPlayer.release()
         }
     }
@@ -1779,9 +1781,16 @@ private fun InlineVideoPlayerWithFullscreen(url: String, onFullScreen: (position
                 val totalHeight = bounds.height
                 val visibleFraction = if (totalHeight > 0) visibleHeight / totalHeight else 0f
                 if (visibleFraction > 0.5f) {
-                    if (mediaSettings.videoAutoPlay && !exoPlayer.isPlaying && !userPaused) exoPlayer.play()
+                    if (mediaSettings.videoAutoPlay && !exoPlayer.isPlaying && !userPaused) {
+                        val current = activeVideoUrl.value
+                        if (current == null || current == url) {
+                            activeVideoUrl.value = url
+                            exoPlayer.play()
+                        }
+                    }
                 } else {
                     if (exoPlayer.isPlaying) exoPlayer.pause()
+                    activeVideoUrl.compareAndSet(url, null)
                     userPaused = false
                 }
             }
@@ -1923,6 +1932,7 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
         exoPlayer.addListener(listener)
         onDispose {
             exoPlayer.removeListener(listener)
+            activeVideoUrl.compareAndSet(url, null)
             exoPlayer.release()
         }
     }
@@ -1940,9 +1950,16 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
                 val totalHeight = bounds.height
                 val visibleFraction = if (totalHeight > 0) visibleHeight / totalHeight else 0f
                 if (visibleFraction > 0.5f) {
-                    if (mediaSettings.videoAutoPlay && !exoPlayer.isPlaying && !userPaused) exoPlayer.play()
+                    if (mediaSettings.videoAutoPlay && !exoPlayer.isPlaying && !userPaused) {
+                        val current = activeVideoUrl.value
+                        if (current == null || current == url) {
+                            activeVideoUrl.value = url
+                            exoPlayer.play()
+                        }
+                    }
                 } else {
                     if (exoPlayer.isPlaying) exoPlayer.pause()
+                    activeVideoUrl.compareAndSet(url, null)
                     userPaused = false
                 }
             }
