@@ -397,6 +397,11 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
     ) {
         val pool = relayPool ?: return
         signer ?: return
+        // Optimistic local update — remove from members list immediately
+        val repo = groupRepo ?: return
+        repo.getRoom(relayUrl, groupId)?.let { room ->
+            repo.updateMembers(relayUrl, groupId, room.members.filter { it != targetPubkey })
+        }
         viewModelScope.launch(Dispatchers.Default) {
             try {
                 val event = signer.signEvent(
