@@ -546,6 +546,21 @@
     <string name="broadcast_search_relays">Broadcast Search Relays</string>
     <string name="broadcast_blocked_relays">Broadcast Blocked Relays</string>
 
+    <!-- Local Relay -->
+    <string name="local_relay_my_relay">My Local Relay</string>
+    <string name="local_relay_url_hint">ws://localhost:7777</string>
+    <string name="local_relay_remove">Remove Local Relay</string>
+    <string name="local_relay_write_policy">Write Policy</string>
+    <string name="local_relay_own_notes">My Notes</string>
+    <string name="local_relay_tagged">My Notes and Notes I\'m Tagged In</string>
+    <string name="local_relay_all_notes">All Notes</string>
+    <string name="local_relay_kinds">Event Kinds</string>
+    <string name="local_relay_kind_notes">Notes (1)</string>
+    <string name="local_relay_kind_dms">DMs (1059)</string>
+    <string name="local_relay_kind_zaps">Zaps (9735)</string>
+    <string name="local_relay_add_kind">Add Kind</string>
+    <string name="local_relay_invalid_url">Invalid local relay URL</string>
+
     <!-- Post Card -->
     <string name="post_retweeted">reposted</string>
     <string name="post_and_others_retweeted">and %d others reposted</string>

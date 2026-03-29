@@ -8,6 +8,7 @@ import com.wisp.app.nostr.Keys
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.nostr.toHex
+import com.wisp.app.relay.LocalRelayConfig
 import com.wisp.app.relay.RelayConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -58,6 +59,9 @@ class KeyRepository(private val context: Context) {
     private val _blockedRelays = MutableStateFlow(loadBlockedRelays())
     val blockedRelaysFlow: StateFlow<List<String>> = _blockedRelays
 
+    private val _localRelay = MutableStateFlow(loadLocalRelay())
+    val localRelayFlow: StateFlow<LocalRelayConfig?> = _localRelay
+
     // Strong reference to prevent GC — listener syncs flows when prefs change from any instance
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
@@ -65,6 +69,7 @@ class KeyRepository(private val context: Context) {
             "dm_relays" -> _dmRelays.value = loadDmRelays()
             "search_relays" -> _searchRelays.value = loadSearchRelays()
             "blocked_relays" -> _blockedRelays.value = loadBlockedRelays()
+            "local_relay" -> _localRelay.value = loadLocalRelay()
         }
     }
 
@@ -281,6 +286,7 @@ class KeyRepository(private val context: Context) {
         _dmRelays.value = loadDmRelays()
         _searchRelays.value = loadSearchRelays()
         _blockedRelays.value = loadBlockedRelays()
+        _localRelay.value = loadLocalRelay()
     }
 
     fun saveRelays(relays: List<RelayConfig>) {
@@ -333,6 +339,22 @@ class KeyRepository(private val context: Context) {
     private fun loadBlockedRelays(): List<String> {
         val str = prefs.getString("blocked_relays", null) ?: return emptyList()
         return try { json.decodeFromString(str) } catch (_: Exception) { emptyList() }
+    }
+
+    fun saveLocalRelay(config: LocalRelayConfig?) {
+        if (config != null) {
+            prefs.edit().putString("local_relay", json.encodeToString(config)).apply()
+        } else {
+            prefs.edit().remove("local_relay").apply()
+        }
+        _localRelay.value = config
+    }
+
+    fun getLocalRelay(): LocalRelayConfig? = _localRelay.value
+
+    private fun loadLocalRelay(): LocalRelayConfig? {
+        val str = prefs.getString("local_relay", null) ?: return null
+        return try { json.decodeFromString(str) } catch (_: Exception) { null }
     }
 
     fun isOnboardingComplete(): Boolean {
