@@ -679,4 +679,18 @@
     <string name="action_delete_group">Elimina stanza di chat</string>
     <string name="title_delete_group">Elimina stanza di chat</string>
     <string name="msg_delete_group_confirm">Eliminare definitivamente questa stanza di chat? Questa azione non può essere annullata.</string>
+
+    <string name="local_relay_my_relay">Il mio relay locale</string>
+    <string name="local_relay_url_hint">ws://localhost:7777</string>
+    <string name="local_relay_remove">Rimuovi relay locale</string>
+    <string name="local_relay_write_policy">Politica di scrittura</string>
+    <string name="local_relay_own_notes">Le mie note</string>
+    <string name="local_relay_tagged">Le mie note e note in cui sono taggato</string>
+    <string name="local_relay_all_notes">Tutte le note</string>
+    <string name="local_relay_kinds">Tipi di evento</string>
+    <string name="local_relay_kind_notes">Note (1)</string>
+    <string name="local_relay_kind_dms">DM (1059)</string>
+    <string name="local_relay_kind_zaps">Zap (9735)</string>
+    <string name="local_relay_add_kind">Aggiungi tipo</string>
+    <string name="local_relay_invalid_url">URL relay locale non valido</string>
 </resources>

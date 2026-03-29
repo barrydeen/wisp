@@ -679,4 +679,19 @@
     <string name="action_delete_group">채팅방 삭제</string>
     <string name="title_delete_group">채팅방 삭제</string>
     <string name="msg_delete_group_confirm">이 채팅방을 영구적으로 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.</string>
+
+    <!-- Local Relay -->
+    <string name="local_relay_my_relay">내 로컬 릴레이</string>
+    <string name="local_relay_url_hint">ws://localhost:7777</string>
+    <string name="local_relay_remove">로컬 릴레이 제거</string>
+    <string name="local_relay_write_policy">쓰기 정책</string>
+    <string name="local_relay_own_notes">내 노트</string>
+    <string name="local_relay_tagged">내 노트 및 태그된 노트</string>
+    <string name="local_relay_all_notes">모든 노트</string>
+    <string name="local_relay_kinds">이벤트 종류</string>
+    <string name="local_relay_kind_notes">노트 (1)</string>
+    <string name="local_relay_kind_dms">DM (1059)</string>
+    <string name="local_relay_kind_zaps">Zap (9735)</string>
+    <string name="local_relay_add_kind">종류 추가</string>
+    <string name="local_relay_invalid_url">잘못된 로컬 릴레이 URL</string>
 </resources>

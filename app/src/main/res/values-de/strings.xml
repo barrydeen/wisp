@@ -679,4 +679,19 @@
     <string name="action_delete_group">Chatroom löschen</string>
     <string name="title_delete_group">Chatroom löschen</string>
     <string name="msg_delete_group_confirm">Diesen Chatroom dauerhaft löschen? Dies kann nicht rückgängig gemacht werden.</string>
+
+    <!-- Local Relay -->
+    <string name="local_relay_my_relay">Mein lokales Relay</string>
+    <string name="local_relay_url_hint">ws://localhost:7777</string>
+    <string name="local_relay_remove">Lokales Relay entfernen</string>
+    <string name="local_relay_write_policy">Schreibrichtlinie</string>
+    <string name="local_relay_own_notes">Meine Notizen</string>
+    <string name="local_relay_tagged">Meine Notizen und Notizen, in denen ich markiert bin</string>
+    <string name="local_relay_all_notes">Alle Notizen</string>
+    <string name="local_relay_kinds">Event-Typen</string>
+    <string name="local_relay_kind_notes">Notizen (1)</string>
+    <string name="local_relay_kind_dms">DMs (1059)</string>
+    <string name="local_relay_kind_zaps">Zaps (9735)</string>
+    <string name="local_relay_add_kind">Typ hinzufügen</string>
+    <string name="local_relay_invalid_url">Ungültige lokale Relay-URL</string>
 </resources>

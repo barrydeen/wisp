@@ -679,4 +679,18 @@
     <string name="action_delete_group">Eliminar sala de chat</string>
     <string name="title_delete_group">Eliminar sala de chat</string>
     <string name="msg_delete_group_confirm">¿Eliminar permanentemente esta sala de chat? Esta acción no se puede deshacer.</string>
+
+    <string name="local_relay_my_relay">Mi Relay Local</string>
+    <string name="local_relay_url_hint">ws://localhost:7777</string>
+    <string name="local_relay_remove">Eliminar Relay Local</string>
+    <string name="local_relay_write_policy">Política de escritura</string>
+    <string name="local_relay_own_notes">Mis notas</string>
+    <string name="local_relay_tagged">Mis notas y notas en las que me etiquetan</string>
+    <string name="local_relay_all_notes">Todas las notas</string>
+    <string name="local_relay_kinds">Tipos de evento</string>
+    <string name="local_relay_kind_notes">Notas (1)</string>
+    <string name="local_relay_kind_dms">DMs (1059)</string>
+    <string name="local_relay_kind_zaps">Zaps (9735)</string>
+    <string name="local_relay_add_kind">Añadir tipo</string>
+    <string name="local_relay_invalid_url">URL de relay local no válida</string>
 </resources>

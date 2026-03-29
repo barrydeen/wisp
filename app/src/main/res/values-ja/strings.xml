@@ -679,4 +679,18 @@
     <string name="action_delete_group">チャットルームを削除</string>
     <string name="title_delete_group">チャットルームを削除</string>
     <string name="msg_delete_group_confirm">このチャットルームを完全に削除しますか？この操作は元に戻せません。</string>
+
+    <string name="local_relay_my_relay">マイローカルリレー</string>
+    <string name="local_relay_url_hint">ws://localhost:7777</string>
+    <string name="local_relay_remove">ローカルリレーを削除</string>
+    <string name="local_relay_write_policy">書き込みポリシー</string>
+    <string name="local_relay_own_notes">自分のノート</string>
+    <string name="local_relay_tagged">自分のノートとタグ付けされたノート</string>
+    <string name="local_relay_all_notes">すべてのノート</string>
+    <string name="local_relay_kinds">イベントの種類</string>
+    <string name="local_relay_kind_notes">ノート (1)</string>
+    <string name="local_relay_kind_dms">DM (1059)</string>
+    <string name="local_relay_kind_zaps">Zap (9735)</string>
+    <string name="local_relay_add_kind">種類を追加</string>
+    <string name="local_relay_invalid_url">無効なローカルリレーURL</string>
 </resources>

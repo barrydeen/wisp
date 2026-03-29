@@ -679,4 +679,19 @@
     <string name="action_delete_group">删除聊天室</string>
     <string name="title_delete_group">删除聊天室</string>
     <string name="msg_delete_group_confirm">永久删除此聊天室？此操作无法撤销。</string>
+
+    <!-- Local Relay -->
+    <string name="local_relay_my_relay">我的本地中继</string>
+    <string name="local_relay_url_hint">ws://localhost:7777</string>
+    <string name="local_relay_remove">移除本地中继</string>
+    <string name="local_relay_write_policy">写入策略</string>
+    <string name="local_relay_own_notes">我的笔记</string>
+    <string name="local_relay_tagged">我的笔记和提及我的笔记</string>
+    <string name="local_relay_all_notes">所有笔记</string>
+    <string name="local_relay_kinds">事件类型</string>
+    <string name="local_relay_kind_notes">笔记 (1)</string>
+    <string name="local_relay_kind_dms">私信 (1059)</string>
+    <string name="local_relay_kind_zaps">Zap (9735)</string>
+    <string name="local_relay_add_kind">添加类型</string>
+    <string name="local_relay_invalid_url">无效的本地中继URL</string>
 </resources>

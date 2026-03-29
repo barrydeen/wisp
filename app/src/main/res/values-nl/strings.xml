@@ -679,4 +679,18 @@
     <string name="action_delete_group">Chatruimte verwijderen</string>
     <string name="title_delete_group">Chatruimte verwijderen</string>
     <string name="msg_delete_group_confirm">Deze chatruimte definitief verwijderen? Dit kan niet ongedaan worden gemaakt.</string>
+
+    <string name="local_relay_my_relay">Mijn lokale relay</string>
+    <string name="local_relay_url_hint">ws://localhost:7777</string>
+    <string name="local_relay_remove">Lokale relay verwijderen</string>
+    <string name="local_relay_write_policy">Schrijfbeleid</string>
+    <string name="local_relay_own_notes">Mijn notities</string>
+    <string name="local_relay_tagged">Mijn notities en notities waarin ik ben getagd</string>
+    <string name="local_relay_all_notes">Alle notities</string>
+    <string name="local_relay_kinds">Evenementtypen</string>
+    <string name="local_relay_kind_notes">Notities (1)</string>
+    <string name="local_relay_kind_dms">DM\'s (1059)</string>
+    <string name="local_relay_kind_zaps">Zaps (9735)</string>
+    <string name="local_relay_add_kind">Type toevoegen</string>
+    <string name="local_relay_invalid_url">Ongeldige lokale relay-URL</string>
 </resources>
