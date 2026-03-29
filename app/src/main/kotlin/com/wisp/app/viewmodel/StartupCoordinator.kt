@@ -220,6 +220,16 @@ class StartupCoordinator(
         relayPool.updateDmRelays(dmRelays)
         eventRepo.dmRelayUrls = dmRelays.toSet()
 
+        // Connect local relay if configured
+        relayPool.updateLocalRelay(keyRepo.getLocalRelay(), getUserPubkey())
+
+        // Observe local relay config changes
+        scope.launch {
+            keyRepo.localRelayFlow.drop(1).collectLatest { config ->
+                relayPool.updateLocalRelay(config, getUserPubkey())
+            }
+        }
+
         scope.launch {
             relayInfoRepo.prefetchAll(initialRelays.map { it.url })
         }

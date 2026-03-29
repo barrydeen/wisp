@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Allow cleartext ws:// for .onion domains (TLS is redundant over Tor) -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">onion</domain>
-    </domain-config>
+    <!--
+      Allow cleartext (ws://) globally. This is safe because:
+      - All network relay validation (isValidUrl) requires wss://
+      - Only local relays (isLocalRelayUrl) and .onion relays accept ws://
+      - Needed because Android's domain-config doesn't match IP addresses
+        (127.0.0.1, 192.168.*, 10.*) which local relays commonly use.
+    -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
 </network-security-config>

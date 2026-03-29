@@ -275,6 +275,15 @@ class OutboxRouter(
             targetedRelays.addAll(relayPool.getRelayUrls())
         }
 
+        // Also query local relay for own notes
+        if (pubkey == relayPool.localRelayUserPubkey) {
+            val localUrl = relayPool.getLocalRelayUrl()
+            if (localUrl != null) {
+                relayPool.sendToLocalRelay(ClientMessage.req(subId, filter))
+                targetedRelays.add(localUrl)
+            }
+        }
+
         return targetedRelays
     }
 
