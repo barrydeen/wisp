@@ -34,6 +34,7 @@ import com.wisp.app.repo.MuteRepository
 import com.wisp.app.repo.NotificationRepository
 import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.DiagnosticLogger
+import com.wisp.app.repo.GroupRepository
 import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.repo.RelaySetRepository
@@ -64,6 +65,7 @@ class EventRouter(
     private val keyRepo: KeyRepository,
     private val dmRepo: DmRepository,
     private val extendedNetworkRepo: ExtendedNetworkRepository,
+    private val groupRepo: GroupRepository?,
     private val metadataFetcher: MetadataFetcher,
     private val getUserPubkey: () -> String?,
     private val getSigner: () -> NostrSigner?,
@@ -376,6 +378,22 @@ class EventRouter(
                     relaySetRepo.updateFavoriteRelaysFromEvent(event)
                 }
             }
+            if (event.kind == Nip51.KIND_SIMPLE_GROUPS) {
+                val myPubkey = getUserPubkey()
+                if (myPubkey != null && event.pubkey == myPubkey && isNewestSelfData(event)) {
+                    val groups = Nip51.parseSimpleGroups(event)
+                    val repo = groupRepo
+                    if (repo != null && groups.isNotEmpty()) {
+                        val existing = repo.getJoinedGroupKeys().toSet()
+                        for (entry in groups) {
+                            val key = Pair(entry.relayUrl, entry.groupId)
+                            if (key !in existing) {
+                                repo.addGroup(entry.relayUrl, entry.groupId, localName = entry.name)
+                            }
+                        }
+                    }
+                }
+            }
             if (event.kind == Nip30.KIND_USER_EMOJI_LIST) {
                 val myPubkey = getUserPubkey()
                 if (myPubkey != null && event.pubkey == myPubkey) customEmojiRepo.updateFromEvent(event)
@@ -465,10 +483,10 @@ class EventRouter(
     companion object {
         private val SELF_DATA_KINDS = intArrayOf(
             0, 3, 10002, 10050, 10007, 10006,
-            Nip51.KIND_MUTE_LIST, Nip51.KIND_BOOKMARK_LIST, Nip51.KIND_PIN_LIST,
-            Blossom.KIND_SERVER_LIST, Nip51.KIND_FOLLOW_SET, Nip51.KIND_INTEREST_SET,
-            Nip51.KIND_BOOKMARK_SET, Nip51.KIND_RELAY_SET, Nip51.KIND_FAVORITE_RELAYS,
-            Nip30.KIND_USER_EMOJI_LIST, Nip30.KIND_EMOJI_SET
+            Nip51.KIND_MUTE_LIST, Nip51.KIND_SIMPLE_GROUPS, Nip51.KIND_BOOKMARK_LIST,
+            Nip51.KIND_PIN_LIST, Blossom.KIND_SERVER_LIST, Nip51.KIND_FOLLOW_SET,
+            Nip51.KIND_INTEREST_SET, Nip51.KIND_BOOKMARK_SET, Nip51.KIND_RELAY_SET,
+            Nip51.KIND_FAVORITE_RELAYS, Nip30.KIND_USER_EMOJI_LIST, Nip30.KIND_EMOJI_SET
         )
     }
 

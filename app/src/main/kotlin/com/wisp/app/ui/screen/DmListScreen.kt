@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -19,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.GroupAdd
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
@@ -28,6 +30,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
@@ -36,7 +39,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -54,6 +59,7 @@ import com.wisp.app.nostr.DmConversation
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.GroupRoom
+import com.wisp.app.ui.component.GroupCard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.viewmodel.DmListViewModel
 import com.wisp.app.viewmodel.GroupListViewModel
@@ -80,6 +86,7 @@ fun DmListScreen(
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showJoinDialog by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    var showDiscoverSheet by remember { mutableStateOf(false) }
     var showFabMenu by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -118,6 +125,10 @@ fun DmListScreen(
                         expanded = showFabMenu,
                         onDismissRequest = { showFabMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.action_discover_groups)) },
+                            onClick = { showFabMenu = false; showDiscoverSheet = true }
+                        )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.action_join_group)) },
                             onClick = { showFabMenu = false; showJoinDialog = true }
@@ -172,6 +183,18 @@ fun DmListScreen(
             onCreate = { relayUrl, name ->
                 showCreateDialog = false
                 groupListViewModel.createGroup(relayUrl, name, signer)
+            }
+        )
+    }
+
+    if (showDiscoverSheet) {
+        DiscoverGroupsSheet(
+            groupListViewModel = groupListViewModel,
+            eventRepo = eventRepo,
+            onDismiss = { showDiscoverSheet = false },
+            onJoin = { relayUrl, groupId ->
+                showDiscoverSheet = false
+                groupListViewModel.joinGroup(relayUrl, groupId, signer)
             }
         )
     }
@@ -300,8 +323,8 @@ private fun JoinGroupDialog(
     onDismiss: () -> Unit,
     onJoin: (relayUrl: String, groupId: String) -> Unit
 ) {
-    var relayUrl by remember { mutableStateOf("wss://") }
-    var groupId by remember { mutableStateOf("_") }
+    var inviteLink by remember { mutableStateOf("") }
+    var showError by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -309,19 +332,15 @@ private fun JoinGroupDialog(
         text = {
             Column {
                 OutlinedTextField(
-                    value = relayUrl,
-                    onValueChange = { relayUrl = it },
-                    label = { Text(stringResource(R.string.label_relay_url)) },
-                    placeholder = { Text("wss://groups.nostr.com") },
+                    value = inviteLink,
+                    onValueChange = { inviteLink = it; showError = false },
+                    label = { Text(stringResource(R.string.label_invite_link)) },
+                    placeholder = { Text("groups.0xchat.com'roomid") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = groupId,
-                    onValueChange = { groupId = it },
-                    label = { Text(stringResource(R.string.label_group_id)) },
-                    singleLine = true,
+                    isError = showError,
+                    supportingText = if (showError) {
+                        { Text(stringResource(R.string.error_invalid_invite_link)) }
+                    } else null,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -329,9 +348,12 @@ private fun JoinGroupDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    val url = relayUrl.trim()
-                    val id = groupId.trim().ifEmpty { "_" }
-                    if (url.isNotEmpty()) onJoin(url, id)
+                    val parsed = com.wisp.app.nostr.Nip29.parseGroupIdentifier(inviteLink.trim())
+                    if (parsed != null) {
+                        onJoin(parsed.first, parsed.second)
+                    } else {
+                        showError = true
+                    }
                 }
             ) {
                 Text(stringResource(R.string.action_join))
@@ -491,5 +513,93 @@ private fun formatTimestamp(epoch: Long): String {
         timeYearFormat.format(date)
     } else {
         timeFormat.format(date)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DiscoverGroupsSheet(
+    groupListViewModel: GroupListViewModel,
+    eventRepo: EventRepository,
+    onDismiss: () -> Unit,
+    onJoin: (relayUrl: String, groupId: String) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val discoveredGroups by groupListViewModel.discoveredGroups.collectAsState()
+    val isLoading by groupListViewModel.discoveryLoading.collectAsState()
+
+    LaunchedEffect(Unit) {
+        groupListViewModel.discoverGroups()
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+        ) {
+            Text(
+                text = stringResource(R.string.title_discover_groups),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+
+            if (isLoading && discoveredGroups.isEmpty()) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(48.dp)
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (discoveredGroups.isEmpty() && !isLoading) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(48.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.profile_no_groups),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                LazyColumn {
+                    items(
+                        items = discoveredGroups,
+                        key = { "${it.relayUrl}|${it.metadata.groupId}" }
+                    ) { group ->
+                        Box(modifier = Modifier.padding(horizontal = 12.dp)) {
+                            GroupCard(
+                                relayUrl = group.relayUrl,
+                                groupId = group.metadata.groupId,
+                                initialMetadata = group.metadata,
+                                initialMembers = group.members,
+                                onClick = { onJoin(group.relayUrl, group.metadata.groupId) },
+                                eventRepo = eventRepo
+                            )
+                        }
+                    }
+                    if (isLoading) {
+                        item {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp)
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

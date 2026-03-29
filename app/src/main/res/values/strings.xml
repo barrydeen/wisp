@@ -585,6 +585,7 @@
     <string name="profile_tab_media">Media</string>
     <string name="profile_tab_following">Following</string>
     <string name="profile_tab_followers">Followers</string>
+    <string name="profile_tab_groups">Chat Rooms</string>
     <string name="profile_tab_relays">Relays</string>
     <string name="profile_sort_recent">Recent</string>
     <string name="profile_sort_likes">Likes</string>
@@ -602,6 +603,7 @@
     <string name="profile_no_media">No media yet</string>
     <string name="profile_not_following">Not following anyone</string>
     <string name="profile_no_followers">No followers found</string>
+    <string name="profile_no_groups">No chat rooms</string>
     <string name="profile_no_relays">No relay list published</string>
     <string name="profile_relay_list">Relay List (NIP-65)</string>
     <string name="profile_discovered_relays">Discovered Relays</string>
@@ -691,6 +693,7 @@
     <string name="tab_chat_rooms">Chat Rooms</string>
     <string name="title_join_chat_room">Join Chat Room</string>
     <string name="title_create_group">Create Chat Room</string>
+    <string name="error_invalid_invite_link">Invalid invite link</string>
     <string name="label_relay_url">Relay URL</string>
     <string name="label_group_id">Room ID</string>
     <string name="label_group_name">Room Name</string>
@@ -699,6 +702,8 @@
     <string name="action_create">Create</string>
     <string name="action_join_group">Join existing chat room</string>
     <string name="action_create_group">Create new chat room</string>
+    <string name="action_discover_groups">Discover chat rooms</string>
+    <string name="title_discover_groups">Discover Chat Rooms</string>
     <string name="error_no_chat_rooms">No chat rooms yet</string>
     <string name="error_join_room_hint">Tap + to join or create a chat room</string>
     <string name="cd_join_group">Join chat room</string>

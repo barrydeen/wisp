@@ -1473,7 +1473,7 @@ fun WispNavHost(
                 onProfileClick = { pk -> navController.navigate("profile/$pk") },
                 onGroupDetail = { navController.navigate("group_detail/$encodedRelay/${android.net.Uri.encode(groupId)}") },
                 onJoin = { groupListViewModel.joinGroup(relayUrl, groupId, activeSigner) },
-                onAlreadyMember = { groupListViewModel.silentJoin(relayUrl, groupId) },
+                onAlreadyMember = { groupListViewModel.silentJoin(relayUrl, groupId, activeSigner) },
                 fetchGroupPreview = { rUrl, gId -> groupListViewModel.fetchGroupPreview(rUrl, gId) },
                 onPickMedia = {
                     groupRoomMediaLauncher.launch(
