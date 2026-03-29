@@ -75,6 +75,7 @@
     <string name="btn_save_profile">Salva Profilo</string>
     <string name="btn_save_draft">Salva bozza</string>
     <string name="compose_new_post">Nuovo post</string>
+    <string name="new_group_dm">Nuovo Gruppo DM</string>
     <string name="compose_reply">Rispondi</string>
     <string name="compose_quote">Cita</string>
     <string name="compose_placeholder">Cosa hai in mente?</string>

@@ -75,6 +75,7 @@
     <string name="btn_save_profile">Profiel Opslaan</string>
     <string name="btn_save_draft">Concept Opslaan</string>
     <string name="compose_new_post">Nieuw Bericht</string>
+    <string name="new_group_dm">Nieuwe Groep DM</string>
     <string name="compose_reply">Reageren</string>
     <string name="compose_quote">Citeren</string>
     <string name="compose_placeholder">Waar denk je aan?</string>

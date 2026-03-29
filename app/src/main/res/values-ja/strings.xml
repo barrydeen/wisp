@@ -75,6 +75,7 @@
     <string name="btn_save_profile">プロフィールを保存</string>
     <string name="btn_save_draft">下書きを保存</string>
     <string name="compose_new_post">新規投稿</string>
+    <string name="new_group_dm">新しいグループDM</string>
     <string name="compose_reply">返信</string>
     <string name="compose_quote">引用</string>
     <string name="compose_placeholder">今何を考えていますか？</string>

@@ -33,8 +33,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.wisp.app.R
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.ui.component.ProfilePicture
@@ -71,7 +73,7 @@ fun ContactPickerScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text("New Group DM") },
+                title = { Text(stringResource(R.string.new_group_dm)) },
                 navigationIcon = {
                     IconButton(onClick = {
                         viewModel.clearContactSelection()
@@ -110,7 +112,7 @@ fun ContactPickerScreen(
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Search") },
+                placeholder = { Text(stringResource(R.string.nav_search)) },
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
