@@ -8,7 +8,10 @@ import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip29
 import com.wisp.app.nostr.Nip30
+import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.NostrSigner
+import com.wisp.app.nostr.SimpleGroupEntry
+import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.GroupMessage
@@ -46,6 +49,19 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
     private val peerEmojisInternal = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, String>>()
     // "setAuthorPubkey:dTag" → set of peer pubkeys waiting on that emoji set
     private val pendingSetRefs = java.util.concurrent.ConcurrentHashMap<String, MutableSet<String>>()
+
+    data class DiscoveredGroup(
+        val relayUrl: String,
+        val metadata: Nip29.GroupMetadata,
+        val members: List<String> = emptyList()
+    )
+
+    private val _discoveredGroups = MutableStateFlow<List<DiscoveredGroup>>(emptyList())
+    val discoveredGroups: StateFlow<List<DiscoveredGroup>> = _discoveredGroups
+
+    private val _discoveryLoading = MutableStateFlow(false)
+    val discoveryLoading: StateFlow<Boolean> = _discoveryLoading
+    private var discoverGen = 0
 
     val groups: StateFlow<List<GroupRoom>>
         get() = groupRepo?.joinedGroups ?: MutableStateFlow(emptyList())
@@ -252,12 +268,13 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
      * Silently register a group the user already belongs to on the relay (joined via another
      * client). Adds the room locally and subscribes — no kind-9021 join request is sent.
      */
-    fun silentJoin(relayUrl: String, groupId: String) {
+    fun silentJoin(relayUrl: String, groupId: String, signer: NostrSigner? = null) {
         val repo = groupRepo ?: return
         val normalizedUrl = relayUrl.lowercase().trimEnd('/')
         repo.addGroup(normalizedUrl, groupId)
         applyCachedPreview(normalizedUrl, groupId)
         subscribeToGroup(normalizedUrl, groupId)
+        publishGroupList(signer)
     }
 
     fun joinGroup(relayUrl: String, groupId: String, signer: NostrSigner?) {
@@ -267,6 +284,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         repo.addGroup(relayUrl, groupId)
         applyCachedPreview(relayUrl, groupId)
         subscribeToGroup(relayUrl, groupId)
+        publishGroupList(signer)
         viewModelScope.launch(Dispatchers.Default) {
             signer?.let { s ->
                 try {
@@ -294,6 +312,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         // causes an infinite loop in the remote signer bridge after "Always allow" is granted.
         repo.addGroup(relayUrl, groupId, localName = name.trim().ifEmpty { null })
         subscribeToGroup(relayUrl, groupId)
+        publishGroupList(signer)
         signer?.let { s ->
             viewModelScope.launch(Dispatchers.Default) {
                 try {
@@ -350,7 +369,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Leave a group: send kind 9022, remove locally, clean up relay. */
+    /** Leave a group: send kind 9022, remove locally, clean up relay, publish updated list. */
     fun leaveGroup(relayUrl: String, groupId: String, signer: NostrSigner?) {
         val pool = relayPool ?: return
         signer?.let { s ->
@@ -367,9 +386,10 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         }
         groupRepo?.removeGroup(relayUrl, groupId)
         unsubscribeFromGroup(relayUrl, groupId)
+        publishGroupList(signer)
     }
 
-    /** Admin action: delete a group (kind 9008), remove locally, clean up relay. */
+    /** Admin action: delete a group (kind 9008), remove locally, clean up relay, publish updated list. */
     fun deleteGroup(relayUrl: String, groupId: String, signer: NostrSigner?) {
         val pool = relayPool ?: return
         signer?.let { s ->
@@ -386,6 +406,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         }
         groupRepo?.removeGroup(relayUrl, groupId)
         unsubscribeFromGroup(relayUrl, groupId)
+        publishGroupList(signer)
     }
 
     /** Admin action: remove a user from the group (kind 9001). */
@@ -497,6 +518,125 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
             subscriptionId = subId("emoji", pubkey.take(12)),
             filter = Filter(kinds = listOf(Nip30.KIND_USER_EMOJI_LIST), authors = listOf(pubkey), limit = 1)
         ), maxRelays = 5)
+    }
+
+    /**
+     * Discover public chat rooms from known group relays.
+     * Fetches kind 39000 (metadata) and 39002 (members), deduplicates, and ranks by member count.
+     */
+    fun discoverGroups() {
+        val pool = relayPool ?: return
+        if (_discoveryLoading.value) return
+        _discoveryLoading.value = true
+        _discoveredGroups.value = emptyList()
+
+        discoverGen++
+        val gen = discoverGen
+        val metaSubId = "grp-discover-meta-$gen"
+        val membersSubId = "grp-discover-members-$gen"
+        pool.registerDedupBypass(metaSubId)
+        pool.registerDedupBypass(membersSubId)
+        val groupRelays = Nip29.DEFAULT_GROUP_RELAYS +
+            (groupRepo?.getJoinedGroupKeys()?.map { it.first }?.distinct() ?: emptyList())
+        val relayUrls = groupRelays.distinct()
+
+        viewModelScope.launch(Dispatchers.Default) {
+            val metadataMap = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Nip29.GroupMetadata>>() // key -> (relayUrl, metadata)
+            val membersMap = java.util.concurrent.ConcurrentHashMap<String, List<String>>() // groupId -> members
+
+            val collectorReady = CompletableDeferred<Unit>()
+            val collectJob = launch {
+                pool.relayEvents
+                    .onSubscription { collectorReady.complete(Unit) }
+                    .collect { ev ->
+                        when {
+                            ev.subscriptionId == metaSubId && ev.event.kind == Nip29.KIND_GROUP_METADATA -> {
+                                val meta = Nip29.parseGroupMetadata(ev.event) ?: return@collect
+                                val key = "${ev.relayUrl}|${meta.groupId}"
+                                metadataMap.putIfAbsent(key, Pair(ev.relayUrl, meta))
+                            }
+                            ev.subscriptionId == membersSubId && ev.event.kind == Nip29.KIND_GROUP_MEMBERS -> {
+                                val groupId = ev.event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: return@collect
+                                val members = Nip29.parseGroupMembers(ev.event)
+                                val key = "${ev.relayUrl}|$groupId"
+                                membersMap[key] = members
+                            }
+                        }
+                    }
+            }
+
+            collectorReady.await()
+
+            val metaFilter = Filter(kinds = listOf(Nip29.KIND_GROUP_METADATA), limit = 200)
+            val membersFilter = Filter(kinds = listOf(Nip29.KIND_GROUP_MEMBERS), limit = 200)
+            for (url in relayUrls) {
+                pool.sendToRelayOrEphemeral(url, ClientMessage.req(metaSubId, metaFilter), skipBadCheck = true)
+                pool.sendToRelayOrEphemeral(url, ClientMessage.req(membersSubId, membersFilter), skipBadCheck = true)
+            }
+
+            // Wait for responses, emitting intermediate results
+            val deadline = System.currentTimeMillis() + 8_000
+            while (System.currentTimeMillis() < deadline) {
+                kotlinx.coroutines.delay(500)
+                emitDiscoveredGroups(metadataMap, membersMap)
+            }
+
+            collectJob.cancel()
+            for (url in relayUrls) {
+                pool.sendToRelayOrEphemeral(url, ClientMessage.close(metaSubId), skipBadCheck = true)
+                pool.sendToRelayOrEphemeral(url, ClientMessage.close(membersSubId), skipBadCheck = true)
+            }
+
+            emitDiscoveredGroups(metadataMap, membersMap)
+            _discoveryLoading.value = false
+        }
+    }
+
+    private fun emitDiscoveredGroups(
+        metadataMap: Map<String, Pair<String, Nip29.GroupMetadata>>,
+        membersMap: Map<String, List<String>>
+    ) {
+        val joinedKeys = groupRepo?.getJoinedGroupKeys()
+            ?.map { "${it.first}|${it.second}" }?.toSet() ?: emptySet()
+
+        val groups = metadataMap.entries
+            .filter { it.key !in joinedKeys }
+            .map { (key, pair) ->
+                val members = membersMap[key] ?: emptyList()
+                DiscoveredGroup(pair.first, pair.second, members)
+            }
+            .sortedByDescending { it.members.size }
+
+        _discoveredGroups.value = groups
+    }
+
+    /**
+     * Publish the user's current group list as a kind 10009 replaceable event.
+     * Builds entries from GroupRepository's joined groups.
+     */
+    private fun publishGroupList(signer: NostrSigner?) {
+        val s = signer ?: return
+        val repo = groupRepo ?: return
+        val pool = relayPool ?: return
+        val entries = repo.getJoinedGroupKeys().map { (relayUrl, groupId) ->
+            val room = repo.getRoom(relayUrl, groupId)
+            SimpleGroupEntry(groupId, relayUrl, room?.metadata?.name)
+        }
+        val tags = Nip51.buildSimpleGroupsTags(entries)
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                val event = s.signEvent(
+                    kind = Nip51.KIND_SIMPLE_GROUPS,
+                    content = "",
+                    tags = tags
+                )
+                val msg = ClientMessage.event(event)
+                pool.sendToWriteRelays(msg)
+                for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+                    pool.sendToRelayOrEphemeral(url, msg)
+                }
+            } catch (_: Exception) { }
+        }
     }
 
     private fun subId(type: String, groupId: String) = "$SUB_PREFIX$type-$groupId"

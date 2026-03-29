@@ -45,6 +45,12 @@ data class InterestSet(
     val createdAt: Long = 0
 )
 
+data class SimpleGroupEntry(
+    val groupId: String,
+    val relayUrl: String,
+    val name: String? = null
+)
+
 data class RelaySet(
     val pubkey: String,
     val dTag: String,
@@ -60,6 +66,7 @@ object Nip51 {
     const val KIND_PIN_LIST = 10001
     const val KIND_BOOKMARK_LIST = 10003
     const val KIND_DM_RELAYS = 10050
+    const val KIND_SIMPLE_GROUPS = 10009
     const val KIND_FAVORITE_RELAYS = 10012
     const val KIND_FOLLOW_SET = 30000
     const val KIND_RELAY_SET = 30002
@@ -368,5 +375,37 @@ object Nip51 {
             val hint = relayHints[id]
             if (hint != null) listOf("e", id, hint) else listOf("e", id)
         }
+    }
+
+    fun parseSimpleGroups(event: NostrEvent): List<SimpleGroupEntry> {
+        if (event.kind != KIND_SIMPLE_GROUPS) return emptyList()
+        return event.tags.mapNotNull { tag ->
+            if (tag.size >= 3 && tag[0] == "group") {
+                val groupId = tag[1]
+                val relayUrl = tag[2].trim().trimEnd('/')
+                val name = tag.getOrNull(3)?.takeIf { it.isNotBlank() }
+                if (groupId.isNotEmpty() && RelayConfig.isValidUrl(relayUrl)) {
+                    SimpleGroupEntry(groupId, relayUrl, name)
+                } else null
+            } else null
+        }
+    }
+
+    fun buildSimpleGroupsTags(groups: List<SimpleGroupEntry>): List<List<String>> {
+        val tags = mutableListOf<List<String>>()
+        val relays = mutableSetOf<String>()
+        for (group in groups) {
+            val tag = if (group.name != null) {
+                listOf("group", group.groupId, group.relayUrl, group.name)
+            } else {
+                listOf("group", group.groupId, group.relayUrl)
+            }
+            tags.add(tag)
+            relays.add(group.relayUrl)
+        }
+        for (relay in relays) {
+            tags.add(listOf("r", relay))
+        }
+        return tags
     }
 }

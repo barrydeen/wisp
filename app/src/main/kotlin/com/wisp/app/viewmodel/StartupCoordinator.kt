@@ -521,6 +521,7 @@ class StartupCoordinator(
             Filter(kinds = listOf(Nip51.KIND_BOOKMARK_SET), authors = listOf(myPubkey), limit = 50),
             Filter(kinds = listOf(Nip51.KIND_RELAY_SET), authors = listOf(myPubkey), limit = 50),
             Filter(kinds = listOf(Nip51.KIND_INTEREST_SET), authors = listOf(myPubkey), limit = 50),
+            Filter(kinds = listOf(Nip51.KIND_SIMPLE_GROUPS), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Nip30.KIND_USER_EMOJI_LIST), authors = listOf(myPubkey), limit = 1),
             Filter(kinds = listOf(Nip30.KIND_EMOJI_SET), authors = listOf(myPubkey), limit = 50)
         )

@@ -10,6 +10,7 @@ import com.wisp.app.nostr.Nip02
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.Nip65
+import com.wisp.app.nostr.SimpleGroupEntry
 import com.wisp.app.nostr.LocalSigner
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrSigner
@@ -113,6 +114,12 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     private val _followersLoading = MutableStateFlow(false)
     val followersLoading: StateFlow<Boolean> = _followersLoading
 
+    private val _groups = MutableStateFlow<List<SimpleGroupEntry>>(emptyList())
+    val groups: StateFlow<List<SimpleGroupEntry>> = _groups
+
+    private val _groupsLoading = MutableStateFlow(false)
+    val groupsLoading: StateFlow<Boolean> = _groupsLoading
+
     private var targetPubkey: String = ""
     private var eventRepoRef: EventRepository? = null
     private var relayPoolRef: RelayPool? = null
@@ -142,7 +149,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     private var latestRelayListTimestamp: Long = 0
 
     companion object {
-        private val SUB_IDS = setOf("userprofile", "userposts", "userfollows", "userrelays", "userpins", "followprofiles")
+        private val SUB_IDS = setOf("userprofile", "userposts", "userfollows", "userrelays", "userpins", "usergroups", "followprofiles")
     }
 
     fun loadProfile(
@@ -177,6 +184,8 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         _sortedRepliesLoading.value = false
         _followers.value = emptyList()
         _followersLoading.value = false
+        _groups.value = emptyList()
+        _groupsLoading.value = false
         _profile.value = eventRepo.getProfileData(pubkey)
         _relayHints.value = relayHintStore?.getHints(pubkey) ?: emptySet()
         _isFollowing.value = contactRepo.isFollowing(pubkey)
@@ -206,6 +215,7 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         val followFilter = Filter(kinds = listOf(3), authors = listOf(pubkey), limit = 1)
         val relayFilter = Filter(kinds = listOf(10002), authors = listOf(pubkey), limit = 1)
         val pinFilter = Filter(kinds = listOf(10001), authors = listOf(pubkey), limit = 1)
+        val groupsFilter = Filter(kinds = listOf(Nip51.KIND_SIMPLE_GROUPS), authors = listOf(pubkey), limit = 1)
 
         if (outboxRouter != null) {
             outboxRouter.subscribeToUserWriteRelays("userprofile", pubkey, profileFilter)
@@ -213,18 +223,25 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
             outboxRouter.subscribeToUserWriteRelays("userfollows", pubkey, followFilter)
             outboxRouter.subscribeToUserWriteRelays("userrelays", pubkey, relayFilter)
             outboxRouter.subscribeToUserWriteRelays("userpins", pubkey, pinFilter)
+            outboxRouter.subscribeToUserWriteRelays("usergroups", pubkey, groupsFilter)
         } else {
             relayPool.sendToAll(ClientMessage.req("userprofile", profileFilter))
             relayPool.sendToAll(ClientMessage.req("userposts", postsFilter))
             relayPool.sendToAll(ClientMessage.req("userfollows", followFilter))
             relayPool.sendToAll(ClientMessage.req("userrelays", relayFilter))
             relayPool.sendToAll(ClientMessage.req("userpins", pinFilter))
+            relayPool.sendToAll(ClientMessage.req("usergroups", groupsFilter))
         }
         // Also query top scored relays as safety net
         for (url in topRelayUrls) {
             relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("userposts", postsFilter))
             relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("userprofile", profileFilter))
             relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("userfollows", followFilter))
+        }
+        // Query indexer relays for groups list (kind 10009)
+        _groupsLoading.value = true
+        for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+            relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("usergroups", groupsFilter))
         }
 
         // After posts EOSE, subscribe for engagement data
@@ -235,6 +252,14 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 subscribeEngagementForProfile(relayPool)
             }
+        }
+
+        // Stop groups loading after EOSE or timeout
+        viewModelScope.launch {
+            withTimeoutOrNull(8_000) {
+                relayPool.eoseSignals.first { it == "usergroups" }
+            }
+            _groupsLoading.value = false
         }
 
         viewModelScope.launch {
@@ -378,6 +403,13 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                                 router.subscribeToUserWriteRelays("userprofile", pubkey, profileFilter)
                                 router.subscribeToUserWriteRelays("userfollows", pubkey, followFilter)
                             }
+                        }
+                        Nip51.KIND_SIMPLE_GROUPS -> {
+                            val parsed = Nip51.parseSimpleGroups(event)
+                            if (parsed.isNotEmpty()) {
+                                _groups.value = parsed
+                            }
+                            _groupsLoading.value = false
                         }
                     }
                 } else if (event.kind == 0) {

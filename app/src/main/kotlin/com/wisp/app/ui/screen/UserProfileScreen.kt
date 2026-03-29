@@ -337,6 +337,8 @@ fun UserProfileScreen(
     val sortedRepliesLoading by viewModel.sortedRepliesLoading.collectAsState()
     val followers by viewModel.followers.collectAsState()
     val followersLoading by viewModel.followersLoading.collectAsState()
+    val groups by viewModel.groups.collectAsState()
+    val groupsLoading by viewModel.groupsLoading.collectAsState()
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showSortDropdown by remember { mutableStateOf(false) }
@@ -354,6 +356,7 @@ fun UserProfileScreen(
         stringResource(R.string.profile_tab_media),
         stringResource(R.string.profile_tab_following),
         stringResource(R.string.profile_tab_followers),
+        stringResource(R.string.profile_tab_groups),
         stringResource(R.string.profile_tab_relays)
     )
 
@@ -916,6 +919,31 @@ fun UserProfileScreen(
                     }
                 }
                 5 -> {
+                    if (groupsLoading && groups.isEmpty()) {
+                        item {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(32.dp)) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    } else if (groups.isEmpty()) {
+                        item { EmptyTabContent(stringResource(R.string.profile_no_groups)) }
+                    } else {
+                        items(items = groups, key = { "${it.relayUrl}|${it.groupId}" }) { entry ->
+                            Box(modifier = Modifier.padding(horizontal = 12.dp)) {
+                                com.wisp.app.ui.component.GroupCard(
+                                    relayUrl = entry.relayUrl,
+                                    groupId = entry.groupId,
+                                    onClick = if (onGroupRoom != null) {
+                                        { onGroupRoom.invoke(entry.relayUrl, entry.groupId) }
+                                    } else null,
+                                    onFetchPreview = fetchGroupPreview,
+                                    eventRepo = eventRepo
+                                )
+                            }
+                        }
+                    }
+                }
+                6 -> {
                     if (relayList.isEmpty() && relayHints.isEmpty()) {
                         item { EmptyTabContent(stringResource(R.string.profile_no_relays)) }
                     } else {
