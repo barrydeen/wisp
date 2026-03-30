@@ -120,6 +120,7 @@
     <string name="btn_share">Share</string>
     <string name="btn_copy_note_id">Copy Note ID</string>
     <string name="btn_copy_note_json">Copy Note JSON</string>
+    <string name="btn_copy_text">Copy Text</string>
     <string name="btn_hide">Hide</string>
     <string name="btn_retweet">Repost</string>
     <string name="btn_vote">Vote</string>

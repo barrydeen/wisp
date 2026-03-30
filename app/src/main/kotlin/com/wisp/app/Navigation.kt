@@ -1504,6 +1504,7 @@ fun WispNavHost(
                 signer = activeSigner,
                 onBack = { navController.popBackStack() },
                 onProfileClick = { pk -> navController.navigate("profile/$pk") },
+                onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                 onGroupDetail = { navController.navigate("group_detail/$encodedRelay/${android.net.Uri.encode(groupId)}") },
                 onJoin = { groupListViewModel.joinGroup(relayUrl, groupId, activeSigner) },
                 onAlreadyMember = { groupListViewModel.silentJoin(relayUrl, groupId, activeSigner) },
@@ -1562,8 +1563,12 @@ fun WispNavHost(
                 zapAnimatingIds = groupRoomZapAnimatingIds,
                 zapInProgressIds = groupRoomZapInProgress,
                 onOpenEmojiLibrary = { showGroupRoomEmojiLibrary = true },
+                onFollowAuthor = { pubkey -> feedViewModel.toggleFollow(pubkey) },
+                onBlockAuthor = { pubkey -> feedViewModel.blockUser(pubkey) },
+                isFollowing = { pubkey -> feedViewModel.contactRepo.isFollowing(pubkey) },
                 noteActions = remember {
                     com.wisp.app.ui.component.NoteActions(
+                        onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                         onAddEmojiSet = { pk, dTag -> feedViewModel.addSetToEmojiList(pk, dTag) },
                         onRemoveEmojiSet = { pk, dTag -> feedViewModel.removeSetFromEmojiList(pk, dTag) },
                         isEmojiSetAdded = { pk, dTag ->
