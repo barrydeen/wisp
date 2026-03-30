@@ -1,6 +1,11 @@
 package com.wisp.app.ui.component
 
+import android.content.Intent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,38 +22,69 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
+import com.wisp.app.R
+import com.wisp.app.nostr.Nip13
+import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.Nip68
 import com.wisp.app.nostr.Nip71
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
+import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.repo.EventRepository
+import com.wisp.app.repo.Nip05Repository
+import com.wisp.app.repo.Nip05Status
 import com.wisp.app.repo.ZapDetail
+import com.wisp.app.util.MediaDownloader
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 private val GALLERY_KINDS = setOf(20, 21, 22)
+
+private val galleryDateTimeFormat = SimpleDateFormat("MMM d, HH:mm", Locale.US)
+private val galleryDateTimeYearFormat = SimpleDateFormat("MMM d, yyyy", Locale.US)
 
 @Composable
 fun GalleryCard(
@@ -86,6 +122,7 @@ fun GalleryCard(
     onBlockAuthor: () -> Unit = {},
     isFollowingAuthor: Boolean = false,
     isOwnEvent: Boolean = false,
+    nip05Repo: Nip05Repository? = null,
     onQuotedNoteClick: ((String) -> Unit)? = null,
     noteActions: NoteActions? = null,
     onAddToList: () -> Unit = {},
@@ -146,6 +183,7 @@ fun GalleryCard(
             onBlockAuthor = onBlockAuthor,
             isFollowingAuthor = isFollowingAuthor,
             isOwnEvent = isOwnEvent,
+            nip05Repo = nip05Repo,
             onQuotedNoteClick = onQuotedNoteClick,
             noteActions = noteActions,
             onAddToList = onAddToList,
@@ -165,34 +203,185 @@ fun GalleryCard(
     }
     val timestamp = remember(event.created_at) { formatGalleryTimestamp(event.created_at) }
 
+    var showFullScreenViewer by remember { mutableStateOf(false) }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onNoteClick)
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        // Author header
+        // Author header — matches PostCard exactly
         Row(verticalAlignment = Alignment.CenterVertically) {
             ProfilePicture(
                 url = profile?.picture,
-                size = 40,
-                onClick = onProfileClick
+                showFollowBadge = isFollowingAuthor && !isOwnEvent,
+                onClick = onProfileClick,
+                onLongPress = if (!isOwnEvent) onFollowAuthor else null
             )
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = displayName,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clickable(onClick = onProfileClick)
                 )
+                profile?.nip05?.let { nip05 ->
+                    nip05Repo?.checkOrFetch(event.pubkey, nip05)
+                    val status = nip05Repo?.getStatus(event.pubkey)
+                    val isImpersonator = status == Nip05Status.IMPERSONATOR
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable(onClick = onProfileClick)) {
+                        Text(
+                            text = if (isImpersonator) "\u2715 $nip05" else nip05,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isImpersonator) Color.Red else MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (status == Nip05Status.VERIFIED) {
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = stringResource(R.string.cd_verified),
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                        if (status == Nip05Status.ERROR) {
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = stringResource(R.string.cd_retry_verification),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .clickable { nip05Repo?.retry(event.pubkey) }
+                            )
+                        }
+                    }
+                }
             }
             Text(
                 text = timestamp,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
+            val powBits = remember(event.id) { Nip13.verifyDifficulty(event) }
+            if (powBits >= 16) {
+                Spacer(Modifier.width(4.dp))
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                ) {
+                    Text(
+                        text = stringResource(R.string.post_pow_x, powBits),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+            }
+            Box {
+                var menuExpanded by remember { mutableStateOf(false) }
+                val context = LocalContext.current
+                val clipboardManager = LocalClipboardManager.current
+                IconButton(
+                    onClick = { menuExpanded = true },
+                    modifier = Modifier.size(18.dp)
+                ) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = stringResource(R.string.cd_more_options),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    if (!isOwnEvent) {
+                        DropdownMenuItem(
+                            text = { Text(if (isFollowingAuthor) stringResource(R.string.btn_unfollow) else stringResource(R.string.btn_follow)) },
+                            onClick = {
+                                menuExpanded = false
+                                onFollowAuthor()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_block)) },
+                            onClick = {
+                                menuExpanded = false
+                                onBlockAuthor()
+                            }
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.btn_add_to_list)) },
+                        onClick = {
+                            menuExpanded = false
+                            onAddToList()
+                        }
+                    )
+                    if (isOwnEvent) {
+                        DropdownMenuItem(
+                            text = { Text(if (isPinned) stringResource(R.string.btn_unpin_from_profile) else stringResource(R.string.btn_pin_to_profile)) },
+                            onClick = {
+                                menuExpanded = false
+                                onPin()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_delete)) },
+                            onClick = {
+                                menuExpanded = false
+                                onDelete()
+                            }
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.btn_share)) },
+                        onClick = {
+                            menuExpanded = false
+                            try {
+                                val nevent = Nip19.neventEncode(event.id.hexToByteArray())
+                                val url = "https://njump.me/$nevent"
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, url)
+                                }
+                                context.startActivity(Intent.createChooser(intent, null))
+                            } catch (_: Exception) {}
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.btn_copy_note_id)) },
+                        onClick = {
+                            menuExpanded = false
+                            try {
+                                val relays = eventRepo?.getEventRelays(event.id)?.take(3)?.toList() ?: emptyList()
+                                val neventId = Nip19.neventEncode(
+                                    eventId = event.id.hexToByteArray(),
+                                    relays = relays,
+                                    author = event.pubkey.hexToByteArray()
+                                )
+                                clipboardManager.setText(AnnotatedString(neventId))
+                            } catch (_: Exception) {}
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.btn_copy_note_json)) },
+                        onClick = {
+                            menuExpanded = false
+                            clipboardManager.setText(AnnotatedString(event.toJson()))
+                        }
+                    )
+                }
+            }
         }
 
         // Title
@@ -245,6 +434,7 @@ fun GalleryCard(
                         .fillMaxWidth()
                         .aspectRatio(aspectRatio)
                         .clip(RoundedCornerShape(12.dp))
+                        .clickable { showFullScreenViewer = true }
                 ) { page ->
                     val entry = imageEntries[page]
                     AsyncImage(
@@ -286,7 +476,8 @@ fun GalleryCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(aspectRatio.coerceIn(0.5f, 2.5f))
-                    .clip(RoundedCornerShape(12.dp)),
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { showFullScreenViewer = true },
                 contentAlignment = Alignment.Center
             ) {
                 // Thumbnail or placeholder
@@ -365,6 +556,230 @@ fun GalleryCard(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
         )
     }
+
+    // Full-screen gallery viewer
+    if (showFullScreenViewer) {
+        FullScreenGalleryViewer(
+            imageEntries = imageEntries,
+            videoEntries = videoEntries,
+            caption = event.content.takeIf { it.isNotBlank() },
+            eventKind = event.kind,
+            onDismiss = { showFullScreenViewer = false }
+        )
+    }
+}
+
+@Composable
+fun FullScreenGalleryViewer(
+    imageEntries: List<Nip68.ImetaEntry>,
+    videoEntries: List<Nip71.VideoMeta>,
+    caption: String?,
+    eventKind: Int,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        val context = LocalContext.current
+        val clipboardManager = LocalClipboardManager.current
+        val scope = rememberCoroutineScope()
+
+        val buttonColors = IconButtonDefaults.iconButtonColors(
+            containerColor = Color.Black.copy(alpha = 0.5f),
+            contentColor = Color.White
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            if (imageEntries.isNotEmpty()) {
+                // Image pager with pinch-to-zoom
+                val pagerState = rememberPagerState(pageCount = { imageEntries.size })
+
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
+                    val entry = imageEntries[page]
+                    var scale by remember { mutableFloatStateOf(1f) }
+                    var offset by remember { mutableStateOf(Offset.Zero) }
+
+                    val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
+                        scale = (scale * zoomChange).coerceIn(0.5f, 5f)
+                        offset = if (scale > 1f) offset + panChange else Offset.Zero
+                    }
+
+                    AsyncImage(
+                        model = entry.url,
+                        contentDescription = entry.alt ?: "Gallery image",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale,
+                                translationX = offset.x,
+                                translationY = offset.y
+                            )
+                            .transformable(state = transformableState)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { if (scale <= 1f) onDismiss() }
+                            )
+                    )
+                }
+
+                // Page indicator dots
+                if (imageEntries.size > 1) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = if (caption != null) 60.dp else 16.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        repeat(imageEntries.size) { index ->
+                            Box(
+                                modifier = Modifier
+                                    .padding(horizontal = 3.dp)
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (index == pagerState.currentPage)
+                                            Color.White
+                                        else
+                                            Color.White.copy(alpha = 0.4f)
+                                    )
+                            )
+                        }
+                    }
+                }
+
+                // Current image URL for download/copy
+                val currentUrl = imageEntries.getOrNull(pagerState.currentPage)?.url
+
+                // Top-right buttons
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp)
+                ) {
+                    if (currentUrl != null) {
+                        IconButton(
+                            onClick = { scope.launch { MediaDownloader.downloadMedia(context, currentUrl) } },
+                            colors = buttonColors,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_download),
+                                contentDescription = "Download"
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        IconButton(
+                            onClick = { clipboardManager.setText(AnnotatedString(currentUrl)) },
+                            colors = buttonColors,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy URL")
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    IconButton(
+                        onClick = onDismiss,
+                        colors = buttonColors,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+            } else if (videoEntries.isNotEmpty()) {
+                // Video thumbnail with play overlay
+                val video = videoEntries[0]
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onDismiss
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (video.thumbnailUrl != null) {
+                        AsyncImage(
+                            model = video.thumbnailUrl,
+                            contentDescription = "Video thumbnail",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.5f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = "Play video",
+                            tint = Color.White,
+                            modifier = Modifier.size(48.dp)
+                        )
+                    }
+                }
+
+                // Top-right buttons
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp)
+                ) {
+                    IconButton(
+                        onClick = { scope.launch { MediaDownloader.downloadMedia(context, video.url) } },
+                        colors = buttonColors,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_download),
+                            contentDescription = "Download"
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(
+                        onClick = onDismiss,
+                        colors = buttonColors,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+            }
+
+            // Caption strip at bottom
+            if (caption != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        text = caption,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
 }
 
 private fun parseAspectRatio(dim: String?): Float? {
@@ -377,15 +792,34 @@ private fun parseAspectRatio(dim: String?): Float? {
     return w / h
 }
 
-private fun formatGalleryTimestamp(epochSeconds: Long): String {
+private fun formatGalleryTimestamp(epoch: Long): String {
     val now = System.currentTimeMillis()
-    val diff = now - epochSeconds * 1000
-    return when {
-        diff < 60_000 -> "now"
-        diff < 3_600_000 -> "${diff / 60_000}m"
-        diff < 86_400_000 -> "${diff / 3_600_000}h"
-        diff < 604_800_000 -> "${diff / 86_400_000}d"
-        else -> SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(epochSeconds * 1000))
+    val millis = epoch * 1000
+    val diff = now - millis
+
+    if (diff < 0) return galleryDateTimeFormat.format(Date(millis))
+
+    val seconds = diff / 1000
+    val minutes = seconds / 60
+    val hours = minutes / 60
+
+    if (seconds < 60) return "${seconds}s"
+    if (minutes < 60) return "${minutes}m"
+    if (hours < 24) return "${hours}h"
+
+    val days = diff / (24 * 60 * 60 * 1000L)
+    if (days == 1L) return "yesterday"
+
+    val date = Date(millis)
+    val cal = java.util.Calendar.getInstance()
+    val currentYear = cal.get(java.util.Calendar.YEAR)
+    cal.time = date
+    val dateYear = cal.get(java.util.Calendar.YEAR)
+
+    return if (dateYear != currentYear) {
+        galleryDateTimeYearFormat.format(date)
+    } else {
+        galleryDateTimeFormat.format(date)
     }
 }
 

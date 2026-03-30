@@ -1309,7 +1309,8 @@ private fun FeedItem(
             isInList = isInList,
             onPin = onPin,
             isPinned = isPinned,
-            onDelete = onDelete
+            onDelete = onDelete,
+            nip05Repo = viewModel.nip05Repo
         )
     } else {
         PostCard(
