@@ -3,8 +3,8 @@ package com.wisp.app.ui.component
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -587,11 +587,6 @@ fun FullScreenGalleryViewer(
                 var scale by remember { mutableFloatStateOf(1f) }
                 var offset by remember { mutableStateOf(Offset.Zero) }
 
-                val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
-                    scale = (scale * zoomChange).coerceIn(0.5f, 5f)
-                    offset = if (scale > 1f) offset + panChange else Offset.Zero
-                }
-
                 AsyncImage(
                     model = entry.url,
                     contentDescription = entry.alt ?: "Image ${page + 1} of ${imageEntries.size}",
@@ -604,11 +599,29 @@ fun FullScreenGalleryViewer(
                             translationX = offset.x,
                             translationY = offset.y
                         )
-                        .transformable(state = transformableState)
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                val newScale = (scale * zoom).coerceIn(1f, 5f)
+                                scale = newScale
+                                // Only pan when zoomed in — at 1x, let pager handle swipe
+                                if (newScale > 1f) {
+                                    offset += pan
+                                } else {
+                                    offset = Offset.Zero
+                                }
+                            }
+                        }
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                            onClick = { if (scale <= 1f) onDismiss() }
+                            onClick = {
+                                if (scale > 1f) {
+                                    scale = 1f
+                                    offset = Offset.Zero
+                                } else {
+                                    onDismiss()
+                                }
+                            }
                         )
                 )
             }
