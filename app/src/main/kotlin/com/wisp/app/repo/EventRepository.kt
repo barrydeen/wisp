@@ -652,7 +652,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
      */
     fun seedFromObjectBox(events: List<NostrEvent>) {
         for (event in events) {
-            if (event.kind != 0 && event.kind != 1 && event.kind != 20 && event.kind != 21 && event.kind != 22) continue
+            if (event.kind != 0 && event.kind != 1 && event.kind != 20 && event.kind != 21 && event.kind != 22 && event.kind != 1068 && event.kind != 30023) continue
             if (!seenEventIds.add(event.id)) continue
             eventCache[event.id] = event
             if (event.kind == 0) {
@@ -1061,7 +1061,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         val snapshot = eventCache
         var inserted = 0
         for ((_, event) in snapshot) {
-            if (event.kind != 1 && event.kind != 20 && event.kind != 21 && event.kind != 22) continue
+            if (event.kind != 1 && event.kind != 20 && event.kind != 21 && event.kind != 22 && event.kind != 1068 && event.kind != 30023) continue
             if (event.created_at < sinceTimestamp) continue
             if (event.created_at > System.currentTimeMillis() / 1000 + 30) continue  // skip future-dated (scheduled) notes
             if (muteRepo?.isBlocked(event.pubkey) == true) continue

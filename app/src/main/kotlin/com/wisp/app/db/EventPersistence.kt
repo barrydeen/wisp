@@ -234,6 +234,6 @@ class EventPersistence(
     }
 
     companion object {
-        private val PERSISTED_KINDS = setOf(0, 1, 6, 7, 9735, 20, 21, 22)
+        private val PERSISTED_KINDS = setOf(0, 1, 6, 7, 9735, 20, 21, 22, 1068, 30023)
     }
 }
