@@ -384,10 +384,18 @@ class SocialActionManager(
                     _zapSuccess.tryEmit(event.id)
                 },
                 onFailure = { e ->
-                    _zapError.tryEmit(e.message ?: "Zap failed")
-                    // Close receipt subscription on failure
-                    relayPool.closeOnAllRelays(receiptSubId)
-                    if (isPrivate) relayPool.closeOnAllRelays("zap-rcpt-dm-${event.id.take(12)}")
+                    if (isPaymentInFlight(e)) {
+                        // Payment was sent but we lost the connection before confirmation.
+                        // Treat as success to avoid prompting the user to pay again.
+                        val myPubkey = if (isAnonymous) "" else (getUserPubkey() ?: "")
+                        eventRepo.addOptimisticZap(event.id, myPubkey, amountMsats / 1000, message, isPrivate)
+                        _zapSuccess.tryEmit(event.id)
+                    } else {
+                        _zapError.tryEmit(e.message ?: "Zap failed")
+                        // Close receipt subscription on failure
+                        relayPool.closeOnAllRelays(receiptSubId)
+                        if (isPrivate) relayPool.closeOnAllRelays("zap-rcpt-dm-${event.id.take(12)}")
+                    }
                 }
             )
         }
@@ -421,9 +429,30 @@ class SocialActionManager(
             _zapInProgress.value = _zapInProgress.value - pubkey
             result.fold(
                 onSuccess = { _zapSuccess.tryEmit(pubkey) },
-                onFailure = { e -> _zapError.tryEmit(e.message ?: "Zap failed") }
+                onFailure = { e ->
+                    if (isPaymentInFlight(e)) {
+                        _zapSuccess.tryEmit(pubkey)
+                    } else {
+                        _zapError.tryEmit(e.message ?: "Zap failed")
+                    }
+                }
             )
         }
+    }
+
+    /**
+     * Returns true if the exception indicates the payment request was sent
+     * but we lost the wallet response (e.g. connection drop, cancellation).
+     * In this case the payment is likely in-flight and we should NOT show
+     * an error to avoid prompting the user to pay again.
+     */
+    private fun isPaymentInFlight(e: Throwable): Boolean {
+        // CancellationException means the coroutine/connection was cancelled
+        // after the pay request was already dispatched to the wallet.
+        if (e is kotlinx.coroutines.CancellationException) return true
+        // Wallet-returned errors (INSUFFICIENT_BALANCE, etc.) are plain Exceptions
+        // with the error code in the message — those are real failures.
+        return false
     }
 
     fun publishPollVote(pollEventId: String, optionIds: List<String>) {

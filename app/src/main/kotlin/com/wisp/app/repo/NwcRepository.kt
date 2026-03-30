@@ -249,20 +249,34 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         emitStatus("Request sent, waiting for response...")
 
         return try {
-            withTimeout(timeoutMs) {
-                val response = deferred.await()
-                if (response is Nip47.NwcResponse.Error) {
-                    emitStatus("Wallet error: ${response.code}")
-                    Result.failure(Exception("${response.code}: ${response.message}"))
-                } else {
-                    emitStatus("Success")
-                    Result.success(response)
+            if (timeoutMs > 0) {
+                withTimeout(timeoutMs) {
+                    awaitNwcResponse(deferred, event.id)
                 }
+            } else {
+                awaitNwcResponse(deferred, event.id)
             }
-        } catch (e: Exception) {
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
             pendingRequests.remove(event.id)
             emitStatus("Timed out waiting for response")
             Result.failure(e)
+        } catch (e: Exception) {
+            pendingRequests.remove(event.id)
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun awaitNwcResponse(
+        deferred: CompletableDeferred<Nip47.NwcResponse>,
+        eventId: String
+    ): Result<Nip47.NwcResponse> {
+        val response = deferred.await()
+        return if (response is Nip47.NwcResponse.Error) {
+            emitStatus("Wallet error: ${response.code}")
+            Result.failure(Exception("${response.code}: ${response.message}"))
+        } else {
+            emitStatus("Success")
+            Result.success(response)
         }
     }
 
@@ -277,7 +291,9 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
     }
 
     override suspend fun payInvoice(bolt11: String): Result<String> {
-        val result = sendRequest(Nip47.NwcRequest.PayInvoice(bolt11))
+        // Payments can take minutes to settle — don't use the default 10s timeout.
+        // A timeout here does NOT mean the payment failed; the wallet may still complete it.
+        val result = sendRequest(Nip47.NwcRequest.PayInvoice(bolt11), timeoutMs = 0)
         return result.map { (it as Nip47.NwcResponse.PayInvoiceResult).preimage }
     }
 
