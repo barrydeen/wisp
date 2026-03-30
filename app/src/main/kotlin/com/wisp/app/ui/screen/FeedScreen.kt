@@ -185,6 +185,7 @@ fun FeedScreen(
 ) {
     val feed by viewModel.feed.collectAsState()
     val feedType by viewModel.feedType.collectAsState()
+    val contentFilter by viewModel.feedContentFilter.collectAsState()
     val selectedRelay by viewModel.selectedRelay.collectAsState()
     val selectedRelaySet by viewModel.selectedRelaySet.collectAsState()
     val replyCountVersion by viewModel.eventRepo.replyCountVersion.collectAsState()
@@ -807,7 +808,6 @@ fun FeedScreen(
                                 ProfilePicture(url = userProfile?.picture, size = 32)
                             }
                             // Content type filter toggle — rotates through All → Notes → Gallery
-                            val contentFilter by viewModel.feedContentFilter.collectAsState()
                             IconButton(onClick = {
                                 val next = when (contentFilter) {
                                     FeedContentFilter.ALL -> FeedContentFilter.TEXT_ONLY
@@ -1036,8 +1036,19 @@ fun FeedScreen(
                             initLoadingState != InitLoadingState.Done -> {
                                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                             }
+                            contentFilter != FeedContentFilter.ALL -> {
+                                // Content filter active (gallery/text only) but no matching posts
+                                Text(
+                                    if (contentFilter == FeedContentFilter.GALLERY_ONLY) "No gallery posts in your feed yet"
+                                    else "No notes in your feed yet",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             else -> {
-                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                Text(
+                                    "No posts yet",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }

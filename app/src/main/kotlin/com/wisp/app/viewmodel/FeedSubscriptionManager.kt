@@ -106,47 +106,7 @@ class FeedSubscriptionManager(
         when (filter) {
             FeedContentFilter.ALL -> eventRepo.setKindFilter(null)
             FeedContentFilter.TEXT_ONLY -> eventRepo.setKindFilter(setOf(1, 6, 1068, 30023))
-            FeedContentFilter.GALLERY_ONLY -> {
-                eventRepo.setKindFilter(setOf(20, 21, 22))
-                // Gallery posts are rare — fire a dedicated no-since subscription
-                // to fetch older gallery content from followed authors
-                fetchGalleryFeed()
-            }
-        }
-    }
-
-    private fun fetchGalleryFeed() {
-        val cache = extendedNetworkRepo.cachedNetwork.value
-        val firstDegree = contactRepo.getFollowList().map { it.pubkey }
-        val allAuthors = if (cache != null) {
-            (listOfNotNull(pubkeyHex) + firstDegree + cache.qualifiedPubkeys).distinct()
-        } else {
-            listOfNotNull(pubkeyHex) + firstDegree
-        }
-        if (allAuthors.isEmpty()) return
-        val indexerRelays = getIndexerRelays()
-        val excludedUrls = getExcludedRelayUrls()
-        val galleryFilter = Filter(kinds = listOf(20, 21, 22), limit = 100)
-        outboxRouter.subscribeByAuthors(
-            "gallery-feed", allAuthors, galleryFilter,
-            indexerRelays = indexerRelays, blockedUrls = excludedUrls
-        )
-        // Also hit top scored relays directly
-        val topRelays = relayScoreBoard.getScoredRelays().take(15).map { it.url }
-        for (url in topRelays) {
-            val authorBatches = allAuthors.chunked(200)
-            for ((i, batch) in authorBatches.withIndex()) {
-                val batchFilter = Filter(kinds = listOf(20, 21, 22), authors = batch, limit = 50)
-                val subId = if (i == 0) "gallery-feed-top" else "gallery-feed-top-$i"
-                relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(subId, batchFilter))
-            }
-        }
-        // Close after EOSE or timeout
-        scope.launch {
-            subManager.awaitEoseWithTimeout("gallery-feed", 10_000)
-            subManager.closeSubscription("gallery-feed")
-            // Close top relay subs
-            relayPool.closeOnAllRelays("gallery-feed-top")
+            FeedContentFilter.GALLERY_ONLY -> eventRepo.setKindFilter(setOf(20, 21, 22))
         }
     }
 

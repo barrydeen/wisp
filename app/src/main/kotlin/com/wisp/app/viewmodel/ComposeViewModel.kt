@@ -349,8 +349,13 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     ) {
         val text = _content.value.text.trim()
 
-        if (text.isBlank()) {
+        // Gallery posts can have an empty caption — the media is the content
+        if (text.isBlank() && !_galleryMode.value) {
             _error.value = getApplication<Application>().getString(R.string.error_post_empty)
+            return
+        }
+        if (_galleryMode.value && _uploadedUrls.value.isEmpty()) {
+            _error.value = "Gallery post requires at least one uploaded image or video"
             return
         }
 
