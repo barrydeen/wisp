@@ -583,6 +583,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
 
         val event = signer.signEvent(kind = eventKind, content = finalContent, tags = tags)
+        android.util.Log.d("GALLERY", "[ComposeVM] publishNote kind=$eventKind id=${event.id.take(12)} content='${finalContent.take(50)}' tags=${tags.size} galleryMode=${_galleryMode.value} uploadedUrls=${_uploadedUrls.value.size}")
         val msg = ClientMessage.event(event)
         var sentCount = if (replyTo != null && outboxRouter != null) {
             outboxRouter.publishToInbox(msg, replyTo.pubkey)

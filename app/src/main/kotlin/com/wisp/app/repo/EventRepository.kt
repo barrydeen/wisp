@@ -250,6 +250,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             val isNew = event.id !in seenEventIds
             Log.d("POLL", "[EventRepo] addEvent kind=1018 id=${event.id.take(12)} isNew=$isNew pubkey=${event.pubkey.take(8)}")
         }
+        if (event.kind in intArrayOf(20, 21, 22)) {
+            Log.d("GALLERY", "[EventRepo] addEvent kind=${event.kind} id=${event.id.take(12)} pubkey=${event.pubkey.take(8)} alreadySeen=${event.id in seenEventIds}")
+        }
         if (!seenEventIds.add(event.id)) return  // atomic dedup across all relay threads
         if (event.created_at > System.currentTimeMillis() / 1000 + 30) return  // reject future-dated notes (30s grace for clock skew)
         if (muteRepo?.isBlocked(event.pubkey) == true) return
@@ -296,6 +299,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 binaryInsert(event, fromFeed = true)
             }
             20, 21, 22 -> {
+                Log.d("GALLERY", "[EventRepo] routing kind ${event.kind} to binaryInsert id=${event.id.take(12)}")
                 binaryInsert(event, fromFeed = true)
             }
             6 -> {
@@ -536,7 +540,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     private fun binaryInsert(event: NostrEvent, sortTime: Long = event.created_at, fromFeed: Boolean = false) {
         synchronized(feedList) {
-            if (!feedIds.add(event.id)) return  // already in feed
+            if (!feedIds.add(event.id)) {
+                if (event.kind in intArrayOf(20, 21, 22)) {
+                    Log.d("GALLERY", "[EventRepo] binaryInsert DEDUP kind=${event.kind} id=${event.id.take(12)} — already in feedIds")
+                }
+                return  // already in feed
+            }
             var low = 0
             var high = feedList.size
             while (low < high) {
@@ -544,6 +553,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 if (effectiveSortTime(feedList[mid]) > sortTime) low = mid + 1 else high = mid
             }
             feedList.add(low, event)
+            if (event.kind in intArrayOf(20, 21, 22)) {
+                Log.d("GALLERY", "[EventRepo] binaryInsert SUCCESS kind=${event.kind} id=${event.id.take(12)} at pos=$low feedSize=${feedList.size}")
+            }
         }
         feedInserted.trySend(Unit)  // coalesced emission via 50ms settle window
         if (fromFeed && countNewNotes && sortTime > newNotesCutoff) {
@@ -920,6 +932,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun setKindFilter(kinds: Set<Int>?) {
         _kindFilter = kinds
+        Log.d("GALLERY", "[EventRepo] setKindFilter kinds=$kinds")
         rebuildFilteredFeed()
     }
 
@@ -927,11 +940,15 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         val authorFilter = _authorFilter.value
         val kindFilter = _kindFilter
         val raw = synchronized(feedList) { feedList.toList() }
-        _feed.value = raw.filter { event ->
+        val galleryInRaw = raw.count { it.kind in intArrayOf(20, 21, 22) }
+        val result = raw.filter { event ->
             val authorOk = authorFilter == null || event.pubkey in authorFilter || isRepostedByAny(event.id, authorFilter)
             val kindOk = kindFilter == null || event.kind in kindFilter
             authorOk && kindOk
         }
+        val galleryInResult = result.count { it.kind in intArrayOf(20, 21, 22) }
+        Log.d("GALLERY", "[EventRepo] rebuildFilteredFeed: feedList=${raw.size} galleryInFeedList=$galleryInRaw → filtered=${result.size} galleryInFiltered=$galleryInResult kindFilter=$kindFilter authorFilter=${authorFilter?.size}")
+        _feed.value = result
     }
 
     fun getNewestFeedEventTimestamp(): Long? {
