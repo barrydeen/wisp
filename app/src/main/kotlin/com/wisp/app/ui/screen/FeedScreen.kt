@@ -118,6 +118,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Dashboard
+import androidx.compose.material.icons.outlined.HowToVote
 import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Hub
@@ -694,42 +695,46 @@ fun FeedScreen(
             topBar = {
                 CenterAlignedTopAppBar(
                     title = {
-                            Box {
-                                Surface(
-                                    onClick = { showFeedTypeDropdown = true },
-                                    shape = RoundedCornerShape(20.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Box {
+                                    Surface(
+                                        onClick = { showFeedTypeDropdown = true },
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant
                                     ) {
-                                        val feedLabel = when (feedType) {
-                                            FeedType.FOLLOWS -> stringResource(R.string.tab_follows)
-                                            FeedType.EXTENDED_FOLLOWS -> stringResource(R.string.tab_extended)
-                                            FeedType.RELAY -> if (selectedRelay != null) {
-                                                selectedRelay!!.removePrefix("wss://").removeSuffix("/")
-                                            } else stringResource(R.string.tab_relay)
-                                            FeedType.LIST -> if (selectedList != null) {
-                                                selectedList!!.name
-                                            } else stringResource(R.string.tab_list)
-                                            FeedType.TRENDING -> stringResource(R.string.tab_trending)
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            val feedLabel = when (feedType) {
+                                                FeedType.FOLLOWS -> stringResource(R.string.tab_follows)
+                                                FeedType.EXTENDED_FOLLOWS -> stringResource(R.string.tab_extended)
+                                                FeedType.RELAY -> if (selectedRelay != null) {
+                                                    selectedRelay!!.removePrefix("wss://").removeSuffix("/")
+                                                } else stringResource(R.string.tab_relay)
+                                                FeedType.LIST -> if (selectedList != null) {
+                                                    selectedList!!.name
+                                                } else stringResource(R.string.tab_list)
+                                                FeedType.TRENDING -> stringResource(R.string.tab_trending)
+                                            }
+                                            Text(
+                                                feedLabel,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                modifier = Modifier.widthIn(max = 140.dp)
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Icon(
+                                                Icons.Default.ArrowDropDown,
+                                                contentDescription = "Change feed",
+                                                modifier = Modifier.size(20.dp)
+                                            )
                                         }
-                                        Text(
-                                            feedLabel,
-                                            style = MaterialTheme.typography.titleSmall,
-                                            maxLines = 1,
-                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                            modifier = Modifier.widthIn(max = 160.dp)
-                                        )
-                                        Spacer(Modifier.width(4.dp))
-                                        Icon(
-                                            Icons.Default.ArrowDropDown,
-                                            contentDescription = "Change feed",
-                                            modifier = Modifier.size(20.dp)
-                                        )
                                     }
-                                }
                                 DropdownMenu(
                                     expanded = showFeedTypeDropdown,
                                     onDismissRequest = { showFeedTypeDropdown = false },
@@ -797,32 +802,37 @@ fun FeedScreen(
                                         }
                                     )
                                 }
+                                }
+                                // Content type filter toggle — rotates through All → Notes → Gallery → Polls
+                                Spacer(Modifier.width(4.dp))
+                                IconButton(
+                                    onClick = {
+                                        val next = when (contentFilter) {
+                                            FeedContentFilter.ALL -> FeedContentFilter.TEXT_ONLY
+                                            FeedContentFilter.TEXT_ONLY -> FeedContentFilter.GALLERY_ONLY
+                                            FeedContentFilter.GALLERY_ONLY -> FeedContentFilter.POLLS_ONLY
+                                            FeedContentFilter.POLLS_ONLY -> FeedContentFilter.ALL
+                                        }
+                                        viewModel.setFeedContentFilter(next)
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    val (icon, tint) = when (contentFilter) {
+                                        FeedContentFilter.ALL -> Icons.Outlined.Dashboard to MaterialTheme.colorScheme.onSurfaceVariant
+                                        FeedContentFilter.TEXT_ONLY -> Icons.AutoMirrored.Outlined.Article to MaterialTheme.colorScheme.primary
+                                        FeedContentFilter.GALLERY_ONLY -> Icons.Outlined.Photo to MaterialTheme.colorScheme.primary
+                                        FeedContentFilter.POLLS_ONLY -> Icons.Outlined.HowToVote to MaterialTheme.colorScheme.primary
+                                    }
+                                    Icon(icon, contentDescription = "Filter: ${contentFilter.name}", tint = tint, modifier = Modifier.size(22.dp))
+                                }
                             }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     ),
                     navigationIcon = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                ProfilePicture(url = userProfile?.picture, size = 32)
-                            }
-                            // Content type filter toggle — rotates through All → Notes → Gallery
-                            IconButton(onClick = {
-                                val next = when (contentFilter) {
-                                    FeedContentFilter.ALL -> FeedContentFilter.TEXT_ONLY
-                                    FeedContentFilter.TEXT_ONLY -> FeedContentFilter.GALLERY_ONLY
-                                    FeedContentFilter.GALLERY_ONLY -> FeedContentFilter.ALL
-                                }
-                                viewModel.setFeedContentFilter(next)
-                            }) {
-                                val (icon, tint) = when (contentFilter) {
-                                    FeedContentFilter.ALL -> Icons.Outlined.Dashboard to MaterialTheme.colorScheme.onSurfaceVariant
-                                    FeedContentFilter.TEXT_ONLY -> Icons.AutoMirrored.Outlined.Article to MaterialTheme.colorScheme.primary
-                                    FeedContentFilter.GALLERY_ONLY -> Icons.Outlined.Photo to MaterialTheme.colorScheme.primary
-                                }
-                                Icon(icon, contentDescription = "Filter: ${contentFilter.name}", tint = tint, modifier = Modifier.size(22.dp))
-                            }
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            ProfilePicture(url = userProfile?.picture, size = 32)
                         }
                     },
                     actions = {
@@ -1037,10 +1047,14 @@ fun FeedScreen(
                                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                             }
                             contentFilter != FeedContentFilter.ALL -> {
-                                // Content filter active (gallery/text only) but no matching posts
+                                // Content filter active but no matching posts
                                 Text(
-                                    if (contentFilter == FeedContentFilter.GALLERY_ONLY) "No gallery posts in your feed yet"
-                                    else "No notes in your feed yet",
+                                    when (contentFilter) {
+                                        FeedContentFilter.GALLERY_ONLY -> "No gallery posts in your feed yet"
+                                        FeedContentFilter.POLLS_ONLY -> "No polls in your feed yet"
+                                        FeedContentFilter.TEXT_ONLY -> "No notes in your feed yet"
+                                        else -> "No posts yet"
+                                    },
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }

@@ -34,7 +34,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.CoroutineContext
 
-enum class FeedContentFilter { ALL, TEXT_ONLY, GALLERY_ONLY }
+enum class FeedContentFilter { ALL, TEXT_ONLY, GALLERY_ONLY, POLLS_ONLY }
 
 /**
  * Manages feed subscription lifecycle, feed type switching, engagement subscriptions,
@@ -105,8 +105,9 @@ class FeedSubscriptionManager(
         // Client-side filter: rebuild the filtered feed view
         when (filter) {
             FeedContentFilter.ALL -> eventRepo.setKindFilter(null)
-            FeedContentFilter.TEXT_ONLY -> eventRepo.setKindFilter(setOf(1, 6, 1068, 30023))
+            FeedContentFilter.TEXT_ONLY -> eventRepo.setKindFilter(setOf(1, 6, 30023))
             FeedContentFilter.GALLERY_ONLY -> eventRepo.setKindFilter(setOf(20, 21, 22))
+            FeedContentFilter.POLLS_ONLY -> eventRepo.setKindFilter(setOf(Nip88.KIND_POLL))
         }
     }
 
@@ -444,10 +445,11 @@ class FeedSubscriptionManager(
                     listOfNotNull(pubkeyHex) + firstDegree
                 }
                 if (allAuthors.isEmpty()) { isLoadingMore = false; return }
-                // Use gallery-specific kinds when gallery filter is active
+                // Use content-specific kinds when a filter is active
                 val loadMoreKinds = when (_feedContentFilter.value) {
                     FeedContentFilter.GALLERY_ONLY -> listOf(20, 21, 22)
-                    FeedContentFilter.TEXT_ONLY -> listOf(1, 6, 1068, 30023)
+                    FeedContentFilter.TEXT_ONLY -> listOf(1, 6, 30023)
+                    FeedContentFilter.POLLS_ONLY -> listOf(Nip88.KIND_POLL)
                     FeedContentFilter.ALL -> FEED_KINDS
                 }
                 val templateFilter = Filter(kinds = loadMoreKinds, until = oldest - 1, limit = 50)
