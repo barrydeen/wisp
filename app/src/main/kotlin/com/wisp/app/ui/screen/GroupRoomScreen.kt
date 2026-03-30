@@ -121,6 +121,7 @@ fun GroupRoomScreen(
     signer: NostrSigner?,
     onBack: () -> Unit,
     onProfileClick: (String) -> Unit,
+    onNoteClick: ((String) -> Unit)? = null,
     onGroupDetail: () -> Unit = {},
     onPickMedia: (() -> Unit)? = null,
     onUploadMedia: ((List<Uri>, onUrl: (String) -> Unit) -> Unit)? = null,
@@ -292,6 +293,7 @@ fun GroupRoomScreen(
                             isZapAnimating = message.id in zapAnimatingIds,
                             isZapInProgress = message.id in zapInProgressIds,
                             onProfileClick = onProfileClick,
+                            onNoteClick = onNoteClick,
                             onReply = {
                                 viewModel.setReplyTarget(it)
                                 textFieldFocus.requestFocus()
@@ -729,6 +731,7 @@ private fun GroupMessageBubble(
     isZapAnimating: Boolean = false,
     isZapInProgress: Boolean = false,
     onProfileClick: (String) -> Unit,
+    onNoteClick: ((String) -> Unit)? = null,
     onReply: (GroupMessage) -> Unit,
     onReact: (messageId: String, senderPubkey: String, emoji: String) -> Unit,
     onZap: ((messageId: String, senderPubkey: String) -> Unit)? = null,
@@ -882,6 +885,7 @@ private fun GroupMessageBubble(
                 emojiMap = messageEmojiMap,
                 eventRepo = eventRepo,
                 onProfileClick = onProfileClick,
+                onNoteClick = onNoteClick,
                 noteActions = noteActions
             )
 
