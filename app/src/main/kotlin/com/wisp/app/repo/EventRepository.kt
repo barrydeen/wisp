@@ -652,7 +652,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
      */
     fun seedFromObjectBox(events: List<NostrEvent>) {
         for (event in events) {
-            if (event.kind != 0 && event.kind != 1) continue
+            if (event.kind != 0 && event.kind != 1 && event.kind != 20 && event.kind != 21 && event.kind != 22) continue
             if (!seenEventIds.add(event.id)) continue
             eventCache[event.id] = event
             if (event.kind == 0) {
