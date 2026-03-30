@@ -373,6 +373,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val trendingMode: StateFlow<TrendingMode> = feedSub.trendingMode
     val trendingUsers: StateFlow<List<com.wisp.app.nostr.ProfileData>> = feedSub.trendingUsers
     val trendingUsersLoading: StateFlow<Boolean> = feedSub.trendingUsersLoading
+    val feedContentFilter: StateFlow<FeedContentFilter> = feedSub.feedContentFilter
     val selectedList: StateFlow<com.wisp.app.nostr.FollowSet?> = listRepo.selectedList
     val zapInProgress: StateFlow<Set<String>> = socialActions.zapInProgress
     val zapSuccess: SharedFlow<String> = socialActions.zapSuccess
@@ -418,6 +419,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun setTrendingMetric(metric: TrendingMetric) = feedSub.setTrendingMetric(metric)
     fun setTrendingTimeframe(timeframe: TrendingTimeframe) = feedSub.setTrendingTimeframe(timeframe)
     fun setTrendingMode(mode: TrendingMode) = feedSub.setTrendingMode(mode)
+    fun setFeedContentFilter(filter: FeedContentFilter) = feedSub.setFeedContentFilter(filter)
     fun pauseEngagement() = feedSub.pauseEngagement()
     fun resumeEngagement() = feedSub.resumeEngagement()
 

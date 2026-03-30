@@ -91,6 +91,8 @@ import com.wisp.app.nostr.ProfileData
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.TranslationRepository
+import com.wisp.app.ui.component.GalleryCard
+import com.wisp.app.ui.component.isGalleryEvent
 import com.wisp.app.ui.component.PostCard
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -922,85 +924,140 @@ private fun ReferencedNotePostCard(
         if (event.kind == 1068) eventRepo.getUserPollVotes(event.id) else emptyList()
     }
 
-    PostCard(
-        event = event,
-        profile = profile,
-        onReply = { params.onReply(event) },
-        onProfileClick = { params.onProfileClick(event.pubkey) },
-        onNavigateToProfile = params.onProfileClick,
-        onNoteClick = { params.onNoteClick(event.id) },
-        onReact = { emoji -> params.onReact(event, emoji) },
-        userReactionEmojis = userEmojis,
-        onRepost = { params.onRepost(event) },
-        onQuote = { params.onQuote(event) },
-        hasUserReposted = hasUserReposted,
-        repostCount = repostCount,
-        onZap = { params.onZap(event) },
-        hasUserZapped = hasUserZapped,
-        likeCount = likeCount,
-        replyCount = replyCount,
-        zapSats = zapSats,
-        isZapAnimating = params.isZapAnimating(event.id),
-        isZapInProgress = params.isZapInProgress(event.id),
-        eventRepo = eventRepo,
-        reactionDetails = reactionDetails,
-        zapDetails = zapDetails,
-        repostDetails = repostPubkeys,
-        reactionEmojiUrls = eventReactionEmojiUrls,
-        resolvedEmojis = params.resolvedEmojis,
-        unicodeEmojis = params.unicodeEmojis,
-        onOpenEmojiLibrary = params.onOpenEmojiLibrary,
-        onNavigateToProfileFromDetails = params.onProfileClick,
-        onFollowAuthor = { params.onFollowToggle(event.pubkey) },
-        onBlockAuthor = { params.onBlockUser(event.pubkey) },
-        onMuteThread = {
-            val rootId = when (event.kind) {
-                1 -> Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
-                7, 6 -> {
-                    val refId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
-                    if (refId != null) {
-                        val ref = params.eventRepo?.getEvent(refId)
-                        if (ref != null) Nip10.getRootId(ref) ?: refId else refId
-                    } else event.id
+    if (isGalleryEvent(event)) {
+        GalleryCard(
+            event = event,
+            profile = profile,
+            onReply = { params.onReply(event) },
+            onProfileClick = { params.onProfileClick(event.pubkey) },
+            onNavigateToProfile = params.onProfileClick,
+            onNoteClick = { params.onNoteClick(event.id) },
+            onReact = { emoji -> params.onReact(event, emoji) },
+            userReactionEmojis = userEmojis,
+            onRepost = { params.onRepost(event) },
+            onQuote = { params.onQuote(event) },
+            hasUserReposted = hasUserReposted,
+            repostCount = repostCount,
+            onZap = { params.onZap(event) },
+            hasUserZapped = hasUserZapped,
+            likeCount = likeCount,
+            replyCount = replyCount,
+            zapSats = zapSats,
+            isZapAnimating = params.isZapAnimating(event.id),
+            isZapInProgress = params.isZapInProgress(event.id),
+            eventRepo = eventRepo,
+            reactionDetails = reactionDetails,
+            zapDetails = zapDetails,
+            repostDetails = repostPubkeys,
+            reactionEmojiUrls = eventReactionEmojiUrls,
+            resolvedEmojis = params.resolvedEmojis,
+            unicodeEmojis = params.unicodeEmojis,
+            onOpenEmojiLibrary = params.onOpenEmojiLibrary,
+            onNavigateToProfileFromDetails = params.onProfileClick,
+            onFollowAuthor = { params.onFollowToggle(event.pubkey) },
+            onBlockAuthor = { params.onBlockUser(event.pubkey) },
+            isFollowingAuthor = followingAuthor,
+            isOwnEvent = event.pubkey == params.userPubkey,
+            nip05Repo = params.nip05Repo,
+            onAddToList = { params.onAddToList(event.id) },
+            isInList = params.isInList(event.id),
+            onQuotedNoteClick = params.onNoteClick,
+            noteActions = run {
+                val p = params
+                if (p.onPayInvoice != null || p.onGroupRoom != null || p.fetchGroupPreview != null || p.onAddEmojiSet != null) {
+                    com.wisp.app.ui.component.NoteActions(
+                        onPayInvoice = p.onPayInvoice,
+                        onGroupRoom = p.onGroupRoom,
+                        fetchGroupPreview = p.fetchGroupPreview,
+                        onAddEmojiSet = p.onAddEmojiSet,
+                        onRemoveEmojiSet = p.onRemoveEmojiSet,
+                        isEmojiSetAdded = p.isEmojiSetAdded
+                    )
+                } else null
+            },
+            showDivider = false
+        )
+    } else {
+        PostCard(
+            event = event,
+            profile = profile,
+            onReply = { params.onReply(event) },
+            onProfileClick = { params.onProfileClick(event.pubkey) },
+            onNavigateToProfile = params.onProfileClick,
+            onNoteClick = { params.onNoteClick(event.id) },
+            onReact = { emoji -> params.onReact(event, emoji) },
+            userReactionEmojis = userEmojis,
+            onRepost = { params.onRepost(event) },
+            onQuote = { params.onQuote(event) },
+            hasUserReposted = hasUserReposted,
+            repostCount = repostCount,
+            onZap = { params.onZap(event) },
+            hasUserZapped = hasUserZapped,
+            likeCount = likeCount,
+            replyCount = replyCount,
+            zapSats = zapSats,
+            isZapAnimating = params.isZapAnimating(event.id),
+            isZapInProgress = params.isZapInProgress(event.id),
+            eventRepo = eventRepo,
+            reactionDetails = reactionDetails,
+            zapDetails = zapDetails,
+            repostDetails = repostPubkeys,
+            reactionEmojiUrls = eventReactionEmojiUrls,
+            resolvedEmojis = params.resolvedEmojis,
+            unicodeEmojis = params.unicodeEmojis,
+            onOpenEmojiLibrary = params.onOpenEmojiLibrary,
+            onNavigateToProfileFromDetails = params.onProfileClick,
+            onFollowAuthor = { params.onFollowToggle(event.pubkey) },
+            onBlockAuthor = { params.onBlockUser(event.pubkey) },
+            onMuteThread = {
+                val rootId = when (event.kind) {
+                    1 -> Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
+                    7, 6 -> {
+                        val refId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+                        if (refId != null) {
+                            val ref = params.eventRepo?.getEvent(refId)
+                            if (ref != null) Nip10.getRootId(ref) ?: refId else refId
+                        } else event.id
+                    }
+                    9735 -> {
+                        val refId = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+                        if (refId != null) {
+                            val ref = params.eventRepo?.getEvent(refId)
+                            if (ref != null) Nip10.getRootId(ref) ?: refId else refId
+                        } else event.id
+                    }
+                    else -> Nip10.getRootId(event) ?: event.id
                 }
-                9735 -> {
-                    val refId = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
-                    if (refId != null) {
-                        val ref = params.eventRepo?.getEvent(refId)
-                        if (ref != null) Nip10.getRootId(ref) ?: refId else refId
-                    } else event.id
-                }
-                else -> Nip10.getRootId(event) ?: event.id
-            }
-            params.onMuteThread(rootId)
-        },
-        isFollowingAuthor = followingAuthor,
-        isOwnEvent = event.pubkey == params.userPubkey,
-        nip05Repo = params.nip05Repo,
-        onAddToList = { params.onAddToList(event.id) },
-        isInList = params.isInList(event.id),
-        onQuotedNoteClick = params.onNoteClick,
-        translationState = translationState,
-        onTranslate = { params.translationRepo?.translate(event.id, event.content) },
-        pollVoteCounts = pollVoteCounts,
-        pollTotalVotes = pollTotalVotes,
-        userPollVotes = userPollVotes,
-        onPollVote = { optionIds -> params.onPollVote(event.id, optionIds) },
-        noteActions = run {
-            val p = params
-            if (p.onPayInvoice != null || p.onGroupRoom != null || p.fetchGroupPreview != null || p.onAddEmojiSet != null) {
-                com.wisp.app.ui.component.NoteActions(
-                    onPayInvoice = p.onPayInvoice,
-                    onGroupRoom = p.onGroupRoom,
-                    fetchGroupPreview = p.fetchGroupPreview,
-                    onAddEmojiSet = p.onAddEmojiSet,
-                    onRemoveEmojiSet = p.onRemoveEmojiSet,
-                    isEmojiSetAdded = p.isEmojiSetAdded
-                )
-            } else null
-        },
-        showDivider = false
-    )
+                params.onMuteThread(rootId)
+            },
+            isFollowingAuthor = followingAuthor,
+            isOwnEvent = event.pubkey == params.userPubkey,
+            nip05Repo = params.nip05Repo,
+            onAddToList = { params.onAddToList(event.id) },
+            isInList = params.isInList(event.id),
+            onQuotedNoteClick = params.onNoteClick,
+            translationState = translationState,
+            onTranslate = { params.translationRepo?.translate(event.id, event.content) },
+            pollVoteCounts = pollVoteCounts,
+            pollTotalVotes = pollTotalVotes,
+            userPollVotes = userPollVotes,
+            onPollVote = { optionIds -> params.onPollVote(event.id, optionIds) },
+            noteActions = run {
+                val p = params
+                if (p.onPayInvoice != null || p.onGroupRoom != null || p.fetchGroupPreview != null || p.onAddEmojiSet != null) {
+                    com.wisp.app.ui.component.NoteActions(
+                        onPayInvoice = p.onPayInvoice,
+                        onGroupRoom = p.onGroupRoom,
+                        fetchGroupPreview = p.fetchGroupPreview,
+                        onAddEmojiSet = p.onAddEmojiSet,
+                        onRemoveEmojiSet = p.onRemoveEmojiSet,
+                        isEmojiSetAdded = p.isEmojiSetAdded
+                    )
+                } else null
+            },
+            showDivider = false
+        )
+    }
 }
 
 // ── PostCard params holder ─────────────────────────────────────────────

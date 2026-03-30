@@ -102,6 +102,9 @@ class EventRouter(
         if (event.kind == Nip88.KIND_POLL_RESPONSE) {
             Log.d("POLL", "[EventRouter] received kind 1018 id=${event.id.take(12)} sub=$subscriptionId relay=$relayUrl")
         }
+        if (event.kind in intArrayOf(20, 21, 22)) {
+            Log.d("GALLERY", "[EventRouter] received kind=${event.kind} id=${event.id.take(12)} pubkey=${event.pubkey.take(8)} sub=$subscriptionId relay=$relayUrl")
+        }
         if (subscriptionId == "dms") {
             if (event.kind == 1059) processGiftWrap(event, relayUrl)
             return
@@ -452,6 +455,9 @@ class EventRouter(
                     } catch (_: Exception) {}
                 }
             } else if (isFeedSub) {
+                if (event.kind in intArrayOf(20, 21, 22)) {
+                    android.util.Log.d("GALLERY", "[EventRouter] feed sub gallery event kind=${event.kind} id=${event.id.take(12)} pubkey=${event.pubkey.take(8)} sub=$subscriptionId relay=$relayUrl")
+                }
                 eventRepo.addEvent(event)
                 eventRepo.addEventRelay(event.id, relayUrl)
                 if (event.kind == 1 || event.kind == 30023) {

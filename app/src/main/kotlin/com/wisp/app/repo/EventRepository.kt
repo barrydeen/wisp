@@ -55,6 +55,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     // Author filter: null = show all, non-null = only show events from these pubkeys
     private val _authorFilter = MutableStateFlow<Set<String>?>(null)
 
+    // Kind filter: null = show all, non-null = only show events with these kinds in the feed
+    private var _kindFilter: Set<Int>? = null
+
     private val _newNoteCount = MutableStateFlow(0)
     val newNoteCount: StateFlow<Int> = _newNoteCount
     var countNewNotes = false
@@ -149,10 +152,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         scope.launch {
             for (signal in feedInserted) {
                 delay(50)  // settle window: coalesce concurrent inserts
-                val filter = _authorFilter.value
+                val authorFilter = _authorFilter.value
+                val kindFilter = _kindFilter
                 val raw = synchronized(feedList) { feedList.toList() }
-                _feed.value = if (filter == null) raw else raw.filter {
-                    it.pubkey in filter || isRepostedByAny(it.id, filter)
+                _feed.value = raw.filter { event ->
+                    val authorOk = authorFilter == null || event.pubkey in authorFilter || isRepostedByAny(event.id, authorFilter)
+                    val kindOk = kindFilter == null || event.kind in kindFilter
+                    authorOk && kindOk
                 }
             }
         }
@@ -166,10 +172,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         // Immediate emission channel — used for explicit flushes (purge, filter change, etc.)
         scope.launch {
             for (signal in feedDirty) {
-                val filter = _authorFilter.value
+                val authorFilter = _authorFilter.value
+                val kindFilter = _kindFilter
                 val raw = synchronized(feedList) { feedList.toList() }
-                _feed.value = if (filter == null) raw else raw.filter {
-                    it.pubkey in filter || isRepostedByAny(it.id, filter)
+                _feed.value = raw.filter { event ->
+                    val authorOk = authorFilter == null || event.pubkey in authorFilter || isRepostedByAny(event.id, authorFilter)
+                    val kindOk = kindFilter == null || event.kind in kindFilter
+                    authorOk && kindOk
                 }
             }
         }
@@ -241,10 +250,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             val isNew = event.id !in seenEventIds
             Log.d("POLL", "[EventRepo] addEvent kind=1018 id=${event.id.take(12)} isNew=$isNew pubkey=${event.pubkey.take(8)}")
         }
+        if (event.kind in intArrayOf(20, 21, 22)) {
+            Log.d("GALLERY", "[EventRepo] addEvent kind=${event.kind} id=${event.id.take(12)} pubkey=${event.pubkey.take(8)} alreadySeen=${event.id in seenEventIds}")
+        }
         if (!seenEventIds.add(event.id)) return  // atomic dedup across all relay threads
         if (event.created_at > System.currentTimeMillis() / 1000 + 30) return  // reject future-dated notes (30s grace for clock skew)
         if (muteRepo?.isBlocked(event.pubkey) == true) return
-        if ((event.kind == 1 || event.kind == 30023) && muteRepo?.containsMutedWord(event.content) == true) return
+        if ((event.kind == 1 || event.kind == 30023 || event.kind == 20 || event.kind == 21 || event.kind == 22) && muteRepo?.containsMutedWord(event.content) == true) return
         if (event.kind == 1) {
             val threadRoot = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
             if (muteRepo?.isThreadMuted(threadRoot) == true) return
@@ -252,7 +264,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (deletedEventsRepo?.isDeleted(event.id) == true) return
         // Track liveness: only count followed authors with recent active-content kinds,
         // so historical fetches, profile metadata, and strangers don't inflate the online count.
-        if (event.kind == 1 || event.kind == 6 || event.kind == 7 || event.kind == 30023) {
+        if (event.kind == 1 || event.kind == 6 || event.kind == 7 || event.kind == 30023 || event.kind == 20 || event.kind == 21 || event.kind == 22) {
             val eventTimeMs = event.created_at * 1000L
             val cutoff = System.currentTimeMillis() - 10 * 60 * 1000L
             if (eventTimeMs >= cutoff && (contactRepo?.isFollowing(event.pubkey) == true || event.pubkey == currentUserPubkey)) {
@@ -284,6 +296,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 if (!isReply) binaryInsert(event, fromFeed = true)
             }
             30023 -> {
+                binaryInsert(event, fromFeed = true)
+            }
+            20, 21, 22 -> {
+                Log.d("GALLERY", "[EventRepo] routing kind ${event.kind} to binaryInsert id=${event.id.take(12)}")
                 binaryInsert(event, fromFeed = true)
             }
             6 -> {
@@ -524,7 +540,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     private fun binaryInsert(event: NostrEvent, sortTime: Long = event.created_at, fromFeed: Boolean = false) {
         synchronized(feedList) {
-            if (!feedIds.add(event.id)) return  // already in feed
+            if (!feedIds.add(event.id)) {
+                if (event.kind in intArrayOf(20, 21, 22)) {
+                    Log.d("GALLERY", "[EventRepo] binaryInsert DEDUP kind=${event.kind} id=${event.id.take(12)} — already in feedIds")
+                }
+                return  // already in feed
+            }
             var low = 0
             var high = feedList.size
             while (low < high) {
@@ -532,6 +553,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 if (effectiveSortTime(feedList[mid]) > sortTime) low = mid + 1 else high = mid
             }
             feedList.add(low, event)
+            if (event.kind in intArrayOf(20, 21, 22)) {
+                Log.d("GALLERY", "[EventRepo] binaryInsert SUCCESS kind=${event.kind} id=${event.id.take(12)} at pos=$low feedSize=${feedList.size}")
+            }
         }
         feedInserted.trySend(Unit)  // coalesced emission via 50ms settle window
         if (fromFeed && countNewNotes && sortTime > newNotesCutoff) {
@@ -628,7 +652,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
      */
     fun seedFromObjectBox(events: List<NostrEvent>) {
         for (event in events) {
-            if (event.kind != 0 && event.kind != 1) continue
+            if (event.kind != 0 && event.kind != 1 && event.kind != 20 && event.kind != 21 && event.kind != 22 && event.kind != 1068 && event.kind != 30023) continue
             if (!seenEventIds.add(event.id)) continue
             eventCache[event.id] = event
             if (event.kind == 0) {
@@ -906,12 +930,25 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         rebuildFilteredFeed()
     }
 
+    fun setKindFilter(kinds: Set<Int>?) {
+        _kindFilter = kinds
+        Log.d("GALLERY", "[EventRepo] setKindFilter kinds=$kinds")
+        rebuildFilteredFeed()
+    }
+
     private fun rebuildFilteredFeed() {
-        val filter = _authorFilter.value
+        val authorFilter = _authorFilter.value
+        val kindFilter = _kindFilter
         val raw = synchronized(feedList) { feedList.toList() }
-        _feed.value = if (filter == null) raw else raw.filter {
-            it.pubkey in filter || isRepostedByAny(it.id, filter)
+        val galleryInRaw = raw.count { it.kind in intArrayOf(20, 21, 22) }
+        val result = raw.filter { event ->
+            val authorOk = authorFilter == null || event.pubkey in authorFilter || isRepostedByAny(event.id, authorFilter)
+            val kindOk = kindFilter == null || event.kind in kindFilter
+            authorOk && kindOk
         }
+        val galleryInResult = result.count { it.kind in intArrayOf(20, 21, 22) }
+        Log.d("GALLERY", "[EventRepo] rebuildFilteredFeed: feedList=${raw.size} galleryInFeedList=$galleryInRaw → filtered=${result.size} galleryInFiltered=$galleryInResult kindFilter=$kindFilter authorFilter=${authorFilter?.size}")
+        _feed.value = result
     }
 
     fun getNewestFeedEventTimestamp(): Long? {
@@ -922,10 +959,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun getOldestTimestamp(): Long? {
         // Return oldest from the filtered feed so loadMore pages correctly
-        val filter = _authorFilter.value
+        val authorFilter = _authorFilter.value
+        val kindFilter = _kindFilter
         return synchronized(feedList) {
-            if (filter == null) feedList.lastOrNull()?.let { effectiveSortTime(it) }
-            else feedList.lastOrNull { it.pubkey in filter || isRepostedByAny(it.id, filter) }?.let { effectiveSortTime(it) }
+            feedList.lastOrNull { event ->
+                val authorOk = authorFilter == null || event.pubkey in authorFilter || isRepostedByAny(event.id, authorFilter)
+                val kindOk = kindFilter == null || event.kind in kindFilter
+                authorOk && kindOk
+            }?.let { effectiveSortTime(it) }
         }
     }
 
@@ -1020,7 +1061,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         val snapshot = eventCache
         var inserted = 0
         for ((_, event) in snapshot) {
-            if (event.kind != 1) continue
+            if (event.kind != 1 && event.kind != 20 && event.kind != 21 && event.kind != 22 && event.kind != 1068 && event.kind != 30023) continue
             if (event.created_at < sinceTimestamp) continue
             if (event.created_at > System.currentTimeMillis() / 1000 + 30) continue  // skip future-dated (scheduled) notes
             if (muteRepo?.isBlocked(event.pubkey) == true) continue
@@ -1083,6 +1124,11 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 relayHintStore?.extractHintsFromTags(event)
                 relayFeedBinaryInsert(event)
             }
+            20, 21, 22 -> {
+                eventCache[event.id] = event
+                relayHintStore?.extractHintsFromTags(event)
+                relayFeedBinaryInsert(event)
+            }
             6 -> {
                 if (event.content.isNotBlank()) {
                     try {
@@ -1133,6 +1179,11 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 trendingFeedAppend(event)
             }
             30023 -> {
+                eventCache[event.id] = event
+                relayHintStore?.extractHintsFromTags(event)
+                trendingFeedAppend(event)
+            }
+            20, 21, 22 -> {
                 eventCache[event.id] = event
                 relayHintStore?.extractHintsFromTags(event)
                 trendingFeedAppend(event)

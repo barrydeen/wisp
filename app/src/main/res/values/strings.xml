@@ -80,6 +80,8 @@
     <string name="compose_reply">Reply</string>
     <string name="compose_quote">Quote</string>
     <string name="compose_placeholder">What\'s on your mind?</string>
+    <string name="compose_gallery_placeholder">Add a description for your gallery post…</string>
+    <string name="compose_gallery_mode">Gallery Post</string>
     <string name="compose_publish">Publish</string>
     <string name="compose_publishing">Publishing…</string>
     <string name="compose_uploading">Uploading…</string>
@@ -583,6 +585,7 @@
     <!-- Profile -->
     <string name="profile_tab_notes">Notes</string>
     <string name="profile_tab_replies">Replies</string>
+    <string name="profile_tab_gallery">Gallery</string>
     <string name="profile_tab_media">Media</string>
     <string name="profile_tab_following">Following</string>
     <string name="profile_tab_followers">Followers</string>
@@ -601,6 +604,7 @@
     <string name="profile_unblock">Unblock</string>
     <string name="profile_no_notes">No notes yet</string>
     <string name="profile_no_replies">No replies yet</string>
+    <string name="profile_no_gallery">No gallery posts yet</string>
     <string name="profile_no_media">No media yet</string>
     <string name="profile_not_following">Not following anyone</string>
     <string name="profile_no_followers">No followers found</string>

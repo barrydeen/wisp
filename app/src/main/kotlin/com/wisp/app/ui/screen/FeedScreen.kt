@@ -81,6 +81,8 @@ import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.R
 import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.EmojiLibrarySheet
+import com.wisp.app.ui.component.GalleryCard
+import com.wisp.app.ui.component.isGalleryEvent
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RelayIcon
@@ -97,6 +99,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import com.wisp.app.nostr.RelaySet
 import com.wisp.app.relay.BroadcastState
+import com.wisp.app.viewmodel.FeedContentFilter
 import com.wisp.app.viewmodel.FeedType
 import com.wisp.app.viewmodel.FeedViewModel
 import com.wisp.app.viewmodel.InitLoadingState
@@ -112,7 +115,11 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import com.wisp.app.ui.theme.WispThemeColors
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import androidx.compose.material.icons.outlined.Dashboard
+import androidx.compose.material.icons.outlined.HowToVote
+import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Person
@@ -179,6 +186,7 @@ fun FeedScreen(
 ) {
     val feed by viewModel.feed.collectAsState()
     val feedType by viewModel.feedType.collectAsState()
+    val contentFilter by viewModel.feedContentFilter.collectAsState()
     val selectedRelay by viewModel.selectedRelay.collectAsState()
     val selectedRelaySet by viewModel.selectedRelaySet.collectAsState()
     val replyCountVersion by viewModel.eventRepo.replyCountVersion.collectAsState()
@@ -687,42 +695,68 @@ fun FeedScreen(
             topBar = {
                 CenterAlignedTopAppBar(
                     title = {
-                            Box {
-                                Surface(
-                                    onClick = { showFeedTypeDropdown = true },
-                                    shape = RoundedCornerShape(20.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        val feedLabel = when (feedType) {
-                                            FeedType.FOLLOWS -> stringResource(R.string.tab_follows)
-                                            FeedType.EXTENDED_FOLLOWS -> stringResource(R.string.tab_extended)
-                                            FeedType.RELAY -> if (selectedRelay != null) {
-                                                selectedRelay!!.removePrefix("wss://").removeSuffix("/")
-                                            } else stringResource(R.string.tab_relay)
-                                            FeedType.LIST -> if (selectedList != null) {
-                                                selectedList!!.name
-                                            } else stringResource(R.string.tab_list)
-                                            FeedType.TRENDING -> stringResource(R.string.tab_trending)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                // Content type filter toggle — rotates through All → Notes → Gallery → Polls
+                                IconButton(
+                                    onClick = {
+                                        val next = when (contentFilter) {
+                                            FeedContentFilter.ALL -> FeedContentFilter.TEXT_ONLY
+                                            FeedContentFilter.TEXT_ONLY -> FeedContentFilter.GALLERY_ONLY
+                                            FeedContentFilter.GALLERY_ONLY -> FeedContentFilter.POLLS_ONLY
+                                            FeedContentFilter.POLLS_ONLY -> FeedContentFilter.ALL
                                         }
-                                        Text(
-                                            feedLabel,
-                                            style = MaterialTheme.typography.titleSmall,
-                                            maxLines = 1,
-                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                            modifier = Modifier.widthIn(max = 160.dp)
-                                        )
-                                        Spacer(Modifier.width(4.dp))
-                                        Icon(
-                                            Icons.Default.ArrowDropDown,
-                                            contentDescription = "Change feed",
-                                            modifier = Modifier.size(20.dp)
-                                        )
+                                        viewModel.setFeedContentFilter(next)
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    val (icon, tint) = when (contentFilter) {
+                                        FeedContentFilter.ALL -> Icons.Outlined.Dashboard to MaterialTheme.colorScheme.onSurfaceVariant
+                                        FeedContentFilter.TEXT_ONLY -> Icons.AutoMirrored.Outlined.Article to MaterialTheme.colorScheme.primary
+                                        FeedContentFilter.GALLERY_ONLY -> Icons.Outlined.Photo to MaterialTheme.colorScheme.primary
+                                        FeedContentFilter.POLLS_ONLY -> Icons.Outlined.HowToVote to MaterialTheme.colorScheme.primary
                                     }
+                                    Icon(icon, contentDescription = "Filter: ${contentFilter.name}", tint = tint, modifier = Modifier.size(22.dp))
                                 }
+                                Spacer(Modifier.width(4.dp))
+                                Box {
+                                    Surface(
+                                        onClick = { showFeedTypeDropdown = true },
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            val feedLabel = when (feedType) {
+                                                FeedType.FOLLOWS -> stringResource(R.string.tab_follows)
+                                                FeedType.EXTENDED_FOLLOWS -> stringResource(R.string.tab_extended)
+                                                FeedType.RELAY -> if (selectedRelay != null) {
+                                                    selectedRelay!!.removePrefix("wss://").removeSuffix("/")
+                                                } else stringResource(R.string.tab_relay)
+                                                FeedType.LIST -> if (selectedList != null) {
+                                                    selectedList!!.name
+                                                } else stringResource(R.string.tab_list)
+                                                FeedType.TRENDING -> stringResource(R.string.tab_trending)
+                                            }
+                                            Text(
+                                                feedLabel,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                modifier = Modifier.widthIn(max = 140.dp)
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Icon(
+                                                Icons.Default.ArrowDropDown,
+                                                contentDescription = "Change feed",
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
                                 DropdownMenu(
                                     expanded = showFeedTypeDropdown,
                                     onDismissRequest = { showFeedTypeDropdown = false },
@@ -789,6 +823,7 @@ fun FeedScreen(
                                             showHashtagPicker = true
                                         }
                                     )
+                                }
                                 }
                             }
                     },
@@ -1011,8 +1046,23 @@ fun FeedScreen(
                             initLoadingState != InitLoadingState.Done -> {
                                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                             }
+                            contentFilter != FeedContentFilter.ALL -> {
+                                // Content filter active but no matching posts
+                                Text(
+                                    when (contentFilter) {
+                                        FeedContentFilter.GALLERY_ONLY -> "No gallery posts in your feed yet"
+                                        FeedContentFilter.POLLS_ONLY -> "No polls in your feed yet"
+                                        FeedContentFilter.TEXT_ONLY -> "No notes in your feed yet"
+                                        else -> "No posts yet"
+                                    },
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             else -> {
-                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                Text(
+                                    "No posts yet",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
@@ -1242,62 +1292,109 @@ private fun FeedItem(
     val userPollVotes = remember(pollVoteVersion, event.id) {
         if (event.kind == 1068) viewModel.eventRepo.getUserPollVotes(event.id) else emptyList()
     }
-    PostCard(
-        event = event,
-        profile = profileData,
-        onReply = onReply,
-        onProfileClick = onProfileClick,
-        onNavigateToProfile = onNavigateToProfile,
-        onNoteClick = onNoteClick,
-        onReact = onReact,
-        userReactionEmojis = userEmojis,
-        onRepost = onRepost,
-        onQuote = onQuote,
-        hasUserReposted = hasUserReposted,
-        repostCount = repostCount,
-        onZap = onZap,
-        hasUserZapped = hasUserZapped,
-        likeCount = likeCount,
-        replyCount = replyCount,
-        zapSats = zapSats,
-        isZapAnimating = isZapAnimating,
-        isZapInProgress = isZapInProgress,
-        eventRepo = viewModel.eventRepo,
-        relayIcons = relayIcons,
-        repostPubkeys = repostPubkeys,
-        repostTime = repostTime,
-        reactionDetails = reactionDetails,
-        zapDetails = zapDetails,
-        repostDetails = repostPubkeys,
-        onNavigateToProfileFromDetails = onNavigateToProfile,
-        onRelayClick = onRelayClick,
-        onFollowAuthor = { viewModel.toggleFollow(event.pubkey) },
-        onBlockAuthor = { viewModel.blockUser(event.pubkey) },
-        onMuteThread = {
-            val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
-            viewModel.muteThread(rootId)
-        },
-        isFollowingAuthor = isFollowing,
-        isOwnEvent = event.pubkey == userPubkey,
-        nip05Repo = viewModel.nip05Repo,
-        onAddToList = onAddToList,
-        isInList = isInList,
-        onPin = onPin,
-        isPinned = isPinned,
-        onDelete = onDelete,
-        onQuotedNoteClick = onQuotedNoteClick,
-        noteActions = noteActions,
-        reactionEmojiUrls = eventReactionEmojiUrls,
-        resolvedEmojis = resolvedEmojis,
-        unicodeEmojis = unicodeEmojis,
-        onOpenEmojiLibrary = onOpenEmojiLibrary,
-        pollVoteCounts = pollVoteCounts,
-        pollTotalVotes = pollTotalVotes,
-        userPollVotes = userPollVotes,
-        onPollVote = onPollVote,
-        translationState = translationState,
-        onTranslate = { viewModel.translateEvent(event.id, event.content) }
-    )
+    if (isGalleryEvent(event)) {
+        GalleryCard(
+            event = event,
+            profile = profileData,
+            onReply = onReply,
+            onProfileClick = onProfileClick,
+            onNavigateToProfile = onNavigateToProfile,
+            onNoteClick = onNoteClick,
+            onReact = onReact,
+            userReactionEmojis = userEmojis,
+            onRepost = onRepost,
+            onQuote = onQuote,
+            hasUserReposted = hasUserReposted,
+            repostCount = repostCount,
+            onZap = onZap,
+            hasUserZapped = hasUserZapped,
+            likeCount = likeCount,
+            replyCount = replyCount,
+            zapSats = zapSats,
+            isZapAnimating = isZapAnimating,
+            isZapInProgress = isZapInProgress,
+            eventRepo = viewModel.eventRepo,
+            relayIcons = relayIcons,
+            repostPubkeys = repostPubkeys,
+            reactionDetails = reactionDetails,
+            zapDetails = zapDetails,
+            repostDetails = repostPubkeys,
+            onNavigateToProfileFromDetails = onNavigateToProfile,
+            onFollowAuthor = { viewModel.toggleFollow(event.pubkey) },
+            onBlockAuthor = { viewModel.blockUser(event.pubkey) },
+            isFollowingAuthor = isFollowing,
+            isOwnEvent = event.pubkey == userPubkey,
+            onQuotedNoteClick = onQuotedNoteClick,
+            noteActions = noteActions,
+            reactionEmojiUrls = eventReactionEmojiUrls,
+            resolvedEmojis = resolvedEmojis,
+            unicodeEmojis = unicodeEmojis,
+            onOpenEmojiLibrary = onOpenEmojiLibrary,
+            onAddToList = onAddToList,
+            isInList = isInList,
+            onPin = onPin,
+            isPinned = isPinned,
+            onDelete = onDelete,
+            nip05Repo = viewModel.nip05Repo
+        )
+    } else {
+        PostCard(
+            event = event,
+            profile = profileData,
+            onReply = onReply,
+            onProfileClick = onProfileClick,
+            onNavigateToProfile = onNavigateToProfile,
+            onNoteClick = onNoteClick,
+            onReact = onReact,
+            userReactionEmojis = userEmojis,
+            onRepost = onRepost,
+            onQuote = onQuote,
+            hasUserReposted = hasUserReposted,
+            repostCount = repostCount,
+            onZap = onZap,
+            hasUserZapped = hasUserZapped,
+            likeCount = likeCount,
+            replyCount = replyCount,
+            zapSats = zapSats,
+            isZapAnimating = isZapAnimating,
+            isZapInProgress = isZapInProgress,
+            eventRepo = viewModel.eventRepo,
+            relayIcons = relayIcons,
+            repostPubkeys = repostPubkeys,
+            repostTime = repostTime,
+            reactionDetails = reactionDetails,
+            zapDetails = zapDetails,
+            repostDetails = repostPubkeys,
+            onNavigateToProfileFromDetails = onNavigateToProfile,
+            onRelayClick = onRelayClick,
+            onFollowAuthor = { viewModel.toggleFollow(event.pubkey) },
+            onBlockAuthor = { viewModel.blockUser(event.pubkey) },
+            onMuteThread = {
+                val rootId = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
+                viewModel.muteThread(rootId)
+            },
+            isFollowingAuthor = isFollowing,
+            isOwnEvent = event.pubkey == userPubkey,
+            nip05Repo = viewModel.nip05Repo,
+            onAddToList = onAddToList,
+            isInList = isInList,
+            onPin = onPin,
+            isPinned = isPinned,
+            onDelete = onDelete,
+            onQuotedNoteClick = onQuotedNoteClick,
+            noteActions = noteActions,
+            reactionEmojiUrls = eventReactionEmojiUrls,
+            resolvedEmojis = resolvedEmojis,
+            unicodeEmojis = unicodeEmojis,
+            onOpenEmojiLibrary = onOpenEmojiLibrary,
+            pollVoteCounts = pollVoteCounts,
+            pollTotalVotes = pollTotalVotes,
+            userPollVotes = userPollVotes,
+            onPollVote = onPollVote,
+            translationState = translationState,
+            onTranslate = { viewModel.translateEvent(event.id, event.content) }
+        )
+    }
 }
 
 @Composable

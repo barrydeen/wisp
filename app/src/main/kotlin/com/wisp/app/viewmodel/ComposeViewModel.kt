@@ -15,6 +15,8 @@ import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip18
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.Nip37
+import com.wisp.app.nostr.Nip68
+import com.wisp.app.nostr.Nip71
 import com.wisp.app.nostr.Nip88
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrSigner
@@ -102,6 +104,25 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         powPrefs.setNotePowEnabled(newValue)
     }
 
+    private val _galleryMode = MutableStateFlow(false)
+    val galleryMode: StateFlow<Boolean> = _galleryMode
+
+    /** Tracks whether the current gallery upload contains a video (to prevent mixing). */
+    private val _galleryHasVideo = MutableStateFlow(false)
+
+    /** Tracks media dimensions per URL (width x height) for dim tags and video orientation detection. */
+    private val _mediaDimensions = mutableMapOf<String, Pair<Int, Int>>()
+
+    companion object {
+        val SCHEDULER_RELAYS = listOf("wss://scheduler.nostrarchives.com")
+        const val MAX_GALLERY_IMAGES = 21
+    }
+
+    fun toggleGalleryMode() {
+        _galleryMode.value = !_galleryMode.value
+        if (_galleryMode.value) _pollEnabled.value = false
+    }
+
     private val _pollEnabled = MutableStateFlow(false)
     val pollEnabled: StateFlow<Boolean> = _pollEnabled
 
@@ -126,12 +147,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _scheduleTimestamp.value = epochSeconds
     }
 
-    companion object {
-        val SCHEDULER_RELAYS = listOf("wss://scheduler.nostrarchives.com")
-    }
-
     fun togglePoll() {
         _pollEnabled.value = !_pollEnabled.value
+        if (_pollEnabled.value) _galleryMode.value = false
     }
 
     fun updatePollOption(index: Int, text: String) {
@@ -186,15 +204,46 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         viewModelScope.launch {
             val total = uris.size
             for ((index, uri) in uris.withIndex()) {
+                // Gallery mode limits: 1 video max, 21 images max, no mixing
+                if (_galleryMode.value) {
+                    val mime = contentResolver.getType(uri) ?: ""
+                    val isVideo = mime.startsWith("video/")
+                    val currentUrls = _uploadedUrls.value
+                    if (isVideo && currentUrls.isNotEmpty()) {
+                        _error.value = "Video gallery posts can only contain one video"
+                        break
+                    }
+                    if (isVideo && total > 1) {
+                        _error.value = "Video gallery posts can only contain one video"
+                        break
+                    }
+                    if (!isVideo && _galleryHasVideo.value) {
+                        _error.value = "Cannot mix images and videos in a gallery post"
+                        break
+                    }
+                    if (!isVideo && currentUrls.size >= MAX_GALLERY_IMAGES) {
+                        _error.value = "Gallery posts can contain up to $MAX_GALLERY_IMAGES images"
+                        break
+                    }
+                }
                 try {
                     _uploadProgress.value = if (total > 1) "Uploading ${index + 1}/$total..." else "Uploading..."
+                    // Extract dimensions before upload for dim tags and video orientation
+                    val dims = extractMediaDimensions(uri, contentResolver)
                     val (bytes, mime, ext) = readFileFromUri(contentResolver, uri)
                     val url = blossomRepo.uploadMedia(bytes, mime, ext, signer)
                     _uploadedUrls.value = _uploadedUrls.value + url
-                    val current = _content.value.text
-                    val newText = if (current.isBlank()) url else "$current\n$url"
-                    _content.value = TextFieldValue(newText, TextRange(newText.length))
-                    savedStateHandle["draft_content"] = newText
+                    if (dims != null) _mediaDimensions[url] = dims
+                    if (_galleryMode.value && mime.startsWith("video/")) {
+                        _galleryHasVideo.value = true
+                    }
+                    // In gallery mode, don't insert URLs into the text — they're shown in the pager
+                    if (!_galleryMode.value) {
+                        val current = _content.value.text
+                        val newText = if (current.isBlank()) url else "$current\n$url"
+                        _content.value = TextFieldValue(newText, TextRange(newText.length))
+                        savedStateHandle["draft_content"] = newText
+                    }
                 } catch (e: Exception) {
                     _error.value = "Upload failed: ${e.message}"
                     break
@@ -206,10 +255,15 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
     fun removeMediaUrl(url: String) {
         _uploadedUrls.value = _uploadedUrls.value - url
-        val current = _content.value.text
-        val newText = current.replace(url, "").replace("\n\n", "\n").trim()
-        _content.value = TextFieldValue(newText, TextRange(newText.length))
-        savedStateHandle["draft_content"] = newText
+        _mediaDimensions.remove(url)
+        // Reset video flag if all media removed
+        if (_uploadedUrls.value.isEmpty()) _galleryHasVideo.value = false
+        if (!_galleryMode.value) {
+            val current = _content.value.text
+            val newText = current.replace(url, "").replace("\n\n", "\n").trim()
+            _content.value = TextFieldValue(newText, TextRange(newText.length))
+            savedStateHandle["draft_content"] = newText
+        }
     }
 
     fun updateContent(value: TextFieldValue) {
@@ -335,8 +389,13 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     ) {
         val text = _content.value.text.trim()
 
-        if (text.isBlank()) {
+        // Gallery posts can have an empty caption — the media is the content
+        if (text.isBlank() && !_galleryMode.value) {
             _error.value = getApplication<Application>().getString(R.string.error_post_empty)
+            return
+        }
+        if (_galleryMode.value && _uploadedUrls.value.isEmpty()) {
+            _error.value = "Gallery post requires at least one uploaded image or video"
             return
         }
 
@@ -456,7 +515,37 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
         // Build poll tags if poll is enabled
         val eventKind: Int
-        if (_pollEnabled.value) {
+        if (_galleryMode.value) {
+            val urls = _uploadedUrls.value
+            if (urls.isEmpty()) {
+                _error.value = "Gallery post requires at least one uploaded image or video"
+                _publishing.value = false
+                return 0
+            }
+            // Detect if media is video or image based on URL extension
+            val videoExts = setOf("mp4", "webm", "mov", "avi", "mkv", "m4v")
+            val isVideo = urls.any { url ->
+                val ext = url.substringAfterLast('.').lowercase().substringBefore('?')
+                ext in videoExts
+            }
+            if (isVideo) {
+                val videoUrl = urls.first()
+                val dims = _mediaDimensions[videoUrl]
+                val dimStr = dims?.let { "${it.first}x${it.second}" }
+                val isVertical = dims != null && dims.second > dims.first
+                val videoMeta = listOf(Nip71.VideoMeta(url = videoUrl, dim = dimStr))
+                tags.addAll(Nip71.buildVideoTags(title = null, media = videoMeta, hashtags = _hashtags.value))
+                eventKind = if (isVertical) Nip71.KIND_VIDEO_VERTICAL else Nip71.KIND_VIDEO_HORIZONTAL
+            } else {
+                val imetaEntries = urls.map { url ->
+                    val dims = _mediaDimensions[url]
+                    val dimStr = dims?.let { "${it.first}x${it.second}" }
+                    Nip68.ImetaEntry(url = url, dim = dimStr)
+                }
+                tags.addAll(Nip68.buildPictureTags(title = null, media = imetaEntries, hashtags = _hashtags.value))
+                eventKind = Nip68.KIND_PICTURE
+            }
+        } else if (_pollEnabled.value) {
             val nonBlankOptions = _pollOptions.value
                 .mapIndexed { i, label -> Nip88.PollOption(i.toString(), label.trim()) }
                 .filter { it.label.isNotBlank() }
@@ -538,6 +627,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
 
         val event = signer.signEvent(kind = eventKind, content = finalContent, tags = tags)
+        android.util.Log.d("GALLERY", "[ComposeVM] publishNote kind=$eventKind id=${event.id.take(12)} content='${finalContent.take(50)}' tags=${tags.size} galleryMode=${_galleryMode.value} uploadedUrls=${_uploadedUrls.value.size}")
         val msg = ClientMessage.event(event)
         var sentCount = if (replyTo != null && outboxRouter != null) {
             outboxRouter.publishToInbox(msg, replyTo.pubkey)
@@ -607,6 +697,29 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
         val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "bin"
         return Triple(bytes, mimeType, ext)
+    }
+
+    private fun extractMediaDimensions(uri: Uri, contentResolver: ContentResolver): Pair<Int, Int>? {
+        return try {
+            val mime = contentResolver.getType(uri) ?: ""
+            if (mime.startsWith("video/")) {
+                val retriever = android.media.MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(getApplication<Application>(), uri)
+                    val w = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+                    val h = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+                    if (w != null && h != null && w > 0 && h > 0) w to h else null
+                } finally {
+                    retriever.release()
+                }
+            } else if (mime.startsWith("image/")) {
+                val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, opts) }
+                val w = opts.outWidth
+                val h = opts.outHeight
+                if (w > 0 && h > 0) w to h else null
+            } else null
+        } catch (_: Exception) { null }
     }
 
     fun loadDraft(draft: Nip37.Draft) {
@@ -684,6 +797,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _explicit.value = false
         _hashtags.value = emptyList()
         _powEnabled.value = false
+        _galleryMode.value = false
+        _galleryHasVideo.value = false
+        _mediaDimensions.clear()
         _pollEnabled.value = false
         _pollOptions.value = listOf("", "")
         _pollType.value = Nip88.PollType.SINGLECHOICE

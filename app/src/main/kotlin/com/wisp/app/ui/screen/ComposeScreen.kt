@@ -59,6 +59,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -99,7 +100,13 @@ import com.wisp.app.viewmodel.ComposeViewModel
 import com.wisp.app.viewmodel.PowManager
 import com.wisp.app.viewmodel.PowStatus
 import com.wisp.app.repo.PowPreferences
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -108,7 +115,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.animation.animateContentSize
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material3.DatePicker
@@ -154,6 +163,7 @@ fun ComposeScreen(
     val explicit by viewModel.explicit.collectAsState()
     val hashtags by viewModel.hashtags.collectAsState()
     val powEnabled by viewModel.powEnabled.collectAsState()
+    val galleryMode by viewModel.galleryMode.collectAsState()
     val pollEnabled by viewModel.pollEnabled.collectAsState()
     val pollOptions by viewModel.pollOptions.collectAsState()
     val pollType by viewModel.pollType.collectAsState()
@@ -196,6 +206,7 @@ fun ComposeScreen(
                 title = {
                     Text(
                         when {
+                            galleryMode -> stringResource(R.string.compose_gallery_mode)
                             quoteTo != null -> stringResource(R.string.compose_quote)
                             replyTo != null -> stringResource(R.string.compose_reply)
                             else -> stringResource(R.string.compose_new_post)
@@ -205,6 +216,37 @@ fun ComposeScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                },
+                actions = {
+                    if (replyTo != null || quoteTo != null) {
+                        // No gallery toggle when replying or quoting
+                    } else if (galleryMode) {
+                        FilledTonalButton(
+                            onClick = { viewModel.toggleGalleryMode() },
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Outlined.Article,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Switch to Text")
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = { viewModel.toggleGalleryMode() },
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.PhotoLibrary,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Switch to Gallery")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -219,567 +261,779 @@ fun ComposeScreen(
                 .consumeWindowInsets(WindowInsets.navigationBars)
                 .imePadding()
         ) {
-            // Scrollable content takes remaining space
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 16.dp)
-                    .padding(top = 16.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                // Reply context (expandable)
-                replyTo?.let {
-                    val replyProfile = profileRepo?.get(it.pubkey)
-                    val replyAuthorName = replyProfile?.displayString
-                        ?: "${it.pubkey.take(8)}..."
-                    var replyExpanded by remember { mutableStateOf(false) }
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp)
-                            .clickable { replyExpanded = !replyExpanded }
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .animateContentSize()
-                                .padding(12.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                ProfilePicture(url = replyProfile?.picture, size = 24)
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    text = stringResource(R.string.compose_replying_to),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = replyAuthorName,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Icon(
-                                    imageVector = if (replyExpanded) Icons.Filled.KeyboardArrowUp
-                                        else Icons.Filled.KeyboardArrowDown,
-                                    contentDescription = if (replyExpanded) "Collapse" else "Expand",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            if (it.content.isNotBlank()) {
-                                Spacer(Modifier.height(6.dp))
-                                Text(
-                                    text = if (replyExpanded) it.content
-                                        else it.content.take(140) + if (it.content.length > 140) "..." else "",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = if (replyExpanded) Int.MAX_VALUE else 2
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Quote context with resolved display names
-                quoteTo?.let {
-                    val quoteAuthorName = profileRepo?.get(it.pubkey)?.displayString
-                        ?: "${it.pubkey.take(8)}..."
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp)
-                            .border(
-                                width = 1.dp,
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(
-                                text = quoteAuthorName,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = it.content.take(200) + if (it.content.length > 200) "..." else "",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 4
-                            )
-                        }
-                    }
-                }
-
-                // Mention autocomplete dropdown
-                AnimatedVisibility(
-                    visible = mentionQuery != null && mentionCandidates.isNotEmpty(),
-                    enter = fadeIn() + slideInVertically(),
-                    exit = fadeOut() + slideOutVertically()
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        tonalElevation = 3.dp,
-                        shadowElevation = 2.dp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 200.dp)
-                            .padding(bottom = 4.dp)
-                    ) {
-                        LazyColumn {
-                            items(mentionCandidates, key = { it.profile.pubkey }) { candidate ->
-                                MentionCandidateRow(
-                                    candidate = candidate,
-                                    onClick = { viewModel.selectMention(candidate) }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Text field with GIF keyboard support via BasicTextField(TextFieldState)
-                val textFieldState = remember { TextFieldState(content.text) }
-                val interactionSource = remember { MutableInteractionSource() }
-                val enabled = !publishing && countdownSeconds == null
-
-                // Sync ViewModel → TextFieldState (for programmatic updates: upload URL, mention select, etc.)
-                LaunchedEffect(content) {
-                    if (textFieldState.text.toString() != content.text) {
-                        textFieldState.edit {
-                            replace(0, length, content.text)
-                            selection = content.selection
-                        }
-                    }
-                }
-
-                // Sync TextFieldState → ViewModel (for user typing)
-                LaunchedEffect(textFieldState) {
-                    snapshotFlow {
-                        textFieldState.text.toString() to textFieldState.selection
-                    }.collect { (text, selection) ->
-                        if (text != content.text) {
-                            viewModel.updateContent(TextFieldValue(text, selection))
-                        }
-                    }
-                }
-
-                BasicTextField(
-                    state = textFieldState,
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            if (galleryMode) {
+                // ---- Gallery mode: completely separate layout ----
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)
-                        .contentReceiver(object : ReceiveContentListener {
-                            override fun onReceive(
-                                transferableContent: TransferableContent
-                            ): TransferableContent? {
-                                if (!transferableContent.hasMediaType(MediaType.Image)) {
-                                    return transferableContent
-                                }
-                                val clipData = transferableContent.clipEntry.clipData
-                                val uris = (0 until clipData.itemCount)
-                                    .mapNotNull { i -> clipData.getItemAt(i).uri }
-                                if (uris.isNotEmpty()) {
-                                    viewModel.uploadMedia(uris, context.contentResolver, signer)
-                                }
-                                return transferableContent.consume { item -> item.uri != null }
-                            }
-                        }),
-                    enabled = enabled,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                    lineLimits = TextFieldLineLimits.MultiLine(),
-                    outputTransformation = outputTransformation,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    decorator = { innerTextField ->
-                        OutlinedTextFieldDefaults.DecorationBox(
-                            value = textFieldState.text.toString(),
-                            innerTextField = innerTextField,
-                            enabled = enabled,
-                            singleLine = false,
-                            visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
-                            interactionSource = interactionSource,
-                            label = { Text(stringResource(R.string.compose_placeholder)) }
-                        )
-                    }
-                )
-
-                // Attach row with preview toggle
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                        .weight(1f)
+                        .padding(horizontal = 16.dp)
+                        .padding(top = 16.dp)
+                        .verticalScroll(rememberScrollState())
                 ) {
-                    IconButton(
-                        onClick = {
+                    // Upload area
+                    GalleryComposeSection(
+                        uploadedUrls = uploadedUrls,
+                        uploadProgress = uploadProgress,
+                        countdownSeconds = countdownSeconds,
+                        onPickMedia = {
                             photoPickerLauncher.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                             )
                         },
-                        enabled = uploadProgress == null && countdownSeconds == null
-                    ) {
-                        Icon(Icons.Outlined.Image, contentDescription = "Attach media")
-                    }
+                        onRemoveUrl = { viewModel.removeMediaUrl(it) }
+                    )
 
-                    IconButton(onClick = { viewModel.toggleExplicit() }) {
-                        Icon(
-                            Icons.Outlined.Warning,
-                            contentDescription = "Mark as explicit",
-                            tint = if (explicit) MaterialTheme.colorScheme.error
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Spacer(Modifier.height(12.dp))
 
-                    IconButton(onClick = { powPrefs?.let { viewModel.togglePow(it) } }) {
-                        Icon(
-                            Icons.Outlined.Shield,
-                            contentDescription = "Proof of Work",
-                            tint = if (powEnabled) WispThemeColors.zapColor
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    IconButton(onClick = { viewModel.togglePoll() }) {
-                        Icon(
-                            Icons.Outlined.BarChart,
-                            contentDescription = "Add poll",
-                            tint = if (pollEnabled) MaterialTheme.colorScheme.primary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    IconButton(onClick = {
-                        if (scheduleEnabled) {
-                            viewModel.toggleSchedule()
-                        } else {
-                            viewModel.toggleSchedule()
-                            showDatePicker = true
-                        }
-                    }) {
-                        Icon(
-                            Icons.Outlined.Schedule,
-                            contentDescription = "Schedule post",
-                            tint = if (scheduleEnabled) MaterialTheme.colorScheme.primary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    if (uploadProgress != null) {
-                        Spacer(Modifier.width(8.dp))
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            stringResource(R.string.compose_uploading),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Spacer(Modifier.weight(1f))
-
-                        if (content.text.isNotBlank()) {
-                        TextButton(
-                            onClick = onSaveDraft
-                        ) {
-                            Text(stringResource(R.string.btn_save_draft))
-                        }
-                    }
-                }
-
-                // Hashtag chips
-                AnimatedVisibility(
-                    visible = hashtags.isNotEmpty(),
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.Top,
+                    // Caption text field (plain OutlinedTextField, no GIF keyboard / contentReceiver)
+                    OutlinedTextField(
+                        value = content,
+                        onValueChange = { viewModel.updateContent(it) },
+                        label = { Text(stringResource(R.string.compose_gallery_placeholder)) },
+                        enabled = !publishing && countdownSeconds == null,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp, horizontal = 4.dp)
+                            .heightIn(min = 100.dp),
+                        maxLines = 8
+                    )
+
+                    // Toolbar row: NSFW, PoW, Schedule only
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Outlined.Tag,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        IconButton(onClick = { viewModel.toggleExplicit() }) {
+                            Icon(
+                                Icons.Outlined.Warning,
+                                contentDescription = "Mark as explicit",
+                                tint = if (explicit) MaterialTheme.colorScheme.error
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        IconButton(onClick = { powPrefs?.let { viewModel.togglePow(it) } }) {
+                            Icon(
+                                Icons.Outlined.Shield,
+                                contentDescription = "Proof of Work",
+                                tint = if (powEnabled) WispThemeColors.zapColor
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        IconButton(onClick = {
+                            if (scheduleEnabled) {
+                                viewModel.toggleSchedule()
+                            } else {
+                                viewModel.toggleSchedule()
+                                showDatePicker = true
+                            }
+                        }) {
+                            Icon(
+                                Icons.Outlined.Schedule,
+                                contentDescription = "Schedule post",
+                                tint = if (scheduleEnabled) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Spacer(Modifier.weight(1f))
+                    }
+
+                    // NSFW feedback banner
+                    AnimatedVisibility(
+                        visible = explicit,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.errorContainer,
                             modifier = Modifier
-                                .size(16.dp)
-                                .padding(top = 2.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
                         ) {
-                            hashtags.forEach { tag ->
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                                ) {
-                                    Text(
-                                        text = "#$tag",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Warning,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = stringResource(R.string.content_marked_nsfw),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
                             }
                         }
                     }
-                }
 
-                // Poll editor
-                AnimatedVisibility(
-                    visible = pollEnabled,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
+                    // Schedule info banner
+                    AnimatedVisibility(
+                        visible = scheduleEnabled && scheduleTimestamp != null,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
                     ) {
-                        pollOptions.forEachIndexed { index, option ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clickable { showDatePicker = true }
+                        ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                             ) {
-                                OutlinedTextField(
-                                    value = option,
-                                    onValueChange = { viewModel.updatePollOption(index, it) },
-                                    label = { Text(stringResource(R.string.poll_option, index + 1)) },
-                                    singleLine = true,
+                                Icon(
+                                    Icons.Outlined.Schedule,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                val formattedTime = scheduleTimestamp?.let {
+                                    val fmt = SimpleDateFormat("MMM d, yyyy 'at' h:mm a", Locale.getDefault())
+                                    fmt.format(Date(it * 1000))
+                                } ?: ""
+                                Text(
+                                    text = "Scheduled for $formattedTime",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier.weight(1f)
                                 )
-                                if (pollOptions.size > 2) {
-                                    IconButton(
-                                        onClick = { viewModel.removePollOption(index) },
-                                        modifier = Modifier.size(36.dp)
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "Remove schedule",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier
+                                        .size(18.dp)
+                                        .clickable { viewModel.toggleSchedule() }
+                                )
+                            }
+                        }
+                    }
+
+                    // Hashtag chips
+                    AnimatedVisibility(
+                        visible = hashtags.isNotEmpty(),
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.Top,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp, horizontal = 4.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Tag,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .padding(top = 2.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                hashtags.forEach { tag ->
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                                     ) {
-                                        Icon(
-                                            Icons.Filled.Close,
-                                            contentDescription = "Remove option",
-                                            modifier = Modifier.size(18.dp)
+                                        Text(
+                                            text = "#$tag",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                         )
                                     }
                                 }
                             }
                         }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.padding(top = 4.dp)
-                        ) {
-                            if (pollOptions.size < 10) {
-                                TextButton(onClick = { viewModel.addPollOption() }) {
-                                    Text(stringResource(R.string.poll_add_option))
-                                }
-                            }
-                            Spacer(Modifier.weight(1f))
-                            FilterChip(
-                                selected = pollType == Nip88.PollType.MULTIPLECHOICE,
-                                onClick = { viewModel.togglePollType() },
-                                label = {
-                                    Text(
-                                        if (pollType == Nip88.PollType.SINGLECHOICE) stringResource(R.string.poll_single_choice)
-                                        else stringResource(R.string.poll_multiple_choice)
-                                    )
-                                }
-                            )
-                        }
+                    }
+
+                    error?.let {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = it,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
-
-                // NSFW feedback banner
-                AnimatedVisibility(
-                    visible = explicit,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
+            } else {
+                // ---- Regular note mode: existing compose flow ----
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 16.dp)
+                        .padding(top = 16.dp)
+                        .verticalScroll(rememberScrollState())
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    // Reply context (expandable)
+                    replyTo?.let {
+                        val replyProfile = profileRepo?.get(it.pubkey)
+                        val replyAuthorName = replyProfile?.displayString
+                            ?: "${it.pubkey.take(8)}..."
+                        var replyExpanded by remember { mutableStateOf(false) }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp)
+                                .clickable { replyExpanded = !replyExpanded }
                         ) {
-                            Icon(
-                                Icons.Outlined.Warning,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = stringResource(R.string.content_marked_nsfw),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
-                    }
-                }
-
-                // Schedule info banner
-                AnimatedVisibility(
-                    visible = scheduleEnabled && scheduleTimestamp != null,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clickable { showDatePicker = true }
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Icon(
-                                Icons.Outlined.Schedule,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            val formattedTime = scheduleTimestamp?.let {
-                                val fmt = SimpleDateFormat("MMM d, yyyy 'at' h:mm a", Locale.getDefault())
-                                fmt.format(Date(it * 1000))
-                            } ?: ""
-                            Text(
-                                text = "Scheduled for $formattedTime",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Icon(
-                                Icons.Filled.Close,
-                                contentDescription = "Remove schedule",
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            Column(
                                 modifier = Modifier
-                                    .size(18.dp)
-                                    .clickable { viewModel.toggleSchedule() }
-                            )
-                        }
-                    }
-                }
-
-                // Live preview
-                AnimatedVisibility(
-                    visible = !imeVisible && (content.text.isNotBlank() || (pollEnabled && pollOptions.any { it.isNotBlank() })) && eventRepo != null
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .border(
-                                width = 1.dp,
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            val userProfile = userPubkey?.let { profileRepo?.get(it) }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(bottom = 8.dp)
+                                    .animateContentSize()
+                                    .padding(12.dp)
                             ) {
-                                ProfilePicture(url = userProfile?.picture, size = 32)
-                                Spacer(Modifier.width(8.dp))
-                                Column {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    ProfilePicture(url = replyProfile?.picture, size = 24)
+                                    Spacer(Modifier.width(6.dp))
                                     Text(
-                                        text = userProfile?.displayString ?: "You",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Medium,
-                                        maxLines = 1
-                                    )
-                                    Text(
-                                        text = "Preview",
-                                        style = MaterialTheme.typography.labelSmall,
+                                        text = stringResource(R.string.compose_replying_to),
+                                        style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                }
-                            }
-                            RichContent(
-                                content = content.text,
-                                eventRepo = eventRepo
-                            )
-                            // Poll preview
-                            if (pollEnabled) {
-                                val previewOptions = pollOptions.filter { it.isNotBlank() }
-                                if (previewOptions.isNotEmpty()) {
-                                    Spacer(Modifier.height(6.dp))
-                                    previewOptions.forEachIndexed { index, label ->
-                                        Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = 2.dp)
-                                        ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
-                                            ) {
-                                                Text(
-                                                    text = if (pollType == Nip88.PollType.SINGLECHOICE) "○" else "☐",
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                                Spacer(Modifier.width(8.dp))
-                                                Text(
-                                                    text = label,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                            }
-                                        }
-                                    }
                                     Text(
-                                        text = if (pollType == Nip88.PollType.SINGLECHOICE) "Single choice poll"
-                                               else "Multiple choice poll",
-                                        style = MaterialTheme.typography.labelSmall,
+                                        text = replyAuthorName,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Icon(
+                                        imageVector = if (replyExpanded) Icons.Filled.KeyboardArrowUp
+                                            else Icons.Filled.KeyboardArrowDown,
+                                        contentDescription = if (replyExpanded) "Collapse" else "Expand",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                if (it.content.isNotBlank()) {
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(
+                                        text = if (replyExpanded) it.content
+                                            else it.content.take(140) + if (it.content.length > 140) "..." else "",
+                                        style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(top = 4.dp)
+                                        maxLines = if (replyExpanded) Int.MAX_VALUE else 2
                                     )
                                 }
                             }
                         }
                     }
-                }
 
-                error?.let {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = it,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
+                    // Quote context with resolved display names
+                    quoteTo?.let {
+                        val quoteAuthorName = profileRepo?.get(it.pubkey)?.displayString
+                            ?: "${it.pubkey.take(8)}..."
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp)
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = quoteAuthorName,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = it.content.take(200) + if (it.content.length > 200) "..." else "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 4
+                                )
+                            }
+                        }
+                    }
+
+                    // Mention autocomplete dropdown
+                    AnimatedVisibility(
+                        visible = mentionQuery != null && mentionCandidates.isNotEmpty(),
+                        enter = fadeIn() + slideInVertically(),
+                        exit = fadeOut() + slideOutVertically()
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            tonalElevation = 3.dp,
+                            shadowElevation = 2.dp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 200.dp)
+                                .padding(bottom = 4.dp)
+                        ) {
+                            LazyColumn {
+                                items(mentionCandidates, key = { it.profile.pubkey }) { candidate ->
+                                    MentionCandidateRow(
+                                        candidate = candidate,
+                                        onClick = { viewModel.selectMention(candidate) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Text field with GIF keyboard support via BasicTextField(TextFieldState)
+                    val textFieldState = remember { TextFieldState(content.text) }
+                    val interactionSource = remember { MutableInteractionSource() }
+                    val enabled = !publishing && countdownSeconds == null
+
+                    // Sync ViewModel -> TextFieldState (for programmatic updates: upload URL, mention select, etc.)
+                    LaunchedEffect(content) {
+                        if (textFieldState.text.toString() != content.text) {
+                            textFieldState.edit {
+                                replace(0, length, content.text)
+                                selection = content.selection
+                            }
+                        }
+                    }
+
+                    // Sync TextFieldState -> ViewModel (for user typing)
+                    LaunchedEffect(textFieldState) {
+                        snapshotFlow {
+                            textFieldState.text.toString() to textFieldState.selection
+                        }.collect { (text, selection) ->
+                            if (text != content.text) {
+                                viewModel.updateContent(TextFieldValue(text, selection))
+                            }
+                        }
+                    }
+
+                    BasicTextField(
+                        state = textFieldState,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .contentReceiver(object : ReceiveContentListener {
+                                override fun onReceive(
+                                    transferableContent: TransferableContent
+                                ): TransferableContent? {
+                                    if (!transferableContent.hasMediaType(MediaType.Image)) {
+                                        return transferableContent
+                                    }
+                                    val clipData = transferableContent.clipEntry.clipData
+                                    val uris = (0 until clipData.itemCount)
+                                        .mapNotNull { i -> clipData.getItemAt(i).uri }
+                                    if (uris.isNotEmpty()) {
+                                        viewModel.uploadMedia(uris, context.contentResolver, signer)
+                                    }
+                                    return transferableContent.consume { item -> item.uri != null }
+                                }
+                            }),
+                        enabled = enabled,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        lineLimits = TextFieldLineLimits.MultiLine(),
+                        outputTransformation = outputTransformation,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            color = MaterialTheme.colorScheme.onSurface
+                        ),
+                        decorator = { innerTextField ->
+                            OutlinedTextFieldDefaults.DecorationBox(
+                                value = textFieldState.text.toString(),
+                                innerTextField = innerTextField,
+                                enabled = enabled,
+                                singleLine = false,
+                                visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+                                interactionSource = interactionSource,
+                                label = { Text(stringResource(R.string.compose_placeholder)) }
+                            )
+                        }
                     )
+
+                    // Attach row with preview toggle
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                )
+                            },
+                            enabled = uploadProgress == null && countdownSeconds == null
+                        ) {
+                            Icon(Icons.Outlined.Image, contentDescription = "Attach media")
+                        }
+
+                        IconButton(onClick = { viewModel.toggleExplicit() }) {
+                            Icon(
+                                Icons.Outlined.Warning,
+                                contentDescription = "Mark as explicit",
+                                tint = if (explicit) MaterialTheme.colorScheme.error
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        IconButton(onClick = { powPrefs?.let { viewModel.togglePow(it) } }) {
+                            Icon(
+                                Icons.Outlined.Shield,
+                                contentDescription = "Proof of Work",
+                                tint = if (powEnabled) WispThemeColors.zapColor
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        IconButton(onClick = { viewModel.togglePoll() }) {
+                            Icon(
+                                Icons.Outlined.BarChart,
+                                contentDescription = "Add poll",
+                                tint = if (pollEnabled) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        IconButton(onClick = {
+                            if (scheduleEnabled) {
+                                viewModel.toggleSchedule()
+                            } else {
+                                viewModel.toggleSchedule()
+                                showDatePicker = true
+                            }
+                        }) {
+                            Icon(
+                                Icons.Outlined.Schedule,
+                                contentDescription = "Schedule post",
+                                tint = if (scheduleEnabled) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        if (uploadProgress != null) {
+                            Spacer(Modifier.width(8.dp))
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                stringResource(R.string.compose_uploading),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Spacer(Modifier.weight(1f))
+
+                            if (content.text.isNotBlank()) {
+                            TextButton(
+                                onClick = onSaveDraft
+                            ) {
+                                Text(stringResource(R.string.btn_save_draft))
+                            }
+                        }
+                    }
+
+                    // Hashtag chips
+                    AnimatedVisibility(
+                        visible = hashtags.isNotEmpty(),
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.Top,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp, horizontal = 4.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Tag,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .padding(top = 2.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                hashtags.forEach { tag ->
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                    ) {
+                                        Text(
+                                            text = "#$tag",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Poll editor
+                    AnimatedVisibility(
+                        visible = pollEnabled,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            pollOptions.forEachIndexed { index, option ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = option,
+                                        onValueChange = { viewModel.updatePollOption(index, it) },
+                                        label = { Text(stringResource(R.string.poll_option, index + 1)) },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (pollOptions.size > 2) {
+                                        IconButton(
+                                            onClick = { viewModel.removePollOption(index) },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.Close,
+                                                contentDescription = "Remove option",
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(top = 4.dp)
+                            ) {
+                                if (pollOptions.size < 10) {
+                                    TextButton(onClick = { viewModel.addPollOption() }) {
+                                        Text(stringResource(R.string.poll_add_option))
+                                    }
+                                }
+                                Spacer(Modifier.weight(1f))
+                                FilterChip(
+                                    selected = pollType == Nip88.PollType.MULTIPLECHOICE,
+                                    onClick = { viewModel.togglePollType() },
+                                    label = {
+                                        Text(
+                                            if (pollType == Nip88.PollType.SINGLECHOICE) stringResource(R.string.poll_single_choice)
+                                            else stringResource(R.string.poll_multiple_choice)
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // NSFW feedback banner
+                    AnimatedVisibility(
+                        visible = explicit,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Warning,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = stringResource(R.string.content_marked_nsfw),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
+
+                    // Schedule info banner
+                    AnimatedVisibility(
+                        visible = scheduleEnabled && scheduleTimestamp != null,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clickable { showDatePicker = true }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Schedule,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                val formattedTime = scheduleTimestamp?.let {
+                                    val fmt = SimpleDateFormat("MMM d, yyyy 'at' h:mm a", Locale.getDefault())
+                                    fmt.format(Date(it * 1000))
+                                } ?: ""
+                                Text(
+                                    text = "Scheduled for $formattedTime",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "Remove schedule",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier
+                                        .size(18.dp)
+                                        .clickable { viewModel.toggleSchedule() }
+                                )
+                            }
+                        }
+                    }
+
+                    // Live preview
+                    AnimatedVisibility(
+                        visible = !imeVisible && (content.text.isNotBlank() || (pollEnabled && pollOptions.any { it.isNotBlank() })) && eventRepo != null
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                val userProfile = userPubkey?.let { profileRepo?.get(it) }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(bottom = 8.dp)
+                                ) {
+                                    ProfilePicture(url = userProfile?.picture, size = 32)
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = userProfile?.displayString ?: "You",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            text = "Preview",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                RichContent(
+                                    content = content.text,
+                                    eventRepo = eventRepo
+                                )
+                                // Poll preview
+                                if (pollEnabled) {
+                                    val previewOptions = pollOptions.filter { it.isNotBlank() }
+                                    if (previewOptions.isNotEmpty()) {
+                                        Spacer(Modifier.height(6.dp))
+                                        previewOptions.forEachIndexed { index, label ->
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 2.dp)
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                                                ) {
+                                                    Text(
+                                                        text = if (pollType == Nip88.PollType.SINGLECHOICE) "○" else "☐",
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text(
+                                                        text = label,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Text(
+                                            text = if (pollType == Nip88.PollType.SINGLECHOICE) "Single choice poll"
+                                                   else "Multiple choice poll",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(top = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    error?.let {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = it,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             }
 
-            // Bottom bar — always visible above keyboard
+            // Bottom bar — always visible above keyboard (shared by both modes)
             Column(modifier = Modifier.padding(horizontal = 16.dp).padding(top = 4.dp)) {
                     if (countdownSeconds != null) {
                     Row(
@@ -956,3 +1210,157 @@ private fun MentionCandidateRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun GalleryComposeSection(
+    uploadedUrls: List<String>,
+    uploadProgress: String?,
+    countdownSeconds: Int?,
+    onPickMedia: () -> Unit,
+    onRemoveUrl: (String) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (uploadedUrls.isEmpty()) {
+            // Empty state — prominent upload area
+            Surface(
+                onClick = onPickMedia,
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(4f / 3f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (uploadProgress != null) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(36.dp),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                uploadProgress,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Outlined.Image,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Tap to add photos or videos",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            // Image pager with uploaded media
+            val pagerState = rememberPagerState(pageCount = { uploadedUrls.size })
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(4f / 3f)
+                    .clip(RoundedCornerShape(16.dp))
+            ) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        AsyncImage(
+                            model = uploadedUrls[page],
+                            contentDescription = "Uploaded media ${page + 1}",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        // Remove button
+                        IconButton(
+                            onClick = { onRemoveUrl(uploadedUrls[page]) },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.5f))
+                        ) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Remove",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+                // Page indicator dots
+                if (uploadedUrls.size > 1) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 10.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        repeat(uploadedUrls.size) { index ->
+                            Box(
+                                modifier = Modifier
+                                    .padding(horizontal = 3.dp)
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (index == pagerState.currentPage)
+                                            Color.White
+                                        else
+                                            Color.White.copy(alpha = 0.4f)
+                                    )
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            // Add more / uploading indicator
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onPickMedia,
+                    enabled = uploadProgress == null && countdownSeconds == null,
+                    modifier = Modifier.height(36.dp)
+                ) {
+                    Icon(Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Add more", style = MaterialTheme.typography.labelMedium)
+                }
+                if (uploadProgress != null) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        uploadProgress,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        "${uploadedUrls.size} ${if (uploadedUrls.size == 1) "item" else "items"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}

@@ -34,6 +34,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.CoroutineContext
 
+enum class FeedContentFilter { ALL, TEXT_ONLY, GALLERY_ONLY, POLLS_ONLY }
+
 /**
  * Manages feed subscription lifecycle, feed type switching, engagement subscriptions,
  * relay feed status monitoring, and load-more pagination.
@@ -58,6 +60,10 @@ class FeedSubscriptionManager(
     private val pubkeyHex: String?,
     private val prefs: SharedPreferences
 ) {
+    companion object {
+        val FEED_KINDS = listOf(1, 6, 1068, 30023, 20, 21, 22)
+    }
+
     init {
         // Relay feed subs bypass RelayPool's seen-event dedup so events already
         // received by the main feed subscription can still appear in relay feeds.
@@ -90,6 +96,20 @@ class FeedSubscriptionManager(
 
     private val _trendingUsersLoading = MutableStateFlow(false)
     val trendingUsersLoading: StateFlow<Boolean> = _trendingUsersLoading
+
+    private val _feedContentFilter = MutableStateFlow(FeedContentFilter.ALL)
+    val feedContentFilter: StateFlow<FeedContentFilter> = _feedContentFilter
+
+    fun setFeedContentFilter(filter: FeedContentFilter) {
+        _feedContentFilter.value = filter
+        // Client-side filter: rebuild the filtered feed view
+        when (filter) {
+            FeedContentFilter.ALL -> eventRepo.setKindFilter(null)
+            FeedContentFilter.TEXT_ONLY -> eventRepo.setKindFilter(setOf(1, 6, 30023))
+            FeedContentFilter.GALLERY_ONLY -> eventRepo.setKindFilter(setOf(20, 21, 22))
+            FeedContentFilter.POLLS_ONLY -> eventRepo.setKindFilter(setOf(Nip88.KIND_POLL))
+        }
+    }
 
     private val _relayFeedStatus = MutableStateFlow<RelayFeedStatus>(RelayFeedStatus.Idle)
     val relayFeedStatus: StateFlow<RelayFeedStatus> = _relayFeedStatus
@@ -308,7 +328,7 @@ class FeedSubscriptionManager(
                     return
                 }
                 Log.d("RLC", "[FeedSub] resubscribeFeed: ${allAuthors.size} authors, ${indexerRelays.size} indexers, ${excludedUrls.size} excluded")
-                val notesFilter = Filter(kinds = listOf(1, 6, 1068, 30023), since = sinceTimestamp)
+                val notesFilter = Filter(kinds = FEED_KINDS, since = sinceTimestamp)
                 outboxRouter.subscribeByAuthors(
                     feedSubId, allAuthors, notesFilter,
                     indexerRelays = indexerRelays, blockedUrls = excludedUrls
@@ -345,7 +365,7 @@ class FeedSubscriptionManager(
                         subManager.awaitEoseCount(prefetchSubId, prefetchTarget, timeoutMs = 5000)
                         subManager.closeSubscription(prefetchSubId)
                         Log.d("RLC", "[FeedSub] list relay-list prefetch done, now subscribing feed")
-                        val notesFilter = Filter(kinds = listOf(1, 6, 1068, 30023), since = listSince)
+                        val notesFilter = Filter(kinds = FEED_KINDS, since = listSince)
                         val targeted = outboxRouter.subscribeByAuthors(
                             feedSubId, authors, notesFilter,
                             indexerRelays = indexerRelays, blockedUrls = excludedUrls
@@ -366,7 +386,7 @@ class FeedSubscriptionManager(
                     return
                 }
 
-                val notesFilter = Filter(kinds = listOf(1, 6, 1068, 30023), since = listSince)
+                val notesFilter = Filter(kinds = FEED_KINDS, since = listSince)
                 outboxRouter.subscribeByAuthors(
                     feedSubId, authors, notesFilter,
                     indexerRelays = indexerRelays, blockedUrls = excludedUrls
@@ -425,7 +445,14 @@ class FeedSubscriptionManager(
                     listOfNotNull(pubkeyHex) + firstDegree
                 }
                 if (allAuthors.isEmpty()) { isLoadingMore = false; return }
-                val templateFilter = Filter(kinds = listOf(1, 6, 1068, 30023), until = oldest - 1, limit = 50)
+                // Use content-specific kinds when a filter is active
+                val loadMoreKinds = when (_feedContentFilter.value) {
+                    FeedContentFilter.GALLERY_ONLY -> listOf(20, 21, 22)
+                    FeedContentFilter.TEXT_ONLY -> listOf(1, 6, 30023)
+                    FeedContentFilter.POLLS_ONLY -> listOf(Nip88.KIND_POLL)
+                    FeedContentFilter.ALL -> FEED_KINDS
+                }
+                val templateFilter = Filter(kinds = loadMoreKinds, until = oldest - 1, limit = 50)
                 outboxRouter.subscribeByAuthors(
                     "loadmore", allAuthors, templateFilter,
                     indexerRelays = indexerRelays, blockedUrls = excludedUrls
@@ -435,7 +462,7 @@ class FeedSubscriptionManager(
                 val oldest = eventRepo.getOldestRelayFeedTimestamp() ?: run { isLoadingMore = false; return }
                 val relaySet = _selectedRelaySet.value
                 if (relaySet != null) {
-                    val filter = Filter(kinds = listOf(1, 6, 1068, 30023), until = oldest - 1, limit = 50)
+                    val filter = Filter(kinds = FEED_KINDS, until = oldest - 1, limit = 50)
                     val msg = ClientMessage.req("relay-loadmore", filter)
                     for (setUrl in relaySet.relays) {
                         relayPool.sendToRelayOrEphemeral(setUrl, msg, skipBadCheck = true)
@@ -443,7 +470,7 @@ class FeedSubscriptionManager(
                 } else {
                     val url = _selectedRelay.value
                     if (url != null) {
-                        val filter = Filter(kinds = listOf(1, 6, 1068, 30023), until = oldest - 1, limit = 50)
+                        val filter = Filter(kinds = FEED_KINDS, until = oldest - 1, limit = 50)
                         relayPool.sendToRelayOrEphemeral(url, ClientMessage.req("relay-loadmore", filter), skipBadCheck = true)
                     } else { isLoadingMore = false; return }
                 }
@@ -462,7 +489,7 @@ class FeedSubscriptionManager(
                         val prefetchTarget = maxOf(2, (connected * 0.2).toInt())
                         subManager.awaitEoseCount(prefetchSubId, prefetchTarget, timeoutMs = 5000)
                         subManager.closeSubscription(prefetchSubId)
-                        val templateFilter = Filter(kinds = listOf(1, 6, 1068, 30023), until = oldest - 1)
+                        val templateFilter = Filter(kinds = FEED_KINDS, until = oldest - 1)
                         outboxRouter.subscribeByAuthors(
                             "loadmore", authors, templateFilter,
                             indexerRelays = indexerRelays, blockedUrls = excludedUrls
@@ -482,7 +509,7 @@ class FeedSubscriptionManager(
                     return
                 }
 
-                val templateFilter = Filter(kinds = listOf(1, 6, 1068, 30023), until = oldest - 1)
+                val templateFilter = Filter(kinds = FEED_KINDS, until = oldest - 1)
                 outboxRouter.subscribeByAuthors(
                     "loadmore", authors, templateFilter,
                     indexerRelays = indexerRelays, blockedUrls = excludedUrls
@@ -583,7 +610,7 @@ class FeedSubscriptionManager(
         val url = buildTrendingRelayUrl(_trendingMetric.value, _trendingTimeframe.value)
         _relayFeedStatus.value = RelayFeedStatus.Connecting
 
-        val filter = Filter(kinds = listOf(1, 6, 1068, 30023), limit = 100)
+        val filter = Filter(kinds = FEED_KINDS, limit = 100)
         val currentGen = relayFeedGeneration
         val subId = relayFeedSubId
 
@@ -726,7 +753,7 @@ class FeedSubscriptionManager(
         if (relaySet != null) {
             relayStatusMonitorJob?.cancel()
             _relayFeedStatus.value = RelayFeedStatus.Subscribing
-            val filter = Filter(kinds = listOf(1, 6, 1068, 30023), limit = 100)
+            val filter = Filter(kinds = FEED_KINDS, limit = 100)
             val msg = ClientMessage.req(relayFeedSubId, filter)
             val sentUrls = mutableSetOf<String>()
             for (setUrl in relaySet.relays) {
@@ -753,7 +780,7 @@ class FeedSubscriptionManager(
             if (status is RelayFeedStatus.Cooldown || status is RelayFeedStatus.BadRelay) {
                 return
             }
-            val filter = Filter(kinds = listOf(1, 6, 1068, 30023), limit = 100)
+            val filter = Filter(kinds = FEED_KINDS, limit = 100)
             val msg = ClientMessage.req(relayFeedSubId, filter)
             val sent = relayPool.sendToRelayOrEphemeral(url, msg, skipBadCheck = true)
             if (!sent) {

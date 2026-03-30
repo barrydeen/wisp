@@ -3,6 +3,7 @@ package com.wisp.app.ui.screen
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -88,6 +89,8 @@ import com.wisp.app.repo.TranslationRepository
 import com.wisp.app.ui.component.FollowButton
 import com.wisp.app.ui.component.ContentSegment
 import com.wisp.app.ui.component.FullScreenImageViewer
+import com.wisp.app.ui.component.GalleryCard
+import com.wisp.app.ui.component.isGalleryEvent
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.parseContent
 import com.wisp.app.ui.component.parseImetaTags
@@ -349,7 +352,7 @@ fun UserProfileScreen(
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showSortDropdown by remember { mutableStateOf(false) }
 
-    if (selectedTab == 4) {
+    if (selectedTab == 5) {
         LaunchedEffect(Unit) { viewModel.loadFollowers() }
     }
 
@@ -359,6 +362,7 @@ fun UserProfileScreen(
     val tabTitles = listOf(
         stringResource(R.string.profile_tab_notes),
         stringResource(R.string.profile_tab_replies),
+        stringResource(R.string.profile_tab_gallery),
         stringResource(R.string.profile_tab_media),
         stringResource(R.string.profile_tab_following),
         stringResource(R.string.profile_tab_followers),
@@ -467,8 +471,9 @@ fun UserProfileScreen(
             )
         }
     ) { padding ->
+        val galleryPosts by viewModel.galleryPosts.collectAsState()
         val mediaItems = remember(rootNotes.size, replies.size, selectedTab) {
-            if (selectedTab != 2) emptyList()
+            if (selectedTab != 3) emptyList()
             else (rootNotes + replies)
                 .sortedByDescending { it.created_at }
                 .flatMap { event ->
@@ -488,7 +493,7 @@ fun UserProfileScreen(
         val listState = rememberLazyListState()
 
         // Auto-load more media when scrolling near the bottom of the grid
-        if (selectedTab == 2 && mediaItems.isNotEmpty()) {
+        if (selectedTab == 3 && mediaItems.isNotEmpty()) {
             LaunchedEffect(listState) {
                 snapshotFlow {
                     val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -770,6 +775,74 @@ fun UserProfileScreen(
                         }
                     }
                 }
+                2 -> {
+                    // Gallery tab — 2-column grid of gallery posts
+                    if (galleryPosts.isEmpty()) {
+                        item { EmptyTabContent(stringResource(R.string.profile_no_gallery)) }
+                    } else {
+                        items(items = galleryPosts.chunked(2), key = { row -> row.first().id }) { row ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 2.dp),
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                for (event in row) {
+                                    val firstMedia = remember(event.id) {
+                                        val img = com.wisp.app.nostr.Nip68.parseImetaEntries(event).firstOrNull()
+                                        val vid = com.wisp.app.nostr.Nip71.parseVideoMeta(event).firstOrNull()
+                                        Triple(img?.url ?: vid?.thumbnailUrl, vid != null && img == null, event)
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .aspectRatio(1f)
+                                            .padding(1.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .clickable { onNoteClick(event) }
+                                    ) {
+                                        if (firstMedia.first != null) {
+                                            coil3.compose.AsyncImage(
+                                                model = firstMedia.first,
+                                                contentDescription = null,
+                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                            )
+                                        }
+                                        // Play icon overlay for video posts
+                                        if (firstMedia.second) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.Center)
+                                                    .size(32.dp)
+                                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                                    .background(Color.Black.copy(alpha = 0.5f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.PlayArrow,
+                                                    contentDescription = "Video",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                // Fill remaining space if odd number
+                                if (row.size == 1) {
+                                    Spacer(Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+                }
                 1 -> if (isBlocked && !blockedContentRevealed) {
                     item { BlockedContentOverlay(onReveal = { blockedContentRevealed = true }) }
                 } else {
@@ -872,7 +945,7 @@ fun UserProfileScreen(
                         }
                     }
                 }
-                2 -> {
+                3 -> {
                     if (mediaItems.isEmpty()) {
                         item { EmptyTabContent(stringResource(R.string.profile_no_media)) }
                     } else {
@@ -885,7 +958,7 @@ fun UserProfileScreen(
                         }
                     }
                 }
-                3 -> {
+                4 -> {
                     if (followList.isEmpty()) {
                         item { EmptyTabContent(stringResource(R.string.profile_not_following)) }
                     } else {
@@ -904,7 +977,7 @@ fun UserProfileScreen(
                         }
                     }
                 }
-                4 -> {
+                5 -> {
                     if (followersLoading && followers.isEmpty()) {
                         item {
                             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(32.dp)) {
@@ -924,7 +997,7 @@ fun UserProfileScreen(
                         }
                     }
                 }
-                5 -> {
+                6 -> {
                     if (groupsLoading && groups.isEmpty()) {
                         item {
                             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(32.dp)) {
@@ -949,7 +1022,7 @@ fun UserProfileScreen(
                         }
                     }
                 }
-                6 -> {
+                7 -> {
                     if (relayList.isEmpty() && relayHints.isEmpty()) {
                         item { EmptyTabContent(stringResource(R.string.profile_no_relays)) }
                     } else {
