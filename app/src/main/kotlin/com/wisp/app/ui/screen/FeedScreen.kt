@@ -117,7 +117,7 @@ import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
-import androidx.compose.material.icons.outlined.DynamicFeed
+import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Hub
@@ -817,7 +817,7 @@ fun FeedScreen(
                                 viewModel.setFeedContentFilter(next)
                             }) {
                                 val (icon, tint) = when (contentFilter) {
-                                    FeedContentFilter.ALL -> Icons.Outlined.DynamicFeed to MaterialTheme.colorScheme.onSurfaceVariant
+                                    FeedContentFilter.ALL -> Icons.Outlined.Dashboard to MaterialTheme.colorScheme.onSurfaceVariant
                                     FeedContentFilter.TEXT_ONLY -> Icons.AutoMirrored.Outlined.Article to MaterialTheme.colorScheme.primary
                                     FeedContentFilter.GALLERY_ONLY -> Icons.Outlined.Photo to MaterialTheme.colorScheme.primary
                                 }
