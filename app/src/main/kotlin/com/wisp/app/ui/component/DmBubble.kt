@@ -86,6 +86,7 @@ fun DmBubble(
     onProfileClick: ((String) -> Unit)? = null,
     onNoteClick: ((String) -> Unit)? = null,
     onDebugTap: ((DmMessage) -> Unit)? = null,
+    noteActions: NoteActions? = null,
     modifier: Modifier = Modifier
 ) {
     var showDetails by remember(message.id) { mutableStateOf(false) }
@@ -190,7 +191,8 @@ fun DmBubble(
                         linkColor = textColor,
                         eventRepo = eventRepo,
                         onProfileClick = onProfileClick,
-                        onNoteClick = onNoteClick
+                        onNoteClick = onNoteClick,
+                        noteActions = noteActions
                     )
 
                     Row(verticalAlignment = Alignment.CenterVertically) {

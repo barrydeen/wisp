@@ -1125,7 +1125,13 @@ fun WispNavHost(
                     val encodedRelay = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(relayUrl.toByteArray())
                     navController.navigate("group_room/$encodedRelay/${android.net.Uri.encode(groupId)}")
                 },
-                fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) }
+                fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) },
+                onAddEmojiSet = { pk, dTag -> feedViewModel.addSetToEmojiList(pk, dTag) },
+                onRemoveEmojiSet = { pk, dTag -> feedViewModel.removeSetFromEmojiList(pk, dTag) },
+                isEmojiSetAdded = { pk, dTag ->
+                    val ref = com.wisp.app.nostr.Nip30.buildSetReference(pk, dTag)
+                    feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
+                }
             )
             if (showProfileEmojiLibrary) {
                 com.wisp.app.ui.component.EmojiLibrarySheet(
@@ -1221,7 +1227,13 @@ fun WispNavHost(
                 onAddToList = { eventId -> addToListEventId = eventId },
                 onDeleteEvent = { eventId, kind -> feedViewModel.deleteEvent(eventId, kind) },
                 translationRepo = feedViewModel.translationRepo,
-                onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) }
+                onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
+                onAddEmojiSet = { pubkey, dTag -> feedViewModel.addSetToEmojiList(pubkey, dTag) },
+                onRemoveEmojiSet = { pubkey, dTag -> feedViewModel.removeSetFromEmojiList(pubkey, dTag) },
+                isEmojiSetAdded = { pubkey, dTag ->
+                    val ref = com.wisp.app.nostr.Nip30.buildSetReference(pubkey, dTag)
+                    feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
+                }
             )
         }
 
@@ -1315,7 +1327,17 @@ fun WispNavHost(
                 signer = activeSigner,
                 socialActionManager = feedViewModel.socialActions,
                 isWalletConnected = feedViewModel.activeWalletProvider.hasConnection(),
-                onGoToWallet = { navController.navigate(Routes.WALLET) }
+                onGoToWallet = { navController.navigate(Routes.WALLET) },
+                noteActions = remember {
+                    com.wisp.app.ui.component.NoteActions(
+                        onAddEmojiSet = { pk, dTag -> feedViewModel.addSetToEmojiList(pk, dTag) },
+                        onRemoveEmojiSet = { pk, dTag -> feedViewModel.removeSetFromEmojiList(pk, dTag) },
+                        isEmojiSetAdded = { pk, dTag ->
+                            val ref = com.wisp.app.nostr.Nip30.buildSetReference(pk, dTag)
+                            feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
+                        }
+                    )
+                }
             )
         }
 
@@ -1362,7 +1384,17 @@ fun WispNavHost(
                 signer = activeSigner,
                 socialActionManager = feedViewModel.socialActions,
                 isWalletConnected = feedViewModel.activeWalletProvider.hasConnection(),
-                onGoToWallet = { navController.navigate(Routes.WALLET) }
+                onGoToWallet = { navController.navigate(Routes.WALLET) },
+                noteActions = remember {
+                    com.wisp.app.ui.component.NoteActions(
+                        onAddEmojiSet = { pk, dTag -> feedViewModel.addSetToEmojiList(pk, dTag) },
+                        onRemoveEmojiSet = { pk, dTag -> feedViewModel.removeSetFromEmojiList(pk, dTag) },
+                        isEmojiSetAdded = { pk, dTag ->
+                            val ref = com.wisp.app.nostr.Nip30.buildSetReference(pk, dTag)
+                            feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
+                        }
+                    )
+                }
             )
         }
 
@@ -1528,7 +1560,17 @@ fun WispNavHost(
                 zapVersion = groupRoomZapVersion,
                 zapAnimatingIds = groupRoomZapAnimatingIds,
                 zapInProgressIds = groupRoomZapInProgress,
-                onOpenEmojiLibrary = { showGroupRoomEmojiLibrary = true }
+                onOpenEmojiLibrary = { showGroupRoomEmojiLibrary = true },
+                noteActions = remember {
+                    com.wisp.app.ui.component.NoteActions(
+                        onAddEmojiSet = { pk, dTag -> feedViewModel.addSetToEmojiList(pk, dTag) },
+                        onRemoveEmojiSet = { pk, dTag -> feedViewModel.removeSetFromEmojiList(pk, dTag) },
+                        isEmojiSetAdded = { pk, dTag ->
+                            val ref = com.wisp.app.nostr.Nip30.buildSetReference(pk, dTag)
+                            feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
+                        }
+                    )
+                }
             )
             if (showGroupRoomEmojiLibrary) {
                 val groupRoomSheetUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
@@ -1742,7 +1784,13 @@ fun WispNavHost(
                     val encodedRelay = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(relayUrl.toByteArray())
                     navController.navigate("group_room/$encodedRelay/${android.net.Uri.encode(groupId)}")
                 },
-                fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) }
+                fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) },
+                onAddEmojiSet = { pubkey, dTag -> feedViewModel.addSetToEmojiList(pubkey, dTag) },
+                onRemoveEmojiSet = { pubkey, dTag -> feedViewModel.removeSetFromEmojiList(pubkey, dTag) },
+                isEmojiSetAdded = { pubkey, dTag ->
+                    val ref = com.wisp.app.nostr.Nip30.buildSetReference(pubkey, dTag)
+                    feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
+                }
             )
 
             if (showThreadEmojiLibrary) {
@@ -1817,7 +1865,13 @@ fun WispNavHost(
                         navController.navigate("group_room/$encoded/${android.net.Uri.encode(groupId)}")
                     },
                     groupMetadataProvider = { relayUrl, groupId -> feedViewModel.groupRepo.getRoom(relayUrl, groupId)?.metadata },
-                    fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) }
+                    fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) },
+                    onAddEmojiSet = { pubkey, dTag -> feedViewModel.addSetToEmojiList(pubkey, dTag) },
+                    onRemoveEmojiSet = { pubkey, dTag -> feedViewModel.removeSetFromEmojiList(pubkey, dTag) },
+                    isEmojiSetAdded = { pubkey, dTag ->
+                        val ref = com.wisp.app.nostr.Nip30.buildSetReference(pubkey, dTag)
+                        feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
+                    }
                 )
             }
             val interestSets by feedViewModel.interestRepo.sets.collectAsState()
@@ -1918,7 +1972,13 @@ fun WispNavHost(
                         navController.navigate("group_room/$encoded/${android.net.Uri.encode(groupId)}")
                     },
                     groupMetadataProvider = { relayUrl, groupId -> feedViewModel.groupRepo.getRoom(relayUrl, groupId)?.metadata },
-                    fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) }
+                    fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) },
+                    onAddEmojiSet = { pubkey, dTag -> feedViewModel.addSetToEmojiList(pubkey, dTag) },
+                    onRemoveEmojiSet = { pubkey, dTag -> feedViewModel.removeSetFromEmojiList(pubkey, dTag) },
+                    isEmojiSetAdded = { pubkey, dTag ->
+                        val ref = com.wisp.app.nostr.Nip30.buildSetReference(pubkey, dTag)
+                        feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
+                    }
                 )
             }
             val interestSets by feedViewModel.interestRepo.sets.collectAsState()
@@ -2066,7 +2126,13 @@ fun WispNavHost(
                         navController.navigate("group_room/$encoded/${android.net.Uri.encode(groupId)}")
                     },
                     groupMetadataProvider = { relayUrl, groupId -> feedViewModel.groupRepo.getRoom(relayUrl, groupId)?.metadata },
-                    fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) }
+                    fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) },
+                    onAddEmojiSet = { pubkey, dTag -> feedViewModel.addSetToEmojiList(pubkey, dTag) },
+                    onRemoveEmojiSet = { pubkey, dTag -> feedViewModel.removeSetFromEmojiList(pubkey, dTag) },
+                    isEmojiSetAdded = { pubkey, dTag ->
+                        val ref = com.wisp.app.nostr.Nip30.buildSetReference(pubkey, dTag)
+                        feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
+                    }
                 )
             }
 
@@ -2708,7 +2774,13 @@ fun WispNavHost(
                     val encodedRelay = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(relayUrl.toByteArray())
                     navController.navigate("group_room/$encodedRelay/${android.net.Uri.encode(groupId)}")
                 },
-                fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) }
+                fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) },
+                onAddEmojiSet = { pk, dTag -> feedViewModel.addSetToEmojiList(pk, dTag) },
+                onRemoveEmojiSet = { pk, dTag -> feedViewModel.removeSetFromEmojiList(pk, dTag) },
+                isEmojiSetAdded = { pk, dTag ->
+                    val ref = com.wisp.app.nostr.Nip30.buildSetReference(pk, dTag)
+                    feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
+                }
             )
 
             if (showNotifEmojiLibrary) {

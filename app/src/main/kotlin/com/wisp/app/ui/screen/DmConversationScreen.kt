@@ -99,7 +99,8 @@ fun DmConversationScreen(
     signer: NostrSigner? = null,
     socialActionManager: SocialActionManager? = null,
     isWalletConnected: Boolean = false,
-    onGoToWallet: () -> Unit = {}
+    onGoToWallet: () -> Unit = {},
+    noteActions: com.wisp.app.ui.component.NoteActions? = null
 ) {
     val messages by viewModel.messages.collectAsState()
     val messageText by viewModel.messageText.collectAsState()
@@ -363,7 +364,8 @@ fun DmConversationScreen(
                             zapSats = msg.zaps.sumOf { it.sats }.coerceAtLeast(zapSatsMap[msg.id] ?: 0L),
                             onProfileClick = onProfileClick,
                             onNoteClick = onNoteClick,
-                            onDebugTap = { debugMessage = it }
+                            onDebugTap = { debugMessage = it },
+                            noteActions = noteActions
                         )
                     }
                     val dateKey = dayKey(msg.createdAt)

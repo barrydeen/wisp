@@ -105,7 +105,10 @@ fun SearchScreen(
     onAddToList: (String) -> Unit = {},
     onDeleteEvent: (String, Int) -> Unit = { _, _ -> },
     translationRepo: TranslationRepository? = null,
-    onPollVote: (String, List<String>) -> Unit = { _, _ -> }
+    onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    onAddEmojiSet: ((String, String) -> Unit)? = null,
+    onRemoveEmojiSet: ((String, String) -> Unit)? = null,
+    isEmojiSetAdded: ((String, String) -> Boolean)? = null
 ) {
     val query by viewModel.query.collectAsState()
     val filter by viewModel.filter.collectAsState()
@@ -132,6 +135,9 @@ fun SearchScreen(
             onProfileClick = onProfileClick,
             onNoteClick = { eventId -> onQuotedNoteClick?.invoke(eventId) },
             userPubkey = userPubkey,
+            onAddEmojiSet = onAddEmojiSet,
+            onRemoveEmojiSet = onRemoveEmojiSet,
+            isEmojiSetAdded = isEmojiSetAdded,
         )
     }
 

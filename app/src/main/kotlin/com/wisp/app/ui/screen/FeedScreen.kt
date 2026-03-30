@@ -319,7 +319,13 @@ fun FeedScreen(
             onPayInvoice = { bolt11 -> viewModel.payInvoice(bolt11) },
             onGroupRoom = onGroupRoom,
             groupMetadataProvider = { relayUrl, groupId -> viewModel.groupRepo.getRoom(relayUrl, groupId)?.metadata },
-            fetchGroupPreview = fetchGroupPreview
+            fetchGroupPreview = fetchGroupPreview,
+            onAddEmojiSet = { pubkey, dTag -> viewModel.addSetToEmojiList(pubkey, dTag) },
+            onRemoveEmojiSet = { pubkey, dTag -> viewModel.removeSetFromEmojiList(pubkey, dTag) },
+            isEmojiSetAdded = { pubkey, dTag ->
+                val ref = com.wisp.app.nostr.Nip30.buildSetReference(pubkey, dTag)
+                viewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
+            }
         )
     }
 

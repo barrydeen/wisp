@@ -160,6 +160,9 @@ fun NotificationsScreen(
     onPayInvoice: (suspend (String) -> Boolean)? = null,
     onGroupRoom: ((String, String) -> Unit)? = null,
     fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null,
+    onAddEmojiSet: ((String, String) -> Unit)? = null,
+    onRemoveEmojiSet: ((String, String) -> Unit)? = null,
+    isEmojiSetAdded: ((String, String) -> Boolean)? = null,
 ) {
     val notifications by viewModel.filteredFlatNotifications.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -224,7 +227,10 @@ fun NotificationsScreen(
             onPollVote = onPollVote,
             onPayInvoice = onPayInvoice,
             onGroupRoom = onGroupRoom,
-            fetchGroupPreview = fetchGroupPreview
+            fetchGroupPreview = fetchGroupPreview,
+            onAddEmojiSet = onAddEmojiSet,
+            onRemoveEmojiSet = onRemoveEmojiSet,
+            isEmojiSetAdded = isEmojiSetAdded
         )
     }
 
@@ -982,11 +988,14 @@ private fun ReferencedNotePostCard(
         onPollVote = { optionIds -> params.onPollVote(event.id, optionIds) },
         noteActions = run {
             val p = params
-            if (p.onPayInvoice != null || p.onGroupRoom != null || p.fetchGroupPreview != null) {
+            if (p.onPayInvoice != null || p.onGroupRoom != null || p.fetchGroupPreview != null || p.onAddEmojiSet != null) {
                 com.wisp.app.ui.component.NoteActions(
                     onPayInvoice = p.onPayInvoice,
                     onGroupRoom = p.onGroupRoom,
-                    fetchGroupPreview = p.fetchGroupPreview
+                    fetchGroupPreview = p.fetchGroupPreview,
+                    onAddEmojiSet = p.onAddEmojiSet,
+                    onRemoveEmojiSet = p.onRemoveEmojiSet,
+                    isEmojiSetAdded = p.isEmojiSetAdded
                 )
             } else null
         },
@@ -1029,7 +1038,10 @@ private data class NotifPostCardParams(
     val onPollVote: (String, List<String>) -> Unit = { _, _ -> },
     val onPayInvoice: (suspend (String) -> Boolean)? = null,
     val onGroupRoom: ((String, String) -> Unit)? = null,
-    val fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null
+    val fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null,
+    val onAddEmojiSet: ((String, String) -> Unit)? = null,
+    val onRemoveEmojiSet: ((String, String) -> Unit)? = null,
+    val isEmojiSetAdded: ((String, String) -> Boolean)? = null
 )
 
 // ── Inline Sent Reply ──────────────────────────────────────────────────

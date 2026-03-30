@@ -92,7 +92,10 @@ fun ThreadScreen(
     onOpenEmojiLibrary: (() -> Unit)? = null,
     onPollVote: (String, List<String>) -> Unit = { _, _ -> },
     onGroupRoom: ((String, String) -> Unit)? = null,
-    fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null
+    fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null,
+    onAddEmojiSet: ((String, String) -> Unit)? = null,
+    onRemoveEmojiSet: ((String, String) -> Unit)? = null,
+    isEmojiSetAdded: ((String, String) -> Boolean)? = null
 ) {
     val flatThread by viewModel.flatThread.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -160,7 +163,10 @@ fun ThreadScreen(
             onArticleClick = onArticleClick,
             onPayInvoice = onPayInvoice,
             onGroupRoom = onGroupRoom,
-            fetchGroupPreview = fetchGroupPreview
+            fetchGroupPreview = fetchGroupPreview,
+            onAddEmojiSet = onAddEmojiSet,
+            onRemoveEmojiSet = onRemoveEmojiSet,
+            isEmojiSetAdded = isEmojiSetAdded
         )
     }
 

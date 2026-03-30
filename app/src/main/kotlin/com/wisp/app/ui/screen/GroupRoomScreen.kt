@@ -136,7 +136,8 @@ fun GroupRoomScreen(
     zapVersion: Int = 0,
     zapAnimatingIds: Set<String> = emptySet(),
     zapInProgressIds: Set<String> = emptySet(),
-    onOpenEmojiLibrary: (() -> Unit)? = null
+    onOpenEmojiLibrary: (() -> Unit)? = null,
+    noteActions: com.wisp.app.ui.component.NoteActions? = null
 ) {
     val textFieldFocus = remember { FocusRequester() }
 
@@ -299,7 +300,8 @@ fun GroupRoomScreen(
                                 viewModel.sendReaction(msgId, pubkey, emoji, signer, relayPool, resolvedEmojis)
                             },
                             onZap = onZap,
-                            onOpenEmojiLibrary = onOpenEmojiLibrary
+                            onOpenEmojiLibrary = onOpenEmojiLibrary,
+                            noteActions = noteActions
                         )
                     }
                 }
@@ -730,7 +732,8 @@ private fun GroupMessageBubble(
     onReply: (GroupMessage) -> Unit,
     onReact: (messageId: String, senderPubkey: String, emoji: String) -> Unit,
     onZap: ((messageId: String, senderPubkey: String) -> Unit)? = null,
-    onOpenEmojiLibrary: (() -> Unit)? = null
+    onOpenEmojiLibrary: (() -> Unit)? = null,
+    noteActions: com.wisp.app.ui.component.NoteActions? = null
 ) {
     val profile = remember(message.senderPubkey) { eventRepo.getProfileData(message.senderPubkey) }
     val displayName = profile?.displayString ?: (message.senderPubkey.take(8) + "…")
@@ -878,7 +881,8 @@ private fun GroupMessageBubble(
                 color = MaterialTheme.colorScheme.onSurface,
                 emojiMap = messageEmojiMap,
                 eventRepo = eventRepo,
-                onProfileClick = onProfileClick
+                onProfileClick = onProfileClick,
+                noteActions = noteActions
             )
 
             // Per-emoji reaction badges

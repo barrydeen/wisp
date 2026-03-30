@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -96,6 +97,7 @@ import androidx.compose.material3.TextButton
 import com.wisp.app.R
 import com.wisp.app.nostr.Bolt11
 import com.wisp.app.nostr.Nip19
+import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.toHex
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrUriData
@@ -151,6 +153,9 @@ data class NoteActions(
     val onGroupRoom: ((String, String) -> Unit)? = null,
     val groupMetadataProvider: ((String, String) -> Nip29.GroupMetadata?)? = null,
     val fetchGroupPreview: (suspend (String, String) -> GroupPreview?)? = null,
+    val onAddEmojiSet: ((pubkey: String, dTag: String) -> Unit)? = null,
+    val onRemoveEmojiSet: ((pubkey: String, dTag: String) -> Unit)? = null,
+    val isEmojiSetAdded: ((pubkey: String, dTag: String) -> Boolean)? = null,
 )
 
 internal sealed interface ContentSegment {
@@ -844,6 +849,22 @@ fun RichContent(
                                     UnsupportedKindBadge(kind = kind, style = style)
                                 }
                             }
+                            kind == 30030 -> {
+                                if (eventRepo != null && segment.author != null) {
+                                    EmojiPackCard(
+                                        dTag = segment.dTag,
+                                        author = segment.author,
+                                        relayHints = segment.relays,
+                                        eventRepo = eventRepo,
+                                        onProfileClick = onProfileClick,
+                                        onAddEmojiSet = noteActions?.onAddEmojiSet,
+                                        onRemoveEmojiSet = noteActions?.onRemoveEmojiSet,
+                                        isEmojiSetAdded = noteActions?.isEmojiSetAdded
+                                    )
+                                } else {
+                                    UnsupportedKindBadge(kind = kind, style = style)
+                                }
+                            }
                             else -> UnsupportedKindBadge(kind = kind, style = style)
                         }
                     }
@@ -1383,6 +1404,188 @@ private fun LiveStreamCard(
                                 Modifier.clickable { onProfileClick(author) }
                             } else Modifier
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmojiPackCard(
+    dTag: String,
+    author: String,
+    relayHints: List<String>,
+    eventRepo: EventRepository,
+    onProfileClick: ((String) -> Unit)?,
+    onAddEmojiSet: ((String, String) -> Unit)?,
+    onRemoveEmojiSet: ((String, String) -> Unit)?,
+    isEmojiSetAdded: ((String, String) -> Boolean)?
+) {
+    val version by eventRepo.quotedEventVersion.collectAsState()
+    val event = remember(author, dTag, version) {
+        eventRepo.findAddressableEvent(30030, author, dTag)
+    }
+    val profile = remember(author, version) { eventRepo.getProfileData(author) }
+
+    // Fetch if not cached; retry once after a delay if the first attempt got no result
+    LaunchedEffect(author, dTag) {
+        if (eventRepo.findAddressableEvent(30030, author, dTag) == null) {
+            eventRepo.requestAddressableEvent(30030, author, dTag, relayHints)
+            delay(8_000)
+            if (eventRepo.findAddressableEvent(30030, author, dTag) == null) {
+                eventRepo.requestAddressableEvent(30030, author, dTag, relayHints)
+            }
+        }
+    }
+
+    val emojiSet = remember(event) { event?.let { Nip30.parseEmojiSet(it) } }
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        if (emojiSet == null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(14.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.width(14.dp).height(14.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Loading emoji pack...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                // Header: badge + title
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Text(
+                            text = "EMOJI PACK",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Text(
+                        text = emojiSet.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                // Emoji grid
+                if (emojiSet.emojis.isNotEmpty()) {
+                    val maxDisplay = 15
+                    val displayEmojis = emojiSet.emojis.take(maxDisplay)
+                    val remaining = emojiSet.emojis.size - maxDisplay
+
+                    // Use chunked rows for wrapping layout
+                    val rows = displayEmojis.chunked(8)
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        for (row in rows) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                for (emoji in row) {
+                                    AsyncImage(
+                                        model = emoji.url,
+                                        contentDescription = emoji.shortcode,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                            }
+                        }
+                        if (remaining > 0) {
+                            Text(
+                                text = "+$remaining more",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // Footer: author + count
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 6.dp)
+                ) {
+                    ProfilePicture(url = profile?.picture, size = 20)
+                    Spacer(Modifier.width(6.dp))
+                    val displayName = profile?.displayString
+                        ?: "${author.take(8)}...${author.takeLast(4)}"
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = if (onProfileClick != null) {
+                            Modifier.clickable { onProfileClick(author) }
+                        } else Modifier
+                    )
+                    Text(
+                        text = " \u00b7 ${emojiSet.emojis.size} emojis",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+
+                // Add/Remove button
+                if (onAddEmojiSet != null) {
+                    var isAdded by remember(author, dTag) {
+                        mutableStateOf(isEmojiSetAdded?.invoke(author, dTag) ?: false)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        if (isAdded) {
+                            TextButton(
+                                onClick = {
+                                    onRemoveEmojiSet?.invoke(author, dTag)
+                                    isAdded = false
+                                },
+                                enabled = true
+                            ) {
+                                Text(
+                                    text = "Added \u2713",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            TextButton(
+                                onClick = {
+                                    onAddEmojiSet(author, dTag)
+                                    isAdded = true
+                                }
+                            ) {
+                                Text(
+                                    text = "Add",
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                     }
                 }
             }
