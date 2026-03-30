@@ -219,7 +219,9 @@ fun ComposeScreen(
                     }
                 },
                 actions = {
-                    if (galleryMode) {
+                    if (replyTo != null || quoteTo != null) {
+                        // No gallery toggle when replying or quoting
+                    } else if (galleryMode) {
                         FilledTonalButton(
                             onClick = { viewModel.toggleGalleryMode() },
                             modifier = Modifier.padding(end = 8.dp)
