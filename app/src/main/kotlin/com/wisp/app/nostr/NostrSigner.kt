@@ -174,11 +174,17 @@ class RemoteSigner(
         data: String,
         peerPubkeyHex: String
     ): String {
+        val crMethod = if (type == "nip44_encrypt") "NIP44_ENCRYPT" else "NIP44_DECRYPT"
         val intent = buildSignerIntent("nostrsigner:$data", type) {
             putExtra("pubkey", peerPubkeyHex)
         }
         android.util.Log.d("RemoteSigner", "nip44ViaIntent: type=$type")
-        return when (val result = SignerIntentBridge.requestSign(intent)) {
+        // Retry ContentResolver under the mutex — a prior intent may have granted permission
+        // since our initial CR attempt, avoiding a redundant Amber popup.
+        val result = SignerIntentBridge.requestSignWithRetry(intent) {
+            tryContentResolver(crMethod, data, peerPubkeyHex)
+        }
+        return when (result) {
             is SignResult.Success -> result.result
             is SignResult.Rejected -> throw SignerRejectedException("Signer rejected $type")
             is SignResult.Cancelled -> throw SignerCancelledException("$type cancelled by user")
