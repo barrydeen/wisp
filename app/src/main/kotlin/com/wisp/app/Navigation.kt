@@ -1313,6 +1313,7 @@ fun WispNavHost(
             }
             val peerProfile = feedViewModel.eventRepo.getProfileData(pubkey)
             val userProfile = userPubkey?.let { feedViewModel.eventRepo.getProfileData(it) }
+            val dmResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
             DmConversationScreen(
                 viewModel = dmConvoViewModel,
                 relayPool = feedViewModel.relayPool,
@@ -1338,7 +1339,8 @@ fun WispNavHost(
                             feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
                         }
                     )
-                }
+                },
+                resolvedEmojis = dmResolvedEmojis
             )
         }
 
@@ -1369,6 +1371,7 @@ fun WispNavHost(
             }
             val peerProfile = participantList.firstOrNull()?.let { feedViewModel.eventRepo.getProfileData(it) }
             val userProfile = userPubkey?.let { feedViewModel.eventRepo.getProfileData(it) }
+            val dmGroupResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
             DmConversationScreen(
                 viewModel = dmConvoViewModel,
                 relayPool = feedViewModel.relayPool,
@@ -1395,7 +1398,8 @@ fun WispNavHost(
                             feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
                         }
                     )
-                }
+                },
+                resolvedEmojis = dmGroupResolvedEmojis
             )
         }
 
@@ -1440,7 +1444,6 @@ fun WispNavHost(
             var showGroupRoomEmojiLibrary by remember { mutableStateOf(false) }
             val groupRoomResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
             val groupRoomUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
-            val groupRoomPeerEmojiMaps by groupListViewModel.peerEmojiMaps.collectAsState()
             val groupRoomZapVersion by feedViewModel.eventRepo.zapVersion.collectAsState()
             val groupRoomZapInProgress by feedViewModel.zapInProgress.collectAsState()
             var groupRoomZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
@@ -1558,7 +1561,6 @@ fun WispNavHost(
                 },
                 resolvedEmojis = groupRoomResolvedEmojis,
                 unicodeEmojis = groupRoomUnicodeEmojis,
-                peerEmojiMaps = groupRoomPeerEmojiMaps,
                 zapVersion = groupRoomZapVersion,
                 zapAnimatingIds = groupRoomZapAnimatingIds,
                 zapInProgressIds = groupRoomZapInProgress,
@@ -2677,7 +2679,8 @@ fun WispNavHost(
                     val signer = activeSigner ?: return@NotificationsScreen
                     notifReplyScope.launch {
                         val hint = feedViewModel.outboxRouter?.getRelayHint(replyToEvent.pubkey) ?: ""
-                        val tags = com.wisp.app.nostr.Nip10.buildReplyTags(replyToEvent, hint)
+                        val tags = com.wisp.app.nostr.Nip10.buildReplyTags(replyToEvent, hint) +
+                            com.wisp.app.nostr.Nip30.buildEmojiTagsForContent(content, notifResolvedEmojis)
 
                         if (feedViewModel.powPrefs.isNotePowEnabled()) {
                             feedViewModel.powManager.submitNote(

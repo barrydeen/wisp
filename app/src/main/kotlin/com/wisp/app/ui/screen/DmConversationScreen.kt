@@ -71,7 +71,13 @@ import com.wisp.app.nostr.ProfileData
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.RelayInfoRepository
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import com.wisp.app.ui.component.DmBubble
+import com.wisp.app.ui.component.EmojiShortcodePopup
+import com.wisp.app.ui.component.EmojiVisualTransformation
+import com.wisp.app.ui.component.detectEmojiAutocomplete
+import com.wisp.app.ui.component.insertEmojiShortcode
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.ZapDialog
 import com.wisp.app.nostr.NostrSigner
@@ -100,7 +106,8 @@ fun DmConversationScreen(
     socialActionManager: SocialActionManager? = null,
     isWalletConnected: Boolean = false,
     onGoToWallet: () -> Unit = {},
-    noteActions: com.wisp.app.ui.component.NoteActions? = null
+    noteActions: com.wisp.app.ui.component.NoteActions? = null,
+    resolvedEmojis: Map<String, String> = emptyMap()
 ) {
     val messages by viewModel.messages.collectAsState()
     val messageText by viewModel.messageText.collectAsState()
@@ -449,6 +456,27 @@ fun DmConversationScreen(
                 }
             }
 
+            // Emoji shortcode autocomplete for DM input
+            var dmTfv by remember { mutableStateOf(TextFieldValue()) }
+            // Sync ViewModel → local TextFieldValue (external updates: upload URL, clear after send)
+            LaunchedEffect(messageText) {
+                if (dmTfv.text != messageText) {
+                    dmTfv = TextFieldValue(messageText, TextRange(messageText.length))
+                }
+            }
+            val dmEmojiState = remember(dmTfv) { detectEmojiAutocomplete(dmTfv) }
+            if (dmEmojiState != null) {
+                EmojiShortcodePopup(
+                    query = dmEmojiState.query,
+                    resolvedEmojis = resolvedEmojis,
+                    onSelect = { shortcode ->
+                        val newTfv = insertEmojiShortcode(dmTfv, dmEmojiState.triggerIndex, shortcode)
+                        dmTfv = newTfv
+                        viewModel.updateMessageText(newTfv.text)
+                    }
+                )
+            }
+
             // Message input
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -471,13 +499,20 @@ fun DmConversationScreen(
                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
                     )
                 }
+                val dmEmojiVisualTransformation = remember(resolvedEmojis) {
+                    EmojiVisualTransformation(resolvedEmojis)
+                }
                 OutlinedTextField(
-                    value = messageText,
-                    onValueChange = { viewModel.updateMessageText(it) },
+                    value = dmTfv,
+                    onValueChange = {
+                        dmTfv = it
+                        viewModel.updateMessageText(it.text)
+                    },
                     placeholder = { Text(stringResource(R.string.placeholder_message)) },
                     singleLine = false,
                     maxLines = 4,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    visualTransformation = dmEmojiVisualTransformation,
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(8.dp))
@@ -502,7 +537,7 @@ fun DmConversationScreen(
                     )
                 } else {
                     IconButton(
-                        onClick = { viewModel.sendMessage(relayPool, signer) },
+                        onClick = { viewModel.sendMessage(relayPool, signer, resolvedEmojis) },
                         enabled = messageText.isNotBlank()
                     ) {
                         Icon(

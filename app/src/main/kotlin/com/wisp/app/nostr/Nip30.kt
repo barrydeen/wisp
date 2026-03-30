@@ -98,4 +98,19 @@ object Nip30 {
     fun buildSetReference(pubkey: String, dTag: String): String {
         return "$KIND_EMOJI_SET:$pubkey:$dTag"
     }
+
+    /** Extract emoji tags for all :shortcode: references found in content. */
+    fun buildEmojiTagsForContent(content: String, resolvedEmojis: Map<String, String>): List<List<String>> {
+        if (resolvedEmojis.isEmpty()) return emptyList()
+        val tags = mutableListOf<List<String>>()
+        val seen = mutableSetOf<String>()
+        for (match in shortcodeRegex.findAll(content)) {
+            val shortcode = match.groupValues[1]
+            if (shortcode in seen) continue
+            val url = resolvedEmojis[shortcode] ?: continue
+            tags.add(listOf("emoji", shortcode, url))
+            seen.add(shortcode)
+        }
+        return tags
+    }
 }

@@ -566,13 +566,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
 
         // Add emoji tags for any :shortcode: references in the content
-        if (resolvedEmojis.isNotEmpty()) {
-            for (match in Nip30.shortcodeRegex.findAll(content)) {
-                val shortcode = match.groupValues[1]
-                val url = resolvedEmojis[shortcode] ?: continue
-                tags.add(listOf("emoji", shortcode, url))
-            }
-        }
+        tags.addAll(Nip30.buildEmojiTagsForContent(content, resolvedEmojis))
 
         if (interfacePrefs.isClientTagEnabled()) {
             tags.add(listOf("client", "Wisp"))

@@ -41,15 +41,6 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
      *  gets a cache hit instead of a second relay round-trip (which often times out). */
     private val previewCache = java.util.concurrent.ConcurrentHashMap<String, GroupPreview>()
 
-    // Per-author resolved emoji maps fetched from their outbox relays
-    private val _peerEmojiMaps = MutableStateFlow<Map<String, Map<String, String>>>(emptyMap())
-    val peerEmojiMaps: StateFlow<Map<String, Map<String, String>>> = _peerEmojiMaps
-    private val fetchedEmojiPubkeys = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-    private val fetchedEmojiSets = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-    private val peerEmojisInternal = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, String>>()
-    // "setAuthorPubkey:dTag" → set of peer pubkeys waiting on that emoji set
-    private val pendingSetRefs = java.util.concurrent.ConcurrentHashMap<String, MutableSet<String>>()
-
     data class DiscoveredGroup(
         val relayUrl: String,
         val metadata: Nip29.GroupMetadata,
@@ -70,11 +61,6 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
     fun reset() {
         subscribedGroups.clear()
         previewCache.clear()
-        fetchedEmojiPubkeys.clear()
-        fetchedEmojiSets.clear()
-        peerEmojisInternal.clear()
-        pendingSetRefs.clear()
-        _peerEmojiMaps.value = emptyMap()
         groupRepo = null
         relayPool = null
         eventRepo = null
@@ -175,45 +161,6 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
                             replyToId = replyToId,
                             emojiTags = Nip30.parseEmojiTags(event)
                         ))
-                        // Fetch author's emoji library if message contains shortcodes and tags don't cover them
-                        if (Nip30.shortcodeRegex.containsMatchIn(event.content)) {
-                            maybeRequestPeerEmoji(event.pubkey)
-                        }
-                    }
-                    Nip30.KIND_USER_EMOJI_LIST -> {
-                        val authorPubkey = event.pubkey
-                        val list = Nip30.parseUserEmojiList(event)
-                        val map = peerEmojisInternal.getOrPut(authorPubkey) { java.util.concurrent.ConcurrentHashMap() }
-                        for (emoji in list.emojis) {
-                            if (emoji.url.isNotBlank()) map[emoji.shortcode] = emoji.url
-                        }
-                        // Request any referenced emoji sets (deduplicated across all peers)
-                        for (ref in list.setReferences) {
-                            val parsed = Nip30.parseSetReference(ref) ?: continue
-                            val setKey = "${parsed.second}:${parsed.third}"
-                            pendingSetRefs.getOrPut(setKey) { java.util.concurrent.ConcurrentHashMap.newKeySet() }.add(authorPubkey)
-                            if (fetchedEmojiSets.add(setKey)) {
-                                relayPool?.sendToTopRelays(ClientMessage.req(
-                                    subscriptionId = subId("emset", parsed.third.take(12)),
-                                    filter = Filter(kinds = listOf(Nip30.KIND_EMOJI_SET), authors = listOf(parsed.second), dTags = listOf(parsed.third), limit = 1)
-                                ), maxRelays = 3)
-                            }
-                        }
-                        _peerEmojiMaps.value = _peerEmojiMaps.value + (authorPubkey to map.toMap())
-                    }
-                    Nip30.KIND_EMOJI_SET -> {
-                        val set = Nip30.parseEmojiSet(event) ?: return@collect
-                        val setKey = "${set.pubkey}:${set.dTag}"
-                        val waitingPubkeys = pendingSetRefs[setKey] ?: return@collect
-                        val updated = _peerEmojiMaps.value.toMutableMap()
-                        for (peerPubkey in waitingPubkeys) {
-                            val map = peerEmojisInternal[peerPubkey] ?: continue
-                            for (emoji in set.emojis) {
-                                if (emoji.url.isNotBlank()) map.putIfAbsent(emoji.shortcode, emoji.url)
-                            }
-                            updated[peerPubkey] = map.toMap()
-                        }
-                        _peerEmojiMaps.value = updated
                     }
                     7 -> {
                         val messageId = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
@@ -510,14 +457,6 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
             if (metadata != null || members.isNotEmpty()) previewCache[cacheKey] = preview
             preview
         }
-    }
-
-    private fun maybeRequestPeerEmoji(pubkey: String) {
-        if (!fetchedEmojiPubkeys.add(pubkey)) return
-        relayPool?.sendToTopRelays(ClientMessage.req(
-            subscriptionId = subId("emoji", pubkey.take(12)),
-            filter = Filter(kinds = listOf(Nip30.KIND_USER_EMOJI_LIST), authors = listOf(pubkey), limit = 1)
-        ), maxRelays = 5)
     }
 
     /**

@@ -42,7 +42,12 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.AddReaction
 import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import com.wisp.app.ui.component.EmojiReactionPopup
+import com.wisp.app.ui.component.EmojiShortcodePopup
+import com.wisp.app.ui.component.detectEmojiAutocomplete
+import com.wisp.app.ui.component.insertEmojiShortcode
 import com.wisp.app.ui.component.LightningAnimation
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -378,6 +383,7 @@ fun NotificationsScreen(
                         inlineDmReplies = inlineDmReplies[item.dmPeerPubkey ?: ""] ?: emptyList(),
                         userPubkey = userPubkey,
                         postCardParams = postCardParams,
+                        resolvedEmojis = resolvedEmojis,
                         onClick = {
                             if (item.type == NotificationType.DM_REACTION && item.dmPeerPubkey != null) {
                                 onDmConversationClick(item.dmPeerPubkey)
@@ -439,6 +445,7 @@ private fun ZenNotificationRow(
     inlineDmReplies: List<String> = emptyList(),
     userPubkey: String? = null,
     postCardParams: NotifPostCardParams? = null,
+    resolvedEmojis: Map<String, String> = emptyMap(),
     onClick: () -> Unit,
     onProfileClick: (String) -> Unit,
     onSendReply: (NostrEvent, String) -> Unit = { _, _ -> },
@@ -538,6 +545,7 @@ private fun ZenNotificationRow(
                     onUploadMedia = onUploadMedia,
                     onProfileClick = onProfileClick,
                     onFocused = onReplyFocused,
+                    resolvedEmojis = resolvedEmojis,
                     onDmReact = onDmReact,
                     onDmZap = onDmZap,
                     isDmZapInProgress = postCardParams?.isZapInProgress?.invoke(item.actorPubkey) ?: false,
@@ -556,7 +564,8 @@ private fun ZenNotificationRow(
                     onProfileClick = onProfileClick,
                     onSendReply = onSendReply,
                     onUploadMedia = onUploadMedia,
-                    onReplyFocused = onReplyFocused
+                    onReplyFocused = onReplyFocused,
+                    resolvedEmojis = resolvedEmojis
                 )
             } else if (item.type == NotificationType.DM_ZAP || item.type == NotificationType.PROFILE_ZAP) {
                 ZapMessageExpansion(item = item)
@@ -629,6 +638,7 @@ private fun DmExpansion(
     onUploadMedia: (List<Uri>, onUrl: (String) -> Unit) -> Unit = { _, _ -> },
     onProfileClick: (String) -> Unit = {},
     onFocused: () -> Unit = {},
+    resolvedEmojis: Map<String, String> = emptyMap(),
     onDmReact: (peerPubkey: String, rumorId: String, senderPubkey: String, emoji: String) -> Unit = { _, _, _, _ -> },
     onDmZap: (peerPubkey: String, rumorId: String, senderPubkey: String) -> Unit = { _, _, _ -> },
     isDmZapInProgress: Boolean = false,
@@ -734,6 +744,7 @@ private fun DmExpansion(
                 profile = userProfile,
                 onProfileClick = onProfileClick,
                 onNoteClick = {},
+                resolvedEmojis = resolvedEmojis,
                 modifier = Modifier.padding(start = 48.dp, top = 4.dp, end = 16.dp)
             )
         }
@@ -744,6 +755,7 @@ private fun DmExpansion(
             onUploadMedia = onUploadMedia,
             onFocused = onFocused,
             placeholder = stringResource(R.string.placeholder_message),
+            resolvedEmojis = resolvedEmojis,
             modifier = Modifier.padding(start = 48.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)
         )
 
@@ -775,7 +787,8 @@ private fun ReplyExpansion(
     onProfileClick: (String) -> Unit,
     onSendReply: (NostrEvent, String) -> Unit,
     onUploadMedia: (List<Uri>, onUrl: (String) -> Unit) -> Unit = { _, _ -> },
-    onReplyFocused: () -> Unit = {}
+    onReplyFocused: () -> Unit = {},
+    resolvedEmojis: Map<String, String> = emptyMap()
 ) {
     val replyEvent = remember(item.replyEventId) { item.replyEventId?.let { eventRepo?.getEvent(it) } }
 
@@ -828,7 +841,8 @@ private fun ReplyExpansion(
                 profile = userProfile,
                 eventRepo = postCardParams?.eventRepo,
                 onProfileClick = onProfileClick,
-                onNoteClick = postCardParams?.onNoteClick ?: {}
+                onNoteClick = postCardParams?.onNoteClick ?: {},
+                resolvedEmojis = resolvedEmojis
             )
         }
 
@@ -839,6 +853,7 @@ private fun ReplyExpansion(
                 onUploadMedia = onUploadMedia,
                 onFocused = onReplyFocused,
                 placeholder = stringResource(R.string.reply_placeholder),
+                resolvedEmojis = resolvedEmojis,
                 modifier = Modifier.padding(start = 48.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)
             )
         }
@@ -1110,6 +1125,7 @@ private fun InlineSentReply(
     eventRepo: EventRepository? = null,
     onProfileClick: (String) -> Unit,
     onNoteClick: (String) -> Unit,
+    resolvedEmojis: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -1125,6 +1141,7 @@ private fun InlineSentReply(
             content = content,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
+            emojiMap = resolvedEmojis,
             eventRepo = eventRepo,
             onProfileClick = onProfileClick,
             onNoteClick = onNoteClick,
@@ -1141,7 +1158,8 @@ private fun SentNoteCard(
     profile: ProfileData?,
     eventRepo: EventRepository? = null,
     onProfileClick: (String) -> Unit = {},
-    onNoteClick: (String) -> Unit = {}
+    onNoteClick: (String) -> Unit = {},
+    resolvedEmojis: Map<String, String> = emptyMap()
 ) {
     val displayName = profile?.displayString ?: "You"
     Column(
@@ -1173,6 +1191,7 @@ private fun SentNoteCard(
             content = content,
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
+            emojiMap = resolvedEmojis,
             eventRepo = eventRepo,
             onProfileClick = onProfileClick,
             onNoteClick = onNoteClick
@@ -1189,9 +1208,20 @@ private fun InlineReplyComposer(
     onUploadMedia: ((List<Uri>, onUrl: (String) -> Unit) -> Unit)? = null,
     onFocused: () -> Unit = {},
     placeholder: String = "Reply...",
+    resolvedEmojis: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
     val textFieldState = remember { TextFieldState() }
+
+    // TextFieldValue mirror for cursor-aware emoji autocomplete
+    var replyTfv by remember { mutableStateOf(TextFieldValue()) }
+    LaunchedEffect(textFieldState) {
+        snapshotFlow {
+            textFieldState.text.toString() to textFieldState.selection
+        }.collect { (text, selection) ->
+            replyTfv = TextFieldValue(text, selection)
+        }
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
@@ -1207,8 +1237,26 @@ private fun InlineReplyComposer(
         }
     }
 
+    Column(modifier = modifier) {
+        // Emoji shortcode autocomplete
+        val replyEmojiState = remember(replyTfv) { detectEmojiAutocomplete(replyTfv) }
+        if (replyEmojiState != null) {
+            EmojiShortcodePopup(
+                query = replyEmojiState.query,
+                resolvedEmojis = resolvedEmojis,
+                onSelect = { shortcode ->
+                    val newTfv = insertEmojiShortcode(replyTfv, replyEmojiState.triggerIndex, shortcode)
+                    textFieldState.edit {
+                        replace(0, length, newTfv.text)
+                        selection = newTfv.selection
+                    }
+                    replyTfv = newTfv
+                }
+            )
+        }
+
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (onUploadMedia != null) {
@@ -1261,10 +1309,17 @@ private fun InlineReplyComposer(
                 }
             })
         }
+        val replyEmojiTransformation = remember(resolvedEmojis) {
+            com.wisp.app.ui.component.MentionOutputTransformation(
+                resolveDisplayName = { null },
+                resolvedEmojis = resolvedEmojis
+            )
+        }
         BasicTextField(
             state = textFieldState,
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             modifier = fieldModifier,
+            outputTransformation = replyEmojiTransformation,
             lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 6),
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Sentences
@@ -1306,6 +1361,7 @@ private fun InlineReplyComposer(
                 tint = MaterialTheme.colorScheme.onPrimary
             )
         }
+    }
     }
 }
 

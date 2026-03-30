@@ -445,7 +445,7 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
         return relayPool.getWriteRelayUrls()
     }
 
-    fun sendMessage(relayPool: RelayPool, signer: NostrSigner? = null) {
+    fun sendMessage(relayPool: RelayPool, signer: NostrSigner? = null, resolvedEmojis: Map<String, String> = emptyMap()) {
         val text = _messageText.value.trim()
         if (text.isBlank() || _sending.value) return
         val replyingTo = _replyingToMessage.value
@@ -475,7 +475,8 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                         _miningStatus.value = PowStatus.Mining(1059, 0, dmDifficulty)
                     }
 
-                    val combinedTags = replyTags + allParticipantTags
+                    val emojiTags = com.wisp.app.nostr.Nip30.buildEmojiTagsForContent(text, resolvedEmojis)
+                    val combinedTags = replyTags + allParticipantTags + emojiTags
 
                     // Fix rumorId consistency: compute timestamp before any wraps so all recipients
                     // decrypt the same rumor (identical tags + created_at → identical rumorId).
@@ -576,7 +577,8 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.Default) {
             try {
                 val senderPubkeyHex = keypair.pubkey.toHex()
-                val combinedTags = replyTags + allParticipantTags
+                val emojiTags2 = com.wisp.app.nostr.Nip30.buildEmojiTagsForContent(text, resolvedEmojis)
+                val combinedTags = replyTags + allParticipantTags + emojiTags2
 
                 val recipientDmRelays = fetchRecipientDmRelays(relayPool)
                 val deliveryRelays = resolveRecipientRelaysWithSource(recipientDmRelays, relayPool).urls

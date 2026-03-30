@@ -92,6 +92,10 @@ import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.MentionCandidate
 import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.R
+import com.wisp.app.ui.component.EmojiShortcodePopup
+import com.wisp.app.ui.component.EmojiVisualTransformation
+import com.wisp.app.ui.component.detectEmojiAutocomplete
+import com.wisp.app.ui.component.insertEmojiShortcode
 import com.wisp.app.ui.component.MentionOutputTransformation
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
@@ -186,7 +190,7 @@ fun ComposeScreen(
         if (uris.isNotEmpty()) viewModel.uploadMedia(uris, context.contentResolver, signer)
     }
 
-    val outputTransformation = remember(profileRepo) {
+    val outputTransformation = remember(profileRepo, resolvedEmojis) {
         MentionOutputTransformation(
             resolveDisplayName = { bech32 ->
                 if (profileRepo == null) return@MentionOutputTransformation null
@@ -196,7 +200,8 @@ fun ComposeScreen(
                         profileRepo.get(data.pubkey)?.displayString
                     } else null
                 } catch (_: Exception) { null }
-            }
+            },
+            resolvedEmojis = resolvedEmojis
         )
     }
 
@@ -286,12 +291,29 @@ fun ComposeScreen(
 
                     Spacer(Modifier.height(12.dp))
 
+                    // Emoji shortcode autocomplete for gallery caption
+                    val galleryEmojiState = remember(content) { detectEmojiAutocomplete(content) }
+                    if (galleryEmojiState != null) {
+                        EmojiShortcodePopup(
+                            query = galleryEmojiState.query,
+                            resolvedEmojis = resolvedEmojis,
+                            onSelect = { shortcode ->
+                                val newTfv = insertEmojiShortcode(content, galleryEmojiState.triggerIndex, shortcode)
+                                viewModel.updateContent(newTfv)
+                            }
+                        )
+                    }
+
                     // Caption text field (plain OutlinedTextField, no GIF keyboard / contentReceiver)
+                    val galleryEmojiVisual = remember(resolvedEmojis) {
+                        EmojiVisualTransformation(resolvedEmojis)
+                    }
                     OutlinedTextField(
                         value = content,
                         onValueChange = { viewModel.updateContent(it) },
                         label = { Text(stringResource(R.string.compose_gallery_placeholder)) },
                         enabled = !publishing && countdownSeconds == null,
+                        visualTransformation = galleryEmojiVisual,
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 100.dp),
@@ -597,6 +619,19 @@ fun ComposeScreen(
                                 }
                             }
                         }
+                    }
+
+                    // Emoji shortcode autocomplete
+                    val emojiState = remember(content) { detectEmojiAutocomplete(content) }
+                    if (emojiState != null && mentionQuery == null) {
+                        EmojiShortcodePopup(
+                            query = emojiState.query,
+                            resolvedEmojis = resolvedEmojis,
+                            onSelect = { shortcode ->
+                                val newTfv = insertEmojiShortcode(content, emojiState.triggerIndex, shortcode)
+                                viewModel.updateContent(newTfv)
+                            }
+                        )
                     }
 
                     // Text field with GIF keyboard support via BasicTextField(TextFieldState)
@@ -977,6 +1012,7 @@ fun ComposeScreen(
                                 }
                                 RichContent(
                                     content = content.text,
+                                    emojiMap = resolvedEmojis,
                                     eventRepo = eventRepo
                                 )
                                 // Poll preview

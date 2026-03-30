@@ -106,6 +106,9 @@ import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.GroupMessage
 import com.wisp.app.repo.GroupPreview
 import com.wisp.app.ui.component.EmojiReactionPopup
+import com.wisp.app.ui.component.EmojiShortcodePopup
+import com.wisp.app.ui.component.MentionOutputTransformation
+import com.wisp.app.ui.component.insertEmojiShortcode
 import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
@@ -137,7 +140,6 @@ fun GroupRoomScreen(
     onZap: ((messageId: String, senderPubkey: String) -> Unit)? = null,
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
-    peerEmojiMaps: Map<String, Map<String, String>> = emptyMap(),
     zapVersion: Int = 0,
     zapAnimatingIds: Set<String> = emptySet(),
     zapInProgressIds: Set<String> = emptySet(),
@@ -163,6 +165,9 @@ fun GroupRoomScreen(
     // BasicTextField state for GIF keyboard support via contentReceiver
     val textFieldState = remember { TextFieldState() }
     val interactionSource = remember { MutableInteractionSource() }
+    val groupEmojiTransformation = remember(resolvedEmojis) {
+        MentionOutputTransformation(resolveDisplayName = { null }, resolvedEmojis = resolvedEmojis)
+    }
 
     // TextFieldValue mirror for cursor-aware autocomplete detection
     var tfv by remember { mutableStateOf(TextFieldValue()) }
@@ -294,7 +299,6 @@ fun GroupRoomScreen(
                             myPubkey = myPubkey,
                             reactionEmojiUrls = effectiveRoom?.reactionEmojiUrls ?: emptyMap(),
                             resolvedEmojis = resolvedEmojis,
-                            peerEmojiMap = peerEmojiMaps[message.senderPubkey] ?: emptyMap(),
                             unicodeEmojis = unicodeEmojis,
                             zapVersion = zapVersion,
                             isZapAnimating = message.id in zapAnimatingIds,
@@ -439,59 +443,15 @@ fun GroupRoomScreen(
                             }
                         }
                         AutocompleteMode.EMOJI -> {
-                            val query = autocomplete.query.lowercase()
-                            val matches = remember(query, resolvedEmojis) {
-                                resolvedEmojis.entries
-                                    .filter { (shortcode, _) -> query.isEmpty() || shortcode.contains(query) }
-                                    .take(12)
-                            }
-                            if (matches.isNotEmpty()) {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    tonalElevation = 3.dp,
-                                    shadowElevation = 2.dp,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    @OptIn(ExperimentalLayoutApi::class)
-                                    FlowRow(
-                                        modifier = Modifier.padding(4.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                                    ) {
-                                        matches.forEach { (shortcode, url) ->
-                                            Surface(
-                                                shape = RoundedCornerShape(8.dp),
-                                                modifier = Modifier.clickable {
-                                                    val insertion = ":$shortcode:"
-                                                    val newTfv = insertAutocomplete(tfv, autocomplete.triggerIndex, insertion)
-                                                    tfv = newTfv
-                                                    viewModel.updateText(newTfv.text)
-                                                }
-                                            ) {
-                                                Column(
-                                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                                    modifier = Modifier.padding(6.dp)
-                                                ) {
-                                                    AsyncImage(
-                                                        model = url,
-                                                        contentDescription = shortcode,
-                                                        modifier = Modifier.size(28.dp)
-                                                    )
-                                                    Text(
-                                                        text = shortcode,
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        fontSize = 9.sp,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                        modifier = Modifier.width(36.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
+                            EmojiShortcodePopup(
+                                query = autocomplete.query,
+                                resolvedEmojis = resolvedEmojis,
+                                onSelect = { shortcode ->
+                                    val newTfv = insertEmojiShortcode(tfv, autocomplete.triggerIndex, shortcode)
+                                    tfv = newTfv
+                                    viewModel.updateText(newTfv.text)
                                 }
-                            }
+                            )
                         }
                     }
                 }
@@ -544,6 +504,7 @@ fun GroupRoomScreen(
                             ),
                         enabled = uploadProgress == null,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        outputTransformation = groupEmojiTransformation,
                         lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                             color = MaterialTheme.colorScheme.onSurface
@@ -565,7 +526,7 @@ fun GroupRoomScreen(
                         CircularProgressIndicator(modifier = Modifier.size(24.dp))
                     } else {
                         IconButton(
-                            onClick = { viewModel.sendMessage(relayPool, signer) },
+                            onClick = { viewModel.sendMessage(relayPool, signer, resolvedEmojis) },
                             enabled = messageText.isNotBlank() && signer != null
                         ) {
                             Icon(
@@ -735,7 +696,6 @@ private fun GroupMessageBubble(
     myPubkey: String?,
     reactionEmojiUrls: Map<String, String>,
     resolvedEmojis: Map<String, String>,
-    peerEmojiMap: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String>,
     zapVersion: Int = 0,
     isZapAnimating: Boolean = false,
@@ -765,9 +725,9 @@ private fun GroupMessageBubble(
         message.replyToId?.let { id -> allMessages.firstOrNull { it.id == id } }
     }
 
-    // Combined emoji map: our library → sender's library → room reactions → message's own tags (highest priority)
-    val messageEmojiMap = remember(message.emojiTags, reactionEmojiUrls, resolvedEmojis, peerEmojiMap) {
-        resolvedEmojis + peerEmojiMap + reactionEmojiUrls + message.emojiTags
+    // Emoji map: message's own tags (NIP-30 authoritative) + our library for our own messages + reaction URLs
+    val messageEmojiMap = remember(message.emojiTags, reactionEmojiUrls, resolvedEmojis) {
+        resolvedEmojis + reactionEmojiUrls + message.emojiTags
     }
 
     // Zap totals — re-evaluated whenever zapVersion ticks

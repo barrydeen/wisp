@@ -134,7 +134,7 @@ class GroupRoomViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun sendMessage(relayPool: RelayPool, signer: NostrSigner?) {
+    fun sendMessage(relayPool: RelayPool, signer: NostrSigner?, resolvedEmojis: Map<String, String> = emptyMap()) {
         val text = messageText.value.trim()
         if (text.isEmpty() || signer == null || sending.value) return
         val replyTarget = _replyTarget.value
@@ -162,6 +162,8 @@ class GroupRoomViewModel(app: Application) : AndroidViewModel(app) {
                         tags.add(listOf("p", pubkey))
                     }
                 }
+                // Add emoji tags for any :shortcode: references in the content
+                tags.addAll(com.wisp.app.nostr.Nip30.buildEmojiTagsForContent(text, resolvedEmojis))
                 val event = signer.signEvent(
                     kind = Nip29.KIND_CHAT_MESSAGE,
                     content = text,
