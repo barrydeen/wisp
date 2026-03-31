@@ -63,6 +63,13 @@ private fun lightenColor(color: Color, fraction: Float = 0.3f): Color {
     return Color(ColorUtils.HSLToColor(hsl))
 }
 
+private fun darkenColor(color: Color, fraction: Float = 0.6f): Color {
+    val hsl = FloatArray(3)
+    ColorUtils.colorToHSL(color.toArgb(), hsl)
+    hsl[2] = (hsl[2] * (1f - fraction)).coerceIn(0f, 1f)
+    return Color(ColorUtils.HSLToColor(hsl))
+}
+
 @Composable
 fun WispTheme(
     isDarkTheme: Boolean = true,
@@ -76,12 +83,16 @@ fun WispTheme(
 
     val primary = if (isCustomTheme) accentColor else themePreset.dark.primary
     val secondary = remember(primary) { lightenColor(primary) }
+    val primaryContainerDark = remember(primary) { darkenColor(primary, 0.6f) }
+    val primaryContainerLight = remember(primary) { lightenColor(primary, 0.7f) }
 
     val colorScheme = if (isDarkTheme) {
         if (isCustomTheme) {
             darkColorScheme(
                 primary = accentColor,
                 onPrimary = Color.White,
+                primaryContainer = primaryContainerDark,
+                onPrimaryContainer = lightenColor(accentColor, 0.5f),
                 secondary = secondary,
                 background = Color(0xFF131215),
                 surface = Color(0xFF1F1E21),
@@ -93,9 +104,12 @@ fun WispTheme(
             )
         } else {
             val colors = themePreset.dark
+            val presetContainerDark = remember(colors.primary) { darkenColor(colors.primary, 0.6f) }
             darkColorScheme(
                 primary = colors.primary,
                 onPrimary = Color.White,
+                primaryContainer = presetContainerDark,
+                onPrimaryContainer = lightenColor(colors.primary, 0.5f),
                 secondary = colors.secondary,
                 background = colors.background,
                 surface = colors.surface,
@@ -111,6 +125,8 @@ fun WispTheme(
             lightColorScheme(
                 primary = accentColor,
                 onPrimary = Color.White,
+                primaryContainer = primaryContainerLight,
+                onPrimaryContainer = darkenColor(accentColor, 0.4f),
                 secondary = secondary,
                 background = Color(0xFFECECEC),
                 surface = Color(0xFFF5F5F5),
@@ -122,9 +138,12 @@ fun WispTheme(
             )
         } else {
             val colors = themePreset.light
+            val presetContainerLight = remember(colors.primary) { lightenColor(colors.primary, 0.7f) }
             lightColorScheme(
                 primary = colors.primary,
                 onPrimary = Color.White,
+                primaryContainer = presetContainerLight,
+                onPrimaryContainer = darkenColor(colors.primary, 0.4f),
                 secondary = colors.secondary,
                 background = colors.background,
                 surface = colors.surface,
