@@ -69,6 +69,7 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
                     saveOwnSetsToPrefs()
                 }
                 resolveEmojis()
+                saveReferencedSetsToPrefs()
             }
         }
     }
@@ -183,6 +184,37 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
         prefs.edit().putString("own_sets", arr.toString()).apply()
     }
 
+    private fun saveReferencedSetsToPrefs() {
+        val refs = _userEmojiList.value?.setReferences ?: return
+        val referencedKeys = refs.mapNotNull { ref ->
+            val parsed = Nip30.parseSetReference(ref) ?: return@mapNotNull null
+            "${parsed.second}:${parsed.third}"
+        }.toSet()
+        val setsToSave = emojiSets.filter { it.key in referencedKeys && it.value.pubkey != ownerPubkey }
+        if (setsToSave.isEmpty()) {
+            prefs.edit().remove("referenced_sets").apply()
+            return
+        }
+        val arr = JSONArray()
+        for ((_, set) in setsToSave) {
+            val obj = JSONObject()
+            obj.put("pubkey", set.pubkey)
+            obj.put("dTag", set.dTag)
+            obj.put("title", set.title)
+            obj.put("createdAt", set.createdAt)
+            val emojisArr = JSONArray()
+            for (emoji in set.emojis) {
+                val emojiObj = JSONObject()
+                emojiObj.put("shortcode", emoji.shortcode)
+                emojiObj.put("url", emoji.url)
+                emojisArr.put(emojiObj)
+            }
+            obj.put("emojis", emojisArr)
+            arr.put(obj)
+        }
+        prefs.edit().putString("referenced_sets", arr.toString()).apply()
+    }
+
     private fun saveUnicodeToPrefs() {
         val arr = JSONArray()
         _unicodeEmojis.value.forEach { arr.put(it) }
@@ -266,6 +298,30 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
                 }
                 _ownSets.value = sets
                 for (set in sets) emojiSets["${set.pubkey}:${set.dTag}"] = set
+            } catch (_: Exception) {}
+        }
+
+        // Load referenced third-party sets
+        val refSetsJson = prefs.getString("referenced_sets", null)
+        if (refSetsJson != null) {
+            try {
+                val arr = JSONArray(refSetsJson)
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    val emojisArr = obj.getJSONArray("emojis")
+                    val emojis = (0 until emojisArr.length()).map { j ->
+                        val emojiObj = emojisArr.getJSONObject(j)
+                        CustomEmoji(emojiObj.getString("shortcode"), emojiObj.getString("url"))
+                    }
+                    val set = EmojiSet(
+                        pubkey = obj.getString("pubkey"),
+                        dTag = obj.getString("dTag"),
+                        title = obj.getString("title"),
+                        emojis = emojis,
+                        createdAt = obj.getLong("createdAt")
+                    )
+                    emojiSets.putIfAbsent("${set.pubkey}:${set.dTag}", set)
+                }
             } catch (_: Exception) {}
         }
 
