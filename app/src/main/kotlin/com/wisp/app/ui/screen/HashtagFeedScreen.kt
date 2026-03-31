@@ -67,7 +67,9 @@ fun HashtagFeedScreen(
     translationRepo: TranslationRepository? = null,
     onHashtagPicker: () -> Unit = {},
     onBack: () -> Unit,
-    onPollVote: (String, List<String>) -> Unit = { _, _ -> }
+    onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    zapAnimatingIds: Set<String> = emptySet(),
+    zapInProgressIds: Set<String> = emptySet()
 ) {
     val hashtag by viewModel.hashtag.collectAsState()
     val setName by viewModel.setName.collectAsState()
@@ -182,7 +184,9 @@ fun HashtagFeedScreen(
                         nip05Repo = nip05Repo,
                         translationRepo = translationRepo,
                         pollVoteVersion = pollVoteVersion,
-                        onPollVote = onPollVote
+                        onPollVote = onPollVote,
+                        isZapAnimating = event.id in zapAnimatingIds,
+                        isZapInProgress = event.id in zapInProgressIds
                     )
                 }
             }
@@ -258,7 +262,9 @@ private fun HashtagFeedItem(
     nip05Repo: Nip05Repository? = null,
     translationRepo: TranslationRepository? = null,
     pollVoteVersion: Int = 0,
-    onPollVote: (String, List<String>) -> Unit = { _, _ -> }
+    onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    isZapAnimating: Boolean = false,
+    isZapInProgress: Boolean = false
 ) {
     val profile = remember(profileVersion, event.pubkey) {
         eventRepo.getProfileData(event.pubkey)
@@ -328,6 +334,8 @@ private fun HashtagFeedItem(
         likeCount = likeCount,
         replyCount = replyCount,
         zapSats = zapSats,
+        isZapAnimating = isZapAnimating,
+        isZapInProgress = isZapInProgress,
         eventRepo = eventRepo,
         reactionDetails = reactionDetails,
         zapDetails = zapDetails,

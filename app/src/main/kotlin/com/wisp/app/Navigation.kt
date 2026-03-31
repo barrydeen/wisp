@@ -1852,9 +1852,48 @@ fun WispNavHost(
                     tag = tag,
                     relayPool = feedViewModel.relayPool,
                     eventRepo = feedViewModel.eventRepo,
-                    muteRepo = feedViewModel.muteRepo
+                    muteRepo = feedViewModel.muteRepo,
+                    outboxRouter = feedViewModel.outboxRouter,
+                    relayScoreBoard = feedViewModel.relayScoreBoard
                 )
             }
+            var hashtagZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
+            val hashtagZapInProgress by feedViewModel.zapInProgress.collectAsState()
+            var hashtagZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
+            val isHashtagNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
+
+            LaunchedEffect(Unit) {
+                feedViewModel.zapSuccess.collect { eventId ->
+                    hashtagZapAnimatingIds = hashtagZapAnimatingIds + eventId
+                    kotlinx.coroutines.delay(1500)
+                    hashtagZapAnimatingIds = hashtagZapAnimatingIds - eventId
+                }
+            }
+
+            if (hashtagZapTarget != null) {
+                val hashtagZapRecipient = hashtagZapTarget!!.pubkey
+                val hashtagUserHasDmRelays = feedViewModel.relayPool.hasDmRelays()
+                var hashtagRecipientHasDmRelays by remember(hashtagZapRecipient) {
+                    mutableStateOf(feedViewModel.relayListRepo.hasDmRelays(hashtagZapRecipient))
+                }
+                if (hashtagUserHasDmRelays && !hashtagRecipientHasDmRelays) {
+                    LaunchedEffect(hashtagZapRecipient) {
+                        hashtagRecipientHasDmRelays = feedViewModel.fetchDmRelaysIfMissing(hashtagZapRecipient)
+                    }
+                }
+                ZapDialog(
+                    isWalletConnected = isHashtagNwcConnected,
+                    onDismiss = { hashtagZapTarget = null },
+                    onZap = { amountMsats, message, isAnonymous, isPrivate ->
+                        val event = hashtagZapTarget ?: return@ZapDialog
+                        hashtagZapTarget = null
+                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
+                    },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
+                    canPrivateZap = hashtagUserHasDmRelays && hashtagRecipientHasDmRelays
+                )
+            }
+
             val hashtagNoteActions = remember {
                 com.wisp.app.ui.component.NoteActions(
                     onReply = { event ->
@@ -1871,7 +1910,7 @@ fun WispNavHost(
                         composeViewModel.clear()
                         navController.navigate(Routes.COMPOSE)
                     },
-                    onZap = { _ -> },
+                    onZap = { event -> hashtagZapTarget = event },
                     onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                     onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                     onAddToList = { eventId -> addToListEventId = eventId },
@@ -1935,7 +1974,9 @@ fun WispNavHost(
                     navController.popBackStack()
                 },
                 onBack = { navController.popBackStack() },
-                onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) }
+                onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
+                zapAnimatingIds = hashtagZapAnimatingIds,
+                zapInProgressIds = hashtagZapInProgress
             )
         }
 
@@ -1959,9 +2000,48 @@ fun WispNavHost(
                     name = name,
                     relayPool = feedViewModel.relayPool,
                     eventRepo = feedViewModel.eventRepo,
-                    muteRepo = feedViewModel.muteRepo
+                    muteRepo = feedViewModel.muteRepo,
+                    outboxRouter = feedViewModel.outboxRouter,
+                    relayScoreBoard = feedViewModel.relayScoreBoard
                 )
             }
+            var setFeedZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
+            val setFeedZapInProgress by feedViewModel.zapInProgress.collectAsState()
+            var setFeedZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
+            val isSetFeedNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
+
+            LaunchedEffect(Unit) {
+                feedViewModel.zapSuccess.collect { eventId ->
+                    setFeedZapAnimatingIds = setFeedZapAnimatingIds + eventId
+                    kotlinx.coroutines.delay(1500)
+                    setFeedZapAnimatingIds = setFeedZapAnimatingIds - eventId
+                }
+            }
+
+            if (setFeedZapTarget != null) {
+                val setFeedZapRecipient = setFeedZapTarget!!.pubkey
+                val setFeedUserHasDmRelays = feedViewModel.relayPool.hasDmRelays()
+                var setFeedRecipientHasDmRelays by remember(setFeedZapRecipient) {
+                    mutableStateOf(feedViewModel.relayListRepo.hasDmRelays(setFeedZapRecipient))
+                }
+                if (setFeedUserHasDmRelays && !setFeedRecipientHasDmRelays) {
+                    LaunchedEffect(setFeedZapRecipient) {
+                        setFeedRecipientHasDmRelays = feedViewModel.fetchDmRelaysIfMissing(setFeedZapRecipient)
+                    }
+                }
+                ZapDialog(
+                    isWalletConnected = isSetFeedNwcConnected,
+                    onDismiss = { setFeedZapTarget = null },
+                    onZap = { amountMsats, message, isAnonymous, isPrivate ->
+                        val event = setFeedZapTarget ?: return@ZapDialog
+                        setFeedZapTarget = null
+                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
+                    },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
+                    canPrivateZap = setFeedUserHasDmRelays && setFeedRecipientHasDmRelays
+                )
+            }
+
             val setFeedNoteActions = remember {
                 com.wisp.app.ui.component.NoteActions(
                     onReply = { event ->
@@ -1978,7 +2058,7 @@ fun WispNavHost(
                         composeViewModel.clear()
                         navController.navigate(Routes.COMPOSE)
                     },
-                    onZap = { _ -> },
+                    onZap = { event -> setFeedZapTarget = event },
                     onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                     onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                     onAddToList = { eventId -> addToListEventId = eventId },
@@ -2042,7 +2122,9 @@ fun WispNavHost(
                     navController.popBackStack()
                 },
                 onBack = { navController.popBackStack() },
-                onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) }
+                onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
+                zapAnimatingIds = setFeedZapAnimatingIds,
+                zapInProgressIds = setFeedZapInProgress
             )
         }
 

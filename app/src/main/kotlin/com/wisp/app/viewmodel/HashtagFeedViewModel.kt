@@ -7,7 +7,9 @@ import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
+import com.wisp.app.relay.RelayScoreBoard
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.MuteRepository
 import kotlinx.coroutines.Job
@@ -35,6 +37,8 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
 
     private var relayPoolRef: RelayPool? = null
     private var eventRepoRef: EventRepository? = null
+    private var outboxRouterRef: OutboxRouter? = null
+    private var relayScoreBoardRef: RelayScoreBoard? = null
     private var loadJob: Job? = null
     private var muteObserverJob: Job? = null
     private val activeSubIds = mutableListOf<String>()
@@ -46,10 +50,12 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
         tag: String,
         relayPool: RelayPool,
         eventRepo: EventRepository,
-        muteRepo: MuteRepository? = null
+        muteRepo: MuteRepository? = null,
+        outboxRouter: OutboxRouter? = null,
+        relayScoreBoard: RelayScoreBoard? = null
     ) {
         _setName.value = null
-        loadTags(listOf(tag), tag, relayPool, eventRepo, muteRepo)
+        loadTags(listOf(tag), tag, relayPool, eventRepo, muteRepo, outboxRouter, relayScoreBoard)
     }
 
     fun loadHashtags(
@@ -57,10 +63,12 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
         name: String,
         relayPool: RelayPool,
         eventRepo: EventRepository,
-        muteRepo: MuteRepository? = null
+        muteRepo: MuteRepository? = null,
+        outboxRouter: OutboxRouter? = null,
+        relayScoreBoard: RelayScoreBoard? = null
     ) {
         _setName.value = name
-        loadTags(tags, tags.firstOrNull() ?: "", relayPool, eventRepo, muteRepo)
+        loadTags(tags, tags.firstOrNull() ?: "", relayPool, eventRepo, muteRepo, outboxRouter, relayScoreBoard)
     }
 
     private fun loadTags(
@@ -68,7 +76,9 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
         displayTag: String,
         relayPool: RelayPool,
         eventRepo: EventRepository,
-        muteRepo: MuteRepository? = null
+        muteRepo: MuteRepository? = null,
+        outboxRouter: OutboxRouter? = null,
+        relayScoreBoard: RelayScoreBoard? = null
     ) {
         if (tags.isEmpty()) return
 
@@ -80,6 +90,8 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
         _isLoading.value = true
         relayPoolRef = relayPool
         eventRepoRef = eventRepo
+        outboxRouterRef = outboxRouter
+        relayScoreBoardRef = relayScoreBoard
 
         muteObserverJob?.cancel()
         if (muteRepo != null) {
@@ -116,13 +128,14 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     }
                     if (relayEvent.subscriptionId.startsWith(engagePrefix)) {
-                        when (relayEvent.event.kind) {
-                            7 -> eventRepo.addEvent(relayEvent.event)
-                            9735 -> eventRepo.addEvent(relayEvent.event)
+                        val e = relayEvent.event
+                        when (e.kind) {
+                            6, 7, 1018, 9735 -> eventRepo.addEvent(e)
                             1 -> {
-                                val parentId = Nip10.getReplyTarget(relayEvent.event)
-                                if (parentId != null) eventRepo.addReplyCount(parentId, relayEvent.event.id)
+                                val parentId = Nip10.getReplyTarget(e)
+                                if (parentId != null) eventRepo.addReplyCount(parentId, e.id)
                             }
+                            5 -> eventRepo.addEvent(e)
                         }
                     }
                 }
@@ -156,18 +169,26 @@ class HashtagFeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun subscribeEngagement(relayPool: RelayPool, eventRepo: EventRepository) {
-        val eventIds = _notes.value.map { it.id }.distinct()
-        if (eventIds.isEmpty()) return
+        val notes = _notes.value
+        if (notes.isEmpty()) return
 
-        eventIds.chunked(50).forEachIndexed { index, batch ->
-            val subId = if (index == 0) engagePrefix else "$engagePrefix-$index"
-            activeSubIds.add(subId)
-            val filters = listOf(
-                Filter(kinds = listOf(7), eTags = batch),
-                Filter(kinds = listOf(9735), eTags = batch),
-                Filter(kinds = listOf(1), eTags = batch)
-            )
-            relayPool.sendToRelayOrEphemeral(SearchViewModel.DEFAULT_SEARCH_RELAY, ClientMessage.req(subId, filters))
+        val router = outboxRouterRef
+        if (router != null) {
+            val eventsByAuthor = mutableMapOf<String, MutableList<String>>()
+            for (note in notes) {
+                eventsByAuthor.getOrPut(note.pubkey) { mutableListOf() }.add(note.id)
+            }
+            val safetyNet = relayScoreBoardRef?.getScoredRelays()?.take(5)?.map { it.url } ?: emptyList()
+            router.subscribeEngagementByAuthors(engagePrefix, eventsByAuthor, activeSubIds, safetyNet)
+        } else {
+            // Fallback: query search relay directly
+            val eventIds = notes.map { it.id }.distinct()
+            eventIds.chunked(50).forEachIndexed { index, batch ->
+                val subId = if (index == 0) engagePrefix else "$engagePrefix-$index"
+                activeSubIds.add(subId)
+                val filter = Filter(kinds = listOf(1, 5, 6, 7, 1018, 9735), eTags = batch, limit = 500)
+                relayPool.sendToRelayOrEphemeral(SearchViewModel.DEFAULT_SEARCH_RELAY, ClientMessage.req(subId, filter))
+            }
         }
     }
 
