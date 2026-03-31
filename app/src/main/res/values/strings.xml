@@ -736,4 +736,7 @@
     <string name="action_delete_group">Delete Chat Room</string>
     <string name="title_delete_group">Delete Chat Room</string>
     <string name="msg_delete_group_confirm">Permanently delete this chat room? This cannot be undone.</string>
+    <string name="label_notifications">Notifications</string>
+    <string name="label_notifications_on">On — new messages will be tracked</string>
+    <string name="label_notifications_off">Off — tap to enable</string>
 </resources>

@@ -44,8 +44,20 @@ class GroupRepository(private val context: Context, pubkeyHex: String? = null) {
     private val _joinedGroups = MutableStateFlow<List<GroupRoom>>(emptyList())
     val joinedGroups: StateFlow<List<GroupRoom>> = _joinedGroups
 
+    /** Set of "relayUrl|groupId" keys for groups with notifications enabled. */
+    private val _notifiedGroups = MutableStateFlow<Set<String>>(emptySet())
+    val notifiedGroups: StateFlow<Set<String>> = _notifiedGroups
+
+    /** Map of "relayUrl|groupId" → last-seen message ID. */
+    private val lastSeenMessageIds = ConcurrentHashMap<String, String>()
+
+    /** Set of "relayUrl|groupId" keys that have unread messages. */
+    private val _unreadGroups = MutableStateFlow<Set<String>>(emptySet())
+    val unreadGroups: StateFlow<Set<String>> = _unreadGroups
+
     init {
         loadPersistedGroups()
+        loadNotificationState()
     }
 
     private fun roomKey(relayUrl: String, groupId: String) = "$relayUrl|$groupId"
@@ -158,6 +170,13 @@ class GroupRepository(private val context: Context, pubkeyHex: String? = null) {
         )
         rooms[key] = updatedRoom
         ownerPubkey?.let { persistence?.queueMessage(it, relayUrl, groupId, message) }
+        // Update unread state for notified groups
+        if (key in _notifiedGroups.value) {
+            val lastSeen = lastSeenMessageIds[key]
+            if (lastSeen == null || lastSeen != message.id) {
+                _unreadGroups.value = _unreadGroups.value + key
+            }
+        }
         emit()
     }
 
@@ -187,9 +206,65 @@ class GroupRepository(private val context: Context, pubkeyHex: String? = null) {
     fun getJoinedGroupKeys(): List<Pair<String, String>> =
         rooms.values.map { Pair(it.relayUrl, it.groupId) }
 
+    // --- Notification subscription & unread tracking ---
+
+    fun isNotified(relayUrl: String, groupId: String): Boolean =
+        roomKey(relayUrl, groupId) in _notifiedGroups.value
+
+    fun setNotified(relayUrl: String, groupId: String, enabled: Boolean) {
+        val key = roomKey(relayUrl, groupId)
+        val current = _notifiedGroups.value.toMutableSet()
+        if (enabled) current.add(key) else {
+            current.remove(key)
+            _unreadGroups.value = _unreadGroups.value - key
+        }
+        _notifiedGroups.value = current
+        prefs.edit().putStringSet("notified_groups", current).apply()
+    }
+
+    /** Returns the set of (relayUrl, groupId) pairs that have notifications enabled. */
+    fun getNotifiedGroupKeys(): List<Pair<String, String>> {
+        return _notifiedGroups.value.mapNotNull { key ->
+            val parts = key.split("|", limit = 2)
+            if (parts.size == 2) Pair(parts[0], parts[1]) else null
+        }
+    }
+
+    fun markRead(relayUrl: String, groupId: String) {
+        val key = roomKey(relayUrl, groupId)
+        val room = rooms[key] ?: return
+        val lastMsg = room.messages.lastOrNull() ?: return
+        lastSeenMessageIds[key] = lastMsg.id
+        _unreadGroups.value = _unreadGroups.value - key
+        prefs.edit().putString("last_seen_$key", lastMsg.id).apply()
+    }
+
+    fun hasUnread(relayUrl: String, groupId: String): Boolean =
+        roomKey(relayUrl, groupId) in _unreadGroups.value
+
+    private fun loadNotificationState() {
+        val notified = prefs.getStringSet("notified_groups", emptySet()) ?: emptySet()
+        _notifiedGroups.value = notified
+        // Load last-seen message IDs and compute initial unread state
+        val unread = mutableSetOf<String>()
+        for (key in notified) {
+            val lastSeen = prefs.getString("last_seen_$key", null)
+            if (lastSeen != null) lastSeenMessageIds[key] = lastSeen
+            val room = rooms[key]
+            if (room != null) {
+                val lastMsg = room.messages.lastOrNull()
+                if (lastMsg != null && lastMsg.id != lastSeen) {
+                    unread.add(key)
+                }
+            }
+        }
+        _unreadGroups.value = unread
+    }
+
     fun clear() {
         rooms.clear()
         seenMessages.clear()
+        _unreadGroups.value = emptySet()
         emit()
     }
 
@@ -198,6 +273,7 @@ class GroupRepository(private val context: Context, pubkeyHex: String? = null) {
         prefs = context.getSharedPreferences("group_rooms_${newPubkey ?: "anon"}", Context.MODE_PRIVATE)
         clear()
         loadPersistedGroups()
+        loadNotificationState()
     }
 
     private fun persistRooms() {

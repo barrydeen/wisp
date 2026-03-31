@@ -1459,6 +1459,7 @@ fun WispNavHost(
             LaunchedEffect(relayUrl, groupId) {
                 groupRoomViewModel.init(groupId, relayUrl, feedViewModel.groupRepo, feedViewModel.relayPool)
                 feedViewModel.metadataFetcher.queueProfileFetch(feedViewModel.getUserPubkey() ?: "")
+                groupListViewModel.markGroupRead(relayUrl, groupId)
             }
             // Only subscribe eagerly if the group is already joined locally —
             // otherwise messages arrive before the room exists in the repo and get
@@ -1468,6 +1469,7 @@ fun WispNavHost(
                     groupListViewModel.subscribeToGroup(relayUrl, groupId)
                 }
                 onDispose {
+                    groupListViewModel.markGroupRead(relayUrl, groupId)
                     groupListViewModel.unsubscribeFromGroup(relayUrl, groupId)
                 }
             }
