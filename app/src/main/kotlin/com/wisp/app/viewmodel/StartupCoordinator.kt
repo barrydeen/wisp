@@ -392,7 +392,7 @@ class StartupCoordinator(
                 // Use actual relay count to avoid waiting for impossible minCount
                 relayPool.awaitAnyConnected(minCount = minOf(3, relayCount), timeoutMs = 5_000)
                 subscribeSelfData()
-                fetchMissingEmojiSets()
+                awaitEmojiListThenFetchSets()
 
                 // Show profile if we didn't have it cached but now have it from self-data
                 if (cachedProfile == null) {
@@ -446,7 +446,7 @@ class StartupCoordinator(
                         val pk = getUserPubkey()
                         if (pk != null) subscribeDmsAndNotifications(pk)
                     }
-                    fetchMissingEmojiSets()
+                    awaitEmojiListThenFetchSets()
                 }
 
                 follows = cachedFollows.map { it.pubkey }
@@ -500,6 +500,23 @@ class StartupCoordinator(
      * DM and notification subscriptions are fire-and-forget (not feed-blocking).
      */
     /**
+     * Wait for the emoji list (kind 10030) to arrive from EventRouter before
+     * fetching missing emoji sets. EOSE signals the relay finished sending but
+     * events may still be buffered in the SharedFlow waiting for processing.
+     */
+    private suspend fun awaitEmojiListThenFetchSets() {
+        if (customEmojiRepo.userEmojiList.value != null) {
+            fetchMissingEmojiSets()
+            return
+        }
+        // Wait for EventRouter to process the kind 10030 event after EOSE
+        withTimeoutOrNull(3_000) {
+            customEmojiRepo.userEmojiList.first { it != null }
+        }
+        fetchMissingEmojiSets()
+    }
+
+    /**
      * Fetches self-data (follow list, relay lists, mutes, etc.).
      * Instead of waiting for full EOSE (up to 15s), we proceed as soon as the
      * follow list (kind 3) arrives since that's the gate for the next phase.
@@ -508,22 +525,22 @@ class StartupCoordinator(
     private suspend fun subscribeSelfData() {
         val myPubkey = getUserPubkey() ?: return
 
+        // Consolidate into 2 filters to stay within relay filter-count limits.
+        // Replaceable events (one per kind per author):
+        val replaceableKinds = listOf(
+            0, 3, 10002, 10050, 10007, 10006,
+            Nip51.KIND_FAVORITE_RELAYS, Nip51.KIND_MUTE_LIST, Nip51.KIND_PIN_LIST,
+            Nip51.KIND_BOOKMARK_LIST, Blossom.KIND_SERVER_LIST,
+            Nip51.KIND_SIMPLE_GROUPS, Nip30.KIND_USER_EMOJI_LIST
+        )
+        // Parameterized replaceable events (many per kind per author):
+        val addressableKinds = listOf(
+            Nip51.KIND_FOLLOW_SET, Nip51.KIND_BOOKMARK_SET, Nip51.KIND_RELAY_SET,
+            Nip51.KIND_INTEREST_SET, Nip30.KIND_EMOJI_SET
+        )
         val selfDataFilters = listOf(
-            Filter(kinds = listOf(0), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(3), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(10002), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(10050, 10007, 10006, Nip51.KIND_FAVORITE_RELAYS), authors = listOf(myPubkey), limit = 4),
-            Filter(kinds = listOf(Nip51.KIND_MUTE_LIST), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(Nip51.KIND_PIN_LIST), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(Nip51.KIND_BOOKMARK_LIST), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(Blossom.KIND_SERVER_LIST), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(Nip51.KIND_FOLLOW_SET), authors = listOf(myPubkey), limit = 50),
-            Filter(kinds = listOf(Nip51.KIND_BOOKMARK_SET), authors = listOf(myPubkey), limit = 50),
-            Filter(kinds = listOf(Nip51.KIND_RELAY_SET), authors = listOf(myPubkey), limit = 50),
-            Filter(kinds = listOf(Nip51.KIND_INTEREST_SET), authors = listOf(myPubkey), limit = 50),
-            Filter(kinds = listOf(Nip51.KIND_SIMPLE_GROUPS), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(Nip30.KIND_USER_EMOJI_LIST), authors = listOf(myPubkey), limit = 1),
-            Filter(kinds = listOf(Nip30.KIND_EMOJI_SET), authors = listOf(myPubkey), limit = 50)
+            Filter(kinds = replaceableKinds, authors = listOf(myPubkey), limit = replaceableKinds.size),
+            Filter(kinds = addressableKinds, authors = listOf(myPubkey), limit = 250)
         )
         // Send to indexer relays (ephemeral if not already connected) AND the user's own
         // write relays — write relays are the authoritative source since the user published

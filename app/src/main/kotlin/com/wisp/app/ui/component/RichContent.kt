@@ -1016,14 +1016,7 @@ fun QuotedNote(
             }
         }
     } else if (event != null && isGalleryEvent(event)) {
-        // Gallery quote preview — compact card with thumbnail
-        val galleryTitle: String? = remember(event.id) {
-            com.wisp.app.nostr.Nip68.getTitle(event) ?: com.wisp.app.nostr.Nip71.getTitle(event)
-        }
-        val thumbnailUrl: String? = remember(event.id) {
-            com.wisp.app.nostr.Nip68.parseImetaEntries(event).firstOrNull()?.url
-                ?: com.wisp.app.nostr.Nip71.parseVideoMeta(event).firstOrNull()?.let { meta -> meta.thumbnailUrl ?: meta.url }
-        }
+        // Gallery quote preview — render with full media display
         Surface(
             shape = RoundedCornerShape(12.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -1031,54 +1024,15 @@ fun QuotedNote(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 6.dp)
-                .then(
-                    if (effectiveNoteClick != null) Modifier.clickable { effectiveNoteClick(eventId) }
-                    else Modifier
-                )
         ) {
-            Row(
-                modifier = Modifier.padding(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (thumbnailUrl != null) {
-                    coil3.compose.AsyncImage(
-                        model = thumbnailUrl,
-                        contentDescription = galleryTitle,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                    )
-                    Spacer(Modifier.width(10.dp))
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    if (!galleryTitle.isNullOrBlank()) {
-                        Text(
-                            text = galleryTitle,
-                            style = MaterialTheme.typography.titleSmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Text(
-                        text = profile?.displayString
-                            ?: event.pubkey.take(8) + "..." + event.pubkey.takeLast(4),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (event.content.isNotBlank()) {
-                        Text(
-                            text = event.content,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
+            GalleryCard(
+                event = event,
+                profile = profile,
+                onNoteClick = { effectiveNoteClick?.invoke(eventId) },
+                onProfileClick = {},
+                eventRepo = eventRepo,
+                showDivider = false
+            )
         }
     } else if (event != null) {
         // Simple fallback rendering (no noteActions available)

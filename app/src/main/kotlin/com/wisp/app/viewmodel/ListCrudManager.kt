@@ -3,6 +3,8 @@ package com.wisp.app.viewmodel
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.CustomEmoji
 import com.wisp.app.nostr.Filter
+import com.wisp.app.relay.OutboxRouter
+import kotlinx.coroutines.delay
 import com.wisp.app.nostr.Nip09
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip51
@@ -33,6 +35,7 @@ class ListCrudManager(
     private val bookmarkSetRepo: BookmarkSetRepository,
     private val customEmojiRepo: CustomEmojiRepository,
     private val metadataFetcher: MetadataFetcher,
+    private val outboxRouter: OutboxRouter?,
     private val scope: CoroutineScope,
     private val processingContext: CoroutineContext,
     private val getSigner: () -> NostrSigner?,
@@ -379,15 +382,29 @@ class ListCrudManager(
     fun fetchMissingEmojiSets() {
         val missing = customEmojiRepo.getMissingSetReferences()
         if (missing.isEmpty()) return
-        val filters = missing.mapNotNull { ref ->
-            val parsed = Nip30.parseSetReference(ref) ?: return@mapNotNull null
-            Filter(kinds = listOf(Nip30.KIND_EMOJI_SET), authors = listOf(parsed.second), dTags = listOf(parsed.third), limit = 1)
+        val parsed = missing.mapNotNull { ref ->
+            Nip30.parseSetReference(ref)?.let { (_, pubkey, dTag) -> pubkey to dTag }
         }
-        if (filters.isEmpty()) return
-        relayPool.sendToReadRelays(ClientMessage.req("emoji-sets", filters))
+        if (parsed.isEmpty()) return
+        // Send per-author via outbox routing to hit each author's write relays,
+        // with a fallback to read+top relays for authors without known relay lists.
+        val subIds = mutableListOf<String>()
+        for ((pubkey, dTag) in parsed) {
+            val filter = Filter(kinds = listOf(Nip30.KIND_EMOJI_SET), authors = listOf(pubkey), dTags = listOf(dTag), limit = 1)
+            val subId = "emoji-set-${pubkey.take(8)}"
+            subIds.add(subId)
+            val targeted = outboxRouter?.subscribeToUserWriteRelays(subId, pubkey, filter)
+            if (targeted == null || targeted.isEmpty()) {
+                val msg = ClientMessage.req(subId, filter)
+                relayPool.sendToReadRelays(msg)
+                relayPool.sendToTopRelays(msg, maxRelays = 5)
+            }
+        }
+        // Wait for results then clean up — don't close on first EOSE since that
+        // may be a relay with 0 results while slower relays have the data.
         scope.launch {
-            subManager.awaitEoseWithTimeout("emoji-sets")
-            subManager.closeSubscription("emoji-sets")
+            delay(4_000)
+            for (subId in subIds) subManager.closeSubscription(subId)
         }
     }
 }

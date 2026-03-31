@@ -185,10 +185,10 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         if (prefix !in dedupBypassPrefixes) dedupBypassPrefixes.add(prefix)
     }
 
-    private val _events = MutableSharedFlow<NostrEvent>(extraBufferCapacity = 1024)
+    private val _events = MutableSharedFlow<NostrEvent>(extraBufferCapacity = 4096)
     val events: SharedFlow<NostrEvent> = _events
 
-    private val _relayEvents = MutableSharedFlow<RelayEvent>(extraBufferCapacity = 1024)
+    private val _relayEvents = MutableSharedFlow<RelayEvent>(extraBufferCapacity = 4096)
     val relayEvents: SharedFlow<RelayEvent> = _relayEvents
 
     private val _eoseSignals = MutableSharedFlow<String>(extraBufferCapacity = 64)

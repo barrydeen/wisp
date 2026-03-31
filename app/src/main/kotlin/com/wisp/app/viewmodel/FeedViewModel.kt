@@ -287,7 +287,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     val listCrud: ListCrudManager = ListCrudManager(
         relayPool, subManager, eventRepo, listRepo, interestRepo, bookmarkSetRepo, customEmojiRepo,
-        metadataFetcher, viewModelScope, processingDispatcher,
+        metadataFetcher, outboxRouter, viewModelScope, processingDispatcher,
         getSigner = { signer },
         getUserPubkey = { getUserPubkey() }
     )

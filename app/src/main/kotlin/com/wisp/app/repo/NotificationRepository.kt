@@ -77,6 +77,13 @@ class NotificationRepository(
 
     fun addEvent(event: NostrEvent, myPubkey: String, replyToMyEvent: Boolean = false, source: String = "") {
         if (event.pubkey == myPubkey) return
+        // Defense-in-depth: reject events from blocked users even if the caller forgot to check.
+        // For zap receipts, event.pubkey is the lightning service — check the actual zapper too.
+        if (muteRepo?.isBlocked(event.pubkey) == true) return
+        if (event.kind == 9735) {
+            val zapperPubkey = Nip57.getZapperPubkey(event)
+            if (zapperPubkey != null && muteRepo?.isBlocked(zapperPubkey) == true) return
+        }
         val hasPTag = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == myPubkey }
         // Kind 6 reposts may omit the p-tag; callers must pre-filter kind 6 ownership.
         // replyToMyEvent bypasses p-tag check for kind 1 replies found via e-tag subscription.
@@ -276,6 +283,7 @@ class NotificationRepository(
 
                     for ((emoji, pubkeys) in group.reactions) {
                         for (pk in pubkeys) {
+                            if (muteRepo?.isBlocked(pk) == true) continue
                             val ts = group.reactionTimestamps[pk] ?: 0L
                             if (ts >= recentCutoff) {
                                 recentReactions.getOrPut(emoji) { mutableListOf() }.add(pk)
@@ -287,8 +295,8 @@ class NotificationRepository(
                         }
                     }
 
-                    val recentZaps = group.zapEntries.filter { it.createdAt >= recentCutoff }
-                    val olderZaps = group.zapEntries.filter { it.createdAt < recentCutoff }
+                    val recentZaps = group.zapEntries.filter { it.createdAt >= recentCutoff && muteRepo?.isBlocked(it.pubkey) != true }
+                    val olderZaps = group.zapEntries.filter { it.createdAt < recentCutoff && muteRepo?.isBlocked(it.pubkey) != true }
 
                     if (recentReactions.isNotEmpty() || recentZaps.isNotEmpty()) {
                         val ts = maxOf(
@@ -316,14 +324,23 @@ class NotificationRepository(
                         ))
                     }
                 }
-                else -> result.add(group)
+                is NotificationGroup.ReplyNotification -> {
+                    if (muteRepo?.isBlocked(group.senderPubkey) != true) result.add(group)
+                }
+                is NotificationGroup.QuoteNotification -> {
+                    if (muteRepo?.isBlocked(group.senderPubkey) != true) result.add(group)
+                }
+                is NotificationGroup.MentionNotification -> {
+                    if (muteRepo?.isBlocked(group.senderPubkey) != true) result.add(group)
+                }
             }
         }
 
         val sorted = result.sortedByDescending { it.latestTimestamp }
         _notifications.value = if (sorted.size > 200) sorted.take(200) else sorted
 
-        val sortedFlat = flatItems.sortedByDescending { it.timestamp }
+        val sortedFlat = flatItems.filter { muteRepo?.isBlocked(it.actorPubkey) != true }
+            .sortedByDescending { it.timestamp }
         _flatNotifications.value = if (sortedFlat.size > 500) sortedFlat.take(500) else sortedFlat
 
         // Compute 24h summary from raw groupMap (not the split result)
@@ -341,6 +358,7 @@ class NotificationRepository(
                 is NotificationGroup.ReactionGroup -> {
                     for ((emoji, pubkeys) in group.reactions) {
                         for (pk in pubkeys) {
+                            if (muteRepo?.isBlocked(pk) == true) continue
                             val ts = group.reactionTimestamps[pk] ?: 0L
                             if (ts >= summaryCutoff) {
                                 when (emoji) {
@@ -352,6 +370,7 @@ class NotificationRepository(
                         }
                     }
                     for (zap in group.zapEntries) {
+                        if (muteRepo?.isBlocked(zap.pubkey) == true) continue
                         if (zap.createdAt >= summaryCutoff) {
                             zapCount++
                             zapSats += zap.sats
@@ -359,13 +378,13 @@ class NotificationRepository(
                     }
                 }
                 is NotificationGroup.ReplyNotification -> {
-                    if (group.latestTimestamp >= summaryCutoff) replyCount++
+                    if (muteRepo?.isBlocked(group.senderPubkey) != true && group.latestTimestamp >= summaryCutoff) replyCount++
                 }
                 is NotificationGroup.QuoteNotification -> {
-                    if (group.latestTimestamp >= summaryCutoff) quoteCount++
+                    if (muteRepo?.isBlocked(group.senderPubkey) != true && group.latestTimestamp >= summaryCutoff) quoteCount++
                 }
                 is NotificationGroup.MentionNotification -> {
-                    if (group.latestTimestamp >= summaryCutoff) mentionCount++
+                    if (muteRepo?.isBlocked(group.senderPubkey) != true && group.latestTimestamp >= summaryCutoff) mentionCount++
                 }
             }
         }
