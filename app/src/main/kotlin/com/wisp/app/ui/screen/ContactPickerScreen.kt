@@ -1,12 +1,14 @@
 package com.wisp.app.ui.screen
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -109,15 +111,21 @@ fun ContactPickerScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text(stringResource(R.string.nav_search)) },
-                singleLine = true,
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .defaultMinSize(minHeight = 64.dp)
                     .padding(horizontal = 16.dp, vertical = 8.dp)
-            )
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text(stringResource(R.string.nav_search)) },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(items = filteredList, key = { it.pubkey }) { entry ->
                 val profile = remember(entry.pubkey) { eventRepo.getProfileData(entry.pubkey) }

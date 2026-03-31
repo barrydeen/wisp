@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -193,34 +194,39 @@ fun SearchScreen(
                     }
                 },
                 title = {
-                    TextField(
-                        value = query,
-                        onValueChange = { viewModel.updateQuery(it) },
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyMedium,
-                        trailingIcon = {
-                            if (query.isNotEmpty()) {
-                                IconButton(onClick = { viewModel.clear() }) {
-                                    Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.btn_clear), modifier = Modifier.size(18.dp))
-                                }
-                            }
-                        },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                        ),
-                        shape = RoundedCornerShape(50),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(
-                            onSearch = { viewModel.search(query, relayPool, eventRepo, muteRepo) }
-                        ),
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                            .focusRequester(focusRequester)
-                    )
+                            .defaultMinSize(minHeight = 64.dp)
+                    ) {
+                        TextField(
+                            value = query,
+                            onValueChange = { viewModel.updateQuery(it) },
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyLarge,
+                            trailingIcon = {
+                                if (query.isNotEmpty()) {
+                                    IconButton(onClick = { viewModel.clear() }) {
+                                        Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.btn_clear), modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                            ),
+                            shape = RoundedCornerShape(50),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(
+                                onSearch = { viewModel.search(query, relayPool, eventRepo, muteRepo) }
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester)
+                        )
+                    }
                 },
                 actions = {
                     IconButton(onClick = { viewModel.search(query, relayPool, eventRepo, muteRepo) }) {
