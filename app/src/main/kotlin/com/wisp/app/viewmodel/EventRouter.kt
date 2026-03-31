@@ -520,7 +520,11 @@ class EventRouter(
             val participants = Nip17.getConversationParticipants(rumor, myPubkey)
             if (participants.any { muteRepo.isBlocked(it) }) return
             val convKey = DmRepository.conversationKey(participants + myPubkey)
-            dmRepo.addReaction(convKey, targetId, DmReaction(rumor.pubkey, rumor.content.trim(), rumor.createdAt))
+            val emojiContent = rumor.content.trim()
+            val emojiUrl = if (emojiContent.startsWith(":") && emojiContent.endsWith(":")) {
+                Nip30.parseEmojiTags(rumor.tags)[emojiContent.removeSurrounding(":")]
+            } else null
+            dmRepo.addReaction(convKey, targetId, DmReaction(rumor.pubkey, emojiContent, rumor.createdAt, emojiUrl))
             return
         }
 
@@ -530,6 +534,7 @@ class EventRouter(
         val convKey = DmRepository.conversationKey(participants + myPubkey)
         val replyToId = rumor.tags.firstOrNull { it.size >= 2 && it[0] == "e" && it.any { v -> v == "reply" } }?.get(1)
         val rumorId = Nip17.computeRumorId(rumor)
+        val emojiMap = Nip30.parseEmojiTags(rumor.tags)
         val msg = DmMessage(
             id = "${event.id}:${rumor.createdAt}",
             senderPubkey = rumor.pubkey,
@@ -540,6 +545,7 @@ class EventRouter(
             rumorId = rumorId,
             replyToId = replyToId,
             participants = participants,
+            emojiMap = emojiMap,
             debugGiftWrapJson = event.toJson(),
             debugRumorJson = Nip17.rumorToJson(rumor)
         )

@@ -3,7 +3,9 @@ package com.wisp.app.nostr
 data class DmReaction(
     val authorPubkey: String,
     val emoji: String,
-    val timestamp: Long
+    val timestamp: Long,
+    /** URL for custom emoji reactions (from the rumor's emoji tag). */
+    val emojiUrl: String? = null
 )
 
 data class DmZap(
@@ -29,6 +31,8 @@ data class DmMessage(
     val reactions: List<DmReaction> = emptyList(),
     /** Zap receipts (kind 9735) targeting this message's rumorId. */
     val zaps: List<DmZap> = emptyList(),
+    /** Emoji shortcode → URL map from the rumor's emoji tags (NIP-30). */
+    val emojiMap: Map<String, String> = emptyMap(),
     /** Raw gift wrap event JSON (kind 1059) — for debug inspection only. */
     val debugGiftWrapJson: String? = null,
     /** Decrypted rumor JSON — for debug inspection only. */
