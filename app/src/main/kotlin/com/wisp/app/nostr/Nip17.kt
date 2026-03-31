@@ -354,19 +354,26 @@ object Nip17 {
         recipientPubkey: ByteArray,
         targetRumorId: String,
         originalSenderPubkey: String,
-        emoji: String
-    ): NostrEvent = createGiftWrap(
-        senderPrivkey = senderPrivkey,
-        senderPubkey = senderPubkey,
-        recipientPubkey = recipientPubkey,
-        message = emoji,
-        rumorKind = 7,
-        replyTags = listOf(
+        emoji: String,
+        emojiUrl: String? = null
+    ): NostrEvent {
+        val tags = mutableListOf(
             listOf("e", targetRumorId),
             listOf("p", originalSenderPubkey),
             listOf("k", "14")
         )
-    )
+        if (emojiUrl != null) {
+            tags.add(listOf("emoji", emoji.removeSurrounding(":"), emojiUrl))
+        }
+        return createGiftWrap(
+            senderPrivkey = senderPrivkey,
+            senderPubkey = senderPubkey,
+            recipientPubkey = recipientPubkey,
+            message = emoji,
+            rumorKind = 7,
+            replyTags = tags
+        )
+    }
 
     /** Remote-signer variant of [createDmReaction]. */
     suspend fun createDmReactionRemote(
@@ -374,18 +381,25 @@ object Nip17 {
         recipientPubkeyHex: String,
         targetRumorId: String,
         originalSenderPubkey: String,
-        emoji: String
-    ): NostrEvent = createGiftWrapRemote(
-        signer = signer,
-        recipientPubkeyHex = recipientPubkeyHex,
-        message = emoji,
-        rumorKind = 7,
-        replyTags = listOf(
+        emoji: String,
+        emojiUrl: String? = null
+    ): NostrEvent {
+        val tags = mutableListOf(
             listOf("e", targetRumorId),
             listOf("p", originalSenderPubkey),
             listOf("k", "14")
         )
-    )
+        if (emojiUrl != null) {
+            tags.add(listOf("emoji", emoji.removeSurrounding(":"), emojiUrl))
+        }
+        return createGiftWrapRemote(
+            signer = signer,
+            recipientPubkeyHex = recipientPubkeyHex,
+            message = emoji,
+            rumorKind = 7,
+            replyTags = tags
+        )
+    }
 
     private fun randomizeTimestamp(base: Long): Long {
         // 0 to 1 day in the past — NIP-17 spec allows up to 2 days, but keeping it to 1 day

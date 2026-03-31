@@ -1314,6 +1314,8 @@ fun WispNavHost(
             val peerProfile = feedViewModel.eventRepo.getProfileData(pubkey)
             val userProfile = userPubkey?.let { feedViewModel.eventRepo.getProfileData(it) }
             val dmResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
+            val dmUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+            var showDmEmojiLibrary by remember { mutableStateOf(false) }
             DmConversationScreen(
                 viewModel = dmConvoViewModel,
                 relayPool = feedViewModel.relayPool,
@@ -1340,8 +1342,20 @@ fun WispNavHost(
                         }
                     )
                 },
-                resolvedEmojis = dmResolvedEmojis
+                resolvedEmojis = dmResolvedEmojis,
+                unicodeEmojis = dmUnicodeEmojis,
+                onOpenEmojiLibrary = { showDmEmojiLibrary = true }
             )
+            if (showDmEmojiLibrary) {
+                val dmSheetUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+                com.wisp.app.ui.component.EmojiLibrarySheet(
+                    currentEmojis = dmSheetUnicodeEmojis,
+                    onAddEmojis = { emojis ->
+                        emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                    },
+                    onDismiss = { showDmEmojiLibrary = false }
+                )
+            }
         }
 
         composable(
@@ -1372,6 +1386,8 @@ fun WispNavHost(
             val peerProfile = participantList.firstOrNull()?.let { feedViewModel.eventRepo.getProfileData(it) }
             val userProfile = userPubkey?.let { feedViewModel.eventRepo.getProfileData(it) }
             val dmGroupResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
+            val dmGroupUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+            var showDmGroupEmojiLibrary by remember { mutableStateOf(false) }
             DmConversationScreen(
                 viewModel = dmConvoViewModel,
                 relayPool = feedViewModel.relayPool,
@@ -1399,8 +1415,20 @@ fun WispNavHost(
                         }
                     )
                 },
-                resolvedEmojis = dmGroupResolvedEmojis
+                resolvedEmojis = dmGroupResolvedEmojis,
+                unicodeEmojis = dmGroupUnicodeEmojis,
+                onOpenEmojiLibrary = { showDmGroupEmojiLibrary = true }
             )
+            if (showDmGroupEmojiLibrary) {
+                val dmGroupSheetUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+                com.wisp.app.ui.component.EmojiLibrarySheet(
+                    currentEmojis = dmGroupSheetUnicodeEmojis,
+                    onAddEmojis = { emojis ->
+                        emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                    },
+                    onDismiss = { showDmGroupEmojiLibrary = false }
+                )
+            }
         }
 
         composable(

@@ -107,7 +107,9 @@ fun DmConversationScreen(
     isWalletConnected: Boolean = false,
     onGoToWallet: () -> Unit = {},
     noteActions: com.wisp.app.ui.component.NoteActions? = null,
-    resolvedEmojis: Map<String, String> = emptyMap()
+    resolvedEmojis: Map<String, String> = emptyMap(),
+    unicodeEmojis: List<String> = emptyList(),
+    onOpenEmojiLibrary: (() -> Unit)? = null
 ) {
     val messages by viewModel.messages.collectAsState()
     val messageText by viewModel.messageText.collectAsState()
@@ -365,14 +367,17 @@ fun DmConversationScreen(
                             relayIcons = icons,
                             onSelect = { viewModel.selectMessage(msg.id) },
                             onReply = { viewModel.setReplyingTo(it) },
-                            onReact = { m, emoji -> viewModel.sendReaction(m.rumorId, emoji, relayPool, signer) },
+                            onReact = { m, emoji -> viewModel.sendReaction(m.rumorId, emoji, relayPool, signer, resolvedEmojis) },
                             onZap = { m -> zapTargetMessage = m },
                             isZapInProgress = msg.senderPubkey in zapInProgress,
                             zapSats = msg.zaps.sumOf { it.sats }.coerceAtLeast(zapSatsMap[msg.id] ?: 0L),
                             onProfileClick = onProfileClick,
                             onNoteClick = onNoteClick,
                             onDebugTap = { debugMessage = it },
-                            noteActions = noteActions
+                            noteActions = noteActions,
+                            resolvedEmojis = resolvedEmojis,
+                            unicodeEmojis = unicodeEmojis,
+                            onOpenEmojiLibrary = onOpenEmojiLibrary
                         )
                     }
                     val dateKey = dayKey(msg.createdAt)

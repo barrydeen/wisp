@@ -916,7 +916,7 @@ fun QuotedNote(
     val effectiveNoteClick = noteActions?.onNoteClick ?: onNoteClick
 
     if (event != null && noteActions != null) {
-        // Full interactive rendering with all features
+        // Full rendering with all interactive features
         val reactionVersion by eventRepo.reactionVersion.collectAsState()
         val zapVersion by eventRepo.zapVersion.collectAsState()
         val replyCountVersion by eventRepo.replyCountVersion.collectAsState()

@@ -87,6 +87,9 @@ fun DmBubble(
     onNoteClick: ((String) -> Unit)? = null,
     onDebugTap: ((DmMessage) -> Unit)? = null,
     noteActions: NoteActions? = null,
+    resolvedEmojis: Map<String, String> = emptyMap(),
+    unicodeEmojis: List<String> = emptyList(),
+    onOpenEmojiLibrary: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showDetails by remember(message.id) { mutableStateOf(false) }
@@ -210,7 +213,8 @@ fun DmBubble(
                             reactions = message.reactions,
                             eventRepo = eventRepo,
                             isSent = isSent,
-                            onToggle = { emoji -> onReact(message, emoji) }
+                            onToggle = { emoji -> onReact(message, emoji) },
+                            resolvedEmojis = resolvedEmojis
                         )
                     }
                 }
@@ -328,7 +332,8 @@ fun DmBubble(
                 relayIcons = relayIcons,
                 reactions = message.reactions,
                 eventRepo = eventRepo,
-                isSent = isSent
+                isSent = isSent,
+                resolvedEmojis = resolvedEmojis
             )
         }
 
@@ -339,7 +344,10 @@ fun DmBubble(
                     onReact(message, emoji)
                     showEmojiPicker = false
                 },
-                onDismiss = { showEmojiPicker = false }
+                onDismiss = { showEmojiPicker = false },
+                resolvedEmojis = resolvedEmojis,
+                unicodeEmojis = unicodeEmojis,
+                onOpenEmojiLibrary = onOpenEmojiLibrary?.let { { showEmojiPicker = false; it() } }
             )
         }
     }
@@ -400,7 +408,8 @@ private fun ReactionChips(
     reactions: List<DmReaction>,
     eventRepo: EventRepository?,
     isSent: Boolean,
-    onToggle: (String) -> Unit
+    onToggle: (String) -> Unit,
+    resolvedEmojis: Map<String, String> = emptyMap()
 ) {
     val grouped = remember(reactions) { reactions.groupBy { it.emoji } }
     val pillColor = if (isSent) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f)
@@ -419,7 +428,18 @@ private fun ReactionChips(
                     .clickable { onToggle(emoji) }
                     .padding(horizontal = 6.dp, vertical = 3.dp)
             ) {
-                Text(emoji, fontSize = 14.sp)
+                val emojiUrl = if (emoji.startsWith(":") && emoji.endsWith(":")) {
+                    resolvedEmojis[emoji.removeSurrounding(":")]
+                } else null
+                if (emojiUrl != null) {
+                    coil3.compose.AsyncImage(
+                        model = emojiUrl,
+                        contentDescription = emoji,
+                        modifier = Modifier.size(18.dp)
+                    )
+                } else {
+                    Text(emoji, fontSize = 14.sp)
+                }
                 Spacer(Modifier.width(3.dp))
                 // Stack up to 3 reactor avatars
                 list.take(3).forEachIndexed { index, reaction ->
@@ -442,7 +462,8 @@ private fun DmExpandedDetails(
     relayIcons: List<Pair<String, String?>>,
     reactions: List<DmReaction>,
     eventRepo: EventRepository?,
-    isSent: Boolean
+    isSent: Boolean,
+    resolvedEmojis: Map<String, String> = emptyMap()
 ) {
     Column(
         modifier = Modifier
@@ -490,7 +511,18 @@ private fun DmExpandedDetails(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(bottom = 4.dp)
                 ) {
-                    Text(emoji, fontSize = 14.sp)
+                    val emojiUrl = if (emoji.startsWith(":") && emoji.endsWith(":")) {
+                        resolvedEmojis[emoji.removeSurrounding(":")]
+                    } else null
+                    if (emojiUrl != null) {
+                        coil3.compose.AsyncImage(
+                            model = emojiUrl,
+                            contentDescription = emoji,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    } else {
+                        Text(emoji, fontSize = 14.sp)
+                    }
                     Spacer(Modifier.width(6.dp))
                     Row {
                         list.take(5).forEach { reaction ->
