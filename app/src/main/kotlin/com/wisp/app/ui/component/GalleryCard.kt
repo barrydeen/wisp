@@ -3,6 +3,8 @@ package com.wisp.app.ui.component
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +23,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -38,6 +42,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,6 +50,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -558,44 +565,93 @@ fun FullScreenGalleryViewer(
         val context = LocalContext.current
         val clipboardManager = LocalClipboardManager.current
         val scope = rememberCoroutineScope()
-        val pagerState = rememberPagerState(
-            initialPage = initialPage.coerceIn(0, imageEntries.size - 1),
-            pageCount = { imageEntries.size }
-        )
+        var currentPage by remember { mutableIntStateOf(initialPage.coerceIn(0, imageEntries.size - 1)) }
 
         val buttonColors = IconButtonDefaults.iconButtonColors(
             containerColor = Color.Black.copy(alpha = 0.5f),
             contentColor = Color.White
         )
 
+        val entry = imageEntries[currentPage]
+
+        var scale by remember(currentPage) { mutableFloatStateOf(1f) }
+        var offset by remember(currentPage) { mutableStateOf(Offset.Zero) }
+
+        val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
+            val newScale = (scale * zoomChange).coerceIn(1f, 5f)
+            scale = newScale
+            offset = if (newScale > 1f) offset + panChange else Offset.Zero
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
         ) {
-            // Swipeable image pager with pinch-to-zoom
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize()
-            ) { page ->
-                val entry = imageEntries[page]
-
+            // Zoomable image
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { if (scale <= 1f) onDismiss() }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
                 AsyncImage(
                     model = entry.url,
-                    contentDescription = entry.alt ?: "Image ${page + 1} of ${imageEntries.size}",
+                    contentDescription = entry.alt ?: "Image ${currentPage + 1} of ${imageEntries.size}",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxSize()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onDismiss
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offset.x,
+                            translationY = offset.y
                         )
+                        .transformable(state = transformableState)
                 )
             }
 
-            // Page counter (e.g. "2 / 5")
+            // Navigation arrows
             if (imageEntries.size > 1) {
+                // Previous arrow
+                if (currentPage > 0) {
+                    IconButton(
+                        onClick = { currentPage-- },
+                        colors = buttonColors,
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(start = 8.dp)
+                            .size(44.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                            contentDescription = "Previous image"
+                        )
+                    }
+                }
+
+                // Next arrow
+                if (currentPage < imageEntries.size - 1) {
+                    IconButton(
+                        onClick = { currentPage++ },
+                        colors = buttonColors,
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(end = 8.dp)
+                            .size(44.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = "Next image"
+                        )
+                    }
+                }
+
+                // Page counter
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = Color.Black.copy(alpha = 0.5f),
@@ -604,7 +660,7 @@ fun FullScreenGalleryViewer(
                         .padding(top = 16.dp)
                 ) {
                     Text(
-                        text = "${pagerState.currentPage + 1} / ${imageEntries.size}",
+                        text = "${currentPage + 1} / ${imageEntries.size}",
                         style = MaterialTheme.typography.labelMedium,
                         color = Color.White,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -625,7 +681,7 @@ fun FullScreenGalleryViewer(
                                 .size(8.dp)
                                 .clip(CircleShape)
                                 .background(
-                                    if (index == pagerState.currentPage)
+                                    if (index == currentPage)
                                         Color.White
                                     else
                                         Color.White.copy(alpha = 0.4f)
@@ -636,7 +692,7 @@ fun FullScreenGalleryViewer(
             }
 
             // Current image URL for download/copy
-            val currentUrl = imageEntries.getOrNull(pagerState.currentPage)?.url
+            val currentUrl = entry.url
 
             // Top-right buttons
             Row(
@@ -644,27 +700,25 @@ fun FullScreenGalleryViewer(
                     .align(Alignment.TopEnd)
                     .padding(16.dp)
             ) {
-                if (currentUrl != null) {
-                    IconButton(
-                        onClick = { scope.launch { MediaDownloader.downloadMedia(context, currentUrl) } },
-                        colors = buttonColors,
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_download),
-                            contentDescription = "Download"
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    IconButton(
-                        onClick = { clipboardManager.setText(AnnotatedString(currentUrl)) },
-                        colors = buttonColors,
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy URL")
-                    }
-                    Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = { scope.launch { MediaDownloader.downloadMedia(context, currentUrl) } },
+                    colors = buttonColors,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_download),
+                        contentDescription = "Download"
+                    )
                 }
+                Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = { clipboardManager.setText(AnnotatedString(currentUrl)) },
+                    colors = buttonColors,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy URL")
+                }
+                Spacer(Modifier.width(8.dp))
                 IconButton(
                     onClick = onDismiss,
                     colors = buttonColors,
