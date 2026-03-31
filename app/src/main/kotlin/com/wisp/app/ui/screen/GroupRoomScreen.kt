@@ -2,6 +2,7 @@ package com.wisp.app.ui.screen
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -199,6 +200,9 @@ fun GroupRoomScreen(
 
     val listState = rememberLazyListState()
     var prevMessageCount by remember { mutableIntStateOf(0) }
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }
+    var highlightTrigger by remember { mutableIntStateOf(0) }
+    val scrollScope = rememberCoroutineScope()
 
     LaunchedEffect(messages.size) {
         if (messages.isEmpty()) return@LaunchedEffect
@@ -303,6 +307,7 @@ fun GroupRoomScreen(
                             zapVersion = zapVersion,
                             isZapAnimating = message.id in zapAnimatingIds,
                             isZapInProgress = message.id in zapInProgressIds,
+                            highlightTrigger = if (message.id == highlightedMessageId) highlightTrigger else 0,
                             onProfileClick = onProfileClick,
                             onNoteClick = onNoteClick,
                             onReply = {
@@ -313,6 +318,16 @@ fun GroupRoomScreen(
                                 viewModel.sendReaction(msgId, pubkey, emoji, signer, relayPool, resolvedEmojis)
                             },
                             onZap = onZap,
+                            onScrollToMessage = { targetId ->
+                                val index = messages.indexOfFirst { it.id == targetId }
+                                if (index >= 0) {
+                                    scrollScope.launch {
+                                        listState.animateScrollToItem(index)
+                                        highlightedMessageId = targetId
+                                        highlightTrigger++
+                                    }
+                                }
+                            },
                             onOpenEmojiLibrary = onOpenEmojiLibrary,
                             onFollowAuthor = onFollowAuthor,
                             onBlockAuthor = onBlockAuthor,
@@ -700,11 +715,13 @@ private fun GroupMessageBubble(
     zapVersion: Int = 0,
     isZapAnimating: Boolean = false,
     isZapInProgress: Boolean = false,
+    highlightTrigger: Int = 0,
     onProfileClick: (String) -> Unit,
     onNoteClick: ((String) -> Unit)? = null,
     onReply: (GroupMessage) -> Unit,
     onReact: (messageId: String, senderPubkey: String, emoji: String) -> Unit,
     onZap: ((messageId: String, senderPubkey: String) -> Unit)? = null,
+    onScrollToMessage: ((String) -> Unit)? = null,
     onOpenEmojiLibrary: (() -> Unit)? = null,
     onFollowAuthor: ((String) -> Unit)? = null,
     onBlockAuthor: ((String) -> Unit)? = null,
@@ -734,6 +751,15 @@ private fun GroupMessageBubble(
     val zapSats = remember(message.id, zapVersion) { eventRepo.getZapSats(message.id) }
     val hasZaps = zapSats > 0
 
+    // Highlight animation for scroll-to-reply
+    val highlightAlpha = remember { Animatable(0f) }
+    LaunchedEffect(highlightTrigger) {
+        if (highlightTrigger > 0) {
+            highlightAlpha.snapTo(0.3f)
+            highlightAlpha.animateTo(0f, tween(durationMillis = 1200))
+        }
+    }
+
     val swipeOffset = remember { Animatable(0f) }
     val density = LocalDensity.current
     val swipeThreshold = remember(density) { with(density) { 80.dp.toPx() } }
@@ -755,6 +781,7 @@ private fun GroupMessageBubble(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = highlightAlpha.value))
             .padding(horizontal = 12.dp, vertical = 4.dp)
             .offset { IntOffset(swipeOffset.value.toInt(), 0) }
             .pointerInput(message.id) {
@@ -821,6 +848,7 @@ private fun GroupMessageBubble(
                         .padding(vertical = 4.dp)
                         .clip(RoundedCornerShape(6.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                        .clickable { onScrollToMessage?.invoke(replyToMessage.id) }
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Box(
