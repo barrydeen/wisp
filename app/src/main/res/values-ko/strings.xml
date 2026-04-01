@@ -79,6 +79,11 @@
     <string name="compose_reply">답글</string>
     <string name="compose_quote">인용</string>
     <string name="compose_placeholder">무슨 생각을 하고 있나요?</string>
+    <string name="compose_switch_to_text">텍스트로 전환</string>
+    <string name="compose_switch_to_gallery">갤러리로 전환</string>
+    <string name="compose_gallery_mode">갤러리 게시물</string>
+    <string name="compose_gallery_placeholder">갤러리 게시물에 설명 추가…</string>
+    <string name="compose_gallery_tap_to_add">사진 또는 비디오를 추가하려면 탭하세요</string>
     <string name="compose_publish">게시</string>
     <string name="compose_publishing">게시 중…</string>
     <string name="compose_uploading">업로드 중…</string>

@@ -79,6 +79,11 @@
     <string name="compose_reply">Antworten</string>
     <string name="compose_quote">Zitat</string>
     <string name="compose_placeholder">Was hast du auf dem Herzen?</string>
+    <string name="compose_switch_to_text">Zu Text wechseln</string>
+    <string name="compose_switch_to_gallery">Zu Galerie wechseln</string>
+    <string name="compose_gallery_mode">Galerie-Beitrag</string>
+    <string name="compose_gallery_placeholder">Füge eine Beschreibung zu deinem Galerie-Beitrag hinzu…</string>
+    <string name="compose_gallery_tap_to_add">Tippe, um Fotos oder Videos hinzuzufügen</string>
     <string name="compose_publish">Veröffentlichen</string>
     <string name="compose_publishing">Wird veröffentlicht…</string>
     <string name="compose_uploading">Wird hochgeladen…</string>

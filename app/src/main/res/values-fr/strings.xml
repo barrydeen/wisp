@@ -79,6 +79,11 @@
     <string name="compose_reply">Répondre</string>
     <string name="compose_quote">Citer</string>
     <string name="compose_placeholder">À quoi pensez-vous ?</string>
+    <string name="compose_switch_to_text">Passer en Texte</string>
+    <string name="compose_switch_to_gallery">Passer en Galerie</string>
+    <string name="compose_gallery_mode">Publication Galerie</string>
+    <string name="compose_gallery_placeholder">Ajoutez une description à votre publication galerie…</string>
+    <string name="compose_gallery_tap_to_add">Appuyez pour ajouter des photos ou vidéos</string>
     <string name="compose_publish">Publier</string>
     <string name="compose_publishing">Publication en cours…</string>
     <string name="compose_uploading">Téléchargement en cours…</string>

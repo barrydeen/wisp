@@ -79,6 +79,11 @@
     <string name="compose_reply">Reageren</string>
     <string name="compose_quote">Citeren</string>
     <string name="compose_placeholder">Waar denk je aan?</string>
+    <string name="compose_switch_to_text">Overschakelen naar Tekst</string>
+    <string name="compose_switch_to_gallery">Overschakelen naar Galerij</string>
+    <string name="compose_gallery_mode">Galerij bericht</string>
+    <string name="compose_gallery_placeholder">Voeg een beschrijving toe voor je galerij bericht…</string>
+    <string name="compose_gallery_tap_to_add">Tik om foto\'s of video\'s toe te voegen</string>
     <string name="compose_publish">Plaatsen</string>
     <string name="compose_publishing">Plaatsen…</string>
     <string name="compose_uploading">Uploaden…</string>

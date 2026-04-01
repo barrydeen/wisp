@@ -141,40 +141,6 @@ object Themes {
             )
         ),
         ThemePreset(
-            name = "solarized",
-            displayName = "Solarized",
-            dark = ThemeColors(
-                primary = Color(0xFFB58900),
-                secondary = Color(0xFF2AA198),
-                background = Color(0xFF002B36),
-                surface = Color(0xFF073642),
-                surfaceVariant = Color(0xFF094050),
-                onBackground = Color(0xFF93A1A1),
-                onSurface = Color(0xFF93A1A1),
-                onSurfaceVariant = Color(0xFF657B83),
-                outline = Color(0xFF586E75),
-                zapColor = Color(0xFFB58900),
-                repostColor = Color(0xFF859900),
-                bookmarkColor = Color(0xFFB58900),
-                paidColor = Color(0xFFB58900)
-            ),
-            light = ThemeColors(
-                primary = Color(0xFFB58900),
-                secondary = Color(0xFF2AA198),
-                background = Color(0xFFFDF6E3),
-                surface = Color(0xFFEEE8D5),
-                surfaceVariant = Color(0xFFE4DCC8),
-                onBackground = Color(0xFF657B83),
-                onSurface = Color(0xFF657B83),
-                onSurfaceVariant = Color(0xFF586E75),
-                outline = Color(0xFF93A1A1),
-                zapColor = Color(0xFFB58900),
-                repostColor = Color(0xFF859900),
-                bookmarkColor = Color(0xFFB58900),
-                paidColor = Color(0xFFB58900)
-            )
-        ),
-        ThemePreset(
             name = "catppuccin",
             displayName = "Catppuccin",
             dark = ThemeColors(
@@ -311,79 +277,11 @@ object Themes {
             )
         ),
         ThemePreset(
-            name = "earthsong",
-            displayName = "Earthsong",
-            dark = ThemeColors(
-                primary = Color(0xFF6B8E4E),
-                secondary = Color(0xFFF5AE2E),
-                background = Color(0xFF1A1612),
-                surface = Color(0xFF282520),
-                surfaceVariant = Color(0xFF3A3530),
-                onBackground = Color(0xFFE5C7A9),
-                onSurface = Color(0xFFE5C7A9),
-                onSurfaceVariant = Color(0xFFA89880),
-                outline = Color(0xFF4A4540),
-                zapColor = Color(0xFFF5AE2E),
-                repostColor = Color(0xFF6B8E4E),
-                bookmarkColor = Color(0xFFF5AE2E),
-                paidColor = Color(0xFFF5AE2E)
-            ),
-            light = ThemeColors(
-                primary = Color(0xFF4A6B38),
-                secondary = Color(0xFF8B6914),
-                background = Color(0xFFD8D0C0),
-                surface = Color(0xFFCCC4B4),
-                surfaceVariant = Color(0xFFB8B0A0),
-                onBackground = Color(0xFF2A2420),
-                onSurface = Color(0xFF2A2420),
-                onSurfaceVariant = Color(0xFF4A4030),
-                outline = Color(0xFF908880),
-                zapColor = Color(0xFF8B6914),
-                repostColor = Color(0xFF4A6B38),
-                bookmarkColor = Color(0xFF8B6914),
-                paidColor = Color(0xFF8B6914)
-            )
-        ),
-        ThemePreset(
-            name = "neonnight",
-            displayName = "Neon Night",
-            dark = ThemeColors(
-                primary = Color(0xFFDD92F6),
-                secondary = Color(0xFF8CE8FF),
-                background = Color(0xFF20242D),
-                surface = Color(0xFF282E3A),
-                surfaceVariant = Color(0xFF353E4C),
-                onBackground = Color(0xFFC7C8FF),
-                onSurface = Color(0xFFC7C8FF),
-                onSurfaceVariant = Color(0xFF9AA0C0),
-                outline = Color(0xFF404858),
-                zapColor = Color(0xFFDD92F6),
-                repostColor = Color(0xFF8CE8FF),
-                bookmarkColor = Color(0xFFDD92F6),
-                paidColor = Color(0xFFF0E080)
-            ),
-            light = ThemeColors(
-                primary = Color(0xFF285088),
-                secondary = Color(0xFF006070),
-                background = Color(0xFFCDD2E0),
-                surface = Color(0xFFBEC4D4),
-                surfaceVariant = Color(0xFFA8B0C4),
-                onBackground = Color(0xFF1E2030),
-                onSurface = Color(0xFF1E2030),
-                onSurfaceVariant = Color(0xFF383848),
-                outline = Color(0xFF8890A0),
-                zapColor = Color(0xFF8040A0),
-                repostColor = Color(0xFF3060A0),
-                bookmarkColor = Color(0xFF8040A0),
-                paidColor = Color(0xFF707090)
-            )
-        ),
-        ThemePreset(
             name = "srcery",
             displayName = "Srcery",
             dark = ThemeColors(
-                primary = Color(0xFF2C78BF),
-                secondary = Color(0xFF519F50),
+                primary = Color(0xFF7CB860),
+                secondary = Color(0xFF6CA0D0),
                 background = Color(0xFF1C1B19),
                 surface = Color(0xFF262424),
                 surfaceVariant = Color(0xFF303030),
@@ -392,13 +290,13 @@ object Themes {
                 onSurfaceVariant = Color(0xFF918175),
                 outline = Color(0xFF3A3A3A),
                 zapColor = Color(0xFFFF5F00),
-                repostColor = Color(0xFF519F50),
-                bookmarkColor = Color(0xFFFF5F00),
+                repostColor = Color(0xFF6CA0D0),
+                bookmarkColor = Color(0xFF7CB860),
                 paidColor = Color(0xFFFBC000)
             ),
             light = ThemeColors(
-                primary = Color(0xFF225A9A),
-                secondary = Color(0xFF407A40),
+                primary = Color(0xFF508040),
+                secondary = Color(0xFF4A80B0),
                 background = Color(0xFFD4CFC0),
                 surface = Color(0xFFC8C2B4),
                 surfaceVariant = Color(0xFFB4AFA0),
@@ -407,8 +305,8 @@ object Themes {
                 onSurfaceVariant = Color(0xFF5A5548),
                 outline = Color(0xFF989088),
                 zapColor = Color(0xFFB84800),
-                repostColor = Color(0xFF407A40),
-                bookmarkColor = Color(0xFFB84800),
+                repostColor = Color(0xFF4A80B0),
+                bookmarkColor = Color(0xFF508040),
                 paidColor = Color(0xFFA08000)
             )
         ),
@@ -416,7 +314,7 @@ object Themes {
             name = "kanagawa",
             displayName = "Kanagawa",
             dark = ThemeColors(
-                primary = Color(0xFFD27E99),
+                primary = Color(0xFFCB4B62),
                 secondary = Color(0xFF7E9CD8),
                 background = Color(0xFF1F1F28),
                 surface = Color(0xFF2A2A37),
@@ -424,14 +322,14 @@ object Themes {
                 onBackground = Color(0xFFDCD7BA),
                 onSurface = Color(0xFFDCD7BA),
                 onSurfaceVariant = Color(0xFFC8C093),
-                outline = Color(0xFF54546D),
+                outline = Color(0xFF6B6B80),
                 zapColor = Color(0xFFFF9E3B),
                 repostColor = Color(0xFF76946A),
-                bookmarkColor = Color(0xFFD27E99),
+                bookmarkColor = Color(0xFFCB4B62),
                 paidColor = Color(0xFFE6C384)
             ),
             light = ThemeColors(
-                primary = Color(0xFFD27E99),
+                primary = Color(0xFFCB4B62),
                 secondary = Color(0xFF7E9CD8),
                 background = Color(0xFFF6F3E8),
                 surface = Color(0xFFECE8DC),
@@ -439,7 +337,7 @@ object Themes {
                 onBackground = Color(0xFF3A3630),
                 onSurface = Color(0xFF3A3630),
                 onSurfaceVariant = Color(0xFF6A6658),
-                outline = Color(0xFFA8A498),
+                outline = Color(0xFFB8B0A0),
                 zapColor = Color(0xFFE6A03B),
                 repostColor = Color(0xFF6A9A5A),
                 bookmarkColor = Color(0xFFD27E99),
@@ -465,7 +363,7 @@ object Themes {
                 paidColor = Color(0xFFFFE99D)
             ),
             light = ThemeColors(
-                primary = Color(0xFFFC6D26),
+                primary = Color(0xFFE86A33),
                 secondary = Color(0xFF1497D6),
                 background = Color(0xFFFAFAFA),
                 surface = Color(0xFFF0F0F0),
@@ -474,9 +372,9 @@ object Themes {
                 onSurface = Color(0xFF434343),
                 onSurfaceVariant = Color(0xFF6B6B6B),
                 outline = Color(0xFFB0B0B0),
-                zapColor = Color(0xFFFC6D26),
+                zapColor = Color(0xFFE86A33),
                 repostColor = Color(0xFF5BA055),
-                bookmarkColor = Color(0xFFFC6D26),
+                bookmarkColor = Color(0xFFE86A33),
                 paidColor = Color(0xFFC0A000)
             )
         ),

@@ -82,6 +82,9 @@
     <string name="compose_placeholder">What\'s on your mind?</string>
     <string name="compose_gallery_placeholder">Add a description for your gallery post…</string>
     <string name="compose_gallery_mode">Gallery Post</string>
+    <string name="compose_gallery_tap_to_add">Tap to add photos or videos</string>
+    <string name="compose_switch_to_text">Switch to Text</string>
+    <string name="compose_switch_to_gallery">Switch to Gallery</string>
     <string name="compose_publish">Publish</string>
     <string name="compose_publishing">Publishing…</string>
     <string name="compose_uploading">Uploading…</string>

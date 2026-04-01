@@ -79,6 +79,11 @@
     <string name="compose_reply">返信</string>
     <string name="compose_quote">引用</string>
     <string name="compose_placeholder">今何を考えていますか？</string>
+    <string name="compose_switch_to_text">テキストに変換</string>
+    <string name="compose_switch_to_gallery">ギャラリーに変換</string>
+    <string name="compose_gallery_mode">ギャラリー投稿</string>
+    <string name="compose_gallery_placeholder">ギャラリー投稿の説明を追加…</string>
+    <string name="compose_gallery_tap_to_add">写真または動画を追加するにはタップ</string>
     <string name="compose_publish">投稿</string>
     <string name="compose_publishing">投稿中…</string>
     <string name="compose_uploading">アップロード中…</string>
