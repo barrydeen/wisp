@@ -39,6 +39,13 @@ object Keys {
         return secp256k1.signSchnorr(message, privkey, null)
     }
 
+    fun verifySchnorr(signature: ByteArray, message: ByteArray, pubkey: ByteArray): Boolean {
+        require(signature.size == 64) { "Schnorr signature must be 64 bytes" }
+        require(message.size == 32) { "Message must be 32 bytes (SHA-256 hash)" }
+        require(pubkey.size == 32) { "X-only pubkey must be 32 bytes" }
+        return secp256k1.verifySchnorr(signature, message, pubkey)
+    }
+
     /**
      * Convert x-only pubkey (32 bytes) to compressed form (33 bytes) by prepending 0x02.
      * Used for ECDH in NIP-44.
