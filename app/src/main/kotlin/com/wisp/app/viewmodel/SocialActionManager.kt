@@ -197,7 +197,6 @@ class SocialActionManager(
         muteRepo.muteThread(rootEventId)
         notifRepo.purgeThread(rootEventId)
         eventRepo.purgeThread(rootEventId)
-        publishMuteList()
     }
 
     fun updateMutedWords() {
@@ -207,11 +206,7 @@ class SocialActionManager(
     private fun publishMuteList() {
         val s = getSigner() ?: return
         scope.launch {
-            val privateJson = Nip51.buildMuteListContent(
-                muteRepo.getBlockedPubkeys(),
-                muteRepo.getMutedWords(),
-                muteRepo.getMutedThreads()
-            )
+            val privateJson = Nip51.buildMuteListContent(muteRepo.getBlockedPubkeys(), muteRepo.getMutedWords())
             val encrypted = s.nip44Encrypt(privateJson, s.pubkeyHex)
             val event = s.signEvent(kind = Nip51.KIND_MUTE_LIST, content = encrypted, tags = emptyList())
             relayPool.sendToWriteRelays(ClientMessage.event(event))
