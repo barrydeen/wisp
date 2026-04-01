@@ -127,7 +127,7 @@ object Routes {
     const val DM_CONVERSATION = "dm/{pubkey}"
     const val DM_CONVERSATION_GROUP = "dm/group/{conversationKey}"
     const val CONTACT_PICKER = "contact_picker"
-    const val GROUP_ROOM = "group_room/{encodedRelay}/{groupId}"
+    const val GROUP_ROOM = "group_room/{encodedRelay}/{groupId}?scrollTo={scrollTo}"
     const val GROUP_DETAIL = "group_detail/{encodedRelay}/{groupId}"
     const val NOTIFICATIONS = "notifications"
     const val BLOSSOM_SERVERS = "blossom_servers"
@@ -1441,11 +1441,13 @@ fun WispNavHost(
             Routes.GROUP_ROOM,
             arguments = listOf(
                 navArgument("encodedRelay") { type = NavType.StringType },
-                navArgument("groupId") { type = NavType.StringType }
+                navArgument("groupId") { type = NavType.StringType },
+                navArgument("scrollTo") { type = NavType.StringType; nullable = true; defaultValue = null }
             )
         ) { backStackEntry ->
             val encodedRelay = backStackEntry.arguments?.getString("encodedRelay") ?: return@composable
             val groupId = backStackEntry.arguments?.getString("groupId") ?: return@composable
+            val scrollToMessageId = backStackEntry.arguments?.getString("scrollTo")
             val relayUrl = String(
                 android.util.Base64.decode(encodedRelay, android.util.Base64.URL_SAFE),
                 Charsets.UTF_8
@@ -1538,6 +1540,7 @@ fun WispNavHost(
             com.wisp.app.ui.screen.GroupRoomScreen(
                 viewModel = groupRoomViewModel,
                 initialRoom = initialRoom,
+                scrollToMessageId = scrollToMessageId,
                 relayPool = feedViewModel.relayPool,
                 eventRepo = feedViewModel.eventRepo,
                 signer = activeSigner,
@@ -2905,6 +2908,17 @@ fun WispNavHost(
                 onGroupRoom = { relayUrl, groupId ->
                     val encodedRelay = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(relayUrl.toByteArray())
                     navController.navigate("group_room/$encodedRelay/${android.net.Uri.encode(groupId)}")
+                },
+                onGroupNotificationClick = { groupChatId, messageId ->
+                    val relayUrl = feedViewModel.groupRepo.getRelayForGroup(groupChatId)
+                    if (relayUrl != null) {
+                        val encodedRelay = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(relayUrl.toByteArray())
+                        navController.navigate("group_room/$encodedRelay/${android.net.Uri.encode(groupChatId)}?scrollTo=${android.net.Uri.encode(messageId)}")
+                    }
+                },
+                resolveGroupMessage = { groupChatId, messageId ->
+                    val result = feedViewModel.groupRepo.findGroupMessage(groupChatId, messageId)
+                    Triple(result?.content, result?.groupName, result?.emojiTags ?: emptyMap())
                 },
                 fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) },
                 onAddEmojiSet = { pk, dTag -> feedViewModel.addSetToEmojiList(pk, dTag) },

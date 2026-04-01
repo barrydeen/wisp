@@ -19,6 +19,8 @@ data class FlatNotificationItem(
     val dmContent: String? = null,
     val dmPeerPubkey: String? = null,
     val dmRumorId: String? = null,
+    /** NIP-29 group ID (from h-tag) — when set, clicking navigates to the group room. */
+    val groupChatId: String? = null,
 )
 
 data class NotificationSummary(

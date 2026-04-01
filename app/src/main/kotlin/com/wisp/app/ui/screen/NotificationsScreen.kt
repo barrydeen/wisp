@@ -39,6 +39,7 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.AddReaction
 import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.Repeat
@@ -173,6 +174,10 @@ fun NotificationsScreen(
     onDmConversationClick: (conversationKey: String) -> Unit = {},
     onPayInvoice: (suspend (String) -> Boolean)? = null,
     onGroupRoom: ((String, String) -> Unit)? = null,
+    /** Navigate to a group room and scroll to a specific message (from group notification click). */
+    onGroupNotificationClick: ((groupChatId: String, messageId: String) -> Unit)? = null,
+    /** Look up group message content, group name, and emoji tags. */
+    resolveGroupMessage: ((groupChatId: String, messageId: String) -> Triple<String?, String?, Map<String, String>>)? = null,
     fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null,
     onAddEmojiSet: ((String, String) -> Unit)? = null,
     onRemoveEmojiSet: ((String, String) -> Unit)? = null,
@@ -449,7 +454,9 @@ fun NotificationsScreen(
                         onMentionDetect = { tfv -> viewModel.detectMentionQuery(tfv) },
                         onMentionSelect = { candidate, text, cursor -> viewModel.selectMention(candidate, text, cursor) },
                         onMentionClear = { viewModel.clearMentionState() },
-                        resolveDisplayName = resolveDisplayName
+                        resolveDisplayName = resolveDisplayName,
+                        onGroupNotificationClick = onGroupNotificationClick,
+                        resolveGroupMessage = resolveGroupMessage
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
                 }
@@ -487,7 +494,9 @@ private fun ZenNotificationRow(
     onMentionDetect: ((TextFieldValue) -> Unit)? = null,
     onMentionSelect: ((MentionCandidate, String, Int) -> TextFieldValue)? = null,
     onMentionClear: (() -> Unit)? = null,
-    resolveDisplayName: ((String) -> String?)? = null
+    resolveDisplayName: ((String) -> String?)? = null,
+    onGroupNotificationClick: ((groupChatId: String, messageId: String) -> Unit)? = null,
+    resolveGroupMessage: ((groupChatId: String, messageId: String) -> Triple<String?, String?, Map<String, String>>)? = null
 ) {
     val profile = remember(profileVersion, item.actorPubkey) { resolveProfile(item.actorPubkey) }
     val displayName = profile?.displayString
@@ -614,6 +623,20 @@ private fun ZenNotificationRow(
                 )
             } else if (item.type == NotificationType.DM_ZAP || item.type == NotificationType.PROFILE_ZAP) {
                 ZapMessageExpansion(item = item)
+            } else if (item.groupChatId != null && onGroupNotificationClick != null) {
+                val (msgContent, grpName, emojiTags) = remember(item.groupChatId, item.referencedEventId) {
+                    resolveGroupMessage?.invoke(item.groupChatId, item.referencedEventId)
+                        ?: Triple(null, null, emptyMap())
+                }
+                GroupChatExpansion(
+                    item = item,
+                    eventRepo = eventRepo,
+                    groupName = grpName,
+                    messageContent = msgContent,
+                    emojiMap = resolvedEmojis + emojiTags,
+                    onProfileClick = onProfileClick,
+                    onClick = { onGroupNotificationClick(item.groupChatId, item.referencedEventId) }
+                )
             } else if (postCardParams != null && item.type != NotificationType.DM_REACTION) {
                 NoteExpansion(
                     item = item,
@@ -641,6 +664,75 @@ private fun ZapMessageExpansion(item: FlatNotificationItem) {
                     else MaterialTheme.colorScheme.onSurfaceVariant,
             fontStyle = if (msg.isEmpty()) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal
         )
+    }
+}
+
+// ── Group Chat Expansion ────────────────────────────────────────────────
+
+@Composable
+private fun GroupChatExpansion(
+    item: FlatNotificationItem,
+    eventRepo: EventRepository?,
+    groupName: String?,
+    messageContent: String?,
+    emojiMap: Map<String, String> = emptyMap(),
+    onProfileClick: (String) -> Unit,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 56.dp, end = 16.dp, bottom = 12.dp)
+            .clickable(onClick = onClick)
+    ) {
+        // Group badge
+        if (groupName != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 4.dp)
+            ) {
+                Icon(
+                    Icons.Outlined.Forum,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = groupName,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        // Message content
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant
+        ) {
+            if (messageContent != null) {
+                com.wisp.app.ui.component.RichContent(
+                    content = messageContent,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    emojiMap = emojiMap,
+                    eventRepo = eventRepo,
+                    onProfileClick = onProfileClick,
+                    onNoteClick = {},
+                    modifier = Modifier.padding(12.dp)
+                )
+            } else {
+                Text(
+                    text = "Message not available",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
+        }
     }
 }
 

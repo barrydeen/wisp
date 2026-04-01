@@ -134,6 +134,7 @@ import kotlinx.coroutines.launch
 fun GroupRoomScreen(
     viewModel: GroupRoomViewModel,
     initialRoom: com.wisp.app.repo.GroupRoom? = null,
+    scrollToMessageId: String? = null,
     relayPool: RelayPool,
     eventRepo: EventRepository,
     signer: NostrSigner?,
@@ -220,10 +221,40 @@ fun GroupRoomScreen(
     var highlightTrigger by remember { mutableIntStateOf(0) }
     val scrollScope = rememberCoroutineScope()
 
+    // Track whether we've handled the initial scrollToMessageId target
+    var scrollTargetHandled by remember { mutableStateOf(scrollToMessageId == null) }
+
     LaunchedEffect(messages.size) {
         if (messages.isEmpty()) return@LaunchedEffect
         if (prevMessageCount == 0) {
-            listState.scrollToItem(messages.size - 1)
+            // First load: scroll to target message if provided, otherwise bottom
+            if (!scrollTargetHandled && scrollToMessageId != null) {
+                val index = messages.indexOfFirst { it.id == scrollToMessageId }
+                if (index >= 0) {
+                    listState.scrollToItem(index)
+                    highlightedMessageId = scrollToMessageId
+                    highlightTrigger++
+                    // Clear the search-style blink after the fade animation finishes
+                    kotlinx.coroutines.delay(1500)
+                    highlightedMessageId = null
+                    scrollTargetHandled = true
+                } else {
+                    listState.scrollToItem(messages.size - 1)
+                }
+            } else {
+                listState.scrollToItem(messages.size - 1)
+            }
+        } else if (!scrollTargetHandled && scrollToMessageId != null) {
+            // Messages arrived after initial load — check if target is now available
+            val index = messages.indexOfFirst { it.id == scrollToMessageId }
+            if (index >= 0) {
+                listState.animateScrollToItem(index)
+                highlightedMessageId = scrollToMessageId
+                highlightTrigger++
+                kotlinx.coroutines.delay(1500)
+                highlightedMessageId = null
+                scrollTargetHandled = true
+            }
         } else if (messages.size > prevMessageCount) {
             listState.animateScrollToItem(messages.size - 1)
         }

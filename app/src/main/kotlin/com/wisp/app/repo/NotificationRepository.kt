@@ -442,6 +442,7 @@ class NotificationRepository(
 
         val shortcode = Nip30.shortcodeRegex.matchEntire(emoji)?.groupValues?.get(1)
         val flatEmojiUrl = eventEmojiUrls[shortcode ?: ""]
+        val groupChatId = event.tags.firstOrNull { it.size >= 2 && it[0] == "h" }?.get(1)
         val flatId = "reaction:${referencedId}:${event.pubkey}:${emoji.hashCode()}"
         if (flatItemIds.add(flatId)) {
             flatItems.add(FlatNotificationItem(
@@ -451,7 +452,8 @@ class NotificationRepository(
                 referencedEventId = referencedId,
                 timestamp = event.created_at,
                 emoji = emoji,
-                emojiUrl = flatEmojiUrl
+                emojiUrl = flatEmojiUrl,
+                groupChatId = groupChatId
             ))
         }
 
@@ -506,6 +508,7 @@ class NotificationRepository(
             )
         }
 
+        val groupChatId = event.tags.firstOrNull { it.size >= 2 && it[0] == "h" }?.get(1)
         val flatZapId = "zap:${event.id}"
         if (flatItemIds.add(flatZapId)) {
             flatItems.add(FlatNotificationItem(
@@ -516,7 +519,8 @@ class NotificationRepository(
                 timestamp = event.created_at,
                 zapSats = amount,
                 zapMessage = message,
-                isPrivateZap = isPrivate
+                isPrivateZap = isPrivate,
+                groupChatId = groupChatId
             ))
         }
 

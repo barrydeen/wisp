@@ -203,6 +203,29 @@ class GroupRepository(private val context: Context, pubkeyHex: String? = null) {
 
     fun getRoom(relayUrl: String, groupId: String): GroupRoom? = rooms[roomKey(relayUrl, groupId)]
 
+    /** Look up the relay URL for a group by its ID alone. Returns null if not joined. */
+    fun getRelayForGroup(groupId: String): String? =
+        rooms.values.firstOrNull { it.groupId == groupId }?.relayUrl
+
+    data class GroupMessageInfo(
+        val content: String?,
+        val groupName: String?,
+        val relayUrl: String?,
+        val emojiTags: Map<String, String> = emptyMap()
+    )
+
+    /** Look up a message and its room context by group ID and message ID. */
+    fun findGroupMessage(groupId: String, messageId: String): GroupMessageInfo? {
+        val room = rooms.values.firstOrNull { it.groupId == groupId } ?: return null
+        val message = room.messages.firstOrNull { it.id == messageId }
+        return GroupMessageInfo(
+            content = message?.content,
+            groupName = room.metadata?.name ?: groupId,
+            relayUrl = room.relayUrl,
+            emojiTags = message?.emojiTags ?: emptyMap()
+        )
+    }
+
     fun getJoinedGroupKeys(): List<Pair<String, String>> =
         rooms.values.map { Pair(it.relayUrl, it.groupId) }
 
