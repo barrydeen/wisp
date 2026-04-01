@@ -82,10 +82,16 @@ object Nip78 {
         }
     }
 
-    /** Build a filter to fetch all spark wallet backups for a pubkey. */
-    fun backupFilter(pubkeyHex: String): Filter = Filter(
+    /**
+     * Build a filter to fetch spark wallet backups for a pubkey.
+     * When [knownDTags] is provided, filters to those exact d-tags.
+     * Otherwise fetches all kind 30078 for the author (relay-side prefix
+     * filtering isn't supported by NIP-01, so client-side filtering is needed).
+     */
+    fun backupFilter(pubkeyHex: String, knownDTags: List<String>? = null): Filter = Filter(
         kinds = listOf(KIND),
-        authors = listOf(pubkeyHex)
+        authors = listOf(pubkeyHex),
+        dTags = knownDTags
     )
 
     /** Build a filter targeting a specific wallet's d-tag for per-relay status checks. */
