@@ -213,15 +213,6 @@ fun ActionBar(
             }
         }
         if (!isZapInProgress && zapSats > 0) {
-            if (useZapBoltIcon) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_bolt),
-                    contentDescription = null,
-                    tint = if (hasUserZapped) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(10.dp)
-                )
-                Spacer(Modifier.width(1.dp))
-            }
             Text(
                 text = formatSats(zapSats),
                 style = MaterialTheme.typography.labelSmall,
@@ -282,17 +273,14 @@ internal fun LightningAnimation(modifier: Modifier = Modifier) {
         val h = size.height
         val jitterX = sin(jitter) * w * 0.04f
 
-        // Bolt shape from ic_bolt.xml (viewBox 55x94), scaled to canvas
-        val sx = w / 55f
-        val sy = h / 94f
-        val ox = jitterX
         val boltPath = Path().apply {
-            moveTo(35.563f * sx + ox, 0f * sy)
-            lineTo(35.563f * sx + ox, 40.406f * sy)
-            lineTo(54.969f * sx + ox, 40.406f * sy)
-            lineTo(21.016f * sx + ox, 93.75f * sy)
-            lineTo(21.016f * sx + ox, 51.719f * sy)
-            lineTo(0f * sx + ox, 51.719f * sy)
+            moveTo(w * 0.55f + jitterX, h * 0.05f)
+            lineTo(w * 0.35f + jitterX, h * 0.42f)
+            lineTo(w * 0.52f + jitterX, h * 0.42f)
+            lineTo(w * 0.40f + jitterX, h * 0.95f)
+            lineTo(w * 0.70f + jitterX, h * 0.48f)
+            lineTo(w * 0.53f + jitterX, h * 0.48f)
+            lineTo(w * 0.65f + jitterX, h * 0.05f)
             close()
         }
 
