@@ -8,7 +8,11 @@ import kotlinx.serialization.json.jsonPrimitive
 
 data class MuteList(
     val pubkeys: Set<String> = emptySet(),
-    val words: Set<String> = emptySet()
+    val words: Set<String> = emptySet(),
+    val eventIds: Set<String> = emptySet(),
+    val hashtags: Set<String> = emptySet(),
+    val coordinates: Set<String> = emptySet(),
+    val unknownTags: List<List<String>> = emptyList()
 )
 
 data class FollowSet(
@@ -121,49 +125,76 @@ object Nip51 {
     fun parseMuteList(event: NostrEvent): MuteList {
         val pubkeys = mutableSetOf<String>()
         val words = mutableSetOf<String>()
+        val eventIds = mutableSetOf<String>()
+        val hashtags = mutableSetOf<String>()
+        val coordinates = mutableSetOf<String>()
+        val unknownTags = mutableListOf<List<String>>()
         for (tag in event.tags) {
             if (tag.size < 2) continue
             when (tag[0]) {
                 "p" -> pubkeys.add(tag[1])
                 "word" -> words.add(tag[1])
+                "e" -> eventIds.add(tag[1])
+                "t" -> hashtags.add(tag[1])
+                "a" -> coordinates.add(tag[1])
+                else -> unknownTags.add(tag)
             }
         }
-        return MuteList(pubkeys, words)
+        return MuteList(pubkeys, words, eventIds, hashtags, coordinates, unknownTags)
     }
 
     fun parsePrivateTags(json: String): MuteList {
         val pubkeys = mutableSetOf<String>()
         val words = mutableSetOf<String>()
+        val eventIds = mutableSetOf<String>()
+        val hashtags = mutableSetOf<String>()
+        val coordinates = mutableSetOf<String>()
+        val unknownTags = mutableListOf<List<String>>()
         try {
             val arr = kotlinx.serialization.json.Json.parseToJsonElement(json).jsonArray
             for (element in arr) {
                 val tag = element.jsonArray
                 if (tag.size < 2) continue
-                when (tag[0].jsonPrimitive.content) {
-                    "p" -> pubkeys.add(tag[1].jsonPrimitive.content)
-                    "word" -> words.add(tag[1].jsonPrimitive.content)
+                val tagName = tag[0].jsonPrimitive.content
+                val tagValue = tag[1].jsonPrimitive.content
+                when (tagName) {
+                    "p" -> pubkeys.add(tagValue)
+                    "word" -> words.add(tagValue)
+                    "e" -> eventIds.add(tagValue)
+                    "t" -> hashtags.add(tagValue)
+                    "a" -> coordinates.add(tagValue)
+                    else -> unknownTags.add(tag.map { it.jsonPrimitive.content })
                 }
             }
         } catch (_: Exception) {}
-        return MuteList(pubkeys, words)
+        return MuteList(pubkeys, words, eventIds, hashtags, coordinates, unknownTags)
     }
 
-    fun buildMuteListContent(blockedPubkeys: Set<String>, mutedWords: Set<String>): String {
+    fun buildMuteListContent(muteList: MuteList): String {
         val arr = buildJsonArray {
-            for (pubkey in blockedPubkeys) {
-                add(buildJsonArray { add(JsonPrimitive("p")); add(JsonPrimitive(pubkey)) })
-            }
-            for (word in mutedWords) {
+            for (word in muteList.words) {
                 add(buildJsonArray { add(JsonPrimitive("word")); add(JsonPrimitive(word)) })
+            }
+            for (id in muteList.eventIds) {
+                add(buildJsonArray { add(JsonPrimitive("e")); add(JsonPrimitive(id)) })
+            }
+            for (tag in muteList.hashtags) {
+                add(buildJsonArray { add(JsonPrimitive("t")); add(JsonPrimitive(tag)) })
+            }
+            for (coord in muteList.coordinates) {
+                add(buildJsonArray { add(JsonPrimitive("a")); add(JsonPrimitive(coord)) })
+            }
+            for (tag in muteList.unknownTags) {
+                add(buildJsonArray { for (item in tag) add(JsonPrimitive(item)) })
             }
         }
         return arr.toString()
     }
 
-    fun buildMuteListTags(blockedPubkeys: Set<String>, mutedWords: Set<String>): List<List<String>> {
+    fun buildMuteListTags(muteList: MuteList): List<List<String>> {
         val tags = mutableListOf<List<String>>()
-        for (pubkey in blockedPubkeys) tags.add(listOf("p", pubkey))
-        for (word in mutedWords) tags.add(listOf("word", word))
+        for (pubkey in muteList.pubkeys) tags.add(listOf("p", pubkey))
+        for (tag in muteList.unknownTags) tags.add(tag)
         return tags
     }
 

@@ -257,6 +257,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (event.created_at > System.currentTimeMillis() / 1000 + 30) return  // reject future-dated notes (30s grace for clock skew)
         if (muteRepo?.isBlocked(event.pubkey) == true) return
         if ((event.kind == 1 || event.kind == 30023 || event.kind == 20 || event.kind == 21 || event.kind == 22) && muteRepo?.containsMutedWord(event.content) == true) return
+        if ((event.kind == 1 || event.kind == 30023 || event.kind == 20 || event.kind == 21 || event.kind == 22) && muteRepo?.containsMutedHashtag(event.tags) == true) return
         if (event.kind == 1) {
             val threadRoot = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
             if (muteRepo?.isThreadMuted(threadRoot) == true) return

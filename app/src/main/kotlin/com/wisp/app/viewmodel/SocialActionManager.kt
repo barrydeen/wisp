@@ -7,6 +7,7 @@ import com.wisp.app.nostr.Nip02
 import com.wisp.app.nostr.Nip13
 import com.wisp.app.nostr.Nip25
 import com.wisp.app.nostr.Nip30
+import com.wisp.app.nostr.MuteList
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrSigner
@@ -197,6 +198,7 @@ class SocialActionManager(
         muteRepo.muteThread(rootEventId)
         notifRepo.purgeThread(rootEventId)
         eventRepo.purgeThread(rootEventId)
+        publishMuteList()
     }
 
     fun updateMutedWords() {
@@ -206,9 +208,21 @@ class SocialActionManager(
     private fun publishMuteList() {
         val s = getSigner() ?: return
         scope.launch {
-            val privateJson = Nip51.buildMuteListContent(muteRepo.getBlockedPubkeys(), muteRepo.getMutedWords())
+            val publicMuteList = MuteList(
+                pubkeys = muteRepo.getBlockedPubkeys(),
+                unknownTags = muteRepo.getPublicUnknownTags()
+            )
+            val privateMuteList = MuteList(
+                words = muteRepo.getMutedWords(),
+                eventIds = muteRepo.getMutedThreads(),
+                hashtags = muteRepo.getMutedHashtags(),
+                coordinates = muteRepo.getMutedCoordinates(),
+                unknownTags = muteRepo.getPrivateUnknownTags()
+            )
+            val publicTags = Nip51.buildMuteListTags(publicMuteList)
+            val privateJson = Nip51.buildMuteListContent(privateMuteList)
             val encrypted = s.nip44Encrypt(privateJson, s.pubkeyHex)
-            val event = s.signEvent(kind = Nip51.KIND_MUTE_LIST, content = encrypted, tags = emptyList())
+            val event = s.signEvent(kind = Nip51.KIND_MUTE_LIST, content = encrypted, tags = publicTags)
             relayPool.sendToWriteRelays(ClientMessage.event(event))
         }
     }

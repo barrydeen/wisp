@@ -22,9 +22,19 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
     private val _mutedThreads = MutableStateFlow<Set<String>>(emptySet())
     val mutedThreads: StateFlow<Set<String>> = _mutedThreads
 
+    private val _mutedHashtags = MutableStateFlow<Set<String>>(emptySet())
+    val mutedHashtags: StateFlow<Set<String>> = _mutedHashtags
+
+    private val _mutedCoordinates = MutableStateFlow<Set<String>>(emptySet())
+    val mutedCoordinates: StateFlow<Set<String>> = _mutedCoordinates
+
     private var blockedSet = HashSet<String>()
     private var wordSet = HashSet<String>()
     private var threadSet = HashSet<String>()
+    private var hashtagSet = HashSet<String>()
+    private var coordinateSet = HashSet<String>()
+    private var publicUnknownTags = mutableListOf<List<String>>()
+    private var privateUnknownTags = mutableListOf<List<String>>()
     private var lastUpdated: Long = 0
 
     init {
@@ -37,8 +47,15 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
         val muteList = Nip51.parseMuteList(event)
         blockedSet = HashSet(muteList.pubkeys)
         wordSet = HashSet(muteList.words)
+        threadSet = HashSet(muteList.eventIds)
+        hashtagSet = HashSet(muteList.hashtags)
+        coordinateSet = HashSet(muteList.coordinates)
+        publicUnknownTags = muteList.unknownTags.toMutableList()
         _blockedPubkeys.value = blockedSet.toSet()
         _mutedWords.value = wordSet.toSet()
+        _mutedThreads.value = threadSet.toSet()
+        _mutedHashtags.value = hashtagSet.toSet()
+        _mutedCoordinates.value = coordinateSet.toSet()
         lastUpdated = event.created_at
         saveToPrefs()
     }
@@ -57,8 +74,16 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
         } else MuteList()
         blockedSet = HashSet(publicMutes.pubkeys + privateMutes.pubkeys)
         wordSet = HashSet(publicMutes.words + privateMutes.words)
+        threadSet = HashSet(publicMutes.eventIds + privateMutes.eventIds)
+        hashtagSet = HashSet(publicMutes.hashtags + privateMutes.hashtags)
+        coordinateSet = HashSet(publicMutes.coordinates + privateMutes.coordinates)
+        publicUnknownTags = publicMutes.unknownTags.toMutableList()
+        privateUnknownTags = privateMutes.unknownTags.toMutableList()
         _blockedPubkeys.value = blockedSet.toSet()
         _mutedWords.value = wordSet.toSet()
+        _mutedThreads.value = threadSet.toSet()
+        _mutedHashtags.value = hashtagSet.toSet()
+        _mutedCoordinates.value = coordinateSet.toSet()
         lastUpdated = event.created_at
         saveToPrefs()
     }
@@ -109,17 +134,40 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
 
     fun isThreadMuted(rootEventId: String): Boolean = threadSet.contains(rootEventId)
 
+    fun containsMutedHashtag(tags: List<List<String>>): Boolean {
+        if (hashtagSet.isEmpty()) return false
+        return tags.any { tag ->
+            tag.size >= 2 && tag[0] == "t" && hashtagSet.contains(tag[1].lowercase())
+        }
+    }
+
     fun getBlockedPubkeys(): Set<String> = blockedSet.toSet()
 
     fun getMutedWords(): Set<String> = wordSet.toSet()
+
+    fun getMutedThreads(): Set<String> = threadSet.toSet()
+
+    fun getMutedHashtags(): Set<String> = hashtagSet.toSet()
+
+    fun getMutedCoordinates(): Set<String> = coordinateSet.toSet()
+
+    fun getPublicUnknownTags(): List<List<String>> = publicUnknownTags.toList()
+
+    fun getPrivateUnknownTags(): List<List<String>> = privateUnknownTags.toList()
 
     fun clear() {
         _blockedPubkeys.value = emptySet()
         _mutedWords.value = emptySet()
         _mutedThreads.value = emptySet()
+        _mutedHashtags.value = emptySet()
+        _mutedCoordinates.value = emptySet()
         blockedSet = HashSet()
         wordSet = HashSet()
         threadSet = HashSet()
+        hashtagSet = HashSet()
+        coordinateSet = HashSet()
+        publicUnknownTags = mutableListOf()
+        privateUnknownTags = mutableListOf()
         lastUpdated = 0
         prefs.edit().clear().apply()
     }
@@ -135,6 +183,8 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
             .putStringSet("blocked_pubkeys", blockedSet.toSet())
             .putStringSet("muted_words", wordSet.toSet())
             .putStringSet("muted_threads", threadSet.toSet())
+            .putStringSet("muted_hashtags", hashtagSet.toSet())
+            .putStringSet("muted_coordinates", coordinateSet.toSet())
             .putLong("mute_updated", lastUpdated)
             .apply()
     }
@@ -155,6 +205,16 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
         if (threads != null) {
             threadSet = HashSet(threads)
             _mutedThreads.value = threadSet.toSet()
+        }
+        val hashtags = prefs.getStringSet("muted_hashtags", null)
+        if (hashtags != null) {
+            hashtagSet = HashSet(hashtags)
+            _mutedHashtags.value = hashtagSet.toSet()
+        }
+        val coordinates = prefs.getStringSet("muted_coordinates", null)
+        if (coordinates != null) {
+            coordinateSet = HashSet(coordinates)
+            _mutedCoordinates.value = coordinateSet.toSet()
         }
     }
 
