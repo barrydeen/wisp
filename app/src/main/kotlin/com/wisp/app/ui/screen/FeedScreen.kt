@@ -333,7 +333,8 @@ fun FeedScreen(
             isEmojiSetAdded = { pubkey, dTag ->
                 val ref = com.wisp.app.nostr.Nip30.buildSetReference(pubkey, dTag)
                 viewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
-            }
+            },
+            onPollVote = { pollId, optionIds -> viewModel.publishPollVote(pollId, optionIds) }
         )
     }
 
@@ -695,32 +696,6 @@ fun FeedScreen(
             topBar = {
                 CenterAlignedTopAppBar(
                     title = {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                // Content type filter toggle — rotates through All → Notes → Gallery → Polls
-                                IconButton(
-                                    onClick = {
-                                        val next = when (contentFilter) {
-                                            FeedContentFilter.ALL -> FeedContentFilter.TEXT_ONLY
-                                            FeedContentFilter.TEXT_ONLY -> FeedContentFilter.GALLERY_ONLY
-                                            FeedContentFilter.GALLERY_ONLY -> FeedContentFilter.POLLS_ONLY
-                                            FeedContentFilter.POLLS_ONLY -> FeedContentFilter.ALL
-                                        }
-                                        viewModel.setFeedContentFilter(next)
-                                    },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    val (icon, tint) = when (contentFilter) {
-                                        FeedContentFilter.ALL -> Icons.Outlined.Dashboard to MaterialTheme.colorScheme.onSurfaceVariant
-                                        FeedContentFilter.TEXT_ONLY -> Icons.AutoMirrored.Outlined.Article to MaterialTheme.colorScheme.primary
-                                        FeedContentFilter.GALLERY_ONLY -> Icons.Outlined.Photo to MaterialTheme.colorScheme.primary
-                                        FeedContentFilter.POLLS_ONLY -> Icons.Outlined.HowToVote to MaterialTheme.colorScheme.primary
-                                    }
-                                    Icon(icon, contentDescription = "Filter: ${contentFilter.name}", tint = tint, modifier = Modifier.size(22.dp))
-                                }
-                                Spacer(Modifier.width(4.dp))
                                 Box {
                                     Surface(
                                         onClick = { showFeedTypeDropdown = true },
@@ -825,14 +800,36 @@ fun FeedScreen(
                                     )
                                 }
                                 }
-                            }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     ),
                     navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            ProfilePicture(url = userProfile?.picture, size = 32)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                ProfilePicture(url = userProfile?.picture, size = 32)
+                            }
+                            // Content type filter toggle — rotates through All → Notes → Gallery → Polls
+                            IconButton(
+                                onClick = {
+                                    val next = when (contentFilter) {
+                                        FeedContentFilter.ALL -> FeedContentFilter.TEXT_ONLY
+                                        FeedContentFilter.TEXT_ONLY -> FeedContentFilter.GALLERY_ONLY
+                                        FeedContentFilter.GALLERY_ONLY -> FeedContentFilter.POLLS_ONLY
+                                        FeedContentFilter.POLLS_ONLY -> FeedContentFilter.ALL
+                                    }
+                                    viewModel.setFeedContentFilter(next)
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                val (icon, tint) = when (contentFilter) {
+                                    FeedContentFilter.ALL -> Icons.Outlined.Dashboard to MaterialTheme.colorScheme.onSurfaceVariant
+                                    FeedContentFilter.TEXT_ONLY -> Icons.AutoMirrored.Outlined.Article to MaterialTheme.colorScheme.primary
+                                    FeedContentFilter.GALLERY_ONLY -> Icons.Outlined.Photo to MaterialTheme.colorScheme.primary
+                                    FeedContentFilter.POLLS_ONLY -> Icons.Outlined.HowToVote to MaterialTheme.colorScheme.primary
+                                }
+                                Icon(icon, contentDescription = "Filter: ${contentFilter.name}", tint = tint, modifier = Modifier.size(22.dp))
+                            }
                         }
                     },
                     actions = {

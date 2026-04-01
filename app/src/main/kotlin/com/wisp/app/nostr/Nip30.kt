@@ -21,9 +21,11 @@ object Nip30 {
     const val KIND_USER_EMOJI_LIST = 10030
     val shortcodeRegex = Regex(""":([a-zA-Z0-9_-]+):""")
 
-    fun parseEmojiTags(event: NostrEvent): Map<String, String> {
+    fun parseEmojiTags(event: NostrEvent): Map<String, String> = parseEmojiTags(event.tags)
+
+    fun parseEmojiTags(tags: List<List<String>>): Map<String, String> {
         val map = mutableMapOf<String, String>()
-        for (tag in event.tags) {
+        for (tag in tags) {
             if (tag.size >= 3 && tag[0] == "emoji") {
                 map[tag[1]] = tag[2]
             }

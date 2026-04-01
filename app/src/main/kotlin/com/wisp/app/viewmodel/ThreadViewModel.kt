@@ -128,6 +128,13 @@ class ThreadViewModel : ViewModel() {
                 eventRepo.addEventRelay(event.id, relayUrl)
 
                 if (Nip10.isStandaloneQuote(event)) return@collect
+
+                // Validate: event must reference the thread root (some relays ignore eTags filter)
+                if (event.id != rootId &&
+                    event.tags.none { it.size >= 2 && it[0] == "e" && it[1] == rootId }) {
+                    return@collect
+                }
+
                 val isNew = event.id !in threadEvents
                 threadEvents[event.id] = event
                 if (event.id == rootId) {

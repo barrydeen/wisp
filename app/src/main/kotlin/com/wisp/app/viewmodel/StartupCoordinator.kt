@@ -250,6 +250,13 @@ class StartupCoordinator(
             }
         }
 
+        // Remove events that fail async signature verification
+        scope.launch(processingContext) {
+            relayPool.invalidEvents.collect { eventId ->
+                eventRepo.removeEvent(eventId)
+            }
+        }
+
         // Profile sweep — eager burst at startup for fast profile coverage,
         // then relaxed periodic sweep as a safety net.
         metadataSweepJob = scope.launch(processingContext) {

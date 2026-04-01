@@ -900,7 +900,7 @@ private fun PollResultRow(
 }
 
 @Composable
-private fun TopZapperBanner(
+internal fun TopZapperBanner(
     avatarUrl: String?,
     name: String,
     sats: Long,
@@ -963,7 +963,7 @@ private fun TopZapperBanner(
     }
 }
 
-private fun formatZapAmount(sats: Long): String = when {
+internal fun formatZapAmount(sats: Long): String = when {
     sats >= 1_000_000 -> String.format("%.1fM", sats / 1_000_000.0)
     sats >= 1_000 -> String.format("%.1fk", sats / 1_000.0)
     else -> "$sats"

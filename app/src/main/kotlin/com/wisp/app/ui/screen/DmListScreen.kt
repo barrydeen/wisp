@@ -1,5 +1,6 @@
 package com.wisp.app.ui.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,10 +17,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.GroupAdd
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -161,9 +165,21 @@ fun DmListScreen(
                 )
             }
 
+            val unreadGroups by groupListViewModel.unreadGroups.collectAsState()
+            val notifiedGroups by groupListViewModel.notifiedGroups.collectAsState()
+
             when (selectedTab) {
                 0 -> DmListContent(conversations, eventRepo, onConversation)
-                1 -> GroupListContent(groups, eventRepo, onGroupRoom)
+                1 -> GroupListContent(
+                    groups = groups,
+                    eventRepo = eventRepo,
+                    onGroupRoom = onGroupRoom,
+                    unreadGroups = unreadGroups,
+                    notifiedGroups = notifiedGroups,
+                    onToggleNotify = { relayUrl, groupId, enabled ->
+                        groupListViewModel.setGroupNotified(relayUrl, groupId, enabled)
+                    }
+                )
             }
         }
     }
@@ -244,7 +260,10 @@ private fun DmListContent(
 private fun GroupListContent(
     groups: List<GroupRoom>,
     eventRepo: EventRepository,
-    onGroupRoom: (relayUrl: String, groupId: String) -> Unit
+    onGroupRoom: (relayUrl: String, groupId: String) -> Unit,
+    unreadGroups: Set<String> = emptySet(),
+    notifiedGroups: Set<String> = emptySet(),
+    onToggleNotify: (relayUrl: String, groupId: String, enabled: Boolean) -> Unit = { _, _, _ -> }
 ) {
     if (groups.isEmpty()) {
         Column(
@@ -268,8 +287,12 @@ private fun GroupListContent(
     } else {
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(items = groups, key = { "${it.relayUrl}|${it.groupId}" }) { room ->
+                val key = "${room.relayUrl}|${room.groupId}"
                 GroupRoomRow(
                     room = room,
+                    hasUnread = key in unreadGroups,
+                    isNotified = key in notifiedGroups,
+                    onToggleNotify = { enabled -> onToggleNotify(room.relayUrl, room.groupId, enabled) },
                     onClick = { onGroupRoom(room.relayUrl, room.groupId) }
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
@@ -279,7 +302,13 @@ private fun GroupListContent(
 }
 
 @Composable
-private fun GroupRoomRow(room: GroupRoom, onClick: () -> Unit) {
+private fun GroupRoomRow(
+    room: GroupRoom,
+    hasUnread: Boolean = false,
+    isNotified: Boolean = false,
+    onToggleNotify: (Boolean) -> Unit = {},
+    onClick: () -> Unit
+) {
     val lastMsg = room.messages.lastOrNull()
     val displayName = room.metadata?.name ?: room.groupId.ifEmpty { room.relayUrl }
 
@@ -288,9 +317,34 @@ private fun GroupRoomRow(room: GroupRoom, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(start = 4.dp, end = 16.dp, top = 12.dp, bottom = 12.dp)
     ) {
-        ProfilePicture(url = room.metadata?.picture, size = 40)
+        IconButton(
+            onClick = { onToggleNotify(!isNotified) },
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                if (isNotified) Icons.Outlined.Notifications else Icons.Outlined.NotificationsOff,
+                contentDescription = stringResource(
+                    if (isNotified) R.string.cd_unmute_notifications else R.string.cd_mute_notifications
+                ),
+                tint = if (isNotified) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(Modifier.width(4.dp))
+        Box {
+            ProfilePicture(url = room.metadata?.picture, size = 40)
+            if (hasUnread) {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .align(Alignment.TopEnd)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                )
+            }
+        }
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(

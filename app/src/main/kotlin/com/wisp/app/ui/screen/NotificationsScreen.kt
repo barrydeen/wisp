@@ -29,8 +29,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.outlined.AlternateEmail
@@ -39,9 +37,11 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.AddReaction
 import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import com.wisp.app.ui.component.EmojiReactionPopup
@@ -50,8 +50,6 @@ import com.wisp.app.ui.component.detectEmojiAutocomplete
 import com.wisp.app.ui.component.insertEmojiShortcode
 import com.wisp.app.ui.component.LightningAnimation
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.HorizontalDivider
@@ -115,6 +113,13 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.heightIn
+import com.wisp.app.nostr.Nip19
+import com.wisp.app.repo.MentionCandidate
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.theme.WispThemeColors
 import com.wisp.app.viewmodel.NotificationFilter
@@ -166,6 +171,10 @@ fun NotificationsScreen(
     onDmConversationClick: (conversationKey: String) -> Unit = {},
     onPayInvoice: (suspend (String) -> Boolean)? = null,
     onGroupRoom: ((String, String) -> Unit)? = null,
+    /** Navigate to a group room and scroll to a specific message (from group notification click). */
+    onGroupNotificationClick: ((groupChatId: String, messageId: String) -> Unit)? = null,
+    /** Look up group message content, group name, and emoji tags. */
+    resolveGroupMessage: ((groupChatId: String, messageId: String) -> Triple<String?, String?, Map<String, String>>)? = null,
     fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null,
     onAddEmojiSet: ((String, String) -> Unit)? = null,
     onRemoveEmojiSet: ((String, String) -> Unit)? = null,
@@ -173,11 +182,12 @@ fun NotificationsScreen(
 ) {
     val notifications by viewModel.filteredFlatNotifications.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
-    val currentFilter by viewModel.filter.collectAsState()
+    val enabledTypes by viewModel.enabledTypes.collectAsState()
+    val chatRoomsEnabled by viewModel.chatRoomsEnabled.collectAsState()
     val summary by viewModel.summary24h.collectAsState()
     val eventRepo = viewModel.eventRepository
     val listState = rememberLazyListState()
-    var showFilterDropdown by remember { mutableStateOf(false) }
+    var showFilterSheet by remember { mutableStateOf(false) }
     val profileVersion = eventRepo?.profileVersion?.collectAsState()?.value ?: 0
 
     // Track which notification is expanded (only one at a time)
@@ -188,6 +198,20 @@ fun NotificationsScreen(
 
     // Track inline DM replies sent by user: peerPubkey -> list of sent content strings
     var inlineDmReplies by remember { mutableStateOf(mapOf<String, List<String>>()) }
+
+    // Mention autocomplete state
+    val mentionQuery by viewModel.mentionQuery.collectAsState()
+    val mentionCandidates by viewModel.mentionCandidates.collectAsState()
+    val resolveDisplayName: (String) -> String? = remember(eventRepo) {
+        { bech32 ->
+            try {
+                val data = Nip19.decodeNostrUri("nostr:$bech32")
+                if (data is com.wisp.app.nostr.NostrUriData.ProfileRef) {
+                    eventRepo?.getProfileData(data.pubkey)?.displayString
+                } else null
+            } catch (_: Exception) { null }
+        }
+    }
 
     // Version flows for PostCard cache invalidation
     val reactionVersion = eventRepo?.reactionVersion?.collectAsState()?.value ?: 0
@@ -269,54 +293,10 @@ fun NotificationsScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Box {
-                            Surface(
-                                onClick = { showFilterDropdown = true },
-                                shape = RoundedCornerShape(20.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        stringResource(currentFilter.labelResId),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.widthIn(max = 160.dp)
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                    Icon(
-                                        Icons.Default.ArrowDropDown,
-                                        contentDescription = stringResource(R.string.cd_filter_notifications),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                            DropdownMenu(
-                                expanded = showFilterDropdown,
-                                onDismissRequest = { showFilterDropdown = false }
-                            ) {
-                                NotificationFilter.entries.forEach { filterOption ->
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(filterOption.labelResId)) },
-                                        onClick = {
-                                            showFilterDropdown = false
-                                            viewModel.setFilter(filterOption)
-                                        },
-                                        trailingIcon = if (currentFilter == filterOption) {{
-                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        }} else null
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    Text(
+                        stringResource(R.string.nav_notifications),
+                        style = MaterialTheme.typography.titleMedium
+                    )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -324,10 +304,20 @@ fun NotificationsScreen(
                     }
                 },
                 actions = {
+                    val allEnabled = enabledTypes.size == NotificationFilter.entries.size && chatRoomsEnabled
+                    IconButton(onClick = { showFilterSheet = true }) {
+                        Icon(
+                            Icons.Outlined.Tune,
+                            contentDescription = stringResource(R.string.cd_filter_notifications),
+                            tint = if (allEnabled) MaterialTheme.colorScheme.onSurface
+                                   else MaterialTheme.colorScheme.primary
+                        )
+                    }
                     IconButton(onClick = onToggleNotifSound) {
                         Icon(
                             if (notifSoundEnabled) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
-                            contentDescription = if (notifSoundEnabled) stringResource(R.string.cd_mute_notifications) else stringResource(R.string.cd_unmute_notifications)
+                            contentDescription = if (notifSoundEnabled) stringResource(R.string.cd_mute_notifications)
+                                                 else stringResource(R.string.cd_unmute_notifications)
                         )
                     }
                 },
@@ -364,10 +354,7 @@ fun NotificationsScreen(
                 modifier = Modifier.fillMaxSize()
             ) {
                 item(key = "summary_24h", contentType = "summary") {
-                    DailySummaryBar(
-                        summary = summary,
-                        onFilterSelect = { viewModel.setFilter(it) }
-                    )
+                    DailySummaryBar(summary = summary)
                 }
                 items(items = notifications, key = { it.id }, contentType = { "notification" }) { item ->
                     val isExpanded = expandedId == item.id
@@ -422,13 +409,159 @@ fun NotificationsScreen(
                                 val offset = (itemHeight - visibleHeight * 3 / 5).coerceAtLeast(0)
                                 listState.animateScrollToItem(index = itemIndex, scrollOffset = offset)
                             }
-                        }
+                        },
+                        mentionQuery = mentionQuery,
+                        mentionCandidates = mentionCandidates,
+                        onMentionDetect = { tfv -> viewModel.detectMentionQuery(tfv) },
+                        onMentionSelect = { candidate, text, cursor -> viewModel.selectMention(candidate, text, cursor) },
+                        onMentionClear = { viewModel.clearMentionState() },
+                        resolveDisplayName = resolveDisplayName,
+                        onGroupNotificationClick = onGroupNotificationClick,
+                        resolveGroupMessage = resolveGroupMessage
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
                 }
             }
         }
         } // PullToRefreshBox
+    }
+
+    if (showFilterSheet) {
+        NotificationFilterSheet(
+            enabledTypes = enabledTypes,
+            chatRoomsEnabled = chatRoomsEnabled,
+            onToggleType = { viewModel.toggleType(it) },
+            onToggleChatRooms = { viewModel.toggleChatRooms() },
+            onEnableAll = { viewModel.enableAll() },
+            onDisableAll = { viewModel.disableAll() },
+            onDismiss = { showFilterSheet = false }
+        )
+    }
+}
+
+// ── Filter Bottom Sheet ─────────────────────────────────────────────────
+
+private fun NotificationFilter.icon(): androidx.compose.ui.graphics.vector.ImageVector = when (this) {
+    NotificationFilter.REPLIES -> Icons.Outlined.ChatBubbleOutline
+    NotificationFilter.REACTIONS -> Icons.Outlined.FavoriteBorder
+    NotificationFilter.ZAPS -> Icons.Outlined.CurrencyBitcoin
+    NotificationFilter.REPOSTS -> Icons.Outlined.Repeat
+    NotificationFilter.MENTIONS -> Icons.Outlined.AlternateEmail
+    NotificationFilter.VOTES -> Icons.Outlined.BarChart
+    NotificationFilter.DMS -> Icons.Outlined.MailOutline
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NotificationFilterSheet(
+    enabledTypes: Set<NotificationFilter>,
+    chatRoomsEnabled: Boolean,
+    onToggleType: (NotificationFilter) -> Unit,
+    onToggleChatRooms: () -> Unit,
+    onEnableAll: () -> Unit,
+    onDisableAll: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(modifier = Modifier.padding(bottom = 32.dp)) {
+            Text(
+                stringResource(R.string.notif_filter_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+
+            NotificationFilter.entries.forEach { filter ->
+                val enabled = filter in enabledTypes
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onToggleType(filter) }
+                        .padding(horizontal = 24.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        filter.icon(),
+                        contentDescription = null,
+                        tint = if (enabled) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Text(
+                        stringResource(filter.labelResId),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (enabled) MaterialTheme.colorScheme.onSurface
+                               else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.weight(1f))
+                    androidx.compose.material3.Switch(
+                        checked = enabled,
+                        onCheckedChange = { onToggleType(filter) }
+                    )
+                }
+            }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+
+            // Chat rooms toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleChatRooms() }
+                    .padding(horizontal = 24.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Outlined.Forum,
+                    contentDescription = null,
+                    tint = if (chatRoomsEnabled) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(Modifier.width(14.dp))
+                Text(
+                    stringResource(R.string.notif_chat_rooms),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (chatRoomsEnabled) MaterialTheme.colorScheme.onSurface
+                           else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.weight(1f))
+                androidx.compose.material3.Switch(
+                    checked = chatRoomsEnabled,
+                    onCheckedChange = { onToggleChatRooms() }
+                )
+            }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+
+            // Enable All / Disable All
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                TextButton(onClick = onEnableAll) {
+                    Text(stringResource(R.string.notif_enable_all))
+                }
+                TextButton(onClick = onDisableAll) {
+                    Text(stringResource(R.string.notif_disable_all))
+                }
+            }
+        }
     }
 }
 
@@ -454,7 +587,15 @@ private fun ZenNotificationRow(
     onDmZap: (String, String, String) -> Unit = { _, _, _ -> },
     dmZapSats: (String) -> Long = { 0L },
     onUploadMedia: (List<Uri>, onUrl: (String) -> Unit) -> Unit = { _, _ -> },
-    onReplyFocused: () -> Unit = {}
+    onReplyFocused: () -> Unit = {},
+    mentionQuery: String? = null,
+    mentionCandidates: List<MentionCandidate> = emptyList(),
+    onMentionDetect: ((TextFieldValue) -> Unit)? = null,
+    onMentionSelect: ((MentionCandidate, String, Int) -> TextFieldValue)? = null,
+    onMentionClear: (() -> Unit)? = null,
+    resolveDisplayName: ((String) -> String?)? = null,
+    onGroupNotificationClick: ((groupChatId: String, messageId: String) -> Unit)? = null,
+    resolveGroupMessage: ((groupChatId: String, messageId: String) -> Triple<String?, String?, Map<String, String>>)? = null
 ) {
     val profile = remember(profileVersion, item.actorPubkey) { resolveProfile(item.actorPubkey) }
     val displayName = profile?.displayString
@@ -550,7 +691,13 @@ private fun ZenNotificationRow(
                     onDmZap = onDmZap,
                     isDmZapInProgress = postCardParams?.isZapInProgress?.invoke(item.actorPubkey) ?: false,
                     isDmZapAnimating = postCardParams?.isZapAnimating?.invoke(item.actorPubkey) ?: false,
-                    dmZapSats = dmZapSats(item.actorPubkey)
+                    dmZapSats = dmZapSats(item.actorPubkey),
+                    mentionQuery = mentionQuery,
+                    mentionCandidates = mentionCandidates,
+                    onMentionDetect = onMentionDetect,
+                    onMentionSelect = onMentionSelect,
+                    onMentionClear = onMentionClear,
+                    resolveDisplayName = resolveDisplayName
                 )
             } else if (item.type == NotificationType.REPLY) {
                 ReplyExpansion(
@@ -565,10 +712,30 @@ private fun ZenNotificationRow(
                     onSendReply = onSendReply,
                     onUploadMedia = onUploadMedia,
                     onReplyFocused = onReplyFocused,
-                    resolvedEmojis = resolvedEmojis
+                    resolvedEmojis = resolvedEmojis,
+                    mentionQuery = mentionQuery,
+                    mentionCandidates = mentionCandidates,
+                    onMentionDetect = onMentionDetect,
+                    onMentionSelect = onMentionSelect,
+                    onMentionClear = onMentionClear,
+                    resolveDisplayName = resolveDisplayName
                 )
             } else if (item.type == NotificationType.DM_ZAP || item.type == NotificationType.PROFILE_ZAP) {
                 ZapMessageExpansion(item = item)
+            } else if (item.groupChatId != null && onGroupNotificationClick != null) {
+                val (msgContent, grpName, emojiTags) = remember(item.groupChatId, item.referencedEventId) {
+                    resolveGroupMessage?.invoke(item.groupChatId, item.referencedEventId)
+                        ?: Triple(null, null, emptyMap())
+                }
+                GroupChatExpansion(
+                    item = item,
+                    eventRepo = eventRepo,
+                    groupName = grpName,
+                    messageContent = msgContent,
+                    emojiMap = resolvedEmojis + emojiTags,
+                    onProfileClick = onProfileClick,
+                    onClick = { onGroupNotificationClick(item.groupChatId, item.referencedEventId) }
+                )
             } else if (postCardParams != null && item.type != NotificationType.DM_REACTION) {
                 NoteExpansion(
                     item = item,
@@ -596,6 +763,75 @@ private fun ZapMessageExpansion(item: FlatNotificationItem) {
                     else MaterialTheme.colorScheme.onSurfaceVariant,
             fontStyle = if (msg.isEmpty()) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal
         )
+    }
+}
+
+// ── Group Chat Expansion ────────────────────────────────────────────────
+
+@Composable
+private fun GroupChatExpansion(
+    item: FlatNotificationItem,
+    eventRepo: EventRepository?,
+    groupName: String?,
+    messageContent: String?,
+    emojiMap: Map<String, String> = emptyMap(),
+    onProfileClick: (String) -> Unit,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 56.dp, end = 16.dp, bottom = 12.dp)
+            .clickable(onClick = onClick)
+    ) {
+        // Group badge
+        if (groupName != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 4.dp)
+            ) {
+                Icon(
+                    Icons.Outlined.Forum,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = groupName,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        // Message content
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant
+        ) {
+            if (messageContent != null) {
+                com.wisp.app.ui.component.RichContent(
+                    content = messageContent,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    emojiMap = emojiMap,
+                    eventRepo = eventRepo,
+                    onProfileClick = onProfileClick,
+                    onNoteClick = {},
+                    modifier = Modifier.padding(12.dp)
+                )
+            } else {
+                Text(
+                    text = "Message not available",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
+        }
     }
 }
 
@@ -643,7 +879,13 @@ private fun DmExpansion(
     onDmZap: (peerPubkey: String, rumorId: String, senderPubkey: String) -> Unit = { _, _, _ -> },
     isDmZapInProgress: Boolean = false,
     isDmZapAnimating: Boolean = false,
-    dmZapSats: Long = 0L
+    dmZapSats: Long = 0L,
+    mentionQuery: String? = null,
+    mentionCandidates: List<MentionCandidate> = emptyList(),
+    onMentionDetect: ((TextFieldValue) -> Unit)? = null,
+    onMentionSelect: ((MentionCandidate, String, Int) -> TextFieldValue)? = null,
+    onMentionClear: (() -> Unit)? = null,
+    resolveDisplayName: ((String) -> String?)? = null
 ) {
     val peerPubkey = item.dmPeerPubkey ?: return
     val rumorId = item.dmRumorId ?: ""
@@ -756,6 +998,12 @@ private fun DmExpansion(
             onFocused = onFocused,
             placeholder = stringResource(R.string.placeholder_message),
             resolvedEmojis = resolvedEmojis,
+            mentionQuery = mentionQuery,
+            mentionCandidates = mentionCandidates,
+            onMentionDetect = onMentionDetect,
+            onMentionSelect = onMentionSelect,
+            onMentionClear = onMentionClear,
+            resolveDisplayName = resolveDisplayName,
             modifier = Modifier.padding(start = 48.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)
         )
 
@@ -788,7 +1036,13 @@ private fun ReplyExpansion(
     onSendReply: (NostrEvent, String) -> Unit,
     onUploadMedia: (List<Uri>, onUrl: (String) -> Unit) -> Unit = { _, _ -> },
     onReplyFocused: () -> Unit = {},
-    resolvedEmojis: Map<String, String> = emptyMap()
+    resolvedEmojis: Map<String, String> = emptyMap(),
+    mentionQuery: String? = null,
+    mentionCandidates: List<MentionCandidate> = emptyList(),
+    onMentionDetect: ((TextFieldValue) -> Unit)? = null,
+    onMentionSelect: ((MentionCandidate, String, Int) -> TextFieldValue)? = null,
+    onMentionClear: (() -> Unit)? = null,
+    resolveDisplayName: ((String) -> String?)? = null
 ) {
     val replyEvent = remember(item.replyEventId) { item.replyEventId?.let { eventRepo?.getEvent(it) } }
 
@@ -854,6 +1108,12 @@ private fun ReplyExpansion(
                 onFocused = onReplyFocused,
                 placeholder = stringResource(R.string.reply_placeholder),
                 resolvedEmojis = resolvedEmojis,
+                mentionQuery = mentionQuery,
+                mentionCandidates = mentionCandidates,
+                onMentionDetect = onMentionDetect,
+                onMentionSelect = onMentionSelect,
+                onMentionClear = onMentionClear,
+                resolveDisplayName = resolveDisplayName,
                 modifier = Modifier.padding(start = 48.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)
             )
         }
@@ -986,7 +1246,8 @@ private fun ReferencedNotePostCard(
                         fetchGroupPreview = p.fetchGroupPreview,
                         onAddEmojiSet = p.onAddEmojiSet,
                         onRemoveEmojiSet = p.onRemoveEmojiSet,
-                        isEmojiSetAdded = p.isEmojiSetAdded
+                        isEmojiSetAdded = p.isEmojiSetAdded,
+                        onPollVote = p.onPollVote
                     )
                 } else null
             },
@@ -1066,7 +1327,8 @@ private fun ReferencedNotePostCard(
                         fetchGroupPreview = p.fetchGroupPreview,
                         onAddEmojiSet = p.onAddEmojiSet,
                         onRemoveEmojiSet = p.onRemoveEmojiSet,
-                        isEmojiSetAdded = p.isEmojiSetAdded
+                        isEmojiSetAdded = p.isEmojiSetAdded,
+                        onPollVote = p.onPollVote
                     )
                 } else null
             },
@@ -1209,17 +1471,25 @@ private fun InlineReplyComposer(
     onFocused: () -> Unit = {},
     placeholder: String = "Reply...",
     resolvedEmojis: Map<String, String> = emptyMap(),
+    mentionQuery: String? = null,
+    mentionCandidates: List<MentionCandidate> = emptyList(),
+    onMentionDetect: ((TextFieldValue) -> Unit)? = null,
+    onMentionSelect: ((MentionCandidate, String, Int) -> TextFieldValue)? = null,
+    onMentionClear: (() -> Unit)? = null,
+    resolveDisplayName: ((String) -> String?)? = null,
     modifier: Modifier = Modifier
 ) {
     val textFieldState = remember { TextFieldState() }
 
-    // TextFieldValue mirror for cursor-aware emoji autocomplete
+    // TextFieldValue mirror for cursor-aware emoji/mention autocomplete
     var replyTfv by remember { mutableStateOf(TextFieldValue()) }
     LaunchedEffect(textFieldState) {
         snapshotFlow {
             textFieldState.text.toString() to textFieldState.selection
         }.collect { (text, selection) ->
-            replyTfv = TextFieldValue(text, selection)
+            val tfv = TextFieldValue(text, selection)
+            replyTfv = tfv
+            onMentionDetect?.invoke(tfv)
         }
     }
 
@@ -1238,9 +1508,48 @@ private fun InlineReplyComposer(
     }
 
     Column(modifier = modifier) {
+        // Mention autocomplete dropdown
+        if (onMentionSelect != null) {
+            AnimatedVisibility(
+                visible = mentionQuery != null && mentionCandidates.isNotEmpty(),
+                enter = fadeIn() + slideInVertically(),
+                exit = fadeOut() + slideOutVertically()
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    tonalElevation = 3.dp,
+                    shadowElevation = 2.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 200.dp)
+                        .padding(bottom = 4.dp)
+                ) {
+                    LazyColumn {
+                        items(mentionCandidates, key = { it.profile.pubkey }) { candidate ->
+                            MentionCandidateRow(
+                                candidate = candidate,
+                                onClick = {
+                                    val result = onMentionSelect(
+                                        candidate,
+                                        textFieldState.text.toString(),
+                                        textFieldState.selection.start
+                                    )
+                                    textFieldState.edit {
+                                        replace(0, length, result.text)
+                                        selection = result.selection
+                                    }
+                                    replyTfv = result
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Emoji shortcode autocomplete
         val replyEmojiState = remember(replyTfv) { detectEmojiAutocomplete(replyTfv) }
-        if (replyEmojiState != null) {
+        if (replyEmojiState != null && mentionQuery == null) {
             EmojiShortcodePopup(
                 query = replyEmojiState.query,
                 resolvedEmojis = resolvedEmojis,
@@ -1309,9 +1618,9 @@ private fun InlineReplyComposer(
                 }
             })
         }
-        val replyEmojiTransformation = remember(resolvedEmojis) {
+        val replyOutputTransformation = remember(resolvedEmojis, resolveDisplayName) {
             com.wisp.app.ui.component.MentionOutputTransformation(
-                resolveDisplayName = { null },
+                resolveDisplayName = resolveDisplayName ?: { null },
                 resolvedEmojis = resolvedEmojis
             )
         }
@@ -1319,7 +1628,7 @@ private fun InlineReplyComposer(
             state = textFieldState,
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             modifier = fieldModifier,
-            outputTransformation = replyEmojiTransformation,
+            outputTransformation = replyOutputTransformation,
             lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 6),
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Sentences
@@ -1350,6 +1659,7 @@ private fun InlineReplyComposer(
                     if (trimmed.isNotEmpty()) {
                         onSend(trimmed)
                         textFieldState.edit { replace(0, length, "") }
+                        onMentionClear?.invoke()
                     }
                 },
             contentAlignment = Alignment.Center
@@ -1362,6 +1672,45 @@ private fun InlineReplyComposer(
             )
         }
     }
+    }
+}
+
+@Composable
+private fun MentionCandidateRow(
+    candidate: MentionCandidate,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ProfilePicture(
+            url = candidate.profile.picture,
+            size = 32,
+            showFollowBadge = candidate.isContact
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = candidate.profile.displayString,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                maxLines = 1
+            )
+            val subtitle = candidate.profile.name?.let { "@$it" }
+                ?: candidate.profile.nip05
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+        }
     }
 }
 
@@ -1511,7 +1860,7 @@ private fun actionText(item: FlatNotificationItem): String = when (item.type) {
 // ── Daily Summary Bar ──────────────────────────────────────────────────
 
 @Composable
-private fun DailySummaryBar(summary: NotificationSummary, onFilterSelect: (NotificationFilter) -> Unit) {
+private fun DailySummaryBar(summary: NotificationSummary) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth()
@@ -1528,23 +1877,22 @@ private fun DailySummaryBar(summary: NotificationSummary, onFilterSelect: (Notif
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            SummaryStat(Icons.Outlined.ChatBubbleOutline, summary.replyCount.toString()) { onFilterSelect(NotificationFilter.REPLIES) }
-            SummaryStat(Icons.Outlined.FavoriteBorder, summary.reactionCount.toString()) { onFilterSelect(NotificationFilter.REACTIONS) }
-            SummaryStat(Icons.Outlined.CurrencyBitcoin, formatSatsCompact(summary.zapSats)) { onFilterSelect(NotificationFilter.ZAPS) }
-            SummaryStat(Icons.Outlined.Repeat, summary.repostCount.toString()) { onFilterSelect(NotificationFilter.REPOSTS) }
-            SummaryStat(Icons.Outlined.AlternateEmail, (summary.mentionCount + summary.quoteCount).toString()) { onFilterSelect(NotificationFilter.MENTIONS) }
-            SummaryStat(Icons.Outlined.MailOutline, summary.dmCount.toString()) { onFilterSelect(NotificationFilter.DMS) }
+            SummaryStat(Icons.Outlined.ChatBubbleOutline, summary.replyCount.toString())
+            SummaryStat(Icons.Outlined.FavoriteBorder, summary.reactionCount.toString())
+            SummaryStat(Icons.Outlined.CurrencyBitcoin, formatSatsCompact(summary.zapSats))
+            SummaryStat(Icons.Outlined.Repeat, summary.repostCount.toString())
+            SummaryStat(Icons.Outlined.AlternateEmail, (summary.mentionCount + summary.quoteCount).toString())
+            SummaryStat(Icons.Outlined.MailOutline, summary.dmCount.toString())
         }
     }
 }
 
 @Composable
-private fun SummaryStat(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String, onClick: () -> Unit) {
+private fun SummaryStat(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 2.dp)
     ) {
         Icon(

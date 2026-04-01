@@ -582,6 +582,28 @@ fun GalleryCard(
             )
         }
 
+        // Top zapper banner
+        if (zapDetails.isNotEmpty()) {
+            val topZap = remember(zapDetails) {
+                zapDetails.maxByOrNull { it.sats }
+            }
+            if (topZap != null) {
+                val zapperProfile = eventRepo?.getProfileData(topZap.pubkey)
+                val zapperName = zapperProfile?.displayString
+                    ?: (topZap.pubkey.take(8) + "...")
+                TopZapperBanner(
+                    avatarUrl = zapperProfile?.picture,
+                    name = zapperName,
+                    sats = topZap.sats,
+                    message = topZap.message,
+                    onClick = {
+                        val nav = onNavigateToProfileFromDetails ?: onNavigateToProfile
+                        nav?.invoke(topZap.pubkey)
+                    }
+                )
+            }
+        }
+
         Spacer(Modifier.height(4.dp))
 
         // Action bar with expand/collapse

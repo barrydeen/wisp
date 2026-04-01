@@ -82,6 +82,9 @@
     <string name="compose_placeholder">What\'s on your mind?</string>
     <string name="compose_gallery_placeholder">Add a description for your gallery post…</string>
     <string name="compose_gallery_mode">Gallery Post</string>
+    <string name="compose_gallery_tap_to_add">Tap to add photos or videos</string>
+    <string name="compose_switch_to_text">Switch to Text</string>
+    <string name="compose_switch_to_gallery">Switch to Gallery</string>
     <string name="compose_publish">Publish</string>
     <string name="compose_publishing">Publishing…</string>
     <string name="compose_uploading">Uploading…</string>
@@ -257,6 +260,11 @@
     <string name="filter_votes">Votes</string>
     <string name="filter_dms">DMs</string>
     <string name="filter_zen">Zen</string>
+    <string name="notif_filtered">Filtered</string>
+    <string name="notif_filter_title">Notification Filters</string>
+    <string name="notif_chat_rooms">Chat rooms</string>
+    <string name="notif_enable_all">Enable all</string>
+    <string name="notif_disable_all">Disable all</string>
     <string name="cd_mute_notifications">Mute notifications</string>
     <string name="cd_unmute_notifications">Unmute notifications</string>
     <string name="cd_reposted">reposted</string>
@@ -463,7 +471,7 @@
     <string name="settings_large_text">Large text</string>
     <string name="settings_increase_text_size">Increase text size across the app</string>
     <string name="settings_language">Language</string>
-    <string name="settings_popular_themes">Popular Themes</string>
+    <string name="settings_popular_themes">Themes</string>
     <string name="settings_choose_color_scheme">Choose a color scheme</string>
     <string name="settings_accent_color">Accent Color</string>
     <string name="settings_preview">Preview</string>
@@ -736,4 +744,7 @@
     <string name="action_delete_group">Delete Chat Room</string>
     <string name="title_delete_group">Delete Chat Room</string>
     <string name="msg_delete_group_confirm">Permanently delete this chat room? This cannot be undone.</string>
+    <string name="label_notifications">Notifications</string>
+    <string name="label_notifications_on">On — new messages will be tracked</string>
+    <string name="label_notifications_off">Off — tap to enable</string>
 </resources>

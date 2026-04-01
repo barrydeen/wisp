@@ -184,7 +184,8 @@ fun UserProfileScreen(
                 fetchGroupPreview = fetchGroupPreview,
                 onAddEmojiSet = onAddEmojiSet,
                 onRemoveEmojiSet = onRemoveEmojiSet,
-                isEmojiSetAdded = isEmojiSetAdded
+                isEmojiSetAdded = isEmojiSetAdded,
+                onPollVote = onPollVote
             )
         } else null
     }

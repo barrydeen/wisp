@@ -77,6 +77,11 @@
     <string name="compose_reply">Ответить</string>
     <string name="compose_quote">Цитировать</string>
     <string name="compose_placeholder">О чём думаете?</string>
+    <string name="compose_switch_to_text">Переключиться на текст</string>
+    <string name="compose_switch_to_gallery">Переключиться на галерею</string>
+    <string name="compose_gallery_mode">Пост галереи</string>
+    <string name="compose_gallery_placeholder">Добавьте описание для вашего поста галереи…</string>
+    <string name="compose_gallery_tap_to_add">Нажмите, чтобы добавить фото или видео</string>
     <string name="compose_publish">Опубликовать</string>
     <string name="compose_publishing">Публикация…</string>
     <string name="compose_uploading">Загрузка…</string>
@@ -419,7 +424,7 @@
     <string name="settings_large_text">Крупный текст</string>
     <string name="settings_increase_text_size">Увеличить размер текста во всём приложении</string>
     <string name="settings_language">Язык</string>
-    <string name="settings_popular_themes">Популярные темы</string>
+    <string name="settings_popular_themes">Темы</string>
     <string name="settings_choose_color_scheme">Выберите цветовую схему</string>
     <string name="settings_accent_color">Акцентный цвет</string>
     <string name="settings_preview">Предпросмотр</string>

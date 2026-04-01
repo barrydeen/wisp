@@ -25,10 +25,16 @@ import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.KeyRepository
+import com.wisp.app.repo.MentionCandidate
+import com.wisp.app.repo.MentionSearchRepository
 import com.wisp.app.repo.NotificationRepository
 import com.wisp.app.repo.PowPreferences
+import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.R
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import com.wisp.app.nostr.Nip19
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -41,7 +47,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 enum class NotificationFilter(val labelResId: Int) {
-    ALL(R.string.filter_all),
     REPLIES(R.string.filter_replies),
     REACTIONS(R.string.filter_reactions),
     ZAPS(R.string.filter_zaps),
@@ -57,6 +62,9 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val PREF_NOTIFICATION_FILTER = "notification_filter"
+        private const val PREF_ENABLED_NOTIF_TYPES = "enabled_notif_types"
+        private const val PREF_CHAT_ROOMS_NOTIF_ENABLED = "chat_rooms_notif_enabled"
+        private val ALL_TYPES = NotificationFilter.entries.toSet()
     }
 
     val notifications: StateFlow<List<NotificationGroup>>
@@ -92,8 +100,11 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing
 
-    private val _filter = MutableStateFlow(loadSavedFilter())
-    val filter: StateFlow<NotificationFilter> = _filter
+    private val _enabledTypes = MutableStateFlow(loadEnabledTypes())
+    val enabledTypes: StateFlow<Set<NotificationFilter>> = _enabledTypes
+
+    private val _chatRoomsEnabled = MutableStateFlow(settingsPrefs.getBoolean(PREF_CHAT_ROOMS_NOTIF_ENABLED, true))
+    val chatRoomsEnabled: StateFlow<Boolean> = _chatRoomsEnabled
 
     private val _filteredNotifications = MutableStateFlow<List<NotificationGroup>>(emptyList())
     val filteredNotifications: StateFlow<List<NotificationGroup>> = _filteredNotifications
@@ -110,6 +121,16 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
     private var powPrefs: PowPreferences? = null
     private val keyRepo = KeyRepository(getApplication())
 
+    // ── Mention search ──────────────────────────────────────────────────
+    private var mentionSearchRepo: MentionSearchRepository? = null
+    private var mentionStartIndex: Int = -1
+
+    private val _mentionQuery = MutableStateFlow<String?>(null)
+    val mentionQuery: StateFlow<String?> = _mentionQuery
+
+    private val _mentionCandidates = MutableStateFlow<List<MentionCandidate>>(emptyList())
+    val mentionCandidates: StateFlow<List<MentionCandidate>> = _mentionCandidates
+
     fun init(
         notificationRepository: NotificationRepository,
         eventRepository: EventRepository,
@@ -117,7 +138,9 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
         dmRepository: DmRepository? = null,
         relayPool: RelayPool? = null,
         relayListRepository: RelayListRepository? = null,
-        powPreferences: PowPreferences? = null
+        powPreferences: PowPreferences? = null,
+        profileRepository: ProfileRepository? = null,
+        eventPersistence: com.wisp.app.db.EventPersistence? = null
     ) {
         notifRepo = notificationRepository
         eventRepo = eventRepository
@@ -126,6 +149,14 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
         this.relayPool = relayPool
         relayListRepo = relayListRepository
         powPrefs = powPreferences
+        if (profileRepository != null && relayPool != null) {
+            mentionSearchRepo = MentionSearchRepository(profileRepository, contactRepository, relayPool, keyRepo).also {
+                it.eventPersistence = eventPersistence
+            }
+            viewModelScope.launch {
+                mentionSearchRepo!!.candidates.collect { _mentionCandidates.value = it }
+            }
+        }
         startPeriodicRefresh()
         startFilterCombine()
         startSummaryCombine()
@@ -143,43 +174,67 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
     private val dmNotifications: StateFlow<List<FlatNotificationItem>>
         get() = dmRepo?.dmNotifications ?: MutableStateFlow(emptyList())
 
+    private fun notifTypeToFilter(type: NotificationType): NotificationFilter? = when (type) {
+        NotificationType.REPLY -> NotificationFilter.REPLIES
+        NotificationType.REACTION, NotificationType.DM_REACTION -> NotificationFilter.REACTIONS
+        NotificationType.ZAP, NotificationType.DM_ZAP, NotificationType.PROFILE_ZAP -> NotificationFilter.ZAPS
+        NotificationType.REPOST -> NotificationFilter.REPOSTS
+        NotificationType.MENTION, NotificationType.QUOTE -> NotificationFilter.MENTIONS
+        NotificationType.VOTE -> NotificationFilter.VOTES
+        NotificationType.DM -> NotificationFilter.DMS
+    }
+
+    private fun isItemEnabled(item: FlatNotificationItem, enabled: Set<NotificationFilter>, chatEnabled: Boolean): Boolean {
+        val filter = notifTypeToFilter(item.type) ?: return true
+        if (filter !in enabled) return false
+        if (item.groupChatId != null && !chatEnabled) return false
+        return true
+    }
+
     private fun startFilterCombine() {
         viewModelScope.launch {
-            combine(notifications, _filter) { notifs, filterType ->
-                when (filterType) {
-                    NotificationFilter.ALL -> notifs
-                    NotificationFilter.REPLIES -> notifs.filterIsInstance<NotificationGroup.ReplyNotification>()
-                    NotificationFilter.REACTIONS -> notifs.filterIsInstance<NotificationGroup.ReactionGroup>()
-                    NotificationFilter.ZAPS -> notifs.filter {
-                        it is NotificationGroup.ReactionGroup &&
-                            NotificationGroup.ZAP_EMOJI in it.reactions
+            combine(
+                notifications,
+                _enabledTypes
+            ) { notifs: List<NotificationGroup>, enabled: Set<NotificationFilter> ->
+                notifs.filter { group ->
+                    when (group) {
+                        is NotificationGroup.ReplyNotification -> NotificationFilter.REPLIES in enabled
+                        is NotificationGroup.ReactionGroup -> {
+                            val hasZap = NotificationGroup.ZAP_EMOJI in group.reactions
+                            val hasRepost = NotificationGroup.REPOST_EMOJI in group.reactions
+                            when {
+                                hasZap -> NotificationFilter.ZAPS in enabled
+                                hasRepost -> NotificationFilter.REPOSTS in enabled
+                                else -> NotificationFilter.REACTIONS in enabled
+                            }
+                        }
+                        is NotificationGroup.MentionNotification -> NotificationFilter.MENTIONS in enabled
+                        is NotificationGroup.QuoteNotification -> NotificationFilter.MENTIONS in enabled
                     }
-                    NotificationFilter.REPOSTS -> notifs.filter {
-                        it is NotificationGroup.ReactionGroup &&
-                            NotificationGroup.REPOST_EMOJI in it.reactions
-                    }
-                    NotificationFilter.MENTIONS -> notifs.filter {
-                        it is NotificationGroup.MentionNotification || it is NotificationGroup.QuoteNotification
-                    }
-                    NotificationFilter.VOTES -> emptyList() // votes only exist in flat list
-                    NotificationFilter.DMS -> emptyList() // DMs only exist in flat list
                 }
-            }.collect { _filteredNotifications.value = it }
+            }.collect { filtered -> _filteredNotifications.value = filtered }
         }
         viewModelScope.launch {
-            combine(flatNotifications, dmNotifications, _filter) { items, dmItems, filterType ->
-                val merged = when (filterType) {
-                    NotificationFilter.ALL -> (items + dmItems).sortedByDescending { it.timestamp }
-                    NotificationFilter.REPLIES -> items.filter { it.type == NotificationType.REPLY }
-                    NotificationFilter.REACTIONS -> items.filter { it.type == NotificationType.REACTION }
-                    NotificationFilter.ZAPS -> items.filter { it.type == NotificationType.ZAP }
-                    NotificationFilter.REPOSTS -> items.filter { it.type == NotificationType.REPOST }
-                    NotificationFilter.MENTIONS -> items.filter { it.type == NotificationType.MENTION || it.type == NotificationType.QUOTE }
-                    NotificationFilter.VOTES -> items.filter { it.type == NotificationType.VOTE }
-                    NotificationFilter.DMS -> dmItems
-                }
-                merged
-            }.collect { _filteredFlatNotifications.value = it }
+            combine(
+                flatNotifications,
+                dmNotifications,
+                _enabledTypes
+            ) { items: List<FlatNotificationItem>, dmItems: List<FlatNotificationItem>, enabled: Set<NotificationFilter> ->
+                val chatEnabled = _chatRoomsEnabled.value
+                (items + dmItems)
+                    .filter { isItemEnabled(it, enabled, chatEnabled) }
+                    .sortedByDescending { it.timestamp }
+            }.collect { filtered -> _filteredFlatNotifications.value = filtered }
+        }
+        // Re-filter when chat rooms toggle changes
+        viewModelScope.launch {
+            _chatRoomsEnabled.collect { chatEnabled ->
+                val enabled = _enabledTypes.value
+                _filteredFlatNotifications.value = (flatNotifications.value + dmNotifications.value)
+                    .filter { isItemEnabled(it, enabled, chatEnabled) }
+                    .sortedByDescending { it.timestamp }
+            }
         }
     }
 
@@ -194,16 +249,58 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setFilter(filter: NotificationFilter) {
-        _filter.value = filter
-        settingsPrefs.edit().putString(PREF_NOTIFICATION_FILTER, filter.name).apply()
+    fun toggleType(type: NotificationFilter) {
+        val current = _enabledTypes.value.toMutableSet()
+        if (type in current) current.remove(type) else current.add(type)
+        _enabledTypes.value = current
+        saveEnabledTypes(current)
     }
 
-    private fun loadSavedFilter(): NotificationFilter {
-        val saved = settingsPrefs.getString(PREF_NOTIFICATION_FILTER, null)
-        return saved?.let {
-            try { NotificationFilter.valueOf(it) } catch (_: IllegalArgumentException) { null }
-        } ?: NotificationFilter.ALL
+    fun toggleChatRooms() {
+        val newValue = !_chatRoomsEnabled.value
+        _chatRoomsEnabled.value = newValue
+        settingsPrefs.edit().putBoolean(PREF_CHAT_ROOMS_NOTIF_ENABLED, newValue).apply()
+    }
+
+    fun enableAll() {
+        _enabledTypes.value = ALL_TYPES
+        _chatRoomsEnabled.value = true
+        saveEnabledTypes(ALL_TYPES)
+        settingsPrefs.edit().putBoolean(PREF_CHAT_ROOMS_NOTIF_ENABLED, true).apply()
+    }
+
+    fun disableAll() {
+        _enabledTypes.value = emptySet()
+        _chatRoomsEnabled.value = false
+        saveEnabledTypes(emptySet())
+        settingsPrefs.edit().putBoolean(PREF_CHAT_ROOMS_NOTIF_ENABLED, false).apply()
+    }
+
+    private fun saveEnabledTypes(types: Set<NotificationFilter>) {
+        settingsPrefs.edit().putStringSet(PREF_ENABLED_NOTIF_TYPES, types.map { it.name }.toSet()).apply()
+    }
+
+    private fun loadEnabledTypes(): Set<NotificationFilter> {
+        val saved = settingsPrefs.getStringSet(PREF_ENABLED_NOTIF_TYPES, null)
+        if (saved != null) {
+            return saved.mapNotNull { name ->
+                try { NotificationFilter.valueOf(name) } catch (_: IllegalArgumentException) { null }
+            }.toSet()
+        }
+        // Migrate from old single-filter pref
+        val oldFilter = settingsPrefs.getString(PREF_NOTIFICATION_FILTER, null)
+        if (oldFilter != null) {
+            settingsPrefs.edit().remove(PREF_NOTIFICATION_FILTER).apply()
+        }
+        // Migrate from old global sound toggle
+        val soundEnabled = settingsPrefs.getBoolean("notif_sound_enabled", true)
+        if (!soundEnabled) {
+            settingsPrefs.edit().remove("notif_sound_enabled").apply()
+            val empty = emptySet<NotificationFilter>()
+            saveEnabledTypes(empty)
+            return empty
+        }
+        return ALL_TYPES
     }
 
     fun isFollowing(pubkey: String): Boolean {
@@ -225,6 +322,62 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun getProfileData(pubkey: String): ProfileData? {
         return eventRepo?.getProfileData(pubkey)
+    }
+
+    // ── Mention autocomplete ──────────────────────────────────────────────
+
+    fun detectMentionQuery(value: TextFieldValue) {
+        val text = value.text
+        val cursor = value.selection.start
+
+        if (cursor == 0 || text.isEmpty()) {
+            clearMentionState()
+            return
+        }
+
+        var atIndex = -1
+        for (i in (cursor - 1) downTo 0) {
+            val c = text[i]
+            if (c == '@') {
+                if (i == 0 || text[i - 1].isWhitespace()) {
+                    atIndex = i
+                }
+                break
+            }
+            if (c.isWhitespace()) break
+        }
+
+        if (atIndex == -1) {
+            clearMentionState()
+            return
+        }
+
+        mentionStartIndex = atIndex
+        val query = text.substring(atIndex + 1, cursor)
+        _mentionQuery.value = query
+        mentionSearchRepo?.search(query, viewModelScope)
+    }
+
+    fun selectMention(candidate: MentionCandidate, currentText: String, cursorPos: Int): TextFieldValue {
+        if (mentionStartIndex < 0 || mentionStartIndex > currentText.length) {
+            clearMentionState()
+            return TextFieldValue(currentText, TextRange(cursorPos))
+        }
+
+        val nprofile = "nostr:" + Nip19.nprofileEncode(candidate.profile.pubkey)
+        val before = currentText.substring(0, mentionStartIndex)
+        val after = if (cursorPos < currentText.length) currentText.substring(cursorPos) else ""
+        val newText = before + nprofile + " " + after
+        val newCursor = before.length + nprofile.length + 1
+
+        clearMentionState()
+        return TextFieldValue(newText, TextRange(newCursor))
+    }
+
+    fun clearMentionState() {
+        _mentionQuery.value = null
+        mentionStartIndex = -1
+        mentionSearchRepo?.clear()
     }
 
     // ── Inline DM Send ──────────────────────────────────────────────────

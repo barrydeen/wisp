@@ -70,6 +70,10 @@ class MetadataFetcher(
     private val inFlightAddressables = mutableSetOf<String>()
     private var addressableBatchCounter = 0
 
+    // Poll vote fetching for quoted polls
+    private val fetchedPollVotes = mutableSetOf<String>()
+    private var pollVoteBatchCounter = 0
+
     /** Returns URLs of the top relays by author coverage for quote lookups. Set by FeedViewModel. */
     var quoteRelayProvider: (() -> List<String>)? = null
 
@@ -94,6 +98,7 @@ class MetadataFetcher(
         exhaustedProfiles.clear()
         scannedQuoteEvents.clear()
         failedQuoteFetches.clear()
+        synchronized(fetchedPollVotes) { fetchedPollVotes.clear() }
         metaBatchCounter = 0
         replyCountBatchCounter = 0
         zapCountBatchCounter = 0
@@ -211,6 +216,32 @@ class MetadataFetcher(
         relayPool.sendToReadRelays(msg)
         scope.launch {
             subManager.awaitEoseWithTimeout(subId, timeoutMs = 5_000)
+            subManager.closeSubscription(subId)
+        }
+    }
+
+    /**
+     * Fetch kind 1018 poll responses for a quoted poll event.
+     * Sends a REQ to top relays so the PollSection can render results.
+     */
+    fun requestPollVotes(pollEventId: String) {
+        synchronized(fetchedPollVotes) {
+            if (!fetchedPollVotes.add(pollEventId)) return
+        }
+        val subId = "qpoll-${pollVoteBatchCounter++}"
+        val filter = Filter(kinds = listOf(com.wisp.app.nostr.Nip88.KIND_POLL_RESPONSE), eTags = listOf(pollEventId))
+        val msg = ClientMessage.req(subId, filter)
+        relayPool.sendToAllRelays(msg)
+        // Also try poll-specified relays
+        val pollEvent = eventRepo.getEvent(pollEventId)
+        if (pollEvent != null) {
+            val sentUrls = relayPool.getReadRelayUrls().toSet() + relayPool.getWriteRelayUrls().toSet()
+            for (url in com.wisp.app.nostr.Nip88.parsePollRelays(pollEvent)) {
+                if (url !in sentUrls) relayPool.sendToRelayOrEphemeral(url, msg)
+            }
+        }
+        scope.launch {
+            subManager.awaitEoseWithTimeout(subId, timeoutMs = 8_000)
             subManager.closeSubscription(subId)
         }
     }

@@ -66,13 +66,22 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         eventRepo = null
     }
 
+    val unreadGroups: StateFlow<Set<String>>
+        get() = groupRepo?.unreadGroups ?: MutableStateFlow(emptySet())
+
+    val notifiedGroups: StateFlow<Set<String>>
+        get() = groupRepo?.notifiedGroups ?: MutableStateFlow(emptySet())
+
     fun init(repository: GroupRepository, pool: RelayPool, evRepo: EventRepository? = null) {
         if (groupRepo != null) return
         groupRepo = repository
         relayPool = pool
         eventRepo = evRepo
-        // No startup subscriptions — connections are made on-demand when a room is opened.
         collectRelayEvents()
+        // Auto-subscribe to groups with notifications enabled so messages arrive in the background
+        for ((relayUrl, groupId) in repository.getNotifiedGroupKeys()) {
+            subscribeToGroup(relayUrl, groupId)
+        }
     }
 
     fun subscribeToGroup(relayUrl: String, groupId: String) {
@@ -81,15 +90,22 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         if (!subscribedGroups.add(key)) return  // already subscribed this session
         Log.d("GroupListVM", "[subscribe] relay=$relayUrl group=$groupId")
         pool.ensureGroupRelay(relayUrl)
-        sendGroupReqs(relayUrl, groupId)
+        // Use the latest persisted message timestamp as `since` to avoid re-downloading
+        // messages we already have in ObjectBox. 5-minute buffer covers relay clock skew.
+        val room = groupRepo?.getRoom(relayUrl, groupId)
+        val since = room?.lastMessageAt?.takeIf { it > 0 }?.let { it - 5 * 60 }
+        sendGroupReqs(relayUrl, groupId, since)
     }
 
-    /** Send all 6 group subscription REQs without touching the subscribedGroups guard. */
-    private fun sendGroupReqs(relayUrl: String, groupId: String) {
+    /** Send all 6 group subscription REQs without touching the subscribedGroups guard.
+     *  When [since] is set, messages/reactions/zaps use it to skip already-persisted events.
+     *  Metadata, admins, and members are replaceable — always fetched fresh. */
+    private fun sendGroupReqs(relayUrl: String, groupId: String, since: Long? = null) {
         val pool = relayPool ?: return
         pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(
             subscriptionId = subId("msg", groupId),
-            filter = Filter(kinds = listOf(Nip29.KIND_CHAT_MESSAGE), hTags = listOf(groupId), limit = 100)
+            filter = Filter(kinds = listOf(Nip29.KIND_CHAT_MESSAGE), hTags = listOf(groupId),
+                since = since, limit = if (since != null) null else 100)
         ), skipBadCheck = true)
         pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(
             subscriptionId = subId("meta", groupId),
@@ -105,17 +121,43 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         ), skipBadCheck = true)
         pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(
             subscriptionId = subId("react", groupId),
-            filter = Filter(kinds = listOf(7), hTags = listOf(groupId), limit = 500)
+            filter = Filter(kinds = listOf(7), hTags = listOf(groupId),
+                since = since, limit = if (since != null) null else 500)
         ), skipBadCheck = true)
         pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(
             subscriptionId = subId("zap", groupId),
-            filter = Filter(kinds = listOf(9735), hTags = listOf(groupId), limit = 200)
+            filter = Filter(kinds = listOf(9735), hTags = listOf(groupId),
+                since = since, limit = if (since != null) null else 200)
         ), skipBadCheck = true)
     }
 
-    /** Close subscriptions for a room and disconnect its relay if no other rooms use it. */
+    /** Toggle notification subscription for a group. When enabled, the relay connection stays open. */
+    fun setGroupNotified(relayUrl: String, groupId: String, enabled: Boolean) {
+        val repo = groupRepo ?: return
+        repo.setNotified(relayUrl, groupId, enabled)
+        if (enabled) {
+            subscribeToGroup(relayUrl, groupId)
+        }
+        // When disabling, don't unsubscribe — the user might still be viewing the room.
+        // The connection will be cleaned up when they leave the room screen.
+    }
+
+    fun isGroupNotified(relayUrl: String, groupId: String): Boolean =
+        groupRepo?.isNotified(relayUrl, groupId) ?: false
+
+    fun markGroupRead(relayUrl: String, groupId: String) {
+        groupRepo?.markRead(relayUrl, groupId)
+    }
+
+    /** Close subscriptions for a room and disconnect its relay if no other rooms use it.
+     *  If the group has notifications enabled, the connection is kept alive. */
     fun unsubscribeFromGroup(relayUrl: String, groupId: String) {
         val key = "$relayUrl|$groupId"
+        // If this group has notifications enabled, keep the subscription alive
+        if (groupRepo?.isNotified(relayUrl, groupId) == true) {
+            Log.d("GroupListVM", "[unsubscribe] skipped — notifications enabled relay=$relayUrl group=$groupId")
+            return
+        }
         subscribedGroups.remove(key)
         val pool = relayPool ?: return
         Log.d("GroupListVM", "[unsubscribe] relay=$relayUrl group=$groupId")

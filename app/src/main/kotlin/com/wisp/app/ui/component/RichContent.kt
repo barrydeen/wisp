@@ -158,6 +158,7 @@ data class NoteActions(
     val onAddEmojiSet: ((pubkey: String, dTag: String) -> Unit)? = null,
     val onRemoveEmojiSet: ((pubkey: String, dTag: String) -> Unit)? = null,
     val isEmojiSetAdded: ((pubkey: String, dTag: String) -> Boolean)? = null,
+    val onPollVote: (String, List<String>) -> Unit = { _, _ -> },
 )
 
 internal sealed interface ContentSegment {
@@ -918,12 +919,20 @@ fun QuotedNote(
 
     val effectiveNoteClick = noteActions?.onNoteClick ?: onNoteClick
 
+    // Fetch poll votes when quoted event is a poll
+    LaunchedEffect(event?.id, event?.kind) {
+        if (event != null && event.kind == com.wisp.app.nostr.Nip88.KIND_POLL) {
+            eventRepo.requestPollVotes(event.id)
+        }
+    }
+
     if (event != null && noteActions != null) {
         // Full rendering with all interactive features
         val reactionVersion by eventRepo.reactionVersion.collectAsState()
         val zapVersion by eventRepo.zapVersion.collectAsState()
         val replyCountVersion by eventRepo.replyCountVersion.collectAsState()
         val repostVersion by eventRepo.repostVersion.collectAsState()
+        val pollVoteVersion by eventRepo.pollVoteVersion.collectAsState()
 
         val likeCount = remember(reactionVersion, eventId) { eventRepo.getReactionCount(eventId) }
         val replyCount = remember(replyCountVersion, eventId) { eventRepo.getReplyCount(eventId) }
@@ -937,6 +946,17 @@ fun QuotedNote(
         val hasUserZapped = remember(zapVersion, eventId) { eventRepo.hasUserZapped(eventId) }
         val reactionDetails = remember(reactionVersion, eventId) { eventRepo.getReactionDetails(eventId) }
         val zapDetails = remember(zapVersion, eventId) { eventRepo.getZapDetails(eventId) }
+
+        // Poll data for quoted polls
+        val pollVoteCounts = remember(pollVoteVersion, eventId) {
+            if (event.kind == com.wisp.app.nostr.Nip88.KIND_POLL) eventRepo.getPollVoteCounts(eventId) else emptyMap()
+        }
+        val pollTotalVotes = remember(pollVoteVersion, eventId) {
+            if (event.kind == com.wisp.app.nostr.Nip88.KIND_POLL) eventRepo.getPollTotalVotes(eventId) else 0
+        }
+        val userPollVotes = remember(pollVoteVersion, eventId) {
+            if (event.kind == com.wisp.app.nostr.Nip88.KIND_POLL) eventRepo.getUserPollVotes(eventId) else emptyList()
+        }
 
         Surface(
             shape = RoundedCornerShape(12.dp),
@@ -1014,6 +1034,10 @@ fun QuotedNote(
                     onPin = { noteActions.onPin(eventId) },
                     onQuotedNoteClick = effectiveNoteClick,
                     noteActions = noteActions,
+                    pollVoteCounts = pollVoteCounts,
+                    pollTotalVotes = pollTotalVotes,
+                    userPollVotes = userPollVotes,
+                    onPollVote = { optionIds -> noteActions.onPollVote(eventId, optionIds) },
                     showDivider = false
                 )
             }

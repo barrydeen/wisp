@@ -95,6 +95,7 @@ fun SearchScreen(
     onReply: (NostrEvent) -> Unit = {},
     onReact: (NostrEvent, String) -> Unit = { _, _ -> },
     onRepost: (NostrEvent) -> Unit = {},
+    onQuote: (NostrEvent) -> Unit = {},
     onZap: (NostrEvent) -> Unit = {},
     zapInProgress: Set<String> = emptySet(),
     zapAnimatingIds: Set<String> = emptySet(),
@@ -139,6 +140,7 @@ fun SearchScreen(
             onAddEmojiSet = onAddEmojiSet,
             onRemoveEmojiSet = onRemoveEmojiSet,
             isEmojiSetAdded = isEmojiSetAdded,
+            onPollVote = onPollVote,
         )
     }
 
@@ -364,6 +366,7 @@ fun SearchScreen(
                                     onQuotedNoteClick = onQuotedNoteClick,
                                     onReact = { emoji -> onReact(event, emoji) },
                                     onRepost = { onRepost(event) },
+                                    onQuote = { onQuote(event) },
                                     onZap = { onZap(event) },
                                     onFollowAuthor = { onToggleFollow(event.pubkey) },
                                     onBlockAuthor = { onBlockUser(event.pubkey) },
@@ -406,6 +409,7 @@ private fun SearchNoteItem(
     onQuotedNoteClick: ((String) -> Unit)?,
     onReact: (String) -> Unit,
     onRepost: () -> Unit,
+    onQuote: () -> Unit = {},
     onZap: () -> Unit,
     onFollowAuthor: () -> Unit,
     onBlockAuthor: () -> Unit,
@@ -446,6 +450,7 @@ private fun SearchNoteItem(
         onQuotedNoteClick = onQuotedNoteClick,
         onReact = onReact,
         onRepost = onRepost,
+        onQuote = onQuote,
         onZap = onZap,
         hasUserZapped = hasUserZapped,
         zapSats = zapSats,

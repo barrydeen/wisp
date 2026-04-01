@@ -79,6 +79,11 @@
     <string name="compose_reply">Rispondi</string>
     <string name="compose_quote">Cita</string>
     <string name="compose_placeholder">Cosa hai in mente?</string>
+    <string name="compose_switch_to_text">Passa a Testo</string>
+    <string name="compose_switch_to_gallery">Passa a Galleria</string>
+    <string name="compose_gallery_mode">Post Galleria</string>
+    <string name="compose_gallery_placeholder">Aggiungi una descrizione per il tuo post galleria…</string>
+    <string name="compose_gallery_tap_to_add">Tocca per aggiungere foto o video</string>
     <string name="compose_publish">Pubblica</string>
     <string name="compose_publishing">Pubblicazione in corso…</string>
     <string name="compose_uploading">Caricamento in corso…</string>
@@ -442,7 +447,7 @@
     <string name="settings_large_text">Testo grande</string>
     <string name="settings_increase_text_size">Aumenta la dimensione del testo in tutta l\'app</string>
     <string name="settings_language">Lingua</string>
-    <string name="settings_popular_themes">Temi Popolari</string>
+    <string name="settings_popular_themes">Temi</string>
     <string name="settings_choose_color_scheme">Scegli schema colori</string>
     <string name="settings_accent_color">Colore Accento</string>
     <string name="settings_preview">Anteprima</string>

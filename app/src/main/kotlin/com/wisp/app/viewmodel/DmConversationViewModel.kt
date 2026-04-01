@@ -241,7 +241,11 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                                 ?: continue
                             val pList = Nip17.getConversationParticipants(rumor, myPubkey)
                             val convKey = DmRepository.conversationKey(pList + myPubkey)
-                            repo.addReaction(convKey, targetId, DmReaction(rumor.pubkey, rumor.content.trim(), rumor.createdAt))
+                            val emojiContent = rumor.content.trim()
+                            val emojiUrl = if (emojiContent.startsWith(":") && emojiContent.endsWith(":")) {
+                                com.wisp.app.nostr.Nip30.parseEmojiTags(rumor.tags)[emojiContent.removeSurrounding(":")]
+                            } else null
+                            repo.addReaction(convKey, targetId, DmReaction(rumor.pubkey, emojiContent, rumor.createdAt, emojiUrl))
                             continue
                         }
 
@@ -251,6 +255,7 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                         val convKey = DmRepository.conversationKey(pList + myPubkey)
                         val replyToId = rumor.tags.firstOrNull { it.size >= 2 && it[0] == "e" && it.any { v -> v == "reply" } }?.get(1)
                         val rumorId = Nip17.computeRumorId(rumor)
+                        val emojiMap = com.wisp.app.nostr.Nip30.parseEmojiTags(rumor.tags)
                         val msg = DmMessage(
                             id = "${wrap.event.id}:${rumor.createdAt}",
                             senderPubkey = rumor.pubkey,
@@ -261,6 +266,7 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                             rumorId = rumorId,
                             replyToId = replyToId,
                             participants = pList,
+                            emojiMap = emojiMap,
                             debugGiftWrapJson = wrap.event.toJson(),
                             debugRumorJson = Nip17.rumorToJson(rumor)
                         )
@@ -538,6 +544,8 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                         relayPool.sendToWriteRelays(selfMsg)
                     }
 
+                    val sentEmojiMap = com.wisp.app.nostr.Nip30.buildEmojiTagsForContent(text, resolvedEmojis)
+                        .associate { it[1] to it[2] }
                     val dmMsg = DmMessage(
                         id = "${selfWrap.id}:$rumorCreatedAt",
                         senderPubkey = signer.pubkeyHex,
@@ -547,7 +555,8 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                         relayUrls = firstSentRelayUrls,
                         rumorId = rumorId,
                         replyToId = replyingTo?.rumorId,
-                        participants = participants
+                        participants = participants,
+                        emojiMap = sentEmojiMap
                     )
                     dmRepo?.addMessage(dmMsg, conversationKey)
                     dmRepo?.markGiftWrapSeen(selfWrap.id, dmMsg.id)
@@ -651,6 +660,8 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                     relayPool.sendToWriteRelays(selfMsg)
                 }
 
+                val sentEmojiMap = com.wisp.app.nostr.Nip30.buildEmojiTagsForContent(text, resolvedEmojis)
+                    .associate { it[1] to it[2] }
                 val dmMsg = DmMessage(
                     id = "${selfWrap.id}:$rumorCreatedAt",
                     senderPubkey = senderPubkeyHex,
@@ -660,7 +671,8 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                     relayUrls = firstSentRelayUrls,
                     rumorId = rumorId,
                     replyToId = replyingTo?.rumorId,
-                    participants = participants
+                    participants = participants,
+                    emojiMap = sentEmojiMap
                 )
                 dmRepo?.addMessage(dmMsg, conversationKey)
                 dmRepo?.markGiftWrapSeen(selfWrap.id, dmMsg.id)

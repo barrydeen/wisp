@@ -129,6 +129,22 @@ data class NostrEvent(
     fun toJson(): String = json.encodeToString(serializer(), this)
 
     fun withSignature(sig: String): NostrEvent = copy(sig = sig)
+
+    /**
+     * Verify the Schnorr signature of this event.
+     * Recomputes the event ID and checks the sig against the pubkey.
+     * Returns false if the ID doesn't match or the signature is invalid.
+     */
+    fun verifySignature(): Boolean {
+        if (sig.length != 128 || pubkey.length != 64) return false
+        val expectedId = computeId(pubkey, created_at, kind, tags, content)
+        if (id != expectedId) return false
+        return try {
+            Keys.verifySchnorr(sig.hexToByteArray(), id.hexToByteArray(), pubkey.hexToByteArray())
+        } catch (_: Exception) {
+            false
+        }
+    }
 }
 
 private object LongAsStringSerializer : KSerializer<Long> {

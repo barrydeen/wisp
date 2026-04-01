@@ -123,11 +123,11 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val optimisticZaps = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     // Poll vote tracking: pollId -> (optionId -> count)
-    private val pollVoteCounts = LruCache<String, ConcurrentHashMap<String, Int>>(5000)
+    private val pollVoteCounts = LruCache<String, ConcurrentHashMap<String, Int>>(15000)
     // pollId -> (voterPubkey -> (timestamp, optionIds)) for one-vote-per-pubkey enforcement
-    private val pollVoters = LruCache<String, ConcurrentHashMap<String, Pair<Long, List<String>>>>(5000)
+    private val pollVoters = LruCache<String, ConcurrentHashMap<String, Pair<Long, List<String>>>>(15000)
     // pollId -> selected option IDs for current user
-    private val userPollVotes = LruCache<String, List<String>>(5000)
+    private val userPollVotes = LruCache<String, List<String>>(15000)
     private val _pollVoteVersion = MutableStateFlow(0)
     val pollVoteVersion: StateFlow<Int> = _pollVoteVersion
 
@@ -624,6 +624,11 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     /** Fetch an event expected to live on our own write/read relays (e.g. our own note). */
     fun requestOwnEvent(eventId: String) {
         metadataFetcher?.requestOwnEvent(eventId)
+    }
+
+    /** Fetch kind 1018 poll responses for a quoted poll so results render inline. */
+    fun requestPollVotes(pollEventId: String) {
+        metadataFetcher?.requestPollVotes(pollEventId)
     }
 
     fun requestAddressableEvent(kind: Int, author: String, dTag: String, relayHints: List<String> = emptyList()) {

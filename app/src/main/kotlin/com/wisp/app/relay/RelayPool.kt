@@ -194,6 +194,10 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
     private val _eoseSignals = MutableSharedFlow<String>(extraBufferCapacity = 64)
     val eoseSignals: SharedFlow<String> = _eoseSignals
 
+    /** Event IDs that failed async signature verification and should be removed from UI. */
+    private val _invalidEvents = MutableSharedFlow<String>(extraBufferCapacity = 64)
+    val invalidEvents: SharedFlow<String> = _invalidEvents
+
     /** Emitted when a relay sends CLOSED for a group subscription (subId starts with "grp-"). */
     val groupRelayErrors = MutableSharedFlow<Triple<String, String, String>>(
         extraBufferCapacity = 16,
@@ -401,6 +405,13 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
                             }
                         }
                         if (shouldEmit) {
+                            // Verify signature off the hot path — retract if invalid
+                            scope.launch(Dispatchers.Default) {
+                                if (!msg.event.verifySignature()) {
+                                    Log.w("RelayPool", "Invalid signature: id=${msg.event.id.take(12)} kind=${msg.event.kind} relay=${relay.config.url}")
+                                    _invalidEvents.tryEmit(msg.event.id)
+                                }
+                            }
                             if (msg.event.kind == 1018) {
                                 Log.d("POLL", "[Pool] emit kind 1018 id=${msg.event.id.take(12)} sub=${msg.subscriptionId} relay=${relay.config.url}")
                             }

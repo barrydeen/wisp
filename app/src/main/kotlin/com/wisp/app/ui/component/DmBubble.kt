@@ -192,6 +192,7 @@ fun DmBubble(
                         style = MaterialTheme.typography.bodyMedium,
                         color = textColor,
                         linkColor = textColor,
+                        emojiMap = resolvedEmojis + message.emojiMap,
                         eventRepo = eventRepo,
                         onProfileClick = onProfileClick,
                         onNoteClick = onNoteClick,
@@ -430,6 +431,7 @@ private fun ReactionChips(
             ) {
                 val emojiUrl = if (emoji.startsWith(":") && emoji.endsWith(":")) {
                     resolvedEmojis[emoji.removeSurrounding(":")]
+                        ?: list.firstNotNullOfOrNull { it.emojiUrl }
                 } else null
                 if (emojiUrl != null) {
                     coil3.compose.AsyncImage(
@@ -513,6 +515,7 @@ private fun DmExpandedDetails(
                 ) {
                     val emojiUrl = if (emoji.startsWith(":") && emoji.endsWith(":")) {
                         resolvedEmojis[emoji.removeSurrounding(":")]
+                            ?: list.firstNotNullOfOrNull { it.emojiUrl }
                     } else null
                     if (emojiUrl != null) {
                         coil3.compose.AsyncImage(

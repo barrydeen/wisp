@@ -1,7 +1,13 @@
 package com.wisp.app.ui.screen
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -38,12 +44,16 @@ import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.content.hasMediaType
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -88,6 +98,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
@@ -123,6 +134,7 @@ import kotlinx.coroutines.launch
 fun GroupRoomScreen(
     viewModel: GroupRoomViewModel,
     initialRoom: com.wisp.app.repo.GroupRoom? = null,
+    scrollToMessageId: String? = null,
     relayPool: RelayPool,
     eventRepo: EventRepository,
     signer: NostrSigner?,
@@ -162,6 +174,12 @@ fun GroupRoomScreen(
     val relayError by viewModel.relayError.collectAsState()
     val replyTarget by viewModel.replyTarget.collectAsState()
 
+    // In-chat search state
+    var searchActive by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchMatches by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var searchCurrentIndex by remember { mutableIntStateOf(0) }
+
     // BasicTextField state for GIF keyboard support via contentReceiver
     val textFieldState = remember { TextFieldState() }
     val interactionSource = remember { MutableInteractionSource() }
@@ -199,11 +217,44 @@ fun GroupRoomScreen(
 
     val listState = rememberLazyListState()
     var prevMessageCount by remember { mutableIntStateOf(0) }
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }
+    var highlightTrigger by remember { mutableIntStateOf(0) }
+    val scrollScope = rememberCoroutineScope()
+
+    // Track whether we've handled the initial scrollToMessageId target
+    var scrollTargetHandled by remember { mutableStateOf(scrollToMessageId == null) }
 
     LaunchedEffect(messages.size) {
         if (messages.isEmpty()) return@LaunchedEffect
         if (prevMessageCount == 0) {
-            listState.scrollToItem(messages.size - 1)
+            // First load: scroll to target message if provided, otherwise bottom
+            if (!scrollTargetHandled && scrollToMessageId != null) {
+                val index = messages.indexOfFirst { it.id == scrollToMessageId }
+                if (index >= 0) {
+                    listState.scrollToItem(index)
+                    highlightedMessageId = scrollToMessageId
+                    highlightTrigger++
+                    // Clear the search-style blink after the fade animation finishes
+                    kotlinx.coroutines.delay(1500)
+                    highlightedMessageId = null
+                    scrollTargetHandled = true
+                } else {
+                    listState.scrollToItem(messages.size - 1)
+                }
+            } else {
+                listState.scrollToItem(messages.size - 1)
+            }
+        } else if (!scrollTargetHandled && scrollToMessageId != null) {
+            // Messages arrived after initial load — check if target is now available
+            val index = messages.indexOfFirst { it.id == scrollToMessageId }
+            if (index >= 0) {
+                listState.animateScrollToItem(index)
+                highlightedMessageId = scrollToMessageId
+                highlightTrigger++
+                kotlinx.coroutines.delay(1500)
+                highlightedMessageId = null
+                scrollTargetHandled = true
+            }
         } else if (messages.size > prevMessageCount) {
             listState.animateScrollToItem(messages.size - 1)
         }
@@ -255,6 +306,22 @@ fun GroupRoomScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
                     }
                 },
+                actions = {
+                    IconButton(onClick = {
+                        searchActive = !searchActive
+                        if (!searchActive) {
+                            searchQuery = ""
+                            searchMatches = emptyList()
+                            searchCurrentIndex = 0
+                            highlightedMessageId = null
+                        }
+                    }) {
+                        Icon(
+                            if (searchActive) Icons.Outlined.Close else Icons.Filled.Search,
+                            contentDescription = "Search messages"
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
@@ -287,6 +354,122 @@ fun GroupRoomScreen(
                     onProfileClick = onProfileClick
                 )
                 HorizontalDivider()
+
+                // Search bar
+                if (searchActive) {
+                    val searchFocusRequester = remember { FocusRequester() }
+                    LaunchedEffect(Unit) { searchFocusRequester.requestFocus() }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        val executeSearch = {
+                            val query = searchQuery
+                            if (query.isBlank()) {
+                                searchMatches = emptyList()
+                                searchCurrentIndex = 0
+                                highlightedMessageId = null
+                            } else {
+                                val lowerQuery = query.lowercase()
+                                val matches = messages.indices.filter {
+                                    messages[it].content.lowercase().contains(lowerQuery)
+                                }
+                                searchMatches = matches
+                                if (matches.isNotEmpty()) {
+                                    searchCurrentIndex = 0
+                                    highlightedMessageId = messages[matches[0]].id
+                                } else {
+                                    searchCurrentIndex = 0
+                                    highlightedMessageId = null
+                                }
+                            }
+                        }
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { executeSearch() }),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                color = MaterialTheme.colorScheme.onSurface
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            decorationBox = { innerTextField ->
+                                Box(contentAlignment = Alignment.CenterStart) {
+                                    if (searchQuery.isEmpty()) {
+                                        Text(
+                                            "Search messages…",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(vertical = 8.dp)
+                                .focusRequester(searchFocusRequester)
+                        )
+                        if (searchQuery.isNotBlank()) {
+                            Text(
+                                text = if (searchMatches.isEmpty()) "0/0"
+                                       else "${searchCurrentIndex + 1}/${searchMatches.size}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            IconButton(
+                                onClick = {
+                                    if (searchMatches.isNotEmpty()) {
+                                        val prev = (searchCurrentIndex - 1 + searchMatches.size) % searchMatches.size
+                                        searchCurrentIndex = prev
+                                        highlightedMessageId = messages[searchMatches[prev]].id
+                                    }
+                                },
+                                enabled = searchMatches.size > 1,
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Previous match", modifier = Modifier.size(20.dp))
+                            }
+                            IconButton(
+                                onClick = {
+                                    if (searchMatches.isNotEmpty()) {
+                                        val next = (searchCurrentIndex + 1) % searchMatches.size
+                                        searchCurrentIndex = next
+                                        highlightedMessageId = messages[searchMatches[next]].id
+                                    }
+                                },
+                                enabled = searchMatches.size > 1,
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Next match", modifier = Modifier.size(20.dp))
+                            }
+                        }
+                    }
+                    HorizontalDivider()
+                }
+
+                // Scroll to search result when navigating matches
+                LaunchedEffect(searchCurrentIndex, searchMatches) {
+                    if (searchMatches.isEmpty()) return@LaunchedEffect
+                    val msgIndex = searchMatches[searchCurrentIndex]
+                    listState.animateScrollToItem(msgIndex)
+                    highlightedMessageId = messages[msgIndex].id
+                    highlightTrigger++
+                }
+
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.weight(1f)
@@ -294,6 +477,7 @@ fun GroupRoomScreen(
                     items(items = messages, key = { it.id }) { message ->
                         GroupMessageBubble(
                             message = message,
+                            isSearchHighlighted = message.id == highlightedMessageId,
                             allMessages = messages,
                             eventRepo = eventRepo,
                             myPubkey = myPubkey,
@@ -303,11 +487,22 @@ fun GroupRoomScreen(
                             zapVersion = zapVersion,
                             isZapAnimating = message.id in zapAnimatingIds,
                             isZapInProgress = message.id in zapInProgressIds,
+                            highlightTrigger = if (message.id == highlightedMessageId) highlightTrigger else 0,
                             onProfileClick = onProfileClick,
                             onNoteClick = onNoteClick,
                             onReply = {
                                 viewModel.setReplyTarget(it)
                                 textFieldFocus.requestFocus()
+                            },
+                            onScrollToMessage = { targetId ->
+                                val index = messages.indexOfFirst { it.id == targetId }
+                                if (index >= 0) {
+                                    scrollScope.launch {
+                                        listState.animateScrollToItem(index)
+                                        highlightedMessageId = targetId
+                                        highlightTrigger++
+                                    }
+                                }
                             },
                             onReact = { msgId, pubkey, emoji ->
                                 viewModel.sendReaction(msgId, pubkey, emoji, signer, relayPool, resolvedEmojis)
@@ -691,6 +886,7 @@ private fun GroupMemberAvatarStrip(
 @Composable
 private fun GroupMessageBubble(
     message: GroupMessage,
+    isSearchHighlighted: Boolean = false,
     allMessages: List<GroupMessage>,
     eventRepo: EventRepository,
     myPubkey: String?,
@@ -700,9 +896,11 @@ private fun GroupMessageBubble(
     zapVersion: Int = 0,
     isZapAnimating: Boolean = false,
     isZapInProgress: Boolean = false,
+    highlightTrigger: Int = 0,
     onProfileClick: (String) -> Unit,
     onNoteClick: ((String) -> Unit)? = null,
     onReply: (GroupMessage) -> Unit,
+    onScrollToMessage: ((String) -> Unit)? = null,
     onReact: (messageId: String, senderPubkey: String, emoji: String) -> Unit,
     onZap: ((messageId: String, senderPubkey: String) -> Unit)? = null,
     onOpenEmojiLibrary: (() -> Unit)? = null,
@@ -734,6 +932,32 @@ private fun GroupMessageBubble(
     val zapSats = remember(message.id, zapVersion) { eventRepo.getZapSats(message.id) }
     val hasZaps = zapSats > 0
 
+    // Highlight animation for scroll-to-reply (fade-out)
+    val replyHighlightAlpha = remember { Animatable(0f) }
+    LaunchedEffect(highlightTrigger) {
+        if (highlightTrigger > 0) {
+            replyHighlightAlpha.snapTo(0.3f)
+            replyHighlightAlpha.animateTo(0f, tween(durationMillis = 1200))
+        }
+    }
+
+    // Search highlight blink effect (breathing)
+    val searchHighlightAlpha = if (isSearchHighlighted) {
+        val transition = rememberInfiniteTransition(label = "searchHighlight")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 0.15f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(600),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "highlightAlpha"
+        ).value
+    } else 0f
+
+    // Combined highlight: search blink or reply fade
+    val highlightAlpha = if (isSearchHighlighted) searchHighlightAlpha else replyHighlightAlpha.value
+
     val swipeOffset = remember { Animatable(0f) }
     val density = LocalDensity.current
     val swipeThreshold = remember(density) { with(density) { 80.dp.toPx() } }
@@ -755,6 +979,7 @@ private fun GroupMessageBubble(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = highlightAlpha))
             .padding(horizontal = 12.dp, vertical = 4.dp)
             .offset { IntOffset(swipeOffset.value.toInt(), 0) }
             .pointerInput(message.id) {
@@ -821,6 +1046,7 @@ private fun GroupMessageBubble(
                         .padding(vertical = 4.dp)
                         .clip(RoundedCornerShape(6.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                        .clickable { onScrollToMessage?.invoke(replyToMessage.id) }
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Box(
