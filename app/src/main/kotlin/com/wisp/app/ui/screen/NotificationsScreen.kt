@@ -29,8 +29,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.outlined.AlternateEmail
@@ -43,6 +41,7 @@ import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.AddReaction
 import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import com.wisp.app.ui.component.EmojiReactionPopup
@@ -51,8 +50,6 @@ import com.wisp.app.ui.component.detectEmojiAutocomplete
 import com.wisp.app.ui.component.insertEmojiShortcode
 import com.wisp.app.ui.component.LightningAnimation
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.HorizontalDivider
@@ -185,11 +182,12 @@ fun NotificationsScreen(
 ) {
     val notifications by viewModel.filteredFlatNotifications.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
-    val currentFilter by viewModel.filter.collectAsState()
+    val enabledTypes by viewModel.enabledTypes.collectAsState()
+    val chatRoomsEnabled by viewModel.chatRoomsEnabled.collectAsState()
     val summary by viewModel.summary24h.collectAsState()
     val eventRepo = viewModel.eventRepository
     val listState = rememberLazyListState()
-    var showFilterDropdown by remember { mutableStateOf(false) }
+    var showFilterSheet by remember { mutableStateOf(false) }
     val profileVersion = eventRepo?.profileVersion?.collectAsState()?.value ?: 0
 
     // Track which notification is expanded (only one at a time)
@@ -295,54 +293,10 @@ fun NotificationsScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Box {
-                            Surface(
-                                onClick = { showFilterDropdown = true },
-                                shape = RoundedCornerShape(20.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        stringResource(currentFilter.labelResId),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.widthIn(max = 160.dp)
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                    Icon(
-                                        Icons.Default.ArrowDropDown,
-                                        contentDescription = stringResource(R.string.cd_filter_notifications),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                            DropdownMenu(
-                                expanded = showFilterDropdown,
-                                onDismissRequest = { showFilterDropdown = false }
-                            ) {
-                                NotificationFilter.entries.forEach { filterOption ->
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(filterOption.labelResId)) },
-                                        onClick = {
-                                            showFilterDropdown = false
-                                            viewModel.setFilter(filterOption)
-                                        },
-                                        trailingIcon = if (currentFilter == filterOption) {{
-                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        }} else null
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    Text(
+                        stringResource(R.string.nav_notifications),
+                        style = MaterialTheme.typography.titleMedium
+                    )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -350,10 +304,20 @@ fun NotificationsScreen(
                     }
                 },
                 actions = {
+                    val allEnabled = enabledTypes.size == NotificationFilter.entries.size && chatRoomsEnabled
+                    IconButton(onClick = { showFilterSheet = true }) {
+                        Icon(
+                            Icons.Outlined.Tune,
+                            contentDescription = stringResource(R.string.cd_filter_notifications),
+                            tint = if (allEnabled) MaterialTheme.colorScheme.onSurface
+                                   else MaterialTheme.colorScheme.primary
+                        )
+                    }
                     IconButton(onClick = onToggleNotifSound) {
                         Icon(
                             if (notifSoundEnabled) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
-                            contentDescription = if (notifSoundEnabled) stringResource(R.string.cd_mute_notifications) else stringResource(R.string.cd_unmute_notifications)
+                            contentDescription = if (notifSoundEnabled) stringResource(R.string.cd_mute_notifications)
+                                                 else stringResource(R.string.cd_unmute_notifications)
                         )
                     }
                 },
@@ -390,10 +354,7 @@ fun NotificationsScreen(
                 modifier = Modifier.fillMaxSize()
             ) {
                 item(key = "summary_24h", contentType = "summary") {
-                    DailySummaryBar(
-                        summary = summary,
-                        onFilterSelect = { viewModel.setFilter(it) }
-                    )
+                    DailySummaryBar(summary = summary)
                 }
                 items(items = notifications, key = { it.id }, contentType = { "notification" }) { item ->
                     val isExpanded = expandedId == item.id
@@ -463,6 +424,144 @@ fun NotificationsScreen(
             }
         }
         } // PullToRefreshBox
+    }
+
+    if (showFilterSheet) {
+        NotificationFilterSheet(
+            enabledTypes = enabledTypes,
+            chatRoomsEnabled = chatRoomsEnabled,
+            onToggleType = { viewModel.toggleType(it) },
+            onToggleChatRooms = { viewModel.toggleChatRooms() },
+            onEnableAll = { viewModel.enableAll() },
+            onDisableAll = { viewModel.disableAll() },
+            onDismiss = { showFilterSheet = false }
+        )
+    }
+}
+
+// ── Filter Bottom Sheet ─────────────────────────────────────────────────
+
+private fun NotificationFilter.icon(): androidx.compose.ui.graphics.vector.ImageVector = when (this) {
+    NotificationFilter.REPLIES -> Icons.Outlined.ChatBubbleOutline
+    NotificationFilter.REACTIONS -> Icons.Outlined.FavoriteBorder
+    NotificationFilter.ZAPS -> Icons.Outlined.CurrencyBitcoin
+    NotificationFilter.REPOSTS -> Icons.Outlined.Repeat
+    NotificationFilter.MENTIONS -> Icons.Outlined.AlternateEmail
+    NotificationFilter.VOTES -> Icons.Outlined.BarChart
+    NotificationFilter.DMS -> Icons.Outlined.MailOutline
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NotificationFilterSheet(
+    enabledTypes: Set<NotificationFilter>,
+    chatRoomsEnabled: Boolean,
+    onToggleType: (NotificationFilter) -> Unit,
+    onToggleChatRooms: () -> Unit,
+    onEnableAll: () -> Unit,
+    onDisableAll: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(modifier = Modifier.padding(bottom = 32.dp)) {
+            Text(
+                stringResource(R.string.notif_filter_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+
+            NotificationFilter.entries.forEach { filter ->
+                val enabled = filter in enabledTypes
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onToggleType(filter) }
+                        .padding(horizontal = 24.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        filter.icon(),
+                        contentDescription = null,
+                        tint = if (enabled) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Text(
+                        stringResource(filter.labelResId),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (enabled) MaterialTheme.colorScheme.onSurface
+                               else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.weight(1f))
+                    androidx.compose.material3.Switch(
+                        checked = enabled,
+                        onCheckedChange = { onToggleType(filter) }
+                    )
+                }
+            }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+
+            // Chat rooms toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleChatRooms() }
+                    .padding(horizontal = 24.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Outlined.Forum,
+                    contentDescription = null,
+                    tint = if (chatRoomsEnabled) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(Modifier.width(14.dp))
+                Text(
+                    stringResource(R.string.notif_chat_rooms),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (chatRoomsEnabled) MaterialTheme.colorScheme.onSurface
+                           else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.weight(1f))
+                androidx.compose.material3.Switch(
+                    checked = chatRoomsEnabled,
+                    onCheckedChange = { onToggleChatRooms() }
+                )
+            }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+
+            // Enable All / Disable All
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                TextButton(onClick = onEnableAll) {
+                    Text(stringResource(R.string.notif_enable_all))
+                }
+                TextButton(onClick = onDisableAll) {
+                    Text(stringResource(R.string.notif_disable_all))
+                }
+            }
+        }
     }
 }
 
@@ -1761,7 +1860,7 @@ private fun actionText(item: FlatNotificationItem): String = when (item.type) {
 // ── Daily Summary Bar ──────────────────────────────────────────────────
 
 @Composable
-private fun DailySummaryBar(summary: NotificationSummary, onFilterSelect: (NotificationFilter) -> Unit) {
+private fun DailySummaryBar(summary: NotificationSummary) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth()
@@ -1778,23 +1877,22 @@ private fun DailySummaryBar(summary: NotificationSummary, onFilterSelect: (Notif
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            SummaryStat(Icons.Outlined.ChatBubbleOutline, summary.replyCount.toString()) { onFilterSelect(NotificationFilter.REPLIES) }
-            SummaryStat(Icons.Outlined.FavoriteBorder, summary.reactionCount.toString()) { onFilterSelect(NotificationFilter.REACTIONS) }
-            SummaryStat(Icons.Outlined.CurrencyBitcoin, formatSatsCompact(summary.zapSats)) { onFilterSelect(NotificationFilter.ZAPS) }
-            SummaryStat(Icons.Outlined.Repeat, summary.repostCount.toString()) { onFilterSelect(NotificationFilter.REPOSTS) }
-            SummaryStat(Icons.Outlined.AlternateEmail, (summary.mentionCount + summary.quoteCount).toString()) { onFilterSelect(NotificationFilter.MENTIONS) }
-            SummaryStat(Icons.Outlined.MailOutline, summary.dmCount.toString()) { onFilterSelect(NotificationFilter.DMS) }
+            SummaryStat(Icons.Outlined.ChatBubbleOutline, summary.replyCount.toString())
+            SummaryStat(Icons.Outlined.FavoriteBorder, summary.reactionCount.toString())
+            SummaryStat(Icons.Outlined.CurrencyBitcoin, formatSatsCompact(summary.zapSats))
+            SummaryStat(Icons.Outlined.Repeat, summary.repostCount.toString())
+            SummaryStat(Icons.Outlined.AlternateEmail, (summary.mentionCount + summary.quoteCount).toString())
+            SummaryStat(Icons.Outlined.MailOutline, summary.dmCount.toString())
         }
     }
 }
 
 @Composable
-private fun SummaryStat(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String, onClick: () -> Unit) {
+private fun SummaryStat(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 2.dp)
     ) {
         Icon(
