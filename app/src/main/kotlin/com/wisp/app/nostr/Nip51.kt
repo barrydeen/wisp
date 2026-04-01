@@ -8,7 +8,8 @@ import kotlinx.serialization.json.jsonPrimitive
 
 data class MuteList(
     val pubkeys: Set<String> = emptySet(),
-    val words: Set<String> = emptySet()
+    val words: Set<String> = emptySet(),
+    val eventIds: Set<String> = emptySet()
 )
 
 data class FollowSet(
@@ -121,19 +122,22 @@ object Nip51 {
     fun parseMuteList(event: NostrEvent): MuteList {
         val pubkeys = mutableSetOf<String>()
         val words = mutableSetOf<String>()
+        val eventIds = mutableSetOf<String>()
         for (tag in event.tags) {
             if (tag.size < 2) continue
             when (tag[0]) {
                 "p" -> pubkeys.add(tag[1])
                 "word" -> words.add(tag[1])
+                "e" -> eventIds.add(tag[1])
             }
         }
-        return MuteList(pubkeys, words)
+        return MuteList(pubkeys, words, eventIds)
     }
 
     fun parsePrivateTags(json: String): MuteList {
         val pubkeys = mutableSetOf<String>()
         val words = mutableSetOf<String>()
+        val eventIds = mutableSetOf<String>()
         try {
             val arr = kotlinx.serialization.json.Json.parseToJsonElement(json).jsonArray
             for (element in arr) {
@@ -142,19 +146,23 @@ object Nip51 {
                 when (tag[0].jsonPrimitive.content) {
                     "p" -> pubkeys.add(tag[1].jsonPrimitive.content)
                     "word" -> words.add(tag[1].jsonPrimitive.content)
+                    "e" -> eventIds.add(tag[1].jsonPrimitive.content)
                 }
             }
         } catch (_: Exception) {}
-        return MuteList(pubkeys, words)
+        return MuteList(pubkeys, words, eventIds)
     }
 
-    fun buildMuteListContent(blockedPubkeys: Set<String>, mutedWords: Set<String>): String {
+    fun buildMuteListContent(blockedPubkeys: Set<String>, mutedWords: Set<String>, mutedEventIds: Set<String> = emptySet()): String {
         val arr = buildJsonArray {
             for (pubkey in blockedPubkeys) {
                 add(buildJsonArray { add(JsonPrimitive("p")); add(JsonPrimitive(pubkey)) })
             }
             for (word in mutedWords) {
                 add(buildJsonArray { add(JsonPrimitive("word")); add(JsonPrimitive(word)) })
+            }
+            for (id in mutedEventIds) {
+                add(buildJsonArray { add(JsonPrimitive("e")); add(JsonPrimitive(id)) })
             }
         }
         return arr.toString()

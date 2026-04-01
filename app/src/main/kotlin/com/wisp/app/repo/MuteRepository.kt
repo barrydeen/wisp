@@ -37,8 +37,10 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
         val muteList = Nip51.parseMuteList(event)
         blockedSet = HashSet(muteList.pubkeys)
         wordSet = HashSet(muteList.words)
+        threadSet = HashSet(muteList.eventIds)
         _blockedPubkeys.value = blockedSet.toSet()
         _mutedWords.value = wordSet.toSet()
+        _mutedThreads.value = threadSet.toSet()
         lastUpdated = event.created_at
         saveToPrefs()
     }
@@ -57,8 +59,10 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
         } else MuteList()
         blockedSet = HashSet(publicMutes.pubkeys + privateMutes.pubkeys)
         wordSet = HashSet(publicMutes.words + privateMutes.words)
+        threadSet = HashSet(publicMutes.eventIds + privateMutes.eventIds)
         _blockedPubkeys.value = blockedSet.toSet()
         _mutedWords.value = wordSet.toSet()
+        _mutedThreads.value = threadSet.toSet()
         lastUpdated = event.created_at
         saveToPrefs()
     }
@@ -112,6 +116,8 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
     fun getBlockedPubkeys(): Set<String> = blockedSet.toSet()
 
     fun getMutedWords(): Set<String> = wordSet.toSet()
+
+    fun getMutedThreads(): Set<String> = threadSet.toSet()
 
     fun clear() {
         _blockedPubkeys.value = emptySet()
