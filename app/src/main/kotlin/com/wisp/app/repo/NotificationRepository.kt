@@ -567,6 +567,7 @@ class NotificationRepository(
             latestTimestamp = event.created_at
         )
 
+        val groupChatId = event.tags.firstOrNull { it.size >= 2 && it[0] == "h" }?.get(1)
         val flatReplyId = "reply:${event.id}"
         if (flatItemIds.add(flatReplyId)) {
             flatItems.add(FlatNotificationItem(
@@ -575,7 +576,8 @@ class NotificationRepository(
                 actorPubkey = event.pubkey,
                 referencedEventId = replyTarget,
                 timestamp = event.created_at,
-                replyEventId = event.id
+                replyEventId = event.id,
+                groupChatId = groupChatId
             ))
         }
 

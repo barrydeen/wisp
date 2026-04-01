@@ -101,6 +101,7 @@ import com.wisp.app.viewmodel.ProfileViewModel
 import com.wisp.app.viewmodel.RelayViewModel
 import com.wisp.app.viewmodel.ThreadViewModel
 import com.wisp.app.viewmodel.UserProfileViewModel
+import com.wisp.app.viewmodel.NotificationFilter
 import com.wisp.app.viewmodel.NotificationsViewModel
 import com.wisp.app.viewmodel.ConsoleViewModel
 import com.wisp.app.viewmodel.RelayHealthViewModel
@@ -477,7 +478,12 @@ fun WispNavHost(
     val currentNotifSoundEnabled by rememberUpdatedState(notifSoundEnabled)
     LaunchedEffect(Unit) {
         notificationsViewModel.notifReceived.collect {
-            if (currentNotifSoundEnabled) {
+            if (!currentNotifSoundEnabled) return@collect
+            val enabled = notificationsViewModel.enabledTypes.value
+            val anyGenericEnabled = NotificationFilter.REACTIONS in enabled ||
+                NotificationFilter.REPOSTS in enabled ||
+                NotificationFilter.MENTIONS in enabled
+            if (anyGenericEnabled) {
                 notifBlipSound.play()
                 HapticHelper.blip()
             }
@@ -485,12 +491,16 @@ fun WispNavHost(
     }
     LaunchedEffect(Unit) {
         notificationsViewModel.zapReceived.collect {
-            if (currentNotifSoundEnabled) HapticHelper.zapBuzz()
+            if (currentNotifSoundEnabled && NotificationFilter.ZAPS in notificationsViewModel.enabledTypes.value) {
+                HapticHelper.zapBuzz()
+            }
         }
     }
     LaunchedEffect(Unit) {
         notificationsViewModel.replyReceived.collect {
-            if (currentNotifSoundEnabled) HapticHelper.pulse()
+            if (currentNotifSoundEnabled && NotificationFilter.REPLIES in notificationsViewModel.enabledTypes.value) {
+                HapticHelper.pulse()
+            }
         }
     }
     LaunchedEffect(Unit) {
@@ -498,7 +508,9 @@ fun WispNavHost(
             isReplyAnimating = true
             kotlinx.coroutines.delay(1000)
             isReplyAnimating = false
-            if (currentNotifSoundEnabled) HapticHelper.pulse()
+            if (currentNotifSoundEnabled && NotificationFilter.DMS in notificationsViewModel.enabledTypes.value) {
+                HapticHelper.pulse()
+            }
         }
     }
     // Background decryption of pending DM gift wraps (remote signer mode)
