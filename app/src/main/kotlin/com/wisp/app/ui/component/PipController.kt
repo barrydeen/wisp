@@ -1,13 +1,14 @@
 package com.wisp.app.ui.component
 
-import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -19,6 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -28,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,11 +42,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import android.view.TextureView
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
-import androidx.media3.common.util.UnstableApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.math.roundToInt
 
@@ -81,7 +85,6 @@ object PipController {
     }
 }
 
-@OptIn(UnstableApi::class)
 @Composable
 fun FloatingVideoPlayer(
     onExpandToFullScreen: (url: String, positionMs: Long, player: ExoPlayer, aspectRatio: Float) -> Unit,
@@ -118,6 +121,16 @@ fun FloatingVideoPlayer(
         var offsetX by remember { mutableFloatStateOf(0f) }
         var offsetY by remember { mutableFloatStateOf(0f) }
 
+        var showControls by remember { mutableStateOf(false) }
+        var controlsTrigger by remember { mutableStateOf(0) }
+
+        LaunchedEffect(controlsTrigger, showControls) {
+            if (showControls) {
+                delay(2000)
+                showControls = false
+            }
+        }
+
         Box(
             modifier = Modifier
                 .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
@@ -134,49 +147,101 @@ fun FloatingVideoPlayer(
                     }
                 }
         ) {
+            var isPlaying by remember { mutableStateOf(pipState.player.isPlaying) }
+
+            DisposableEffect(pipState.player) {
+                val listener = object : Player.Listener {
+                    override fun onIsPlayingChanged(playing: Boolean) {
+                        isPlaying = playing
+                    }
+                }
+                pipState.player.addListener(listener)
+                onDispose { pipState.player.removeListener(listener) }
+            }
+
             AndroidView(
                 factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = pipState.player
-                        useController = false
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    }
+                    TextureView(ctx).also { pipState.player.setVideoTextureView(it) }
                 },
+                update = { view -> pipState.player.setVideoTextureView(view) },
                 modifier = Modifier.fillMaxSize()
             )
 
-            val buttonColors = IconButtonDefaults.iconButtonColors(
-                containerColor = Color.Black.copy(alpha = 0.6f),
-                contentColor = Color.White
+            // Tap overlay to toggle controls
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        showControls = !showControls
+                        controlsTrigger++
+                    }
             )
 
-            IconButton(
-                onClick = { PipController.exitPip() },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(4.dp)
-                    .size(28.dp),
-                colors = buttonColors
+            AnimatedVisibility(
+                visible = showControls,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.fillMaxSize()
             ) {
-                Icon(Icons.Filled.Close, "Close", Modifier.size(16.dp))
-            }
+                val buttonColors = IconButtonDefaults.iconButtonColors(
+                    containerColor = Color.Black.copy(alpha = 0.6f),
+                    contentColor = Color.White
+                )
 
-            IconButton(
-                onClick = {
-                    val position = pipState.player.currentPosition
-                    val url = pipState.url
-                    val player = pipState.player
-                    val ratio = pipState.aspectRatio
-                    PipController.pipState.value = null
-                    onExpandToFullScreen(url, position, player, ratio)
-                },
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(4.dp)
-                    .size(28.dp),
-                colors = buttonColors
-            ) {
-                Icon(Icons.Filled.Fullscreen, "Expand", Modifier.size(16.dp))
+                Box(Modifier.fillMaxSize()) {
+                    IconButton(
+                        onClick = { PipController.exitPip() },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                            .size(28.dp),
+                        colors = buttonColors
+                    ) {
+                        Icon(Icons.Filled.Close, "Close", Modifier.size(16.dp))
+                    }
+
+                    IconButton(
+                        onClick = {
+                            val position = pipState.player.currentPosition
+                            val url = pipState.url
+                            val player = pipState.player
+                            val ratio = pipState.aspectRatio
+                            PipController.pipState.value = null
+                            onExpandToFullScreen(url, position, player, ratio)
+                        },
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(4.dp)
+                            .size(28.dp),
+                        colors = buttonColors
+                    ) {
+                        Icon(Icons.Filled.Fullscreen, "Expand", Modifier.size(16.dp))
+                    }
+
+                    IconButton(
+                        onClick = {
+                            if (pipState.player.isPlaying) {
+                                pipState.player.pause()
+                            } else {
+                                pipState.player.play()
+                            }
+                            controlsTrigger++
+                        },
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(36.dp),
+                        colors = buttonColors
+                    ) {
+                        Icon(
+                            if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = if (isPlaying) "Pause" else "Play",
+                            Modifier.size(22.dp)
+                        )
+                    }
+                }
             }
         }
     }

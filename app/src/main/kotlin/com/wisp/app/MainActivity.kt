@@ -9,6 +9,7 @@ import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -20,6 +21,7 @@ import com.wisp.app.repo.InterfacePreferences
 import com.wisp.app.repo.LocaleRepository
 import com.wisp.app.ui.component.LocalMediaSettings
 import com.wisp.app.ui.component.MediaSettings
+import com.wisp.app.ui.component.PipController
 import com.wisp.app.ui.theme.WispTheme
 
 class MainActivity : FragmentActivity() {
@@ -66,8 +68,15 @@ class MainActivity : FragmentActivity() {
                 )
             }
 
+            val pipActive by PipController.pipState.collectAsState()
+            val effectiveMediaSettings = if (pipActive != null) {
+                mediaSettings.copy(videoAutoPlay = false)
+            } else {
+                mediaSettings
+            }
+
             WispTheme(isDarkTheme = isDarkTheme, accentColor = accentColor, isLargeText = isLargeText, themeName = themeName) {
-                CompositionLocalProvider(LocalMediaSettings provides mediaSettings) {
+                CompositionLocalProvider(LocalMediaSettings provides effectiveMediaSettings) {
                     WispNavHost(
                         deepLinkUri = deepLinkUri.value,
                         onDeepLinkConsumed = { deepLinkUri.value = null },

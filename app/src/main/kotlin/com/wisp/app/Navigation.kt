@@ -2432,6 +2432,12 @@ fun WispNavHost(
                 myPubkey = feedViewModel.getUserPubkey(),
                 onBack = { navController.popBackStack() },
                 onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
+                onFullScreenVideo = { url, positionMs ->
+                    pipFullScreenVideoUrl = url
+                    pipFullScreenStartPosition = positionMs
+                    pipFullScreenPlayer = null
+                    pipFullScreenAspectRatio = 16f / 9f
+                },
                 resolvedEmojis = liveResolvedEmojis,
                 unicodeEmojis = liveUnicodeEmojis,
                 onFollowAuthor = { pubkey -> feedViewModel.toggleFollow(pubkey) },
