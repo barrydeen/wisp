@@ -78,7 +78,8 @@ class ZapSender(
         message: String = "",
         isAnonymous: Boolean = false,
         isPrivate: Boolean = false,
-        extraTags: List<List<String>> = emptyList()
+        extraTags: List<List<String>> = emptyList(),
+        extraRelayHints: List<String> = emptyList()
     ): Result<Unit> {
         // 1. LNURL discovery
         val payInfo = Nip57.resolveLud16(recipientLud16, httpClient)
@@ -103,11 +104,12 @@ class ZapSender(
             }
             combined
         } else {
-            // Recipient's read relays first (so they see the receipt), then our own
-            // read relays (so we can verify it), deduped, capped at 5.
+            // Extra relay hints first (e.g. live stream chat relays), then recipient's
+            // read relays (so they see the receipt), then our own read relays (so we can
+            // verify it), deduped, capped at 5.
             val recipientRelays = relayListRepo.getReadRelays(recipientPubkey) ?: emptyList()
             val ourRelays = relayPool.getReadRelayUrls()
-            (recipientRelays + ourRelays).distinct().take(5)
+            (extraRelayHints + recipientRelays + ourRelays).distinct().take(5)
                 .ifEmpty { relayPool.getRelayUrls().take(3) }
         }
 

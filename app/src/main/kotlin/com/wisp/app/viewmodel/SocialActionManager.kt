@@ -345,8 +345,14 @@ class SocialActionManager(
         return subId
     }
 
-    fun sendZap(event: NostrEvent, amountMsats: Long, message: String = "", isAnonymous: Boolean = false, isPrivate: Boolean = false) {
-        val profileData = eventRepo.getProfileData(event.pubkey)
+    /**
+     * @param eventATag For parameterized replaceable events (e.g. kind 30311 live activities),
+     *   pass the "a" tag value ("30311:pubkey:dTag"). Per NIP-57 the zap request must use an
+     *   "a" tag instead of "e" so the receipt is associated with the addressable event.
+     */
+    fun sendZap(event: NostrEvent, amountMsats: Long, message: String = "", isAnonymous: Boolean = false, isPrivate: Boolean = false, extraRelayHints: List<String> = emptyList(), recipientOverride: String? = null, eventATag: String? = null) {
+        val recipientPubkey = recipientOverride ?: event.pubkey
+        val profileData = eventRepo.getProfileData(recipientPubkey)
         val lud16 = profileData?.lud16
         if (lud16.isNullOrBlank()) {
             _zapError.tryEmit("This user has no lightning address")
@@ -361,20 +367,57 @@ class SocialActionManager(
             _zapInProgress.value = _zapInProgress.value + event.id
             // Open receipt subscription BEFORE paying so we catch the 9735
             // even if the LNURL provider publishes it before NWC confirms
-            val receiptSubId = subscribeZapReceipt(event.id)
+            val receiptSubId = if (eventATag != null) {
+                // Addressable event — receipt will have an "a" tag, not "e"
+                val subId = "zap-rcpt-${event.id.take(12)}"
+                val filter = Filter(kinds = listOf(9735), aTags = listOf(eventATag))
+                relayPool.sendToReadRelays(ClientMessage.req(subId, filter))
+                scope.launch {
+                    kotlinx.coroutines.delay(30_000)
+                    relayPool.closeOnAllRelays(subId)
+                }
+                subId
+            } else {
+                subscribeZapReceipt(event.id)
+            }
             // For private zaps, also subscribe on DM relays for the receipt
             if (isPrivate && relayPool.hasDmRelays()) {
-                val dmFilter = Filter(kinds = listOf(9735), eTags = listOf(event.id))
+                val dmFilter = if (eventATag != null) {
+                    Filter(kinds = listOf(9735), aTags = listOf(eventATag))
+                } else {
+                    Filter(kinds = listOf(9735), eTags = listOf(event.id))
+                }
                 relayPool.sendToDmRelays(ClientMessage.req("zap-rcpt-dm-${event.id.take(12)}", dmFilter))
             }
+            // Also subscribe for receipt on extra relay hints (e.g. live stream chat relays)
+            if (extraRelayHints.isNotEmpty()) {
+                val hintFilter = if (eventATag != null) {
+                    Filter(kinds = listOf(9735), aTags = listOf(eventATag))
+                } else {
+                    Filter(kinds = listOf(9735), eTags = listOf(event.id))
+                }
+                val hintSubId = "zap-rcpt-hint-${event.id.take(12)}"
+                for (url in extraRelayHints) {
+                    relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(hintSubId, hintFilter))
+                }
+                scope.launch {
+                    kotlinx.coroutines.delay(30_000)
+                    relayPool.closeOnAllRelays(hintSubId)
+                }
+            }
+            // For addressable events (e.g. live streams), use "a" tag instead of "e" tag
+            // per NIP-57 so the receipt is properly associated with the event.
+            val zapExtraTags = if (eventATag != null) listOf(listOf("a", eventATag)) else emptyList()
             val result = zapSender.sendZap(
                 recipientLud16 = lud16,
-                recipientPubkey = event.pubkey,
-                eventId = event.id,
+                recipientPubkey = recipientPubkey,
+                eventId = if (eventATag != null) null else event.id,
                 amountMsats = amountMsats,
                 message = message,
                 isAnonymous = isAnonymous,
-                isPrivate = isPrivate
+                isPrivate = isPrivate,
+                extraTags = zapExtraTags,
+                extraRelayHints = extraRelayHints
             )
             _zapInProgress.value = _zapInProgress.value - event.id
             result.fold(

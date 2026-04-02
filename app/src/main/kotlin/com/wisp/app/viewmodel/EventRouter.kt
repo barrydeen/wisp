@@ -316,7 +316,7 @@ class EventRouter(
                 liveStreamRepo?.trackChatter(event)
             }
             return
-        } else if (subscriptionId.startsWith("live-chat-")) {
+        } else if (subscriptionId.startsWith("live-chat-") || subscriptionId.startsWith("live-react-") || subscriptionId.startsWith("live-zap-")) {
             when (event.kind) {
                 Nip53.KIND_LIVE_CHAT_MESSAGE -> {
                     eventRepo.cacheEvent(event)
@@ -332,6 +332,29 @@ class EventRouter(
                 9735 -> {
                     eventRepo.addEvent(event)
                     eventRepo.addEventRelay(event.id, relayUrl)
+                    // Route stream-level zaps to liveStreamRepo for chat announcements
+                    var zapATag = event.tags.firstOrNull { it.size >= 2 && it[0] == "a" }?.get(1)
+                    if (zapATag == null) {
+                        // Some LNURL servers only include e-tag, not a-tag.
+                        // If the e-tag points to a cached 30311 event, derive the a-tag.
+                        val eTagId = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+                        if (eTagId != null) {
+                            val targetEvent = eventRepo.getEvent(eTagId)
+                            if (targetEvent?.kind == Nip53.KIND_LIVE_ACTIVITY) {
+                                val dTag = targetEvent.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)
+                                if (dTag != null) {
+                                    zapATag = Nip53.aTagValue(targetEvent.pubkey, dTag)
+                                }
+                            }
+                        }
+                    }
+                    if (zapATag != null) {
+                        liveStreamRepo?.addStreamZap(event, zapATag)
+                    }
+                    val zapperPubkey = Nip57.getZapperPubkey(event)
+                    if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
+                        metadataFetcher.addToPendingProfiles(zapperPubkey)
+                    }
                 }
             }
             if (eventRepo.getProfileData(event.pubkey) == null) {

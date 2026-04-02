@@ -33,13 +33,17 @@ class LiveStreamViewModel(app: Application) : AndroidViewModel(app) {
     var dTag: String = ""
         private set
     private var aTagValue: String = ""
-    private var chatRelays: List<String> = emptyList()
+    var chatRelays: List<String> = emptyList()
+        private set
 
     private val _activity = MutableStateFlow<Nip53.LiveActivity?>(null)
     val activity: StateFlow<Nip53.LiveActivity?> = _activity
 
     private val _messages = MutableStateFlow<List<LiveChatMessage>>(emptyList())
     val messages: StateFlow<List<LiveChatMessage>> = _messages
+
+    private val _streamZapTotal = MutableStateFlow(0L)
+    val streamZapTotal: StateFlow<Long> = _streamZapTotal
 
     private val _messageText = MutableStateFlow("")
     val messageText: StateFlow<String> = _messageText
@@ -79,6 +83,13 @@ class LiveStreamViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             liveStreamRepo.currentChatMessages.collect { msgs ->
                 _messages.value = msgs
+            }
+        }
+
+        // Collect stream zap total
+        viewModelScope.launch {
+            liveStreamRepo.streamZapTotal.collect { total ->
+                _streamZapTotal.value = total
             }
         }
 

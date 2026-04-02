@@ -2393,8 +2393,12 @@ fun WispNavHost(
             val liveUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
             val liveZapVersion by feedViewModel.eventRepo.zapVersion.collectAsState()
             val liveZapInProgress by feedViewModel.zapInProgress.collectAsState()
+            val liveStreamZapTotal by liveStreamViewModel.streamZapTotal.collectAsState()
             var liveZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
             var liveZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
+            var liveZapRecipientOverride by remember { mutableStateOf<String?>(null) }
+            var liveZapATag by remember { mutableStateOf<String?>(null) }
+            var liveZapError by remember { mutableStateOf<String?>(null) }
             val isNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
             LaunchedEffect(Unit) {
                 feedViewModel.zapSuccess.collect { eventId ->
@@ -2403,8 +2407,25 @@ fun WispNavHost(
                     liveZapAnimatingIds = liveZapAnimatingIds - eventId
                 }
             }
+            LaunchedEffect(Unit) {
+                feedViewModel.zapError.collect { error ->
+                    liveZapError = error
+                }
+            }
+            if (liveZapError != null) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { liveZapError = null },
+                    title = { androidx.compose.material3.Text("Zap Failed") },
+                    text = { androidx.compose.material3.Text(liveZapError ?: "") },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = { liveZapError = null }) {
+                            androidx.compose.material3.Text("OK")
+                        }
+                    }
+                )
+            }
             if (liveZapTarget != null) {
-                val zapRecipient = liveZapTarget!!.pubkey
+                val zapRecipient = liveZapRecipientOverride ?: liveZapTarget!!.pubkey
                 var recipientHasDmRelays by remember(zapRecipient) {
                     mutableStateOf(feedViewModel.relayListRepo.hasDmRelays(zapRecipient))
                 }
@@ -2415,15 +2436,29 @@ fun WispNavHost(
                 }
                 ZapDialog(
                     isWalletConnected = isNwcConnected,
-                    onDismiss = { liveZapTarget = null },
+                    onDismiss = { liveZapTarget = null; liveZapRecipientOverride = null; liveZapATag = null },
                     onZap = { amountMsats, message, isAnonymous, isPrivate ->
                         val event = liveZapTarget ?: return@ZapDialog
+                        val recipientPubkey = liveZapRecipientOverride
+                        val aTag = liveZapATag
                         liveZapTarget = null
-                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
+                        liveZapRecipientOverride = null
+                        liveZapATag = null
+                        // Include stream chat relays so the receipt arrives on relays
+                        // the streamer and chat room are subscribed to
+                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate,
+                            extraRelayHints = liveStreamViewModel.chatRelays,
+                            recipientOverride = recipientPubkey,
+                            eventATag = aTag)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
                     canPrivateZap = feedViewModel.relayPool.hasDmRelays() && recipientHasDmRelays
                 )
+            }
+            val streamActivityEventId = remember(hostPubkey, dTag) {
+                feedViewModel.eventRepo.findAddressableEvent(
+                    com.wisp.app.nostr.Nip53.KIND_LIVE_ACTIVITY, hostPubkey, dTag
+                )?.id
             }
             LiveStreamScreen(
                 viewModel = liveStreamViewModel,
@@ -2448,6 +2483,23 @@ fun WispNavHost(
                     val chatEvent = feedViewModel.eventRepo.getEvent(messageId)
                     if (chatEvent != null) liveZapTarget = chatEvent
                 },
+                onZapStream = {
+                    // Target the 30311 activity event for stream-level zaps.
+                    // The event pubkey is the stream provider — the actual streamer
+                    // is in the p-tag with role "Host", so override the recipient.
+                    // Per NIP-57, use "a" tag (not "e") for parameterized replaceable events.
+                    val activityEvent = feedViewModel.eventRepo.findAddressableEvent(
+                        com.wisp.app.nostr.Nip53.KIND_LIVE_ACTIVITY, hostPubkey, dTag
+                    )
+                    if (activityEvent != null) {
+                        liveZapTarget = activityEvent
+                        val activity = liveStreamViewModel.activity.value
+                        liveZapRecipientOverride = activity?.streamerPubkey ?: activity?.hostPubkey
+                        liveZapATag = com.wisp.app.nostr.Nip53.aTagValue(hostPubkey, dTag)
+                    }
+                },
+                streamZapTotal = liveStreamZapTotal,
+                streamActivityEventId = streamActivityEventId,
                 zapVersion = liveZapVersion,
                 zapAnimatingIds = liveZapAnimatingIds,
                 zapInProgressIds = liveZapInProgress

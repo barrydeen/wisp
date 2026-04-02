@@ -111,6 +111,9 @@ fun LiveStreamScreen(
     onBlockAuthor: ((String) -> Unit)? = null,
     isFollowing: ((String) -> Boolean)? = null,
     onZap: ((messageId: String, senderPubkey: String) -> Unit)? = null,
+    onZapStream: (() -> Unit)? = null,
+    streamZapTotal: Long = 0,
+    streamActivityEventId: String? = null,
     zapVersion: Int = 0,
     zapAnimatingIds: Set<String> = emptySet(),
     zapInProgressIds: Set<String> = emptySet()
@@ -178,12 +181,18 @@ fun LiveStreamScreen(
         }
 
         // Stream info bar
+        val isStreamZapInProgress = streamActivityEventId != null && streamActivityEventId in zapInProgressIds
+        val isStreamZapAnimating = streamActivityEventId != null && streamActivityEventId in zapAnimatingIds
         StreamInfoBar(
             hostPubkey = activity?.streamerPubkey ?: activity?.hostPubkey ?: viewModel.hostPubkey,
             title = activity?.title,
             status = activity?.status,
             eventRepo = eventRepo,
-            onProfileClick = onProfileClick
+            onProfileClick = onProfileClick,
+            onZapStream = onZapStream,
+            streamZapTotal = streamZapTotal,
+            isZapInProgress = isStreamZapInProgress,
+            isZapAnimating = isStreamZapAnimating
         )
 
         HorizontalDivider()
@@ -206,26 +215,34 @@ fun LiveStreamScreen(
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(messages.asReversed(), key = { it.id }) { msg ->
-                    LiveChatBubble(
-                        message = msg,
-                        allMessages = messages,
-                        eventRepo = eventRepo,
-                        myPubkey = myPubkey,
-                        resolvedEmojis = resolvedEmojis,
-                        unicodeEmojis = unicodeEmojis,
-                        onProfileClick = onProfileClick,
-                        onReply = { viewModel.setReplyTarget(it) },
-                        onReact = { messageId, senderPubkey, emoji ->
-                            viewModel.sendReaction(messageId, senderPubkey, emoji, signer, resolvedEmojis)
-                        },
-                        onFollowAuthor = onFollowAuthor,
-                        onBlockAuthor = onBlockAuthor,
-                        isFollowing = isFollowing,
-                        onZap = onZap,
-                        zapVersion = zapVersion,
-                        isZapAnimating = msg.id in zapAnimatingIds,
-                        isZapInProgress = msg.id in zapInProgressIds
-                    )
+                    if (msg.isZapAnnouncement) {
+                        ZapAnnouncementBubble(
+                            message = msg,
+                            eventRepo = eventRepo,
+                            onProfileClick = onProfileClick
+                        )
+                    } else {
+                        LiveChatBubble(
+                            message = msg,
+                            allMessages = messages,
+                            eventRepo = eventRepo,
+                            myPubkey = myPubkey,
+                            resolvedEmojis = resolvedEmojis,
+                            unicodeEmojis = unicodeEmojis,
+                            onProfileClick = onProfileClick,
+                            onReply = { viewModel.setReplyTarget(it) },
+                            onReact = { messageId, senderPubkey, emoji ->
+                                viewModel.sendReaction(messageId, senderPubkey, emoji, signer, resolvedEmojis)
+                            },
+                            onFollowAuthor = onFollowAuthor,
+                            onBlockAuthor = onBlockAuthor,
+                            isFollowing = isFollowing,
+                            onZap = onZap,
+                            zapVersion = zapVersion,
+                            isZapAnimating = msg.id in zapAnimatingIds,
+                            isZapInProgress = msg.id in zapInProgressIds
+                        )
+                    }
                 }
             }
         }
@@ -332,10 +349,15 @@ private fun StreamInfoBar(
     title: String?,
     status: String?,
     eventRepo: EventRepository,
-    onProfileClick: (String) -> Unit
+    onProfileClick: (String) -> Unit,
+    onZapStream: (() -> Unit)? = null,
+    streamZapTotal: Long = 0,
+    isZapInProgress: Boolean = false,
+    isZapAnimating: Boolean = false
 ) {
     val profile = remember(hostPubkey) { eventRepo.getProfileData(hostPubkey) }
     val displayName = profile?.displayString ?: (hostPubkey.take(8) + "…")
+    val zapColor = com.wisp.app.ui.theme.WispThemeColors.zapColor
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -373,6 +395,158 @@ private fun StreamInfoBar(
                 .weight(1f)
                 .clickable { onProfileClick(hostPubkey) }
         )
+        if (streamZapTotal > 0) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = 8.dp)
+            ) {
+                Icon(
+                    Icons.Filled.Bolt,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = zapColor
+                )
+                Text(
+                    text = formatZapSats(streamZapTotal),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = zapColor
+                )
+            }
+        }
+        if (onZapStream != null) {
+            Box(modifier = Modifier.padding(start = 8.dp)) {
+                Surface(
+                    onClick = onZapStream,
+                    enabled = !isZapInProgress,
+                    shape = RoundedCornerShape(20.dp),
+                    color = when {
+                        isZapInProgress -> zapColor.copy(alpha = 0.5f)
+                        isZapAnimating -> Color(0xFF4CAF50)
+                        else -> zapColor
+                    }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        if (isZapInProgress) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                        } else {
+                            Icon(
+                                Icons.Filled.Bolt,
+                                contentDescription = "Zap this stream",
+                                modifier = Modifier.size(16.dp),
+                                tint = Color.White
+                            )
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = when {
+                                isZapAnimating -> "Sent!"
+                                isZapInProgress -> "Zapping..."
+                                else -> "Zap"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .wrapContentSize(unbounded = true, align = Alignment.Center)
+                ) {
+                    com.wisp.app.ui.component.ZapBurstEffect(
+                        isActive = isZapAnimating,
+                        modifier = Modifier.size(80.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ZapAnnouncementBubble(
+    message: LiveChatMessage,
+    eventRepo: EventRepository,
+    onProfileClick: (String) -> Unit
+) {
+    val profile = remember(message.senderPubkey) { eventRepo.getProfileData(message.senderPubkey) }
+    val displayName = profile?.displayString ?: (message.senderPubkey.take(8) + "…")
+    val zapColor = com.wisp.app.ui.theme.WispThemeColors.zapColor
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = zapColor.copy(alpha = 0.1f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, zapColor.copy(alpha = 0.3f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Icon(
+                Icons.Filled.Bolt,
+                contentDescription = null,
+                tint = zapColor,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            ProfilePicture(
+                url = profile?.picture,
+                size = 28,
+                onClick = { onProfileClick(message.senderPubkey) }
+            )
+            Spacer(Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Text(
+                        text = " zapped ",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = formatZapSats(message.zapAmountSats),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = zapColor
+                    )
+                    Text(
+                        text = " sats",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (message.content.isNotBlank()) {
+                    Text(
+                        text = message.content,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+            }
+        }
     }
 }
 

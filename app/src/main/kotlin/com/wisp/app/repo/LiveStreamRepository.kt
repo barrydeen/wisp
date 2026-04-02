@@ -1,6 +1,7 @@
 package com.wisp.app.repo
 
 import com.wisp.app.nostr.Nip53
+import com.wisp.app.nostr.Nip57
 import com.wisp.app.nostr.NostrEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,7 +14,9 @@ data class LiveChatMessage(
     val createdAt: Long,
     val replyToId: String? = null,
     val reactions: Map<String, List<String>> = emptyMap(),
-    val emojiTags: Map<String, String> = emptyMap()
+    val emojiTags: Map<String, String> = emptyMap(),
+    val isZapAnnouncement: Boolean = false,
+    val zapAmountSats: Long = 0
 )
 
 data class LiveStream(
@@ -33,6 +36,9 @@ class LiveStreamRepository {
 
     private val _currentChatMessages = MutableStateFlow<List<LiveChatMessage>>(emptyList())
     val currentChatMessages: StateFlow<List<LiveChatMessage>> = _currentChatMessages
+
+    private val _streamZapTotal = MutableStateFlow(0L)
+    val streamZapTotal: StateFlow<Long> = _streamZapTotal
 
     private val chatMessages = ConcurrentHashMap<String, MutableList<LiveChatMessage>>()
     private val pendingFollowChatters = ConcurrentHashMap<String, MutableSet<String>>()
@@ -149,11 +155,49 @@ class LiveStreamRepository {
         }
     }
 
+    /**
+     * Handle a stream-level zap receipt (kind 9735 with a-tag).
+     * Inserts a zap announcement message into the chat list.
+     */
+    fun addStreamZap(event: NostrEvent, aTagValue: String) {
+        if (!seenChatIds.add("zap-${event.id}")) return
+        val sats = Nip57.getZapAmountSats(event)
+        if (sats <= 0) return
+        val zapperPubkey = Nip57.getZapperPubkey(event) ?: return
+        val zapMessage = Nip57.getZapMessage(event)
+
+        val msg = LiveChatMessage(
+            id = "zap-${event.id}",
+            senderPubkey = zapperPubkey,
+            content = zapMessage,
+            createdAt = event.created_at,
+            isZapAnnouncement = true,
+            zapAmountSats = sats
+        )
+
+        val msgs = chatMessages.getOrPut(aTagValue) { mutableListOf() }
+        synchronized(msgs) {
+            msgs.add(msg)
+            msgs.sortBy { it.createdAt }
+        }
+
+        if (aTagValue == currentStreamKey) {
+            _streamZapTotal.value += sats
+            emitCurrentChat()
+        }
+    }
+
     fun setCurrentStream(aTagValue: String?) {
         currentStreamKey = aTagValue
         if (aTagValue != null) {
+            // Recalculate stream zap total from existing messages
+            val msgs = chatMessages[aTagValue]
+            _streamZapTotal.value = if (msgs != null) {
+                synchronized(msgs) { msgs.filter { it.isZapAnnouncement }.sumOf { it.zapAmountSats } }
+            } else 0L
             emitCurrentChat()
         } else {
+            _streamZapTotal.value = 0L
             _currentChatMessages.value = emptyList()
         }
     }
@@ -184,5 +228,6 @@ class LiveStreamRepository {
         currentStreamKey = null
         _liveStreams.value = emptyMap()
         _currentChatMessages.value = emptyList()
+        _streamZapTotal.value = 0L
     }
 }
