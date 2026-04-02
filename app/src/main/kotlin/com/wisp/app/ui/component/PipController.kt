@@ -1,6 +1,12 @@
 package com.wisp.app.ui.component
 
+import android.widget.FrameLayout
 import androidx.annotation.OptIn
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
@@ -32,13 +38,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.zIndex
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -84,72 +88,74 @@ object PipController {
 @OptIn(UnstableApi::class)
 @Composable
 fun FloatingVideoPlayer(
-    onExpandToFullScreen: (url: String, positionMs: Long) -> Unit
+    onExpandToFullScreen: (url: String, positionMs: Long) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val state by PipController.pipState.collectAsState()
-    val currentState = state ?: return
+    val currentState = state
 
-    val isMuted by PipController.globalMuted.collectAsState()
+    AnimatedVisibility(
+        visible = currentState != null,
+        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+        modifier = modifier.zIndex(Float.MAX_VALUE)
+    ) {
+        val pipState = currentState ?: return@AnimatedVisibility
+        val isMuted by PipController.globalMuted.collectAsState()
 
-    LaunchedEffect(isMuted) {
-        currentState.player.volume = if (isMuted) 0f else 1f
-    }
+        LaunchedEffect(isMuted) {
+            pipState.player.volume = if (isMuted) 0f else 1f
+        }
 
-    DisposableEffect(currentState.url) {
-        onDispose {
-            val current = PipController.pipState.value
-            if (current?.url == currentState.url) {
-                PipController.exitPip()
+        DisposableEffect(pipState.url) {
+            onDispose {
+                val current = PipController.pipState.value
+                if (current?.url == pipState.url) {
+                    PipController.exitPip()
+                }
             }
         }
-    }
 
-    val pipWidthDp = 200.dp
-    val pipHeightDp = (200f / currentState.aspectRatio).dp.coerceAtMost(260.dp)
+        val pipWidth = 200.dp
+        val pipHeight = (200f / pipState.aspectRatio).dp.coerceAtMost(260.dp)
 
-    val density = LocalDensity.current
-    val configuration = LocalConfiguration.current
-    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
-    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
-    val pipWidthPx = with(density) { pipWidthDp.toPx() }
-    val pipHeightPx = with(density) { pipHeightDp.toPx() }
-    val paddingPx = with(density) { 12.dp.toPx() }
-    val bottomPaddingPx = with(density) { 72.dp.toPx() }
+        var offsetX by remember { mutableFloatStateOf(0f) }
+        var offsetY by remember { mutableFloatStateOf(0f) }
 
-    // Start at bottom-end
-    var offsetX by remember { mutableFloatStateOf(screenWidthPx - pipWidthPx - paddingPx) }
-    var offsetY by remember { mutableFloatStateOf(screenHeightPx - pipHeightPx - bottomPaddingPx) }
-
-    Popup(
-        properties = PopupProperties(
-            focusable = false,
-            clippingEnabled = false
-        )
-    ) {
         Box(
             modifier = Modifier
                 .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
-                .width(pipWidthDp)
-                .height(pipHeightDp)
+                .width(pipWidth)
+                .height(pipHeight)
                 .shadow(8.dp, RoundedCornerShape(12.dp))
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color.Black)
                 .pointerInput(Unit) {
                     detectDragGestures { change, dragAmount ->
                         change.consume()
-                        offsetX = (offsetX + dragAmount.x)
-                            .coerceIn(0f, screenWidthPx - pipWidthPx)
-                        offsetY = (offsetY + dragAmount.y)
-                            .coerceIn(0f, screenHeightPx - pipHeightPx)
+                        offsetX += dragAmount.x
+                        offsetY += dragAmount.y
                     }
                 }
         ) {
             AndroidView(
                 factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = currentState.player
-                        useController = false
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    // Wrap PlayerView in a FrameLayout with high translationZ
+                    // so it renders above inline video AndroidViews in the feed
+                    FrameLayout(ctx).apply {
+                        translationZ = 1000f
+                        clipChildren = false
+                        addView(
+                            PlayerView(ctx).apply {
+                                player = pipState.player
+                                useController = false
+                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            },
+                            FrameLayout.LayoutParams(
+                                FrameLayout.LayoutParams.MATCH_PARENT,
+                                FrameLayout.LayoutParams.MATCH_PARENT
+                            )
+                        )
                     }
                 },
                 modifier = Modifier.fillMaxSize()
@@ -173,8 +179,8 @@ fun FloatingVideoPlayer(
 
             IconButton(
                 onClick = {
-                    val position = currentState.player.currentPosition
-                    val url = currentState.url
+                    val position = pipState.player.currentPosition
+                    val url = pipState.url
                     PipController.pipState.value = null
                     onExpandToFullScreen(url, position)
                 },

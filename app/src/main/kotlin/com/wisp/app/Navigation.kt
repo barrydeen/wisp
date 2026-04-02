@@ -3075,7 +3075,10 @@ fun WispNavHost(
         onExpandToFullScreen = { url, positionMs ->
             pipFullScreenVideoUrl = url
             pipFullScreenStartPosition = positionMs
-        }
+        },
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(end = 12.dp, bottom = 72.dp)
     )
 
     if (pipFullScreenVideoUrl != null) {
