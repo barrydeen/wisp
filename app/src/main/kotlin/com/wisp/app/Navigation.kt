@@ -14,7 +14,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -89,7 +88,6 @@ import com.wisp.app.ui.screen.OnboardingScreen
 import com.wisp.app.ui.component.AddNoteToListDialog
 import com.wisp.app.ui.component.CrashReportDialog
 import com.wisp.app.ui.component.FloatingVideoPlayer
-import com.wisp.app.ui.component.FullScreenVideoPlayer
 import com.wisp.app.ui.screen.OnboardingSuggestionsScreen
 import com.wisp.app.ui.screen.RelayDetailScreen
 import com.wisp.app.ui.screen.WalletScreen
@@ -640,9 +638,6 @@ fun WispNavHost(
 
     val broadcastState by feedViewModel.relayPool.broadcastState.collectAsState()
     val powStatus by feedViewModel.powManager.status.collectAsState()
-    var pipFullScreenVideoUrl by remember { mutableStateOf<String?>(null) }
-    var pipFullScreenStartPosition by remember { mutableLongStateOf(0L) }
-
     Box(modifier = Modifier.padding(innerPadding)) {
     NavHost(
         navController = navController,
@@ -3071,20 +3066,7 @@ fun WispNavHost(
         }
     }
 
-    FloatingVideoPlayer(
-        onExpandToFullScreen = { url, positionMs ->
-            pipFullScreenVideoUrl = url
-            pipFullScreenStartPosition = positionMs
-        }
-    )
-
-    if (pipFullScreenVideoUrl != null) {
-        FullScreenVideoPlayer(
-            videoUrl = pipFullScreenVideoUrl!!,
-            startPositionMs = pipFullScreenStartPosition,
-            onDismiss = { pipFullScreenVideoUrl = null }
-        )
-    }
+    FloatingVideoPlayer()
 
     BroadcastStatusBar(
         broadcastState = broadcastState,
