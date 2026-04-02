@@ -77,7 +77,8 @@ class ZapSender(
         amountMsats: Long,
         message: String = "",
         isAnonymous: Boolean = false,
-        isPrivate: Boolean = false
+        isPrivate: Boolean = false,
+        extraTags: List<List<String>> = emptyList()
     ): Result<Unit> {
         // 1. LNURL discovery
         val payInfo = Nip57.resolveLud16(recipientLud16, httpClient)
@@ -110,10 +111,9 @@ class ZapSender(
                 .ifEmpty { relayPool.getRelayUrls().take(3) }
         }
 
-        val extraTags = if (interfacePrefs.isClientTagEnabled()) {
-            listOf(listOf("client", "Wisp"))
-        } else {
-            emptyList()
+        val allExtraTags = buildList {
+            if (interfacePrefs.isClientTagEnabled()) add(listOf("client", "Wisp"))
+            addAll(extraTags)
         }
 
         val zapRequest = if (isAnonymous) {
@@ -127,7 +127,7 @@ class ZapSender(
                 relayUrls = relayUrls,
                 lnurl = recipientLud16,
                 message = message,
-                extraTags = extraTags
+                extraTags = allExtraTags
             )
         } else {
             val s = signer
@@ -142,7 +142,7 @@ class ZapSender(
                     relayUrls = relayUrls,
                     lnurl = recipientLud16,
                     message = message,
-                    extraTags = extraTags
+                    extraTags = allExtraTags
                 )
                 keypair != null -> Nip57.buildZapRequest(
                     senderPrivkey = keypair.privkey,
@@ -153,7 +153,7 @@ class ZapSender(
                     relayUrls = relayUrls,
                     lnurl = recipientLud16,
                     message = message,
-                    extraTags = extraTags
+                    extraTags = allExtraTags
                 )
                 else -> return Result.failure(Exception("No signer or keypair available"))
             }

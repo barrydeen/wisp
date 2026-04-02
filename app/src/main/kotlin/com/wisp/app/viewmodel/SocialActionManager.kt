@@ -479,4 +479,51 @@ class SocialActionManager(
             } catch (_: Exception) {}
         }
     }
+
+    fun sendZapPollVote(
+        pollEvent: NostrEvent,
+        optionIndex: Int,
+        amountMsats: Long,
+        message: String = "",
+        isAnonymous: Boolean = false
+    ) {
+        val profileData = eventRepo.getProfileData(pollEvent.pubkey)
+        val lud16 = profileData?.lud16
+        if (lud16.isNullOrBlank()) {
+            _zapError.tryEmit("This user has no lightning address")
+            return
+        }
+        val wallet = getWalletProvider()
+        if (wallet.hasConnection() && !wallet.isConnected.value) {
+            wallet.connect()
+        }
+        scope.launch {
+            _zapInProgress.value = _zapInProgress.value + pollEvent.id
+            val receiptSubId = subscribeZapReceipt(pollEvent.id)
+            val pollOptionTag = listOf("poll_option", optionIndex.toString())
+            val result = zapSender.sendZap(
+                recipientLud16 = lud16,
+                recipientPubkey = pollEvent.pubkey,
+                eventId = pollEvent.id,
+                amountMsats = amountMsats,
+                message = message,
+                isAnonymous = isAnonymous,
+                extraTags = listOf(pollOptionTag)
+            )
+            _zapInProgress.value = _zapInProgress.value - pollEvent.id
+            result.fold(
+                onSuccess = {
+                    _zapSuccess.tryEmit(pollEvent.id)
+                },
+                onFailure = { e ->
+                    if (isPaymentInFlight(e)) {
+                        _zapSuccess.tryEmit(pollEvent.id)
+                    } else {
+                        _zapError.tryEmit(e.message ?: "Zap poll vote failed")
+                        relayPool.closeOnAllRelays(receiptSubId)
+                    }
+                }
+            )
+        }
+    }
 }

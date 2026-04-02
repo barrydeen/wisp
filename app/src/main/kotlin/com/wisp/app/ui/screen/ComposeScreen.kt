@@ -51,6 +51,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.verticalScroll
@@ -172,6 +173,10 @@ fun ComposeScreen(
     val pollEnabled by viewModel.pollEnabled.collectAsState()
     val pollOptions by viewModel.pollOptions.collectAsState()
     val pollType by viewModel.pollType.collectAsState()
+    val isZapPoll by viewModel.isZapPoll.collectAsState()
+    val zapPollMinSats by viewModel.zapPollMinSats.collectAsState()
+    val zapPollMaxSats by viewModel.zapPollMaxSats.collectAsState()
+    val zapPollConsensus by viewModel.zapPollConsensus.collectAsState()
     val scheduleEnabled by viewModel.scheduleEnabled.collectAsState()
     val scheduleTimestamp by viewModel.scheduleTimestamp.collectAsState()
     val powStatus = powManager?.status?.collectAsState()?.value ?: PowStatus.Idle
@@ -879,15 +884,47 @@ fun ComposeScreen(
                                 }
                                 Spacer(Modifier.weight(1f))
                                 FilterChip(
-                                    selected = pollType == Nip88.PollType.MULTIPLECHOICE,
-                                    onClick = { viewModel.togglePollType() },
-                                    label = {
-                                        Text(
-                                            if (pollType == Nip88.PollType.SINGLECHOICE) stringResource(R.string.poll_single_choice)
-                                            else stringResource(R.string.poll_multiple_choice)
-                                        )
-                                    }
+                                    selected = isZapPoll,
+                                    onClick = { viewModel.toggleZapPoll() },
+                                    label = { Text(if (isZapPoll) "Zap Poll" else "Free Poll") }
                                 )
+                                if (!isZapPoll) {
+                                    Spacer(Modifier.width(8.dp))
+                                    FilterChip(
+                                        selected = pollType == Nip88.PollType.MULTIPLECHOICE,
+                                        onClick = { viewModel.togglePollType() },
+                                        label = {
+                                            Text(
+                                                if (pollType == Nip88.PollType.SINGLECHOICE) stringResource(R.string.poll_single_choice)
+                                                else stringResource(R.string.poll_multiple_choice)
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                            // Zap poll settings
+                            if (isZapPoll) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.padding(top = 4.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = zapPollMinSats?.toString() ?: "",
+                                        onValueChange = { viewModel.setZapPollMinSats(it.toLongOrNull()) },
+                                        label = { Text("Min sats") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                    )
+                                    OutlinedTextField(
+                                        value = zapPollMaxSats?.toString() ?: "",
+                                        onValueChange = { viewModel.setZapPollMaxSats(it.toLongOrNull()) },
+                                        label = { Text("Max sats") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                    )
+                                }
                             }
                         }
                     }

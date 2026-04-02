@@ -63,6 +63,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.Nip02
+import com.wisp.app.nostr.Nip69
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.R
@@ -108,6 +109,7 @@ fun SearchScreen(
     onDeleteEvent: (String, Int) -> Unit = { _, _ -> },
     translationRepo: TranslationRepository? = null,
     onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    onZapPollVote: (String, Int) -> Unit = { _, _ -> },
     onAddEmojiSet: ((String, String) -> Unit)? = null,
     onRemoveEmojiSet: ((String, String) -> Unit)? = null,
     isEmojiSetAdded: ((String, String) -> Boolean)? = null
@@ -347,6 +349,15 @@ fun SearchScreen(
                                 val userPollVotes = remember(pollVoteVersion, event.id) {
                                     if (event.kind == 1068) eventRepo.getUserPollVotes(event.id) else emptyList()
                                 }
+                                val zapPollSatsCounts = remember(pollVoteVersion, event.id) {
+                                    if (event.kind == 6969) eventRepo.getZapPollSatsCounts(event.id) else emptyMap()
+                                }
+                                val zapPollTotalSats = remember(pollVoteVersion, event.id) {
+                                    if (event.kind == 6969) eventRepo.getZapPollTotalSats(event.id) else 0L
+                                }
+                                val userZapPollVote = remember(pollVoteVersion, event.id) {
+                                    if (event.kind == 6969) eventRepo.getUserZapPollVote(event.id) else null
+                                }
                                 SearchNoteItem(
                                     event = event,
                                     eventRepo = eventRepo,
@@ -378,7 +389,11 @@ fun SearchScreen(
                                     pollVoteCounts = pollVoteCounts,
                                     pollTotalVotes = pollTotalVotes,
                                     userPollVotes = userPollVotes,
-                                    onPollVote = { optionIds -> onPollVote(event.id, optionIds) }
+                                    onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                                    zapPollSatsCounts = zapPollSatsCounts,
+                                    zapPollTotalSats = zapPollTotalSats,
+                                    userZapPollVote = userZapPollVote,
+                                    onZapPollVote = { idx -> onZapPollVote(event.id, idx) }
                                 )
                             }
                         }
@@ -422,6 +437,10 @@ private fun SearchNoteItem(
     pollTotalVotes: Int,
     userPollVotes: List<String>,
     onPollVote: (List<String>) -> Unit,
+    zapPollSatsCounts: Map<Int, Long> = emptyMap(),
+    zapPollTotalSats: Long = 0L,
+    userZapPollVote: Int? = null,
+    onZapPollVote: (Int) -> Unit = {},
 ) {
     val profile = eventRepo.getProfileData(event.pubkey)
     val likeCount = remember(reactionVersion, event.id) { eventRepo.getReactionCount(event.id) }
@@ -469,6 +488,10 @@ private fun SearchNoteItem(
         pollTotalVotes = pollTotalVotes,
         userPollVotes = userPollVotes,
         onPollVote = onPollVote,
+        zapPollSatsCounts = zapPollSatsCounts,
+        zapPollTotalSats = zapPollTotalSats,
+        userZapPollVote = userZapPollVote,
+        onZapPollVote = onZapPollVote,
         noteActions = noteActions,
     )
 }

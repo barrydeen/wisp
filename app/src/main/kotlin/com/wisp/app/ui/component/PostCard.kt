@@ -70,6 +70,7 @@ import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import com.wisp.app.nostr.Nip30
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.CircularProgressIndicator
+import com.wisp.app.nostr.Nip69
 import com.wisp.app.nostr.Nip88
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.Nip05Repository
@@ -133,6 +134,10 @@ fun PostCard(
     pollTotalVotes: Int = 0,
     userPollVotes: List<String> = emptyList(),
     onPollVote: (List<String>) -> Unit = {},
+    zapPollSatsCounts: Map<Int, Long> = emptyMap(),
+    zapPollTotalSats: Long = 0L,
+    userZapPollVote: Int? = null,
+    onZapPollVote: (Int) -> Unit = {},
     translationState: TranslationState = TranslationState(),
     onTranslate: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -631,6 +636,14 @@ fun PostCard(
                     userVotes = userPollVotes,
                     onVote = onPollVote
                 )
+            } else if (event.kind == Nip69.KIND_ZAP_POLL) {
+                ZapPollSection(
+                    event = event,
+                    satsCounts = zapPollSatsCounts,
+                    totalSats = zapPollTotalSats,
+                    userVote = userZapPollVote,
+                    onVote = onZapPollVote
+                )
             }
 
             // Top zapper banner
@@ -893,6 +906,132 @@ private fun PollResultRow(
             )
             Text(
                 text = "${(percentage * 100).toInt()}% ($count)",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ZapPollSection(
+    event: NostrEvent,
+    satsCounts: Map<Int, Long>,
+    totalSats: Long,
+    userVote: Int?,
+    onVote: (Int) -> Unit
+) {
+    val options = remember(event.id) { Nip69.parseZapPollOptions(event) }
+    val isClosed = remember(event.id) { Nip69.isZapPollClosed(event) }
+    val hasVoted = userVote != null
+    val showResults = hasVoted || isClosed || totalSats > 0
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        if (showResults) {
+            options.forEach { option ->
+                val sats = satsCounts[option.index] ?: 0L
+                val percentage = if (totalSats > 0) sats.toFloat() / totalSats else 0f
+                val isUserChoice = option.index == userVote
+                ZapPollResultRow(
+                    label = option.label,
+                    percentage = percentage,
+                    sats = sats,
+                    isUserChoice = isUserChoice
+                )
+            }
+            val formattedSats = java.text.NumberFormat.getNumberInstance().format(totalSats)
+            Text(
+                text = "$formattedSats sats total${if (isClosed) " \u00b7 Poll ended" else ""}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            val minSats = remember(event.id) { Nip69.parseValueMinimum(event) }
+            val maxSats = remember(event.id) { Nip69.parseValueMaximum(event) }
+            if (minSats != null || maxSats != null) {
+                val constraint = buildString {
+                    if (minSats != null) append("Min: $minSats sats")
+                    if (minSats != null && maxSats != null) append(" \u00b7 ")
+                    if (maxSats != null) append("Max: $maxSats sats")
+                }
+                Text(
+                    text = constraint,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+        } else {
+            // Voting mode — click an option to zap-vote
+            options.forEach { option ->
+                PollOptionRow(
+                    label = option.label,
+                    selected = false,
+                    isRadio = true,
+                    onClick = { onVote(option.index) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ZapPollResultRow(
+    label: String,
+    percentage: Float,
+    sats: Long,
+    isUserChoice: Boolean
+) {
+    val animatedFraction by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = percentage.coerceIn(0f, 1f),
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 600),
+        label = "zapPollBar"
+    )
+    val barColor = WispThemeColors.zapColor.copy(alpha = 0.25f)
+
+    val fillHeight = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val density = LocalDensity.current
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            .onGloballyPositioned { fillHeight.intValue = it.size.height }
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(fraction = if (animatedFraction > 0f) animatedFraction else 0.001f)
+                .height(with(density) { fillHeight.intValue.toDp() })
+                .background(color = barColor)
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            if (isUserChoice) {
+                Text(
+                    text = "\u26A1 ",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = WispThemeColors.zapColor
+                )
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            val formattedSats = java.text.NumberFormat.getNumberInstance().format(sats)
+            Text(
+                text = "${(percentage * 100).toInt()}% ($formattedSats sats)",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

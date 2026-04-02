@@ -6,6 +6,7 @@ import android.util.LruCache
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip57
+import com.wisp.app.nostr.Nip69
 import com.wisp.app.nostr.Nip88
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.FlatNotificationItem
@@ -562,6 +563,11 @@ class NotificationRepository(
         }
 
         val groupChatId = event.tags.firstOrNull { it.size >= 2 && it[0] == "h" }?.get(1)
+        // Check if this zap is a vote on a kind 6969 zap poll
+        val referencedEvent = eventRepo?.getEvent(referencedId)
+        val zapPollOptionIndex = if (referencedEvent?.kind == Nip69.KIND_ZAP_POLL) {
+            Nip69.getZapPollOptionFromZapReceipt(event)
+        } else null
         val flatZapId = "zap:${event.id}"
         if (flatItemIds.add(flatZapId)) {
             flatItems.add(FlatNotificationItem(
@@ -573,7 +579,8 @@ class NotificationRepository(
                 zapSats = amount,
                 zapMessage = message,
                 isPrivateZap = isPrivate,
-                groupChatId = groupChatId
+                groupChatId = groupChatId,
+                zapPollOptionIndex = zapPollOptionIndex
             ))
         }
 

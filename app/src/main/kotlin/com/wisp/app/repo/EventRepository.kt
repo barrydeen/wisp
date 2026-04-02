@@ -7,6 +7,7 @@ import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Bolt11
 import com.wisp.app.nostr.Nip57
+import com.wisp.app.nostr.Nip69
 import com.wisp.app.nostr.Nip88
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrEvent.Companion.fromJson
@@ -130,6 +131,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val userPollVotes = LruCache<String, List<String>>(15000)
     private val _pollVoteVersion = MutableStateFlow(0)
     val pollVoteVersion: StateFlow<Int> = _pollVoteVersion
+
+    // Zap poll vote tracking (kind 6969): tallied by sats, not vote count
+    // pollId -> (optionIndex -> total sats)
+    private val zapPollSatsCounts = LruCache<String, ConcurrentHashMap<Int, Long>>(5000)
+    // pollId -> (voterPubkey -> (timestamp, optionIndex)) for one-vote-per-pubkey
+    private val zapPollVoters = LruCache<String, ConcurrentHashMap<String, Pair<Long, Int>>>(5000)
+    // pollId -> option index the current user voted for
+    private val zapPollUserVotes = LruCache<String, Int>(5000)
 
     // Activity tracking: pubkey -> last seen timestamp (ms) — used for "online now" liveness
     private val recentlySeenPubkeys = ConcurrentHashMap<String, Long>()
@@ -256,7 +265,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         if (!seenEventIds.add(event.id)) return  // atomic dedup across all relay threads
         if (event.created_at > System.currentTimeMillis() / 1000 + 30) return  // reject future-dated notes (30s grace for clock skew)
         if (muteRepo?.isBlocked(event.pubkey) == true) return
-        if ((event.kind == 1 || event.kind == 30023 || event.kind == 20 || event.kind == 21 || event.kind == 22) && muteRepo?.containsMutedWord(event.content) == true) return
+        if ((event.kind == 1 || event.kind == 30023 || event.kind == 20 || event.kind == 21 || event.kind == 22 || event.kind == Nip69.KIND_ZAP_POLL) && muteRepo?.containsMutedWord(event.content) == true) return
         if (event.kind == 1) {
             val threadRoot = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
             if (muteRepo?.isThreadMuted(threadRoot) == true) return
@@ -362,7 +371,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                     }
                 }
             }
-            Nip88.KIND_POLL -> {
+            Nip88.KIND_POLL, Nip69.KIND_ZAP_POLL -> {
                 // Polls are top-level feed events like kind 1
                 binaryInsert(event, fromFeed = true)
             }
@@ -401,6 +410,11 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                     // Always mark user zap flag from receipts
                     if (zapperPubkey == currentUserPubkey) {
                         userZaps.put(targetId, true)
+                    }
+                    // Check if this zap is a zap poll vote (kind 6969)
+                    val targetEvent = eventCache[targetId]
+                    if (targetEvent?.kind == Nip69.KIND_ZAP_POLL && sats > 0) {
+                        addZapPollVote(event, targetId, sats, zapperPubkey)
                     }
                 }
             }
@@ -520,6 +534,53 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         return userPollVotes.get(pollId) ?: emptyList()
     }
 
+    private fun addZapPollVote(zapReceipt: NostrEvent, pollId: String, sats: Long, zapperPubkey: String?) {
+        val optionIndex = Nip69.getZapPollOptionFromZapReceipt(zapReceipt) ?: return
+        val pubkey = zapperPubkey ?: return
+
+        // Check if poll has closed
+        val pollEvent = eventCache[pollId]
+        if (pollEvent != null && Nip69.isZapPollClosed(pollEvent)) return
+
+        // One-vote-per-pubkey enforcement (latest timestamp wins)
+        val voters = zapPollVoters.get(pollId)
+            ?: ConcurrentHashMap<String, Pair<Long, Int>>().also { zapPollVoters.put(pollId, it) }
+        val prev = voters[pubkey]
+        if (prev != null && zapReceipt.created_at <= prev.first) return
+
+        val satsCounts = zapPollSatsCounts.get(pollId)
+            ?: ConcurrentHashMap<Int, Long>().also { zapPollSatsCounts.put(pollId, it) }
+
+        // Decrement old option sats when a pubkey re-votes
+        if (prev != null) {
+            val oldSats = satsCounts[prev.second]
+            if (oldSats != null && oldSats > 0) satsCounts[prev.second] = oldSats - sats
+        }
+
+        voters[pubkey] = Pair(zapReceipt.created_at, optionIndex)
+        satsCounts[optionIndex] = (satsCounts[optionIndex] ?: 0L) + sats
+
+        // Track current user's vote
+        if (pubkey == currentUserPubkey) {
+            zapPollUserVotes.put(pollId, optionIndex)
+        }
+
+        pollVoteDirty = true
+        markVersionDirty()
+    }
+
+    fun getZapPollSatsCounts(pollId: String): Map<Int, Long> {
+        return zapPollSatsCounts.get(pollId)?.toMap() ?: emptyMap()
+    }
+
+    fun getZapPollTotalSats(pollId: String): Long {
+        return zapPollSatsCounts.get(pollId)?.values?.sum() ?: 0L
+    }
+
+    fun getUserZapPollVote(pollId: String): Int? {
+        return zapPollUserVotes.get(pollId)
+    }
+
     /**
      * Resolve an engagement event's target when it only has an a-tag (addressable
      * coordinate like "30023:<pubkey>:<dtag>") and no e-tag. Looks up the cached
@@ -631,6 +692,11 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         metadataFetcher?.requestPollVotes(pollEventId)
     }
 
+    /** Fetch kind 9735 zap receipts for a quoted zap poll so results render inline. */
+    fun requestZapPollVotes(pollEventId: String) {
+        metadataFetcher?.requestZapPollVotes(pollEventId)
+    }
+
     fun requestAddressableEvent(kind: Int, author: String, dTag: String, relayHints: List<String> = emptyList()) {
         metadataFetcher?.requestAddressableEvent(kind, author, dTag, relayHints)
     }
@@ -657,7 +723,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
      */
     fun seedFromObjectBox(events: List<NostrEvent>) {
         for (event in events) {
-            if (event.kind != 0 && event.kind != 1 && event.kind != 20 && event.kind != 21 && event.kind != 22 && event.kind != 1068 && event.kind != 30023) continue
+            if (event.kind != 0 && event.kind != 1 && event.kind != 20 && event.kind != 21 && event.kind != 22 && event.kind != 1068 && event.kind != 6969 && event.kind != 30023) continue
             if (!seenEventIds.add(event.id)) continue
             eventCache[event.id] = event
             if (event.kind == 0) {
@@ -1066,7 +1132,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         val snapshot = eventCache
         var inserted = 0
         for ((_, event) in snapshot) {
-            if (event.kind != 1 && event.kind != 20 && event.kind != 21 && event.kind != 22 && event.kind != 1068 && event.kind != 30023) continue
+            if (event.kind != 1 && event.kind != 20 && event.kind != 21 && event.kind != 22 && event.kind != 1068 && event.kind != 6969 && event.kind != 30023) continue
             if (event.created_at < sinceTimestamp) continue
             if (event.created_at > System.currentTimeMillis() / 1000 + 30) continue  // skip future-dated (scheduled) notes
             if (muteRepo?.isBlocked(event.pubkey) == true) continue
@@ -1119,7 +1185,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                     relayFeedBinaryInsert(event)
                 }
             }
-            Nip88.KIND_POLL -> {
+            Nip88.KIND_POLL, Nip69.KIND_ZAP_POLL -> {
                 eventCache[event.id] = event
                 relayHintStore?.extractHintsFromTags(event)
                 relayFeedBinaryInsert(event)
@@ -1178,7 +1244,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                     trendingFeedAppend(event)
                 }
             }
-            Nip88.KIND_POLL -> {
+            Nip88.KIND_POLL, Nip69.KIND_ZAP_POLL -> {
                 eventCache[event.id] = event
                 relayHintStore?.extractHintsFromTags(event)
                 trendingFeedAppend(event)

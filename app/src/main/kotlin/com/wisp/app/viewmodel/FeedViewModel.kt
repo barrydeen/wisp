@@ -509,6 +509,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun followAll(pubkeys: Set<String>) = socialActions.followAll(pubkeys)
     fun muteThread(rootEventId: String) = socialActions.muteThread(rootEventId)
     fun publishPollVote(pollEventId: String, optionIds: List<String>) = socialActions.publishPollVote(pollEventId, optionIds)
+    fun sendZapPollVote(pollEvent: NostrEvent, optionIndex: Int, amountMsats: Long, message: String = "", isAnonymous: Boolean = false) =
+        socialActions.sendZapPollVote(pollEvent, optionIndex, amountMsats, message, isAnonymous)
 
     // -- List CRUD delegates --
     fun createList(name: String, isPrivate: Boolean = false) = listCrud.createList(name, isPrivate)

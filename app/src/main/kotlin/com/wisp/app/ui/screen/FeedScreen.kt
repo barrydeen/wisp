@@ -77,6 +77,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.FollowSet
 import com.wisp.app.nostr.Nip10
+import com.wisp.app.nostr.Nip69
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.R
 import com.wisp.app.ui.component.NoteActions
@@ -297,6 +298,7 @@ fun FeedScreen(
     val pinnedIds by viewModel.pinRepo.pinnedIds.collectAsState()
 
     var zapTargetEvent by remember { mutableStateOf<NostrEvent?>(null) }
+    var zapPollTarget by remember { mutableStateOf<Pair<NostrEvent, Int>?>(null) }
     var zapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
     var zapErrorMessage by remember { mutableStateOf<String?>(null) }
     var showEmojiLibrary by remember { mutableStateOf(false) }
@@ -528,6 +530,34 @@ fun FeedScreen(
             },
             onGoToWallet = onWallet,
             canPrivateZap = userHasDmRelays && recipientHasDmRelays
+        )
+    }
+
+    // Zap poll vote dialog
+    if (zapPollTarget != null) {
+        val (pollEvent, optionIndex) = zapPollTarget!!
+        val minSats = remember(pollEvent.id) { Nip69.parseValueMinimum(pollEvent) }
+        val maxSats = remember(pollEvent.id) { Nip69.parseValueMaximum(pollEvent) }
+        val optionLabel = remember(pollEvent.id, optionIndex) {
+            Nip69.parseZapPollOptions(pollEvent).firstOrNull { it.index == optionIndex }?.label ?: "Option $optionIndex"
+        }
+        ZapDialog(
+            isWalletConnected = isWalletConnected,
+            onDismiss = { zapPollTarget = null },
+            onZap = { amountMsats, message, isAnonymous, _ ->
+                val sats = amountMsats / 1000
+                if (minSats != null && sats < minSats) {
+                    zapErrorMessage = "Minimum vote is $minSats sats"
+                    return@ZapDialog
+                }
+                if (maxSats != null && sats > maxSats) {
+                    zapErrorMessage = "Maximum vote is $maxSats sats"
+                    return@ZapDialog
+                }
+                zapPollTarget = null
+                viewModel.sendZapPollVote(pollEvent, optionIndex, amountMsats, message, isAnonymous)
+            },
+            onGoToWallet = onWallet
         )
     }
 
@@ -1146,7 +1176,8 @@ fun FeedScreen(
                                     onOpenEmojiLibrary = { showEmojiLibrary = true },
                                     translationVersion = translationVersion,
                                     pollVoteVersion = pollVoteVersion,
-                                    onPollVote = { optionIds -> viewModel.publishPollVote(event.id, optionIds) }
+                                    onPollVote = { optionIds -> viewModel.publishPollVote(event.id, optionIds) },
+                                    onZapPollVote = { optionIndex -> zapPollTarget = Pair(event, optionIndex) }
                                 )
                                 }
                             }
@@ -1238,7 +1269,8 @@ private fun FeedItem(
     onOpenEmojiLibrary: (() -> Unit)? = null,
     translationVersion: Int = 0,
     pollVoteVersion: Int = 0,
-    onPollVote: (List<String>) -> Unit = {}
+    onPollVote: (List<String>) -> Unit = {},
+    onZapPollVote: (Int) -> Unit = {}
 ) {
     val profileData = remember(profileVersion, event.pubkey) {
         viewModel.eventRepo.getProfileData(event.pubkey)
@@ -1300,6 +1332,15 @@ private fun FeedItem(
     }
     val userPollVotes = remember(pollVoteVersion, event.id) {
         if (event.kind == 1068) viewModel.eventRepo.getUserPollVotes(event.id) else emptyList()
+    }
+    val zapPollSatsCounts = remember(pollVoteVersion, event.id) {
+        if (event.kind == 6969) viewModel.eventRepo.getZapPollSatsCounts(event.id) else emptyMap()
+    }
+    val zapPollTotalSats = remember(pollVoteVersion, event.id) {
+        if (event.kind == 6969) viewModel.eventRepo.getZapPollTotalSats(event.id) else 0L
+    }
+    val userZapPollVote = remember(pollVoteVersion, event.id) {
+        if (event.kind == 6969) viewModel.eventRepo.getUserZapPollVote(event.id) else null
     }
     if (isGalleryEvent(event)) {
         GalleryCard(
@@ -1402,6 +1443,10 @@ private fun FeedItem(
             pollTotalVotes = pollTotalVotes,
             userPollVotes = userPollVotes,
             onPollVote = onPollVote,
+            zapPollSatsCounts = zapPollSatsCounts,
+            zapPollTotalSats = zapPollTotalSats,
+            userZapPollVote = userZapPollVote,
+            onZapPollVote = onZapPollVote,
             translationState = translationState,
             onTranslate = { viewModel.translateEvent(event.id, event.content) }
         )

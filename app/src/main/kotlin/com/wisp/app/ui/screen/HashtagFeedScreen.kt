@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.R
 import com.wisp.app.nostr.InterestSet
+import com.wisp.app.nostr.Nip69
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.PostCard
@@ -68,6 +69,7 @@ fun HashtagFeedScreen(
     onHashtagPicker: () -> Unit = {},
     onBack: () -> Unit,
     onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    onZapPollVote: (String, Int) -> Unit = { _, _ -> },
     zapAnimatingIds: Set<String> = emptySet(),
     zapInProgressIds: Set<String> = emptySet()
 ) {
@@ -185,6 +187,7 @@ fun HashtagFeedScreen(
                         translationRepo = translationRepo,
                         pollVoteVersion = pollVoteVersion,
                         onPollVote = onPollVote,
+                        onZapPollVote = onZapPollVote,
                         isZapAnimating = event.id in zapAnimatingIds,
                         isZapInProgress = event.id in zapInProgressIds
                     )
@@ -263,6 +266,7 @@ private fun HashtagFeedItem(
     translationRepo: TranslationRepository? = null,
     pollVoteVersion: Int = 0,
     onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    onZapPollVote: (String, Int) -> Unit = { _, _ -> },
     isZapAnimating: Boolean = false,
     isZapInProgress: Boolean = false
 ) {
@@ -315,6 +319,15 @@ private fun HashtagFeedItem(
     val userPollVotes = remember(pollVoteVersion, event.id) {
         if (event.kind == 1068) eventRepo.getUserPollVotes(event.id) else emptyList()
     }
+    val zapPollSatsCounts = remember(pollVoteVersion, event.id) {
+        if (event.kind == 6969) eventRepo.getZapPollSatsCounts(event.id) else emptyMap()
+    }
+    val zapPollTotalSats = remember(pollVoteVersion, event.id) {
+        if (event.kind == 6969) eventRepo.getZapPollTotalSats(event.id) else 0L
+    }
+    val userZapPollVote = remember(pollVoteVersion, event.id) {
+        if (event.kind == 6969) eventRepo.getUserZapPollVote(event.id) else null
+    }
 
     PostCard(
         event = event,
@@ -357,6 +370,10 @@ private fun HashtagFeedItem(
         pollVoteCounts = pollVoteCounts,
         pollTotalVotes = pollTotalVotes,
         userPollVotes = userPollVotes,
-        onPollVote = { optionIds -> onPollVote(event.id, optionIds) }
+        onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+        zapPollSatsCounts = zapPollSatsCounts,
+        zapPollTotalSats = zapPollTotalSats,
+        userZapPollVote = userZapPollVote,
+        onZapPollVote = { idx -> onZapPollVote(event.id, idx) }
     )
 }

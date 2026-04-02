@@ -43,6 +43,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.unit.dp
+import com.wisp.app.nostr.Nip69
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
@@ -93,6 +94,7 @@ fun ThreadScreen(
     unicodeEmojis: List<String> = emptyList(),
     onOpenEmojiLibrary: (() -> Unit)? = null,
     onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    onZapPollVote: (String, Int) -> Unit = { _, _ -> },
     onGroupRoom: ((String, String) -> Unit)? = null,
     onLiveStreamClick: ((String, String, String?) -> Unit)? = null,
     fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null,
@@ -233,6 +235,15 @@ fun ThreadScreen(
                         val userPollVotes = remember(pollVoteVersion, event.id) {
                             if (event.kind == 1068) eventRepo.getUserPollVotes(event.id) else emptyList()
                         }
+                        val zapPollSatsCounts = remember(pollVoteVersion, event.id) {
+                            if (event.kind == 6969) eventRepo.getZapPollSatsCounts(event.id) else emptyMap()
+                        }
+                        val zapPollTotalSats = remember(pollVoteVersion, event.id) {
+                            if (event.kind == 6969) eventRepo.getZapPollTotalSats(event.id) else 0L
+                        }
+                        val userZapPollVote = remember(pollVoteVersion, event.id) {
+                            if (event.kind == 6969) eventRepo.getUserZapPollVote(event.id) else null
+                        }
                         val indentDp = 12
                         val clampedDepth = min(depth, 8)
                         val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
@@ -346,6 +357,10 @@ fun ThreadScreen(
                                     pollTotalVotes = pollTotalVotes,
                                     userPollVotes = userPollVotes,
                                     onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                                    zapPollSatsCounts = zapPollSatsCounts,
+                                    zapPollTotalSats = zapPollTotalSats,
+                                    userZapPollVote = userZapPollVote,
+                                    onZapPollVote = { idx -> onZapPollVote(event.id, idx) },
                                     modifier = Modifier.padding(start = (clampedDepth * indentDp).dp)
                                 )
                             }

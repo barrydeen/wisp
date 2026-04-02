@@ -929,6 +929,9 @@ fun QuotedNote(
         if (event != null && event.kind == com.wisp.app.nostr.Nip88.KIND_POLL) {
             eventRepo.requestPollVotes(event.id)
         }
+        if (event != null && event.kind == com.wisp.app.nostr.Nip69.KIND_ZAP_POLL) {
+            eventRepo.requestZapPollVotes(event.id)
+        }
     }
 
     if (event != null && noteActions != null) {
@@ -961,6 +964,17 @@ fun QuotedNote(
         }
         val userPollVotes = remember(pollVoteVersion, eventId) {
             if (event.kind == com.wisp.app.nostr.Nip88.KIND_POLL) eventRepo.getUserPollVotes(eventId) else emptyList()
+        }
+
+        // Zap poll data for quoted zap polls
+        val zapPollSatsCounts = remember(pollVoteVersion, eventId) {
+            if (event.kind == com.wisp.app.nostr.Nip69.KIND_ZAP_POLL) eventRepo.getZapPollSatsCounts(eventId) else emptyMap()
+        }
+        val zapPollTotalSats = remember(pollVoteVersion, eventId) {
+            if (event.kind == com.wisp.app.nostr.Nip69.KIND_ZAP_POLL) eventRepo.getZapPollTotalSats(eventId) else 0L
+        }
+        val userZapPollVote = remember(pollVoteVersion, eventId) {
+            if (event.kind == com.wisp.app.nostr.Nip69.KIND_ZAP_POLL) eventRepo.getUserZapPollVote(eventId) else null
         }
 
         Surface(
@@ -1043,6 +1057,9 @@ fun QuotedNote(
                     pollTotalVotes = pollTotalVotes,
                     userPollVotes = userPollVotes,
                     onPollVote = { optionIds -> noteActions.onPollVote(eventId, optionIds) },
+                    zapPollSatsCounts = zapPollSatsCounts,
+                    zapPollTotalSats = zapPollTotalSats,
+                    userZapPollVote = userZapPollVote,
                     showDivider = false
                 )
             }

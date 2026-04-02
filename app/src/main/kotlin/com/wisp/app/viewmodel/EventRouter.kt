@@ -199,6 +199,11 @@ class EventRouter(
             if (event.kind == Nip88.KIND_POLL_RESPONSE) {
                 eventRepo.addEvent(event)
             }
+        } else if (subscriptionId.startsWith("qzpoll-")) {
+            // Zap receipts for quoted zap polls
+            if (event.kind == 9735) {
+                eventRepo.addEvent(event)
+            }
         } else if (subscriptionId.startsWith("quote-")) {
             eventRepo.cacheEvent(event)
             if (event.kind == 1 && eventRepo.getProfileData(event.pubkey) == null) {

@@ -87,6 +87,7 @@ import coil3.compose.AsyncImage
 import com.wisp.app.nostr.FlatNotificationItem
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip30
+import com.wisp.app.nostr.Nip69
 import com.wisp.app.nostr.Nip88
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NotificationSummary
@@ -164,6 +165,7 @@ fun NotificationsScreen(
     zapError: SharedFlow<String>? = null,
     translationRepo: TranslationRepository? = null,
     onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    onZapPollVote: (String, Int) -> Unit = { _, _ -> },
     onUploadMedia: (List<Uri>, onUrl: (String) -> Unit) -> Unit = { _, _ -> },
     onSendDm: (peerPubkey: String, content: String) -> Unit = { _, _ -> },
     onDmReact: (peerPubkey: String, rumorId: String, senderPubkey: String, emoji: String) -> Unit = { _, _, _, _ -> },
@@ -257,6 +259,7 @@ fun NotificationsScreen(
             translationRepo = translationRepo,
             pollVoteVersion = pollVoteVersion,
             onPollVote = onPollVote,
+            onZapPollVote = onZapPollVote,
             onPayInvoice = onPayInvoice,
             onGroupRoom = onGroupRoom,
             fetchGroupPreview = fetchGroupPreview,
@@ -640,7 +643,7 @@ private fun ZenNotificationRow(
                         maxLines = 1
                     )
                 }
-                // Show voted option labels
+                // Show voted option labels for NIP-88 polls
                 if (item.type == NotificationType.VOTE && item.voteOptionIds.isNotEmpty()) {
                     val optionLabels = remember(item.referencedEventId, item.voteOptionIds) {
                         val pollEvent = eventRepo?.getEvent(item.referencedEventId)
@@ -652,6 +655,26 @@ private fun ZenNotificationRow(
                     if (optionLabels.isNotEmpty()) {
                         Text(
                             text = optionLabels.joinToString(", "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+                }
+                // Show voted option label for zap poll votes (kind 6969)
+                if (item.type == NotificationType.ZAP && item.zapPollOptionIndex != null) {
+                    val optionLabel = remember(item.referencedEventId, item.zapPollOptionIndex) {
+                        val pollEvent = eventRepo?.getEvent(item.referencedEventId)
+                        if (pollEvent != null) {
+                            Nip69.parseZapPollOptions(pollEvent)
+                                .firstOrNull { it.index == item.zapPollOptionIndex }?.label
+                        } else null
+                    }
+                    if (optionLabel != null) {
+                        Text(
+                            text = "voted: $optionLabel",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                             maxLines = 1,
@@ -1257,6 +1280,15 @@ private fun ReferencedNotePostCard(
     val userPollVotes = remember(params.pollVoteVersion, event.id) {
         if (event.kind == 1068) eventRepo.getUserPollVotes(event.id) else emptyList()
     }
+    val zapPollSatsCounts = remember(params.pollVoteVersion, event.id) {
+        if (event.kind == 6969) eventRepo.getZapPollSatsCounts(event.id) else emptyMap()
+    }
+    val zapPollTotalSats = remember(params.pollVoteVersion, event.id) {
+        if (event.kind == 6969) eventRepo.getZapPollTotalSats(event.id) else 0L
+    }
+    val userZapPollVote = remember(params.pollVoteVersion, event.id) {
+        if (event.kind == 6969) eventRepo.getUserZapPollVote(event.id) else null
+    }
 
     if (isGalleryEvent(event)) {
         GalleryCard(
@@ -1377,6 +1409,10 @@ private fun ReferencedNotePostCard(
             pollTotalVotes = pollTotalVotes,
             userPollVotes = userPollVotes,
             onPollVote = { optionIds -> params.onPollVote(event.id, optionIds) },
+            zapPollSatsCounts = zapPollSatsCounts,
+            zapPollTotalSats = zapPollTotalSats,
+            userZapPollVote = userZapPollVote,
+            onZapPollVote = { idx -> params.onZapPollVote(event.id, idx) },
             noteActions = run {
                 val p = params
                 if (p.onPayInvoice != null || p.onGroupRoom != null || p.fetchGroupPreview != null || p.onAddEmojiSet != null) {
@@ -1429,6 +1465,7 @@ private data class NotifPostCardParams(
     val translationRepo: TranslationRepository? = null,
     val pollVoteVersion: Int = 0,
     val onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    val onZapPollVote: (String, Int) -> Unit = { _, _ -> },
     val onPayInvoice: (suspend (String) -> Boolean)? = null,
     val onGroupRoom: ((String, String) -> Unit)? = null,
     val fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null,

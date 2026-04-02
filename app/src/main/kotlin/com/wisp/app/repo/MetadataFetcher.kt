@@ -74,6 +74,10 @@ class MetadataFetcher(
     private val fetchedPollVotes = mutableSetOf<String>()
     private var pollVoteBatchCounter = 0
 
+    // Zap poll vote fetching for quoted zap polls
+    private val fetchedZapPollVotes = mutableSetOf<String>()
+    private var zapPollVoteBatchCounter = 0
+
     /** Returns URLs of the top relays by author coverage for quote lookups. Set by FeedViewModel. */
     var quoteRelayProvider: (() -> List<String>)? = null
 
@@ -99,6 +103,7 @@ class MetadataFetcher(
         scannedQuoteEvents.clear()
         failedQuoteFetches.clear()
         synchronized(fetchedPollVotes) { fetchedPollVotes.clear() }
+        synchronized(fetchedZapPollVotes) { fetchedZapPollVotes.clear() }
         metaBatchCounter = 0
         replyCountBatchCounter = 0
         zapCountBatchCounter = 0
@@ -237,6 +242,32 @@ class MetadataFetcher(
         if (pollEvent != null) {
             val sentUrls = relayPool.getReadRelayUrls().toSet() + relayPool.getWriteRelayUrls().toSet()
             for (url in com.wisp.app.nostr.Nip88.parsePollRelays(pollEvent)) {
+                if (url !in sentUrls) relayPool.sendToRelayOrEphemeral(url, msg)
+            }
+        }
+        scope.launch {
+            subManager.awaitEoseWithTimeout(subId, timeoutMs = 8_000)
+            subManager.closeSubscription(subId)
+        }
+    }
+
+    /**
+     * Fetch kind 9735 zap receipts for a quoted zap poll event.
+     * Sends a REQ to top relays so the ZapPollSection can render results.
+     */
+    fun requestZapPollVotes(pollEventId: String) {
+        synchronized(fetchedZapPollVotes) {
+            if (!fetchedZapPollVotes.add(pollEventId)) return
+        }
+        val subId = "qzpoll-${zapPollVoteBatchCounter++}"
+        val filter = Filter(kinds = listOf(9735), eTags = listOf(pollEventId))
+        val msg = ClientMessage.req(subId, filter)
+        relayPool.sendToAllRelays(msg)
+        // Also try poll-specified relays
+        val pollEvent = eventRepo.getEvent(pollEventId)
+        if (pollEvent != null) {
+            val sentUrls = relayPool.getReadRelayUrls().toSet() + relayPool.getWriteRelayUrls().toSet()
+            for (url in com.wisp.app.nostr.Nip69.parseZapPollRelays(pollEvent)) {
                 if (url !in sentUrls) relayPool.sendToRelayOrEphemeral(url, msg)
             }
         }

@@ -77,6 +77,7 @@ import coil3.compose.AsyncImage
 import com.wisp.app.R
 import com.wisp.app.nostr.FollowSet
 import com.wisp.app.nostr.Nip02
+import com.wisp.app.nostr.Nip69
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.relay.RelayConfig
@@ -166,6 +167,7 @@ fun UserProfileScreen(
     translationRepo: TranslationRepository? = null,
     onArticleClick: ((Int, String, String) -> Unit)? = null,
     onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    onZapPollVote: (String, Int) -> Unit = { _, _ -> },
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
     onOpenEmojiLibrary: (() -> Unit)? = null,
@@ -634,6 +636,15 @@ fun UserProfileScreen(
                             val pinnedUserPollVotes = remember(pollVoteVersion, event.id) {
                                 if (event.kind == 1068) eventRepo?.getUserPollVotes(event.id) ?: emptyList() else emptyList()
                             }
+                            val pinnedZapPollSatsCounts = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getZapPollSatsCounts(event.id) ?: emptyMap() else emptyMap()
+                            }
+                            val pinnedZapPollTotalSats = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getZapPollTotalSats(event.id) ?: 0L else 0L
+                            }
+                            val pinnedUserZapPollVote = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getUserZapPollVote(event.id) else null
+                            }
                             PostCard(
                                 event = event,
                                 profile = eventProfile,
@@ -657,6 +668,10 @@ fun UserProfileScreen(
                                 pollTotalVotes = pinnedPollTotalVotes,
                                 userPollVotes = pinnedUserPollVotes,
                                 onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                                zapPollSatsCounts = pinnedZapPollSatsCounts,
+                                zapPollTotalSats = pinnedZapPollTotalSats,
+                                userZapPollVote = pinnedUserZapPollVote,
+                                onZapPollVote = { idx -> onZapPollVote(event.id, idx) },
                                 resolvedEmojis = resolvedEmojis,
                                 unicodeEmojis = unicodeEmojis,
                                 onOpenEmojiLibrary = onOpenEmojiLibrary,
@@ -723,6 +738,15 @@ fun UserProfileScreen(
                             val rootUserPollVotes = remember(pollVoteVersion, event.id) {
                                 if (event.kind == 1068) eventRepo?.getUserPollVotes(event.id) ?: emptyList() else emptyList()
                             }
+                            val rootZapPollSatsCounts = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getZapPollSatsCounts(event.id) ?: emptyMap() else emptyMap()
+                            }
+                            val rootZapPollTotalSats = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getZapPollTotalSats(event.id) ?: 0L else 0L
+                            }
+                            val rootUserZapPollVote = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getUserZapPollVote(event.id) else null
+                            }
                             PostCard(
                                 event = event,
                                 profile = if (repostPubkey != null) eventRepo?.getProfileData(event.pubkey) else profile,
@@ -766,6 +790,10 @@ fun UserProfileScreen(
                                 pollTotalVotes = rootPollTotalVotes,
                                 userPollVotes = rootUserPollVotes,
                                 onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                                zapPollSatsCounts = rootZapPollSatsCounts,
+                                zapPollTotalSats = rootZapPollTotalSats,
+                                userZapPollVote = rootUserZapPollVote,
+                                onZapPollVote = { idx -> onZapPollVote(event.id, idx) },
                                 resolvedEmojis = resolvedEmojis,
                                 unicodeEmojis = unicodeEmojis,
                                 onOpenEmojiLibrary = onOpenEmojiLibrary,
@@ -894,6 +922,15 @@ fun UserProfileScreen(
                             val replyUserPollVotes = remember(pollVoteVersion, event.id) {
                                 if (event.kind == 1068) eventRepo?.getUserPollVotes(event.id) ?: emptyList() else emptyList()
                             }
+                            val replyZapPollSatsCounts = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getZapPollSatsCounts(event.id) ?: emptyMap() else emptyMap()
+                            }
+                            val replyZapPollTotalSats = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getZapPollTotalSats(event.id) ?: 0L else 0L
+                            }
+                            val replyUserZapPollVote = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getUserZapPollVote(event.id) else null
+                            }
                             PostCard(
                                 event = event,
                                 profile = profile,
@@ -936,6 +973,10 @@ fun UserProfileScreen(
                                 pollTotalVotes = replyPollTotalVotes,
                                 userPollVotes = replyUserPollVotes,
                                 onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                                zapPollSatsCounts = replyZapPollSatsCounts,
+                                zapPollTotalSats = replyZapPollTotalSats,
+                                userZapPollVote = replyUserZapPollVote,
+                                onZapPollVote = { idx -> onZapPollVote(event.id, idx) },
                                 resolvedEmojis = resolvedEmojis,
                                 unicodeEmojis = unicodeEmojis,
                                 onOpenEmojiLibrary = onOpenEmojiLibrary,

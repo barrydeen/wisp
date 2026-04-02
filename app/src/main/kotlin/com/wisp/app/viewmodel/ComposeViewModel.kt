@@ -18,6 +18,7 @@ import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.Nip37
 import com.wisp.app.nostr.Nip68
 import com.wisp.app.nostr.Nip71
+import com.wisp.app.nostr.Nip69
 import com.wisp.app.nostr.Nip88
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrSigner
@@ -133,6 +134,18 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     private val _pollType = MutableStateFlow(Nip88.PollType.SINGLECHOICE)
     val pollType: StateFlow<Nip88.PollType> = _pollType
 
+    private val _isZapPoll = MutableStateFlow(false)
+    val isZapPoll: StateFlow<Boolean> = _isZapPoll
+
+    private val _zapPollMinSats = MutableStateFlow<Long?>(null)
+    val zapPollMinSats: StateFlow<Long?> = _zapPollMinSats
+
+    private val _zapPollMaxSats = MutableStateFlow<Long?>(null)
+    val zapPollMaxSats: StateFlow<Long?> = _zapPollMaxSats
+
+    private val _zapPollConsensus = MutableStateFlow<Int?>(null)
+    val zapPollConsensus: StateFlow<Int?> = _zapPollConsensus
+
     private val _scheduleEnabled = MutableStateFlow(false)
     val scheduleEnabled: StateFlow<Boolean> = _scheduleEnabled
 
@@ -177,6 +190,17 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _pollType.value = if (_pollType.value == Nip88.PollType.SINGLECHOICE)
             Nip88.PollType.MULTIPLECHOICE else Nip88.PollType.SINGLECHOICE
     }
+
+    fun toggleZapPoll() {
+        _isZapPoll.value = !_isZapPoll.value
+        if (_isZapPoll.value) {
+            _pollType.value = Nip88.PollType.SINGLECHOICE
+        }
+    }
+
+    fun setZapPollMinSats(value: Long?) { _zapPollMinSats.value = value }
+    fun setZapPollMaxSats(value: Long?) { _zapPollMaxSats.value = value }
+    fun setZapPollConsensus(value: Int?) { _zapPollConsensus.value = value?.coerceIn(0, 100) }
 
     private var mentionStartIndex: Int = -1
     private var countdownJob: Job? = null
@@ -551,16 +575,32 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             }
         } else if (_pollEnabled.value) {
             val nonBlankOptions = _pollOptions.value
-                .mapIndexed { i, label -> Nip88.PollOption(i.toString(), label.trim()) }
-                .filter { it.label.isNotBlank() }
+                .filter { it.isNotBlank() }
             if (nonBlankOptions.size < 2) {
                 _error.value = getApplication<Application>().getString(R.string.error_poll_options)
                 _publishing.value = false
                 return 0
             }
             val pollRelays = relayPool.getWriteRelayUrls()
-            tags.addAll(Nip88.buildPollTags(nonBlankOptions, _pollType.value, relayUrls = pollRelays))
-            eventKind = Nip88.KIND_POLL
+            if (_isZapPoll.value) {
+                val zapPollOptions = nonBlankOptions.mapIndexed { i, label ->
+                    Nip69.ZapPollOption(i, label.trim())
+                }
+                tags.addAll(Nip69.buildZapPollTags(
+                    options = zapPollOptions,
+                    valueMinimum = _zapPollMinSats.value,
+                    valueMaximum = _zapPollMaxSats.value,
+                    consensusThreshold = _zapPollConsensus.value,
+                    relayUrls = pollRelays
+                ))
+                eventKind = Nip69.KIND_ZAP_POLL
+            } else {
+                val nip88Options = nonBlankOptions.mapIndexed { i, label ->
+                    Nip88.PollOption(i.toString(), label.trim())
+                }
+                tags.addAll(Nip88.buildPollTags(nip88Options, _pollType.value, relayUrls = pollRelays))
+                eventKind = Nip88.KIND_POLL
+            }
         } else {
             eventKind = 1
         }
@@ -810,6 +850,10 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _pollEnabled.value = false
         _pollOptions.value = listOf("", "")
         _pollType.value = Nip88.PollType.SINGLECHOICE
+        _isZapPoll.value = false
+        _zapPollMinSats.value = null
+        _zapPollMaxSats.value = null
+        _zapPollConsensus.value = null
         _scheduleEnabled.value = false
         _scheduleTimestamp.value = null
         clearMentionState()

@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.wisp.app.nostr.Nip69
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.TranslationRepository
@@ -43,7 +44,8 @@ fun BookmarksScreen(
     onToggleFollow: (String) -> Unit = {},
     onBlockUser: (String) -> Unit = {},
     translationRepo: TranslationRepository? = null,
-    onPollVote: (String, List<String>) -> Unit = { _, _ -> }
+    onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    onZapPollVote: (String, Int) -> Unit = { _, _ -> }
 ) {
     val profileVersion by eventRepo.profileVersion.collectAsState()
     val reactionVersion by eventRepo.reactionVersion.collectAsState()
@@ -113,6 +115,15 @@ fun BookmarksScreen(
                     val bmUserPollVotes = remember(pollVoteVersion, event.id) {
                         if (event.kind == 1068) eventRepo.getUserPollVotes(event.id) else emptyList()
                     }
+                    val bmZapPollSatsCounts = remember(pollVoteVersion, event.id) {
+                        if (event.kind == 6969) eventRepo.getZapPollSatsCounts(event.id) else emptyMap()
+                    }
+                    val bmZapPollTotalSats = remember(pollVoteVersion, event.id) {
+                        if (event.kind == 6969) eventRepo.getZapPollTotalSats(event.id) else 0L
+                    }
+                    val bmUserZapPollVote = remember(pollVoteVersion, event.id) {
+                        if (event.kind == 6969) eventRepo.getUserZapPollVote(event.id) else null
+                    }
                     PostCard(
                         event = event,
                         profile = profile,
@@ -133,7 +144,11 @@ fun BookmarksScreen(
                         pollVoteCounts = bmPollVoteCounts,
                         pollTotalVotes = bmPollTotalVotes,
                         userPollVotes = bmUserPollVotes,
-                        onPollVote = { optionIds -> onPollVote(event.id, optionIds) }
+                        onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                        zapPollSatsCounts = bmZapPollSatsCounts,
+                        zapPollTotalSats = bmZapPollTotalSats,
+                        userZapPollVote = bmUserZapPollVote,
+                        onZapPollVote = { /* zap polls in bookmarks can be view-only for now */ }
                     )
                 }
             }
