@@ -512,6 +512,17 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun sendZapPollVote(pollEvent: NostrEvent, optionIndex: Int, amountMsats: Long, message: String = "", isAnonymous: Boolean = false) =
         socialActions.sendZapPollVote(pollEvent, optionIndex, amountMsats, message, isAnonymous)
 
+    /** Publish a NIP-38 user status (kind 30315). Empty string clears the status. */
+    fun publishUserStatus(status: String) {
+        val s = signer ?: return
+        viewModelScope.launch {
+            val tags = mutableListOf(listOf("d", "general"))
+            val event = s.signEvent(kind = 30315, content = status, tags = tags)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            eventRepo.addEvent(event)
+        }
+    }
+
     // -- List CRUD delegates --
     fun createList(name: String, isPrivate: Boolean = false) = listCrud.createList(name, isPrivate)
     fun addToList(dTag: String, pubkey: String) = listCrud.addToList(dTag, pubkey)

@@ -545,7 +545,8 @@ class StartupCoordinator(
         // Parameterized replaceable events (many per kind per author):
         val addressableKinds = listOf(
             Nip51.KIND_FOLLOW_SET, Nip51.KIND_BOOKMARK_SET, Nip51.KIND_RELAY_SET,
-            Nip51.KIND_INTEREST_SET, Nip30.KIND_EMOJI_SET
+            Nip51.KIND_INTEREST_SET, Nip30.KIND_EMOJI_SET,
+            30315 // NIP-38: user status
         )
         val selfDataFilters = listOf(
             Filter(kinds = replaceableKinds, authors = listOf(myPubkey), limit = replaceableKinds.size),

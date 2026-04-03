@@ -99,7 +99,9 @@ fun WispDrawerContent(
     onRelayHealth: () -> Unit = {},
     onRelaySettings: () -> Unit,
     onInterfaceSettings: () -> Unit = {},
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    userStatus: String? = null,
+    onUpdateStatus: ((String) -> Unit)? = null
 ) {
     ModalDrawerSheet(
         drawerContainerColor = MaterialTheme.colorScheme.surface
@@ -220,6 +222,79 @@ fun WispDrawerContent(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+
+            // User status — tap to edit
+            if (onUpdateStatus != null) {
+                var showStatusDialog by remember { mutableStateOf(false) }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clickable { showStatusDialog = true }
+                        .padding(top = 4.dp)
+                ) {
+                    if (userStatus.isNullOrBlank()) {
+                        Icon(
+                            Icons.Outlined.Edit,
+                            contentDescription = "Set status",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "Set status...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                        )
+                    } else {
+                        Text(
+                            text = userStatus,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            Icons.Outlined.Edit,
+                            contentDescription = "Edit status",
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+                if (showStatusDialog) {
+                    var statusText by remember { mutableStateOf(userStatus ?: "") }
+                    AlertDialog(
+                        onDismissRequest = { showStatusDialog = false },
+                        title = { Text("Update Status") },
+                        text = {
+                            androidx.compose.material3.OutlinedTextField(
+                                value = statusText,
+                                onValueChange = { statusText = it },
+                                label = { Text("What are you up to?") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                onUpdateStatus(statusText.trim())
+                                showStatusDialog = false
+                            }) {
+                                Text(if (statusText.isBlank()) "Clear" else "Update")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showStatusDialog = false }) {
+                                Text(stringResource(R.string.btn_cancel))
+                            }
+                        }
+                    )
+                }
             }
 
             // Account picker dropdown

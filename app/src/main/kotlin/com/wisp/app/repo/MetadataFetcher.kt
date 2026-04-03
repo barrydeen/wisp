@@ -367,7 +367,7 @@ class MetadataFetcher(
             outboxRouter.requestProfiles(subId, pubkeys)
         } else {
             // Retry: send to top 10 relays instead of all — most profiles are on major relays
-            val filter = Filter(kinds = listOf(0), authors = pubkeys, limit = pubkeys.size)
+            val filter = Filter(kinds = listOf(0, 30315), authors = pubkeys, limit = pubkeys.size * 2)
             relayPool.sendToTopRelays(ClientMessage.req(subId, filter), maxRelays = 10)
         }
 
@@ -375,7 +375,7 @@ class MetadataFetcher(
         val hintUrls = relayHints.values.flatten().distinct()
         if (hintUrls.isNotEmpty()) {
             val hintPubkeys = relayHints.keys.toList()
-            val filter = Filter(kinds = listOf(0), authors = hintPubkeys, limit = hintPubkeys.size)
+            val filter = Filter(kinds = listOf(0, 30315), authors = hintPubkeys, limit = hintPubkeys.size * 2)
             val msg = ClientMessage.req(subId, filter)
             for (url in hintUrls) {
                 relayPool.sendToRelayOrEphemeral(url, msg)

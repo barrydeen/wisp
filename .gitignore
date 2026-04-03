@@ -12,3 +12,4 @@
 local.properties
 *.hprof
 node_modules/
+app/temp/

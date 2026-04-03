@@ -552,6 +552,8 @@ class EventRouter(
                 }
             } else {
                 eventRepo.cacheEvent(event)
+                // NIP-38: route user status events to addEvent so they get processed
+                if (event.kind == 30315) eventRepo.addEvent(event)
             }
             // Always handle follow list updates (from self-data subscription)
             if (event.kind == 3) {

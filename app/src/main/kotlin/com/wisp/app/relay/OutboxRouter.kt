@@ -219,15 +219,17 @@ class OutboxRouter(
         val knownPubkeys = pubkeys.filter { relayListRepo.hasRelayList(it) }
         val unknownPubkeys = pubkeys.filter { !relayListRepo.hasRelayList(it) }
 
+        val profileKinds = listOf(0, 30315)
+
         if (knownPubkeys.isNotEmpty()) {
             val relayToAuthors = groupAuthorsByWriteRelay(knownPubkeys)
             for ((relayUrl, relayAuthors) in relayToAuthors) {
                 if (relayUrl.isEmpty()) {
                     sendChunkedToAll(subId, relayAuthors, listOf(
-                        Filter(kinds = listOf(0))
+                        Filter(kinds = profileKinds)
                     ), limitPerAuthor = true)
                 } else {
-                    val f = Filter(kinds = listOf(0), authors = relayAuthors, limit = relayAuthors.size)
+                    val f = Filter(kinds = profileKinds, authors = relayAuthors, limit = relayAuthors.size * 2)
                     relayPool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(subId, f))
                 }
             }
@@ -236,12 +238,12 @@ class OutboxRouter(
         // Fallback: send unknown pubkeys to top relays + profile indexers
         if (unknownPubkeys.isNotEmpty()) {
             sendChunkedToTopRelays(subId, unknownPubkeys, listOf(
-                Filter(kinds = listOf(0))
+                Filter(kinds = profileKinds)
             ), limitPerAuthor = true)
             // Also query profile-specialized relays via ephemeral connections
             val chunks = unknownPubkeys.chunked(MAX_AUTHORS_PER_FILTER)
             for (chunk in chunks) {
-                val f = Filter(kinds = listOf(0), authors = chunk, limit = chunk.size)
+                val f = Filter(kinds = profileKinds, authors = chunk, limit = chunk.size * 2)
                 val msg = ClientMessage.req(subId, f)
                 for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
                     relayPool.sendToRelayOrEphemeral(url, msg)
