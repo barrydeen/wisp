@@ -33,7 +33,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,6 +61,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Surface
+import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip13
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.NostrEvent
@@ -166,6 +169,17 @@ fun PostCard(
         event.tags.firstOrNull { it.size >= 2 && it[0] == "client" }?.get(1)
     }
 
+    // Reply-to attribution: resolve the author name of the post being replied to
+    val replyToPubkey = remember(event.id) {
+        if (!Nip10.isReply(event)) null
+        else event.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
+    }
+    val replyToName = remember(replyToPubkey) {
+        replyToPubkey?.let { pk ->
+            eventRepo?.getProfileData(pk)?.displayString ?: (pk.take(8) + "...")
+        }
+    }
+
     val hasReactionDetails = reactionDetails.isNotEmpty() || zapDetails.isNotEmpty() || repostDetails.isNotEmpty()
     var expandedDetails by remember { mutableStateOf(false) }
     var showTranslation by remember { mutableStateOf(true) }
@@ -254,6 +268,40 @@ fun PostCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.clickable(onClick = onProfileClick)
                 )
+                if (replyToName != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "replying to ",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = replyToName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.clickable {
+                                replyToPubkey?.let { onNavigateToProfile?.invoke(it) }
+                            }
+                        )
+                    }
+                }
+                // NIP-38: user status
+                val statusVersion by eventRepo?.statusVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
+                val userStatus = remember(statusVersion, event.pubkey) {
+                    eventRepo?.getUserStatus(event.pubkey)
+                }
+                if (userStatus != null) {
+                    Text(
+                        text = userStatus,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                    )
+                }
                 profile?.nip05?.let { nip05 ->
                     nip05Repo?.checkOrFetch(event.pubkey, nip05)
                     val status = nip05Repo?.getStatus(event.pubkey)
