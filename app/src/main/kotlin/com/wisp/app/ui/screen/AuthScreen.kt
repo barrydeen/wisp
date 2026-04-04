@@ -3,6 +3,7 @@ package com.wisp.app.ui.screen
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -45,8 +46,20 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.sign
+import kotlin.math.sin
 import androidx.compose.ui.res.stringResource
 import com.wisp.app.R
 import com.wisp.app.nostr.RemoteSignerBridge
@@ -95,7 +108,10 @@ fun AuthScreen(
         Image(
             painter = painterResource(R.mipmap.ic_launcher_foreground),
             contentDescription = stringResource(R.string.onboarding_wisp_logo),
-            modifier = Modifier.size(108.dp)
+            modifier = Modifier
+                .size(108.dp)
+                .clip(SquircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         )
         Text(
             text = stringResource(R.string.auth_wisp),
@@ -246,5 +262,27 @@ fun AuthScreen(
                 style = MaterialTheme.typography.bodySmall
             )
         }
+    }
+}
+
+/** Superellipse-based squircle shape (n≈5) for smooth continuous-curvature corners. */
+private val SquircleShape = object : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val path = Path()
+        val w = size.width
+        val h = size.height
+        val n = 5.0 // superellipse exponent — higher = more square, lower = more round
+        val steps = 360
+        for (i in 0 until steps) {
+            val angle = 2.0 * Math.PI * i / steps
+            val cosA = cos(angle)
+            val sinA = sin(angle)
+            val x = (w / 2) * abs(cosA).pow(2.0 / n) * sign(cosA) + w / 2
+            val y = (h / 2) * abs(sinA).pow(2.0 / n) * sign(sinA) + h / 2
+            if (i == 0) path.moveTo(x.toFloat(), y.toFloat())
+            else path.lineTo(x.toFloat(), y.toFloat())
+        }
+        path.close()
+        return Outline.Generic(path)
     }
 }
