@@ -143,7 +143,8 @@ fun ActionBar(
                     selectedEmojis = userReactionEmojis,
                     resolvedEmojis = resolvedEmojis,
                     unicodeEmojis = unicodeEmojis,
-                    onOpenEmojiLibrary = onOpenEmojiLibrary
+                    onOpenEmojiLibrary = onOpenEmojiLibrary,
+                    onRemoveEmoji = emojiRemoveCallback
                 )
             }
         }

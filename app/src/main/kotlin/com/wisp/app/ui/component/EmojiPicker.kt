@@ -1,7 +1,10 @@
 package com.wisp.app.ui.component
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.heightIn
@@ -17,6 +20,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,7 +38,10 @@ private val DEFAULT_UNICODE_EMOJIS = listOf("\uD83E\uDDE1", "\uD83D\uDC4D", "\uD
  */
 internal var pendingEmojiReactCallback: ((String) -> Unit)? = null
 
-@OptIn(ExperimentalLayoutApi::class)
+/** Bridge for removing emojis from the quick reaction list. Set by the hosting screen. */
+internal var emojiRemoveCallback: ((String) -> Unit)? = null
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun EmojiReactionPopup(
     onSelect: (String) -> Unit,
@@ -41,9 +49,11 @@ fun EmojiReactionPopup(
     selectedEmojis: Set<String> = emptySet(),
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
-    onOpenEmojiLibrary: (() -> Unit)? = null
+    onOpenEmojiLibrary: (() -> Unit)? = null,
+    onRemoveEmoji: ((String) -> Unit)? = null
 ) {
     val effectiveUnicode = unicodeEmojis.ifEmpty { DEFAULT_UNICODE_EMOJIS }
+    val haptic = LocalHapticFeedback.current
 
     Popup(
         alignment = Alignment.BottomStart,
@@ -67,15 +77,25 @@ fun EmojiReactionPopup(
                 // Unicode emoji shortcuts
                 effectiveUnicode.forEach { emoji ->
                     val isSelected = emoji in selectedEmojis
-                    TextButton(
-                        onClick = {
-                            onSelect(emoji)
-                            onDismiss()
-                        },
-                        modifier = if (isSelected) Modifier.background(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                            RoundedCornerShape(12.dp)
-                        ) else Modifier
+                    Box(
+                        modifier = Modifier
+                            .combinedClickable(
+                                onClick = {
+                                    onSelect(emoji)
+                                    onDismiss()
+                                },
+                                onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onRemoveEmoji?.invoke(emoji)
+                                }
+                            )
+                            .padding(8.dp)
+                            .then(
+                                if (isSelected) Modifier.background(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                    RoundedCornerShape(12.dp)
+                                ) else Modifier
+                            )
                     ) {
                         Text(emoji, fontSize = 24.sp)
                     }
@@ -84,15 +104,25 @@ fun EmojiReactionPopup(
                 resolvedEmojis.forEach { (shortcode, url) ->
                     val emojiKey = ":$shortcode:"
                     val isSelected = emojiKey in selectedEmojis
-                    TextButton(
-                        onClick = {
-                            onSelect(emojiKey)
-                            onDismiss()
-                        },
-                        modifier = if (isSelected) Modifier.background(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                            RoundedCornerShape(12.dp)
-                        ) else Modifier
+                    Box(
+                        modifier = Modifier
+                            .combinedClickable(
+                                onClick = {
+                                    onSelect(emojiKey)
+                                    onDismiss()
+                                },
+                                onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onRemoveEmoji?.invoke(emojiKey)
+                                }
+                            )
+                            .padding(8.dp)
+                            .then(
+                                if (isSelected) Modifier.background(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                    RoundedCornerShape(12.dp)
+                                ) else Modifier
+                            )
                     ) {
                         AsyncImage(
                             model = url,
