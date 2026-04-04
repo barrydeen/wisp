@@ -46,7 +46,10 @@ object Nip05 {
                 val body = response.body?.string() ?: return@withContext Nip05Result.ERROR
                 val root = json.parseToJsonElement(body).jsonObject
                 val names = root["names"]?.jsonObject ?: return@withContext Nip05Result.MISMATCH
-                val registeredPubkey = names[local]?.jsonPrimitive?.content
+                // Case-insensitive lookup per NIP-05 spec (servers may return capitalized keys)
+                val registeredPubkey = (names[local] ?: names.entries.firstOrNull {
+                    it.key.equals(local, ignoreCase = true)
+                }?.value)?.jsonPrimitive?.content
                     ?: return@withContext Nip05Result.MISMATCH
 
                 if (registeredPubkey.equals(pubkeyHex, ignoreCase = true))
