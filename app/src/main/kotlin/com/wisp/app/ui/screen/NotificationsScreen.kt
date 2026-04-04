@@ -1338,7 +1338,8 @@ private fun ReferencedNotePostCard(
                         onAddEmojiSet = p.onAddEmojiSet,
                         onRemoveEmojiSet = p.onRemoveEmojiSet,
                         isEmojiSetAdded = p.isEmojiSetAdded,
-                        onPollVote = p.onPollVote
+                        onPollVote = p.onPollVote,
+                        nip05Repo = p.nip05Repo
                     )
                 } else null
             },
@@ -1423,7 +1424,8 @@ private fun ReferencedNotePostCard(
                         onAddEmojiSet = p.onAddEmojiSet,
                         onRemoveEmojiSet = p.onRemoveEmojiSet,
                         isEmojiSetAdded = p.isEmojiSetAdded,
-                        onPollVote = p.onPollVote
+                        onPollVote = p.onPollVote,
+                        nip05Repo = p.nip05Repo
                     )
                 } else null
             },

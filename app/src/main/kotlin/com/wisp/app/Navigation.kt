@@ -52,6 +52,7 @@ import com.wisp.app.ui.component.NotifBlipSound
 import com.wisp.app.ui.component.BottomTab
 import com.wisp.app.ui.component.WispBottomBar
 import com.wisp.app.ui.component.ZapDialog
+import com.wisp.app.ui.component.pendingEmojiReactCallback
 import com.wisp.app.ui.component.AuthApprovalDialog
 import com.wisp.app.ui.screen.BlossomServersScreen
 import com.wisp.app.ui.screen.AuthScreen
@@ -1179,8 +1180,10 @@ fun WispNavHost(
                     currentEmojis = profileUnicodeEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                        if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
+                        pendingEmojiReactCallback = null
                     },
-                    onDismiss = { showProfileEmojiLibrary = false }
+                    onDismiss = { showProfileEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
             }
         }
@@ -1280,7 +1283,8 @@ fun WispNavHost(
                 isEmojiSetAdded = { pubkey, dTag ->
                     val ref = com.wisp.app.nostr.Nip30.buildSetReference(pubkey, dTag)
                     feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
-                }
+                },
+                nip05Repo = feedViewModel.nip05Repo
             )
         }
 
@@ -1380,6 +1384,7 @@ fun WispNavHost(
                 onGoToWallet = { navController.navigate(Routes.WALLET) },
                 noteActions = remember {
                     com.wisp.app.ui.component.NoteActions(
+                        nip05Repo = feedViewModel.nip05Repo,
                         onAddEmojiSet = { pk, dTag -> feedViewModel.addSetToEmojiList(pk, dTag) },
                         onRemoveEmojiSet = { pk, dTag -> feedViewModel.removeSetFromEmojiList(pk, dTag) },
                         isEmojiSetAdded = { pk, dTag ->
@@ -1398,8 +1403,10 @@ fun WispNavHost(
                     currentEmojis = dmSheetUnicodeEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                        if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
+                        pendingEmojiReactCallback = null
                     },
-                    onDismiss = { showDmEmojiLibrary = false }
+                    onDismiss = { showDmEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
             }
         }
@@ -1453,6 +1460,7 @@ fun WispNavHost(
                 onGoToWallet = { navController.navigate(Routes.WALLET) },
                 noteActions = remember {
                     com.wisp.app.ui.component.NoteActions(
+                        nip05Repo = feedViewModel.nip05Repo,
                         onAddEmojiSet = { pk, dTag -> feedViewModel.addSetToEmojiList(pk, dTag) },
                         onRemoveEmojiSet = { pk, dTag -> feedViewModel.removeSetFromEmojiList(pk, dTag) },
                         isEmojiSetAdded = { pk, dTag ->
@@ -1471,8 +1479,10 @@ fun WispNavHost(
                     currentEmojis = dmGroupSheetUnicodeEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                        if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
+                        pendingEmojiReactCallback = null
                     },
-                    onDismiss = { showDmGroupEmojiLibrary = false }
+                    onDismiss = { showDmGroupEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
             }
         }
@@ -1649,6 +1659,7 @@ fun WispNavHost(
                 isFollowing = { pubkey -> feedViewModel.contactRepo.isFollowing(pubkey) },
                 noteActions = remember {
                     com.wisp.app.ui.component.NoteActions(
+                        nip05Repo = feedViewModel.nip05Repo,
                         onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                         onAddEmojiSet = { pk, dTag -> feedViewModel.addSetToEmojiList(pk, dTag) },
                         onRemoveEmojiSet = { pk, dTag -> feedViewModel.removeSetFromEmojiList(pk, dTag) },
@@ -1665,8 +1676,10 @@ fun WispNavHost(
                     currentEmojis = groupRoomSheetUnicodeEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                        if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
+                        pendingEmojiReactCallback = null
                     },
-                    onDismiss = { showGroupRoomEmojiLibrary = false }
+                    onDismiss = { showGroupRoomEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
             }
         }
@@ -1892,8 +1905,10 @@ fun WispNavHost(
                     currentEmojis = threadUnicodeEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                        if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
+                        pendingEmojiReactCallback = null
                     },
-                    onDismiss = { showThreadEmojiLibrary = false }
+                    onDismiss = { showThreadEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
             }
         }
@@ -2355,8 +2370,10 @@ fun WispNavHost(
                     currentEmojis = articleUnicodeEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                        if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
+                        pendingEmojiReactCallback = null
                     },
-                    onDismiss = { showArticleEmojiLibrary = false }
+                    onDismiss = { showArticleEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
             }
         }
@@ -2393,12 +2410,8 @@ fun WispNavHost(
             val liveUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
             val liveZapVersion by feedViewModel.eventRepo.zapVersion.collectAsState()
             val liveZapInProgress by feedViewModel.zapInProgress.collectAsState()
-            val liveStreamZapTotal by liveStreamViewModel.streamZapTotal.collectAsState()
             var liveZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
             var liveZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
-            var liveZapRecipientOverride by remember { mutableStateOf<String?>(null) }
-            var liveZapATag by remember { mutableStateOf<String?>(null) }
-            var liveZapError by remember { mutableStateOf<String?>(null) }
             val isNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
             LaunchedEffect(Unit) {
                 feedViewModel.zapSuccess.collect { eventId ->
@@ -2407,25 +2420,8 @@ fun WispNavHost(
                     liveZapAnimatingIds = liveZapAnimatingIds - eventId
                 }
             }
-            LaunchedEffect(Unit) {
-                feedViewModel.zapError.collect { error ->
-                    liveZapError = error
-                }
-            }
-            if (liveZapError != null) {
-                androidx.compose.material3.AlertDialog(
-                    onDismissRequest = { liveZapError = null },
-                    title = { androidx.compose.material3.Text("Zap Failed") },
-                    text = { androidx.compose.material3.Text(liveZapError ?: "") },
-                    confirmButton = {
-                        androidx.compose.material3.TextButton(onClick = { liveZapError = null }) {
-                            androidx.compose.material3.Text("OK")
-                        }
-                    }
-                )
-            }
             if (liveZapTarget != null) {
-                val zapRecipient = liveZapRecipientOverride ?: liveZapTarget!!.pubkey
+                val zapRecipient = liveZapTarget!!.pubkey
                 var recipientHasDmRelays by remember(zapRecipient) {
                     mutableStateOf(feedViewModel.relayListRepo.hasDmRelays(zapRecipient))
                 }
@@ -2436,29 +2432,15 @@ fun WispNavHost(
                 }
                 ZapDialog(
                     isWalletConnected = isNwcConnected,
-                    onDismiss = { liveZapTarget = null; liveZapRecipientOverride = null; liveZapATag = null },
+                    onDismiss = { liveZapTarget = null },
                     onZap = { amountMsats, message, isAnonymous, isPrivate ->
                         val event = liveZapTarget ?: return@ZapDialog
-                        val recipientPubkey = liveZapRecipientOverride
-                        val aTag = liveZapATag
                         liveZapTarget = null
-                        liveZapRecipientOverride = null
-                        liveZapATag = null
-                        // Include stream chat relays so the receipt arrives on relays
-                        // the streamer and chat room are subscribed to
-                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate,
-                            extraRelayHints = liveStreamViewModel.chatRelays,
-                            recipientOverride = recipientPubkey,
-                            eventATag = aTag)
+                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
                     canPrivateZap = feedViewModel.relayPool.hasDmRelays() && recipientHasDmRelays
                 )
-            }
-            val streamActivityEventId = remember(hostPubkey, dTag) {
-                feedViewModel.eventRepo.findAddressableEvent(
-                    com.wisp.app.nostr.Nip53.KIND_LIVE_ACTIVITY, hostPubkey, dTag
-                )?.id
             }
             LiveStreamScreen(
                 viewModel = liveStreamViewModel,
@@ -2483,23 +2465,6 @@ fun WispNavHost(
                     val chatEvent = feedViewModel.eventRepo.getEvent(messageId)
                     if (chatEvent != null) liveZapTarget = chatEvent
                 },
-                onZapStream = {
-                    // Target the 30311 activity event for stream-level zaps.
-                    // The event pubkey is the stream provider — the actual streamer
-                    // is in the p-tag with role "Host", so override the recipient.
-                    // Per NIP-57, use "a" tag (not "e") for parameterized replaceable events.
-                    val activityEvent = feedViewModel.eventRepo.findAddressableEvent(
-                        com.wisp.app.nostr.Nip53.KIND_LIVE_ACTIVITY, hostPubkey, dTag
-                    )
-                    if (activityEvent != null) {
-                        liveZapTarget = activityEvent
-                        val activity = liveStreamViewModel.activity.value
-                        liveZapRecipientOverride = activity?.streamerPubkey ?: activity?.hostPubkey
-                        liveZapATag = com.wisp.app.nostr.Nip53.aTagValue(hostPubkey, dTag)
-                    }
-                },
-                streamZapTotal = liveStreamZapTotal,
-                streamActivityEventId = streamActivityEventId,
                 zapVersion = liveZapVersion,
                 zapAnimatingIds = liveZapAnimatingIds,
                 zapInProgressIds = liveZapInProgress
@@ -3126,8 +3091,10 @@ fun WispNavHost(
                     currentEmojis = notifUnicodeEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                        if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
+                        pendingEmojiReactCallback = null
                     },
-                    onDismiss = { showNotifEmojiLibrary = false }
+                    onDismiss = { showNotifEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
             }
         }

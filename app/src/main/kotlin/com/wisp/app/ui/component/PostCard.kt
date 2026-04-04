@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import android.content.Intent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,7 +34,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,6 +58,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -240,54 +246,39 @@ fun PostCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             ProfilePicture(
                 url = profile?.picture,
-                showFollowBadge = isFollowingAuthor && !isOwnEvent,
                 onClick = onProfileClick,
                 onLongPress = if (!isOwnEvent) onFollowAuthor else null
             )
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = displayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.clickable(onClick = onProfileClick)
-                )
-                profile?.nip05?.let { nip05 ->
-                    nip05Repo?.checkOrFetch(event.pubkey, nip05)
-                    val status = nip05Repo?.getStatus(event.pubkey)
-                    val isImpersonator = status == Nip05Status.IMPERSONATOR
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable(onClick = onProfileClick)) {
-                        Text(
-                            text = if (isImpersonator) "\u2715 $nip05" else nip05,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isImpersonator) Color.Red else MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .clickable(onClick = onProfileClick)
+                            .weight(1f, fill = false)
+                    )
+                    if (isFollowingAuthor && !isOwnEvent) {
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = "Following",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(14.dp)
                         )
-                        if (status == Nip05Status.VERIFIED) {
-                            Spacer(Modifier.width(4.dp))
-                            Icon(
-                                Icons.Default.CheckCircle,
-                                contentDescription = stringResource(R.string.cd_verified),
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
-                        if (status == Nip05Status.ERROR) {
-                            Spacer(Modifier.width(4.dp))
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = stringResource(R.string.cd_retry_verification),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .size(14.dp)
-                                    .clickable { nip05Repo?.retry(event.pubkey) }
-                            )
-                        }
                     }
+                }
+                profile?.nip05?.let { nip05 ->
+                    Nip05Badge(
+                        nip05 = nip05,
+                        pubkey = event.pubkey,
+                        nip05Repo = nip05Repo,
+                        onClick = onProfileClick
+                    )
                 }
             }
             Text(
@@ -1104,7 +1095,7 @@ internal fun TopZapperBanner(
             if (message.isNotBlank()) {
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = "\u201C${message}\u201D",
+                    text = message,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     maxLines = 1,
@@ -1156,5 +1147,69 @@ private fun formatTimestamp(epoch: Long): String {
         dateTimeYearFormat.format(date)
     } else {
         dateTimeFormat.format(date)
+    }
+}
+
+/**
+ * Self-contained NIP-05 badge that observes verification state.
+ * Handles its own subscription to nip05Repo.version so it works correctly
+ * in any context (feed, profile, quoted notes, etc.).
+ */
+@Composable
+internal fun Nip05Badge(
+    nip05: String,
+    pubkey: String,
+    nip05Repo: Nip05Repository?,
+    onClick: (() -> Unit)? = null,
+    maxLines: Int = 1,
+    verifiedTint: Color = MaterialTheme.colorScheme.primary,
+    modifier: Modifier = Modifier
+) {
+    if (nip05.isBlank()) return
+    nip05Repo?.checkOrFetch(pubkey, nip05)
+    val version = nip05Repo?.version?.collectAsState()
+    // Read .value to ensure Compose tracks this state
+    val v = version?.value ?: 0
+    val status = if (v >= 0) nip05Repo?.getStatus(pubkey) else null
+    val isImpersonator = status == Nip05Status.IMPERSONATOR
+    val isError = status == Nip05Status.ERROR
+    val textColor = when {
+        isImpersonator -> MaterialTheme.colorScheme.onSurfaceVariant
+        isError -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        else -> MaterialTheme.colorScheme.primary
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.then(
+            if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+        )
+    ) {
+        Text(
+            text = nip05,
+            style = MaterialTheme.typography.bodySmall,
+            color = textColor,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false)
+        )
+        if (status == Nip05Status.VERIFIED) {
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                Icons.Default.CheckCircle,
+                contentDescription = "Verified",
+                tint = verifiedTint,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+        if (isImpersonator) {
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                Icons.Default.Cancel,
+                contentDescription = "Impersonator",
+                tint = Color.Red,
+                modifier = Modifier.size(14.dp)
+            )
+        }
     }
 }

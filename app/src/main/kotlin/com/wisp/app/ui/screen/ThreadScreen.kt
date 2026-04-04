@@ -1,5 +1,6 @@
 package com.wisp.app.ui.screen
 
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -131,7 +132,15 @@ fun ThreadScreen(
 
     LaunchedEffect(scrollToIndex) {
         if (scrollToIndex >= 0) {
-            listState.animateScrollToItem(scrollToIndex)
+            // Wait for list to have enough items, then scroll
+            val target = scrollToIndex
+            for (attempt in 0 until 10) {
+                if (listState.layoutInfo.totalItemsCount > target) {
+                    listState.animateScrollToItem(target)
+                    break
+                }
+                kotlinx.coroutines.delay(150)
+            }
             viewModel.clearScrollTarget()
         }
     }
@@ -178,6 +187,7 @@ fun ThreadScreen(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text("Thread") },

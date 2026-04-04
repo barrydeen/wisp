@@ -197,20 +197,12 @@ private fun BaseProfilePicture(
 private fun FollowBadge(size: Int, modifier: Modifier = Modifier) {
     val badgeSize = (size * 0.3f).coerceIn(10f, 16f)
     Box(
-        contentAlignment = Alignment.Center,
         modifier = modifier
             .offset(x = 1.dp, y = 1.dp)
             .size(badgeSize.dp)
             .background(MaterialTheme.colorScheme.primary, CircleShape)
             .border(1.dp, MaterialTheme.colorScheme.surface, CircleShape)
-    ) {
-        Icon(
-            Icons.Default.Check,
-            contentDescription = "Following",
-            tint = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.size((badgeSize * 0.65f).dp)
-        )
-    }
+    )
 }
 
 @Composable

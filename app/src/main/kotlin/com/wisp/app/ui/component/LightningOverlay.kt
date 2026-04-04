@@ -17,11 +17,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalContext
 import com.wisp.app.ui.theme.WispThemeColors
 import kotlin.math.cos
@@ -29,8 +31,8 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 /**
- * Mini lightning bolts that burst outward from center when triggered.
- * Designed to overlay on top of the zap icon in the ActionBar.
+ * Bolt icons that burst outward from center when a zap is confirmed.
+ * Uses the ic_bolt shape for visual consistency with the rest of the app.
  */
 @Composable
 fun ZapBurstEffect(
@@ -45,10 +47,9 @@ fun ZapBurstEffect(
         onDispose { zapSound.release() }
     }
 
-    var bolts by remember { mutableStateOf<List<MiniBolt>>(emptyList()) }
+    var particles by remember { mutableStateOf<List<BoltParticle>>(emptyList()) }
     val progress = remember { Animatable(0f) }
 
-    val paidColor = WispThemeColors.paidColor
     val zapColor = WispThemeColors.zapColor
 
     if (!isActive && progress.value <= 0f) return
@@ -56,107 +57,98 @@ fun ZapBurstEffect(
     LaunchedEffect(isActive) {
         if (!isActive) return@LaunchedEffect
 
-        bolts = generateMiniBolts()
+        particles = generateBoltParticles()
         if (soundEnabled) zapSound.play()
 
         progress.snapTo(0f)
-        progress.animateTo(1f, animationSpec = tween(800, easing = LinearEasing))
+        progress.animateTo(1f, animationSpec = tween(900, easing = FastOutSlowInEasing))
         progress.snapTo(0f)
     }
 
     Canvas(modifier = modifier.fillMaxSize()) {
         val p = progress.value
-        // Grow outward in first 40%, then hold and fade
-        val extension = (p / 0.4f).coerceAtMost(1f)
-        val alpha = if (p < 0.5f) 1f else 1f - ((p - 0.5f) / 0.5f)
-
-        if (alpha <= 0f) return@Canvas
+        if (p <= 0f) return@Canvas
 
         val cx = size.width / 2f
         val cy = size.height / 2f
 
-        for (bolt in bolts) {
-            drawMiniBolt(bolt, cx, cy, extension, alpha, paidColor, zapColor)
+        for (particle in particles) {
+            drawBoltParticle(particle, cx, cy, p, zapColor)
         }
     }
 }
 
-private data class MiniBolt(
+private data class BoltParticle(
     val angle: Float,
-    val length: Float,
-    val segments: List<Float>,
-    val width: Float
+    val distance: Float,
+    val boltSize: Float,
+    val rotationDir: Float,
+    val delay: Float // 0..0.2 staggered start
 )
 
-private fun generateMiniBolts(): List<MiniBolt> {
+private fun generateBoltParticles(): List<BoltParticle> {
     val rng = Random(System.nanoTime())
     val count = rng.nextInt(5, 8)
     val baseStep = (2f * Math.PI / count).toFloat()
 
     return (0 until count).map { i ->
-        val angle = baseStep * i + (rng.nextFloat() - 0.5f) * baseStep * 0.6f
-        val length = 28f + rng.nextFloat() * 36f
-        val segCount = rng.nextInt(3, 6)
-        val segments = (0 until segCount).map { (rng.nextFloat() - 0.5f) * 8f }
-        val width = 1.5f + rng.nextFloat() * 1.5f
-        MiniBolt(angle, length, segments, width)
+        BoltParticle(
+            angle = baseStep * i + (rng.nextFloat() - 0.5f) * baseStep * 0.5f,
+            distance = 30f + rng.nextFloat() * 25f,
+            boltSize = 6f + rng.nextFloat() * 5f,
+            rotationDir = if (rng.nextBoolean()) 1f else -1f,
+            delay = rng.nextFloat() * 0.15f
+        )
     }
 }
 
-private fun DrawScope.drawMiniBolt(
-    bolt: MiniBolt,
+private fun DrawScope.drawBoltParticle(
+    particle: BoltParticle,
     cx: Float,
     cy: Float,
-    extension: Float,
-    alpha: Float,
-    paidColor: Color,
+    progress: Float,
     zapColor: Color
 ) {
-    val startR = 14f * density
-    val endR = startR + bolt.length * density * extension
+    // Stagger each particle start
+    val localP = ((progress - particle.delay) / (1f - particle.delay)).coerceIn(0f, 1f)
+    if (localP <= 0f) return
 
-    val cosA = cos(bolt.angle)
-    val sinA = sin(bolt.angle)
-    val perpX = -sinA
-    val perpY = cosA
+    // Ease out for smooth deceleration
+    val eased = 1f - (1f - localP) * (1f - localP)
 
-    val totalSegs = bolt.segments.size + 1
-    val path = Path().apply {
-        val sx = cx + cosA * startR
-        val sy = cy + sinA * startR
-        moveTo(sx, sy)
+    // Move outward
+    val dist = particle.distance * density * eased
+    val px = cx + cos(particle.angle) * dist
+    val py = cy + sin(particle.angle) * dist
 
-        for (i in bolt.segments.indices) {
-            val t = (i + 1).toFloat() / totalSegs
-            val r = startR + (endR - startR) * t
-            val jag = bolt.segments[i] * density
-            val px = cx + cosA * r + perpX * jag
-            val py = cy + sinA * r + perpY * jag
-            lineTo(px, py)
-        }
+    // Scale: grow quickly then shrink
+    val scale = if (localP < 0.3f) localP / 0.3f else 1f - (localP - 0.3f) / 0.7f * 0.6f
 
-        val fx = cx + cosA * endR
-        val fy = cy + sinA * endR
-        lineTo(fx, fy)
+    // Fade out in final third
+    val alpha = if (localP > 0.6f) 1f - (localP - 0.6f) / 0.4f else 1f
+
+    if (alpha <= 0f || scale <= 0f) return
+
+    val boltW = particle.boltSize * density * scale
+    val boltH = boltW * (94f / 55f) // maintain ic_bolt aspect ratio
+    val boltPath = icBoltPath(boltW, boltH)
+
+    translate(left = px - boltW / 2f, top = py - boltH / 2f) {
+        // Glow
+        drawPath(
+            path = boltPath,
+            color = zapColor.copy(alpha = alpha * 0.5f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = 2f * density * scale,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round
+            )
+        )
+        // Fill
+        drawPath(path = boltPath, color = zapColor.copy(alpha = alpha * 0.9f), style = Fill)
+        // Core highlight
+        drawPath(path = boltPath, color = Color.White.copy(alpha = alpha * 0.3f), style = Fill)
     }
-
-    drawPath(
-        path = path,
-        color = paidColor.copy(alpha = alpha * 0.4f),
-        style = Stroke(width = bolt.width * density * 3f, cap = StrokeCap.Round)
-    )
-
-    drawPath(
-        path = path,
-        color = zapColor.copy(alpha = alpha * 0.7f),
-        style = Stroke(width = bolt.width * density * 1.5f, cap = StrokeCap.Round)
-    )
-
-    drawPath(
-        path = path,
-        color = Color.White.copy(alpha = alpha * 0.9f),
-        style = Stroke(width = bolt.width * density * 0.6f, cap = StrokeCap.Round)
-    )
 }
 
 /**

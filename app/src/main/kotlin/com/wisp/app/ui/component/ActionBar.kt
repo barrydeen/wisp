@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.ModeComment
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -89,9 +90,10 @@ fun ActionBar(
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onReply) {
             Icon(
-                Icons.AutoMirrored.Outlined.Reply,
+                Icons.Outlined.ModeComment,
                 contentDescription = stringResource(R.string.cd_reply),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
             )
         }
         Text(
@@ -141,7 +143,8 @@ fun ActionBar(
                     selectedEmojis = userReactionEmojis,
                     resolvedEmojis = resolvedEmojis,
                     unicodeEmojis = unicodeEmojis,
-                    onOpenEmojiLibrary = onOpenEmojiLibrary
+                    onOpenEmojiLibrary = onOpenEmojiLibrary,
+                    onRemoveEmoji = emojiRemoveCallback
                 )
             }
         }
@@ -183,7 +186,7 @@ fun ActionBar(
         Box {
             IconButton(onClick = onZap, enabled = !isZapInProgress) {
                 if (isZapInProgress) {
-                    LightningAnimation(modifier = Modifier.size(22.dp))
+                    LightningAnimation(modifier = Modifier.size(width = 14.dp, height = 22.dp))
                 } else if (useZapBoltIcon) {
                     Icon(
                         painter = painterResource(R.drawable.ic_bolt),
@@ -235,78 +238,68 @@ fun ActionBar(
 internal fun LightningAnimation(modifier: Modifier = Modifier) {
     val transition = rememberInfiniteTransition(label = "lightning")
 
-    val glowAlpha by transition.animateFloat(
-        initialValue = 0.3f,
+    val pulse by transition.animateFloat(
+        initialValue = 0.5f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(150, easing = LinearEasing),
+            animation = tween(600, easing = androidx.compose.animation.core.FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "glowAlpha"
+        label = "pulse"
     )
 
-    val flicker by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
+    val scale by transition.animateFloat(
+        initialValue = 0.92f,
+        targetValue = 1.08f,
         animationSpec = infiniteRepeatable(
-            animation = tween(80, easing = LinearEasing),
+            animation = tween(600, easing = androidx.compose.animation.core.FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "flicker"
+        label = "scale"
     )
 
-    val jitter by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 6.28f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(400, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "jitter"
-    )
-
-    val paidColor = WispThemeColors.paidColor
     val zapColor = WispThemeColors.zapColor
 
     Canvas(modifier = modifier) {
         val w = size.width
         val h = size.height
-        val jitterX = sin(jitter) * w * 0.04f
+        val boltPath = icBoltPath(w, h, scale)
 
-        val boltPath = Path().apply {
-            moveTo(w * 0.55f + jitterX, h * 0.05f)
-            lineTo(w * 0.35f + jitterX, h * 0.42f)
-            lineTo(w * 0.52f + jitterX, h * 0.42f)
-            lineTo(w * 0.40f + jitterX, h * 0.95f)
-            lineTo(w * 0.70f + jitterX, h * 0.48f)
-            lineTo(w * 0.53f + jitterX, h * 0.48f)
-            lineTo(w * 0.65f + jitterX, h * 0.05f)
-            close()
-        }
-
-        // Outer glow
+        // Soft outer glow
         drawPath(
             path = boltPath,
-            color = paidColor.copy(alpha = glowAlpha * 0.4f),
-            style = Stroke(width = w * 0.16f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            color = zapColor.copy(alpha = pulse * 0.3f),
+            style = Stroke(width = w * 0.14f, cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
 
-        // Mid glow
+        // Bolt fill
+        drawPath(path = boltPath, color = zapColor)
+
+        // White-hot core
         drawPath(
             path = boltPath,
-            color = zapColor.copy(alpha = glowAlpha * 0.6f),
-            style = Stroke(width = w * 0.08f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            color = Color.White.copy(alpha = pulse * 0.4f)
         )
+    }
+}
 
-        // Bolt fill — flickers between orange and bright yellow
-        val boltColor = if (flicker > 0.5f) paidColor else zapColor
-        drawPath(path = boltPath, color = boltColor)
-
-        // White-hot core highlight
-        drawPath(
-            path = boltPath,
-            color = Color.White.copy(alpha = glowAlpha * 0.5f * if (flicker > 0.7f) 1f else 0f)
-        )
+/** Builds the ic_bolt shape path scaled to the given dimensions with optional scale. */
+internal fun icBoltPath(w: Float, h: Float, scale: Float = 1f): Path {
+    // Original ic_bolt viewBox: 55 x 94
+    // Path: M35.563,0 V40.406 H54.969 L21.016,93.75 V51.719 H0 L35.563,0 Z
+    val sx = w / 55f * scale
+    val sy = h / 94f * scale
+    val ox = w * (1f - scale) / 2f
+    val oy = h * (1f - scale) / 2f
+    return Path().apply {
+        moveTo(ox + 35.563f * sx, oy + 0f)
+        lineTo(ox + 35.563f * sx, oy + 40.406f * sy)
+        lineTo(ox + 54.969f * sx, oy + 40.406f * sy)
+        lineTo(ox + 21.016f * sx, oy + 93.75f * sy)
+        lineTo(ox + 21.016f * sx, oy + 51.719f * sy)
+        lineTo(ox + 0f * sx, oy + 51.719f * sy)
+        lineTo(ox + 35.563f * sx, oy + 0f)
+        close()
     }
 }
 

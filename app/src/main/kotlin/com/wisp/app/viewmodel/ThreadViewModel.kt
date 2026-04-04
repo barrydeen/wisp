@@ -58,6 +58,7 @@ class ThreadViewModel : ViewModel() {
 
     fun clearScrollTarget() {
         _scrollToIndex.value = -1
+        scrollTargetId = null
     }
 
     fun loadThread(
@@ -89,9 +90,10 @@ class ThreadViewModel : ViewModel() {
         // Resolve root from cached event (we clicked on it, so it's in cache)
         val cached = eventRepo.getEvent(eventId)
         if (cached != null) {
-            val resolvedRoot = Nip10.getRootId(cached) ?: eventId
+            val resolvedRoot = Nip10.getRootId(cached) ?: Nip10.getReplyTarget(cached) ?: eventId
             rootId = resolvedRoot
             scrollTargetId = if (resolvedRoot != eventId) eventId else null
+            android.util.Log.d("ThreadVM", "loadThread: eventId=${eventId.take(8)} rootId=${resolvedRoot.take(8)} scrollTarget=${scrollTargetId?.take(8)} rootTag=${Nip10.getRootId(cached)?.take(8)} replyTag=${Nip10.getReplyTarget(cached)?.take(8)}")
             threadEvents[cached.id] = cached
 
             if (resolvedRoot != eventId) {
@@ -384,6 +386,7 @@ class ThreadViewModel : ViewModel() {
         val targetId = scrollTargetId
         if (targetId != null) {
             val index = result.indexOfFirst { it.first.id == targetId }
+            android.util.Log.d("ThreadVM", "rebuildTree: target=${targetId.take(8)} index=$index listSize=${result.size}")
             if (index >= 0) {
                 _scrollToIndex.value = index
             }

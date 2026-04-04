@@ -5,6 +5,7 @@ import android.app.Application
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -279,60 +280,78 @@ fun InterfaceScreen(
             Spacer(Modifier.height(24.dp))
 
             if (isCustomTheme) {
-                // Accent Color section
-                Text(
-                    text = stringResource(R.string.settings_accent_color),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.height(12.dp))
-
-                // Preview swatch
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(currentColor)
-                    )
-                    Spacer(Modifier.padding(start = 12.dp))
+                // Accent Color section — collapsed by default, tap to expand
+                var colorPickerExpanded by remember { mutableStateOf(false) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { colorPickerExpanded = !colorPickerExpanded }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(currentColor)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = stringResource(R.string.settings_accent_color),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Tap to customize",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                     Text(
-                        text = stringResource(R.string.cd_preview),
+                        text = if (colorPickerExpanded) "▲" else "▼",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                Spacer(Modifier.height(16.dp))
+                AnimatedVisibility(visible = colorPickerExpanded) {
+                    Column {
+                        Spacer(Modifier.height(12.dp))
 
-                // Saturation/Brightness square
-                SatBrightnessSquare(
-                    hue = hue,
-                    saturation = saturation,
-                    brightness = brightness,
-                    onChanged = { s, b ->
-                        saturation = s
-                        brightness = b
-                        interfacePrefs.setAccentColor(
-                            android.graphics.Color.HSVToColor(floatArrayOf(hue, s, b))
+                        // Saturation/Brightness square
+                        SatBrightnessSquare(
+                            hue = hue,
+                            saturation = saturation,
+                            brightness = brightness,
+                            onChanged = { s, b ->
+                                saturation = s
+                                brightness = b
+                                interfacePrefs.setAccentColor(
+                                    android.graphics.Color.HSVToColor(floatArrayOf(hue, s, b))
+                                )
+                                onChanged()
+                            }
                         )
-                        onChanged()
-                    }
-                )
 
-                Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(12.dp))
 
-                // Hue slider
-                HueBar(
-                    hue = hue,
-                    onHueChanged = { h ->
-                        hue = h
-                        interfacePrefs.setAccentColor(
-                            android.graphics.Color.HSVToColor(floatArrayOf(h, saturation, brightness))
+                        // Hue slider
+                        HueBar(
+                            hue = hue,
+                            onHueChanged = { h ->
+                                hue = h
+                                interfacePrefs.setAccentColor(
+                                    android.graphics.Color.HSVToColor(floatArrayOf(h, saturation, brightness))
+                                )
+                                onChanged()
+                            }
                         )
-                        onChanged()
                     }
-                )
+                }
 
                 Spacer(Modifier.height(24.dp))
             }
@@ -465,7 +484,7 @@ fun InterfaceScreen(
                         Icons.Outlined.CurrencyBitcoin,
                         contentDescription = "Bitcoin symbol",
                         tint = if (!zapBoltIcon) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         modifier = Modifier
                             .size(24.dp)
                             .clickable {
@@ -477,7 +496,7 @@ fun InterfaceScreen(
                         painter = painterResource(R.drawable.ic_bolt),
                         contentDescription = "Lightning bolt",
                         tint = if (zapBoltIcon) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         modifier = Modifier
                             .height(24.dp)
                             .clickable {
