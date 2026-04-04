@@ -47,6 +47,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -352,6 +353,20 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
             finalResult.add(segment)
         }
     }
+
+    // Final pass: trim trailing blank lines from text segments that precede
+    // block-level segments (links, images, embeds, etc.) to avoid extra vertical space
+    for (i in 0 until finalResult.size - 1) {
+        val segment = finalResult[i]
+        val next = finalResult[i + 1]
+        if (segment is ContentSegment.TextSegment && next !is ContentSegment.TextSegment && next !is ContentSegment.InlineLinkSegment && next !is ContentSegment.CustomEmojiSegment) {
+            val trimmed = segment.text.trimEnd('\n')
+            if (trimmed != segment.text) {
+                finalResult[i] = ContentSegment.TextSegment(if (trimmed.isEmpty()) trimmed else "$trimmed\n")
+            }
+        }
+    }
+
     return finalResult
 }
 
