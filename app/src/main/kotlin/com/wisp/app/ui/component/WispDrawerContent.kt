@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -60,7 +62,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -102,9 +106,16 @@ fun WispDrawerContent(
     onLogout: () -> Unit
 ) {
     ModalDrawerSheet(
-        drawerContainerColor = MaterialTheme.colorScheme.surface
+        drawerContainerColor = MaterialTheme.colorScheme.surface,
+        windowInsets = androidx.compose.foundation.layout.WindowInsets(0)
     ) {
-        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+        val scrollState = rememberScrollState()
+        val scope = rememberCoroutineScope()
+        Column(modifier = Modifier
+            .fillMaxHeight()
+            .statusBarsPadding()
+            .verticalScroll(scrollState)
+        ) {
         var showQrDialog by remember { mutableStateOf(false) }
         var showLightningDialog by remember { mutableStateOf(false) }
         var accountPickerExpanded by remember { mutableStateOf(false) }
@@ -170,13 +181,27 @@ fun WispDrawerContent(
                     )
                 }
                 if (profile?.lud16 != null) {
+                    val lnContext = androidx.compose.ui.platform.LocalContext.current
+                    val useBoltIcon = remember {
+                        lnContext.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
+                            .getBoolean("zap_bolt_icon", false)
+                    }
                     IconButton(onClick = { showLightningDialog = true }) {
-                        Icon(
-                            Icons.Outlined.CurrencyBitcoin,
-                            contentDescription = stringResource(R.string.cd_lightning_address),
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (useBoltIcon) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_bolt),
+                                contentDescription = stringResource(R.string.cd_lightning_address),
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Icon(
+                                Icons.Outlined.CurrencyBitcoin,
+                                contentDescription = stringResource(R.string.cd_lightning_address),
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -334,8 +359,23 @@ fun WispDrawerContent(
             onClick = onMessages,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
+        val walletContext = androidx.compose.ui.platform.LocalContext.current
+        val useZapBolt = remember {
+            walletContext.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
+                .getBoolean("zap_bolt_icon", false)
+        }
         NavigationDrawerItem(
-            icon = { Icon(Icons.Outlined.CurrencyBitcoin, contentDescription = null) },
+            icon = {
+                if (useZapBolt) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_bolt),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp)
+                    )
+                } else {
+                    Icon(Icons.Outlined.CurrencyBitcoin, contentDescription = null)
+                }
+            },
             label = { Text(stringResource(R.string.nav_wallet)) },
             selected = false,
             onClick = onWallet,
@@ -356,6 +396,12 @@ fun WispDrawerContent(
             modifier = Modifier.padding(horizontal = 12.dp)
         )
         var settingsExpanded by remember { mutableStateOf(false) }
+        LaunchedEffect(settingsExpanded) {
+            if (settingsExpanded) {
+                delay(300) // wait for AnimatedVisibility expansion
+                scrollState.animateScrollTo(scrollState.maxValue)
+            }
+        }
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
             label = { Text(stringResource(R.string.drawer_settings)) },
