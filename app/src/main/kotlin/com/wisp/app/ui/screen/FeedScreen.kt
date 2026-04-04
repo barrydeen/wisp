@@ -82,6 +82,7 @@ import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.R
 import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.EmojiLibrarySheet
+import com.wisp.app.ui.component.pendingEmojiReactCallback
 import com.wisp.app.ui.component.GalleryCard
 import com.wisp.app.ui.component.isGalleryEvent
 import com.wisp.app.ui.component.PostCard
@@ -110,7 +111,9 @@ import com.wisp.app.viewmodel.TrendingMetric
 import com.wisp.app.viewmodel.TrendingMode
 import com.wisp.app.viewmodel.TrendingTimeframe
 import com.wisp.app.viewmodel.buildTrendingRelayUrl
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.itemsIndexed
 import com.wisp.app.ui.theme.WispThemeColors
@@ -968,9 +971,18 @@ fun FeedScreen(
                 )
             },
             floatingActionButton = {
+                val isScrolling = listState.isScrollInProgress
+                val fabAlpha by animateFloatAsState(
+                    targetValue = if (isScrolling) 0.3f else 1f,
+                    animationSpec = tween(
+                        durationMillis = if (isScrolling) 150 else 400
+                    ),
+                    label = "fabAlpha"
+                )
                 FloatingActionButton(
                     onClick = onCompose,
-                    containerColor = MaterialTheme.colorScheme.primary
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.graphicsLayer { alpha = fabAlpha }
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "New post")
                 }
@@ -1205,6 +1217,7 @@ fun FeedScreen(
                         NewNotesButton(
                             visible = newNoteCount > 0 && !isAtTop && !newNotesButtonHidden,
                             count = newNoteCount,
+                            isScrolling = listState.isScrollInProgress,
                             onClick = {
                                 scope.launch {
                                     listState.scrollToItem(0)
@@ -1230,8 +1243,12 @@ fun FeedScreen(
             currentEmojis = sheetUnicodeEmojis,
             onAddEmojis = { emojis ->
                 emojis.forEach { viewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                if (emojis.isNotEmpty()) {
+                    pendingEmojiReactCallback?.invoke(emojis.first())
+                }
+                pendingEmojiReactCallback = null
             },
-            onDismiss = { showEmojiLibrary = false }
+            onDismiss = { showEmojiLibrary = false; pendingEmojiReactCallback = null }
         )
     }
 }
@@ -2356,17 +2373,23 @@ private fun HashtagPickerDialog(
 private fun NewNotesButton(
     visible: Boolean,
     count: Int,
+    isScrolling: Boolean = false,
     onClick: () -> Unit,
     onHide: (permanent: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    val buttonAlpha by animateFloatAsState(
+        targetValue = if (isScrolling) 0.3f else 1f,
+        animationSpec = tween(durationMillis = if (isScrolling) 150 else 400),
+        label = "newNotesAlpha"
+    )
 
     androidx.compose.animation.AnimatedVisibility(
         visible = visible,
         enter = slideInVertically { -it },
         exit = slideOutVertically { -it },
-        modifier = modifier
+        modifier = modifier.graphicsLayer { alpha = buttonAlpha }
     ) {
         Box {
             Surface(
