@@ -25,6 +25,14 @@ import androidx.compose.ui.window.PopupProperties
 import coil3.compose.AsyncImage
 private val DEFAULT_UNICODE_EMOJIS = listOf("\uD83E\uDDE1", "\uD83D\uDC4D", "\uD83D\uDC4E", "\uD83E\uDD19", "\uD83D\uDE80", "\uD83E\uDD17", "\uD83D\uDE02", "\uD83D\uDE22", "\uD83D\uDC68\u200D\uD83D\uDCBB", "\uD83D\uDC40", "\u2705", "\uD83E\uDD21", "\uD83D\uDC38", "\uD83D\uDC80", "\u26A1", "\uD83D\uDE4F", "\uD83C\uDF46")
 
+/**
+ * Bridge for passing the pending reaction callback from EmojiReactionPopup
+ * to EmojiLibrarySheet. When the user opens the emoji library via "+" in the
+ * reaction popup, this holds the react callback so the library can both add
+ * the emoji AND send the reaction in one action.
+ */
+internal var pendingEmojiReactCallback: ((String) -> Unit)? = null
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun EmojiReactionPopup(
@@ -94,6 +102,7 @@ fun EmojiReactionPopup(
                     }
                 }
                 TextButton(onClick = {
+                    pendingEmojiReactCallback = onSelect
                     onDismiss()
                     onOpenEmojiLibrary?.invoke()
                 }) {

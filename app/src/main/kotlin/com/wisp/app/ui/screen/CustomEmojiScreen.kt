@@ -63,6 +63,7 @@ import com.wisp.app.nostr.CustomEmoji
 import com.wisp.app.nostr.EmojiSet
 import com.wisp.app.repo.CustomEmojiRepository
 import com.wisp.app.ui.component.EmojiLibrarySheet
+import com.wisp.app.ui.component.pendingEmojiReactCallback
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -361,8 +362,10 @@ fun CustomEmojiScreen(
             currentEmojis = unicodeEmojis,
             onAddEmojis = { emojis ->
                 emojis.forEach { customEmojiRepo.addUnicodeEmoji(it) }
+                // No reaction trigger here — this is the emoji management screen
+                pendingEmojiReactCallback = null
             },
-            onDismiss = { showEmojiLibrary = false }
+            onDismiss = { showEmojiLibrary = false; pendingEmojiReactCallback = null }
         )
     }
 
