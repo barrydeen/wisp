@@ -127,6 +127,8 @@ import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.theme.WispThemeColors
 import com.wisp.app.viewmodel.NotificationFilter
 import com.wisp.app.viewmodel.NotificationsViewModel
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import com.wisp.app.R
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
@@ -359,7 +361,17 @@ fun NotificationsScreen(
                 modifier = Modifier.fillMaxSize()
             ) {
                 item(key = "summary_24h", contentType = "summary") {
-                    DailySummaryBar(summary = summary)
+                    DailySummaryBar(
+                        summary = summary,
+                        enabledTypes = enabledTypes,
+                        onFilterSelect = { filter ->
+                            if (enabledTypes == setOf(filter)) {
+                                viewModel.enableAll()
+                            } else {
+                                viewModel.isolateType(filter)
+                            }
+                        }
+                    )
                 }
                 items(items = notifications, key = { it.id }, contentType = { "notification" }) { item ->
                     val isExpanded = expandedId == item.id
@@ -1960,7 +1972,12 @@ private fun actionText(item: FlatNotificationItem): String = when (item.type) {
 // ── Daily Summary Bar ──────────────────────────────────────────────────
 
 @Composable
-private fun DailySummaryBar(summary: NotificationSummary) {
+private fun DailySummaryBar(
+    summary: NotificationSummary,
+    enabledTypes: Set<NotificationFilter> = emptySet(),
+    onFilterSelect: (NotificationFilter) -> Unit = {}
+) {
+    val isFiltered = enabledTypes.size == 1
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth()
@@ -1977,36 +1994,91 @@ private fun DailySummaryBar(summary: NotificationSummary) {
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            SummaryStat(Icons.Outlined.ChatBubbleOutline, summary.replyCount.toString())
-            SummaryStat(Icons.Outlined.FavoriteBorder, summary.reactionCount.toString())
-            SummaryStat(Icons.Outlined.CurrencyBitcoin, formatSatsCompact(summary.zapSats))
-            SummaryStat(Icons.Outlined.Repeat, summary.repostCount.toString())
-            SummaryStat(Icons.Outlined.AlternateEmail, (summary.mentionCount + summary.quoteCount).toString())
-            SummaryStat(Icons.Outlined.MailOutline, summary.dmCount.toString())
+            SummaryStat(Icons.Outlined.ChatBubbleOutline, summary.replyCount.toString(),
+                active = isFiltered && NotificationFilter.REPLIES in enabledTypes,
+                onClick = { onFilterSelect(NotificationFilter.REPLIES) })
+            SummaryStat(Icons.Outlined.FavoriteBorder, summary.reactionCount.toString(),
+                active = isFiltered && NotificationFilter.REACTIONS in enabledTypes,
+                onClick = { onFilterSelect(NotificationFilter.REACTIONS) })
+            run {
+                val zapContext = LocalContext.current
+                val useZapBolt = remember {
+                    zapContext.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
+                        .getBoolean("zap_bolt_icon", false)
+                }
+                val zapActive = isFiltered && NotificationFilter.ZAPS in enabledTypes
+                if (useZapBolt) {
+                    SummaryStatPainter(painterResource(R.drawable.ic_bolt), formatSatsCompact(summary.zapSats),
+                        active = zapActive, onClick = { onFilterSelect(NotificationFilter.ZAPS) })
+                } else {
+                    SummaryStat(Icons.Outlined.CurrencyBitcoin, formatSatsCompact(summary.zapSats),
+                        active = zapActive, onClick = { onFilterSelect(NotificationFilter.ZAPS) })
+                }
+            }
+            SummaryStat(Icons.Outlined.Repeat, summary.repostCount.toString(),
+                active = isFiltered && NotificationFilter.REPOSTS in enabledTypes,
+                onClick = { onFilterSelect(NotificationFilter.REPOSTS) })
+            SummaryStat(Icons.Outlined.AlternateEmail, (summary.mentionCount + summary.quoteCount).toString(),
+                active = isFiltered && NotificationFilter.MENTIONS in enabledTypes,
+                onClick = { onFilterSelect(NotificationFilter.MENTIONS) })
+            SummaryStat(Icons.Outlined.MailOutline, summary.dmCount.toString(),
+                active = isFiltered && NotificationFilter.DMS in enabledTypes,
+                onClick = { onFilterSelect(NotificationFilter.DMS) })
         }
     }
 }
 
 @Composable
-private fun SummaryStat(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String) {
+private fun SummaryStat(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    value: String,
+    active: Boolean = false,
+    onClick: () -> Unit = {}
+) {
+    val tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
-            .padding(horizontal = 4.dp, vertical = 2.dp)
+            .clickable(onClick = onClick)
+            .then(
+                if (active) Modifier.background(
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    RoundedCornerShape(8.dp)
+                ) else Modifier
+            )
+            .padding(horizontal = 6.dp, vertical = 4.dp)
     ) {
-        Icon(
-            icon,
-            contentDescription = null,
-            modifier = Modifier.size(22.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = tint)
         Spacer(Modifier.width(4.dp))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Text(text = value, style = MaterialTheme.typography.bodyLarge, color = tint)
+    }
+}
+
+@Composable
+private fun SummaryStatPainter(
+    icon: androidx.compose.ui.graphics.painter.Painter,
+    value: String,
+    active: Boolean = false,
+    onClick: () -> Unit = {}
+) {
+    val tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .then(
+                if (active) Modifier.background(
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    RoundedCornerShape(8.dp)
+                ) else Modifier
+            )
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = tint)
+        Spacer(Modifier.width(4.dp))
+        Text(text = value, style = MaterialTheme.typography.bodyLarge, color = tint)
     }
 }
 

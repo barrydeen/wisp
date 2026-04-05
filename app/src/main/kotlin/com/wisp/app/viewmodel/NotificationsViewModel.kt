@@ -262,6 +262,12 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
         settingsPrefs.edit().putBoolean(PREF_CHAT_ROOMS_NOTIF_ENABLED, newValue).apply()
     }
 
+    /** Show only this notification type (single atomic update, no intermediate empty state). */
+    fun isolateType(type: NotificationFilter) {
+        _enabledTypes.value = setOf(type)
+        saveEnabledTypes(setOf(type))
+    }
+
     fun enableAll() {
         _enabledTypes.value = ALL_TYPES
         _chatRoomsEnabled.value = true
