@@ -357,7 +357,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         if (muteRepo?.isBlocked(inner.pubkey) == true) return
                         if (muteRepo?.containsMutedWord(inner.content) == true) return
                         val authors = repostAuthors.get(inner.id)
-                            ?: mutableSetOf<String>().also { repostAuthors.put(inner.id, it) }
+                            ?: ConcurrentHashMap.newKeySet<String>().also { repostAuthors.put(inner.id, it) }
                         authors.add(event.pubkey)
                         // Auto-mark if this is the current user's repost
                         if (event.pubkey == currentUserPubkey) {
@@ -1009,7 +1009,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     fun markUserRepost(eventId: String) {
         userReposts.put(eventId, true)
         val authors = repostAuthors.get(eventId)
-            ?: mutableSetOf<String>().also { repostAuthors.put(eventId, it) }
+            ?: ConcurrentHashMap.newKeySet<String>().also { repostAuthors.put(eventId, it) }
         if (currentUserPubkey != null) authors.add(currentUserPubkey!!)
         repostDirty = true
         markVersionDirty()
@@ -1249,7 +1249,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         if (muteRepo?.containsMutedWord(inner.content) == true) return
                         // Track repost metadata for badges
                         val authors = repostAuthors.get(inner.id)
-                            ?: mutableSetOf<String>().also { repostAuthors.put(inner.id, it) }
+                            ?: ConcurrentHashMap.newKeySet<String>().also { repostAuthors.put(inner.id, it) }
                         authors.add(event.pubkey)
                         if (event.pubkey == currentUserPubkey) {
                             userReposts.put(inner.id, true)
@@ -1307,7 +1307,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         if (muteRepo?.isBlocked(inner.pubkey) == true) return
                         if (muteRepo?.containsMutedWord(inner.content) == true) return
                         val authors = repostAuthors.get(inner.id)
-                            ?: mutableSetOf<String>().also { repostAuthors.put(inner.id, it) }
+                            ?: ConcurrentHashMap.newKeySet<String>().also { repostAuthors.put(inner.id, it) }
                         authors.add(event.pubkey)
                         if (event.pubkey == currentUserPubkey) {
                             userReposts.put(inner.id, true)
