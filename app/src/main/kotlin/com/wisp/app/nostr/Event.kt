@@ -9,7 +9,6 @@ import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import androidx.compose.runtime.Immutable
@@ -61,11 +60,6 @@ data class NostrEvent(
             tags: List<List<String>>,
             content: String
         ): String {
-            val tagsJson = buildJsonArray {
-                for (tag in tags) {
-                    add(buildJsonArray { for (t in tag) add(JsonPrimitive(t)) })
-                }
-            }
             val serialized = buildString(512) {
                 append("[0,\"")
                 append(pubkey)
@@ -73,14 +67,22 @@ data class NostrEvent(
                 append(createdAt)
                 append(',')
                 append(kind)
-                append(',')
-                append(tagsJson)
-                append(",")
-                // JSON-escape the content string
-                val escaped = content.replace("\\", "\\\\").replace("\"", "\\\"")
-                    .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+                append(",[")
+                for (i in tags.indices) {
+                    if (i > 0) append(',')
+                    val tag = tags[i]
+                    append('[')
+                    for (j in tag.indices) {
+                        if (j > 0) append(',')
+                        append('"')
+                        appendJsonEscaped(tag[j])
+                        append('"')
+                    }
+                    append(']')
+                }
+                append("],")
                 append('"')
-                append(escaped)
+                appendJsonEscaped(content)
                 append('"')
                 append(']')
             }
@@ -151,6 +153,27 @@ private object LongAsStringSerializer : KSerializer<Long> {
     override val descriptor = PrimitiveSerialDescriptor("LongAsString", PrimitiveKind.LONG)
     override fun serialize(encoder: Encoder, value: Long) = encoder.encodeLong(value)
     override fun deserialize(decoder: Decoder): Long = decoder.decodeLong()
+}
+
+private fun StringBuilder.appendJsonEscaped(s: String) {
+    for (c in s) {
+        when (c) {
+            '\\' -> append("\\\\")
+            '"' -> append("\\\"")
+            '\b' -> append("\\b")
+            '\u000C' -> append("\\f")
+            '\n' -> append("\\n")
+            '\r' -> append("\\r")
+            '\t' -> append("\\t")
+            else -> if (c < ' ') {
+                append("\\u00")
+                append(HEX_CHARS[c.code ushr 4])
+                append(HEX_CHARS[c.code and 0xF])
+            } else {
+                append(c)
+            }
+        }
+    }
 }
 
 private const val HEX_CHARS = "0123456789abcdef"
