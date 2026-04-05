@@ -152,7 +152,11 @@ fun SearchScreen(
     var advancedExpanded by remember { mutableStateOf(authorFilter != null) }
     val focusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        // Seed search refs so debounced auto-search works before first manual search
+        viewModel.initSearchRefs(relayPool, eventRepo, muteRepo)
+    }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),

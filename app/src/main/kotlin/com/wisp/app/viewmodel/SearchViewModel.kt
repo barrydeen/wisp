@@ -69,6 +69,9 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private var searchJob: Job? = null
     private var authorSearchJob: Job? = null
     private var relayPool: RelayPool? = null
+    private var eventRepoRef: EventRepository? = null
+    private var muteRepoRef: MuteRepository? = null
+    private var autoSearchJob: Job? = null
     private var searchCounter = 0
 
     private var userSubId = "search-users-0"
@@ -114,8 +117,24 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun initSearchRefs(relayPool: RelayPool, eventRepo: EventRepository, muteRepo: MuteRepository?) {
+        if (this.relayPool == null) this.relayPool = relayPool
+        if (this.eventRepoRef == null) this.eventRepoRef = eventRepo
+        if (this.muteRepoRef == null) this.muteRepoRef = muteRepo
+    }
+
     fun updateQuery(newQuery: String) {
         _query.value = newQuery
+        // Debounced auto-search: trigger after 500ms of no typing
+        autoSearchJob?.cancel()
+        val pool = relayPool ?: return
+        val repo = eventRepoRef ?: return
+        val trimmed = newQuery.trim()
+        if (trimmed.length < 2) return
+        autoSearchJob = viewModelScope.launch {
+            delay(500)
+            search(newQuery, pool, repo, muteRepoRef)
+        }
     }
 
     fun setAuthorFilter(profile: ProfileData) {
@@ -201,7 +220,10 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         searchJob?.cancel()
+        autoSearchJob?.cancel()
         this.relayPool = relayPool
+        this.eventRepoRef = eventRepo
+        this.muteRepoRef = muteRepo
 
         closeSubscriptions(relayPool)
 
