@@ -35,6 +35,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -126,19 +135,57 @@ fun SplashScreen(
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 48.dp, start = 32.dp, end = 32.dp)
         ) {
-            Image(
-                painter = painterResource(R.mipmap.ic_launcher_foreground),
+            val wispTransition = rememberInfiniteTransition(label = "wisp")
+            val bob by wispTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = -8f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(1200, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "bob"
+            )
+            val sway by wispTransition.animateFloat(
+                initialValue = -3f,
+                targetValue = 3f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(2400, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "sway"
+            )
+            Icon(
+                painter = painterResource(R.drawable.ic_wisp_logo),
                 contentDescription = stringResource(R.string.cd_wisp_logo),
-                modifier = Modifier.size(96.dp)
+                tint = Color.Unspecified,
+                modifier = Modifier
+                    .size(96.dp)
+                    .graphicsLayer {
+                        translationY = bob * density
+                        rotationZ = sway
+                    }
+                    .drawBehind {
+                        drawCircle(
+                            brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                                colors = listOf(
+                                    Color.Black,
+                                    Color.Black.copy(alpha = 0.6f),
+                                    Color.Transparent
+                                ),
+                                radius = size.minDimension * 0.65f
+                            ),
+                            radius = size.minDimension * 0.65f
+                        )
+                    }
             )
             Text(
                 text = "wisp",
                 style = MaterialTheme.typography.titleLarge.copy(
+                    fontFamily = FontFamily.SansSerif,
                     fontSize = 56.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp
+                    fontWeight = FontWeight.W500
                 ),
-                color = MaterialTheme.colorScheme.primary
+                color = Color.White
             )
             liveMetrics?.let { OnlineCard(it) }
 

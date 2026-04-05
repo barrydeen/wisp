@@ -121,6 +121,13 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
         return updated
     }
 
+    fun removeUnicodeEmoji(emoji: String): List<String> {
+        val updated = _unicodeEmojis.value.filter { it != emoji }
+        _unicodeEmojis.value = updated
+        saveUnicodeToPrefs()
+        return updated
+    }
+
     fun setUnicodeEmojis(emojis: List<String>) {
         _unicodeEmojis.value = emojis
         saveUnicodeToPrefs()

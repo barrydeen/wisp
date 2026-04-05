@@ -3,6 +3,7 @@ package com.wisp.app.ui.screen
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -44,9 +45,23 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.sign
+import kotlin.math.sin
 import androidx.compose.ui.res.stringResource
 import com.wisp.app.R
 import com.wisp.app.nostr.RemoteSignerBridge
@@ -92,17 +107,32 @@ fun AuthScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Image(
-            painter = painterResource(R.mipmap.ic_launcher_foreground),
+        Icon(
+            painter = painterResource(R.drawable.ic_wisp_logo),
             contentDescription = stringResource(R.string.onboarding_wisp_logo),
-            modifier = Modifier.size(108.dp)
+            tint = androidx.compose.ui.graphics.Color.Unspecified,
+            modifier = Modifier
+                .size(108.dp)
+                .drawBehind {
+                    drawCircle(
+                        brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                            colors = listOf(
+                                androidx.compose.ui.graphics.Color.Black,
+                                androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f),
+                                androidx.compose.ui.graphics.Color.Transparent
+                            ),
+                            radius = size.minDimension * 0.65f
+                        ),
+                        radius = size.minDimension * 0.65f
+                    )
+                }
         )
         Text(
             text = stringResource(R.string.auth_wisp),
             style = MaterialTheme.typography.titleLarge.copy(
+                fontFamily = FontFamily.SansSerif,
                 fontSize = 36.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 2.sp
+                fontWeight = FontWeight.W500
             ),
             color = MaterialTheme.colorScheme.primary
         )
@@ -246,5 +276,27 @@ fun AuthScreen(
                 style = MaterialTheme.typography.bodySmall
             )
         }
+    }
+}
+
+/** Superellipse-based squircle shape (n≈5) for smooth continuous-curvature corners. */
+private val SquircleShape = object : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val path = Path()
+        val w = size.width
+        val h = size.height
+        val n = 5.0 // superellipse exponent — higher = more square, lower = more round
+        val steps = 360
+        for (i in 0 until steps) {
+            val angle = 2.0 * Math.PI * i / steps
+            val cosA = cos(angle)
+            val sinA = sin(angle)
+            val x = (w / 2) * abs(cosA).pow(2.0 / n) * sign(cosA) + w / 2
+            val y = (h / 2) * abs(sinA).pow(2.0 / n) * sign(sinA) + h / 2
+            if (i == 0) path.moveTo(x.toFloat(), y.toFloat())
+            else path.lineTo(x.toFloat(), y.toFloat())
+        }
+        path.close()
+        return Outline.Generic(path)
     }
 }

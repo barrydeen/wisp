@@ -58,6 +58,7 @@ class ThreadViewModel : ViewModel() {
 
     fun clearScrollTarget() {
         _scrollToIndex.value = -1
+        scrollTargetId = null
     }
 
     fun loadThread(
@@ -89,7 +90,7 @@ class ThreadViewModel : ViewModel() {
         // Resolve root from cached event (we clicked on it, so it's in cache)
         val cached = eventRepo.getEvent(eventId)
         if (cached != null) {
-            val resolvedRoot = Nip10.getRootId(cached) ?: eventId
+            val resolvedRoot = Nip10.getRootId(cached) ?: Nip10.getReplyTarget(cached) ?: eventId
             rootId = resolvedRoot
             scrollTargetId = if (resolvedRoot != eventId) eventId else null
             threadEvents[cached.id] = cached

@@ -56,7 +56,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Surface
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
@@ -677,7 +679,9 @@ private fun WalletHomeContent(
     modifier: Modifier = Modifier
 ) {
     val balanceSats = balanceMsats / 1000
-    var balanceHidden by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE) }
+    var balanceHidden by remember { mutableStateOf(prefs.getBoolean("balance_hidden", false)) }
 
     Column(
         modifier = modifier
@@ -794,7 +798,10 @@ private fun WalletHomeContent(
         // Balance — tap to hide/show
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.clickable { balanceHidden = !balanceHidden }
+            modifier = Modifier.clickable {
+                balanceHidden = !balanceHidden
+                prefs.edit().putBoolean("balance_hidden", balanceHidden).apply()
+            }
         ) {
             if (balanceHidden) {
                 Text(
@@ -2559,6 +2566,7 @@ private fun SparkBackupContent(
     val words = mnemonic.split(" ")
     val clipboardManager = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
+    var revealed by remember { mutableStateOf(false) }
 
     Spacer(Modifier.height(16.dp))
 
@@ -2576,37 +2584,68 @@ private fun SparkBackupContent(
 
     Spacer(Modifier.height(24.dp))
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Display words in two columns
-            for (i in words.indices step 2) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                ) {
-                    Text(
-                        "${i + 1}. ${words[i]}",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.weight(1f),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    if (i + 1 < words.size) {
+    if (revealed) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Display words in two columns
+                for (i in words.indices step 2) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
                         Text(
-                            "${i + 2}. ${words[i + 1]}",
+                            "${i + 1}. ${words[i]}",
                             style = MaterialTheme.typography.bodyLarge,
                             fontFamily = FontFamily.Monospace,
                             modifier = Modifier.weight(1f),
                             color = MaterialTheme.colorScheme.onSurface
                         )
+                        if (i + 1 < words.size) {
+                            Text(
+                                "${i + 2}. ${words[i + 1]}",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
+            }
+        }
+    } else {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { revealed = true },
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    Icons.Outlined.Visibility,
+                    contentDescription = "Reveal recovery phrase",
+                    modifier = Modifier.size(32.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Tap to reveal",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -2801,7 +2840,7 @@ private fun WalletSettingsContent(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             val units = listOf(BalanceUnit.SATS, BalanceUnit.BITCOIN, BalanceUnit.LIGHTNING)
             units.forEach { unit ->
@@ -2811,6 +2850,7 @@ private fun WalletSettingsContent(
                 OutlinedButton(
                     onClick = { onBalanceUnitChange(unit) },
                     modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                     border = BorderStroke(
                         1.dp,
                         if (selected) MaterialTheme.colorScheme.primary
@@ -2826,7 +2866,8 @@ private fun WalletSettingsContent(
                         BalanceUnit.BITCOIN -> Text(
                             "\u20BF 1,000",
                             color = tint,
-                            style = MaterialTheme.typography.bodyMedium
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1
                         )
                         BalanceUnit.LIGHTNING -> {
                             Icon(
@@ -2835,13 +2876,14 @@ private fun WalletSettingsContent(
                                 tint = tint,
                                 modifier = Modifier.height(14.dp)
                             )
-                            Spacer(Modifier.width(3.dp))
-                            Text("1,000", color = tint, style = MaterialTheme.typography.bodyMedium)
+                            Spacer(Modifier.width(2.dp))
+                            Text("1,000", color = tint, style = MaterialTheme.typography.bodySmall, maxLines = 1)
                         }
                         BalanceUnit.SATS -> Text(
                             "1,000 sats",
                             color = tint,
-                            style = MaterialTheme.typography.bodyMedium
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1
                         )
                     }
                 }

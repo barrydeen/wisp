@@ -52,6 +52,7 @@ import com.wisp.app.ui.component.NotifBlipSound
 import com.wisp.app.ui.component.BottomTab
 import com.wisp.app.ui.component.WispBottomBar
 import com.wisp.app.ui.component.ZapDialog
+import com.wisp.app.ui.component.pendingEmojiReactCallback
 import com.wisp.app.ui.component.AuthApprovalDialog
 import com.wisp.app.ui.screen.BlossomServersScreen
 import com.wisp.app.ui.screen.AuthScreen
@@ -1179,8 +1180,10 @@ fun WispNavHost(
                     currentEmojis = profileUnicodeEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                        if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
+                        pendingEmojiReactCallback = null
                     },
-                    onDismiss = { showProfileEmojiLibrary = false }
+                    onDismiss = { showProfileEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
             }
         }
@@ -1280,7 +1283,8 @@ fun WispNavHost(
                 isEmojiSetAdded = { pubkey, dTag ->
                     val ref = com.wisp.app.nostr.Nip30.buildSetReference(pubkey, dTag)
                     feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
-                }
+                },
+                nip05Repo = feedViewModel.nip05Repo
             )
         }
 
@@ -1380,6 +1384,7 @@ fun WispNavHost(
                 onGoToWallet = { navController.navigate(Routes.WALLET) },
                 noteActions = remember {
                     com.wisp.app.ui.component.NoteActions(
+                        nip05Repo = feedViewModel.nip05Repo,
                         onAddEmojiSet = { pk, dTag -> feedViewModel.addSetToEmojiList(pk, dTag) },
                         onRemoveEmojiSet = { pk, dTag -> feedViewModel.removeSetFromEmojiList(pk, dTag) },
                         isEmojiSetAdded = { pk, dTag ->
@@ -1398,8 +1403,10 @@ fun WispNavHost(
                     currentEmojis = dmSheetUnicodeEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                        if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
+                        pendingEmojiReactCallback = null
                     },
-                    onDismiss = { showDmEmojiLibrary = false }
+                    onDismiss = { showDmEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
             }
         }
@@ -1453,6 +1460,7 @@ fun WispNavHost(
                 onGoToWallet = { navController.navigate(Routes.WALLET) },
                 noteActions = remember {
                     com.wisp.app.ui.component.NoteActions(
+                        nip05Repo = feedViewModel.nip05Repo,
                         onAddEmojiSet = { pk, dTag -> feedViewModel.addSetToEmojiList(pk, dTag) },
                         onRemoveEmojiSet = { pk, dTag -> feedViewModel.removeSetFromEmojiList(pk, dTag) },
                         isEmojiSetAdded = { pk, dTag ->
@@ -1471,8 +1479,10 @@ fun WispNavHost(
                     currentEmojis = dmGroupSheetUnicodeEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                        if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
+                        pendingEmojiReactCallback = null
                     },
-                    onDismiss = { showDmGroupEmojiLibrary = false }
+                    onDismiss = { showDmGroupEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
             }
         }
@@ -1649,6 +1659,7 @@ fun WispNavHost(
                 isFollowing = { pubkey -> feedViewModel.contactRepo.isFollowing(pubkey) },
                 noteActions = remember {
                     com.wisp.app.ui.component.NoteActions(
+                        nip05Repo = feedViewModel.nip05Repo,
                         onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                         onAddEmojiSet = { pk, dTag -> feedViewModel.addSetToEmojiList(pk, dTag) },
                         onRemoveEmojiSet = { pk, dTag -> feedViewModel.removeSetFromEmojiList(pk, dTag) },
@@ -1665,8 +1676,10 @@ fun WispNavHost(
                     currentEmojis = groupRoomSheetUnicodeEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                        if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
+                        pendingEmojiReactCallback = null
                     },
-                    onDismiss = { showGroupRoomEmojiLibrary = false }
+                    onDismiss = { showGroupRoomEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
             }
         }
@@ -1892,8 +1905,10 @@ fun WispNavHost(
                     currentEmojis = threadUnicodeEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                        if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
+                        pendingEmojiReactCallback = null
                     },
-                    onDismiss = { showThreadEmojiLibrary = false }
+                    onDismiss = { showThreadEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
             }
         }
@@ -2355,8 +2370,10 @@ fun WispNavHost(
                     currentEmojis = articleUnicodeEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                        if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
+                        pendingEmojiReactCallback = null
                     },
-                    onDismiss = { showArticleEmojiLibrary = false }
+                    onDismiss = { showArticleEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
             }
         }
@@ -3126,8 +3143,10 @@ fun WispNavHost(
                     currentEmojis = notifUnicodeEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
+                        if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
+                        pendingEmojiReactCallback = null
                     },
-                    onDismiss = { showNotifEmojiLibrary = false }
+                    onDismiss = { showNotifEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
             }
         }

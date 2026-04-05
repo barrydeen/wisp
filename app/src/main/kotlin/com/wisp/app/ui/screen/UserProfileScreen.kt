@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -37,6 +38,9 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import com.wisp.app.ui.component.Nip05Badge
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -190,7 +194,8 @@ fun UserProfileScreen(
                 onAddEmojiSet = onAddEmojiSet,
                 onRemoveEmojiSet = onRemoveEmojiSet,
                 isEmojiSetAdded = isEmojiSetAdded,
-                onPollVote = onPollVote
+                onPollVote = onPollVote,
+                nip05Repo = nip05Repo
             )
         } else null
     }
@@ -391,6 +396,7 @@ fun UserProfileScreen(
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = {
@@ -1176,13 +1182,27 @@ private fun ProfileHeader(
                         }
                     }
                     if (profile?.lud16 != null && onZapClick != null) {
+                        val zapContext = LocalContext.current
+                        val useZapBolt = remember {
+                            zapContext.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
+                                .getBoolean("zap_bolt_icon", false)
+                        }
                         IconButton(onClick = onZapClick) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_bolt),
-                                contentDescription = "Zap",
-                                tint = Color(0xFFFFC107),
-                                modifier = Modifier.size(22.dp)
-                            )
+                            if (useZapBolt) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_bolt),
+                                    contentDescription = "Zap",
+                                    tint = Color(0xFFFFC107),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Outlined.CurrencyBitcoin,
+                                    contentDescription = "Zap",
+                                    tint = Color(0xFFFFC107),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
                     }
                     FollowButton(
@@ -1218,36 +1238,12 @@ private fun ProfileHeader(
         }
 
         profile?.nip05?.let { nip05 ->
-            if (pubkey.isNotEmpty()) nip05Repo?.checkOrFetch(pubkey, nip05)
-            val status = if (pubkey.isNotEmpty()) nip05Repo?.getStatus(pubkey) else null
-            val isImpersonator = status == Nip05Status.IMPERSONATOR
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = if (isImpersonator) "\u2715 $nip05" else nip05,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (isImpersonator) Color.Red else MaterialTheme.colorScheme.primary
-                )
-                if (status == Nip05Status.VERIFIED) {
-                    Spacer(Modifier.width(4.dp))
-                    Icon(
-                        Icons.Default.CheckCircle,
-                        contentDescription = "Verified",
-                        tint = Color(0xFFFF8C00),
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-                if (status == Nip05Status.ERROR) {
-                    Spacer(Modifier.width(4.dp))
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = "Retry verification",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .size(14.dp)
-                            .clickable { nip05Repo?.retry(pubkey) }
-                    )
-                }
-            }
+            Nip05Badge(
+                nip05 = nip05,
+                pubkey = pubkey,
+                nip05Repo = nip05Repo,
+                verifiedTint = Color(0xFFFF8C00)
+            )
         }
 
         profile?.about?.let { about ->
@@ -1273,12 +1269,26 @@ private fun ProfileHeader(
                     Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
                 }
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_bolt),
-                    contentDescription = "Lightning address",
-                    tint = Color(0xFFFFC107),
-                    modifier = Modifier.size(16.dp)
-                )
+                val lnContext = LocalContext.current
+                val useBoltIcon = remember {
+                    lnContext.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
+                        .getBoolean("zap_bolt_icon", false)
+                }
+                if (useBoltIcon) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_bolt),
+                        contentDescription = "Lightning address",
+                        tint = Color(0xFFFFC107),
+                        modifier = Modifier.size(16.dp)
+                    )
+                } else {
+                    Icon(
+                        Icons.Outlined.CurrencyBitcoin,
+                        contentDescription = "Lightning address",
+                        tint = Color(0xFFFFC107),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
                 Spacer(Modifier.width(4.dp))
                 Text(
                     text = lightning,

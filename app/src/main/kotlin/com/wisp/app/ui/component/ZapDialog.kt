@@ -37,6 +37,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.automirrored.outlined.Message
 
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -124,14 +125,13 @@ fun ZapDialog(
     }
 
     val context = LocalContext.current
-    var presets by remember { mutableStateOf(ZapPreferences(context).getPresets()) }
+    var presets by remember { mutableStateOf(ZapPreferences(context).getPresets().sortedBy { it.amountSats }) }
     var selectedPreset by remember { mutableStateOf<ZapPreset?>(presets.firstOrNull()) }
     var isCustom by remember { mutableStateOf(false) }
     var customAmount by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var isAnonymous by remember { mutableStateOf(false) }
     var isPrivate by remember { mutableStateOf(false) }
-    var showSaveDialog by remember { mutableStateOf(false) }
     var editMode by remember { mutableStateOf(false) }
 
     val effectiveAmount = if (isCustom) {
@@ -285,9 +285,7 @@ fun ZapDialog(
                                     if (!editMode) {
                                         selectedPreset = preset
                                         isCustom = false
-                                        if (preset.message.isNotEmpty()) {
-                                            message = preset.message
-                                        }
+                                        message = preset.message
                                     }
                                 },
                                 onRemove = {
@@ -297,37 +295,6 @@ fun ZapDialog(
                                     }
                                 }
                             )
-                        }
-
-                        // Add preset chip
-                        Surface(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable { showSaveDialog = true },
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Filled.Add,
-                                    contentDescription = stringResource(R.string.btn_add_preset),
-                                    modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    stringResource(R.string.btn_save),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
                         }
 
                         // Custom amount chip
@@ -361,6 +328,27 @@ fun ZapDialog(
                                     cursorColor = LightningOrange
                                 )
                             )
+                            val saveAmount = customAmount.toLongOrNull() ?: 0L
+                            if (saveAmount > 0) {
+                                Spacer(Modifier.height(6.dp))
+                                TextButton(
+                                    onClick = {
+                                        val preset = ZapPreset(saveAmount, message.trim())
+                                        presets = ZapPreferences(context).addPreset(preset)
+                                        selectedPreset = presets.firstOrNull { it.amountSats == saveAmount }
+                                        isCustom = false
+                                        customAmount = ""
+                                    }
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Add,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(stringResource(R.string.btn_save))
+                                }
+                            }
                             Spacer(Modifier.height(8.dp))
                         }
                     }
@@ -380,17 +368,8 @@ fun ZapDialog(
                         )
                     )
 
-                    // Show saved message hint for preset
-                    if (!isCustom && selectedPreset?.message?.isNotEmpty() == true) {
-                        Text(
-                            text = "Preset message: \"${selectedPreset?.message}\"",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 4.dp, start = 4.dp)
-                        )
-                    }
+                    // Clear message when switching away from a preset with a saved message
+                    // (message is pre-filled when selecting a preset with a message)
 
                     Spacer(Modifier.height(16.dp))
 
@@ -496,16 +475,6 @@ fun ZapDialog(
         }
     }
 
-    // Save preset dialog
-    if (showSaveDialog) {
-        SaveZapPresetDialog(
-            onSave = { preset ->
-                presets = ZapPreferences(context).addPreset(preset)
-                showSaveDialog = false
-            },
-            onDismiss = { showSaveDialog = false }
-        )
-    }
 }
 
 @Composable
@@ -670,35 +639,33 @@ private fun ZapPresetChip(
             },
             shadowElevation = if (isSelected) 4.dp else 0.dp
         ) {
-            Column(
+            Row(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isSelected) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_bolt),
-                            contentDescription = null,
-                            modifier = Modifier.size(12.dp),
-                            tint = Color.White
-                        )
-                        Spacer(Modifier.width(3.dp))
-                    }
-                    Text(
-                        text = formatDisplayAmount(preset.amountSats),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                if (isSelected) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_bolt),
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp),
+                        tint = Color.White
                     )
+                    Spacer(Modifier.width(3.dp))
                 }
+                Text(
+                    text = formatDisplayAmount(preset.amountSats),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 if (preset.message.isNotEmpty()) {
-                    Text(
-                        text = preset.message,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isSelected) Color.White.copy(alpha = 0.8f)
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        maxLines = 1,
-                        fontSize = 10.sp
+                    Spacer(Modifier.width(4.dp))
+                    Icon(
+                        Icons.AutoMirrored.Outlined.Message,
+                        contentDescription = null,
+                        modifier = Modifier.size(10.dp),
+                        tint = if (isSelected) Color.White.copy(alpha = 0.7f)
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                     )
                 }
             }

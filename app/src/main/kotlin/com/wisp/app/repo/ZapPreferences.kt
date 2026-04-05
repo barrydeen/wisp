@@ -58,7 +58,7 @@ class ZapPreferences(private val context: Context, pubkeyHex: String? = null) {
     fun addPreset(preset: ZapPreset): List<ZapPreset> {
         val current = getPresets()
         if (current.any { it.amountSats == preset.amountSats && it.message == preset.message }) return current
-        val updated = current + preset
+        val updated = (current + preset).sortedBy { it.amountSats }
         setPresets(updated)
         return updated
     }
