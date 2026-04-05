@@ -168,6 +168,7 @@ fun FeedScreen(
     onSwitchAccount: (String) -> Unit = {},
     onAddAccount: () -> Unit = {},
     onLogout: () -> Unit = {},
+    hasEmbeddedWallet: Boolean = false,
     onMediaServers: () -> Unit = {},
     onWallet: () -> Unit = {},
     onLists: () -> Unit = {},
@@ -734,6 +735,7 @@ fun FeedScreen(
                     scope.launch { drawerState.close() }
                     onLogout()
                 },
+                hasEmbeddedWallet = hasEmbeddedWallet,
                 userStatus = statusVersion.let { userPubkey?.let { viewModel.eventRepo.getUserStatus(it) } },
                 onUpdateStatus = { status ->
                     viewModel.publishUserStatus(status)
