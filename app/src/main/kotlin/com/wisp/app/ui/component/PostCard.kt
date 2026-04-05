@@ -298,12 +298,12 @@ fun PostCard(
                         )
                     }
                 }
-                // NIP-38: user status
+                // NIP-38: user status (hide on replies to reduce clutter)
                 val statusVersion by eventRepo?.statusVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
                 val userStatus = remember(statusVersion, event.pubkey) {
                     eventRepo?.getUserStatus(event.pubkey)
                 }
-                if (userStatus != null) {
+                if (userStatus != null && !Nip10.isReply(event)) {
                     Text(
                         text = userStatus,
                         style = MaterialTheme.typography.bodySmall,
