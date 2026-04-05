@@ -95,6 +95,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.wisp.app.ui.component.FloatingVideoPlayer
 import com.wisp.app.ui.component.PipController
 import com.wisp.app.ui.component.FullScreenVideoPlayer
+import com.wisp.app.ui.component.FullScreenVideoState
 import com.wisp.app.ui.screen.OnboardingSuggestionsScreen
 import com.wisp.app.ui.screen.RelayDetailScreen
 import com.wisp.app.ui.screen.WalletScreen
@@ -3184,6 +3185,15 @@ fun WispNavHost(
                 pipFullScreenVideoUrl = null
                 pipFullScreenPlayer = null
             }
+        )
+    }
+
+    val inlineFullScreenRequest by FullScreenVideoState.request.collectAsState()
+    if (inlineFullScreenRequest != null) {
+        FullScreenVideoPlayer(
+            videoUrl = inlineFullScreenRequest!!.url,
+            startPositionMs = inlineFullScreenRequest!!.startPositionMs,
+            onDismiss = { FullScreenVideoState.dismiss() }
         )
     }
 

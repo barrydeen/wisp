@@ -29,7 +29,25 @@ import com.wisp.app.relay.HttpClientFactory
 import com.wisp.app.util.MediaDownloader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+
+data class FullScreenVideoRequest(
+    val url: String,
+    val startPositionMs: Long = 0L
+)
+
+object FullScreenVideoState {
+    val request = MutableStateFlow<FullScreenVideoRequest?>(null)
+
+    fun enter(url: String, positionMs: Long = 0L) {
+        request.value = FullScreenVideoRequest(url, positionMs)
+    }
+
+    fun dismiss() {
+        request.value = null
+    }
+}
 
 @OptIn(UnstableApi::class)
 @Composable

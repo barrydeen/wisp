@@ -579,21 +579,11 @@ fun RichContent(
     val segments = remember(content, emojiMap, imetaMap, plainLinks) { parseContent(content.trimEnd('\n', '\r'), emojiMap, imetaMap, trimBlankLines = !plainLinks) }
     val profileVer = eventRepo?.profileVersion?.collectAsState()?.value ?: 0
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
-    var fullScreenVideoUrl by remember { mutableStateOf<String?>(null) }
-    var fullScreenVideoPositionMs by remember { mutableLongStateOf(0L) }
 
     if (fullScreenImageUrl != null) {
         FullScreenImageViewer(
             imageUrl = fullScreenImageUrl!!,
             onDismiss = { fullScreenImageUrl = null }
-        )
-    }
-
-    if (fullScreenVideoUrl != null) {
-        FullScreenVideoPlayer(
-            videoUrl = fullScreenVideoUrl!!,
-            startPositionMs = fullScreenVideoPositionMs,
-            onDismiss = { fullScreenVideoUrl = null }
         )
     }
 
@@ -782,8 +772,7 @@ fun RichContent(
                         InlineVideoPlayerWithFullscreen(
                             url = segment.url,
                             onFullScreen = { positionMs ->
-                                fullScreenVideoPositionMs = positionMs
-                                fullScreenVideoUrl = segment.url
+                                FullScreenVideoState.enter(segment.url, positionMs)
                             }
                         )
                     }
@@ -795,8 +784,7 @@ fun RichContent(
                             url = segment.url,
                             onFullScreenImage = { fullScreenImageUrl = segment.url },
                             onFullScreenVideo = { positionMs ->
-                                fullScreenVideoPositionMs = positionMs
-                                fullScreenVideoUrl = segment.url
+                                FullScreenVideoState.enter(segment.url, positionMs)
                             }
                         )
                     }

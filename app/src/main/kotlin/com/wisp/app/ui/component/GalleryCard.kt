@@ -230,8 +230,6 @@ fun GalleryCard(
     var expandedDetails by remember { mutableStateOf(false) }
 
     var fullScreenInitialPage by remember { mutableIntStateOf(-1) }
-    var fullScreenVideoUrl by remember { mutableStateOf<String?>(null) }
-    var fullScreenVideoStartMs by remember { mutableStateOf(0L) }
 
     Column(
         modifier = modifier
@@ -538,8 +536,7 @@ fun GalleryCard(
             InlineVideoPlayerWithFullscreen(
                 url = video.url,
                 onFullScreen = { positionMs ->
-                    fullScreenVideoUrl = video.url
-                    fullScreenVideoStartMs = positionMs
+                    FullScreenVideoState.enter(video.url, positionMs)
                 }
             )
         }
@@ -664,14 +661,6 @@ fun GalleryCard(
         )
     }
 
-    // Full-screen video player (uses existing ExoPlayer-based player)
-    if (fullScreenVideoUrl != null) {
-        FullScreenVideoPlayer(
-            videoUrl = fullScreenVideoUrl!!,
-            startPositionMs = fullScreenVideoStartMs,
-            onDismiss = { fullScreenVideoUrl = null }
-        )
-    }
 }
 
 @Composable
