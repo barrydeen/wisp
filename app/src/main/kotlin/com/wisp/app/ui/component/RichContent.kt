@@ -2155,6 +2155,8 @@ internal fun InlineVideoPlayerWithFullscreen(url: String, onFullScreen: (positio
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(max = 500.dp)
+            .aspectRatio(videoAspectRatio)
             .clip(RoundedCornerShape(12.dp))
             .onGloballyPositioned { coordinates ->
                 val bounds = coordinates.boundsInWindow()
@@ -2195,10 +2197,7 @@ internal fun InlineVideoPlayerWithFullscreen(url: String, onFullScreen: (positio
                     hideController()
                 }
             },
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 500.dp)
-                .aspectRatio(videoAspectRatio)
+            modifier = Modifier.fillMaxSize()
         )
         AnimatedVisibility(
             visible = showControls,
