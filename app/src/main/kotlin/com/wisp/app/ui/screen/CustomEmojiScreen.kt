@@ -91,6 +91,7 @@ fun CustomEmojiScreen(
     var removedShortcodes by remember { mutableStateOf(emptySet<String>()) }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text("Custom Emojis") },

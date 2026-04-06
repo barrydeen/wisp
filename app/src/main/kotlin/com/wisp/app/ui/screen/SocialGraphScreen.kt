@@ -135,6 +135,7 @@ fun SocialGraphScreen(
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.drawer_social_graph)) },

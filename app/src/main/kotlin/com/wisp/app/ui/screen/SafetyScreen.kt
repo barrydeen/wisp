@@ -53,6 +53,7 @@ fun SafetyScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.title_safety)) },
