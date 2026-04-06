@@ -123,8 +123,7 @@ fun WispDrawerContent(
             .statusBarsPadding()
             .verticalScroll(scrollState)
         ) {
-        var showQrDialog by remember { mutableStateOf(false) }
-        var showLightningDialog by remember { mutableStateOf(false) }
+        var showProfileQr by remember { mutableStateOf(false) }
         var accountPickerExpanded by remember { mutableStateOf(false) }
 
         Column(modifier = Modifier.padding(16.dp)) {
@@ -179,37 +178,13 @@ fun WispDrawerContent(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                IconButton(onClick = { showQrDialog = true }) {
+                IconButton(onClick = { showProfileQr = true }) {
                     Icon(
                         Icons.Outlined.QrCodeScanner,
                         contentDescription = stringResource(R.string.cd_show_qr_code),
                         modifier = Modifier.size(24.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-                if (profile?.lud16 != null) {
-                    val lnContext = androidx.compose.ui.platform.LocalContext.current
-                    val useBoltIcon = remember {
-                        lnContext.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
-                            .getBoolean("zap_bolt_icon", false)
-                    }
-                    IconButton(onClick = { showLightningDialog = true }) {
-                        if (useBoltIcon) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_bolt),
-                                contentDescription = stringResource(R.string.cd_lightning_address),
-                                modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            Icon(
-                                Icons.Outlined.CurrencyBitcoin,
-                                contentDescription = stringResource(R.string.cd_lightning_address),
-                                modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
                 }
             }
             Row(
@@ -236,6 +211,7 @@ fun WispDrawerContent(
                     )
                 }
             }
+            Spacer(Modifier.height(2.dp))
             if (!profile?.nip05.isNullOrBlank()) {
                 Text(
                     text = profile!!.nip05!!,
@@ -402,11 +378,13 @@ fun WispDrawerContent(
             }
         }
 
-        if (showQrDialog && pubkey != null) {
-            QrCodeDialog(pubkeyHex = pubkey, avatarUrl = profile?.picture, onDismiss = { showQrDialog = false })
-        }
-        if (showLightningDialog && profile?.lud16 != null) {
-            LightningQrDialog(lud16 = profile.lud16, onDismiss = { showLightningDialog = false })
+        if (showProfileQr && pubkey != null) {
+            ProfileQrSheet(
+                pubkeyHex = pubkey,
+                avatarUrl = profile?.picture,
+                lud16 = profile?.lud16,
+                onDismiss = { showProfileQr = false }
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -658,7 +636,7 @@ fun WispDrawerContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 16.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {

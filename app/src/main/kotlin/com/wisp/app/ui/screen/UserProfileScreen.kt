@@ -100,7 +100,7 @@ import com.wisp.app.ui.component.isGalleryEvent
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.parseContent
 import com.wisp.app.ui.component.parseImetaTags
-import com.wisp.app.ui.component.QrCodeDialog
+import com.wisp.app.ui.component.ProfileQrSheet
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
 import com.wisp.app.ui.component.ZapDialog
@@ -332,9 +332,10 @@ fun UserProfileScreen(
     var showAddToListDialog by remember { mutableStateOf(false) }
 
     if (showQrDialog) {
-        QrCodeDialog(
+        ProfileQrSheet(
             pubkeyHex = profilePubkey,
             avatarUrl = profile?.picture,
+            lud16 = profile?.lud16,
             onDismiss = { showQrDialog = false }
         )
     }
