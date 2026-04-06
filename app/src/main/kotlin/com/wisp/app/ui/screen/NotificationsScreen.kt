@@ -127,6 +127,7 @@ import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.theme.WispThemeColors
 import com.wisp.app.viewmodel.NotificationFilter
 import com.wisp.app.viewmodel.NotificationsViewModel
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import com.wisp.app.R
@@ -300,10 +301,17 @@ fun NotificationsScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        stringResource(R.string.nav_notifications),
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            stringResource(R.string.nav_notifications),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "  |  24h",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -503,13 +511,27 @@ private fun NotificationFilterSheet(
                         .padding(horizontal = 24.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        filter.icon(),
-                        contentDescription = null,
-                        tint = if (enabled) MaterialTheme.colorScheme.primary
-                               else MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.size(22.dp)
-                    )
+                    val iconTint = if (enabled) MaterialTheme.colorScheme.primary
+                                   else MaterialTheme.colorScheme.outline
+                    if (filter == NotificationFilter.ZAPS) {
+                        val zapContext = LocalContext.current
+                        val useBolt = remember {
+                            zapContext.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
+                                .getBoolean("zap_bolt_icon", false)
+                        }
+                        if (useBolt) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_bolt),
+                                contentDescription = null,
+                                tint = iconTint,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        } else {
+                            Icon(filter.icon(), contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
+                        }
+                    } else {
+                        Icon(filter.icon(), contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
+                    }
                     Spacer(Modifier.width(14.dp))
                     Text(
                         stringResource(filter.labelResId),
@@ -520,7 +542,12 @@ private fun NotificationFilterSheet(
                     Spacer(Modifier.weight(1f))
                     androidx.compose.material3.Switch(
                         checked = enabled,
-                        onCheckedChange = { onToggleType(filter) }
+                        onCheckedChange = { onToggleType(filter) },
+                        colors = SwitchDefaults.colors(
+                            uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            uncheckedBorderColor = MaterialTheme.colorScheme.outline
+                        )
                     )
                 }
             }
@@ -555,7 +582,12 @@ private fun NotificationFilterSheet(
                 Spacer(Modifier.weight(1f))
                 androidx.compose.material3.Switch(
                     checked = chatRoomsEnabled,
-                    onCheckedChange = { onToggleChatRooms() }
+                    onCheckedChange = { onToggleChatRooms() },
+                    colors = SwitchDefaults.colors(
+                        uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                        uncheckedBorderColor = MaterialTheme.colorScheme.outline
+                    )
                 )
             }
 
@@ -1989,11 +2021,6 @@ private fun DailySummaryBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "24h",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
             SummaryStat(Icons.Outlined.ChatBubbleOutline, summary.replyCount.toString(),
                 active = isFiltered && NotificationFilter.REPLIES in enabledTypes,
                 onClick = { onFilterSelect(NotificationFilter.REPLIES) })
