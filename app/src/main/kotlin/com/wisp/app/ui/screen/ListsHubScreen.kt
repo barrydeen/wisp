@@ -122,6 +122,7 @@ fun ListsHubScreen(
     val notesLists = remember(ownSets) { ownSets.sortedBy { it.name } }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.drawer_lists)) },

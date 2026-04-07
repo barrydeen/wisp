@@ -827,6 +827,7 @@ fun WispNavHost(
                 accounts = accounts,
                 onSwitchAccount = onSwitchAccount,
                 onAddAccount = onAddAccount,
+                hasEmbeddedWallet = walletViewModel.walletMode.collectAsState().value == com.wisp.app.repo.WalletMode.SPARK,
                 onLogout = {
                     feedViewModel.clearSigner()
                     feedViewModel.resetForAccountSwitch()
@@ -844,6 +845,9 @@ fun WispNavHost(
                             popUpTo(0) { inclusive = true }
                         }
                     } else {
+                        // Full logout — reset UI preferences and refresh in-memory theme state
+                        com.wisp.app.repo.InterfacePreferences(context).reset()
+                        onInterfaceChanged()
                         navController.navigateSafe(Routes.SPLASH) {
                             popUpTo(0) { inclusive = true }
                         }

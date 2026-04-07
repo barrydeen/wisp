@@ -716,7 +716,7 @@ fun RichContent(
                                     }
                                 ) {
                                     withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
-                                        append("@$displayName")
+                                        append("@${displayName.trimEnd()}")
                                     }
                                 }
                             }

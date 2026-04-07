@@ -1,6 +1,9 @@
 package com.wisp.app.ui.component
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,9 +35,10 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.LightMode
-import androidx.compose.material.icons.outlined.QrCode2
+import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -104,6 +108,7 @@ fun WispDrawerContent(
     onRelaySettings: () -> Unit,
     onInterfaceSettings: () -> Unit = {},
     onLogout: () -> Unit,
+    hasEmbeddedWallet: Boolean = false,
     userStatus: String? = null,
     onUpdateStatus: ((String) -> Unit)? = null
 ) {
@@ -118,8 +123,7 @@ fun WispDrawerContent(
             .statusBarsPadding()
             .verticalScroll(scrollState)
         ) {
-        var showQrDialog by remember { mutableStateOf(false) }
-        var showLightningDialog by remember { mutableStateOf(false) }
+        var showProfileQr by remember { mutableStateOf(false) }
         var accountPickerExpanded by remember { mutableStateOf(false) }
 
         Column(modifier = Modifier.padding(16.dp)) {
@@ -174,37 +178,13 @@ fun WispDrawerContent(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                IconButton(onClick = { showQrDialog = true }) {
+                IconButton(onClick = { showProfileQr = true }) {
                     Icon(
-                        Icons.Outlined.QrCode2,
+                        Icons.Outlined.QrCodeScanner,
                         contentDescription = stringResource(R.string.cd_show_qr_code),
                         modifier = Modifier.size(24.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-                if (profile?.lud16 != null) {
-                    val lnContext = androidx.compose.ui.platform.LocalContext.current
-                    val useBoltIcon = remember {
-                        lnContext.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
-                            .getBoolean("zap_bolt_icon", false)
-                    }
-                    IconButton(onClick = { showLightningDialog = true }) {
-                        if (useBoltIcon) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_bolt),
-                                contentDescription = stringResource(R.string.cd_lightning_address),
-                                modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            Icon(
-                                Icons.Outlined.CurrencyBitcoin,
-                                contentDescription = stringResource(R.string.cd_lightning_address),
-                                modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
                 }
             }
             Row(
@@ -231,6 +211,7 @@ fun WispDrawerContent(
                     )
                 }
             }
+            Spacer(Modifier.height(2.dp))
             if (!profile?.nip05.isNullOrBlank()) {
                 Text(
                     text = profile!!.nip05!!,
@@ -397,11 +378,13 @@ fun WispDrawerContent(
             }
         }
 
-        if (showQrDialog && pubkey != null) {
-            QrCodeDialog(pubkeyHex = pubkey, onDismiss = { showQrDialog = false })
-        }
-        if (showLightningDialog && profile?.lud16 != null) {
-            LightningQrDialog(lud16 = profile.lud16, onDismiss = { showLightningDialog = false })
+        if (showProfileQr && pubkey != null) {
+            ProfileQrSheet(
+                pubkeyHex = pubkey,
+                avatarUrl = profile?.picture,
+                lud16 = profile?.lud16,
+                onDismiss = { showProfileQr = false }
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -591,7 +574,39 @@ fun WispDrawerContent(
                 onDismissRequest = { showLogoutDialog = false },
                 title = { Text(stringResource(R.string.btn_logout)) },
                 text = {
-                    Text(stringResource(R.string.logout_warning))
+                    Column {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Icon(
+                                Icons.Outlined.Key,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                "Back up your private key before logging out. Without it, your Nostr account cannot be recovered.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        if (hasEmbeddedWallet) {
+                            Spacer(Modifier.height(14.dp))
+                            Row(verticalAlignment = Alignment.Top) {
+                                Icon(
+                                    Icons.Outlined.AccountBalanceWallet,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    "Back up your wallet recovery phrase. Without it, your funds cannot be recovered.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
                 },
                 confirmButton = {
                     TextButton(onClick = {
@@ -610,6 +625,34 @@ fun WispDrawerContent(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+
+        // Version info with wisp logo
+        val versionContext = androidx.compose.ui.platform.LocalContext.current
+        val versionName = remember {
+            try {
+                versionContext.packageManager.getPackageInfo(versionContext.packageName, 0).versionName ?: "?"
+            } catch (_: Exception) { "?" }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_wisp_logo),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "wisp v$versionName",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+            )
+        }
         }
     }
 }

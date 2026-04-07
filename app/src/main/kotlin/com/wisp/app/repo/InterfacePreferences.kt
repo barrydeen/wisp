@@ -31,4 +31,17 @@ class InterfacePreferences(context: Context) {
 
     fun isZapBoltIcon(): Boolean = prefs.getBoolean("zap_bolt_icon", false)
     fun setZapBoltIcon(enabled: Boolean) = prefs.edit().putBoolean("zap_bolt_icon", enabled).apply()
+
+    /** Reset all interface preferences to defaults (called on full logout). */
+    fun reset() {
+        prefs.edit()
+            .remove("accent_color")
+            .remove("theme")
+            .remove("large_text")
+            .remove("new_notes_button_hidden")
+            .remove("zap_bolt_icon")
+            .remove("dark_theme")
+            .remove("balance_hidden")
+            .apply()
+    }
 }

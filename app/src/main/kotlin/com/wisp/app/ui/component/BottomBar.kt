@@ -19,6 +19,8 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarDefaults
@@ -58,10 +60,15 @@ fun WispBottomBar(
     notifSoundEnabled: Boolean = true,
     onTabSelected: (BottomTab) -> Unit
 ) {
-    NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surface,
-        windowInsets = NavigationBarDefaults.windowInsets
-    ) {
+    Column {
+        HorizontalDivider(
+            thickness = 0.5.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        )
+        NavigationBar(
+            containerColor = MaterialTheme.colorScheme.surface,
+            windowInsets = NavigationBarDefaults.windowInsets
+        ) {
         BottomTab.entries.forEach { tab ->
             val selected = currentRoute == tab.route
             val hasUnread = when (tab) {
@@ -139,5 +146,6 @@ fun WispBottomBar(
                 label = null
             )
         }
+    }
     }
 }

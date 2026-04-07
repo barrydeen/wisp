@@ -66,6 +66,7 @@ fun BookmarkSetScreen(
     var menuExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text(bookmarkSet?.name ?: "List") },
