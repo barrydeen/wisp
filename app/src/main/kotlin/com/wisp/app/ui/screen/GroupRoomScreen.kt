@@ -219,7 +219,16 @@ fun GroupRoomScreen(
     var prevMessageCount by remember { mutableIntStateOf(0) }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var highlightTrigger by remember { mutableIntStateOf(0) }
+    var selectedMessageId by remember { mutableStateOf<String?>(null) }
     val scrollScope = rememberCoroutineScope()
+
+    // Auto-dismiss action bar after 5 seconds
+    LaunchedEffect(selectedMessageId) {
+        if (selectedMessageId != null) {
+            kotlinx.coroutines.delay(5000)
+            selectedMessageId = null
+        }
+    }
 
     // Track whether we've handled the initial scrollToMessageId target
     var scrollTargetHandled by remember { mutableStateOf(scrollToMessageId == null) }
@@ -478,6 +487,7 @@ fun GroupRoomScreen(
                         GroupMessageBubble(
                             message = message,
                             isSearchHighlighted = message.id == highlightedMessageId,
+                            isSelected = message.id == selectedMessageId,
                             allMessages = messages,
                             eventRepo = eventRepo,
                             myPubkey = myPubkey,
@@ -490,8 +500,12 @@ fun GroupRoomScreen(
                             highlightTrigger = if (message.id == highlightedMessageId) highlightTrigger else 0,
                             onProfileClick = onProfileClick,
                             onNoteClick = onNoteClick,
+                            onSelect = { id ->
+                                selectedMessageId = if (selectedMessageId == id) null else id
+                            },
                             onReply = {
                                 viewModel.setReplyTarget(it)
+                                selectedMessageId = null
                                 textFieldFocus.requestFocus()
                             },
                             onScrollToMessage = { targetId ->
@@ -887,6 +901,7 @@ private fun GroupMemberAvatarStrip(
 private fun GroupMessageBubble(
     message: GroupMessage,
     isSearchHighlighted: Boolean = false,
+    isSelected: Boolean = false,
     allMessages: List<GroupMessage>,
     eventRepo: EventRepository,
     myPubkey: String?,
@@ -899,6 +914,7 @@ private fun GroupMessageBubble(
     highlightTrigger: Int = 0,
     onProfileClick: (String) -> Unit,
     onNoteClick: ((String) -> Unit)? = null,
+    onSelect: (String) -> Unit = {},
     onReply: (GroupMessage) -> Unit,
     onScrollToMessage: ((String) -> Unit)? = null,
     onReact: (messageId: String, senderPubkey: String, emoji: String) -> Unit,
@@ -911,6 +927,12 @@ private fun GroupMessageBubble(
 ) {
     val profile = remember(message.senderPubkey) { eventRepo.getProfileData(message.senderPubkey) }
     val displayName = profile?.displayString ?: (message.senderPubkey.take(8) + "…")
+    val isOwnMessage = message.senderPubkey == myPubkey
+    val nameColor = if (isOwnMessage) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        remember(message.senderPubkey) { groupMemberColor(message.senderPubkey) }
+    }
 
     var showEmojiPicker by remember(message.id) { mutableStateOf(false) }
 
@@ -980,6 +1002,7 @@ private fun GroupMessageBubble(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.primary.copy(alpha = highlightAlpha))
+            .clickable { onSelect(message.id) }
             .padding(horizontal = 12.dp, vertical = 4.dp)
             .offset { IntOffset(swipeOffset.value.toInt(), 0) }
             .pointerInput(message.id) {
@@ -1020,7 +1043,7 @@ private fun GroupMessageBubble(
                 Text(
                     text = displayName,
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = nameColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
@@ -1142,91 +1165,93 @@ private fun GroupMessageBubble(
                 }
             }
 
-            // Action row
-            Box {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 2.dp)
-                ) {
-                    // Reply
-                    IconButton(onClick = { onReply(message) }, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            Icons.Outlined.ChatBubbleOutline,
-                            contentDescription = "Reply",
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    // React — opens emoji picker
-                    IconButton(
-                        onClick = { showEmojiPicker = true },
-                        modifier = Modifier.size(36.dp)
+            // Action row — only visible when message is tapped
+            if (isSelected) {
+                Box {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 2.dp)
                     ) {
-                        Icon(
-                            Icons.Filled.FavoriteBorder,
-                            contentDescription = "React",
-                            modifier = Modifier.size(18.dp),
-                            tint = if (myReactions.isNotEmpty()) MaterialTheme.colorScheme.error
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    // Zap
-                    if (onZap != null) {
-                        Box {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.clickable(enabled = !isZapInProgress) {
-                                    onZap(message.id, message.senderPubkey)
-                                }
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .wrapContentSize(unbounded = true, align = Alignment.Center)
+                        // Reply
+                        IconButton(onClick = { onReply(message) }, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                Icons.Outlined.ChatBubbleOutline,
+                                contentDescription = "Reply",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        // React — opens emoji picker
+                        IconButton(
+                            onClick = { showEmojiPicker = true },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.FavoriteBorder,
+                                contentDescription = "React",
+                                modifier = Modifier.size(18.dp),
+                                tint = if (myReactions.isNotEmpty()) MaterialTheme.colorScheme.error
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        // Zap
+                        if (onZap != null) {
+                            Box {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.clickable(enabled = !isZapInProgress) {
+                                        onZap(message.id, message.senderPubkey)
+                                    }
                                 ) {
-                                    Icon(
-                                        Icons.Filled.Bolt,
-                                        contentDescription = "Zap",
-                                        modifier = Modifier.size(18.dp),
-                                        tint = when {
-                                            isZapInProgress -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                            hasZaps || isZapAnimating -> com.wisp.app.ui.theme.WispThemeColors.zapColor
-                                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                        }
-                                    )
-                                    // Burst animation overlay
                                     Box(
                                         modifier = Modifier
-                                            .matchParentSize()
+                                            .size(36.dp)
                                             .wrapContentSize(unbounded = true, align = Alignment.Center)
                                     ) {
-                                        com.wisp.app.ui.component.ZapBurstEffect(
-                                            isActive = isZapAnimating,
-                                            modifier = Modifier.size(80.dp)
+                                        Icon(
+                                            Icons.Filled.Bolt,
+                                            contentDescription = "Zap",
+                                            modifier = Modifier.size(18.dp),
+                                            tint = when {
+                                                isZapInProgress -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                                hasZaps || isZapAnimating -> com.wisp.app.ui.theme.WispThemeColors.zapColor
+                                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                            }
+                                        )
+                                        // Burst animation overlay
+                                        Box(
+                                            modifier = Modifier
+                                                .matchParentSize()
+                                                .wrapContentSize(unbounded = true, align = Alignment.Center)
+                                        ) {
+                                            com.wisp.app.ui.component.ZapBurstEffect(
+                                                isActive = isZapAnimating,
+                                                modifier = Modifier.size(80.dp)
+                                            )
+                                        }
+                                    }
+                                    if (hasZaps) {
+                                        Text(
+                                            text = formatZapSats(zapSats),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontSize = 10.sp,
+                                            color = com.wisp.app.ui.theme.WispThemeColors.zapColor
                                         )
                                     }
-                                }
-                                if (hasZaps) {
-                                    Text(
-                                        text = formatZapSats(zapSats),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontSize = 10.sp,
-                                        color = com.wisp.app.ui.theme.WispThemeColors.zapColor
-                                    )
                                 }
                             }
                         }
                     }
-                }
-                if (showEmojiPicker) {
-                    EmojiReactionPopup(
-                        onSelect = { emoji -> onReact(message.id, message.senderPubkey, emoji) },
-                        onDismiss = { showEmojiPicker = false },
-                        selectedEmojis = myReactions,
-                        resolvedEmojis = resolvedEmojis,
-                        unicodeEmojis = unicodeEmojis,
-                        onOpenEmojiLibrary = onOpenEmojiLibrary?.let { { showEmojiPicker = false; it() } }
-                    )
+                    if (showEmojiPicker) {
+                        EmojiReactionPopup(
+                            onSelect = { emoji -> onReact(message.id, message.senderPubkey, emoji) },
+                            onDismiss = { showEmojiPicker = false },
+                            selectedEmojis = myReactions,
+                            resolvedEmojis = resolvedEmojis,
+                            unicodeEmojis = unicodeEmojis,
+                            onOpenEmojiLibrary = onOpenEmojiLibrary?.let { { showEmojiPicker = false; it() } }
+                        )
+                    }
                 }
             }
         }
@@ -1235,7 +1260,6 @@ private fun GroupMessageBubble(
             var menuExpanded by remember { mutableStateOf(false) }
             val context = androidx.compose.ui.platform.LocalContext.current
             val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
-            val isOwnMessage = message.senderPubkey == myPubkey
             IconButton(
                 onClick = { menuExpanded = true },
                 modifier = Modifier.size(24.dp)
@@ -1321,6 +1345,28 @@ private fun GroupMessageBubble(
         }
     }
     } // close swipe Box
+}
+
+/** Deterministic color for a group chat member based on their pubkey. */
+private val groupMemberColors = listOf(
+    androidx.compose.ui.graphics.Color(0xFFE57373), // red
+    androidx.compose.ui.graphics.Color(0xFF81C784), // green
+    androidx.compose.ui.graphics.Color(0xFF64B5F6), // blue
+    androidx.compose.ui.graphics.Color(0xFFFFB74D), // orange
+    androidx.compose.ui.graphics.Color(0xFFBA68C8), // purple
+    androidx.compose.ui.graphics.Color(0xFF4DD0E1), // cyan
+    androidx.compose.ui.graphics.Color(0xFFF06292), // pink
+    androidx.compose.ui.graphics.Color(0xFFAED581), // lime
+    androidx.compose.ui.graphics.Color(0xFFFFD54F), // amber
+    androidx.compose.ui.graphics.Color(0xFF4DB6AC), // teal
+    androidx.compose.ui.graphics.Color(0xFF7986CB), // indigo
+    androidx.compose.ui.graphics.Color(0xFFFF8A65), // deep orange
+)
+
+private fun groupMemberColor(pubkey: String): androidx.compose.ui.graphics.Color {
+    // Use first 8 hex chars as a stable hash
+    val hash = pubkey.take(8).toLong(16)
+    return groupMemberColors[(hash % groupMemberColors.size).toInt().let { if (it < 0) it + groupMemberColors.size else it }]
 }
 
 private val groupTimeFormat = SimpleDateFormat("HH:mm", Locale.US)
