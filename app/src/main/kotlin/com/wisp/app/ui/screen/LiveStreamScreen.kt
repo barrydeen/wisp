@@ -125,6 +125,15 @@ fun LiveStreamScreen(
     val replyTarget by viewModel.replyTarget.collectAsState()
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    var selectedMessageId by remember { mutableStateOf<String?>(null) }
+
+    // Auto-dismiss action bar after 5 seconds
+    LaunchedEffect(selectedMessageId) {
+        if (selectedMessageId != null) {
+            kotlinx.coroutines.delay(5000)
+            selectedMessageId = null
+        }
+    }
 
     // Auto-scroll to bottom when new messages arrive
     LaunchedEffect(messages.size) {
@@ -224,13 +233,20 @@ fun LiveStreamScreen(
                     } else {
                         LiveChatBubble(
                             message = msg,
+                            isSelected = msg.id == selectedMessageId,
                             allMessages = messages,
                             eventRepo = eventRepo,
                             myPubkey = myPubkey,
                             resolvedEmojis = resolvedEmojis,
                             unicodeEmojis = unicodeEmojis,
                             onProfileClick = onProfileClick,
-                            onReply = { viewModel.setReplyTarget(it) },
+                            onSelect = { id ->
+                                selectedMessageId = if (selectedMessageId == id) null else id
+                            },
+                            onReply = {
+                                viewModel.setReplyTarget(it)
+                                selectedMessageId = null
+                            },
                             onReact = { messageId, senderPubkey, emoji ->
                                 viewModel.sendReaction(messageId, senderPubkey, emoji, signer, resolvedEmojis)
                             },
@@ -554,12 +570,14 @@ private fun ZapAnnouncementBubble(
 @Composable
 private fun LiveChatBubble(
     message: LiveChatMessage,
+    isSelected: Boolean = false,
     allMessages: List<LiveChatMessage>,
     eventRepo: EventRepository,
     myPubkey: String?,
     resolvedEmojis: Map<String, String>,
     unicodeEmojis: List<String>,
     onProfileClick: (String) -> Unit,
+    onSelect: (String) -> Unit = {},
     onReply: (LiveChatMessage) -> Unit,
     onReact: (messageId: String, senderPubkey: String, emoji: String) -> Unit,
     onFollowAuthor: ((String) -> Unit)?,
@@ -572,6 +590,12 @@ private fun LiveChatBubble(
 ) {
     val profile = remember(message.senderPubkey) { eventRepo.getProfileData(message.senderPubkey) }
     val displayName = profile?.displayString ?: (message.senderPubkey.take(8) + "…")
+    val isOwnMessage = message.senderPubkey == myPubkey
+    val nameColor = if (isOwnMessage) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        remember(message.senderPubkey) { liveChatMemberColor(message.senderPubkey) }
+    }
 
     val replyToMessage = remember(message.replyToId, allMessages) {
         message.replyToId?.let { id -> allMessages.firstOrNull { it.id == id } }
@@ -608,6 +632,7 @@ private fun LiveChatBubble(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable { onSelect(message.id) }
                 .padding(horizontal = 12.dp, vertical = 4.dp)
                 .offset { IntOffset(swipeOffset.value.toInt(), 0) }
                 .pointerInput(message.id) {
@@ -651,7 +676,7 @@ private fun LiveChatBubble(
                     Text(
                         text = displayName,
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = nameColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
@@ -771,86 +796,88 @@ private fun LiveChatBubble(
                     }
                 }
 
-                // Action row: reply, react, zap
-                Box {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 2.dp)
-                    ) {
-                        IconButton(onClick = { onReply(message) }, modifier = Modifier.size(36.dp)) {
-                            Icon(
-                                Icons.Outlined.ChatBubbleOutline,
-                                contentDescription = "Reply",
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        IconButton(
-                            onClick = { showEmojiPicker = true },
-                            modifier = Modifier.size(36.dp)
+                // Action row — only visible when message is tapped
+                if (isSelected) {
+                    Box {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 2.dp)
                         ) {
-                            Icon(
-                                Icons.Filled.FavoriteBorder,
-                                contentDescription = "React",
-                                modifier = Modifier.size(18.dp),
-                                tint = if (myReactions.isNotEmpty()) MaterialTheme.colorScheme.error
-                                       else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        if (onZap != null) {
-                            Box {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.clickable(enabled = !isZapInProgress) {
-                                        onZap(message.id, message.senderPubkey)
-                                    }
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .wrapContentSize(unbounded = true, align = Alignment.Center)
+                            IconButton(onClick = { onReply(message) }, modifier = Modifier.size(36.dp)) {
+                                Icon(
+                                    Icons.Outlined.ChatBubbleOutline,
+                                    contentDescription = "Reply",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(
+                                onClick = { showEmojiPicker = true },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.FavoriteBorder,
+                                    contentDescription = "React",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = if (myReactions.isNotEmpty()) MaterialTheme.colorScheme.error
+                                           else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (onZap != null) {
+                                Box {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.clickable(enabled = !isZapInProgress) {
+                                            onZap(message.id, message.senderPubkey)
+                                        }
                                     ) {
-                                        Icon(
-                                            Icons.Filled.Bolt,
-                                            contentDescription = "Zap",
-                                            modifier = Modifier.size(18.dp),
-                                            tint = when {
-                                                isZapInProgress -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                                hasZaps || isZapAnimating -> com.wisp.app.ui.theme.WispThemeColors.zapColor
-                                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                            }
-                                        )
                                         Box(
                                             modifier = Modifier
-                                                .matchParentSize()
+                                                .size(36.dp)
                                                 .wrapContentSize(unbounded = true, align = Alignment.Center)
                                         ) {
-                                            com.wisp.app.ui.component.ZapBurstEffect(
-                                                isActive = isZapAnimating,
-                                                modifier = Modifier.size(80.dp)
+                                            Icon(
+                                                Icons.Filled.Bolt,
+                                                contentDescription = "Zap",
+                                                modifier = Modifier.size(18.dp),
+                                                tint = when {
+                                                    isZapInProgress -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                                    hasZaps || isZapAnimating -> com.wisp.app.ui.theme.WispThemeColors.zapColor
+                                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                }
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .matchParentSize()
+                                                    .wrapContentSize(unbounded = true, align = Alignment.Center)
+                                            ) {
+                                                com.wisp.app.ui.component.ZapBurstEffect(
+                                                    isActive = isZapAnimating,
+                                                    modifier = Modifier.size(80.dp)
+                                                )
+                                            }
+                                        }
+                                        if (hasZaps) {
+                                            Text(
+                                                text = formatZapSats(zapSats),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 10.sp,
+                                                color = com.wisp.app.ui.theme.WispThemeColors.zapColor
                                             )
                                         }
-                                    }
-                                    if (hasZaps) {
-                                        Text(
-                                            text = formatZapSats(zapSats),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontSize = 10.sp,
-                                            color = com.wisp.app.ui.theme.WispThemeColors.zapColor
-                                        )
                                     }
                                 }
                             }
                         }
-                    }
-                    if (showEmojiPicker) {
-                        EmojiReactionPopup(
-                            onSelect = { emoji -> onReact(message.id, message.senderPubkey, emoji) },
-                            onDismiss = { showEmojiPicker = false },
-                            selectedEmojis = myReactions,
-                            resolvedEmojis = resolvedEmojis,
-                            unicodeEmojis = unicodeEmojis
-                        )
+                        if (showEmojiPicker) {
+                            EmojiReactionPopup(
+                                onSelect = { emoji -> onReact(message.id, message.senderPubkey, emoji) },
+                                onDismiss = { showEmojiPicker = false },
+                                selectedEmojis = myReactions,
+                                resolvedEmojis = resolvedEmojis,
+                                unicodeEmojis = unicodeEmojis
+                            )
+                        }
                     }
                 }
             }
@@ -860,7 +887,6 @@ private fun LiveChatBubble(
                 var menuExpanded by remember { mutableStateOf(false) }
                 val context = LocalContext.current
                 val clipboardManager = LocalClipboardManager.current
-                val isOwnMessage = message.senderPubkey == myPubkey
                 IconButton(
                     onClick = { menuExpanded = true },
                     modifier = Modifier.size(24.dp)
@@ -946,6 +972,27 @@ private fun LiveChatBubble(
             }
         }
     }
+}
+
+/** Deterministic color for a live chat member based on their pubkey. */
+private val liveChatMemberColors = listOf(
+    Color(0xFFE57373), // red
+    Color(0xFF81C784), // green
+    Color(0xFF64B5F6), // blue
+    Color(0xFFFFB74D), // orange
+    Color(0xFFBA68C8), // purple
+    Color(0xFF4DD0E1), // cyan
+    Color(0xFFF06292), // pink
+    Color(0xFFAED581), // lime
+    Color(0xFFFFD54F), // amber
+    Color(0xFF4DB6AC), // teal
+    Color(0xFF7986CB), // indigo
+    Color(0xFFFF8A65), // deep orange
+)
+
+private fun liveChatMemberColor(pubkey: String): Color {
+    val hash = pubkey.take(8).toLong(16)
+    return liveChatMemberColors[(hash % liveChatMemberColors.size).toInt().let { if (it < 0) it + liveChatMemberColors.size else it }]
 }
 
 private val liveChatTimeFormat = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
