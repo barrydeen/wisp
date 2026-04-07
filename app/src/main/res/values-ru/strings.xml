@@ -57,7 +57,7 @@
     <string name="auth_connecting_to_tor">Подключение к Tor…</string>
     <string name="auth_connected_via_tor">Подключено через Tor</string>
     <string name="auth_tor_error">Ошибка Tor</string>
-    <string name="auth_wisp">wisp</string>
+    <string name="auth_wisp">antz</string>
     <string name="auth_tagline">небольшой интерфейс для прокрутки постов</string>
     <string name="auth_hide_key">Скрыть ключ</string>
     <string name="auth_show_key">Показать ключ</string>
@@ -379,12 +379,12 @@
     <string name="onboarding_welcome_back">С возвращением</string>
     <string name="onboarding_lets_get_set_up">Настроим ваш аккаунт</string>
     <string name="onboarding_your_network_relays">Ваша сеть, ваши рилэи</string>
-    <string name="onboarding_network_description">Wisp обнаруживает, какие рилэи используют ваши друзья, и подключается напрямую к ним. Это означает более быструю доставку и меньше пропущенных постов — без центрального сервера.</string>
+    <string name="onboarding_network_description">Antz обнаруживает, какие рилэи используют ваши друзья, и подключается напрямую к ним. Это означает более быструю доставку и меньше пропущенных постов — без центрального сервера.</string>
     <string name="onboarding_quick_follow">Быстрая подписка</string>
     <string name="onboarding_long_press_hint">Удерживайте аватар, чтобы подписаться или отписаться</string>
-    <string name="onboarding_utxo">utxo</string>
+    <string name="onboarding_utxo">roguehashrate</string>
     <string name="onboarding_try_it">Попробуйте — удерживайте картинку выше</string>
-    <string name="onboarding_lightning_wallet_info">Wisp поддерживает запы со встроенным Lightning-кошельком или Nostr Wallet Connect. Настроить можно в любой момент через экран кошелька.</string>
+    <string name="onboarding_lightning_wallet_info">Antz поддерживает запы со встроенным Lightning-кошельком или Nostr Wallet Connect. Настроить можно в любой момент через экран кошелька.</string>
     <string name="onboarding_setting_things_up">Настройка</string>
     <string name="onboarding_youre_all_set">Готово!</string>
     <string name="onboarding_mapping_graph">Составление социального графа…</string>
@@ -397,7 +397,7 @@
     <string name="onboarding_almost_there">Почти готово…</string>
     <string name="onboarding_please_wait">Подождите…</string>
     <string name="onboarding_publishing">Публикация…</string>
-    <string name="onboarding_wisp_logo">Логотип Wisp</string>
+    <string name="onboarding_wisp_logo">Логотип Antz</string>
     <string name="onboarding_follow_all_x">Подписаться на всех (%d)</string>
     <string name="zap_send">Отправить zap</string>
     <string name="zap_sats">сатоши</string>
@@ -445,8 +445,8 @@
     <string name="settings_video_autoplay">Автовоспроизведение видео</string>
     <string name="settings_video_autoplay_description">Автоматически воспроизводить видео при появлении в поле зрения</string>
     <string name="settings_client_tag">Метка клиента</string>
-    <string name="settings_tag_notes">Помечать заметки как Wisp</string>
-    <string name="settings_tag_notes_description">Добавлять метку, идентифицирующую Wisp как клиент. Видимо другим.</string>
+    <string name="settings_tag_notes">Помечать заметки как Antz</string>
+    <string name="settings_tag_notes_description">Добавлять метку, идентифицирующую Antz как клиент. Видимо другим.</string>
     <string name="settings_public_key">Публичный ключ</string>
     <string name="settings_private_key">Приватный ключ</string>
     <string name="settings_public_key_copied">Публичный ключ скопирован</string>
@@ -551,7 +551,7 @@
     <string name="wallet_connect_wallet">Подключить Кошелёк</string>
     <string name="wallet_choose_how">Выберите способ подключения кошелька Lightning для отправки и получения сат.</string>
     <string name="wallet_create_new">Создать Новый Кошелёк</string>
-    <string name="wallet_create_description">Создайте новый кошелёк прямо в Wisp, средства защищены провайдерами Spark</string>
+    <string name="wallet_create_description">Создайте новый кошелёк прямо в Antz, средства защищены провайдерами Spark</string>
     <string name="wallet_nwc_description">Подключите внешний кошелёк Lightning с помощью строки подключения NWC.</string>
     <string name="wallet_nwc_connection_string">Строка Подключения NWC</string>
     <string name="wallet_connect">Подключить</string>
@@ -605,7 +605,7 @@
     <string name="online_in_network">%d онлайн в вашей сети</string>
     <string name="online_all_nostr">%d онлайн во всём Nostr</string>
     <string name="splash_people_online">%d человек онлайн</string>
-    <string name="cd_wisp_logo">Логотип Wisp</string>
+    <string name="cd_wisp_logo">Логотип Antz</string>
 
     <!-- NIP-29 Chat Rooms -->
     <string name="tab_direct_messages">Личные сообщения</string>

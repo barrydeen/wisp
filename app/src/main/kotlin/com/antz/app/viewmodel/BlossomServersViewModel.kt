@@ -1,0 +1,95 @@
+package com.antz.app.viewmodel
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.antz.app.nostr.Blossom
+import com.antz.app.nostr.ClientMessage
+import com.antz.app.nostr.LocalSigner
+import com.antz.app.nostr.NostrEvent
+import com.antz.app.nostr.NostrSigner
+import com.antz.app.relay.RelayPool
+import com.antz.app.nostr.toHex
+import com.antz.app.repo.BlossomRepository
+import com.antz.app.repo.KeyRepository
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+
+class BlossomServersViewModel(app: Application) : AndroidViewModel(app) {
+    private val keyRepo = KeyRepository(app)
+    val blossomRepo = BlossomRepository(app, keyRepo.getPubkeyHex())
+
+    val servers: StateFlow<List<String>> = blossomRepo.servers
+
+    private val _newServerUrl = MutableStateFlow("")
+    val newServerUrl: StateFlow<String> = _newServerUrl
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+
+    private val _published = MutableStateFlow(false)
+    val published: StateFlow<Boolean> = _published
+
+    /** Re-point prefs at the current user's file so flows pick up their server data. */
+    fun reload() {
+        blossomRepo.reload(keyRepo.getPubkeyHex())
+    }
+
+    fun refreshServers() {
+        blossomRepo.refreshFromPrefs()
+    }
+
+    fun updateNewServerUrl(url: String) {
+        _newServerUrl.value = url
+    }
+
+    fun addServer() {
+        val raw = _newServerUrl.value.trim().trimEnd('/')
+        if (raw.isBlank()) return
+        if (raw.startsWith("http://")) {
+            _error.value = "Only HTTPS servers are supported"
+            return
+        }
+        val url = if (raw.startsWith("https://")) raw else "https://$raw"
+        val current = servers.value.toMutableList()
+        if (current.contains(url)) {
+            _error.value = "Server already added"
+            return
+        }
+        current.add(url)
+        blossomRepo.saveBlossomServers(current)
+        _newServerUrl.value = ""
+        _error.value = null
+    }
+
+    fun removeServer(url: String) {
+        val current = servers.value.toMutableList()
+        current.remove(url)
+        blossomRepo.saveBlossomServers(current)
+    }
+
+    fun moveServer(from: Int, to: Int) {
+        val current = servers.value.toMutableList()
+        if (from !in current.indices || to !in current.indices) return
+        val item = current.removeAt(from)
+        current.add(to, item)
+        blossomRepo.saveBlossomServers(current)
+    }
+
+    fun publishServerList(relayPool: RelayPool, signer: NostrSigner? = null) {
+        val s = signer ?: keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) } ?: return
+        val tags = Blossom.buildServerListTags(servers.value)
+        _published.value = false
+        viewModelScope.launch {
+            try {
+                val event = s.signEvent(kind = Blossom.KIND_SERVER_LIST, content = "", tags = tags)
+                relayPool.sendToWriteRelays(ClientMessage.event(event))
+                _published.value = true
+                _error.value = null
+            } catch (e: Exception) {
+                _error.value = "Failed to sign event: ${e.message}"
+            }
+        }
+    }
+}

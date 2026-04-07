@@ -64,7 +64,7 @@
     <string name="auth_connecting_to_tor">正在连接 Tor…</string>
     <string name="auth_connected_via_tor">已通过 Tor 连接</string>
     <string name="auth_tor_error">Tor 错误</string>
-    <string name="auth_wisp">wisp</string>
+    <string name="auth_wisp">antz</string>
     <string name="auth_tagline">滚动帖子的轻量界面</string>
     <string name="auth_hide_key">隐藏密钥</string>
     <string name="auth_show_key">显示密钥</string>
@@ -398,12 +398,12 @@
     <string name="onboarding_welcome_back">欢迎回来</string>
     <string name="onboarding_lets_get_set_up">让我们设置你的账户</string>
     <string name="onboarding_your_network_relays">你的网络，你的中继</string>
-    <string name="onboarding_network_description">Wisp 发现你朋友实际使用的中继，然后直接连接到这些中继。这意味着更快的投递和更少的帖子遗漏——无需中央服务器。</string>
+    <string name="onboarding_network_description">Antz 发现你朋友实际使用的中继，然后直接连接到这些中继。这意味着更快的投递和更少的帖子遗漏——无需中央服务器。</string>
     <string name="onboarding_quick_follow">快速关注</string>
     <string name="onboarding_long_press_hint">长按任意头像可关注或取消关注</string>
-    <string name="onboarding_utxo">utxo</string>
+    <string name="onboarding_utxo">roguehashrate</string>
     <string name="onboarding_try_it">试试看——长按上面的图片</string>
-    <string name="onboarding_lightning_wallet_info">Wisp 支持通过内置闪电钱包或 Nostr Wallet Connect 进行闪电支付。你可以随时在钱包页面设置。</string>
+    <string name="onboarding_lightning_wallet_info">Antz 支持通过内置闪电钱包或 Nostr Wallet Connect 进行闪电支付。你可以随时在钱包页面设置。</string>
     <string name="onboarding_setting_things_up">正在设置</string>
     <string name="onboarding_youre_all_set">一切就绪！</string>
     <string name="onboarding_mapping_graph">正在绘制你的社交图谱…</string>
@@ -416,7 +416,7 @@
     <string name="onboarding_almost_there">快完成了…</string>
     <string name="onboarding_please_wait">请稍候…</string>
     <string name="onboarding_publishing">正在发布…</string>
-    <string name="onboarding_wisp_logo">Wisp 标志</string>
+    <string name="onboarding_wisp_logo">Antz 标志</string>
     <string name="onboarding_follow_all_x">全部关注（%d）</string>
 
     <!-- Zap / Wallet -->
@@ -468,8 +468,8 @@
     <string name="settings_video_autoplay">视频自动播放</string>
     <string name="settings_video_autoplay_description">当视频滚动到视图中时自动播放</string>
     <string name="settings_client_tag">客户端标签</string>
-    <string name="settings_tag_notes">用 Wisp 标记帖子</string>
-    <string name="settings_tag_notes_description">包含标识 Wisp 为客户端的标签。这对其他人可见。</string>
+    <string name="settings_tag_notes">用 Antz 标记帖子</string>
+    <string name="settings_tag_notes_description">包含标识 Antz 为客户端的标签。这对其他人可见。</string>
     <string name="settings_public_key">公钥</string>
     <string name="settings_private_key">私钥</string>
     <string name="settings_public_key_copied">公钥已复制</string>
@@ -590,7 +590,7 @@
     <string name="wallet_connect_wallet">连接钱包</string>
     <string name="wallet_choose_how">选择如何连接Lightning钱包以发送和接收聪。</string>
     <string name="wallet_create_new">创建新钱包</string>
-    <string name="wallet_create_description">直接在Wisp中创建新钱包，资金由Spark提供商保障</string>
+    <string name="wallet_create_description">直接在Antz中创建新钱包，资金由Spark提供商保障</string>
     <string name="wallet_nwc_description">使用NWC连接字符串连接外部Lightning钱包。</string>
     <string name="wallet_nwc_connection_string">NWC连接字符串</string>
     <string name="wallet_connect">连接</string>
@@ -644,7 +644,7 @@
     <string name="online_in_network">你的网络中有%d人在线</string>
     <string name="online_all_nostr">整个Nostr有%d人在线</string>
     <string name="splash_people_online">%d人在线</string>
-    <string name="cd_wisp_logo">Wisp标志</string>
+    <string name="cd_wisp_logo">Antz标志</string>
 
     <!-- NIP-29 Chat Rooms -->
     <string name="tab_direct_messages">私信</string>

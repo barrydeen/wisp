@@ -64,7 +64,7 @@
     <string name="auth_connecting_to_tor">Verbinden met Tor…</string>
     <string name="auth_connected_via_tor">Verbonden via Tor</string>
     <string name="auth_tor_error">Tor fout</string>
-    <string name="auth_wisp">wisp</string>
+    <string name="auth_wisp">antz</string>
     <string name="auth_tagline">een kleine interface om door posts te scrollen</string>
     <string name="auth_hide_key">Sleutel verbergen</string>
     <string name="auth_show_key">Sleutel tonen</string>
@@ -398,12 +398,12 @@
     <string name="onboarding_welcome_back">Welkom terug</string>
     <string name="onboarding_lets_get_set_up">Laten we je account instellen</string>
     <string name="onboarding_your_network_relays">Jouw netwerk, jouw relays</string>
-    <string name="onboarding_network_description">Wisp ontdekt welke relays je vrienden daadwerkelijk gebruiken en maakt rechtstreeks verbinding met die relays. Dit betekent snellere levering en minder gemiste posts — geen centrale server nodig.</string>
+    <string name="onboarding_network_description">Antz ontdekt welke relays je vrienden daadwerkelijk gebruiken en maakt rechtstreeks verbinding met die relays. Dit betekent snellere levering en minder gemiste posts — geen centrale server nodig.</string>
     <string name="onboarding_quick_follow">Snel Volgen</string>
     <string name="onboarding_long_press_hint">Houd een profielfoto lang ingedrukt om te volgen of te ontvolgen</string>
-    <string name="onboarding_utxo">utxo</string>
+    <string name="onboarding_utxo">roguehashrate</string>
     <string name="onboarding_try_it">Probeer het — houd de afbeelding hierboven lang ingedrukt</string>
-    <string name="onboarding_lightning_wallet_info">Wisp ondersteunt zaps met een ingebedde Lightning portemonnee of Nostr Wallet Connect. Je kunt dit altijd instellen via het Portemonnee scherm.</string>
+    <string name="onboarding_lightning_wallet_info">Antz ondersteunt zaps met een ingebedde Lightning portemonnee of Nostr Wallet Connect. Je kunt dit altijd instellen via het Portemonnee scherm.</string>
     <string name="onboarding_setting_things_up">Instellen bezig</string>
     <string name="onboarding_youre_all_set">Je bent klaar!</string>
     <string name="onboarding_mapping_graph">Je sociaal graaf in kaart brengen…</string>
@@ -416,7 +416,7 @@
     <string name="onboarding_almost_there">Bijna klaar…</string>
     <string name="onboarding_please_wait">Even geduld…</string>
     <string name="onboarding_publishing">Publiceren…</string>
-    <string name="onboarding_wisp_logo">Wisp logo</string>
+    <string name="onboarding_wisp_logo">Antz logo</string>
     <string name="onboarding_follow_all_x">Allen Volgen (%d)</string>
 
     <!-- Zap / Wallet -->
@@ -468,8 +468,8 @@
     <string name="settings_video_autoplay">Video automatisch afspelen</string>
     <string name="settings_video_autoplay_description">Video\'s automatisch afspelen wanneer ze in beeld scrollen</string>
     <string name="settings_client_tag">Client Tag</string>
-    <string name="settings_tag_notes">Notities taggen met Wisp</string>
-    <string name="settings_tag_notes_description">Voeg een tag toe die Wisp als client identificeert. Dit is zichtbaar voor anderen.</string>
+    <string name="settings_tag_notes">Notities taggen met Antz</string>
+    <string name="settings_tag_notes_description">Voeg een tag toe die Antz als client identificeert. Dit is zichtbaar voor anderen.</string>
     <string name="settings_public_key">Publieke Sleutel</string>
     <string name="settings_private_key">Privésleutel</string>
     <string name="settings_public_key_copied">Publieke sleutel gekopieerd</string>
@@ -590,7 +590,7 @@
     <string name="wallet_connect_wallet">Portemonnee Verbinden</string>
     <string name="wallet_choose_how">Kies hoe je een Lightning portemonnee verbindt voor het verzenden en ontvangen van sats.</string>
     <string name="wallet_create_new">Nieuwe Portemonnee Maken</string>
-    <string name="wallet_create_description">Maak een nieuwe portemonnee direct in Wisp, fondsen zijn beveiligd door Spark providers</string>
+    <string name="wallet_create_description">Maak een nieuwe portemonnee direct in Antz, fondsen zijn beveiligd door Spark providers</string>
     <string name="wallet_nwc_description">Verbind een externe Lightning portemonnee met een NWC verbindingsreeks.</string>
     <string name="wallet_nwc_connection_string">NWC Verbindingsreeks</string>
     <string name="wallet_connect">Verbinden</string>
@@ -644,7 +644,7 @@
     <string name="online_in_network">%d online in je netwerk</string>
     <string name="online_all_nostr">%d online overal op Nostr</string>
     <string name="splash_people_online">%d mensen online</string>
-    <string name="cd_wisp_logo">Wisp-logo</string>
+    <string name="cd_wisp_logo">Antz-logo</string>
 
     <!-- NIP-29 Chat Rooms -->
     <string name="tab_direct_messages">Directe berichten</string>

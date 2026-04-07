@@ -23,5 +23,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "wisp"
+rootProject.name = "antz"
 include(":app")

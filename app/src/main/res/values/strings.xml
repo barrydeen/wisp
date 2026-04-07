@@ -53,7 +53,7 @@
     <string name="online_now">Online Now</string>
     <string name="online_in_network">%d online in your network</string>
     <string name="online_all_nostr">%d online across all of Nostr</string>
-    <string name="cd_wisp_logo">Wisp logo</string>
+    <string name="cd_wisp_logo">Antz logo</string>
 
     <!-- Auth Screen -->
     <string name="auth_sign_up">Sign Up</string>
@@ -65,7 +65,7 @@
     <string name="auth_connecting_to_tor">Connecting to Tor…</string>
     <string name="auth_connected_via_tor">Connected via Tor</string>
     <string name="auth_tor_error">Tor error</string>
-    <string name="auth_wisp">wisp</string>
+    <string name="auth_wisp">antz</string>
     <string name="auth_tagline">a wee interface to scroll posts</string>
     <string name="auth_hide_key">Hide key</string>
     <string name="auth_show_key">Show key</string>
@@ -415,12 +415,12 @@
     <string name="onboarding_welcome_back">Welcome back</string>
     <string name="onboarding_lets_get_set_up">Let\'s get you set up</string>
     <string name="onboarding_your_network_relays">Your network, your relays</string>
-    <string name="onboarding_network_description">Wisp discovers which relays your friends actually use, then connects directly to those relays. This means faster delivery and fewer missed posts — no central server needed.</string>
+    <string name="onboarding_network_description">Antz discovers which relays your friends actually use, then connects directly to those relays. This means faster delivery and fewer missed posts — no central server needed.</string>
     <string name="onboarding_quick_follow">Quick follow</string>
     <string name="onboarding_long_press_hint">Long-press any profile picture to follow or unfollow</string>
-    <string name="onboarding_utxo">utxo</string>
+    <string name="onboarding_utxo">roguehashrate</string>
     <string name="onboarding_try_it">Try it — long-press the picture above</string>
-    <string name="onboarding_lightning_wallet_info">Wisp supports zaps with an embedded Lightning wallet or Nostr Wallet Connect. You can set this up anytime from the Wallet screen.</string>
+    <string name="onboarding_lightning_wallet_info">Antz supports zaps with an embedded Lightning wallet or Nostr Wallet Connect. You can set this up anytime from the Wallet screen.</string>
     <string name="onboarding_setting_things_up">Setting things up</string>
     <string name="onboarding_youre_all_set">You\'re all set!</string>
     <string name="onboarding_mapping_graph">Mapping your social graph…</string>
@@ -433,7 +433,7 @@
     <string name="onboarding_almost_there">Almost there…</string>
     <string name="onboarding_please_wait">Please wait…</string>
     <string name="onboarding_publishing">Publishing…</string>
-    <string name="onboarding_wisp_logo">Wisp logo</string>
+    <string name="onboarding_wisp_logo">Antz logo</string>
     <string name="onboarding_follow_all_x">Follow All (%d)</string>
 
     <!-- Zap / Wallet -->
@@ -492,8 +492,8 @@
     <string name="settings_video_autoplay">Video autoplay</string>
     <string name="settings_video_autoplay_description">Automatically play videos when they scroll into view</string>
     <string name="settings_client_tag">Client Tag</string>
-    <string name="settings_tag_notes">Tag notes with Wisp</string>
-    <string name="settings_tag_notes_description">Include a tag identifying Wisp as the client. This is visible to others.</string>
+    <string name="settings_tag_notes">Tag notes with Antz</string>
+    <string name="settings_tag_notes_description">Include a tag identifying Antz as the client. This is visible to others.</string>
     <string name="settings_public_key">Public Key</string>
     <string name="settings_private_key">Private Key</string>
     <string name="settings_public_key_copied">Public key copied</string>
@@ -666,7 +666,7 @@
     <string name="wallet_connect_wallet">Connect a Wallet</string>
     <string name="wallet_choose_how">Choose how to connect a Lightning wallet for sending and receiving sats.</string>
     <string name="wallet_create_new">Create a New Wallet</string>
-    <string name="wallet_create_description">Create a new wallet directly in Wisp, funds are secured by Spark providers</string>
+    <string name="wallet_create_description">Create a new wallet directly in Antz, funds are secured by Spark providers</string>
     <string name="wallet_nwc_description">Connect an external Lightning wallet using a NWC connection string.</string>
     <string name="wallet_nwc_connection_string">NWC Connection String</string>
     <string name="wallet_connect">Connect</string>

@@ -16,15 +16,15 @@
     </queries>
 
     <application
-        android:name=".WispApp"
+        android:name=".AntzApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="Wisp"
+        android:label="Antz"
         android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
         android:largeHeap="true"
-        android:theme="@style/Theme.Wisp.Splash">
+        android:theme="@style/Theme.Antz.Splash">
         <activity
             android:name=".MainActivity"
             android:exported="true"

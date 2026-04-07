@@ -64,7 +64,7 @@
     <string name="auth_connecting_to_tor">Tor 연결 중…</string>
     <string name="auth_connected_via_tor">Tor로 연결됨</string>
     <string name="auth_tor_error">Tor 오류</string>
-    <string name="auth_wisp">wisp</string>
+    <string name="auth_wisp">antz</string>
     <string name="auth_tagline">게시물을 스크롤하는 작은 인터페이스</string>
     <string name="auth_hide_key">키 숨기기</string>
     <string name="auth_show_key">키 표시</string>
@@ -398,12 +398,12 @@
     <string name="onboarding_welcome_back">다시 오신 것을 환영합니다</string>
     <string name="onboarding_lets_get_set_up">계정을 설정해 드릴게요</string>
     <string name="onboarding_your_network_relays">당신의 네트워크, 당신의 릴레이</string>
-    <string name="onboarding_network_description">Wisp는 친구들이 실제로 사용하는 릴레이를 발견하고 직접 연결합니다. 이를 통해 더 빠른 전달과 누락된 게시물 감소—중앙 서버 불필요.</string>
+    <string name="onboarding_network_description">Antz는 친구들이 실제로 사용하는 릴레이를 발견하고 직접 연결합니다. 이를 통해 더 빠른 전달과 누락된 게시물 감소—중앙 서버 불필요.</string>
     <string name="onboarding_quick_follow">빠른 팔로우</string>
     <string name="onboarding_long_press_hint">프로필 사진을 길게 누르면 팔로우/언팔로우 가능</string>
-    <string name="onboarding_utxo">utxo</string>
+    <string name="onboarding_utxo">roguehashrate</string>
     <string name="onboarding_try_it">사용해보세요— 위 사진을 길게 누르세요</string>
-    <string name="onboarding_lightning_wallet_info">Wisp는 내장 라이트닝 지갑 또는 Nostr Wallet Connect를 통한 잽을 지원합니다. 지갑 화면에서 언제든지 설정할 수 있습니다.</string>
+    <string name="onboarding_lightning_wallet_info">Antz는 내장 라이트닝 지갑 또는 Nostr Wallet Connect를 통한 잽을 지원합니다. 지갑 화면에서 언제든지 설정할 수 있습니다.</string>
     <string name="onboarding_setting_things_up">설정 중</string>
     <string name="onboarding_youre_all_set">준비 완료!</string>
     <string name="onboarding_mapping_graph">소셜 그래프 매핑 중…</string>
@@ -416,7 +416,7 @@
     <string name="onboarding_almost_there">거의 완료…</string>
     <string name="onboarding_please_wait">잠시만 기다려주세요…</string>
     <string name="onboarding_publishing">게시 중…</string>
-    <string name="onboarding_wisp_logo">Wisp 로고</string>
+    <string name="onboarding_wisp_logo">Antz 로고</string>
     <string name="onboarding_follow_all_x">전체 팔로우 (%d)</string>
 
     <!-- Zap / Wallet -->
@@ -468,8 +468,8 @@
     <string name="settings_video_autoplay">비디오 자동 재생</string>
     <string name="settings_video_autoplay_description">뷰로 스크롤될 때 비디오 자동 재생</string>
     <string name="settings_client_tag">클라이언트 태그</string>
-    <string name="settings_tag_notes">Wisp로 노트 태그하기</string>
-    <string name="settings_tag_notes_description">Wisp를 클라이언트로 식별하는 태그 포함. 다른 사람에게 표시됨.</string>
+    <string name="settings_tag_notes">Antz로 노트 태그하기</string>
+    <string name="settings_tag_notes_description">Antz를 클라이언트로 식별하는 태그 포함. 다른 사람에게 표시됨.</string>
     <string name="settings_public_key">공개키</string>
     <string name="settings_private_key">개인키</string>
     <string name="settings_public_key_copied">공개키 복사됨</string>
@@ -590,7 +590,7 @@
     <string name="wallet_connect_wallet">지갑 연결</string>
     <string name="wallet_choose_how">사트를 보내고 받기 위한 라이트닝 지갑 연결 방법을 선택하세요.</string>
     <string name="wallet_create_new">새 지갑 만들기</string>
-    <string name="wallet_create_description">Wisp에서 직접 새 지갑 만들기,资金은 Spark 제공자가 보호</string>
+    <string name="wallet_create_description">Antz에서 직접 새 지갑 만들기,资金은 Spark 제공자가 보호</string>
     <string name="wallet_nwc_description">NWC 연결 문자열을 사용하여 외부 라이트닝 지갑을 연결합니다.</string>
     <string name="wallet_nwc_connection_string">NWC 연결 문자열</string>
     <string name="wallet_connect">연결</string>
@@ -644,7 +644,7 @@
     <string name="online_in_network">네트워크에서 %d명 온라인</string>
     <string name="online_all_nostr">Nostr 전체에서 %d명 온라인</string>
     <string name="splash_people_online">%d명 온라인</string>
-    <string name="cd_wisp_logo">Wisp 로고</string>
+    <string name="cd_wisp_logo">Antz 로고</string>
 
     <!-- NIP-29 Chat Rooms -->
     <string name="tab_direct_messages">다이렉트 메시지</string>

@@ -64,7 +64,7 @@
     <string name="auth_connecting_to_tor">Connexion à Tor…</string>
     <string name="auth_connected_via_tor">Connecté via Tor</string>
     <string name="auth_tor_error">Erreur Tor</string>
-    <string name="auth_wisp">wisp</string>
+    <string name="auth_wisp">antz</string>
     <string name="auth_tagline">une petite interface pour faire défiler les posts</string>
     <string name="auth_hide_key">Masquer la clé</string>
     <string name="auth_show_key">Afficher la clé</string>
@@ -398,12 +398,12 @@
     <string name="onboarding_welcome_back">Bon retour</string>
     <string name="onboarding_lets_get_set_up">Paramons votre compte</string>
     <string name="onboarding_your_network_relays">Votre réseau, vos relais</string>
-    <string name="onboarding_network_description">Wisp découvre quels relais vos amis utilisent réellement, puis se connecte directement à ces relais. Cela signifie une livraison plus rapide et moins de posts manqués — aucun serveur central nécessaire.</string>
+    <string name="onboarding_network_description">Antz découvre quels relais vos amis utilisent réellement, puis se connecte directement à ces relais. Cela signifie une livraison plus rapide et moins de posts manqués — aucun serveur central nécessaire.</string>
     <string name="onboarding_quick_follow">Suivi rapide</string>
     <string name="onboarding_long_press_hint">Appuyez longuement sur n\'importe quelle photo de profil pour suivre ou ne plus suivre</string>
-    <string name="onboarding_utxo">utxo</string>
+    <string name="onboarding_utxo">roguehashrate</string>
     <string name="onboarding_try_it">Essayez — appuyez longuement sur l\'image ci-dessus</string>
-    <string name="onboarding_lightning_wallet_info">Wisp prend en charge les zaps avec un portefeuille Lightning intégré ou Nostr Wallet Connect. Vous pouvez le configurer à tout moment depuis l\'écran Portefeuille.</string>
+    <string name="onboarding_lightning_wallet_info">Antz prend en charge les zaps avec un portefeuille Lightning intégré ou Nostr Wallet Connect. Vous pouvez le configurer à tout moment depuis l\'écran Portefeuille.</string>
     <string name="onboarding_setting_things_up">Configuration en cours</string>
     <string name="onboarding_youre_all_set">Vous êtes prêt !</string>
     <string name="onboarding_mapping_graph">Cartographie de votre graphe social…</string>
@@ -416,7 +416,7 @@
     <string name="onboarding_almost_there">Presque là…</string>
     <string name="onboarding_please_wait">Veuillez patienter…</string>
     <string name="onboarding_publishing">Publication…</string>
-    <string name="onboarding_wisp_logo">Logo Wisp</string>
+    <string name="onboarding_wisp_logo">Logo Antz</string>
     <string name="onboarding_follow_all_x">Suivre Tout (%d)</string>
 
     <!-- Zap / Wallet -->
@@ -468,8 +468,8 @@
     <string name="settings_video_autoplay">Lecture automatique des vidéos</string>
     <string name="settings_video_autoplay_description">Lire automatiquement les vidéos quand elles apparaissent à l\'écran</string>
     <string name="settings_client_tag">Tag Client</string>
-    <string name="settings_tag_notes">Taguer les notes avec Wisp</string>
-    <string name="settings_tag_notes_description">Inclure un tag identifiant Wisp comme le client. Ceci est visible par les autres.</string>
+    <string name="settings_tag_notes">Taguer les notes avec Antz</string>
+    <string name="settings_tag_notes_description">Inclure un tag identifiant Antz comme le client. Ceci est visible par les autres.</string>
     <string name="settings_public_key">Clé Publique</string>
     <string name="settings_private_key">Clé Privée</string>
     <string name="settings_public_key_copied">Clé publique copiée</string>
@@ -590,7 +590,7 @@
     <string name="wallet_connect_wallet">Connecter un Portefeuille</string>
     <string name="wallet_choose_how">Choisissez comment connecter un portefeuille Lightning pour envoyer et recevoir des sats.</string>
     <string name="wallet_create_new">Créer un Nouveau Portefeuille</string>
-    <string name="wallet_create_description">Créez un nouveau portefeuille directement dans Wisp, les fonds sont sécurisés par les fournisseurs Spark</string>
+    <string name="wallet_create_description">Créez un nouveau portefeuille directement dans Antz, les fonds sont sécurisés par les fournisseurs Spark</string>
     <string name="wallet_nwc_description">Connectez un portefeuille Lightning externe utilisant une chaîne de connexion NWC.</string>
     <string name="wallet_nwc_connection_string">Chaîne de Connexion NWC</string>
     <string name="wallet_connect">Connecter</string>
@@ -644,7 +644,7 @@
     <string name="online_in_network">%d en ligne dans votre réseau</string>
     <string name="online_all_nostr">%d en ligne sur tout Nostr</string>
     <string name="splash_people_online">%d personnes en ligne</string>
-    <string name="cd_wisp_logo">Logo Wisp</string>
+    <string name="cd_wisp_logo">Logo Antz</string>
 
     <!-- NIP-29 Chat Rooms -->
     <string name="tab_direct_messages">Messages directs</string>

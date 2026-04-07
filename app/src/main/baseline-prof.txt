@@ -1,13 +1,13 @@
-HSPLcom/wisp/app/MainActivity;->**(**)**
-HSPLcom/wisp/app/MainActivityKt;->**(**)**
+HSPLcom/antz/app/MainActivity;->**(**)**
+HSPLcom/antz/app/MainActivityKt;->**(**)**
 
-HSPLcom/wisp/app/viewmodel/**;->**(**)**
-HSPLcom/wisp/app/repo/**;->**(**)**
-HSPLcom/wisp/app/relay/**;->**(**)**
-HSPLcom/wisp/app/nostr/**;->**(**)**
+HSPLcom/antz/app/viewmodel/**;->**(**)**
+HSPLcom/antz/app/repo/**;->**(**)**
+HSPLcom/antz/app/relay/**;->**(**)**
+HSPLcom/antz/app/nostr/**;->**(**)**
 
-HSPLcom/wisp/app/ui/screen/FeedScreenKt;->**(**)**
-HSPLcom/wisp/app/ui/screen/AuthScreenKt;->**(**)**
-HSPLcom/wisp/app/ui/screen/LoadingScreenKt;->**(**)**
-HSPLcom/wisp/app/ui/component/**;->**(**)**
-HSPLcom/wisp/app/ui/navigation/**;->**(**)**
+HSPLcom/antz/app/ui/screen/FeedScreenKt;->**(**)**
+HSPLcom/antz/app/ui/screen/AuthScreenKt;->**(**)**
+HSPLcom/antz/app/ui/screen/LoadingScreenKt;->**(**)**
+HSPLcom/antz/app/ui/component/**;->**(**)**
+HSPLcom/antz/app/ui/navigation/**;->**(**)**

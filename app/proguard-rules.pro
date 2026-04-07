@@ -58,7 +58,7 @@
 # ObjectBox
 -keep class io.objectbox.** { *; }
 -dontwarn io.objectbox.**
--keep class com.wisp.app.db.** { *; }
+-keep class com.antz.app.db.** { *; }
 
 # Breez SDK Spark (UniFFI bindings)
 -keep class breez_sdk_spark.** { *; }

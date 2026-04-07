@@ -64,7 +64,7 @@
     <string name="auth_connecting_to_tor">Torに接続中…</string>
     <string name="auth_connected_via_tor">Tor経由で接続済み</string>
     <string name="auth_tor_error">Torエラー</string>
-    <string name="auth_wisp">wisp</string>
+    <string name="auth_wisp">antz</string>
     <string name="auth_tagline">投稿をスクロールするための小さなインターフェース</string>
     <string name="auth_hide_key">鍵を隠す</string>
     <string name="auth_show_key">鍵を表示</string>
@@ -398,12 +398,12 @@
     <string name="onboarding_welcome_back">おかえりなさい</string>
     <string name="onboarding_lets_get_set_up">アカウントを設定しましょう</string>
     <string name="onboarding_your_network_relays">あなたのネットワーク、あなたのリレー</string>
-    <string name="onboarding_network_description">Wispは友達が実際に使っているリレーを発見し、直接それに接続します。これにより、より 빠른配信と投稿の見逃しが少なくなります— центрарサーバー的必要がありません。</string>
+    <string name="onboarding_network_description">Antzは友達が実際に使っているリレーを発見し、直接それに接続します。これにより、より 빠른配信と投稿の見逃しが少なくなります— центрарサーバー的必要がありません。</string>
     <string name="onboarding_quick_follow">クイックフォロー</string>
     <string name="onboarding_long_press_hint">プロフィール写真をロングプレスするとフォロー/フォロー解除できます</string>
-    <string name="onboarding_utxo">utxo</string>
+    <string name="onboarding_utxo">roguehashrate</string>
     <string name="onboarding_try_it">試してみよう— 上記の画像をロングプレス</string>
-    <string name="onboarding_lightning_wallet_info">Wispは組み込みLightningウォレットまたはNostr Wallet Connectでサップをサポートします。ウォレット画面からいつでも設定できます。</string>
+    <string name="onboarding_lightning_wallet_info">Antzは組み込みLightningウォレットまたはNostr Wallet Connectでサップをサポートします。ウォレット画面からいつでも設定できます。</string>
     <string name="onboarding_setting_things_up">設定中</string>
     <string name="onboarding_youre_all_set">準備完了！</string>
     <string name="onboarding_mapping_graph">ソーシャルグラフをマッピング中…</string>
@@ -416,7 +416,7 @@
     <string name="onboarding_almost_there">もう少しで完了…</string>
     <string name="onboarding_please_wait">お待ちください…</string>
     <string name="onboarding_publishing">公開中…</string>
-    <string name="onboarding_wisp_logo">Wispロゴ</string>
+    <string name="onboarding_wisp_logo">Antzロゴ</string>
     <string name="onboarding_follow_all_x">全員をフォロー（%d）</string>
 
     <!-- Zap / Wallet -->
@@ -468,8 +468,8 @@
     <string name="settings_video_autoplay">動画の自動再生</string>
     <string name="settings_video_autoplay_description">ビューにスクロールされたときに動画を自動再生</string>
     <string name="settings_client_tag">クライアントタグ</string>
-    <string name="settings_tag_notes">ノートにWispをタグ付け</string>
-    <string name="settings_tag_notes_description">Wispをクライアントとして識別するタグを含める。これは他の人に表示されます。</string>
+    <string name="settings_tag_notes">ノートにAntzをタグ付け</string>
+    <string name="settings_tag_notes_description">Antzをクライアントとして識別するタグを含める。これは他の人に表示されます。</string>
     <string name="settings_public_key">公開鍵</string>
     <string name="settings_private_key">秘密鍵</string>
     <string name="settings_public_key_copied">公開鍵をコピーしました</string>
@@ -590,7 +590,7 @@
     <string name="wallet_connect_wallet">ウォレットを接続</string>
     <string name="wallet_choose_how">サットを送受信するためのLightningウォレットの接続方法を選択してください。</string>
     <string name="wallet_create_new">新規ウォレットを作成</string>
-    <string name="wallet_create_description">Wispで直接新しいウォレットを作成、資金はSparkプロバイダーが保護</string>
+    <string name="wallet_create_description">Antzで直接新しいウォレットを作成、資金はSparkプロバイダーが保護</string>
     <string name="wallet_nwc_description">NWC接続文字列を使用して外部Lightningウォレットを接続。</string>
     <string name="wallet_nwc_connection_string">NWC接続文字列</string>
     <string name="wallet_connect">接続</string>
@@ -644,7 +644,7 @@
     <string name="online_in_network">ネットワーク内で%d人がオンライン</string>
     <string name="online_all_nostr">Nostr全体で%d人がオンライン</string>
     <string name="splash_people_online">%d人がオンライン</string>
-    <string name="cd_wisp_logo">Wispロゴ</string>
+    <string name="cd_wisp_logo">Antzロゴ</string>
 
     <!-- NIP-29 Chat Rooms -->
     <string name="tab_direct_messages">ダイレクトメッセージ</string>

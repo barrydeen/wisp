@@ -1,6 +1,6 @@
-# Wisp
+# Antz
 
-A minimal, performant Android client for the [Nostr](https://nostr.com) protocol. Built with Kotlin and Jetpack Compose, Wisp prioritizes decentralization, intelligent relay routing, and a clean native experience.
+A minimal, performant Android client for the [Nostr](https://nostr.com) protocol. Built with Kotlin and Jetpack Compose, Antz prioritizes decentralization, intelligent relay routing, and a clean native experience.
 
 > **Status:** Early alpha (v0.1.0) — actively developed, expect breaking changes.
 
@@ -8,7 +8,7 @@ A minimal, performant Android client for the [Nostr](https://nostr.com) protocol
 
 ## Table of Contents
 
-- [Why Wisp](#why-wisp)
+- [Why Antz](#why-antz)
 - [Key Features](#key-features)
 - [Screenshots](#screenshots)
 - [Architecture](#architecture)
@@ -21,11 +21,11 @@ A minimal, performant Android client for the [Nostr](https://nostr.com) protocol
 
 ---
 
-## Why Wisp
+## Why Antz
 
-Most Nostr clients treat relays as interchangeable dumb pipes. Wisp takes a different approach — it implements the outbox/inbox relay model from day one, routing messages intelligently based on where users actually publish and read. The result is faster event delivery, less wasted bandwidth, and a client that actively promotes the decentralized architecture Nostr was designed for.
+Most Nostr clients treat relays as interchangeable dumb pipes. Antz takes a different approach — it implements the outbox/inbox relay model from day one, routing messages intelligently based on where users actually publish and read. The result is faster event delivery, less wasted bandwidth, and a client that actively promotes the decentralized architecture Nostr was designed for.
 
-Wisp is built to be fast, lightweight, and respectful of both your device and the relay network.
+Antz is built to be fast, lightweight, and respectful of both your device and the relay network.
 
 ---
 
@@ -33,7 +33,7 @@ Wisp is built to be fast, lightweight, and respectful of both your device and th
 
 ### Intelligent Outbox/Inbox Relay Routing
 
-Wisp implements a full outbox/inbox model with relay scoring:
+Antz implements a full outbox/inbox model with relay scoring:
 
 - **Outbox reads**: Fetches a user's posts from their *write relays* (where they actually publish), not from a hardcoded list
 - **Inbox writes**: Delivers replies and reactions to a user's *read relays* (where they actually look), ensuring they see your interactions
@@ -62,7 +62,7 @@ Wisp implements a full outbox/inbox model with relay scoring:
 
 ### Lightning Wallet
 
-Wisp includes a built-in non-custodial Lightning wallet powered by [Breez SDK (Spark)](https://github.com/niclas9/breez-sdk-spark), with NWC as an alternative:
+Antz includes a built-in non-custodial Lightning wallet powered by [Breez SDK (Spark)](https://github.com/niclas9/breez-sdk-spark), with NWC as an alternative:
 
 - **Embedded Spark wallet**: Self-custodial Lightning node that runs on-device — no external wallet app needed
 - **Seed phrase backup**: 12-word mnemonic for wallet recovery on any device
@@ -124,7 +124,7 @@ Wisp includes a built-in non-custodial Lightning wallet powered by [Breez SDK (S
 
 ## Architecture
 
-Wisp follows an MVVM architecture with clear layer separation:
+Antz follows an MVVM architecture with clear layer separation:
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -160,7 +160,7 @@ Wisp follows an MVVM architecture with clear layer separation:
 ### Project Structure
 
 ```
-app/src/main/kotlin/com/wisp/app/
+app/src/main/kotlin/com/antz/app/
 ├── nostr/          # Protocol implementations (NipXX.kt objects)
 │   ├── Event.kt        # Core event structure, signing, serialization
 │   ├── Filter.kt       # Subscription filters
@@ -229,7 +229,7 @@ APK downloads will be available on the [Releases](../../releases) page once publ
 
 1. **Create or import a key** — Generate a fresh keypair or paste your existing `nsec`
 2. **Set up your profile** — The onboarding flow walks you through name, picture, and bio
-3. **Follow some people** — Wisp suggests popular accounts to get your feed started
+3. **Follow some people** — Antz suggests popular accounts to get your feed started
 4. **Configure relays** — Your relay list is published as a NIP-65 event so other outbox-aware clients can find you
 
 ---
@@ -246,8 +246,8 @@ APK downloads will be available on the [Releases](../../releases) page once publ
 
 ```bash
 # Clone the repository
-git clone https://github.com/barrydeen/wisp.git
-cd wisp
+git clone https://github.com/barrydeen/antz.git
+cd antz
 
 # Build debug APK
 ./gradlew assembleDebug
@@ -266,7 +266,7 @@ cd wisp
 
 ## Contributing
 
-Contributions are welcome! Wisp is an open-source project and we appreciate help from the community.
+Contributions are welcome! Antz is an open-source project and we appreciate help from the community.
 
 ### How to Contribute
 
@@ -369,7 +369,7 @@ Found a bug or have a feature request? [Open an issue](../../issues) with:
 
 ## License
 
-Wisp is released under the [MIT License](LICENSE).
+Antz is released under the [MIT License](LICENSE).
 
 ```
 MIT License
