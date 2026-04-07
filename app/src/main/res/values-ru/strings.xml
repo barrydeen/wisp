@@ -444,6 +444,8 @@
     <string name="settings_auto_load_description">Автоматически загружать изображения и видео в заметках. Если выключено — нажмите для загрузки.</string>
     <string name="settings_video_autoplay">Автовоспроизведение видео</string>
     <string name="settings_video_autoplay_description">Автоматически воспроизводить видео при появлении в поле зрения</string>
+    <string name="settings_hide_live_streams">Скрыть прямые трансляции</string>
+    <string name="settings_hide_live_streams_description">Скрыть строку прямых трансляций в верхней части ленты</string>
     <string name="settings_client_tag">Метка клиента</string>
     <string name="settings_tag_notes">Помечать заметки как Wisp</string>
     <string name="settings_tag_notes_description">Добавлять метку, идентифицирующую Wisp как клиент. Видимо другим.</string>

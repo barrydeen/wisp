@@ -467,6 +467,8 @@
     <string name="settings_auto_load_description">ノートの画像と動画を自動的にダウンロード。オフの場合、タップして読み込み。</string>
     <string name="settings_video_autoplay">動画の自動再生</string>
     <string name="settings_video_autoplay_description">ビューにスクロールされたときに動画を自動再生</string>
+    <string name="settings_hide_live_streams">ライブ配信を非表示</string>
+    <string name="settings_hide_live_streams_description">フィード上部のライブ配信の行を非表示にする</string>
     <string name="settings_client_tag">クライアントタグ</string>
     <string name="settings_tag_notes">ノートにWispをタグ付け</string>
     <string name="settings_tag_notes_description">Wispをクライアントとして識別するタグを含める。これは他の人に表示されます。</string>

@@ -491,6 +491,8 @@
     <string name="settings_auto_load_description">Automatically download images and videos in notes. When off, tap to load.</string>
     <string name="settings_video_autoplay">Video autoplay</string>
     <string name="settings_video_autoplay_description">Automatically play videos when they scroll into view</string>
+    <string name="settings_hide_live_streams">Hide live streams</string>
+    <string name="settings_hide_live_streams_description">Hide the live streams row from the top of your feed</string>
     <string name="settings_client_tag">Client Tag</string>
     <string name="settings_tag_notes">Tag notes with Wisp</string>
     <string name="settings_tag_notes_description">Include a tag identifying Wisp as the client. This is visible to others.</string>

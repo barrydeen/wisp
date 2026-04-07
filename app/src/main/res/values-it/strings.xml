@@ -467,6 +467,8 @@
     <string name="settings_auto_load_description">Scarica automaticamente immagini e video nelle note. Quando disattivato, tocca per caricare.</string>
     <string name="settings_video_autoplay">Autoplay video</string>
     <string name="settings_video_autoplay_description">Riproduci automaticamente i video quando scorrono nella vista</string>
+    <string name="settings_hide_live_streams">Nascondi le dirette</string>
+    <string name="settings_hide_live_streams_description">Nascondi la riga delle dirette in cima al feed</string>
     <string name="settings_client_tag">Tag Cliente</string>
     <string name="settings_tag_notes">Etichetta le note con Wisp</string>
     <string name="settings_tag_notes_description">Includi un\'etichetta che identifica Wisp come cliente. Questo è visibile agli altri.</string>

@@ -240,7 +240,8 @@ class NotificationRepository(
                         9735 -> _zapReceived.tryEmit(Unit)
                         1 -> {
                             // Replies get the ICQ flower effect; quotes/mentions get generic blip
-                            val isReply = Nip10.getReplyTarget(event) != null
+                            val isQuote = event.tags.any { it.size >= 2 && it[0] == "q" }
+                            val isReply = !isQuote && Nip10.getReplyTarget(event) != null
                             if (isReply) _replyReceived.tryEmit(Unit)
                             else _notifReceived.tryEmit(event.kind)
                         }

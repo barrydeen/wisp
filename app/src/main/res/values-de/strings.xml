@@ -467,6 +467,8 @@
     <string name="settings_auto_load_description">Bilder und Videos in Notizen automatisch herunterladen. Wenn aus, tippen zum Laden.</string>
     <string name="settings_video_autoplay">Video-Autoplay</string>
     <string name="settings_video_autoplay_description">Videos automatisch abspielen, wenn sie in den Blick scrollen</string>
+    <string name="settings_hide_live_streams">Livestreams ausblenden</string>
+    <string name="settings_hide_live_streams_description">Die Livestream-Leiste oben im Feed ausblenden</string>
     <string name="settings_client_tag">Client-Tag</string>
     <string name="settings_tag_notes">Notizen mit Wisp taggen</string>
     <string name="settings_tag_notes_description">Ein Tag einfügen, das Wisp als Client identifiziert. Dies ist für andere sichtbar.</string>

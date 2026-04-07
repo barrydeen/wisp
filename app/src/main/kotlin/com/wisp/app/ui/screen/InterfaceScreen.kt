@@ -82,6 +82,7 @@ fun InterfaceScreen(
     var clientTagEnabled by remember { mutableStateOf(interfacePrefs.isClientTagEnabled()) }
     var autoLoadMedia by remember { mutableStateOf(interfacePrefs.isAutoLoadMedia()) }
     var videoAutoPlay by remember { mutableStateOf(interfacePrefs.isVideoAutoPlay()) }
+    var liveStreamsHidden by remember { mutableStateOf(interfacePrefs.isLiveStreamsHidden()) }
     var selectedTheme by remember { mutableStateOf(interfacePrefs.getTheme()) }
     var isCustomTheme by remember { mutableStateOf(selectedTheme == "custom") }
     var selectedLanguage by remember { mutableStateOf(interfacePrefs.getLanguage()) }
@@ -434,6 +435,28 @@ fun InterfaceScreen(
                     onCheckedChange = {
                         videoAutoPlay = it
                         interfacePrefs.setVideoAutoPlay(it)
+                        onChanged()
+                    }
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.settings_hide_live_streams), style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        stringResource(R.string.settings_hide_live_streams_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = liveStreamsHidden,
+                    onCheckedChange = {
+                        liveStreamsHidden = it
+                        interfacePrefs.setLiveStreamsHidden(it)
                         onChanged()
                     }
                 )

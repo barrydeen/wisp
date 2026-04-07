@@ -483,9 +483,11 @@ fun WispNavHost(
     var isReplyAnimating by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         notificationsViewModel.replyReceived.collect {
-            isReplyAnimating = true
-            kotlinx.coroutines.delay(1000)
-            isReplyAnimating = false
+            if (NotificationFilter.REPLIES in notificationsViewModel.enabledTypes.value) {
+                isReplyAnimating = true
+                kotlinx.coroutines.delay(1000)
+                isReplyAnimating = false
+            }
         }
     }
 
@@ -530,9 +532,11 @@ fun WispNavHost(
     }
     LaunchedEffect(Unit) {
         notificationsViewModel.dmReceived.collect {
-            isReplyAnimating = true
-            kotlinx.coroutines.delay(1000)
-            isReplyAnimating = false
+            if (NotificationFilter.DMS in notificationsViewModel.enabledTypes.value) {
+                isReplyAnimating = true
+                kotlinx.coroutines.delay(1000)
+                isReplyAnimating = false
+            }
             if (currentNotifSoundEnabled && NotificationFilter.DMS in notificationsViewModel.enabledTypes.value) {
                 HapticHelper.pulse()
             }

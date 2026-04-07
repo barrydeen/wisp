@@ -467,6 +467,8 @@
     <string name="settings_auto_load_description">自动下载帖子中的图片和视频。关闭时，点击加载。</string>
     <string name="settings_video_autoplay">视频自动播放</string>
     <string name="settings_video_autoplay_description">当视频滚动到视图中时自动播放</string>
+    <string name="settings_hide_live_streams">隐藏直播</string>
+    <string name="settings_hide_live_streams_description">隐藏动态顶部的直播栏</string>
     <string name="settings_client_tag">客户端标签</string>
     <string name="settings_tag_notes">用 Wisp 标记帖子</string>
     <string name="settings_tag_notes_description">包含标识 Wisp 为客户端的标签。这对其他人可见。</string>

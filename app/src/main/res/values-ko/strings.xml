@@ -467,6 +467,8 @@
     <string name="settings_auto_load_description">노트의 이미지 및 비디오 자동 다운로드. 꺼짐 시 탭하여 로드.</string>
     <string name="settings_video_autoplay">비디오 자동 재생</string>
     <string name="settings_video_autoplay_description">뷰로 스크롤될 때 비디오 자동 재생</string>
+    <string name="settings_hide_live_streams">라이브 스트림 숨기기</string>
+    <string name="settings_hide_live_streams_description">피드 상단의 라이브 스트림 행을 숨깁니다</string>
     <string name="settings_client_tag">클라이언트 태그</string>
     <string name="settings_tag_notes">Wisp로 노트 태그하기</string>
     <string name="settings_tag_notes_description">Wisp를 클라이언트로 식별하는 태그 포함. 다른 사람에게 표시됨.</string>

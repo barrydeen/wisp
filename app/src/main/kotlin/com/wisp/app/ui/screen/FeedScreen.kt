@@ -1134,7 +1134,7 @@ fun FeedScreen(
                             state = listState,
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            if (liveNowStreams.isNotEmpty() && onLiveStreamClick != null) {
+                            if (liveNowStreams.isNotEmpty() && onLiveStreamClick != null && !viewModel.interfacePrefs.isLiveStreamsHidden()) {
                                 item(key = "live-now", contentType = "live-now") {
                                     com.wisp.app.ui.component.LiveNowRow(
                                         streams = liveNowStreams,
