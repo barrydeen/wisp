@@ -52,7 +52,7 @@ fun EmojiReactionPopup(
     onOpenEmojiLibrary: (() -> Unit)? = null,
     onRemoveEmoji: ((String) -> Unit)? = null
 ) {
-    val effectiveUnicode = unicodeEmojis.ifEmpty { DEFAULT_UNICODE_EMOJIS }
+    val effectiveEmojis = unicodeEmojis.ifEmpty { DEFAULT_UNICODE_EMOJIS }
     val haptic = LocalHapticFeedback.current
 
     Popup(
@@ -74,8 +74,12 @@ fun EmojiReactionPopup(
                 horizontalArrangement = Arrangement.Start,
                 verticalArrangement = Arrangement.Center
             ) {
-                // Unicode emoji shortcuts
-                effectiveUnicode.forEach { emoji ->
+                effectiveEmojis.forEach { emoji ->
+                    val isCustom = emoji.length > 2 && emoji.startsWith(':') && emoji.endsWith(':')
+                    val shortcode = if (isCustom) emoji.substring(1, emoji.length - 1) else null
+                    val customUrl = shortcode?.let { resolvedEmojis[it] }
+                    // Skip custom emojis whose shortcode is no longer in resolvedEmojis
+                    if (isCustom && customUrl == null) return@forEach
                     val isSelected = emoji in selectedEmojis
                     Box(
                         modifier = Modifier
@@ -97,38 +101,15 @@ fun EmojiReactionPopup(
                                 ) else Modifier
                             )
                     ) {
-                        Text(emoji, fontSize = 24.sp)
-                    }
-                }
-                // Custom image emojis
-                resolvedEmojis.forEach { (shortcode, url) ->
-                    val emojiKey = ":$shortcode:"
-                    val isSelected = emojiKey in selectedEmojis
-                    Box(
-                        modifier = Modifier
-                            .combinedClickable(
-                                onClick = {
-                                    onSelect(emojiKey)
-                                    onDismiss()
-                                },
-                                onLongClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onRemoveEmoji?.invoke(emojiKey)
-                                }
+                        if (customUrl != null) {
+                            AsyncImage(
+                                model = customUrl,
+                                contentDescription = shortcode,
+                                modifier = Modifier.size(28.dp)
                             )
-                            .padding(8.dp)
-                            .then(
-                                if (isSelected) Modifier.background(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                    RoundedCornerShape(12.dp)
-                                ) else Modifier
-                            )
-                    ) {
-                        AsyncImage(
-                            model = url,
-                            contentDescription = shortcode,
-                            modifier = Modifier.size(28.dp)
-                        )
+                        } else {
+                            Text(emoji, fontSize = 24.sp)
+                        }
                     }
                 }
                 TextButton(onClick = {

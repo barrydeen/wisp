@@ -110,6 +110,7 @@ fun LiveStreamScreen(
     onFollowAuthor: ((String) -> Unit)? = null,
     onBlockAuthor: ((String) -> Unit)? = null,
     isFollowing: ((String) -> Boolean)? = null,
+    onEmojiUsed: ((String) -> Unit)? = null,
     onZap: ((messageId: String, senderPubkey: String) -> Unit)? = null,
     onZapStream: (() -> Unit)? = null,
     streamZapTotal: Long = 0,
@@ -234,6 +235,7 @@ fun LiveStreamScreen(
                             },
                             onReact = { messageId, senderPubkey, emoji ->
                                 viewModel.sendReaction(messageId, senderPubkey, emoji, signer, resolvedEmojis)
+                                onEmojiUsed?.invoke(emoji)
                             },
                             onFollowAuthor = onFollowAuthor,
                             onBlockAuthor = onBlockAuthor,

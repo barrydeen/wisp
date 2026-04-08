@@ -1094,7 +1094,7 @@ fun WispNavHost(
             val profilePinnedIds by if (isOwnProfile) feedViewModel.pinRepo.pinnedIds.collectAsState() else userProfileViewModel.pinnedNoteIds.collectAsState()
             val profileZapInProgress by feedViewModel.zapInProgress.collectAsState()
             val profileResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
-            val profileUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+            val profileUnicodeEmojis by feedViewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
             var showProfileEmojiLibrary by remember { mutableStateOf(false) }
             UserProfileScreen(
                 viewModel = userProfileViewModel,
@@ -1386,7 +1386,7 @@ fun WispNavHost(
             val peerProfile = feedViewModel.eventRepo.getProfileData(pubkey)
             val userProfile = userPubkey?.let { feedViewModel.eventRepo.getProfileData(it) }
             val dmResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
-            val dmUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+            val dmUnicodeEmojis by feedViewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
             var showDmEmojiLibrary by remember { mutableStateOf(false) }
             DmConversationScreen(
                 viewModel = dmConvoViewModel,
@@ -1417,7 +1417,8 @@ fun WispNavHost(
                 },
                 resolvedEmojis = dmResolvedEmojis,
                 unicodeEmojis = dmUnicodeEmojis,
-                onOpenEmojiLibrary = { showDmEmojiLibrary = true }
+                onOpenEmojiLibrary = { showDmEmojiLibrary = true },
+                onEmojiUsed = { feedViewModel.customEmojiRepo.recordEmojiUsage(it) }
             )
             if (showDmEmojiLibrary) {
                 val dmSheetUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
@@ -1461,7 +1462,7 @@ fun WispNavHost(
             val peerProfile = participantList.firstOrNull()?.let { feedViewModel.eventRepo.getProfileData(it) }
             val userProfile = userPubkey?.let { feedViewModel.eventRepo.getProfileData(it) }
             val dmGroupResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
-            val dmGroupUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+            val dmGroupUnicodeEmojis by feedViewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
             var showDmGroupEmojiLibrary by remember { mutableStateOf(false) }
             DmConversationScreen(
                 viewModel = dmConvoViewModel,
@@ -1493,7 +1494,8 @@ fun WispNavHost(
                 },
                 resolvedEmojis = dmGroupResolvedEmojis,
                 unicodeEmojis = dmGroupUnicodeEmojis,
-                onOpenEmojiLibrary = { showDmGroupEmojiLibrary = true }
+                onOpenEmojiLibrary = { showDmGroupEmojiLibrary = true },
+                onEmojiUsed = { feedViewModel.customEmojiRepo.recordEmojiUsage(it) }
             )
             if (showDmGroupEmojiLibrary) {
                 val dmGroupSheetUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
@@ -1553,7 +1555,7 @@ fun WispNavHost(
             var groupRoomZapTarget by remember { mutableStateOf<com.wisp.app.nostr.NostrEvent?>(null) }
             var showGroupRoomEmojiLibrary by remember { mutableStateOf(false) }
             val groupRoomResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
-            val groupRoomUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+            val groupRoomUnicodeEmojis by feedViewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
             val groupRoomZapVersion by feedViewModel.eventRepo.zapVersion.collectAsState()
             val groupRoomZapInProgress by feedViewModel.zapInProgress.collectAsState()
             var groupRoomZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
@@ -1690,7 +1692,8 @@ fun WispNavHost(
                             feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
                         }
                     )
-                }
+                },
+                onEmojiUsed = { feedViewModel.customEmojiRepo.recordEmojiUsage(it) }
             )
             if (showGroupRoomEmojiLibrary) {
                 val groupRoomSheetUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
@@ -1835,7 +1838,7 @@ fun WispNavHost(
             val threadListedIds = remember(threadSetListedIds, threadBookmarkedIds) { threadSetListedIds + threadBookmarkedIds }
             val threadPinnedIds by feedViewModel.pinRepo.pinnedIds.collectAsState()
             val threadResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
-            val threadUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+            val threadUnicodeEmojis by feedViewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
             ThreadScreen(
                 viewModel = threadViewModel,
                 eventRepo = feedViewModel.eventRepo,
@@ -2265,7 +2268,7 @@ fun WispNavHost(
             val articleListedIds = remember(articleSetListedIds, articleBookmarkedIds) { articleSetListedIds + articleBookmarkedIds }
             val articlePinnedIds by feedViewModel.pinRepo.pinnedIds.collectAsState()
             val articleResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
-            val articleUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+            val articleUnicodeEmojis by feedViewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
             var showArticleEmojiLibrary by remember { mutableStateOf(false) }
 
             LaunchedEffect(Unit) {
@@ -2429,7 +2432,7 @@ fun WispNavHost(
                 onDispose { liveStreamViewModel.cleanup(feedViewModel.relayPool) }
             }
             val liveResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
-            val liveUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+            val liveUnicodeEmojis by feedViewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
             val liveZapVersion by feedViewModel.eventRepo.zapVersion.collectAsState()
             val liveZapInProgress by feedViewModel.zapInProgress.collectAsState()
             val liveStreamZapTotal by liveStreamViewModel.streamZapTotal.collectAsState()
@@ -2517,6 +2520,7 @@ fun WispNavHost(
                 onFollowAuthor = { pubkey -> feedViewModel.toggleFollow(pubkey) },
                 onBlockAuthor = { pubkey -> feedViewModel.blockUser(pubkey) },
                 isFollowing = { pubkey -> feedViewModel.contactRepo.isFollowing(pubkey) },
+                onEmojiUsed = { feedViewModel.customEmojiRepo.recordEmojiUsage(it) },
                 onZap = { messageId, senderPubkey ->
                     // Create a minimal event for the zap sender to target
                     val chatEvent = feedViewModel.eventRepo.getEvent(messageId)
@@ -3014,7 +3018,7 @@ fun WispNavHost(
             }
 
             val notifResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
-            val notifUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+            val notifUnicodeEmojis by feedViewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
 
             NotificationsScreen(
                 viewModel = notificationsViewModel,

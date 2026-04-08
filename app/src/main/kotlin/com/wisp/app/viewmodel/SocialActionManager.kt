@@ -291,6 +291,7 @@ class SocialActionManager(
                     outboxRouter.publishToInbox(msg, event.pubkey)
                     eventRepo.addEvent(reactionEvent)
                     _reactionSent.tryEmit(Unit)
+                    customEmojiRepo.recordEmojiUsage(emoji)
                 }
             } catch (_: Exception) {}
         }

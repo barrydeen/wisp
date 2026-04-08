@@ -1350,7 +1350,7 @@ private fun FeedItem(
         viewModel.contactRepo.isFollowing(event.pubkey)
     }
     val resolvedEmojis by viewModel.customEmojiRepo.resolvedEmojis.collectAsState()
-    val unicodeEmojis by viewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+    val unicodeEmojis by viewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
     val eventReactionEmojiUrls = remember(reactionVersion, event.id) {
         viewModel.eventRepo.getReactionEmojiUrls(event.id)
     }
@@ -1529,7 +1529,7 @@ private fun FeedArticleItem(
     val hasUserReposted = remember(repostVersion, event.id) { viewModel.eventRepo.hasUserReposted(event.id) }
     val hasUserZapped = remember(zapVersion, event.id) { viewModel.eventRepo.hasUserZapped(event.id) }
     val resolvedEmojis by viewModel.customEmojiRepo.resolvedEmojis.collectAsState()
-    val unicodeEmojis by viewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+    val unicodeEmojis by viewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
     val eventReactionEmojiUrls = remember(reactionVersion, event.id) {
         viewModel.eventRepo.getReactionEmojiUrls(event.id)
     }

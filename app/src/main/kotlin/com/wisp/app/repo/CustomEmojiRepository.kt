@@ -34,6 +34,11 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
     private val _unicodeEmojis = MutableStateFlow<List<String>>(emptyList())
     val unicodeEmojis: StateFlow<List<String>> = _unicodeEmojis
 
+    // Emoji frequency tracking — sorted picker shows most-used first
+    private val _emojiFrequency = MutableStateFlow<Map<String, Int>>(emptyMap())
+    private val _sortedUnicodeEmojis = MutableStateFlow<List<String>>(emptyList())
+    val sortedUnicodeEmojis: StateFlow<List<String>> = _sortedUnicodeEmojis
+
     private var ownerPubkey: String? = pubkeyHex
 
     companion object {
@@ -93,6 +98,7 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
             }
         }
         _resolvedEmojis.value = map
+        recomputeSortedEmojis()
     }
 
     fun getSetReferences(): List<String> {
@@ -113,6 +119,7 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
         val updated = current + emoji
         _unicodeEmojis.value = updated
         saveUnicodeToPrefs()
+        recomputeSortedEmojis()
         return updated
     }
 
@@ -120,12 +127,30 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
         val updated = _unicodeEmojis.value.filter { it != emoji }
         _unicodeEmojis.value = updated
         saveUnicodeToPrefs()
+        recomputeSortedEmojis()
         return updated
     }
 
     fun setUnicodeEmojis(emojis: List<String>) {
         _unicodeEmojis.value = emojis
         saveUnicodeToPrefs()
+        recomputeSortedEmojis()
+    }
+
+    fun recordEmojiUsage(emoji: String) {
+        val freq = _emojiFrequency.value.toMutableMap()
+        freq[emoji] = (freq[emoji] ?: 0) + 1
+        _emojiFrequency.value = freq
+        recomputeSortedEmojis()
+        saveFrequencyToPrefs()
+    }
+
+    private fun recomputeSortedEmojis() {
+        val freq = _emojiFrequency.value
+        // Combine unicode emojis and custom :shortcode: keys into one frequency-sorted list
+        val customKeys = _resolvedEmojis.value.keys.map { ":$it:" }
+        val all = _unicodeEmojis.value + customKeys
+        _sortedUnicodeEmojis.value = all.sortedByDescending { freq[it] ?: 0 }
     }
 
     fun clear() {
@@ -135,6 +160,8 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
         _resolvedEmojis.value = emptyMap()
         eventEmojiCache.evictAll()
         _unicodeEmojis.value = emptyList()
+        _emojiFrequency.value = emptyMap()
+        _sortedUnicodeEmojis.value = emptyList()
         prefs.edit().clear().apply()
     }
 
@@ -223,6 +250,12 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
         prefs.edit().putString("unicode_emojis", arr.toString()).apply()
     }
 
+    private fun saveFrequencyToPrefs() {
+        val obj = JSONObject()
+        for ((emoji, count) in _emojiFrequency.value) obj.put(emoji, count)
+        prefs.edit().putString("emoji_frequency", obj.toString()).apply()
+    }
+
     private fun loadFromPrefs() {
         // Load unicode emojis
         val unicodeJson = prefs.getString("unicode_emojis", null)
@@ -258,6 +291,18 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
             }
             saveUnicodeToPrefs()
         }
+
+        // Load emoji frequency
+        val freqJson = prefs.getString("emoji_frequency", null)
+        if (freqJson != null) {
+            try {
+                val obj = JSONObject(freqJson)
+                val map = mutableMapOf<String, Int>()
+                for (key in obj.keys()) map[key] = obj.getInt(key)
+                _emojiFrequency.value = map
+            } catch (_: Exception) {}
+        }
+        recomputeSortedEmojis()
 
         // Load user emoji list
         val emojisJson = prefs.getString("user_emoji_list", null)

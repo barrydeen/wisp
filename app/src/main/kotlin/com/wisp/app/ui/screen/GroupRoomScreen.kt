@@ -159,7 +159,8 @@ fun GroupRoomScreen(
     onFollowAuthor: ((String) -> Unit)? = null,
     onBlockAuthor: ((String) -> Unit)? = null,
     isFollowing: ((String) -> Boolean)? = null,
-    noteActions: com.wisp.app.ui.component.NoteActions? = null
+    noteActions: com.wisp.app.ui.component.NoteActions? = null,
+    onEmojiUsed: ((String) -> Unit)? = null
 ) {
     val textFieldFocus = remember { FocusRequester() }
 
@@ -506,6 +507,7 @@ fun GroupRoomScreen(
                             },
                             onReact = { msgId, pubkey, emoji ->
                                 viewModel.sendReaction(msgId, pubkey, emoji, signer, relayPool, resolvedEmojis)
+                                onEmojiUsed?.invoke(emoji)
                             },
                             onZap = onZap,
                             onOpenEmojiLibrary = onOpenEmojiLibrary,
