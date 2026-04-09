@@ -8,29 +8,39 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -50,26 +60,29 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -88,23 +101,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import android.net.Uri
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import com.wisp.app.R
@@ -118,16 +139,21 @@ import com.wisp.app.repo.GroupMessage
 import com.wisp.app.repo.GroupPreview
 import com.wisp.app.ui.component.EmojiReactionPopup
 import com.wisp.app.ui.component.EmojiShortcodePopup
+import com.wisp.app.ui.component.pendingEmojiReactCallback
 import com.wisp.app.ui.component.MentionOutputTransformation
 import com.wisp.app.ui.component.insertEmojiShortcode
 import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
+import com.wisp.app.ui.theme.WispThemeColors
 import com.wisp.app.viewmodel.GroupRoomViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.math.BigInteger
 import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -150,6 +176,7 @@ fun GroupRoomScreen(
     fetchGroupPreview: (suspend (String, String) -> GroupPreview?)? = null,
     myPubkey: String? = null,
     onZap: ((messageId: String, senderPubkey: String) -> Unit)? = null,
+    onZapPreset: ((messageId: String, senderPubkey: String, amountSats: Int) -> Unit)? = null,
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
     zapVersion: Int = 0,
@@ -183,7 +210,6 @@ fun GroupRoomScreen(
 
     // BasicTextField state for GIF keyboard support via contentReceiver
     val textFieldState = remember { TextFieldState() }
-    val interactionSource = remember { MutableInteractionSource() }
     val groupEmojiTransformation = remember(resolvedEmojis) {
         MentionOutputTransformation(resolveDisplayName = { null }, resolvedEmojis = resolvedEmojis)
     }
@@ -221,6 +247,7 @@ fun GroupRoomScreen(
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var highlightTrigger by remember { mutableIntStateOf(0) }
     val scrollScope = rememberCoroutineScope()
+    var textFieldFocused by remember { mutableStateOf(false) }
 
     // Track whether we've handled the initial scrollToMessageId target
     var scrollTargetHandled by remember { mutableStateOf(scrollToMessageId == null) }
@@ -273,7 +300,16 @@ fun GroupRoomScreen(
 
     val isJoined = effectiveRoom != null
     val title = effectiveRoom?.metadata?.name ?: viewModel.groupId.ifEmpty { "Chat Room" }
-    val subtitle = viewModel.relayUrl
+
+    val onlinePubkeys by eventRepo.onlinePubkeys.collectAsState()
+    val groupMembersSet = remember(effectiveRoom?.members) {
+        effectiveRoom?.members?.toSet() ?: emptySet()
+    }
+    val onlineMembersForGroup = remember(onlinePubkeys, groupMembersSet) {
+        if (groupMembersSet.isEmpty()) onlinePubkeys
+        else onlinePubkeys.filter { it in groupMembersSet }
+    }
+    val topBarSurfaceColor = MaterialTheme.colorScheme.surface
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -284,27 +320,59 @@ fun GroupRoomScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.clickable { onGroupDetail() }
                     ) {
-                        ProfilePicture(url = effectiveRoom?.metadata?.picture, size = 36)
+                        ProfilePicture(url = effectiveRoom?.metadata?.picture, size = 40)
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f, fill = false)) {
                             Text(
                                 text = title,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Medium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Text(
-                                text = subtitle,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            if (onlineMembersForGroup.isNotEmpty()) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(top = 1.dp)
+                                ) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
+                                        onlineMembersForGroup.take(4).forEachIndexed { i, pubkey ->
+                                            Box(
+                                                modifier = Modifier
+                                                    .zIndex((4 - i).toFloat())
+                                                    .size(17.dp)
+                                                    .background(topBarSurfaceColor, CircleShape)
+                                                    .padding(0.5.dp)
+                                            ) {
+                                                ProfilePicture(
+                                                    url = eventRepo.getProfileData(pubkey)?.picture,
+                                                    size = 16
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = "${onlineMembersForGroup.size} Online",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.KeyboardArrowLeft,
+                            contentDescription = stringResource(R.string.cd_back),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
                 },
                 actions = {
@@ -348,14 +416,6 @@ fun GroupRoomScreen(
                     .padding(padding)
                     .imePadding()
             ) {
-                GroupMemberAvatarStrip(
-                    messages = messages,
-                    members = effectiveRoom?.members ?: emptyList(),
-                    eventRepo = eventRepo,
-                    onProfileClick = onProfileClick
-                )
-                HorizontalDivider()
-
                 // Search bar
                 if (searchActive) {
                     val searchFocusRequester = remember { FocusRequester() }
@@ -471,269 +531,326 @@ fun GroupRoomScreen(
                     highlightTrigger++
                 }
 
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    items(items = messages, key = { it.id }) { message ->
-                        GroupMessageBubble(
-                            message = message,
-                            isSearchHighlighted = message.id == highlightedMessageId,
-                            allMessages = messages,
-                            eventRepo = eventRepo,
-                            myPubkey = myPubkey,
-                            reactionEmojiUrls = effectiveRoom?.reactionEmojiUrls ?: emptyMap(),
-                            resolvedEmojis = resolvedEmojis,
-                            unicodeEmojis = unicodeEmojis,
-                            zapVersion = zapVersion,
-                            isZapAnimating = message.id in zapAnimatingIds,
-                            isZapInProgress = message.id in zapInProgressIds,
-                            highlightTrigger = if (message.id == highlightedMessageId) highlightTrigger else 0,
-                            onProfileClick = onProfileClick,
-                            onNoteClick = onNoteClick,
-                            onReply = {
-                                viewModel.setReplyTarget(it)
-                                textFieldFocus.requestFocus()
-                            },
-                            onScrollToMessage = { targetId ->
-                                val index = messages.indexOfFirst { it.id == targetId }
-                                if (index >= 0) {
-                                    scrollScope.launch {
-                                        listState.animateScrollToItem(index)
-                                        highlightedMessageId = targetId
-                                        highlightTrigger++
-                                    }
+                val density = LocalDensity.current
+                var bottomBarHeightPx by remember { mutableIntStateOf(0) }
+                val pasteImagesModifier =
+                    if (onUploadMedia != null) {
+                        Modifier.contentReceiver(object : ReceiveContentListener {
+                            override fun onReceive(transferableContent: TransferableContent): TransferableContent? {
+                                if (!transferableContent.hasMediaType(MediaType.Image)) {
+                                    return transferableContent
                                 }
-                            },
-                            onReact = { msgId, pubkey, emoji ->
-                                viewModel.sendReaction(msgId, pubkey, emoji, signer, relayPool, resolvedEmojis)
-                                onEmojiUsed?.invoke(emoji)
-                            },
-                            onZap = onZap,
-                            onOpenEmojiLibrary = onOpenEmojiLibrary,
-                            onFollowAuthor = onFollowAuthor,
-                            onBlockAuthor = onBlockAuthor,
-                            isFollowing = isFollowing,
-                            noteActions = noteActions
-                        )
+                                val clipData = transferableContent.clipEntry.clipData
+                                val uris = (0 until clipData.itemCount)
+                                    .mapNotNull { i -> clipData.getItemAt(i).uri }
+                                if (uris.isNotEmpty()) {
+                                    onUploadMedia(uris) { url -> viewModel.appendToText(url) }
+                                }
+                                return transferableContent.consume { item -> item.uri != null }
+                            }
+                        })
+                    } else {
+                        Modifier
                     }
-                }
+                val fieldBorder = BorderStroke(
+                    0.33.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+                )
+                val sendEnabled =
+                    messageText.isNotBlank() && signer != null && uploadProgress == null && !sending
 
-                if (relayError != null && messages.isEmpty()) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = relayError ?: "",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.padding(12.dp)
-                        )
-                    }
-                }
-
-                sendError?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(horizontal = 16.dp)
+                @Composable
+                fun MessageComposerField(
+                    lineLimits: TextFieldLineLimits,
+                    modifier: Modifier = Modifier
+                ) {
+                    BasicTextField(
+                        state = textFieldState,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        modifier = modifier
+                            .focusRequester(textFieldFocus)
+                            .onFocusChanged { textFieldFocused = it.isFocused }
+                            .then(pasteImagesModifier),
+                        enabled = uploadProgress == null,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        outputTransformation = groupEmojiTransformation,
+                        lineLimits = lineLimits,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            color = MaterialTheme.colorScheme.onSurface
+                        ),
+                        decorator = { innerTextField ->
+                            Box {
+                                if (textFieldState.text.isEmpty()) {
+                                    Text(
+                                        stringResource(R.string.placeholder_message),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        }
                     )
                 }
 
-                // Reply preview bar
-                if (replyTarget != null) {
-                    val replyProfile = remember(replyTarget!!.senderPubkey) {
-                        eventRepo.getProfileData(replyTarget!!.senderPubkey)
-                    }
-                    val replyName = replyProfile?.displayString ?: replyTarget!!.senderPubkey.take(8) + "…"
-                    HorizontalDivider()
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                Box(modifier = Modifier.weight(1f)) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = with(density) { bottomBarHeightPx.toDp() })
                     ) {
-                        Icon(
-                            Icons.Outlined.ChatBubbleOutline,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = replyName,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold
+                        items(items = messages, key = { it.id }) { message ->
+                            GroupMessageBubble(
+                                message = message,
+                                isSearchHighlighted = message.id == highlightedMessageId,
+                                allMessages = messages,
+                                eventRepo = eventRepo,
+                                myPubkey = myPubkey,
+                                reactionEmojiUrls = effectiveRoom?.reactionEmojiUrls ?: emptyMap(),
+                                resolvedEmojis = resolvedEmojis,
+                                unicodeEmojis = unicodeEmojis,
+                                zapVersion = zapVersion,
+                                isZapAnimating = message.id in zapAnimatingIds,
+                                isZapInProgress = message.id in zapInProgressIds,
+                                highlightTrigger = if (message.id == highlightedMessageId) highlightTrigger else 0,
+                                onProfileClick = onProfileClick,
+                                onNoteClick = onNoteClick,
+                                onReply = {
+                                    viewModel.setReplyTarget(it)
+                                    textFieldFocus.requestFocus()
+                                },
+                                onScrollToMessage = { targetId ->
+                                    val index = messages.indexOfFirst { it.id == targetId }
+                                    if (index >= 0) {
+                                        scrollScope.launch {
+                                            listState.animateScrollToItem(index)
+                                            highlightedMessageId = targetId
+                                            highlightTrigger++
+                                        }
+                                    }
+                                },
+                                onReact = { msgId, pubkey, emoji ->
+                                    viewModel.sendReaction(msgId, pubkey, emoji, signer, relayPool, resolvedEmojis)
+                                    onEmojiUsed?.invoke(emoji)
+                                },
+                                onZap = onZap,
+                                onZapPreset = onZapPreset,
+                                onOpenEmojiLibrary = onOpenEmojiLibrary,
+                                onFollowAuthor = onFollowAuthor,
+                                onBlockAuthor = onBlockAuthor,
+                                isFollowing = isFollowing,
+                                noteActions = noteActions
                             )
-                            Text(
-                                text = replyTarget!!.content,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        IconButton(onClick = { viewModel.clearReplyTarget() }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(16.dp))
                         }
                     }
-                }
 
-                // Autocomplete dropdowns
-                val autocomplete = remember(tfv) { detectGroupAutocomplete(tfv) }
-                if (autocomplete != null) {
-                    val members = effectiveRoom?.members ?: emptyList()
-                    when (autocomplete.mode) {
-                        AutocompleteMode.MENTION -> {
-                            val query = autocomplete.query.lowercase()
-                            val candidates = remember(query, members) {
-                                members.mapNotNull { pubkey ->
-                                    val p = eventRepo.getProfileData(pubkey) ?: return@mapNotNull null
-                                    val name = p.name?.lowercase() ?: ""
-                                    val display = p.displayName?.lowercase() ?: ""
-                                    if (query.isEmpty() || name.contains(query) || display.contains(query)) p
-                                    else null
-                                }.take(6)
+                    // Overlay: errors, autocomplete, and the message composer float above the list
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .onSizeChanged { bottomBarHeightPx = it.height }
+                    ) {
+                        if (relayError != null && messages.isEmpty()) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = relayError ?: "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.padding(12.dp)
+                                )
                             }
-                            if (candidates.isNotEmpty()) {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    tonalElevation = 3.dp,
-                                    shadowElevation = 2.dp,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(max = 200.dp)
-                                        .padding(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    androidx.compose.foundation.lazy.LazyColumn {
-                                        items(candidates, key = { it.pubkey }) { profile ->
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clickable {
-                                                        val npub = "nostr:" + Nip19.nprofileEncode(profile.pubkey)
-                                                        val newTfv = insertAutocomplete(tfv, autocomplete.triggerIndex, npub)
-                                                        tfv = newTfv
-                                                        viewModel.updateText(newTfv.text)
+                        }
+
+                        sendError?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                        }
+
+                        // Autocomplete dropdowns
+                        val autocomplete = remember(tfv) { detectGroupAutocomplete(tfv) }
+                        if (autocomplete != null) {
+                            val members = effectiveRoom?.members ?: emptyList()
+                            when (autocomplete.mode) {
+                                AutocompleteMode.MENTION -> {
+                                    val query = autocomplete.query.lowercase()
+                                    val candidates = remember(query, members) {
+                                        members.mapNotNull { pubkey ->
+                                            val p = eventRepo.getProfileData(pubkey) ?: return@mapNotNull null
+                                            val name = p.name?.lowercase() ?: ""
+                                            val display = p.displayName?.lowercase() ?: ""
+                                            if (query.isEmpty() || name.contains(query) || display.contains(query)) p
+                                            else null
+                                        }.take(6)
+                                    }
+                                    if (candidates.isNotEmpty()) {
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            tonalElevation = 3.dp,
+                                            shadowElevation = 2.dp,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(max = 200.dp)
+                                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            androidx.compose.foundation.lazy.LazyColumn {
+                                                items(candidates, key = { it.pubkey }) { profile ->
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable {
+                                                                val npub = "nostr:" + Nip19.nprofileEncode(profile.pubkey)
+                                                                val newTfv = insertAutocomplete(tfv, autocomplete.triggerIndex, npub)
+                                                                tfv = newTfv
+                                                                viewModel.updateText(newTfv.text)
+                                                            }
+                                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        ProfilePicture(url = profile.picture, size = 28)
+                                                        Spacer(Modifier.width(8.dp))
+                                                        Text(
+                                                            text = profile.displayString,
+                                                            style = MaterialTheme.typography.bodyMedium,
+                                                            maxLines = 1
+                                                        )
                                                     }
-                                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                                verticalAlignment = Alignment.CenterVertically
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                AutocompleteMode.EMOJI -> {
+                                    EmojiShortcodePopup(
+                                        query = autocomplete.query,
+                                        resolvedEmojis = resolvedEmojis,
+                                        onSelect = { shortcode ->
+                                            val newTfv = insertEmojiShortcode(tfv, autocomplete.triggerIndex, shortcode)
+                                            tfv = newTfv
+                                            viewModel.updateText(newTfv.text)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            MaterialTheme.colorScheme.background
+                                        )
+                                    )
+                                )
+                                .navigationBarsPadding()
+                        ) {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 12.dp, end = 12.dp, top = 0.dp, bottom = 8.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                border = fieldBorder
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    if (replyTarget != null) {
+                                        val rt = replyTarget!!
+                                        val replyProfile = remember(rt.senderPubkey) {
+                                            eventRepo.getProfileData(rt.senderPubkey)
+                                        }
+                                        val replyName =
+                                            replyProfile?.displayString ?: rt.senderPubkey.take(8) + "…"
+                                        GroupChatQuotedMessage(
+                                            authorPubkey = rt.senderPubkey,
+                                            authorName = replyName,
+                                            content = rt.content,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            maxContentLines = 1,
+                                            onDismiss = { viewModel.clearReplyTarget() }
+                                        )
+                                        Spacer(Modifier.height(6.dp))
+                                    }
+                                    Row(
+                                        verticalAlignment = Alignment.Bottom,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        if (onPickMedia != null) {
+                                            Surface(
+                                                onClick = onPickMedia,
+                                                enabled = uploadProgress == null && !sending,
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                                                modifier = Modifier.size(32.dp)
                                             ) {
-                                                ProfilePicture(url = profile.picture, size = 28)
-                                                Spacer(Modifier.width(8.dp))
-                                                Text(
-                                                    text = profile.displayString,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    maxLines = 1
+                                                Box(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        Icons.Filled.Add,
+                                                        contentDescription = stringResource(R.string.cd_attach_media),
+                                                        tint = if (uploadProgress == null && !sending) {
+                                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                                                        },
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        MessageComposerField(
+                                            lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .heightIn(min = 28.dp)
+                                        )
+                                        if (sending || uploadProgress != null) {
+                                            Box(
+                                                modifier = Modifier.size(36.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(20.dp),
+                                                    strokeWidth = 2.dp
+                                                )
+                                            }
+                                        } else {
+                                            IconButton(
+                                                onClick = {
+                                                    viewModel.sendMessage(relayPool, signer, resolvedEmojis)
+                                                },
+                                                enabled = sendEnabled,
+                                                modifier = Modifier.size(36.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.AutoMirrored.Filled.Send,
+                                                    contentDescription = stringResource(R.string.cd_send),
+                                                    tint = if (sendEnabled) {
+                                                        MaterialTheme.colorScheme.primary
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                                    },
+                                                    modifier = Modifier.size(20.dp)
                                                 )
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
-                        AutocompleteMode.EMOJI -> {
-                            EmojiShortcodePopup(
-                                query = autocomplete.query,
-                                resolvedEmojis = resolvedEmojis,
-                                onSelect = { shortcode ->
-                                    val newTfv = insertEmojiShortcode(tfv, autocomplete.triggerIndex, shortcode)
-                                    tfv = newTfv
-                                    viewModel.updateText(newTfv.text)
-                                }
-                            )
-                        }
-                    }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 8.dp, vertical = 8.dp)
-                ) {
-                    if (onPickMedia != null) {
-                        IconButton(
-                            onClick = onPickMedia,
-                            enabled = uploadProgress == null && !sending
-                        ) {
-                            Icon(
-                                Icons.Outlined.Image,
-                                contentDescription = stringResource(R.string.cd_attach_media),
-                                tint = if (uploadProgress == null && !sending)
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                else
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-                            )
-                        }
-                    }
-                    BasicTextField(
-                        state = textFieldState,
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        modifier = Modifier
-                            .weight(1f)
-                            .focusRequester(textFieldFocus)
-                            .then(
-                                if (onUploadMedia != null) Modifier.contentReceiver(object : ReceiveContentListener {
-                                    override fun onReceive(
-                                        transferableContent: TransferableContent
-                                    ): TransferableContent? {
-                                        if (!transferableContent.hasMediaType(MediaType.Image)) {
-                                            return transferableContent
-                                        }
-                                        val clipData = transferableContent.clipEntry.clipData
-                                        val uris = (0 until clipData.itemCount)
-                                            .mapNotNull { i -> clipData.getItemAt(i).uri }
-                                        if (uris.isNotEmpty()) {
-                                            onUploadMedia(uris) { url -> viewModel.appendToText(url) }
-                                        }
-                                        return transferableContent.consume { item -> item.uri != null }
-                                    }
-                                }) else Modifier
-                            ),
-                        enabled = uploadProgress == null,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                        outputTransformation = groupEmojiTransformation,
-                        lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            color = MaterialTheme.colorScheme.onSurface
-                        ),
-                        decorator = { innerTextField ->
-                            OutlinedTextFieldDefaults.DecorationBox(
-                                value = textFieldState.text.toString(),
-                                innerTextField = innerTextField,
-                                enabled = uploadProgress == null,
-                                singleLine = false,
-                                visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
-                                interactionSource = interactionSource,
-                                placeholder = { Text(stringResource(R.string.placeholder_message)) }
-                            )
-                        }
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    if (sending || uploadProgress != null) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    } else {
-                        IconButton(
-                            onClick = { viewModel.sendMessage(relayPool, signer, resolvedEmojis) },
-                            enabled = messageText.isNotBlank() && signer != null
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Send,
-                                contentDescription = stringResource(R.string.cd_send),
-                                tint = if (messageText.isNotBlank() && signer != null)
-                                    MaterialTheme.colorScheme.primary
-                                else
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
                     }
                 }
@@ -884,7 +1001,187 @@ private fun GroupMemberAvatarStrip(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+private val GROUP_CHAT_ZAP_PRESET_AMOUNTS = listOf(21, 69, 100, 420, 500, 1000, 2500, 5000, 10000)
+
+private fun formatGroupCamChipAmount(n: Int): String = when {
+    n >= 1_000_000 -> "${n / 1_000_000}M"
+    n >= 1000 -> "${n / 1000}K"
+    else -> n.toString()
+}
+
+/** Left accent bar color (raw profile hue), matching web QuotedMessage bar. */
+private fun profileBarColorFromPubkey(pubkey: String): Color {
+    val rgb = hexToProfileRgb(pubkey)
+    return Color(rgb.r / 255f, rgb.g / 255f, rgb.b / 255f)
+}
+
+@Composable
+private fun GroupChatSectionEyebrow(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 2.sp),
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+    )
+}
+
+/** Compact quote row matching web `QuotedMessage.svelte` (bar + name + preview). */
+@Composable
+private fun GroupChatQuotedMessage(
+    authorPubkey: String,
+    authorName: String,
+    content: String,
+    modifier: Modifier = Modifier,
+    maxContentLines: Int = 1,
+    onClick: (() -> Unit)? = null,
+    onDismiss: (() -> Unit)? = null
+) {
+    val quoteBg = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+    val backgroundScheme = MaterialTheme.colorScheme.background
+    val isDarkTheme =
+        (backgroundScheme.red * 0.299f + backgroundScheme.green * 0.587f + backgroundScheme.blue * 0.114f) < 0.5f
+    val nameColor = remember(authorPubkey, isDarkTheme) { groupMemberColor(authorPubkey, isDarkTheme) }
+    val barColor = remember(authorPubkey) { profileBarColorFromPubkey(authorPubkey) }
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(quoteBg)
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+            .height(IntrinsicSize.Min)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .fillMaxHeight()
+                .background(barColor, RoundedCornerShape(2.dp))
+        )
+        Column(
+            modifier = Modifier.padding(start = 10.dp, top = 6.dp, end = 10.dp, bottom = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Author row — optionally includes a dismiss button on the right
+            if (onDismiss != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = authorName,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = nameColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        lineHeight = 16.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        Icons.Outlined.Close,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier
+                            .size(14.dp)
+                            .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {
+                                onDismiss()
+                            }
+                    )
+                }
+            } else {
+                Text(
+                    text = authorName,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = nameColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 16.sp
+                )
+            }
+            Text(
+                text = content,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                maxLines = maxContentLines,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 17.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun GroupChatHorizontalChipStrip(
+    scrollState: ScrollState,
+    stripBackground: Color,
+    chipFill: Color,
+    chevronBackground: Color = chipFill,
+    verticalPadding: androidx.compose.ui.unit.Dp = 4.dp,
+    chipSpacing: androidx.compose.ui.unit.Dp = 2.dp,
+    trailingOnClick: () -> Unit,
+    trailingEnabled: Boolean,
+    trailingContentDescription: String,
+    chips: @Composable RowScope.() -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(stripBackground)
+            .padding(horizontal = 8.dp, vertical = verticalPadding),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Chips area — clipped to its bounds, gradient fades to strip bg on the right
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clipToBounds()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(scrollState),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(chipSpacing)
+            ) {
+                chips()
+                // Extra trailing space so last chip can scroll past gradient
+                Spacer(Modifier.width(36.dp))
+            }
+            // Gradient fade at the right edge — use alpha-0 of the same color for correct compositing
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(36.dp)
+                    .align(Alignment.CenterEnd)
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(stripBackground.copy(alpha = 0f), stripBackground)
+                        )
+                    )
+            )
+        }
+        // No spacer — zero gap between chips and chevron
+        Surface(
+            onClick = trailingOnClick,
+            enabled = trailingEnabled,
+            shape = RoundedCornerShape(8.dp),
+            color = chevronBackground,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Filled.KeyboardArrowDown,
+                    contentDescription = trailingContentDescription,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GroupMessageBubble(
     message: GroupMessage,
@@ -905,6 +1202,7 @@ private fun GroupMessageBubble(
     onScrollToMessage: ((String) -> Unit)? = null,
     onReact: (messageId: String, senderPubkey: String, emoji: String) -> Unit,
     onZap: ((messageId: String, senderPubkey: String) -> Unit)? = null,
+    onZapPreset: ((messageId: String, senderPubkey: String, amountSats: Int) -> Unit)? = null,
     onOpenEmojiLibrary: (() -> Unit)? = null,
     onFollowAuthor: ((String) -> Unit)? = null,
     onBlockAuthor: ((String) -> Unit)? = null,
@@ -913,14 +1211,18 @@ private fun GroupMessageBubble(
 ) {
     val profile = remember(message.senderPubkey) { eventRepo.getProfileData(message.senderPubkey) }
     val displayName = profile?.displayString ?: (message.senderPubkey.take(8) + "…")
-    val isOwnMessage = message.senderPubkey == myPubkey
-    val nameColor = if (isOwnMessage) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        remember(message.senderPubkey) { groupMemberColor(message.senderPubkey) }
-    }
+    val background = MaterialTheme.colorScheme.background
+    val isDarkTheme = (background.red * 0.299f + background.green * 0.587f + background.blue * 0.114f) < 0.5f
+    val nameColor = remember(message.senderPubkey, isDarkTheme) { groupMemberColor(message.senderPubkey, isDarkTheme) }
 
     var showEmojiPicker by remember(message.id) { mutableStateOf(false) }
+    var showActionsSheet by remember(message.id) { mutableStateOf(false) }
+    var showDetailsSheet by remember(message.id) { mutableStateOf(false) }
+    val actionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val rowTapInteraction = remember { MutableInteractionSource() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
 
     val myReactions = remember(message.reactions, myPubkey) {
         if (myPubkey == null) emptySet()
@@ -931,16 +1233,14 @@ private fun GroupMessageBubble(
         message.replyToId?.let { id -> allMessages.firstOrNull { it.id == id } }
     }
 
-    // Emoji map: message's own tags (NIP-30 authoritative) + our library for our own messages + reaction URLs
     val messageEmojiMap = remember(message.emojiTags, reactionEmojiUrls, resolvedEmojis) {
         resolvedEmojis + reactionEmojiUrls + message.emojiTags
     }
 
-    // Zap totals — re-evaluated whenever zapVersion ticks
     val zapSats = remember(message.id, zapVersion) { eventRepo.getZapSats(message.id) }
     val hasZaps = zapSats > 0
+    val isOwnMessage = message.senderPubkey == myPubkey
 
-    // Highlight animation for scroll-to-reply (fade-out)
     val replyHighlightAlpha = remember { Animatable(0f) }
     LaunchedEffect(highlightTrigger) {
         if (highlightTrigger > 0) {
@@ -949,7 +1249,6 @@ private fun GroupMessageBubble(
         }
     }
 
-    // Search highlight blink effect (breathing)
     val searchHighlightAlpha = if (isSearchHighlighted) {
         val transition = rememberInfiniteTransition(label = "searchHighlight")
         transition.animateFloat(
@@ -963,7 +1262,6 @@ private fun GroupMessageBubble(
         ).value
     } else 0f
 
-    // Combined highlight: search blink or reply fade
     val highlightAlpha = if (isSearchHighlighted) searchHighlightAlpha else replyHighlightAlpha.value
 
     val swipeOffset = remember { Animatable(0f) }
@@ -972,320 +1270,536 @@ private fun GroupMessageBubble(
     val scope = rememberCoroutineScope()
 
     Box(modifier = Modifier.fillMaxWidth()) {
-        // Reply icon revealed behind the message as you swipe
         Icon(
-            Icons.Outlined.ChatBubbleOutline,
+            Icons.AutoMirrored.Filled.Reply,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .padding(start = 20.dp)
-                .size(20.dp)
+                .size(22.dp)
+                .scale(scaleX = -1f, scaleY = -1f)
                 .alpha((swipeOffset.value / swipeThreshold).coerceIn(0f, 1f))
         )
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = highlightAlpha))
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-            .offset { IntOffset(swipeOffset.value.toInt(), 0) }
-            .pointerInput(message.id) {
-                var triggered = false
-                detectHorizontalDragGestures(
-                    onDragStart = { triggered = false },
-                    onDragEnd = {
-                        scope.launch { swipeOffset.animateTo(0f, spring()) }
-                        triggered = false
-                    },
-                    onDragCancel = {
-                        scope.launch { swipeOffset.animateTo(0f, spring()) }
-                        triggered = false
-                    },
-                    onHorizontalDrag = { _, dragAmount ->
-                        if (dragAmount > 0 && !triggered) {
-                            val next = (swipeOffset.value + dragAmount).coerceIn(0f, swipeThreshold * 1.3f)
-                            scope.launch { swipeOffset.snapTo(next) }
-                            if (next >= swipeThreshold) {
-                                triggered = true
-                                onReply(message)
-                                scope.launch { swipeOffset.animateTo(0f, spring()) }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = highlightAlpha))
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .offset { IntOffset(swipeOffset.value.toInt(), 0) }
+                .pointerInput(message.id) {
+                    var triggered = false
+                    detectHorizontalDragGestures(
+                        onDragStart = { triggered = false },
+                        onDragEnd = {
+                            scope.launch { swipeOffset.animateTo(0f, spring()) }
+                            triggered = false
+                        },
+                        onDragCancel = {
+                            scope.launch { swipeOffset.animateTo(0f, spring()) }
+                            triggered = false
+                        },
+                        onHorizontalDrag = { _, dragAmount ->
+                            if (dragAmount > 0 && !triggered) {
+                                val next = (swipeOffset.value + dragAmount).coerceIn(0f, swipeThreshold * 1.3f)
+                                scope.launch { swipeOffset.snapTo(next) }
+                                if (next >= swipeThreshold) {
+                                    triggered = true
+                                    onReply(message)
+                                    scope.launch { swipeOffset.animateTo(0f, spring()) }
+                                }
                             }
                         }
-                    }
-                )
-            },
-        verticalAlignment = Alignment.Top
-    ) {
-        ProfilePicture(
-            url = profile?.picture,
-            size = 36,
-            onClick = { onProfileClick(message.senderPubkey) }
-        )
-        Spacer(Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = displayName,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = nameColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-                Spacer(Modifier.width(6.dp))
-                val iconTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                // Reply
-                Icon(
-                    Icons.Outlined.ChatBubbleOutline,
-                    contentDescription = "Reply",
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clickable { onReply(message) }
-                        .padding(5.dp),
-                    tint = iconTint
-                )
-                // React + emoji popup
-                Box {
-                    Icon(
-                        Icons.Filled.FavoriteBorder,
-                        contentDescription = "React",
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clickable { showEmojiPicker = true }
-                            .padding(5.dp),
-                        tint = if (myReactions.isNotEmpty()) MaterialTheme.colorScheme.error
-                               else iconTint
                     )
-                    if (showEmojiPicker) {
-                        EmojiReactionPopup(
-                            onSelect = { emoji -> onReact(message.id, message.senderPubkey, emoji) },
-                            onDismiss = { showEmojiPicker = false },
-                            selectedEmojis = myReactions,
-                            resolvedEmojis = resolvedEmojis,
-                            unicodeEmojis = unicodeEmojis,
-                            onOpenEmojiLibrary = onOpenEmojiLibrary?.let { { showEmojiPicker = false; it() } }
-                        )
-                    }
                 }
-                // Zap + burst animation
-                if (onZap != null) {
-                    Box(
+                .clickable(
+                    interactionSource = rowTapInteraction,
+                    indication = null
+                ) { showActionsSheet = true },
+            verticalAlignment = Alignment.Bottom
+        ) {
+            if (!isOwnMessage) {
+                ProfilePicture(
+                    url = profile?.picture,
+                    size = 36,
+                    onClick = { onProfileClick(message.senderPubkey) }
+                )
+                Spacer(Modifier.width(10.dp))
+            }
+            BoxWithConstraints(
+                modifier = Modifier.weight(1f, fill = isOwnMessage),
+                contentAlignment = if (isOwnMessage) Alignment.BottomEnd else Alignment.BottomStart
+            ) {
+                Surface(
+                    shape = if (isOwnMessage)
+                        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 4.dp, bottomStart = 16.dp)
+                    else
+                        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 4.dp),
+                    color = if (isOwnMessage) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+                    modifier = Modifier
+                        .widthIn(min = 80.dp, max = maxWidth - 28.dp)
+                        .wrapContentWidth(align = if (isOwnMessage) Alignment.End else Alignment.Start)
+                ) {
+                    Column(
                         modifier = Modifier
-                            .size(28.dp)
-                            .wrapContentSize(unbounded = true, align = Alignment.Center)
+                            .width(IntrinsicSize.Max)
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
                     ) {
-                        Icon(
-                            Icons.Filled.Bolt,
-                            contentDescription = "Zap",
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clickable(enabled = !isZapInProgress) {
-                                    onZap(message.id, message.senderPubkey)
+                        // Header row hidden for own messages
+                        if (!isOwnMessage) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = displayName,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = nameColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (hasZaps) {
+                                    Text(
+                                        text = formatZapSats(zapSats),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 10.sp,
+                                        color = com.wisp.app.ui.theme.WispThemeColors.zapColor
+                                    )
                                 }
-                                .padding(5.dp),
-                            tint = when {
-                                isZapInProgress -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                hasZaps || isZapAnimating -> com.wisp.app.ui.theme.WispThemeColors.zapColor
-                                else -> iconTint
+                                Text(
+                                    text = formatGroupTimestamp(message.createdAt),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 10.sp
+                                )
                             }
-                        )
-                        Box(
-                            modifier = Modifier
-                                .matchParentSize()
-                                .wrapContentSize(unbounded = true, align = Alignment.Center)
-                        ) {
-                            com.wisp.app.ui.component.ZapBurstEffect(
-                                isActive = isZapAnimating,
-                                modifier = Modifier.size(80.dp)
+                        }
+
+                        if (replyToMessage != null) {
+                            Spacer(Modifier.height(6.dp))
+                            val replyProfile = remember(replyToMessage.senderPubkey) {
+                                eventRepo.getProfileData(replyToMessage.senderPubkey)
+                            }
+                            val replyName = replyProfile?.displayString ?: replyToMessage.senderPubkey.take(8) + "…"
+                            GroupChatQuotedMessage(
+                                authorPubkey = replyToMessage.senderPubkey,
+                                authorName = replyName,
+                                content = replyToMessage.content,
+                                onClick = { onScrollToMessage?.invoke(replyToMessage.id) }
                             )
                         }
-                    }
-                    if (hasZaps) {
-                        Text(
-                            text = formatZapSats(zapSats),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 10.sp,
-                            color = com.wisp.app.ui.theme.WispThemeColors.zapColor
-                        )
-                    }
-                }
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = formatGroupTimestamp(message.createdAt),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp
-                )
-            }
 
-            // Reply quote block
-            if (replyToMessage != null) {
-                val replyProfile = remember(replyToMessage.senderPubkey) {
-                    eventRepo.getProfileData(replyToMessage.senderPubkey)
+                        Spacer(Modifier.height(5.dp))
+                        RichContent(
+                            content = message.content,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            emojiMap = messageEmojiMap,
+                            eventRepo = eventRepo,
+                            onProfileClick = onProfileClick,
+                            onNoteClick = onNoteClick,
+                            noteActions = noteActions
+                        )
+
+                        if (message.reactions.isNotEmpty()) {
+                            val reactionScrollState = rememberScrollState()
+                            Row(
+                                modifier = Modifier
+                                    .horizontalScroll(reactionScrollState)
+                                    .padding(top = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                message.reactions.forEach { (emoji, reactors) ->
+                                    val isMe = myPubkey != null && myPubkey in reactors
+                                    val shortcode = if (emoji.startsWith(":") && emoji.endsWith(":")) emoji.removeSurrounding(":") else null
+                                    val emojiUrl = shortcode?.let { reactionEmojiUrls[it] ?: resolvedEmojis[it] }
+                                    Surface(
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = if (isMe) MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+                                        modifier = Modifier.clickable { onReact(message.id, message.senderPubkey, emoji) }
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier.size(18.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (emojiUrl != null) {
+                                                    AsyncImage(
+                                                        model = emojiUrl,
+                                                        contentDescription = emoji,
+                                                        modifier = Modifier.fillMaxSize()
+                                                    )
+                                                } else {
+                                                    Text(text = emoji, fontSize = 13.sp, lineHeight = 18.sp)
+                                                }
+                                            }
+                                            Spacer(Modifier.width(4.dp))
+                                            val displayReactors = reactors.take(3)
+                                            displayReactors.forEachIndexed { i, pubkey ->
+                                                val reactorProfile = remember(pubkey) { eventRepo.getProfileData(pubkey) }
+                                                ProfilePicture(
+                                                    url = reactorProfile?.picture,
+                                                    size = 16,
+                                                    modifier = if (i > 0) Modifier.offset(x = (i * -4).dp) else Modifier
+                                                )
+                                            }
+                                            if (reactors.size > 3) {
+                                                Text(
+                                                    text = "+${reactors.size - 3}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontSize = 11.sp,
+                                                    modifier = Modifier.offset(x = (displayReactors.size * -4).dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-                val replyName = replyProfile?.displayString ?: replyToMessage.senderPubkey.take(8) + "…"
-                Row(
+            }
+        }
+    }
+
+    if (showEmojiPicker) {
+        EmojiReactionPopup(
+            onSelect = { emoji ->
+                onReact(message.id, message.senderPubkey, emoji)
+                showEmojiPicker = false
+            },
+            onDismiss = { showEmojiPicker = false },
+            selectedEmojis = myReactions,
+            resolvedEmojis = resolvedEmojis,
+            unicodeEmojis = unicodeEmojis,
+            onOpenEmojiLibrary = onOpenEmojiLibrary?.let { { showEmojiPicker = false; it() } }
+        )
+    }
+
+    if (showActionsSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showActionsSheet = false },
+            sheetState = actionsSheetState,
+            dragHandle = null,
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            val sheetScroll = rememberScrollState()
+            val zapScroll = rememberScrollState()
+            val reactScroll = rememberScrollState()
+            val modalBg = MaterialTheme.colorScheme.surface
+            val chipFill = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+            val stripBg = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.5f)
+            val following = !isOwnMessage && isFollowing?.invoke(message.senderPubkey) == true
+            // Custom emoji shortcodes take priority; UTF emojis only shown when no custom ones exist
+            val reactionPick = remember(unicodeEmojis) {
+                val customOnly = unicodeEmojis.filter { it.startsWith(":") && it.endsWith(":") }
+                if (customOnly.isNotEmpty()) customOnly.take(28) else unicodeEmojis.take(28)
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(sheetScroll)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.5f),
+                    border = BorderStroke(
+                        0.33.dp,
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.28f)
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                        .clickable { onScrollToMessage?.invoke(replyToMessage.id) }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .clickable {
+                            showActionsSheet = false
+                            onReply(message)
+                        }
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .width(3.dp)
-                            .height(36.dp)
-                            .background(
-                                MaterialTheme.colorScheme.primary,
-                                RoundedCornerShape(2.dp)
+                    Column(
+                        Modifier.padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        GroupChatQuotedMessage(
+                            authorPubkey = message.senderPubkey,
+                            authorName = displayName,
+                            content = message.content,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.padding(start = 2.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Reply,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .scale(scaleX = -1f, scaleY = -1f)
                             )
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text(
-                            text = replyName,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = replyToMessage.content,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                            Text(
+                                text = stringResource(R.string.group_room_comment),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+                            )
+                        }
                     }
                 }
-            }
 
-            RichContent(
-                content = message.content,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                emojiMap = messageEmojiMap,
-                eventRepo = eventRepo,
-                onProfileClick = onProfileClick,
-                onNoteClick = onNoteClick,
-                noteActions = noteActions
-            )
-
-            // Per-emoji reaction badges
-            if (message.reactions.isNotEmpty()) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(top = 4.dp)
-                ) {
-                    message.reactions.forEach { (emoji, reactors) ->
-                        val isMe = myPubkey != null && myPubkey in reactors
-                        val shortcode = if (emoji.startsWith(":") && emoji.endsWith(":")) emoji.removeSurrounding(":") else null
-                        val emojiUrl = shortcode?.let { reactionEmojiUrls[it] ?: resolvedEmojis[it] }
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = if (isMe) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                                    else MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.clickable { onReact(message.id, message.senderPubkey, emoji) }
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                // React section
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    GroupChatSectionEyebrow(stringResource(R.string.group_room_eyebrow_react))
+                    GroupChatHorizontalChipStrip(
+                        scrollState = reactScroll,
+                        stripBackground = stripBg,
+                        chipFill = chipFill,
+                        chevronBackground = modalBg,
+                        verticalPadding = 8.dp,
+                        chipSpacing = 6.dp,
+                        trailingOnClick = {
+                            showActionsSheet = false
+                            if (onOpenEmojiLibrary != null) {
+                                pendingEmojiReactCallback = { emoji ->
+                                    onReact(message.id, message.senderPubkey, emoji)
+                                }
+                                onOpenEmojiLibrary()
+                            } else {
+                                showEmojiPicker = true
+                            }
+                        },
+                        trailingEnabled = true,
+                        trailingContentDescription = stringResource(R.string.cd_open_reaction_picker)
+                    ) {
+                        reactionPick.forEach { em ->
+                            val isCustom = em.startsWith(":") && em.endsWith(":")
+                            val sc = if (isCustom) em.removeSurrounding(":") else null
+                            val emojiUrl = sc?.let { resolvedEmojis[it] }
+                            // Skip custom emojis with no resolved URL
+                            if (isCustom && emojiUrl == null) return@forEach
+                            Box(
+                                modifier = Modifier
+                                    .clickable {
+                                        showActionsSheet = false
+                                        onReact(message.id, message.senderPubkey, em)
+                                    }
+                                    .padding(horizontal = 3.dp, vertical = 4.dp),
+                                contentAlignment = Alignment.Center
                             ) {
                                 if (emojiUrl != null) {
                                     AsyncImage(
                                         model = emojiUrl,
-                                        contentDescription = emoji,
-                                        modifier = Modifier.size(20.dp)
+                                        contentDescription = em,
+                                        modifier = Modifier.size(28.dp)
                                     )
                                 } else {
-                                    Text(text = emoji, fontSize = 16.sp)
-                                }
-                                Spacer(Modifier.width(4.dp))
-                                // Stacked reactor avatars
-                                val displayReactors = reactors.take(3)
-                                displayReactors.forEachIndexed { i, pubkey ->
-                                    val reactorProfile = remember(pubkey) { eventRepo.getProfileData(pubkey) }
-                                    ProfilePicture(
-                                        url = reactorProfile?.picture,
-                                        size = 16,
-                                        modifier = if (i > 0) Modifier.offset(x = (i * -4).dp) else Modifier
-                                    )
-                                }
-                                if (reactors.size > 3) {
-                                    Text(
-                                        text = "+${reactors.size - 3}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontSize = 11.sp,
-                                        modifier = Modifier.offset(x = (displayReactors.size * -4).dp)
-                                    )
+                                    Text(text = em, fontSize = 26.sp)
                                 }
                             }
                         }
                     }
                 }
-            }
 
-        }
-        // 3-dot overflow menu — far right of message
-        Box(modifier = Modifier.align(Alignment.Top)) {
-            var menuExpanded by remember { mutableStateOf(false) }
-            val context = androidx.compose.ui.platform.LocalContext.current
-            val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
-            IconButton(
-                onClick = { menuExpanded = true },
-                modifier = Modifier.size(24.dp)
-            ) {
-                Icon(
-                    Icons.Default.MoreVert,
-                    contentDescription = stringResource(R.string.cd_more_options),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false }
-            ) {
-                if (!isOwnMessage && onFollowAuthor != null) {
-                    val following = isFollowing?.invoke(message.senderPubkey) ?: false
-                    DropdownMenuItem(
-                        text = { Text(if (following) stringResource(R.string.btn_unfollow) else stringResource(R.string.btn_follow)) },
-                        onClick = {
-                            menuExpanded = false
-                            onFollowAuthor(message.senderPubkey)
-                        }
-                    )
-                }
-                if (!isOwnMessage && onBlockAuthor != null) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.btn_block)) },
-                        onClick = {
-                            menuExpanded = false
-                            onBlockAuthor(message.senderPubkey)
-                        }
-                    )
-                }
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.btn_share)) },
-                    onClick = {
-                        menuExpanded = false
-                        try {
-                            val nevent = Nip19.neventEncode(message.id.hexToByteArray())
-                            val url = "https://njump.me/$nevent"
-                            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(android.content.Intent.EXTRA_TEXT, url)
+                if (onZap != null) {
+                    // Zap section
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        GroupChatSectionEyebrow(stringResource(R.string.group_room_eyebrow_zap))
+                        GroupChatHorizontalChipStrip(
+                            scrollState = zapScroll,
+                            stripBackground = stripBg,
+                            chipFill = chipFill,
+                            chevronBackground = modalBg,
+                            trailingOnClick = {
+                                showActionsSheet = false
+                                onZap(message.id, message.senderPubkey)
+                            },
+                            trailingEnabled = !isZapInProgress,
+                            trailingContentDescription = stringResource(R.string.cd_open_full_zap)
+                        ) {
+                            GROUP_CHAT_ZAP_PRESET_AMOUNTS.forEach { amt ->
+                                Surface(
+                                    onClick = {
+                                        showActionsSheet = false
+                                        if (onZapPreset != null) {
+                                            onZapPreset(message.id, message.senderPubkey, amt)
+                                        } else {
+                                            onZap(message.id, message.senderPubkey)
+                                        }
+                                    },
+                                    enabled = !isZapInProgress,
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = modalBg
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .height(32.dp)
+                                            .padding(horizontal = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_bolt),
+                                            contentDescription = null,
+                                            tint = WispThemeColors.zapColor,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Text(
+                                            text = formatGroupCamChipAmount(amt),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
                             }
-                            context.startActivity(android.content.Intent.createChooser(intent, null))
-                        } catch (_: Exception) {}
+                        }
                     }
+                }
+
+                // Actions section — follow/block hidden for own messages
+                val showFollow = !isOwnMessage && onFollowAuthor != null
+                val showBlock = !isOwnMessage && onBlockAuthor != null
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        GroupChatSectionEyebrow(stringResource(R.string.group_room_eyebrow_actions))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            if (showFollow) {
+                                GroupChatCamPanelButton(
+                                    modifier = Modifier.weight(1f),
+                                    enabled = true,
+                                    onClick = {
+                                        showActionsSheet = false
+                                        onFollowAuthor?.invoke(message.senderPubkey)
+                                    },
+                                    icon = {
+                                        Icon(
+                                            Icons.Outlined.PersonAdd,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    },
+                                    label = if (following) stringResource(R.string.btn_unfollow) else stringResource(R.string.btn_follow)
+                                )
+                            }
+                            if (showBlock) {
+                                GroupChatCamPanelButton(
+                                    modifier = Modifier.weight(1f),
+                                    enabled = true,
+                                    onClick = {
+                                        showActionsSheet = false
+                                        onBlockAuthor?.invoke(message.senderPubkey)
+                                    },
+                                    icon = {
+                                        Icon(
+                                            Icons.Outlined.Block,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    },
+                                    label = stringResource(R.string.btn_block)
+                                )
+                            }
+                            GroupChatCamPanelButton(
+                                modifier = Modifier.weight(1f),
+                                enabled = true,
+                                onClick = {
+                                    showActionsSheet = false
+                                    try {
+                                        val nevent = Nip19.neventEncode(message.id.hexToByteArray())
+                                        val url = "https://njump.me/$nevent"
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(android.content.Intent.EXTRA_TEXT, url)
+                                        }
+                                        context.startActivity(android.content.Intent.createChooser(intent, null))
+                                    } catch (_: Exception) {}
+                                },
+                                icon = {
+                                    Icon(
+                                        Icons.Outlined.Share,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                },
+                                label = stringResource(R.string.btn_share)
+                            )
+                            GroupChatCamPanelButton(
+                                modifier = Modifier.weight(1f),
+                                enabled = true,
+                                onClick = {
+                                    showActionsSheet = false
+                                    showDetailsSheet = true
+                                },
+                                icon = {
+                                    Icon(
+                                        Icons.Outlined.Info,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                },
+                                label = stringResource(R.string.btn_details)
+                            )
+                        }
+                }  // end actions section Column
+            }
+        }
+    }
+
+    if (showDetailsSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showDetailsSheet = false },
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(modifier = Modifier.padding(bottom = 24.dp)) {
+                Text(
+                    text = stringResource(R.string.btn_details),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
                 )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.btn_copy_note_id)) },
+                Text(
+                    text = "Author: ${message.senderPubkey.take(12)}…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp)
+                )
+                Text(
+                    text = "Time: ${formatGroupTimestamp(message.createdAt)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp)
+                )
+                Text(
+                    text = "Event ID: ${message.id.take(16)}…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp)
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+                GroupMessageActionRow(
+                    label = stringResource(R.string.btn_copy_note_id),
                     onClick = {
-                        menuExpanded = false
+                        showDetailsSheet = false
                         try {
                             val relays = eventRepo.getEventRelays(message.id).take(3).toList()
                             val neventId = Nip19.neventEncode(
@@ -1297,50 +1811,141 @@ private fun GroupMessageBubble(
                         } catch (_: Exception) {}
                     }
                 )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.btn_copy_note_json)) },
+                GroupMessageActionRow(
+                    label = stringResource(R.string.btn_copy_note_json),
                     onClick = {
-                        menuExpanded = false
+                        showDetailsSheet = false
                         val event = eventRepo.getEvent(message.id)
                         if (event != null) {
                             clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(event.toJson()))
                         }
                     }
                 )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.btn_copy_text)) },
+                GroupMessageActionRow(
+                    label = stringResource(R.string.btn_copy_text),
                     onClick = {
-                        menuExpanded = false
+                        showDetailsSheet = false
                         clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(message.content))
                     }
                 )
             }
         }
     }
-    } // close swipe Box
 }
 
-/** Deterministic color for a group chat member based on their pubkey. */
-private val groupMemberColors = listOf(
-    androidx.compose.ui.graphics.Color(0xFFE57373), // red
-    androidx.compose.ui.graphics.Color(0xFF81C784), // green
-    androidx.compose.ui.graphics.Color(0xFF64B5F6), // blue
-    androidx.compose.ui.graphics.Color(0xFFFFB74D), // orange
-    androidx.compose.ui.graphics.Color(0xFFBA68C8), // purple
-    androidx.compose.ui.graphics.Color(0xFF4DD0E1), // cyan
-    androidx.compose.ui.graphics.Color(0xFFF06292), // pink
-    androidx.compose.ui.graphics.Color(0xFFAED581), // lime
-    androidx.compose.ui.graphics.Color(0xFFFFD54F), // amber
-    androidx.compose.ui.graphics.Color(0xFF4DB6AC), // teal
-    androidx.compose.ui.graphics.Color(0xFF7986CB), // indigo
-    androidx.compose.ui.graphics.Color(0xFFFF8A65), // deep orange
-)
-
-private fun groupMemberColor(pubkey: String): androidx.compose.ui.graphics.Color {
-    // Use first 8 hex chars as a stable hash
-    val hash = pubkey.take(8).toLong(16)
-    return groupMemberColors[(hash % groupMemberColors.size).toInt().let { if (it < 0) it + groupMemberColors.size else it }]
+@Composable
+private fun GroupChatCamPanelButton(
+    modifier: Modifier = Modifier,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    icon: @Composable () -> Unit,
+    label: String
+) {
+    Column(
+        modifier = modifier
+            .alpha(if (enabled) 1f else 0.35f)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.5f))
+            .padding(horizontal = 8.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            modifier = Modifier.size(28.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            icon()
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
 }
+
+@Composable
+private fun GroupMessageActionRow(
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled) { onClick() }
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (enabled) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        )
+    }
+}
+
+
+/** Deterministic profile-name color matching JS hexToColor + getProfileTextColor. */
+private fun groupMemberColor(pubkey: String, isDarkTheme: Boolean): androidx.compose.ui.graphics.Color {
+    val base = hexToProfileRgb(pubkey)
+    val adjusted = adjustProfileTextBrightness(base, if (isDarkTheme) 1.08f else 0.95f)
+    return androidx.compose.ui.graphics.Color(
+        red = adjusted.r / 255f,
+        green = adjusted.g / 255f,
+        blue = adjusted.b / 255f,
+        alpha = 1f
+    )
+}
+
+private data class Rgb(val r: Int, val g: Int, val b: Int)
+
+private fun adjustProfileTextBrightness(rgb: Rgb, factor: Float): Rgb {
+    return Rgb(
+        r = (rgb.r * factor).roundToInt().coerceIn(0, 255),
+        g = (rgb.g * factor).roundToInt().coerceIn(0, 255),
+        b = (rgb.b * factor).roundToInt().coerceIn(0, 255)
+    )
+}
+
+private fun hexToProfileRgb(hex: String): Rgb {
+    if (hex.isBlank() || !HEX_REGEX.matches(hex)) return Rgb(128, 128, 128)
+    val hue = BigInteger(hex, 16).mod(BigInteger.valueOf(360L)).toInt()
+    val h = hue / 60f
+    val s = 0.7f
+    val v = when {
+        hue in 32..204 -> 0.75f
+        hue in 216..273 -> 0.96f
+        else -> 0.9f
+    }
+
+    val c = v * s
+    val x = c * (1 - abs((h % 2f) - 1))
+    val m = v - c
+
+    val (r1, g1, b1) = when {
+        h < 1f -> Triple(c, x, 0f)
+        h < 2f -> Triple(x, c, 0f)
+        h < 3f -> Triple(0f, c, x)
+        h < 4f -> Triple(0f, x, c)
+        h < 5f -> Triple(x, 0f, c)
+        else -> Triple(c, 0f, x)
+    }
+
+    return Rgb(
+        r = ((r1 + m) * 255f).roundToInt(),
+        g = ((g1 + m) * 255f).roundToInt(),
+        b = ((b1 + m) * 255f).roundToInt()
+    )
+}
+
+private val HEX_REGEX = Regex("^[0-9a-fA-F]+$")
 
 private val groupTimeFormat = SimpleDateFormat("HH:mm", Locale.US)
 private val groupDateTimeFormat = SimpleDateFormat("MMM d, HH:mm", Locale.US)

@@ -1,0 +1,55 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "wisp:start-emulator",
+      "type": "shell",
+      "command": "if adb devices | awk '/^emulator-/{found=1} END{exit !found}'; then echo \"Emulator already running\"; else nohup \"$HOME/Library/Android/sdk/emulator/emulator\" -avd Pixel_9_API_35 >/tmp/wisp-emulator.log 2>&1 & echo \"Starting emulator Pixel_9_API_35\"; fi",
+      "problemMatcher": []
+    },
+    {
+      "label": "wisp:wait-for-boot",
+      "type": "shell",
+      "command": "adb wait-for-device; echo \"Waiting for Android boot (Package Manager)...\"; i=0; while [ \"$i\" -lt 180 ]; do b=$(adb shell getprop sys.boot_completed 2>/dev/null | xargs); if [ \"$b\" = \"1\" ]; then echo \"Boot complete.\"; exit 0; fi; i=$((i+1)); sleep 2; done; echo \"Timeout: emulator did not finish booting.\"; exit 1",
+      "problemMatcher": []
+    },
+    {
+      "label": "wisp:prepare-device-space",
+      "type": "shell",
+      "command": "adb uninstall com.wisp.app >/dev/null 2>&1 || true; adb shell pm trim-caches 2G >/dev/null 2>&1 || true",
+      "problemMatcher": []
+    },
+    {
+      "label": "wisp:install-debug",
+      "type": "shell",
+      "command": "export JAVA_HOME=\"/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home\"; export PATH=\"$JAVA_HOME/bin:$PATH\"; ./gradlew :app:assembleDebug && SERIAL=$(adb devices | awk '/^emulator-.*[[:space:]]+device$/{print $1; exit}'); [ -n \"$SERIAL\" ] || SERIAL=$(adb devices | awk '/^[[:alnum:]:.-]+[[:space:]]+device$/{print $1; exit}'); [ -n \"$SERIAL\" ] || { echo \"No adb device in state device\"; exit 1; }; adb -s \"$SERIAL\" install -r app/build/outputs/apk/debug/app-debug.apk",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "wisp:launch-app",
+      "type": "shell",
+      "command": "adb wait-for-device && adb shell monkey -p com.wisp.app -c android.intent.category.LAUNCHER 1",
+      "problemMatcher": []
+    },
+    {
+      "label": "wisp:run-on-emulator",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "wisp:start-emulator",
+        "wisp:wait-for-boot",
+        "wisp:prepare-device-space",
+        "wisp:install-debug",
+        "wisp:launch-app"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "wisp:logcat",
+      "type": "shell",
+      "command": "if command -v rg >/dev/null 2>&1; then adb logcat | rg --line-buffered \"AndroidRuntime|FATAL EXCEPTION|System.err|wisp|Wisp\"; else adb logcat; fi",
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ]
+}

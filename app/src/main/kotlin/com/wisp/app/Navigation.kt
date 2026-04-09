@@ -1553,6 +1553,7 @@ fun WispNavHost(
             val groupRoomUploadScope = rememberCoroutineScope()
             var groupRoomUploadProgress by remember { mutableStateOf<String?>(null) }
             var groupRoomZapTarget by remember { mutableStateOf<com.wisp.app.nostr.NostrEvent?>(null) }
+            var groupRoomZapInitialSats by remember { mutableStateOf<Int?>(null) }
             var showGroupRoomEmojiLibrary by remember { mutableStateOf(false) }
             val groupRoomResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
             val groupRoomUnicodeEmojis by feedViewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
@@ -1580,14 +1581,19 @@ fun WispNavHost(
                 }
                 ZapDialog(
                     isWalletConnected = isNwcConnected,
-                    onDismiss = { groupRoomZapTarget = null },
+                    onDismiss = {
+                        groupRoomZapTarget = null
+                        groupRoomZapInitialSats = null
+                    },
                     onZap = { amountMsats, message, isAnonymous, isPrivate ->
                         val event = groupRoomZapTarget ?: return@ZapDialog
                         groupRoomZapTarget = null
+                        groupRoomZapInitialSats = null
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigateSafe(Routes.WALLET) },
-                    canPrivateZap = feedViewModel.relayPool.hasDmRelays() && recipientHasDmRelays
+                    canPrivateZap = feedViewModel.relayPool.hasDmRelays() && recipientHasDmRelays,
+                    initialSatsHint = groupRoomZapInitialSats
                 )
             }
             val groupRoomMediaLauncher = rememberLauncherForActivityResult(
@@ -1652,6 +1658,7 @@ fun WispNavHost(
                 uploadProgress = groupRoomUploadProgress,
                 myPubkey = feedViewModel.getUserPubkey(),
                 onZap = { msgId, senderPubkey ->
+                    groupRoomZapInitialSats = null
                     groupRoomZapTarget = com.wisp.app.nostr.NostrEvent(
                         id = msgId,
                         pubkey = senderPubkey,
@@ -1661,8 +1668,26 @@ fun WispNavHost(
                         content = "",
                         sig = ""
                     )
-                    // Subscribe to zap receipt on the group relay too, in case the
-                    // LNURL provider publishes it there
+                    feedViewModel.relayPool.sendToRelayOrEphemeral(
+                        relayUrl,
+                        com.wisp.app.nostr.ClientMessage.req(
+                            subscriptionId = "zap-rcpt-grp-${msgId.take(12)}",
+                            filter = com.wisp.app.nostr.Filter(kinds = listOf(9735), eTags = listOf(msgId))
+                        ),
+                        skipBadCheck = true
+                    )
+                },
+                onZapPreset = { msgId, senderPubkey, sats ->
+                    groupRoomZapInitialSats = sats
+                    groupRoomZapTarget = com.wisp.app.nostr.NostrEvent(
+                        id = msgId,
+                        pubkey = senderPubkey,
+                        created_at = 0L,
+                        kind = com.wisp.app.nostr.Nip29.KIND_CHAT_MESSAGE,
+                        tags = listOf(listOf("h", groupId)),
+                        content = "",
+                        sig = ""
+                    )
                     feedViewModel.relayPool.sendToRelayOrEphemeral(
                         relayUrl,
                         com.wisp.app.nostr.ClientMessage.req(

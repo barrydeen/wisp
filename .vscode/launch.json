@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Wisp: Run on Emulator",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "echo 'Running Wisp on emulator...'",
+      "preLaunchTask": "wisp:run-on-emulator"
+    },
+    {
+      "name": "Wisp: Start Filtered Logcat",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "echo 'Starting filtered logcat...'",
+      "preLaunchTask": "wisp:logcat"
+    }
+  ]
+}
