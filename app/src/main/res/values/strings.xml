@@ -332,6 +332,7 @@
     <string name="emoji_library_title">Emoji Library</string>
     <string name="emoji_add_from_keyboard">Add from Keyboard</string>
     <string name="emoji_add_from_keyboard_hint">Type or paste an emoji</string>
+    <string name="emoji_keyboard_invalid">Please enter an emoji character, not text</string>
     <string name="emoji_dialog_add">Add</string>
     <string name="emoji_dialog_cancel">Cancel</string>
     <string name="emoji_done_format">Done (%d)</string>

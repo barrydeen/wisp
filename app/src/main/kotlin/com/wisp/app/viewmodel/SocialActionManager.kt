@@ -75,6 +75,9 @@ class SocialActionManager(
     private val _reactionSent = MutableSharedFlow<Unit>(extraBufferCapacity = 8)
     val reactionSent: SharedFlow<Unit> = _reactionSent
 
+    /** Guards against duplicate reaction sends from rapid taps. Key = "eventId:emoji" */
+    private val reactionsInFlight = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
     // Non-null while the first-follow confirmation dialog is visible (holds the target pubkey).
     private val _pendingFirstFollow = MutableStateFlow<String?>(null)
     val pendingFirstFollow: StateFlow<String?> = _pendingFirstFollow
@@ -238,7 +241,13 @@ class SocialActionManager(
     fun toggleReaction(event: NostrEvent, emoji: String) {
         val s = getSigner() ?: return
         val myPubkey = s.pubkeyHex
-        val existingEventId = eventRepo.getUserReactionEventId(event.id, myPubkey, emoji)
+        // Normalize blank / "+" to the canonical heart, matching addReaction()
+        val normalizedEmoji = if (emoji.isBlank() || emoji == "+") "\u2764\uFE0F" else emoji
+
+        val flightKey = "${event.id}:$normalizedEmoji"
+        if (!reactionsInFlight.add(flightKey)) return // already in progress
+
+        val existingEventId = eventRepo.getUserReactionEventId(event.id, myPubkey, normalizedEmoji)
 
         scope.launch {
             try {
@@ -246,9 +255,9 @@ class SocialActionManager(
                     val tags = Nip09.buildDeletionTags(existingEventId, 7)
                     val deletionEvent = s.signEvent(kind = 5, content = "", tags = tags)
                     relayPool.sendToWriteRelays(ClientMessage.event(deletionEvent))
-                    eventRepo.removeReaction(event.id, myPubkey, emoji)
+                    eventRepo.removeReaction(event.id, myPubkey, normalizedEmoji)
                 } else {
-                    val shortcodeMatch = Nip30.shortcodeRegex.matchEntire(emoji)
+                    val shortcodeMatch = Nip30.shortcodeRegex.matchEntire(normalizedEmoji)
                     var tags: List<List<String>> = if (shortcodeMatch != null) {
                         val shortcode = shortcodeMatch.groupValues[1]
                         val url = customEmojiRepo.resolvedEmojis.value[shortcode]
@@ -274,7 +283,7 @@ class SocialActionManager(
                             Nip13.mine(
                                 pubkeyHex = myPubkey,
                                 kind = 7,
-                                content = emoji,
+                                content = normalizedEmoji,
                                 tags = tags,
                                 targetDifficulty = powPrefs.getReactionDifficulty(),
                                 createdAt = pinned
@@ -286,14 +295,17 @@ class SocialActionManager(
                         createdAt = System.currentTimeMillis() / 1000
                     }
 
-                    val reactionEvent = s.signEvent(kind = 7, content = emoji, tags = tags, createdAt = createdAt)
+                    val reactionEvent = s.signEvent(kind = 7, content = normalizedEmoji, tags = tags, createdAt = createdAt)
                     val msg = ClientMessage.event(reactionEvent)
                     outboxRouter.publishToInbox(msg, event.pubkey)
                     eventRepo.addEvent(reactionEvent)
                     _reactionSent.tryEmit(Unit)
-                    customEmojiRepo.recordEmojiUsage(emoji)
+                    customEmojiRepo.recordEmojiUsage(normalizedEmoji)
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            } finally {
+                reactionsInFlight.remove(flightKey)
+            }
         }
     }
 
