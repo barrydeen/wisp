@@ -218,18 +218,27 @@ class SocialActionManager(
 
     fun sendRepost(event: NostrEvent) {
         val s = getSigner() ?: return
+        val existingRepostId = eventRepo.getUserRepostEventId(event.id)
+
         scope.launch {
             try {
-                val hint = outboxRouter.getRelayHint(event.pubkey)
-                val tags = Nip18.buildRepostTags(event, hint).toMutableList()
-                if (interfacePrefs.isClientTagEnabled()) {
-                    tags.add(listOf("client", "Wisp"))
+                if (existingRepostId != null) {
+                    val tags = Nip09.buildDeletionTags(existingRepostId, 6)
+                    val deletionEvent = s.signEvent(kind = 5, content = "", tags = tags)
+                    relayPool.sendToWriteRelays(ClientMessage.event(deletionEvent))
+                    eventRepo.removeUserRepost(event.id)
+                } else {
+                    val hint = outboxRouter.getRelayHint(event.pubkey)
+                    val tags = Nip18.buildRepostTags(event, hint).toMutableList()
+                    if (interfacePrefs.isClientTagEnabled()) {
+                        tags.add(listOf("client", "Wisp"))
+                    }
+                    val repostEvent = s.signEvent(kind = 6, content = event.toJson(), tags = tags)
+                    val msg = ClientMessage.event(repostEvent)
+                    outboxRouter.publishToInbox(msg, event.pubkey)
+                    eventRepo.markUserRepost(event.id, repostEvent.id)
+                    eventRepo.addEvent(repostEvent)
                 }
-                val repostEvent = s.signEvent(kind = 6, content = event.toJson(), tags = tags)
-                val msg = ClientMessage.event(repostEvent)
-                outboxRouter.publishToInbox(msg, event.pubkey)
-                eventRepo.markUserRepost(event.id)
-                eventRepo.addEvent(repostEvent)
             } catch (_: Exception) {}
         }
     }

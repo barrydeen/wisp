@@ -132,8 +132,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val repostAuthors = LruCache<String, MutableSet<String>>(15000)
     // Feed sort time override: eventId -> effective sort timestamp (e.g. repost time)
     private val feedSortTime = LruCache<String, Long>(15000)
-    // Track which events the current user has reposted: eventId -> true
-    private val userReposts = LruCache<String, Boolean>(15000)
+    // Track which events the current user has reposted: targetEventId -> repostEventId
+    private val userReposts = LruCache<String, String>(15000)
     private val _repostVersion = MutableStateFlow(0)
     val repostVersion: StateFlow<Int> = _repostVersion
 
@@ -363,7 +363,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         authors.add(event.pubkey)
                         // Auto-mark if this is the current user's repost
                         if (event.pubkey == currentUserPubkey) {
-                            userReposts.put(inner.id, true)
+                            userReposts.put(inner.id, event.id)
                         }
                         repostDirty = true
                         markVersionDirty()
@@ -1015,16 +1015,28 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun getRepostTime(eventId: String): Long? = feedSortTime.get(eventId)
 
-    fun markUserRepost(eventId: String) {
-        userReposts.put(eventId, true)
-        val authors = repostAuthors.get(eventId)
-            ?: ConcurrentHashMap.newKeySet<String>().also { repostAuthors.put(eventId, it) }
+    fun markUserRepost(targetEventId: String, repostEventId: String) {
+        userReposts.put(targetEventId, repostEventId)
+        val authors = repostAuthors.get(targetEventId)
+            ?: ConcurrentHashMap.newKeySet<String>().also { repostAuthors.put(targetEventId, it) }
         if (currentUserPubkey != null) authors.add(currentUserPubkey!!)
         repostDirty = true
         markVersionDirty()
     }
 
-    fun hasUserReposted(eventId: String): Boolean = userReposts.get(eventId) == true
+    fun hasUserReposted(eventId: String): Boolean = userReposts.get(eventId) != null
+
+    fun getUserRepostEventId(eventId: String): String? = userReposts.get(eventId)
+
+    fun removeUserRepost(eventId: String) {
+        userReposts.remove(eventId)
+        val authors = repostAuthors.get(eventId)
+        if (authors != null && currentUserPubkey != null) {
+            authors.remove(currentUserPubkey!!)
+        }
+        repostDirty = true
+        markVersionDirty()
+    }
 
     /**
      * Optimistically record the current user's zap so the UI updates immediately
@@ -1261,7 +1273,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                             ?: ConcurrentHashMap.newKeySet<String>().also { repostAuthors.put(inner.id, it) }
                         authors.add(event.pubkey)
                         if (event.pubkey == currentUserPubkey) {
-                            userReposts.put(inner.id, true)
+                            userReposts.put(inner.id, event.id)
                         }
                         repostDirty = true
                         markVersionDirty()
@@ -1319,7 +1331,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                             ?: ConcurrentHashMap.newKeySet<String>().also { repostAuthors.put(inner.id, it) }
                         authors.add(event.pubkey)
                         if (event.pubkey == currentUserPubkey) {
-                            userReposts.put(inner.id, true)
+                            userReposts.put(inner.id, event.id)
                         }
                         repostDirty = true
                         markVersionDirty()
