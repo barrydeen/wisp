@@ -8,6 +8,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -19,30 +20,40 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.outlined.Reply
-import androidx.compose.material.icons.outlined.AddReaction
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
-import androidx.compose.material.icons.outlined.ExpandLess
-import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.FlashOn
+import androidx.compose.ui.draw.scale
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -55,8 +66,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -65,7 +83,9 @@ import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
+import com.wisp.app.R
 import com.wisp.app.nostr.DmMessage
+import com.wisp.app.ui.screen.GroupChatHorizontalChipStrip
 import com.wisp.app.nostr.DmReaction
 import com.wisp.app.nostr.EncryptedMedia
 import com.wisp.app.repo.EventRepository
@@ -79,6 +99,7 @@ import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DmBubble(
     message: DmMessage,
@@ -102,13 +123,14 @@ fun DmBubble(
     onOpenEmojiLibrary: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    var showDetails by remember(message.id) { mutableStateOf(false) }
-    var showEmojiPicker by remember(message.id) { mutableStateOf(false) }
     var swipeOffsetPx by remember(message.id) { mutableFloatStateOf(0f) }
     var swipeTriggered by remember(message.id) { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    var showActionsSheet by remember(message.id) { mutableStateOf(false) }
+    val actionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val density = LocalDensity.current
     val swipeThresholdPx = with(density) { 72.dp.toPx() }
+    val senderProfile = remember(message.senderPubkey) { eventRepo?.getProfileData(message.senderPubkey) }
+    val senderName = senderProfile?.displayString ?: (message.senderPubkey.take(8) + "…")
 
     val animatedSwipe by animateFloatAsState(
         targetValue = swipeOffsetPx,
@@ -116,258 +138,396 @@ fun DmBubble(
         label = "swipe"
     )
 
-    val bubbleColor = if (isSent) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-    else MaterialTheme.colorScheme.surfaceVariant
-    val textColor = if (isSent) MaterialTheme.colorScheme.onPrimary
-    else MaterialTheme.colorScheme.onSurface
+    val bubbleColor = if (isSent) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f)
 
     val quotedMessage = remember(message.replyToId, conversationMessages.size) {
         message.replyToId?.let { rid -> conversationMessages.firstOrNull { it.rumorId == rid || it.id == rid } }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 2.dp),
-        horizontalAlignment = if (isSent) Alignment.End else Alignment.Start
-    ) {
-        // --- Bubble (swipeable to reply) ---
+    Box(modifier = modifier.fillMaxWidth()) {
+        // Swipe hint icon
+        Icon(
+            Icons.AutoMirrored.Outlined.Reply,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 20.dp)
+                .size(22.dp)
+                .scale(scaleX = -1f, scaleY = -1f)
+                .alpha((animatedSwipe / swipeThresholdPx).coerceIn(0f, 1f))
+        )
+
         Row(
-            verticalAlignment = Alignment.Bottom,
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = if (isSent) Arrangement.End else Arrangement.Start
-        ) {
-            if (!isSent) {
-                val senderProfile = remember(message.senderPubkey) {
-                    eventRepo?.getProfileData(message.senderPubkey)
-                }
-                ProfilePicture(
-                    url = senderProfile?.picture,
-                    size = 28,
-                    modifier = Modifier.padding(end = 4.dp)
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .offset { IntOffset(animatedSwipe.roundToInt(), 0) }
-                    .draggable(
-                        orientation = Orientation.Horizontal,
-                        state = rememberDraggableState { delta ->
-                            val newOffset = (swipeOffsetPx + delta).coerceIn(0f, swipeThresholdPx * 1.3f)
-                            swipeOffsetPx = newOffset
-                            if (!swipeTriggered && newOffset >= swipeThresholdPx) {
-                                swipeTriggered = true
-                                onReply(message)
-                            }
-                        },
-                        onDragStopped = {
-                            swipeTriggered = false
-                            swipeOffsetPx = 0f
-                        }
-                    )
-            ) {
-            @OptIn(ExperimentalFoundationApi::class)
-            Box(
-                modifier = Modifier
-                    .widthIn(min = 160.dp, max = 280.dp)
-                    .clip(
-                        RoundedCornerShape(
-                            topStart = 16.dp,
-                            topEnd = 16.dp,
-                            bottomStart = if (isSent) 16.dp else 4.dp,
-                            bottomEnd = if (isSent) 4.dp else 16.dp
-                        )
-                    )
-                    .background(bubbleColor)
-                    .combinedClickable(
-                        onClick = { onSelect() },
-                        onDoubleClick = { onDebugTap?.invoke(message) }
-                    )
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                Column {
-                    // Quoted reply header
-                    if (quotedMessage != null) {
-                        QuotedDmPreview(
-                            message = quotedMessage,
-                            isSentByMe = quotedMessage.senderPubkey == message.senderPubkey,
-                            eventRepo = eventRepo,
-                            parentIsSent = isSent
-                        )
-                        Spacer(Modifier.height(6.dp))
-                    }
-
-                    if (message.encryptedFileMetadata != null) {
-                        EncryptedMediaContent(
-                            metadata = message.encryptedFileMetadata,
-                            messageId = message.rumorId.ifEmpty { message.id },
-                            tintColor = textColor
-                        )
-                    } else {
-                        RichContent(
-                            content = message.content,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = textColor,
-                            linkColor = textColor,
-                            emojiMap = resolvedEmojis + message.emojiMap,
-                            eventRepo = eventRepo,
-                            onProfileClick = onProfileClick,
-                            onNoteClick = onNoteClick,
-                            noteActions = noteActions
-                        )
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = formatTime(message.createdAt),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isSent) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    if (message.reactions.isNotEmpty()) {
-                        Spacer(Modifier.height(6.dp))
-                        ReactionChips(
-                            reactions = message.reactions,
-                            eventRepo = eventRepo,
-                            isSent = isSent,
-                            onToggle = { emoji -> onReact(message, emoji) },
-                            resolvedEmojis = resolvedEmojis
-                        )
-                    }
-                }
-            }
-            // Reply hint shown while swiping
-            if (animatedSwipe > 4f) {
-                Icon(
-                    Icons.AutoMirrored.Outlined.Reply,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .size(20.dp)
-                        .offset { IntOffset((-animatedSwipe * 0.6f).roundToInt(), 0) }
-                        .alpha((animatedSwipe / swipeThresholdPx).coerceIn(0f, 1f))
-                )
-            }
-            } // end swipe Box
-
-            if (isSent) {
-                val senderProfile = remember(message.senderPubkey) {
-                    eventRepo?.getProfileData(message.senderPubkey)
-                }
-                ProfilePicture(
-                    url = senderProfile?.picture,
-                    size = 28,
-                    modifier = Modifier.padding(start = 4.dp)
-                )
-            }
-        } // end avatar Row
-
-        // --- Action bar (always visible) ---
-        // For sent messages: Reply · React · Zap · Expand (expand closest to bubble on right)
-        // For received messages: Expand · Zap · React · Reply (expand closest to bubble on left)
-        Row(
-            horizontalArrangement = if (isSent) Arrangement.End else Arrangement.Start,
-            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 2.dp)
+                .padding(
+                    start = if (isSent) 24.dp else 12.dp,
+                    end = 12.dp,
+                    top = 4.dp,
+                    bottom = 4.dp
+                )
+                .offset { IntOffset(animatedSwipe.roundToInt(), 0) }
+                .draggable(
+                    orientation = Orientation.Horizontal,
+                    state = rememberDraggableState { delta ->
+                        val newOffset = (swipeOffsetPx + delta).coerceIn(0f, swipeThresholdPx * 1.3f)
+                        swipeOffsetPx = newOffset
+                        if (!swipeTriggered && newOffset >= swipeThresholdPx) {
+                            swipeTriggered = true
+                            onReply(message)
+                        }
+                    },
+                    onDragStopped = {
+                        swipeTriggered = false
+                        swipeOffsetPx = 0f
+                    }
+                ),
+            verticalAlignment = Alignment.Bottom
         ) {
-            val expandButton: @Composable () -> Unit = {
-                IconButton(
-                    onClick = { showDetails = !showDetails },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        if (showDetails) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                        contentDescription = if (showDetails) "Collapse" else "Expand",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+            if (!isSent) {
+                ProfilePicture(
+                    url = senderProfile?.picture,
+                    size = 36,
+                    onClick = { onProfileClick?.invoke(message.senderPubkey) }
+                )
+                Spacer(Modifier.width(6.dp))
             }
-            val zapButton: @Composable () -> Unit = {
-                IconButton(
-                    onClick = { if (!isZapInProgress) onZap(message) },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    if (isZapInProgress) {
-                        LightningAnimation(modifier = Modifier.size(18.dp))
-                    } else {
-                        Icon(
-                            painter = androidx.compose.ui.res.painterResource(com.wisp.app.R.drawable.ic_bolt),
-                            contentDescription = "Zap",
-                            tint = if (zapSats > 0) WispThemeColors.zapColor
-                                   else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(15.dp)
+            BoxWithConstraints(
+                modifier = Modifier.weight(1f, fill = isSent),
+                contentAlignment = if (isSent) Alignment.BottomEnd else Alignment.BottomStart
+            ) {
+                @OptIn(ExperimentalFoundationApi::class)
+                Box(
+                    modifier = Modifier
+                        .widthIn(min = 80.dp, max = maxWidth - 28.dp)
+                        .wrapContentWidth(if (isSent) Alignment.End else Alignment.Start)
+                        .clip(
+                            RoundedCornerShape(
+                                topStart = 16.dp,
+                                topEnd = 16.dp,
+                                bottomStart = if (isSent) 16.dp else 4.dp,
+                                bottomEnd = if (isSent) 4.dp else 16.dp
+                            )
                         )
+                        .background(bubbleColor)
+                        .combinedClickable(
+                            onClick = { showActionsSheet = true },
+                            onDoubleClick = { onDebugTap?.invoke(message) }
+                        )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .width(IntrinsicSize.Max)
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        // Header row: sender name + timestamp (received messages only)
+                        if (!isSent) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = senderName,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = formatTime(message.createdAt),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                        if (quotedMessage != null) {
+                            QuotedDmPreview(
+                                message = quotedMessage,
+                                isSentByMe = quotedMessage.senderPubkey == message.senderPubkey,
+                                eventRepo = eventRepo,
+                                parentIsSent = isSent
+                            )
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        if (message.encryptedFileMetadata != null) {
+                            EncryptedMediaContent(
+                                metadata = message.encryptedFileMetadata,
+                                messageId = message.rumorId.ifEmpty { message.id },
+                                tintColor = MaterialTheme.colorScheme.onSurface
+                            )
+                        } else {
+                            RichContent(
+                                content = message.content,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                linkColor = MaterialTheme.colorScheme.primary,
+                                emojiMap = resolvedEmojis + message.emojiMap,
+                                eventRepo = eventRepo,
+                                onProfileClick = onProfileClick,
+                                onNoteClick = onNoteClick,
+                                noteActions = noteActions
+                            )
+                        }
+                        // Timestamp at bottom only for sent messages (received shows it in header)
+                        if (isSent) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                Text(
+                                    text = formatTime(message.createdAt),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (message.reactions.isNotEmpty()) {
+                            Spacer(Modifier.height(6.dp))
+                            ReactionChips(
+                                reactions = message.reactions,
+                                eventRepo = eventRepo,
+                                isSent = isSent,
+                                onToggle = { emoji -> onReact(message, emoji) },
+                                resolvedEmojis = resolvedEmojis
+                            )
+                        }
                     }
                 }
             }
-            val zapLabel: @Composable () -> Unit = {
-                if (zapSats > 0 && !isZapInProgress) {
-                    Text(
-                        text = if (zapSats >= 1000) "${zapSats / 1000}k" else "$zapSats",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = WispThemeColors.zapColor
-                    )
-                }
-            }
-            val reactButton: @Composable () -> Unit = {
-                IconButton(onClick = { showEmojiPicker = true }, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Outlined.AddReaction, "React", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                }
-            }
-            val replyButton: @Composable () -> Unit = {
-                IconButton(onClick = { onReply(message) }, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Outlined.ChatBubbleOutline, "Reply", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                }
-            }
-
-            if (isSent) {
-                replyButton()
-                reactButton()
-                zapButton()
-                zapLabel()
-                expandButton()
-            } else {
-                expandButton()
-                zapButton()
-                zapLabel()
-                reactButton()
-                replyButton()
-            }
         }
+    }
 
-        // --- Expandable details (relays + reactions) ---
-        AnimatedVisibility(
-            visible = showDetails,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+    if (showActionsSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showActionsSheet = false },
+            sheetState = actionsSheetState,
+            dragHandle = null,
+            containerColor = MaterialTheme.colorScheme.surface
         ) {
-            DmExpandedDetails(
-                relayIcons = relayIcons,
-                reactions = message.reactions,
-                eventRepo = eventRepo,
-                isSent = isSent,
-                resolvedEmojis = resolvedEmojis
-            )
-        }
+            val clipboardManager = LocalClipboardManager.current
+            val context = LocalContext.current
+            val useZapBoltIcon = remember {
+                context.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
+                    .getBoolean("zap_bolt_icon", false)
+            }
+            val sheetScroll = rememberScrollState()
+            val reactScroll = rememberScrollState()
+            val stripBg = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.5f)
+            val chipFill = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+            val reactionPick = remember(unicodeEmojis) {
+                val customOnly = unicodeEmojis.filter { it.startsWith(":") && it.endsWith(":") }
+                if (customOnly.isNotEmpty()) customOnly.take(28) else unicodeEmojis.take(28)
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(sheetScroll)
+                    .navigationBarsPadding()
+                    .padding(vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Comment / Reply section
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = stripBg,
+                    border = BorderStroke(0.33.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.28f)),
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .fillMaxWidth()
+                        .clickable {
+                            showActionsSheet = false
+                            onReply(message)
+                        }
+                ) {
+                    Column(
+                        modifier = Modifier.padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Message preview bar
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(chipFill)
+                                .height(IntrinsicSize.Min)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(3.dp)
+                                    .fillMaxHeight()
+                                    .background(
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                        RoundedCornerShape(2.dp)
+                                    )
+                            )
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(start = 10.dp, top = 6.dp, end = 10.dp, bottom = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = senderName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = message.content,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        // Reply indicator
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.padding(start = 2.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Reply,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .scale(scaleX = -1f, scaleY = -1f)
+                            )
+                            Text(
+                                text = stringResource(R.string.group_room_comment),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+                            )
+                        }
+                    }
+                }
 
-        // --- Emoji picker popup ---
-        if (showEmojiPicker) {
-            EmojiReactionPopup(
-                onSelect = { emoji ->
-                    onReact(message, emoji)
-                    showEmojiPicker = false
-                },
-                onDismiss = { showEmojiPicker = false },
-                resolvedEmojis = resolvedEmojis,
-                unicodeEmojis = unicodeEmojis,
-                onOpenEmojiLibrary = onOpenEmojiLibrary?.let { { showEmojiPicker = false; it() } }
-            )
+                // React section
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.group_room_eyebrow_react),
+                        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 2.sp),
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+                    )
+                    GroupChatHorizontalChipStrip(
+                        scrollState = reactScroll,
+                        stripBackground = stripBg,
+                        chipFill = chipFill,
+                        chevronBackground = MaterialTheme.colorScheme.surface,
+                        verticalPadding = 8.dp,
+                        chipSpacing = 6.dp,
+                        trailingOnClick = {
+                            showActionsSheet = false
+                            pendingEmojiReactCallback = { emoji -> onReact(message, emoji) }
+                            onOpenEmojiLibrary?.invoke()
+                        },
+                        trailingEnabled = true,
+                        trailingContentDescription = stringResource(R.string.cd_open_reaction_picker)
+                    ) {
+                        reactionPick.forEach { em ->
+                            val isCustom = em.startsWith(":") && em.endsWith(":")
+                            val sc = if (isCustom) em.removeSurrounding(":") else null
+                            val emojiUrl = sc?.let { resolvedEmojis[it] }
+                            if (isCustom && emojiUrl == null) return@forEach
+                            Box(
+                                modifier = Modifier
+                                    .clickable {
+                                        showActionsSheet = false
+                                        onReact(message, em)
+                                    }
+                                    .padding(horizontal = 3.dp, vertical = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (emojiUrl != null) {
+                                    coil3.compose.AsyncImage(
+                                        model = emojiUrl,
+                                        contentDescription = em,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                } else {
+                                    Text(text = em, fontSize = 26.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Actions panel
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.group_room_eyebrow_actions),
+                        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 2.sp),
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                        modifier = Modifier.padding(start = 16.dp, bottom = 2.dp)
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Spacer(Modifier.width(4.dp))
+                        DmActionPanelButton(
+                            modifier = Modifier.width(82.dp),
+                            onClick = { showActionsSheet = false; onZap(message) },
+                            icon = {
+                                if (useZapBoltIcon) {
+                                    Icon(
+                                        Icons.Outlined.FlashOn,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                } else {
+                                    Icon(
+                                        Icons.Outlined.CurrencyBitcoin,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            },
+                            label = stringResource(R.string.group_room_eyebrow_zap)
+                        )
+                        DmActionPanelButton(
+                            modifier = Modifier.width(82.dp),
+                            onClick = {
+                                showActionsSheet = false
+                                clipboardManager.setText(AnnotatedString(message.content))
+                            },
+                            icon = {
+                                Icon(
+                                    Icons.Outlined.ContentCopy,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            },
+                            label = "Text"
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
+                }
+            }
         }
     }
 }
@@ -567,6 +727,35 @@ private fun DmExpandedDetails(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DmActionPanelButton(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+    icon: @Composable () -> Unit,
+    label: String
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.5f))
+            .padding(horizontal = 8.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(modifier = Modifier.size(28.dp), contentAlignment = Alignment.Center) { icon() }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

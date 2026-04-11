@@ -42,9 +42,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import androidx.compose.ui.res.stringResource
 import com.wisp.app.R
@@ -54,37 +56,51 @@ import com.wisp.app.R
 fun EmojiLibrarySheet(
     currentEmojis: List<String>,
     onAddEmojis: (List<String>) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** Map of shortcode (no colons) → image URL for the user's custom emojis. */
+    customEmojiMap: Map<String, String> = emptyMap(),
+    /** Called with the shortcode (no colons) when the user taps a custom emoji; sheet auto-dismisses. */
+    onCustomEmojiPick: ((String) -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var selectedEmojis by remember { mutableStateOf(emptySet<String>()) }
-    val categories = remember { EmojiData.categories }
+    val utfCategories = remember { EmojiData.categories }
     val currentEmojiSet = remember(currentEmojis) { currentEmojis.toSet() }
     var selectedTabIndex by remember { mutableStateOf(0) }
     val gridState = rememberLazyGridState()
     var showKeyboardDialog by remember { mutableStateOf(false) }
 
-    // Build a flat list with category headers for the grid
-    val gridItems = remember(categories) {
+    val hasCustom = customEmojiMap.isNotEmpty()
+    // Tab offset: custom section occupies index 0, utf categories shifted by 1 when custom is present
+    val tabOffset = if (hasCustom) 1 else 0
+
+    // Build flat grid items: optionally prepend Custom section, then all UTF categories
+    val gridItems = remember(utfCategories, customEmojiMap, hasCustom) {
         buildList {
-            categories.forEachIndexed { catIndex, category ->
-                add(GridEntry.Header(catIndex, category.name))
+            if (hasCustom) {
+                add(GridEntry.Header(0, "Custom"))
+                customEmojiMap.entries.forEachIndexed { idx, (shortcode, url) ->
+                    add(GridEntry.CustomEmoji(idx, shortcode, url))
+                }
+            }
+            utfCategories.forEachIndexed { catIndex, category ->
+                val adjustedIndex = catIndex + tabOffset
+                add(GridEntry.Header(adjustedIndex, category.name))
                 category.emojis.forEachIndexed { emojiIndex, emoji ->
-                    add(GridEntry.Emoji(catIndex, emojiIndex, emoji))
+                    add(GridEntry.Emoji(adjustedIndex, emojiIndex, emoji))
                 }
             }
         }
     }
 
-    // Track which category header indices map to grid positions
+    // Map category index → grid position for tab-scroll sync
     val categoryGridPositions = remember(gridItems) {
         gridItems.mapIndexedNotNull { index, item ->
             if (item is GridEntry.Header) item.categoryIndex to index else null
         }.toMap()
     }
 
-    // Update selected tab based on scroll position
     val currentCategoryIndex by remember {
         derivedStateOf {
             val firstVisible = gridState.firstVisibleItemIndex
@@ -107,12 +123,24 @@ fun EmojiLibrarySheet(
                 edgePadding = 8.dp,
                 divider = {}
             ) {
-                categories.forEachIndexed { index, category ->
+                if (hasCustom) {
                     Tab(
-                        selected = currentCategoryIndex == index,
+                        selected = currentCategoryIndex == 0,
                         onClick = {
-                            selectedTabIndex = index
-                            val gridPos = categoryGridPositions[index] ?: 0
+                            selectedTabIndex = 0
+                            val gridPos = categoryGridPositions[0] ?: 0
+                            scope.launch { gridState.scrollToItem(gridPos) }
+                        },
+                        text = { Text("✨", fontSize = 20.sp) }
+                    )
+                }
+                utfCategories.forEachIndexed { index, category ->
+                    val adjustedIndex = index + tabOffset
+                    Tab(
+                        selected = currentCategoryIndex == adjustedIndex,
+                        onClick = {
+                            selectedTabIndex = adjustedIndex
+                            val gridPos = categoryGridPositions[adjustedIndex] ?: 0
                             scope.launch { gridState.scrollToItem(gridPos) }
                         },
                         text = { Text(category.icon, fontSize = 20.sp) }
@@ -133,12 +161,14 @@ fun EmojiLibrarySheet(
                         when (item) {
                             is GridEntry.Header -> "header_${item.categoryIndex}"
                             is GridEntry.Emoji -> "emoji_${item.catIndex}_${item.emojiIndex}"
+                            is GridEntry.CustomEmoji -> "custom_${item.shortcode}"
                         }
                     },
                     span = { item ->
                         when (item) {
                             is GridEntry.Header -> GridItemSpan(8)
                             is GridEntry.Emoji -> GridItemSpan(1)
+                            is GridEntry.CustomEmoji -> GridItemSpan(1)
                         }
                     }
                 ) { item ->
@@ -150,6 +180,25 @@ fun EmojiLibrarySheet(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
                             )
+                        }
+                        is GridEntry.CustomEmoji -> {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        onCustomEmojiPick?.invoke(item.shortcode)
+                                        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+                                    }
+                            ) {
+                                AsyncImage(
+                                    model = item.url,
+                                    contentDescription = item.shortcode,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
                         }
                         is GridEntry.Emoji -> {
                             val isAlreadyAdded = item.emoji in currentEmojiSet
@@ -295,4 +344,5 @@ fun EmojiLibrarySheet(
 private sealed class GridEntry {
     data class Header(val categoryIndex: Int, val name: String) : GridEntry()
     data class Emoji(val catIndex: Int, val emojiIndex: Int, val emoji: String) : GridEntry()
+    data class CustomEmoji(val idx: Int, val shortcode: String, val url: String) : GridEntry()
 }
