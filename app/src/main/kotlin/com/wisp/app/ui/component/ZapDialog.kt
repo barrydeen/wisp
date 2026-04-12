@@ -53,6 +53,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -102,7 +103,9 @@ fun ZapDialog(
     onDismiss: () -> Unit,
     onZap: (amountMsats: Long, message: String, isAnonymous: Boolean, isPrivate: Boolean) -> Unit,
     onGoToWallet: () -> Unit,
-    canPrivateZap: Boolean = false
+    canPrivateZap: Boolean = false,
+    /** When opening from a quick preset (e.g. chat actions sheet), pre-select that amount in sats. */
+    initialSatsHint: Int? = null
 ) {
     if (!isWalletConnected) {
         AlertDialog(
@@ -133,6 +136,22 @@ fun ZapDialog(
     var isAnonymous by remember { mutableStateOf(false) }
     var isPrivate by remember { mutableStateOf(false) }
     var editMode by remember { mutableStateOf(false) }
+
+    LaunchedEffect(initialSatsHint) {
+        val hint = initialSatsHint ?: return@LaunchedEffect
+        val h = hint.toLong().coerceAtLeast(1L)
+        val fromPrefs = ZapPreferences(context).getPresets().sortedBy { it.amountSats }
+        val match = fromPrefs.find { it.amountSats == h }
+        if (match != null) {
+            selectedPreset = match
+            isCustom = false
+            message = match.message
+        } else {
+            isCustom = true
+            customAmount = h.toString()
+            message = ""
+        }
+    }
 
     val effectiveAmount = if (isCustom) {
         customAmount.toLongOrNull() ?: 0L

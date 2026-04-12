@@ -1200,10 +1200,16 @@ fun WispNavHost(
             if (showProfileEmojiLibrary) {
                 com.wisp.app.ui.component.EmojiLibrarySheet(
                     currentEmojis = profileUnicodeEmojis,
+                    customEmojiMap = profileResolvedEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
                         if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
                         pendingEmojiReactCallback = null
+                    },
+                    onCustomEmojiPick = { shortcode ->
+                        pendingEmojiReactCallback?.invoke(":$shortcode:")
+                        pendingEmojiReactCallback = null
+                        showProfileEmojiLibrary = false
                     },
                     onDismiss = { showProfileEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
@@ -1422,12 +1428,19 @@ fun WispNavHost(
             )
             if (showDmEmojiLibrary) {
                 val dmSheetUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+                val dmSheetResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
                 com.wisp.app.ui.component.EmojiLibrarySheet(
                     currentEmojis = dmSheetUnicodeEmojis,
+                    customEmojiMap = dmSheetResolvedEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
                         if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
                         pendingEmojiReactCallback = null
+                    },
+                    onCustomEmojiPick = { shortcode ->
+                        pendingEmojiReactCallback?.invoke(":$shortcode:")
+                        pendingEmojiReactCallback = null
+                        showDmEmojiLibrary = false
                     },
                     onDismiss = { showDmEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
@@ -1499,12 +1512,19 @@ fun WispNavHost(
             )
             if (showDmGroupEmojiLibrary) {
                 val dmGroupSheetUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+                val dmGroupSheetResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
                 com.wisp.app.ui.component.EmojiLibrarySheet(
                     currentEmojis = dmGroupSheetUnicodeEmojis,
+                    customEmojiMap = dmGroupSheetResolvedEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
                         if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
                         pendingEmojiReactCallback = null
+                    },
+                    onCustomEmojiPick = { shortcode ->
+                        pendingEmojiReactCallback?.invoke(":$shortcode:")
+                        pendingEmojiReactCallback = null
+                        showDmGroupEmojiLibrary = false
                     },
                     onDismiss = { showDmGroupEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
@@ -1553,6 +1573,7 @@ fun WispNavHost(
             val groupRoomUploadScope = rememberCoroutineScope()
             var groupRoomUploadProgress by remember { mutableStateOf<String?>(null) }
             var groupRoomZapTarget by remember { mutableStateOf<com.wisp.app.nostr.NostrEvent?>(null) }
+            var groupRoomZapInitialSats by remember { mutableStateOf<Int?>(null) }
             var showGroupRoomEmojiLibrary by remember { mutableStateOf(false) }
             val groupRoomResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
             val groupRoomUnicodeEmojis by feedViewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
@@ -1580,14 +1601,19 @@ fun WispNavHost(
                 }
                 ZapDialog(
                     isWalletConnected = isNwcConnected,
-                    onDismiss = { groupRoomZapTarget = null },
+                    onDismiss = {
+                        groupRoomZapTarget = null
+                        groupRoomZapInitialSats = null
+                    },
                     onZap = { amountMsats, message, isAnonymous, isPrivate ->
                         val event = groupRoomZapTarget ?: return@ZapDialog
                         groupRoomZapTarget = null
+                        groupRoomZapInitialSats = null
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigateSafe(Routes.WALLET) },
-                    canPrivateZap = feedViewModel.relayPool.hasDmRelays() && recipientHasDmRelays
+                    canPrivateZap = feedViewModel.relayPool.hasDmRelays() && recipientHasDmRelays,
+                    initialSatsHint = groupRoomZapInitialSats
                 )
             }
             val groupRoomMediaLauncher = rememberLauncherForActivityResult(
@@ -1652,6 +1678,7 @@ fun WispNavHost(
                 uploadProgress = groupRoomUploadProgress,
                 myPubkey = feedViewModel.getUserPubkey(),
                 onZap = { msgId, senderPubkey ->
+                    groupRoomZapInitialSats = null
                     groupRoomZapTarget = com.wisp.app.nostr.NostrEvent(
                         id = msgId,
                         pubkey = senderPubkey,
@@ -1661,8 +1688,26 @@ fun WispNavHost(
                         content = "",
                         sig = ""
                     )
-                    // Subscribe to zap receipt on the group relay too, in case the
-                    // LNURL provider publishes it there
+                    feedViewModel.relayPool.sendToRelayOrEphemeral(
+                        relayUrl,
+                        com.wisp.app.nostr.ClientMessage.req(
+                            subscriptionId = "zap-rcpt-grp-${msgId.take(12)}",
+                            filter = com.wisp.app.nostr.Filter(kinds = listOf(9735), eTags = listOf(msgId))
+                        ),
+                        skipBadCheck = true
+                    )
+                },
+                onZapPreset = { msgId, senderPubkey, sats ->
+                    groupRoomZapInitialSats = sats
+                    groupRoomZapTarget = com.wisp.app.nostr.NostrEvent(
+                        id = msgId,
+                        pubkey = senderPubkey,
+                        created_at = 0L,
+                        kind = com.wisp.app.nostr.Nip29.KIND_CHAT_MESSAGE,
+                        tags = listOf(listOf("h", groupId)),
+                        content = "",
+                        sig = ""
+                    )
                     feedViewModel.relayPool.sendToRelayOrEphemeral(
                         relayUrl,
                         com.wisp.app.nostr.ClientMessage.req(
@@ -1697,12 +1742,19 @@ fun WispNavHost(
             )
             if (showGroupRoomEmojiLibrary) {
                 val groupRoomSheetUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()
+                val groupRoomSheetResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
                 com.wisp.app.ui.component.EmojiLibrarySheet(
                     currentEmojis = groupRoomSheetUnicodeEmojis,
+                    customEmojiMap = groupRoomSheetResolvedEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
                         if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
                         pendingEmojiReactCallback = null
+                    },
+                    onCustomEmojiPick = { shortcode ->
+                        pendingEmojiReactCallback?.invoke(":$shortcode:")
+                        pendingEmojiReactCallback = null
+                        showGroupRoomEmojiLibrary = false
                     },
                     onDismiss = { showGroupRoomEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
@@ -1928,10 +1980,16 @@ fun WispNavHost(
             if (showThreadEmojiLibrary) {
                 com.wisp.app.ui.component.EmojiLibrarySheet(
                     currentEmojis = threadUnicodeEmojis,
+                    customEmojiMap = threadResolvedEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
                         if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
                         pendingEmojiReactCallback = null
+                    },
+                    onCustomEmojiPick = { shortcode ->
+                        pendingEmojiReactCallback?.invoke(":$shortcode:")
+                        pendingEmojiReactCallback = null
+                        showThreadEmojiLibrary = false
                     },
                     onDismiss = { showThreadEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
@@ -2393,10 +2451,16 @@ fun WispNavHost(
             if (showArticleEmojiLibrary) {
                 com.wisp.app.ui.component.EmojiLibrarySheet(
                     currentEmojis = articleUnicodeEmojis,
+                    customEmojiMap = articleResolvedEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
                         if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
                         pendingEmojiReactCallback = null
+                    },
+                    onCustomEmojiPick = { shortcode ->
+                        pendingEmojiReactCallback?.invoke(":$shortcode:")
+                        pendingEmojiReactCallback = null
+                        showArticleEmojiLibrary = false
                     },
                     onDismiss = { showArticleEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
@@ -3169,10 +3233,16 @@ fun WispNavHost(
             if (showNotifEmojiLibrary) {
                 com.wisp.app.ui.component.EmojiLibrarySheet(
                     currentEmojis = notifUnicodeEmojis,
+                    customEmojiMap = notifResolvedEmojis,
                     onAddEmojis = { emojis ->
                         emojis.forEach { feedViewModel.customEmojiRepo.addUnicodeEmoji(it) }
                         if (emojis.isNotEmpty()) pendingEmojiReactCallback?.invoke(emojis.first())
                         pendingEmojiReactCallback = null
+                    },
+                    onCustomEmojiPick = { shortcode ->
+                        pendingEmojiReactCallback?.invoke(":$shortcode:")
+                        pendingEmojiReactCallback = null
+                        showNotifEmojiLibrary = false
                     },
                     onDismiss = { showNotifEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )

@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,12 +26,27 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -41,6 +57,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -207,10 +224,12 @@ fun DmConversationScreen(
                                     peerPubkey?.let { onProfileClick?.invoke(it) }
                                 }
                             ) {
-                                ProfilePicture(url = peerProfile?.picture, size = 32)
+                                ProfilePicture(url = peerProfile?.picture, size = 40)
                                 Spacer(Modifier.width(10.dp))
                                 Text(
                                     peerProfile?.displayString ?: stringResource(R.string.title_chat),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -218,8 +237,13 @@ fun DmConversationScreen(
                         }
                     },
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
+                        IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                Icons.Filled.KeyboardArrowLeft,
+                                contentDescription = stringResource(R.string.cd_back),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp)
+                            )
                         }
                     },
                     actions = {
@@ -337,21 +361,37 @@ fun DmConversationScreen(
             }
         }
     ) { padding ->
-        Column(
+        val density = LocalDensity.current
+        var bottomBarHeightPx by remember { mutableIntStateOf(0) }
+
+        // Emoji autocomplete state — must live at composable scope
+        var dmTfv by remember { mutableStateOf(TextFieldValue()) }
+        LaunchedEffect(messageText) {
+            if (dmTfv.text != messageText) {
+                dmTfv = TextFieldValue(messageText, TextRange(messageText.length))
+            }
+        }
+        LaunchedEffect(messageText) {
+            if (messageText.isNotBlank()) viewModel.clearSendError()
+        }
+        val dmEmojiState = remember(dmTfv) { detectEmojiAutocomplete(dmTfv) }
+        val dmEmojiVisualTransformation = remember(resolvedEmojis) { EmojiVisualTransformation(resolvedEmojis) }
+
+        Box(
             modifier = Modifier
                 .padding(padding)
-                .navigationBarsPadding()
+                .fillMaxSize()
                 .imePadding()
         ) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
+                    .fillMaxSize()
                     .clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {
                         viewModel.selectMessage(null)
                     },
-                reverseLayout = true
+                reverseLayout = true,
+                contentPadding = PaddingValues(bottom = with(density) { bottomBarHeightPx.toDp() })
             ) {
                 var lastDateKey = ""
                 for (msg in messages.reversed()) {
@@ -391,167 +431,184 @@ fun DmConversationScreen(
                 }
             }
 
-            // Dismiss selection on scroll
             LaunchedEffect(listState.isScrollInProgress) {
                 if (listState.isScrollInProgress) viewModel.selectMessage(null)
             }
 
-            // Upload progress banner
-            AnimatedVisibility(visible = uploadProgress != null) {
-                Text(
-                    text = uploadProgress ?: "",
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.bodySmall,
+            // Bottom bar overlay with gradient
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .onSizeChanged { bottomBarHeightPx = it.height }
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, MaterialTheme.colorScheme.background)
+                        )
+                    )
+                    .navigationBarsPadding()
+            ) {
+                AnimatedVisibility(visible = uploadProgress != null) {
+                    Text(
+                        text = uploadProgress ?: "",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+                }
+                AnimatedVisibility(visible = sendError != null) {
+                    Text(
+                        text = sendError ?: "",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+                }
+                if (dmEmojiState != null) {
+                    EmojiShortcodePopup(
+                        query = dmEmojiState.query,
+                        resolvedEmojis = resolvedEmojis,
+                        onSelect = { shortcode ->
+                            val newTfv = insertEmojiShortcode(dmTfv, dmEmojiState.triggerIndex, shortcode)
+                            dmTfv = newTfv
+                            viewModel.updateMessageText(newTfv.text)
+                        }
+                    )
+                }
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp)
-                )
-            }
-
-            // Error banner for signing/upload failures
-            AnimatedVisibility(visible = sendError != null) {
-                Text(
-                    text = sendError ?: "",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp)
-                )
-            }
-
-            // Clear error when user starts typing again
-            LaunchedEffect(messageText) {
-                if (messageText.isNotBlank()) viewModel.clearSendError()
-            }
-
-            // Reply preview strip
-            AnimatedVisibility(visible = replyingTo != null) {
-                val msg = replyingTo
-                if (msg != null) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            val senderName = remember(msg.senderPubkey) {
-                                if (msg.senderPubkey == userPubkey) "You"
-                                else eventRepo?.getProfileData(msg.senderPubkey)?.displayString
-                                    ?: msg.senderPubkey.take(8) + "…"
+                        .padding(start = 12.dp, end = 12.dp, top = 0.dp, bottom = 8.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow
+                ) {
+                    Column(modifier = Modifier.padding(8.dp)) {
+                        // Reply preview inside the composer surface
+                        val replyMsg = replyingTo
+                        if (replyMsg != null) {
+                            val senderName = remember(replyMsg.senderPubkey) {
+                                if (replyMsg.senderPubkey == userPubkey) "You"
+                                else eventRepo?.getProfileData(replyMsg.senderPubkey)?.displayString
+                                    ?: replyMsg.senderPubkey.take(8) + "…"
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Reply,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(14.dp).scale(scaleX = -1f, scaleY = -1f)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = senderName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Icon(
+                                    Icons.Outlined.Close,
+                                    contentDescription = "Cancel reply",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier
+                                        .size(14.dp)
+                                        .clickable { viewModel.clearReply() }
+                                )
                             }
                             Text(
-                                "Replying to $senderName",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                msg.content,
+                                text = replyMsg.content,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 20.dp, top = 2.dp, bottom = 4.dp)
                             )
                         }
-                        IconButton(onClick = { viewModel.clearReply() }) {
-                            Icon(Icons.Outlined.Close, "Cancel reply", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Surface(
+                                onClick = {
+                                    photoPickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                    )
+                                },
+                                enabled = uploadProgress == null && !sending,
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Filled.Add,
+                                        contentDescription = stringResource(R.string.cd_attach_media),
+                                        tint = if (uploadProgress == null && !sending) MaterialTheme.colorScheme.onSurfaceVariant
+                                               else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = dmTfv,
+                                onValueChange = { dmTfv = it; viewModel.updateMessageText(it.text) },
+                                modifier = Modifier.weight(1f).heightIn(min = 28.dp).padding(top = 4.dp),
+                                enabled = uploadProgress == null,
+                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                                visualTransformation = dmEmojiVisualTransformation,
+                                maxLines = 5,
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                    color = MaterialTheme.colorScheme.onSurface
+                                ),
+                                decorationBox = { innerTextField ->
+                                    Box {
+                                        if (dmTfv.text.isEmpty()) {
+                                            Text(
+                                                stringResource(R.string.placeholder_message),
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                }
+                            )
+                            if (sending && miningStatus is PowStatus.Mining) {
+                                Column(
+                                    modifier = Modifier.size(32.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    Text("Mining…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 7.sp)
+                                }
+                            } else if (sending) {
+                                Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                }
+                            } else {
+                                IconButton(
+                                    onClick = { viewModel.sendMessage(relayPool, signer, resolvedEmojis) },
+                                    enabled = messageText.isNotBlank(),
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = stringResource(R.string.cd_send),
+                                        tint = if (messageText.isNotBlank()) MaterialTheme.colorScheme.primary
+                                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
                         }
-                    }
-                }
-            }
-
-            // Emoji shortcode autocomplete for DM input
-            var dmTfv by remember { mutableStateOf(TextFieldValue()) }
-            // Sync ViewModel → local TextFieldValue (external updates: upload URL, clear after send)
-            LaunchedEffect(messageText) {
-                if (dmTfv.text != messageText) {
-                    dmTfv = TextFieldValue(messageText, TextRange(messageText.length))
-                }
-            }
-            val dmEmojiState = remember(dmTfv) { detectEmojiAutocomplete(dmTfv) }
-            if (dmEmojiState != null) {
-                EmojiShortcodePopup(
-                    query = dmEmojiState.query,
-                    resolvedEmojis = resolvedEmojis,
-                    onSelect = { shortcode ->
-                        val newTfv = insertEmojiShortcode(dmTfv, dmEmojiState.triggerIndex, shortcode)
-                        dmTfv = newTfv
-                        viewModel.updateMessageText(newTfv.text)
-                    }
-                )
-            }
-
-            // Message input
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp)
-            ) {
-                IconButton(
-                    onClick = {
-                        photoPickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                        )
-                    },
-                    enabled = uploadProgress == null && !sending
-                ) {
-                    Icon(
-                        Icons.Outlined.Image,
-                        contentDescription = stringResource(R.string.cd_attach_media),
-                        tint = if (uploadProgress == null && !sending) MaterialTheme.colorScheme.onSurfaceVariant
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-                    )
-                }
-                val dmEmojiVisualTransformation = remember(resolvedEmojis) {
-                    EmojiVisualTransformation(resolvedEmojis)
-                }
-                OutlinedTextField(
-                    value = dmTfv,
-                    onValueChange = {
-                        dmTfv = it
-                        viewModel.updateMessageText(it.text)
-                    },
-                    placeholder = { Text(stringResource(R.string.placeholder_message)) },
-                    singleLine = false,
-                    maxLines = 4,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                    visualTransformation = dmEmojiVisualTransformation,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(Modifier.width(8.dp))
-                if (sending && miningStatus is PowStatus.Mining) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            "Mining...",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else if (sending) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                } else {
-                    IconButton(
-                        onClick = { viewModel.sendMessage(relayPool, signer, resolvedEmojis) },
-                        enabled = messageText.isNotBlank()
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Send,
-                            contentDescription = stringResource(R.string.cd_send),
-                            tint = if (messageText.isNotBlank()) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }
