@@ -28,8 +28,6 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.NavController
-import androidx.navigation.NavOptionsBuilder
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import android.app.Activity
@@ -170,12 +168,6 @@ object Routes {
     const val LIVE_STREAM = "live_stream/{hostPubkey}/{dTag}?relayHint={relayHint}"
 }
 
-private fun NavController.navigateSafe(route: String, builder: NavOptionsBuilder.() -> Unit = {}) {
-    if (currentBackStackEntry?.lifecycle?.currentState == Lifecycle.State.RESUMED) {
-        navigate(route, builder)
-    }
-}
-
 @Composable
 fun WispNavHost(
     deepLinkUri: String? = null,
@@ -290,7 +282,7 @@ fun WispNavHost(
         walletViewModel.refreshState()
         groupListInitKey++
         // initRelays() is called by the LOADING composable's LaunchedEffect
-        navController.navigateSafe(Routes.LOADING) {
+        navController.navigate(Routes.LOADING) {
             popUpTo(0) { inclusive = true }
         }
     }
@@ -299,7 +291,7 @@ fun WispNavHost(
         authViewModel.isAddingAccount = true
         feedViewModel.resetForAccountSwitch()
         walletViewModel.suspendForAccountSwitch()  // disconnect only, preserve credentials
-        navController.navigateSafe(Routes.SPLASH) {
+        navController.navigate(Routes.SPLASH) {
             popUpTo(0) { inclusive = true }
         }
     }
@@ -435,7 +427,7 @@ fun WispNavHost(
         // Only navigate directly if we're past the loading/auth screens
         if (currentDest != null && currentDest !in setOf(Routes.LOADING, Routes.AUTH, Routes.SPLASH, Routes.ONBOARDING_PROFILE)) {
             onDeepLinkConsumed()
-            navController.navigateSafe(route)
+            navController.navigate(route)
         }
     }
 
@@ -461,7 +453,7 @@ fun WispNavHost(
     if (currentRoute != null && currentRoute !in nonAppRoutes && !loadingComplete) {
         LaunchedEffect(Unit) {
             feedViewModel.initRelays()
-            navController.navigateSafe(Routes.LOADING) {
+            navController.navigate(Routes.LOADING) {
                 popUpTo(0) { inclusive = true }
             }
         }
@@ -623,7 +615,7 @@ fun WispNavHost(
         } else {
             val popped = navController.popBackStack()
             if (!popped) {
-                navController.navigateSafe(Routes.FEED) {
+                navController.navigate(Routes.FEED) {
                     popUpTo(0) { inclusive = true }
                     launchSingleTop = true
                 }
@@ -648,7 +640,7 @@ fun WispNavHost(
                             scrollToTopTrigger++
                         } else {
                             if (tab == BottomTab.WALLET) walletViewModel.navigateHome()
-                            navController.navigateSafe(tab.route) {
+                            navController.navigate(tab.route) {
                                 popUpTo(Routes.FEED) { inclusive = false }
                                 launchSingleTop = true
                             }
@@ -679,13 +671,13 @@ fun WispNavHost(
                 onToggleTor = onToggleTor,
                 onSignUp = {
                     if (authViewModel.signUp()) {
-                        navController.navigateSafe(Routes.ONBOARDING_PROFILE) {
+                        navController.navigate(Routes.ONBOARDING_PROFILE) {
                             popUpTo(Routes.SPLASH) { inclusive = true }
                         }
                     }
                 },
                 onLogIn = {
-                    navController.navigateSafe(Routes.AUTH)
+                    navController.navigate(Routes.AUTH)
                 }
             )
         }
@@ -703,7 +695,7 @@ fun WispNavHost(
 
                     if (isNewAccount) {
                         // New key generation always goes through full onboarding
-                        navController.navigateSafe(Routes.ONBOARDING_PROFILE)
+                        navController.navigate(Routes.ONBOARDING_PROFILE)
                     } else if (wasAddingAccount && authViewModel.keyRepo.isOnboardingComplete()) {
                         // Adding an existing account that already completed onboarding — skip straight to loading
                         feedViewModel.reloadForNewAccount()
@@ -712,7 +704,7 @@ fun WispNavHost(
                         composeViewModel.reloadBlossomRepo()
                         feedViewModel.initRelays()
                         walletViewModel.refreshState()
-                        navController.navigateSafe(Routes.LOADING) {
+                        navController.navigate(Routes.LOADING) {
                             popUpTo(Routes.AUTH) { inclusive = true }
                         }
                     } else if (authViewModel.keyRepo.isReadOnly()) {
@@ -720,7 +712,7 @@ fun WispNavHost(
                         relayViewModel.reload()
                         feedViewModel.initRelays()
                         authViewModel.keyRepo.markOnboardingComplete()
-                        navController.navigateSafe(Routes.LOADING) {
+                        navController.navigate(Routes.LOADING) {
                             popUpTo(Routes.AUTH) { inclusive = true }
                         }
                     } else {
@@ -733,7 +725,7 @@ fun WispNavHost(
                         feedViewModel.initRelays()
                         walletViewModel.refreshState()
                         authViewModel.keyRepo.markOnboardingComplete()
-                        navController.navigateSafe(Routes.EXISTING_USER_ONBOARDING) {
+                        navController.navigate(Routes.EXISTING_USER_ONBOARDING) {
                             popUpTo(Routes.AUTH) { inclusive = true }
                         }
                     }
@@ -755,12 +747,12 @@ fun WispNavHost(
                     if (target != null) {
                         onDeepLinkConsumed()
                         // Navigate to Feed first (as backstack root), then to the deep link target
-                        navController.navigateSafe(Routes.FEED) {
+                        navController.navigate(Routes.FEED) {
                             popUpTo(Routes.LOADING) { inclusive = true }
                         }
-                        navController.navigateSafe(target)
+                        navController.navigate(target)
                     } else {
-                        navController.navigateSafe(Routes.FEED) {
+                        navController.navigate(Routes.FEED) {
                             popUpTo(Routes.LOADING) { inclusive = true }
                         }
                     }
@@ -772,7 +764,7 @@ fun WispNavHost(
             ExistingUserOnboardingScreen(
                 feedViewModel = feedViewModel,
                 onReady = {
-                    navController.navigateSafe(Routes.FEED) {
+                    navController.navigate(Routes.FEED) {
                         popUpTo(Routes.EXISTING_USER_ONBOARDING) { inclusive = true }
                     }
                 }
@@ -792,13 +784,13 @@ fun WispNavHost(
                     replyTarget = null
                     quoteTarget = null
                     composeViewModel.clear()
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 onReply = { event ->
                     replyTarget = event
                     quoteTarget = null
                     composeViewModel.clear()
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 onRepost = { event ->
                     feedViewModel.sendRepost(event)
@@ -807,31 +799,31 @@ fun WispNavHost(
                     quoteTarget = event
                     replyTarget = null
                     composeViewModel.clear()
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 onRelays = {
-                    navController.navigateSafe(Routes.RELAYS)
+                    navController.navigate(Routes.RELAYS)
                 },
                 onProfileEdit = {
                     val pubkey = feedViewModel.getUserPubkey()
                     if (pubkey != null) {
-                        navController.navigateSafe("profile/$pubkey")
+                        navController.navigate("profile/$pubkey")
                     }
                 },
                 onProfileClick = { pubkey ->
-                    navController.navigateSafe("profile/$pubkey")
+                    navController.navigate("profile/$pubkey")
                 },
                 onDms = {
-                    navController.navigateSafe(Routes.DM_LIST)
+                    navController.navigate(Routes.DM_LIST)
                 },
                 onReact = { event, emoji ->
                     feedViewModel.toggleReaction(event, emoji)
                 },
                 onNoteClick = { event ->
-                    navController.navigateSafe("thread/${event.id}")
+                    navController.navigate("thread/${event.id}")
                 },
                 onQuotedNoteClick = { eventId ->
-                    navController.navigateSafe("thread/$eventId")
+                    navController.navigate("thread/$eventId")
                 },
                 accounts = accounts,
                 onSwitchAccount = onSwitchAccount,
@@ -850,89 +842,89 @@ fun WispNavHost(
                         composeViewModel.reloadBlossomRepo()
                         walletViewModel.refreshState()
                         // initRelays() triggered by LOADING composable LaunchedEffect
-                        navController.navigateSafe(Routes.LOADING) {
+                        navController.navigate(Routes.LOADING) {
                             popUpTo(0) { inclusive = true }
                         }
                     } else {
                         // Full logout — reset UI preferences and refresh in-memory theme state
                         com.wisp.app.repo.InterfacePreferences(context).reset()
                         onInterfaceChanged()
-                        navController.navigateSafe(Routes.SPLASH) {
+                        navController.navigate(Routes.SPLASH) {
                             popUpTo(0) { inclusive = true }
                         }
                     }
                 },
                 onMediaServers = {
-                    navController.navigateSafe(Routes.BLOSSOM_SERVERS)
+                    navController.navigate(Routes.BLOSSOM_SERVERS)
                 },
                 onWallet = {
-                    navController.navigateSafe(Routes.WALLET)
+                    navController.navigate(Routes.WALLET)
                 },
                 onLists = {
-                    navController.navigateSafe(Routes.LISTS_HUB)
+                    navController.navigate(Routes.LISTS_HUB)
                 },
                 onDrafts = {
-                    navController.navigateSafe(Routes.DRAFTS)
+                    navController.navigate(Routes.DRAFTS)
                 },
                 onSafety = {
-                    navController.navigateSafe(Routes.SAFETY)
+                    navController.navigate(Routes.SAFETY)
                 },
                 onSearch = {
-                    navController.navigateSafe(Routes.SEARCH) {
+                    navController.navigate(Routes.SEARCH) {
                         popUpTo(Routes.FEED) { saveState = true }
                         launchSingleTop = true
                         restoreState = true
                     }
                 },
                 onSocialGraph = {
-                    navController.navigateSafe(Routes.SOCIAL_GRAPH)
+                    navController.navigate(Routes.SOCIAL_GRAPH)
                 },
                 onCustomEmojis = {
-                    navController.navigateSafe(Routes.CUSTOM_EMOJIS)
+                    navController.navigate(Routes.CUSTOM_EMOJIS)
                 },
                 onConsole = {
-                    navController.navigateSafe(Routes.CONSOLE)
+                    navController.navigate(Routes.CONSOLE)
                 },
                 onRelayHealth = {
-                    navController.navigateSafe(Routes.RELAY_HEALTH)
+                    navController.navigate(Routes.RELAY_HEALTH)
                 },
                 onKeys = {
-                    navController.navigateSafe(Routes.KEYS)
+                    navController.navigate(Routes.KEYS)
                 },
                 onPowSettings = {
-                    navController.navigateSafe(Routes.POW_SETTINGS)
+                    navController.navigate(Routes.POW_SETTINGS)
                 },
                 onInterfaceSettings = {
-                    navController.navigateSafe(Routes.INTERFACE_SETTINGS)
+                    navController.navigate(Routes.INTERFACE_SETTINGS)
                 },
                 onAddToList = { eventId -> addToListEventId = eventId },
                 onRelayDetail = { url ->
-                    navController.navigateSafe("relay_detail/${java.net.URLEncoder.encode(url, "UTF-8")}")
+                    navController.navigate("relay_detail/${java.net.URLEncoder.encode(url, "UTF-8")}")
                 },
                 onHashtagClick = { tag ->
-                    navController.navigateSafe("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
+                    navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
                 },
                 onViewSetFeed = { set ->
                     val encodedName = java.net.URLEncoder.encode(set.name, "UTF-8")
                     val encodedTags = java.net.URLEncoder.encode(set.hashtags.joinToString(","), "UTF-8")
-                    navController.navigateSafe("hashtag_set/$encodedName/$encodedTags")
+                    navController.navigate("hashtag_set/$encodedName/$encodedTags")
                 },
                 onArticleClick = { kind, author, dTag ->
-                    navController.navigateSafe("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
+                    navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
                 },
                 onGroupRoom = { relayUrl, groupId ->
                     val encoded = android.util.Base64.encodeToString(
                         relayUrl.toByteArray(Charsets.UTF_8),
                         android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
                     )
-                    navController.navigateSafe("group_room/$encoded/${android.net.Uri.encode(groupId)}")
+                    navController.navigate("group_room/$encoded/${android.net.Uri.encode(groupId)}")
                 },
                 onLiveStreamClick = { hostPubkey, dTag, relayHint ->
                     val route = buildString {
                         append("live_stream/$hostPubkey/${android.net.Uri.encode(dTag)}")
                         if (relayHint != null) append("?relayHint=${android.net.Uri.encode(relayHint)}")
                     }
-                    navController.navigateSafe(route)
+                    navController.navigate(route)
                 },
                 fetchGroupPreview = { relayUrl, groupId ->
                     groupListViewModel.fetchGroupPreview(relayUrl, groupId)
@@ -1016,7 +1008,7 @@ fun WispNavHost(
                     }
                     quoteTarget = null
                     composeViewModel.loadDraft(draft)
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 onDeleteDraft = { dTag ->
                     draftsViewModel.deleteDraft(dTag, feedViewModel.relayPool, activeSigner)
@@ -1105,7 +1097,7 @@ fun WispNavHost(
                     replyTarget = event
                     quoteTarget = null
                     composeViewModel.clear()
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 onRepost = { event ->
                     feedViewModel.sendRepost(event)
@@ -1114,15 +1106,15 @@ fun WispNavHost(
                     quoteTarget = event
                     replyTarget = null
                     composeViewModel.clear()
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 eventRepo = feedViewModel.eventRepo,
-                onNavigateToProfile = { pubkey -> navController.navigateSafe("profile/$pubkey") },
+                onNavigateToProfile = { pubkey -> navController.navigate("profile/$pubkey") },
                 onToggleFollow = { pubkey -> feedViewModel.toggleFollow(pubkey) },
                 isOwnProfile = isOwnProfile,
                 onEditProfile = {
                     profileViewModel.loadCurrentProfile(feedViewModel.eventRepo, feedViewModel.relayPool)
-                    navController.navigateSafe(Routes.PROFILE_EDIT)
+                    navController.navigate(Routes.PROFILE_EDIT)
                 },
                 isBlocked = pubkey in isBlockedState,
                 onBlockUser = {
@@ -1130,13 +1122,13 @@ fun WispNavHost(
                     navController.popBackStack()
                 },
                 onUnblockUser = { feedViewModel.unblockUser(pubkey) },
-                onNoteClick = { event -> navController.navigateSafe("thread/${event.id}") },
-                onQuotedNoteClick = { eventId -> navController.navigateSafe("thread/$eventId") },
+                onNoteClick = { event -> navController.navigate("thread/${event.id}") },
+                onQuotedNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                 onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
                 onZap = { event, amountMsats, message, isAnonymous, isPrivate -> feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate) },
                 userPubkey = feedViewModel.getUserPubkey(),
                 isWalletConnected = feedViewModel.activeWalletProvider.hasConnection(),
-                onWallet = { navController.navigateSafe(Routes.WALLET) },
+                onWallet = { navController.navigate(Routes.WALLET) },
                 zapSuccess = feedViewModel.zapSuccess,
                 zapError = feedViewModel.zapError,
                 zapInProgressIds = profileZapInProgress,
@@ -1154,14 +1146,14 @@ fun WispNavHost(
                 onTogglePin = { eventId -> feedViewModel.togglePin(eventId) },
                 onDeleteEvent = { eventId, kind -> feedViewModel.deleteEvent(eventId, kind) },
                 onAddNoteToList = { eventId -> addToListEventId = eventId },
-                onSendDm = if (!isOwnProfile) {{ navController.navigateSafe("dm/$pubkey") }} else null,
+                onSendDm = if (!isOwnProfile) {{ navController.navigate("dm/$pubkey") }} else null,
                 onZapProfile = if (!isOwnProfile) { { amountMsats, message, isAnonymous ->
                     feedViewModel.socialActions.sendZapToPubkey(pubkey, amountMsats, message, isAnonymous)
                 } } else null,
                 signer = activeSigner,
                 translationRepo = feedViewModel.translationRepo,
                 onArticleClick = { kind, articleAuthor, articleDTag ->
-                    navController.navigateSafe("article/$kind/$articleAuthor/${java.net.URLEncoder.encode(articleDTag, "UTF-8")}")
+                    navController.navigate("article/$kind/$articleAuthor/${java.net.URLEncoder.encode(articleDTag, "UTF-8")}")
                 },
                 onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
                 resolvedEmojis = profileResolvedEmojis,
@@ -1171,7 +1163,7 @@ fun WispNavHost(
                     val authorProfile = userProfileViewModel.profile.value
                         ?: ProfileData(pubkey = pubkey, name = null, displayName = null, about = null, picture = null, nip05 = null, banner = null, lud16 = null, updatedAt = 0)
                     searchViewModel.prepareAuthorSearch(authorProfile)
-                    navController.navigateSafe(Routes.SEARCH) {
+                    navController.navigate(Routes.SEARCH) {
                         popUpTo(Routes.FEED) { saveState = true }
                         launchSingleTop = true
                         restoreState = true
@@ -1180,14 +1172,14 @@ fun WispNavHost(
                 onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
                 onGroupRoom = { relayUrl, groupId ->
                     val encodedRelay = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(relayUrl.toByteArray())
-                    navController.navigateSafe("group_room/$encodedRelay/${android.net.Uri.encode(groupId)}")
+                    navController.navigate("group_room/$encodedRelay/${android.net.Uri.encode(groupId)}")
                 },
                 onLiveStreamClick = { hostPubkey, dTag, relayHint ->
                     val route = buildString {
                         append("live_stream/$hostPubkey/${android.net.Uri.encode(dTag)}")
                         if (relayHint != null) append("?relayHint=${android.net.Uri.encode(relayHint)}")
                     }
-                    navController.navigateSafe(route)
+                    navController.navigate(route)
                 },
                 fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) },
                 onAddEmojiSet = { pk, dTag -> feedViewModel.addSetToEmojiList(pk, dTag) },
@@ -1249,7 +1241,7 @@ fun WispNavHost(
                         searchZapTarget = null
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
-                    onGoToWallet = { navController.navigateSafe(Routes.WALLET) },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
                     canPrivateZap = userHasDmRelays && recipientHasDmRelays
                 )
             }
@@ -1260,19 +1252,19 @@ fun WispNavHost(
                 muteRepo = feedViewModel.muteRepo,
                 contactRepo = feedViewModel.contactRepo,
                 onProfileClick = { pubkey ->
-                    navController.navigateSafe("profile/$pubkey")
+                    navController.navigate("profile/$pubkey")
                 },
                 onNoteClick = { event ->
-                    navController.navigateSafe("thread/${event.id}")
+                    navController.navigate("thread/${event.id}")
                 },
                 onQuotedNoteClick = { eventId ->
-                    navController.navigateSafe("thread/$eventId")
+                    navController.navigate("thread/$eventId")
                 },
                 onReply = { event ->
                     replyTarget = event
                     quoteTarget = null
                     composeViewModel.clear()
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 onReact = { event, emoji ->
                     feedViewModel.toggleReaction(event, emoji)
@@ -1284,7 +1276,7 @@ fun WispNavHost(
                     quoteTarget = event
                     replyTarget = null
                     composeViewModel.clear()
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 onZap = { event ->
                     searchZapTarget = event
@@ -1295,7 +1287,7 @@ fun WispNavHost(
                     feedViewModel.toggleFollow(pubkey)
                 },
                 onHashtagClick = { tag ->
-                    navController.navigateSafe("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
+                    navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
                 },
                 onBlockUser = { pubkey ->
                     feedViewModel.blockUser(pubkey)
@@ -1337,20 +1329,20 @@ fun WispNavHost(
                 onBack = null,
                 onConversation = { convo ->
                     if (convo.isGroup) {
-                        navController.navigateSafe("dm/group/${convo.conversationKey.replace(",", "~")}")
+                        navController.navigate("dm/group/${convo.conversationKey.replace(",", "~")}")
                     } else {
-                        navController.navigateSafe("dm/${convo.peerPubkey}")
+                        navController.navigate("dm/${convo.peerPubkey}")
                     }
                 },
                 onNewGroupDm = {
-                    navController.navigateSafe(Routes.CONTACT_PICKER)
+                    navController.navigate(Routes.CONTACT_PICKER)
                 },
                 onGroupRoom = { relayUrl, groupId ->
                     val encoded = android.util.Base64.encodeToString(
                         relayUrl.toByteArray(Charsets.UTF_8),
                         android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
                     )
-                    navController.navigateSafe("group_room/$encoded/${android.net.Uri.encode(groupId)}")
+                    navController.navigate("group_room/$encoded/${android.net.Uri.encode(groupId)}")
                 }
             )
         }
@@ -1364,7 +1356,7 @@ fun WispNavHost(
                 onBack = { navController.popBackStack() },
                 onConfirm = { conversationKey ->
                     navController.popBackStack()
-                    navController.navigateSafe("dm/group/${conversationKey.replace(",", "~")}")
+                    navController.navigate("dm/group/${conversationKey.replace(",", "~")}")
                 },
                 myPubkey = userPubkey
             )
@@ -1403,13 +1395,13 @@ fun WispNavHost(
                 eventRepo = feedViewModel.eventRepo,
                 relayInfoRepo = feedViewModel.relayInfoRepo,
                 onBack = { navController.popBackStack() },
-                onProfileClick = { pk -> navController.navigateSafe("profile/$pk") },
-                onNoteClick = { eventId -> navController.navigateSafe("thread/$eventId") },
+                onProfileClick = { pk -> navController.navigate("profile/$pk") },
+                onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                 peerPubkey = pubkey,
                 signer = activeSigner,
                 socialActionManager = feedViewModel.socialActions,
                 isWalletConnected = feedViewModel.activeWalletProvider.hasConnection(),
-                onGoToWallet = { navController.navigateSafe(Routes.WALLET) },
+                onGoToWallet = { navController.navigate(Routes.WALLET) },
                 noteActions = remember {
                     com.wisp.app.ui.component.NoteActions(
                         nip05Repo = feedViewModel.nip05Repo,
@@ -1486,14 +1478,14 @@ fun WispNavHost(
                 eventRepo = feedViewModel.eventRepo,
                 relayInfoRepo = feedViewModel.relayInfoRepo,
                 onBack = { navController.popBackStack() },
-                onProfileClick = { pk -> navController.navigateSafe("profile/$pk") },
-                onNoteClick = { eventId -> navController.navigateSafe("thread/$eventId") },
+                onProfileClick = { pk -> navController.navigate("profile/$pk") },
+                onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                 peerPubkey = participantList.firstOrNull() ?: "",
                 participants = participantList,
                 signer = activeSigner,
                 socialActionManager = feedViewModel.socialActions,
                 isWalletConnected = feedViewModel.activeWalletProvider.hasConnection(),
-                onGoToWallet = { navController.navigateSafe(Routes.WALLET) },
+                onGoToWallet = { navController.navigate(Routes.WALLET) },
                 noteActions = remember {
                     com.wisp.app.ui.component.NoteActions(
                         nip05Repo = feedViewModel.nip05Repo,
@@ -1611,7 +1603,7 @@ fun WispNavHost(
                         groupRoomZapInitialSats = null
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
-                    onGoToWallet = { navController.navigateSafe(Routes.WALLET) },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
                     canPrivateZap = feedViewModel.relayPool.hasDmRelays() && recipientHasDmRelays,
                     initialSatsHint = groupRoomZapInitialSats
                 )
@@ -1645,9 +1637,9 @@ fun WispNavHost(
                 eventRepo = feedViewModel.eventRepo,
                 signer = activeSigner,
                 onBack = { navController.popBackStack() },
-                onProfileClick = { pk -> navController.navigateSafe("profile/$pk") },
-                onNoteClick = { eventId -> navController.navigateSafe("thread/$eventId") },
-                onGroupDetail = { navController.navigateSafe("group_detail/$encodedRelay/${android.net.Uri.encode(groupId)}") },
+                onProfileClick = { pk -> navController.navigate("profile/$pk") },
+                onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
+                onGroupDetail = { navController.navigate("group_detail/$encodedRelay/${android.net.Uri.encode(groupId)}") },
                 onJoin = { groupListViewModel.joinGroup(relayUrl, groupId, activeSigner) },
                 onAlreadyMember = { groupListViewModel.silentJoin(relayUrl, groupId, activeSigner) },
                 fetchGroupPreview = { rUrl, gId -> groupListViewModel.fetchGroupPreview(rUrl, gId) },
@@ -1729,7 +1721,7 @@ fun WispNavHost(
                 noteActions = remember {
                     com.wisp.app.ui.component.NoteActions(
                         nip05Repo = feedViewModel.nip05Repo,
-                        onNoteClick = { eventId -> navController.navigateSafe("thread/$eventId") },
+                        onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                         onAddEmojiSet = { pk, dTag -> feedViewModel.addSetToEmojiList(pk, dTag) },
                         onRemoveEmojiSet = { pk, dTag -> feedViewModel.removeSetFromEmojiList(pk, dTag) },
                         isEmojiSetAdded = { pk, dTag ->
@@ -1804,12 +1796,12 @@ fun WispNavHost(
                 relayPool = feedViewModel.relayPool,
                 onBack = { navController.popBackStack() },
                 onLeave = {
-                    navController.navigateSafe(Routes.DM_LIST) {
+                    navController.navigate(Routes.DM_LIST) {
                         popUpTo(Routes.DM_LIST) { inclusive = false }
                     }
                 },
                 onDelete = {
-                    navController.navigateSafe(Routes.DM_LIST) {
+                    navController.navigate(Routes.DM_LIST) {
                         popUpTo(Routes.DM_LIST) { inclusive = false }
                     }
                 },
@@ -1881,7 +1873,7 @@ fun WispNavHost(
                         threadZapTarget = null
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
-                    onGoToWallet = { navController.navigateSafe(Routes.WALLET) },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
                     canPrivateZap = threadUserHasDmRelays && threadRecipientHasDmRelays
                 )
             }
@@ -1903,16 +1895,16 @@ fun WispNavHost(
                     replyTarget = event
                     quoteTarget = null
                     composeViewModel.clear()
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 onProfileClick = { pubkey ->
-                    navController.navigateSafe("profile/$pubkey")
+                    navController.navigate("profile/$pubkey")
                 },
                 onNoteClick = { event ->
-                    navController.navigateSafe("thread/${event.id}")
+                    navController.navigate("thread/${event.id}")
                 },
                 onQuotedNoteClick = { eventId ->
-                    navController.navigateSafe("thread/$eventId")
+                    navController.navigate("thread/$eventId")
                 },
                 onReact = { event, emoji ->
                     feedViewModel.toggleReaction(event, emoji)
@@ -1924,7 +1916,7 @@ fun WispNavHost(
                     quoteTarget = event
                     replyTarget = null
                     composeViewModel.clear()
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 onToggleFollow = { pubkey ->
                     feedViewModel.toggleFollow(pubkey)
@@ -1941,7 +1933,7 @@ fun WispNavHost(
                 onDeleteEvent = { eventId, kind -> feedViewModel.deleteEvent(eventId, kind) },
                 onAddToList = { eventId -> addToListEventId = eventId },
                 onHashtagClick = { tag ->
-                    navController.navigateSafe("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
+                    navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
                 },
                 onRelayClick = { url ->
                     feedViewModel.setSelectedRelay(url)
@@ -1949,7 +1941,7 @@ fun WispNavHost(
                     navController.popBackStack(Routes.FEED, inclusive = false)
                 },
                 onArticleClick = { kind, author, dTag ->
-                    navController.navigateSafe("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
+                    navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
                 },
                 translationRepo = feedViewModel.translationRepo,
                 resolvedEmojis = threadResolvedEmojis,
@@ -1959,14 +1951,14 @@ fun WispNavHost(
                 onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
                 onGroupRoom = { relayUrl, groupId ->
                     val encodedRelay = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(relayUrl.toByteArray())
-                    navController.navigateSafe("group_room/$encodedRelay/${android.net.Uri.encode(groupId)}")
+                    navController.navigate("group_room/$encodedRelay/${android.net.Uri.encode(groupId)}")
                 },
                 onLiveStreamClick = { hostPubkey, dTag, relayHint ->
                     val route = buildString {
                         append("live_stream/$hostPubkey/${android.net.Uri.encode(dTag)}")
                         if (relayHint != null) append("?relayHint=${android.net.Uri.encode(relayHint)}")
                     }
-                    navController.navigateSafe(route)
+                    navController.navigate(route)
                 },
                 fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) },
                 onAddEmojiSet = { pubkey, dTag -> feedViewModel.addSetToEmojiList(pubkey, dTag) },
@@ -2045,7 +2037,7 @@ fun WispNavHost(
                         hashtagZapTarget = null
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
-                    onGoToWallet = { navController.navigateSafe(Routes.WALLET) },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
                     canPrivateZap = hashtagUserHasDmRelays && hashtagRecipientHasDmRelays
                 )
             }
@@ -2056,7 +2048,7 @@ fun WispNavHost(
                         replyTarget = event
                         quoteTarget = null
                         composeViewModel.clear()
-                        navController.navigateSafe(Routes.COMPOSE)
+                        navController.navigate(Routes.COMPOSE)
                     },
                     onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
                     onRepost = { event -> feedViewModel.sendRepost(event) },
@@ -2064,11 +2056,11 @@ fun WispNavHost(
                         quoteTarget = event
                         replyTarget = null
                         composeViewModel.clear()
-                        navController.navigateSafe(Routes.COMPOSE)
+                        navController.navigate(Routes.COMPOSE)
                     },
                     onZap = { event -> hashtagZapTarget = event },
-                    onProfileClick = { pubkey -> navController.navigateSafe("profile/$pubkey") },
-                    onNoteClick = { eventId -> navController.navigateSafe("thread/$eventId") },
+                    onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
+                    onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                     onAddToList = { eventId -> addToListEventId = eventId },
                     onFollowAuthor = { pubkey -> feedViewModel.toggleFollow(pubkey) },
                     onBlockAuthor = { pubkey -> feedViewModel.blockUser(pubkey) },
@@ -2077,7 +2069,7 @@ fun WispNavHost(
                     userPubkey = feedViewModel.getUserPubkey(),
                     nip05Repo = feedViewModel.nip05Repo,
                     onHashtagClick = { clickedTag ->
-                        navController.navigateSafe("hashtag/${java.net.URLEncoder.encode(clickedTag, "UTF-8")}")
+                        navController.navigate("hashtag/${java.net.URLEncoder.encode(clickedTag, "UTF-8")}")
                     },
                     onRelayClick = { url ->
                         feedViewModel.setSelectedRelay(url)
@@ -2085,7 +2077,7 @@ fun WispNavHost(
                         navController.popBackStack(Routes.FEED, inclusive = false)
                     },
                     onArticleClick = { kind, author, dTag ->
-                        navController.navigateSafe("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
+                        navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
                     },
                     onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
                     onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
@@ -2094,7 +2086,7 @@ fun WispNavHost(
                             relayUrl.toByteArray(Charsets.UTF_8),
                             android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
                         )
-                        navController.navigateSafe("group_room/$encoded/${android.net.Uri.encode(groupId)}")
+                        navController.navigate("group_room/$encoded/${android.net.Uri.encode(groupId)}")
                     },
                     groupMetadataProvider = { relayUrl, groupId -> feedViewModel.groupRepo.getRoom(relayUrl, groupId)?.metadata },
                     fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) },
@@ -2194,7 +2186,7 @@ fun WispNavHost(
                         setFeedZapTarget = null
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
-                    onGoToWallet = { navController.navigateSafe(Routes.WALLET) },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
                     canPrivateZap = setFeedUserHasDmRelays && setFeedRecipientHasDmRelays
                 )
             }
@@ -2205,7 +2197,7 @@ fun WispNavHost(
                         replyTarget = event
                         quoteTarget = null
                         composeViewModel.clear()
-                        navController.navigateSafe(Routes.COMPOSE)
+                        navController.navigate(Routes.COMPOSE)
                     },
                     onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
                     onRepost = { event -> feedViewModel.sendRepost(event) },
@@ -2213,11 +2205,11 @@ fun WispNavHost(
                         quoteTarget = event
                         replyTarget = null
                         composeViewModel.clear()
-                        navController.navigateSafe(Routes.COMPOSE)
+                        navController.navigate(Routes.COMPOSE)
                     },
                     onZap = { event -> setFeedZapTarget = event },
-                    onProfileClick = { pubkey -> navController.navigateSafe("profile/$pubkey") },
-                    onNoteClick = { eventId -> navController.navigateSafe("thread/$eventId") },
+                    onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
+                    onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                     onAddToList = { eventId -> addToListEventId = eventId },
                     onFollowAuthor = { pubkey -> feedViewModel.toggleFollow(pubkey) },
                     onBlockAuthor = { pubkey -> feedViewModel.blockUser(pubkey) },
@@ -2226,7 +2218,7 @@ fun WispNavHost(
                     userPubkey = feedViewModel.getUserPubkey(),
                     nip05Repo = feedViewModel.nip05Repo,
                     onHashtagClick = { clickedTag ->
-                        navController.navigateSafe("hashtag/${java.net.URLEncoder.encode(clickedTag, "UTF-8")}")
+                        navController.navigate("hashtag/${java.net.URLEncoder.encode(clickedTag, "UTF-8")}")
                     },
                     onRelayClick = { url ->
                         feedViewModel.setSelectedRelay(url)
@@ -2234,7 +2226,7 @@ fun WispNavHost(
                         navController.popBackStack(Routes.FEED, inclusive = false)
                     },
                     onArticleClick = { kind, author, dTag ->
-                        navController.navigateSafe("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
+                        navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
                     },
                     onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
                     onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
@@ -2243,7 +2235,7 @@ fun WispNavHost(
                             relayUrl.toByteArray(Charsets.UTF_8),
                             android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
                         )
-                        navController.navigateSafe("group_room/$encoded/${android.net.Uri.encode(groupId)}")
+                        navController.navigate("group_room/$encoded/${android.net.Uri.encode(groupId)}")
                     },
                     groupMetadataProvider = { relayUrl, groupId -> feedViewModel.groupRepo.getRoom(relayUrl, groupId)?.metadata },
                     fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) },
@@ -2356,7 +2348,7 @@ fun WispNavHost(
                         articleZapTarget = null
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
-                    onGoToWallet = { navController.navigateSafe(Routes.WALLET) },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
                     canPrivateZap = articleUserHasDmRelays && articleRecipientHasDmRelays
                 )
             }
@@ -2367,7 +2359,7 @@ fun WispNavHost(
                         replyTarget = event
                         quoteTarget = null
                         composeViewModel.clear()
-                        navController.navigateSafe(Routes.COMPOSE)
+                        navController.navigate(Routes.COMPOSE)
                     },
                     onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
                     onRepost = { event -> feedViewModel.sendRepost(event) },
@@ -2375,11 +2367,11 @@ fun WispNavHost(
                         quoteTarget = event
                         replyTarget = null
                         composeViewModel.clear()
-                        navController.navigateSafe(Routes.COMPOSE)
+                        navController.navigate(Routes.COMPOSE)
                     },
                     onZap = { event -> articleZapTarget = event },
-                    onProfileClick = { pubkey -> navController.navigateSafe("profile/$pubkey") },
-                    onNoteClick = { eventId -> navController.navigateSafe("thread/$eventId") },
+                    onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
+                    onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                     onAddToList = { eventId -> addToListEventId = eventId },
                     onFollowAuthor = { pubkey -> feedViewModel.toggleFollow(pubkey) },
                     onBlockAuthor = { pubkey -> feedViewModel.blockUser(pubkey) },
@@ -2388,10 +2380,10 @@ fun WispNavHost(
                     userPubkey = feedViewModel.getUserPubkey(),
                     nip05Repo = feedViewModel.nip05Repo,
                     onHashtagClick = { tag ->
-                        navController.navigateSafe("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
+                        navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
                     },
                     onArticleClick = { k, a, d ->
-                        navController.navigateSafe("article/$k/$a/${java.net.URLEncoder.encode(d, "UTF-8")}")
+                        navController.navigate("article/$k/$a/${java.net.URLEncoder.encode(d, "UTF-8")}")
                     },
                     onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
                     onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
@@ -2400,7 +2392,7 @@ fun WispNavHost(
                             relayUrl.toByteArray(Charsets.UTF_8),
                             android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
                         )
-                        navController.navigateSafe("group_room/$encoded/${android.net.Uri.encode(groupId)}")
+                        navController.navigate("group_room/$encoded/${android.net.Uri.encode(groupId)}")
                     },
                     groupMetadataProvider = { relayUrl, groupId -> feedViewModel.groupRepo.getRoom(relayUrl, groupId)?.metadata },
                     fetchGroupPreview = { relayUrl, groupId -> groupListViewModel.fetchGroupPreview(relayUrl, groupId) },
@@ -2417,15 +2409,15 @@ fun WispNavHost(
                 viewModel = articleViewModel,
                 eventRepo = feedViewModel.eventRepo,
                 onBack = { navController.popBackStack() },
-                onProfileClick = { pubkey -> navController.navigateSafe("profile/$pubkey") },
+                onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                 onHashtagClick = { tag ->
-                    navController.navigateSafe("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
+                    navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
                 },
                 onReply = { event ->
                     replyTarget = event
                     quoteTarget = null
                     composeViewModel.clear()
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
                 onRepost = { event -> feedViewModel.sendRepost(event) },
@@ -2433,7 +2425,7 @@ fun WispNavHost(
                     quoteTarget = event
                     replyTarget = null
                     composeViewModel.clear()
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 onZap = { event -> articleZapTarget = event },
                 onAddToList = { eventId -> addToListEventId = eventId },
@@ -2557,7 +2549,7 @@ fun WispNavHost(
                             recipientOverride = recipientPubkey,
                             eventATag = aTag)
                     },
-                    onGoToWallet = { navController.navigateSafe(Routes.WALLET) },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
                     canPrivateZap = feedViewModel.relayPool.hasDmRelays() && recipientHasDmRelays
                 )
             }
@@ -2572,7 +2564,7 @@ fun WispNavHost(
                 signer = activeSigner,
                 myPubkey = feedViewModel.getUserPubkey(),
                 onBack = { navController.popBackStack() },
-                onProfileClick = { pubkey -> navController.navigateSafe("profile/$pubkey") },
+                onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                 onFullScreenVideo = { url, positionMs ->
                     pipFullScreenVideoUrl = url
                     pipFullScreenStartPosition = positionMs
@@ -2692,7 +2684,7 @@ fun WispNavHost(
                 viewModel = relayHealthViewModel,
                 onBack = { navController.popBackStack() },
                 onRelayDetail = { url ->
-                    navController.navigateSafe("relay_detail/${java.net.URLEncoder.encode(url, "UTF-8")}")
+                    navController.navigate("relay_detail/${java.net.URLEncoder.encode(url, "UTF-8")}")
                 }
             )
         }
@@ -2705,7 +2697,7 @@ fun WispNavHost(
                 userPubkey = feedViewModel.getUserPubkey(),
                 onBack = { navController.popBackStack() },
                 onNavigateToProfile = { pubkey ->
-                    navController.navigateSafe("profile/$pubkey")
+                    navController.navigate("profile/$pubkey")
                 },
                 onNetworkDiscovered = {
                     feedViewModel.integrateExtendedNetwork()
@@ -2742,7 +2734,7 @@ fun WispNavHost(
                 isFavorite = relayUrl in favoriteRelays,
                 relaySets = relaySets,
                 onBack = { navController.popBackStack() },
-                onOperatorClick = if (operatorPubkey != null) {{ navController.navigateSafe("profile/$operatorPubkey") }} else null,
+                onOperatorClick = if (operatorPubkey != null) {{ navController.navigate("profile/$operatorPubkey") }} else null,
                 onToggleFavorite = { feedViewModel.toggleFavoriteRelay(relayUrl) },
                 onAddToRelaySet = { dTag -> feedViewModel.addRelayToSet(relayUrl, dTag) },
                 onCreateRelaySet = { name ->
@@ -2783,7 +2775,7 @@ fun WispNavHost(
                 eventRepo = feedViewModel.eventRepo,
                 isOwnList = isOwnList,
                 onBack = { navController.popBackStack() },
-                onProfileClick = { pubkey -> navController.navigateSafe("profile/$pubkey") },
+                onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                 onRemoveMember = if (isOwnList) { pubkey ->
                     feedViewModel.removeFromList(dTag, pubkey)
                 } else null,
@@ -2794,7 +2786,7 @@ fun WispNavHost(
                     followSet?.let {
                         feedViewModel.setSelectedList(it)
                         feedViewModel.setFeedType(FeedType.LIST)
-                        navController.navigateSafe(Routes.FEED) {
+                        navController.navigate(Routes.FEED) {
                             popUpTo(Routes.FEED) { inclusive = true }
                         }
                     }
@@ -2818,12 +2810,12 @@ fun WispNavHost(
                 eventRepo = feedViewModel.eventRepo,
                 onBack = { navController.popBackStack() },
                 onListDetail = { list ->
-                    navController.navigateSafe("list/${list.pubkey}/${list.dTag}")
+                    navController.navigate("list/${list.pubkey}/${list.dTag}")
                 },
                 onBookmarkSetDetail = { set ->
-                    navController.navigateSafe("bookmark_set/${set.pubkey}/${set.dTag}")
+                    navController.navigate("bookmark_set/${set.pubkey}/${set.dTag}")
                 },
-                onBookmarksClick = { navController.navigateSafe(Routes.BOOKMARKS) },
+                onBookmarksClick = { navController.navigate(Routes.BOOKMARKS) },
                 onCreateList = { name, isPrivate -> feedViewModel.createList(name, isPrivate) },
                 onCreateBookmarkSet = { name, isPrivate -> feedViewModel.createBookmarkSet(name, isPrivate) },
                 onDeleteList = { dTag -> feedViewModel.deleteList(dTag) },
@@ -2843,16 +2835,16 @@ fun WispNavHost(
                 eventRepo = feedViewModel.eventRepo,
                 userPubkey = feedViewModel.getUserPubkey(),
                 onBack = { navController.popBackStack() },
-                onNoteClick = { event -> navController.navigateSafe("thread/${event.id}") },
-                onQuotedNoteClick = { eventId -> navController.navigateSafe("thread/$eventId") },
+                onNoteClick = { event -> navController.navigate("thread/${event.id}") },
+                onQuotedNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                 onReply = { event ->
                     replyTarget = event
                     quoteTarget = null
                     composeViewModel.clear()
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
-                onProfileClick = { pubkey -> navController.navigateSafe("profile/$pubkey") },
+                onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                 onRemoveBookmark = { eventId -> feedViewModel.removeBookmark(eventId) },
                 onToggleFollow = { pubkey -> feedViewModel.toggleFollow(pubkey) },
                 onBlockUser = { pubkey -> feedViewModel.blockUser(pubkey) },
@@ -2891,16 +2883,16 @@ fun WispNavHost(
                     feedViewModel.deleteBookmarkSet(dTag)
                     navController.popBackStack()
                 }} else null,
-                onNoteClick = { event -> navController.navigateSafe("thread/${event.id}") },
-                onQuotedNoteClick = { eventId -> navController.navigateSafe("thread/$eventId") },
+                onNoteClick = { event -> navController.navigate("thread/${event.id}") },
+                onQuotedNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                 onReply = { event ->
                     replyTarget = event
                     quoteTarget = null
                     composeViewModel.clear()
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
-                onProfileClick = { pubkey -> navController.navigateSafe("profile/$pubkey") },
+                onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                 onRemoveFromSet = if (isOwnList) { eventId ->
                     feedViewModel.removeNoteFromBookmarkSet(dTag, eventId)
                 } else null,
@@ -2930,7 +2922,7 @@ fun WispNavHost(
                                 walletModeRepo = feedViewModel.walletModeRepo,
                                 signer = activeSigner
                             )) {
-                            navController.navigateSafe(Routes.ONBOARDING_SUGGESTIONS) {
+                            navController.navigate(Routes.ONBOARDING_SUGGESTIONS) {
                                 popUpTo(Routes.ONBOARDING_PROFILE) { inclusive = true }
                             }
                         }
@@ -2978,7 +2970,7 @@ fun WispNavHost(
                             signer = activeSigner
                         )
                         feedViewModel.initRelays()
-                        navController.navigateSafe(Routes.LOADING) {
+                        navController.navigate(Routes.LOADING) {
                             popUpTo(0) { inclusive = true }
                         }
                     }
@@ -2991,7 +2983,7 @@ fun WispNavHost(
                     blossomServersViewModel.reload()
                     composeViewModel.reloadBlossomRepo()
                     walletViewModel.refreshState()
-                    navController.navigateSafe(Routes.FEED) {
+                    navController.navigate(Routes.FEED) {
                         popUpTo(0) { inclusive = true }
                     }
                     scope.launch { feedViewModel.initRelays() }
@@ -3058,7 +3050,7 @@ fun WispNavHost(
                         notifZapTarget = null
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
-                    onGoToWallet = { navController.navigateSafe(Routes.WALLET) },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
                     canPrivateZap = notifUserHasDmRelays && notifRecipientHasDmRelays
                 )
             }
@@ -3077,7 +3069,7 @@ fun WispNavHost(
                             rumorId = target.rumorId.ifEmpty { null }
                         )
                     },
-                    onGoToWallet = { navController.navigateSafe(Routes.WALLET) }
+                    onGoToWallet = { navController.navigate(Routes.WALLET) }
                 )
             }
 
@@ -3095,10 +3087,10 @@ fun WispNavHost(
                 },
                 onBack = { navController.popBackStack() },
                 onNoteClick = { eventId ->
-                    navController.navigateSafe("thread/$eventId")
+                    navController.navigate("thread/$eventId")
                 },
                 onProfileClick = { pubkey ->
-                    navController.navigateSafe("profile/$pubkey")
+                    navController.navigate("profile/$pubkey")
                 },
                 onRefresh = { feedViewModel.refreshDmsAndNotifications() },
                 onSendReply = { replyToEvent, content ->
@@ -3145,7 +3137,7 @@ fun WispNavHost(
                     replyTarget = event
                     quoteTarget = null
                     composeViewModel.clear()
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 onReact = { event, emoji ->
                     feedViewModel.toggleReaction(event, emoji)
@@ -3157,7 +3149,7 @@ fun WispNavHost(
                     quoteTarget = event
                     replyTarget = null
                     composeViewModel.clear()
-                    navController.navigateSafe(Routes.COMPOSE)
+                    navController.navigate(Routes.COMPOSE)
                 },
                 onZap = { event -> notifZapTarget = event },
                 onFollowToggle = { pubkey -> feedViewModel.toggleFollow(pubkey) },
@@ -3200,21 +3192,21 @@ fun WispNavHost(
                 dmZapSats = { senderPubkey -> notifDmZapSatsMap[senderPubkey] ?: 0L },
                 onDmConversationClick = { conversationKey ->
                     if (conversationKey.contains(",")) {
-                        navController.navigateSafe("dm/group/${conversationKey.replace(",", "~")}")
+                        navController.navigate("dm/group/${conversationKey.replace(",", "~")}")
                     } else {
-                        navController.navigateSafe("dm/$conversationKey")
+                        navController.navigate("dm/$conversationKey")
                     }
                 },
                 onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
                 onGroupRoom = { relayUrl, groupId ->
                     val encodedRelay = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(relayUrl.toByteArray())
-                    navController.navigateSafe("group_room/$encodedRelay/${android.net.Uri.encode(groupId)}")
+                    navController.navigate("group_room/$encodedRelay/${android.net.Uri.encode(groupId)}")
                 },
                 onGroupNotificationClick = { groupChatId, messageId ->
                     val relayUrl = feedViewModel.groupRepo.getRelayForGroup(groupChatId)
                     if (relayUrl != null) {
                         val encodedRelay = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(relayUrl.toByteArray())
-                        navController.navigateSafe("group_room/$encodedRelay/${android.net.Uri.encode(groupChatId)}?scrollTo=${android.net.Uri.encode(messageId)}")
+                        navController.navigate("group_room/$encodedRelay/${android.net.Uri.encode(groupChatId)}?scrollTo=${android.net.Uri.encode(messageId)}")
                     }
                 },
                 resolveGroupMessage = { groupChatId, messageId ->
