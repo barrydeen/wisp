@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -67,7 +68,7 @@ fun WispBottomBar(
         )
         NavigationBar(
             containerColor = MaterialTheme.colorScheme.surface,
-            windowInsets = NavigationBarDefaults.windowInsets
+            windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0)
         ) {
         BottomTab.entries.forEach { tab ->
             val selected = currentRoute == tab.route

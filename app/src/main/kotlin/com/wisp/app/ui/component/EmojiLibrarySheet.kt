@@ -262,27 +262,52 @@ fun EmojiLibrarySheet(
 
     if (showKeyboardDialog) {
         var text by remember { mutableStateOf("") }
+        val trimmed = text.trim()
+        val isValidEmoji = remember(trimmed) {
+            trimmed.isNotEmpty() && trimmed.any { Character.getType(it).let { type ->
+                type == Character.OTHER_SYMBOL.toInt() ||
+                type == Character.SURROGATE.toInt() ||
+                type == Character.NON_SPACING_MARK.toInt() ||
+                type == Character.FORMAT.toInt() ||
+                it in '\u200D'..'\u200D' || // ZWJ
+                it in '\uFE00'..'\uFE0F' || // variation selectors
+                it in '\u2600'..'\u27BF' || // misc symbols
+                it in '\u2300'..'\u23FF' || // misc technical
+                it in '\u2B50'..'\u2B55' || // stars
+                it in '\u3030'..'\u303D' || // CJK symbols
+                it in '\u00A9'..'\u00AE'    // copyright, registered
+            }}
+        }
         AlertDialog(
             onDismissRequest = { showKeyboardDialog = false },
             title = { Text(stringResource(R.string.emoji_add_custom)) },
             text = {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    placeholder = { Text(stringResource(R.string.emoji_add_from_keyboard_hint)) },
-                    singleLine = true
-                )
+                Column {
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        placeholder = { Text(stringResource(R.string.emoji_add_from_keyboard_hint)) },
+                        singleLine = true
+                    )
+                    if (trimmed.isNotEmpty() && !isValidEmoji) {
+                        Text(
+                            text = stringResource(R.string.emoji_keyboard_invalid),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val emoji = text.trim()
-                        if (emoji.isNotEmpty()) {
-                            selectedEmojis = selectedEmojis + emoji
+                        if (isValidEmoji) {
+                            selectedEmojis = selectedEmojis + trimmed
                         }
                         showKeyboardDialog = false
                     },
-                    enabled = text.isNotBlank()
+                    enabled = isValidEmoji
                 ) { Text(stringResource(R.string.emoji_dialog_add)) }
             },
             dismissButton = {

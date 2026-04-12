@@ -1,6 +1,21 @@
 package com.wisp.app
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.ui.Alignment
@@ -635,26 +650,41 @@ fun WispNavHost(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (showBottomBar) {
-                WispBottomBar(
-                    currentRoute = currentRoute,
-                    hasUnreadHome = newNoteCount > 0,
-                    hasUnreadMessages = hasUnreadDms,
-                    hasUnreadNotifications = hasUnreadNotifications,
-                    isZapAnimating = isZapAnimating,
-                    isReplyAnimating = isReplyAnimating,
-                    notifSoundEnabled = notifSoundEnabled,
-                    onTabSelected = { tab ->
-                        if (currentRoute == tab.route) {
-                            scrollToTopTrigger++
-                        } else {
-                            if (tab == BottomTab.WALLET) walletViewModel.navigateHome()
-                            navController.navigateSafe(tab.route) {
-                                popUpTo(Routes.FEED) { inclusive = false }
-                                launchSingleTop = true
+                val barsVisible by feedViewModel.barsVisible.collectAsState()
+                val bottomBarVisible = currentRoute != Routes.FEED || barsVisible
+                Column(modifier = Modifier.background(MaterialTheme.colorScheme.surface)) {
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    AnimatedVisibility(
+                        visible = bottomBarVisible,
+                        enter = expandVertically(animationSpec = tween(200), expandFrom = Alignment.Top) + fadeIn(animationSpec = tween(200)),
+                        exit = shrinkVertically(animationSpec = tween(200), shrinkTowards = Alignment.Top) + fadeOut(animationSpec = tween(200))
+                    ) {
+                        WispBottomBar(
+                            currentRoute = currentRoute,
+                            hasUnreadHome = newNoteCount > 0,
+                            hasUnreadMessages = hasUnreadDms,
+                            hasUnreadNotifications = hasUnreadNotifications,
+                            isZapAnimating = isZapAnimating,
+                            isReplyAnimating = isReplyAnimating,
+                            notifSoundEnabled = notifSoundEnabled,
+                            onTabSelected = { tab ->
+                                if (currentRoute == tab.route) {
+                                    scrollToTopTrigger++
+                                } else {
+                                    if (tab == BottomTab.WALLET) walletViewModel.navigateHome()
+                                    navController.navigateSafe(tab.route) {
+                                        popUpTo(Routes.FEED) { inclusive = false }
+                                        launchSingleTop = true
+                                    }
+                                }
                             }
-                        }
+                        )
                     }
-                )
+                    Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
+                }
             }
         }
     ) { innerPadding ->
