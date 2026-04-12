@@ -1133,7 +1133,7 @@ fun ComposeScreen(
             }
 
             // Bottom bar — always visible above keyboard (shared by both modes)
-            Column(modifier = Modifier.padding(horizontal = 16.dp).padding(top = 4.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp).padding(top = 4.dp, bottom = 16.dp)) {
                     if (countdownSeconds != null) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
