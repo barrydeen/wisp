@@ -1,8 +1,10 @@
 package com.wisp.app.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -13,8 +15,13 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -64,6 +71,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -380,6 +388,40 @@ fun FeedScreen(
         }
     }
 
+    // Scroll direction detection — hide bars on scroll down, show on scroll up or at top
+    // Accumulate scroll delta and only toggle after a threshold to avoid stutter
+    var scrollDelta by remember { mutableIntStateOf(0) }
+    var prevFirstVisibleIndex by remember { mutableIntStateOf(0) }
+    var prevFirstVisibleOffset by remember { mutableIntStateOf(0) }
+    val scrollThreshold = 50 // pixels of cumulative scroll before toggling
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        }.collect { (index, offset) ->
+            if (isAtTop) {
+                viewModel.setBarsVisible(true)
+                scrollDelta = 0
+            } else if (listState.isScrollInProgress) {
+                val delta = when {
+                    index > prevFirstVisibleIndex -> scrollThreshold // item jumped, treat as big scroll down
+                    index < prevFirstVisibleIndex -> -scrollThreshold
+                    else -> offset - prevFirstVisibleOffset
+                }
+                scrollDelta = (scrollDelta + delta).coerceIn(-scrollThreshold * 2, scrollThreshold * 2)
+                if (scrollDelta > scrollThreshold) {
+                    viewModel.setBarsVisible(false)
+                } else if (scrollDelta < -scrollThreshold) {
+                    viewModel.setBarsVisible(true)
+                }
+            } else {
+                scrollDelta = 0
+            }
+            prevFirstVisibleIndex = index
+            prevFirstVisibleOffset = offset
+        }
+    }
+
+    val barsVisible by viewModel.barsVisible.collectAsState()
 
     val initialLoadDone by viewModel.initialLoadDone.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -746,7 +788,16 @@ fun FeedScreen(
         Scaffold(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
+                Column(modifier = Modifier.background(MaterialTheme.colorScheme.surface)) {
+                Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+                Spacer(Modifier.height(10.dp))
+                AnimatedVisibility(
+                    visible = barsVisible,
+                    enter = expandVertically(animationSpec = tween(200), expandFrom = Alignment.Bottom) + fadeIn(animationSpec = tween(200)),
+                    exit = shrinkVertically(animationSpec = tween(200), shrinkTowards = Alignment.Bottom) + fadeOut(animationSpec = tween(200))
+                ) {
                 CenterAlignedTopAppBar(
+                    windowInsets = WindowInsets(0, 0, 0, 0),
                     title = {
                                 Box {
                                     Surface(
@@ -980,6 +1031,12 @@ fun FeedScreen(
                         }
                     }
                 )
+                } // AnimatedVisibility
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                )
+                } // Column
             },
             floatingActionButton = {
                 val isScrolling = listState.isScrollInProgress
