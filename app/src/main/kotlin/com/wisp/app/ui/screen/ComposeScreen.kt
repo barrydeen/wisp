@@ -449,6 +449,40 @@ fun ComposeScreen(
                         }
                     }
 
+                    // PoW feedback banner
+                    AnimatedVisibility(
+                        visible = powEnabled,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = WispThemeColors.zapColor.copy(alpha = 0.15f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Shield,
+                                    contentDescription = null,
+                                    tint = WispThemeColors.zapColor,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                val bits = powPrefs?.getNoteDifficulty() ?: 16
+                                Text(
+                                    text = "Proof of Work enabled ($bits-bit)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = WispThemeColors.zapColor
+                                )
+                            }
+                        }
+                    }
+
                     // Hashtag chips
                     AnimatedVisibility(
                         visible = hashtags.isNotEmpty(),
@@ -790,6 +824,40 @@ fun ComposeScreen(
                                 onClick = onSaveDraft
                             ) {
                                 Text(stringResource(R.string.btn_save_draft))
+                            }
+                        }
+                    }
+
+                    // PoW feedback banner
+                    AnimatedVisibility(
+                        visible = powEnabled,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = WispThemeColors.zapColor.copy(alpha = 0.15f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Shield,
+                                    contentDescription = null,
+                                    tint = WispThemeColors.zapColor,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                val bits = powPrefs?.getNoteDifficulty() ?: 16
+                                Text(
+                                    text = "Proof of Work enabled ($bits-bit)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = WispThemeColors.zapColor
+                                )
                             }
                         }
                     }
