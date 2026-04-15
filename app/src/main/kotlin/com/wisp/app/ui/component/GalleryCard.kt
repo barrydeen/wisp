@@ -80,6 +80,7 @@ import coil3.compose.AsyncImage
 import com.wisp.app.R
 import com.wisp.app.nostr.Nip13
 import com.wisp.app.nostr.Nip19
+import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip68
 import com.wisp.app.nostr.Nip71
 import com.wisp.app.nostr.NostrEvent
@@ -161,6 +162,12 @@ fun GalleryCard(
     // Parse media entries
     val imageEntries = remember(event.id) { Nip68.parseImetaEntries(event) }
     val videoEntries = remember(event.id) { Nip71.parseVideoMeta(event) }
+
+    // Parse event emoji tags and combine with resolved emojis
+    val eventEmojiMap = remember(event.id) { Nip30.parseEmojiTags(event) }
+    val emojiMap = remember(eventEmojiMap, resolvedEmojis) {
+        eventEmojiMap + resolvedEmojis
+    }
 
     // If no imeta tags, fall back to PostCard
     if (imageEntries.isEmpty() && videoEntries.isEmpty()) {
@@ -544,13 +551,14 @@ fun GalleryCard(
         // Description (event.content)
         if (event.content.isNotBlank()) {
             Spacer(Modifier.height(8.dp))
-            var expanded by remember { mutableStateOf(false) }
-            Text(
-                text = event.content,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = if (expanded) Int.MAX_VALUE else 3,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.clickable { expanded = !expanded }
+            RichContent(
+                content = event.content,
+                eventRepo = eventRepo,
+                emojiMap = emojiMap,
+                modifier = Modifier,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             )
         }
 

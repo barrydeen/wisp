@@ -49,10 +49,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.ui.component.ProfilePicture
+import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.ui.component.ActionBar
 import com.wisp.app.ui.component.NoteActions
@@ -105,6 +109,13 @@ fun ArticleScreen(
 
     val blocks = remember(article) {
         article?.content?.let { parseMarkdownBlocks(it) } ?: emptyList()
+    }
+
+    val articleEmojiMap = remember(article) {
+        article?.let { Nip30.parseEmojiTags(it) } ?: emptyMap()
+    }
+    val emojiMap = remember(articleEmojiMap, resolvedEmojis) {
+        articleEmojiMap + resolvedEmojis
     }
 
     Scaffold(
@@ -227,11 +238,11 @@ fun ArticleScreen(
                     items(blocks.size, key = { "block-$it" }) { index ->
                         val block = blocks[index]
                         when (block) {
-                            is MdBlock.Heading -> ArticleHeading(block)
-                            is MdBlock.Paragraph -> ArticleParagraph(block)
+                            is MdBlock.Heading -> ArticleHeading(block, emojiMap)
+                            is MdBlock.Paragraph -> ArticleParagraph(block, emojiMap)
                             is MdBlock.Image -> ArticleImage(block)
                             is MdBlock.CodeBlock -> ArticleCodeBlock(block)
-                            is MdBlock.BlockQuote -> ArticleBlockQuote(block)
+                            is MdBlock.BlockQuote -> ArticleBlockQuote(block, emojiMap)
                             is MdBlock.NostrEmbed -> ArticleNostrEmbed(
                                 block = block,
                                 eventRepo = eventRepo,
@@ -380,7 +391,7 @@ fun ArticleScreen(
 // -- Block renderer composables --
 
 @Composable
-private fun ArticleHeading(block: MdBlock.Heading) {
+private fun ArticleHeading(block: MdBlock.Heading, emojiMap: Map<String, String>) {
     val style = when (block.level) {
         1 -> MaterialTheme.typography.headlineLarge
         2 -> MaterialTheme.typography.headlineMedium
@@ -389,21 +400,25 @@ private fun ArticleHeading(block: MdBlock.Heading) {
         5 -> MaterialTheme.typography.titleMedium
         else -> MaterialTheme.typography.titleSmall
     }
+    val formatted = formatInlineWithEmoji(block.text, emojiMap)
     Text(
-        text = formatInline(block.text),
+        text = formatted.text,
         style = style,
         color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+        inlineContent = formatted.inlineContent
     )
 }
 
 @Composable
-private fun ArticleParagraph(block: MdBlock.Paragraph) {
+private fun ArticleParagraph(block: MdBlock.Paragraph, emojiMap: Map<String, String>) {
+    val formatted = formatInlineWithEmoji(block.text, emojiMap)
     Text(
-        text = formatInline(block.text),
+        text = formatted.text,
         style = MaterialTheme.typography.bodyLarge,
         color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+        inlineContent = formatted.inlineContent
     )
 }
 
@@ -450,7 +465,8 @@ private fun ArticleCodeBlock(block: MdBlock.CodeBlock) {
 }
 
 @Composable
-private fun ArticleBlockQuote(block: MdBlock.BlockQuote) {
+private fun ArticleBlockQuote(block: MdBlock.BlockQuote, emojiMap: Map<String, String>) {
+    val formatted = formatInlineWithEmoji(block.text, emojiMap)
     Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
         Box(
             modifier = Modifier
@@ -462,10 +478,11 @@ private fun ArticleBlockQuote(block: MdBlock.BlockQuote) {
                 )
         )
         Text(
-            text = formatInline(block.text),
+            text = formatted.text,
             style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 12.dp)
+            modifier = Modifier.padding(start = 12.dp),
+            inlineContent = formatted.inlineContent
         )
     }
 }
@@ -488,128 +505,203 @@ private fun ArticleNostrEmbed(
 
 // -- Inline formatting --
 
+private data class FormattedInline(
+    val text: AnnotatedString,
+    val inlineContent: Map<String, InlineTextContent>
+)
+
 @Composable
-private fun formatInline(text: String): AnnotatedString {
+private fun formatInline(
+    text: String,
+    emojiMap: Map<String, String> = emptyMap()
+): AnnotatedString {
+    val formatted = formatInlineWithEmoji(text, emojiMap)
+    return formatted.text
+}
+
+@Composable
+private fun formatInlineWithEmoji(
+    text: String,
+    emojiMap: Map<String, String> = emptyMap()
+): FormattedInline {
     val linkColor = MaterialTheme.colorScheme.primary
     val codeBackground = MaterialTheme.colorScheme.surfaceVariant
-    return remember(text, linkColor) {
+    val fontSize = MaterialTheme.typography.bodyLarge.fontSize
+
+    val segments = if (emojiMap.isNotEmpty()) {
+        splitTextForEmojis(text, emojiMap)
+    } else {
+        listOf<InlineSegment>(InlineSegment.TextSegment(text))
+    }
+
+    val usedEmojis = segments.filterIsInstance<InlineSegment.EmojiSegment>().distinctBy { it.shortcode }
+    val inlineContent: Map<String, InlineTextContent> = if (usedEmojis.isNotEmpty()) {
+        usedEmojis.associate { emoji: InlineSegment.EmojiSegment ->
+            emoji.shortcode to InlineTextContent(
+                placeholder = Placeholder(
+                    width = fontSize * 1.5f,
+                    height = fontSize * 1.3f,
+                    placeholderVerticalAlign = PlaceholderVerticalAlign.Center
+                )
+            ) {
+                AsyncImage(
+                    model = emoji.url,
+                    contentDescription = emoji.shortcode,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    } else emptyMap()
+
+    val annotated = remember(text, linkColor, emojiMap) {
         buildAnnotatedString {
-            var i = 0
-            while (i < text.length) {
-                when {
-                    // Images inline (skip, they're extracted as blocks)
-                    text.startsWith("![", i) -> {
-                        val closeBracket = text.indexOf(']', i + 2)
-                        val closeParen = if (closeBracket >= 0) text.indexOf(')', closeBracket) else -1
-                        if (closeBracket >= 0 && closeParen >= 0 && text.getOrNull(closeBracket + 1) == '(') {
-                            i = closeParen + 1
-                        } else {
-                            append(text[i])
-                            i++
-                        }
-                    }
-                    // Links: [text](url)
-                    text[i] == '[' -> {
-                        val closeBracket = text.indexOf(']', i + 1)
-                        val openParen = closeBracket + 1
-                        if (closeBracket > i && openParen < text.length && text[openParen] == '(') {
-                            val closeParen = text.indexOf(')', openParen)
-                            if (closeParen > openParen) {
-                                val linkText = text.substring(i + 1, closeBracket)
-                                withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
-                                    append(linkText)
+            for (segment in segments) {
+                when (segment) {
+                    is InlineSegment.TextSegment -> {
+                        var i = 0
+                        while (i < segment.text.length) {
+                            when {
+                                text.startsWith("![", i) -> {
+                                    val closeBracket = text.indexOf(']', i + 2)
+                                    val closeParen = if (closeBracket >= 0) text.indexOf(')', closeBracket) else -1
+                                    if (closeBracket >= 0 && closeParen >= 0 && text.getOrNull(closeBracket + 1) == '(') {
+                                        i = closeParen + 1
+                                    } else {
+                                        append(text[i])
+                                        i++
+                                    }
                                 }
-                                i = closeParen + 1
-                            } else {
-                                append(text[i])
-                                i++
+                                text[i] == '[' -> {
+                                    val closeBracket = text.indexOf(']', i + 1)
+                                    val openParen = closeBracket + 1
+                                    if (closeBracket > i && openParen < text.length && text[openParen] == '(') {
+                                        val closeParen = text.indexOf(')', openParen)
+                                        if (closeParen > openParen) {
+                                            val linkText = text.substring(i + 1, closeBracket)
+                                            withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
+                                                append(linkText)
+                                            }
+                                            i = closeParen + 1
+                                        } else {
+                                            append(text[i])
+                                            i++
+                                        }
+                                    } else {
+                                        append(text[i])
+                                        i++
+                                    }
+                                }
+                                text.startsWith("***", i) || text.startsWith("___", i) -> {
+                                    val delim = text.substring(i, i + 3)
+                                    val end = text.indexOf(delim, i + 3)
+                                    if (end > i) {
+                                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)) {
+                                            append(text.substring(i + 3, end))
+                                        }
+                                        i = end + 3
+                                    } else {
+                                        append(text[i])
+                                        i++
+                                    }
+                                }
+                                text.startsWith("**", i) || text.startsWith("__", i) -> {
+                                    val delim = text.substring(i, i + 2)
+                                    val end = text.indexOf(delim, i + 2)
+                                    if (end > i) {
+                                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                                            append(text.substring(i + 2, end))
+                                        }
+                                        i = end + 2
+                                    } else {
+                                        append(text[i])
+                                        i++
+                                    }
+                                }
+                                (text[i] == '*' || text[i] == '_') && i + 1 < text.length && text[i + 1] != ' ' -> {
+                                    val delim = text[i]
+                                    val end = text.indexOf(delim, i + 1)
+                                    if (end > i && end > i + 1) {
+                                        withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
+                                            append(text.substring(i + 1, end))
+                                        }
+                                        i = end + 1
+                                    } else {
+                                        append(text[i])
+                                        i++
+                                    }
+                                }
+                                text[i] == '`' -> {
+                                    val end = text.indexOf('`', i + 1)
+                                    if (end > i) {
+                                        withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = codeBackground)) {
+                                            append(text.substring(i + 1, end))
+                                        }
+                                        i = end + 1
+                                    } else {
+                                        append(text[i])
+                                        i++
+                                    }
+                                }
+                                text.regionMatches(i, "nostr:", 0, 6, ignoreCase = true) ||
+                                text.regionMatches(i, "nevent1", 0, 7, ignoreCase = true) ||
+                                text.regionMatches(i, "nprofile1", 0, 9, ignoreCase = true) ||
+                                text.regionMatches(i, "naddr1", 0, 6, ignoreCase = true) ||
+                                text.regionMatches(i, "npub1", 0, 5, ignoreCase = true) ||
+                                text.regionMatches(i, "note1", 0, 5, ignoreCase = true) -> {
+                                    val match = nostrInlineRegex.find(text, i)
+                                    if (match != null && match.range.first == i) {
+                                        withStyle(SpanStyle(color = linkColor)) {
+                                            append(shortenNostrEntity(match.value))
+                                        }
+                                        i = match.range.last + 1
+                                    } else {
+                                        append(text[i])
+                                        i++
+                                    }
+                                }
+                                else -> {
+                                    append(text[i])
+                                    i++
+                                }
                             }
-                        } else {
-                            append(text[i])
-                            i++
                         }
                     }
-                    // Bold+italic: ***text*** or ___text___
-                    text.startsWith("***", i) || text.startsWith("___", i) -> {
-                        val delim = text.substring(i, i + 3)
-                        val end = text.indexOf(delim, i + 3)
-                        if (end > i) {
-                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)) {
-                                append(text.substring(i + 3, end))
-                            }
-                            i = end + 3
-                        } else {
-                            append(text[i])
-                            i++
-                        }
-                    }
-                    // Bold: **text** or __text__
-                    text.startsWith("**", i) || text.startsWith("__", i) -> {
-                        val delim = text.substring(i, i + 2)
-                        val end = text.indexOf(delim, i + 2)
-                        if (end > i) {
-                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                                append(text.substring(i + 2, end))
-                            }
-                            i = end + 2
-                        } else {
-                            append(text[i])
-                            i++
-                        }
-                    }
-                    // Italic: *text* or _text_
-                    (text[i] == '*' || text[i] == '_') && i + 1 < text.length && text[i + 1] != ' ' -> {
-                        val delim = text[i]
-                        val end = text.indexOf(delim, i + 1)
-                        if (end > i && end > i + 1) {
-                            withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-                                append(text.substring(i + 1, end))
-                            }
-                            i = end + 1
-                        } else {
-                            append(text[i])
-                            i++
-                        }
-                    }
-                    // Inline code: `code`
-                    text[i] == '`' -> {
-                        val end = text.indexOf('`', i + 1)
-                        if (end > i) {
-                            withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = codeBackground)) {
-                                append(text.substring(i + 1, end))
-                            }
-                            i = end + 1
-                        } else {
-                            append(text[i])
-                            i++
-                        }
-                    }
-                    // Inline nostr entity references
-                    text.regionMatches(i, "nostr:", 0, 6, ignoreCase = true) ||
-                    text.regionMatches(i, "nevent1", 0, 7, ignoreCase = true) ||
-                    text.regionMatches(i, "nprofile1", 0, 9, ignoreCase = true) ||
-                    text.regionMatches(i, "naddr1", 0, 6, ignoreCase = true) ||
-                    text.regionMatches(i, "npub1", 0, 5, ignoreCase = true) ||
-                    text.regionMatches(i, "note1", 0, 5, ignoreCase = true) -> {
-                        val match = nostrInlineRegex.find(text, i)
-                        if (match != null && match.range.first == i) {
-                            withStyle(SpanStyle(color = linkColor)) {
-                                append(shortenNostrEntity(match.value))
-                            }
-                            i = match.range.last + 1
-                        } else {
-                            append(text[i])
-                            i++
-                        }
-                    }
-                    else -> {
-                        append(text[i])
-                        i++
+                    is InlineSegment.EmojiSegment -> {
+                        pushStringAnnotation(tag = "emoji", annotation = segment.shortcode)
+                        append(":${segment.shortcode}:")
+                        pop()
                     }
                 }
             }
         }
     }
+
+    return FormattedInline(annotated, inlineContent)
+}
+
+private sealed interface InlineSegment {
+    data class TextSegment(val text: String) : InlineSegment
+    data class EmojiSegment(val shortcode: String, val url: String) : InlineSegment
+}
+
+private fun splitTextForEmojis(text: String, emojiMap: Map<String, String>): List<InlineSegment> {
+    val result = mutableListOf<InlineSegment>()
+    var lastEnd = 0
+    for (match in emojiShortcodeRegex.findAll(text)) {
+        val shortcode = match.groupValues[1]
+        val url = emojiMap[shortcode] ?: continue
+        if (match.range.first > lastEnd) {
+            result.add(InlineSegment.TextSegment(text.substring(lastEnd, match.range.first)))
+        }
+        result.add(InlineSegment.EmojiSegment(shortcode, url))
+        lastEnd = match.range.last + 1
+    }
+    if (lastEnd < text.length) {
+        result.add(InlineSegment.TextSegment(text.substring(lastEnd)))
+    } else if (lastEnd == 0 && result.isEmpty()) {
+        result.add(InlineSegment.TextSegment(text))
+    }
+    return result
 }
 
 // -- Markdown block parser --
@@ -627,6 +719,7 @@ private sealed interface MdBlock {
 private val imageLineRegex = Regex("""^!\[([^\]]*)]\((\S+?)(?:\s+"[^"]*")?\)\s*$""")
 private val nostrEntityLineRegex = Regex("""^(?:nostr:)?(?:note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]+$""", RegexOption.IGNORE_CASE)
 private val nostrInlineRegex = Regex("""(?:nostr:)?(?:note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]+""", RegexOption.IGNORE_CASE)
+private val emojiShortcodeRegex = Regex(""":([a-zA-Z0-9_-]+):""")
 
 private fun shortenNostrEntity(entity: String): String {
     val bare = entity.removePrefix("nostr:").removePrefix("NOSTR:")
