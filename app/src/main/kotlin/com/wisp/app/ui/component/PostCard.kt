@@ -533,7 +533,7 @@ fun PostCard(
                     contentAlignment = Alignment.TopStart
                 ) {
                     val emojiMap = remember(event.id) { Nip30.parseEmojiTags(event) }
-                    val imetaMap = remember(event.id) { parseImetaTags(event) }
+                    val imetaMap = remember(event.id) { parseImetaTags(event.tags) }
                     RichContent(
                         content = event.content,
                         style = MaterialTheme.typography.bodyLarge,
@@ -633,7 +633,7 @@ fun PostCard(
                                 modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
                             )
                             val emojiMap = remember(event.id) { Nip30.parseEmojiTags(event) }
-                            val imetaMap = remember(event.id) { parseImetaTags(event) }
+                            val imetaMap = remember(event.id) { parseImetaTags(event.tags) }
                             RichContent(
                                 content = translationState.translatedText,
                                 style = MaterialTheme.typography.bodyLarge,

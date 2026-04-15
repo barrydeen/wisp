@@ -40,7 +40,10 @@ import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import com.wisp.app.nostr.Nip30
 import com.wisp.app.ui.component.Nip05Badge
+import com.wisp.app.ui.component.RichContent
+import com.wisp.app.ui.component.parseImetaTags
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -491,12 +494,12 @@ fun UserProfileScreen(
             else (rootNotes + replies)
                 .sortedByDescending { it.created_at }
                 .flatMap { event ->
-                    val imeta = parseImetaTags(event)
+                    val imeta = parseImetaTags(event.tags)
                     parseContent(event.content, imetaMap = imeta).mapNotNull { segment ->
                         when (segment) {
-                            is ContentSegment.ImageSegment -> MediaItem(segment.url, MediaType.IMAGE)
-                            is ContentSegment.VideoSegment -> MediaItem(segment.url, MediaType.VIDEO)
-                            is ContentSegment.UnknownMediaSegment -> MediaItem(segment.url, MediaType.IMAGE)
+                            is ContentSegment.ImageSegment -> MediaItem(segment.meta.url, MediaType.IMAGE)
+                            is ContentSegment.VideoSegment -> MediaItem(segment.meta.url, MediaType.VIDEO)
+                            is ContentSegment.UnknownMediaSegment -> MediaItem(segment.meta.url, MediaType.IMAGE)
                             else -> null
                         }
                     }
@@ -1249,12 +1252,16 @@ private fun ProfileHeader(
         }
 
         profile?.about?.let { about ->
+            val emojiMap = remember(pubkey) { Nip30.parseEmojiTags(emptyList()) } // Profiles use inline or alternate tags usually not available here easily without event
+            val imetaMap = remember(pubkey) { parseImetaTags(emptyList()) }
             Spacer(Modifier.height(8.dp))
             RichContent(
                 content = about,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 plainLinks = true,
+                emojiMap = emojiMap,
+                imetaMap = imetaMap,
                 eventRepo = eventRepo,
                 onProfileClick = onNavigateToProfile
             )

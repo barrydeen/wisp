@@ -6,6 +6,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -76,6 +77,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import com.wisp.app.util.BlurHashDecoder
+import coil3.compose.SubcomposeAsyncImage
+import androidx.compose.material3.CircularProgressIndicator
 import coil3.compose.AsyncImage
 import com.wisp.app.R
 import com.wisp.app.nostr.Nip13
@@ -498,13 +504,46 @@ fun GalleryCard(
                         .clip(RoundedCornerShape(12.dp))
                 ) { page ->
                     val entry = imageEntries[page]
-                    AsyncImage(
+                    val blurPainter = remember(entry.blurhash, entry.dim) {
+                        val dims = entry.dim?.split('x')
+                        val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+                        val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+                        BlurHashDecoder.decode(entry.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
+                    }
+                    SubcomposeAsyncImage(
                         model = entry.url,
                         contentDescription = entry.alt ?: title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable { fullScreenInitialPage = page }
+                            .clickable { fullScreenInitialPage = page },
+                        loading = {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                if (blurPainter != null) {
+                                    Image(
+                                        painter = blurPainter,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp,
+                                    color = if (blurPainter != null) Color.White else MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        },
+                        error = {
+                            if (blurPainter != null) {
+                                Image(
+                                    painter = blurPainter,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
                     )
                 }
                 if (imageEntries.size > 1) {
@@ -534,7 +573,12 @@ fun GalleryCard(
             // Video event (kind 21/22) — use inline video player, same as kind 1 feed
             val video = videoEntries[0]
             InlineVideoPlayerWithFullscreen(
-                url = video.url,
+                meta = MediaMeta(
+                    url = video.url,
+                    mime = video.mimeType,
+                    dimension = video.dim,
+                    blurhash = video.blurhash
+                ),
                 onFullScreen = { positionMs ->
                     FullScreenVideoState.enter(video.url, positionMs)
                 }
