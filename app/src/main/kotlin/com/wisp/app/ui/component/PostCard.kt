@@ -90,6 +90,21 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private val mediaExtensions = setOf("mp4", "mov", "webm", "mp3", "wav", "ogg", "m4a", "flac", "aac", "jpg", "jpeg", "png", "gif", "webp")
+private val mediaMimePrefixes = listOf("video/", "audio/", "image/")
+
+private fun contentHasMedia(content: String, imetaMap: Map<String, MediaMeta>): Boolean {
+    // Check imeta tags for video/audio
+    if (imetaMap.values.any { meta -> meta.mime?.let { m -> mediaMimePrefixes.any { m.startsWith(it) } } == true }) return true
+    // Check URLs in content for media extensions
+    val urlRegex = Regex("""https?://\S+""")
+    return urlRegex.findAll(content).any { match ->
+        val url = match.value.trimEnd('.', ',', ')', ']')
+        val ext = url.substringAfterLast('.').substringBefore('?').lowercase()
+        ext in mediaExtensions
+    }
+}
+
 @Composable
 fun PostCard(
     event: NostrEvent,
@@ -511,71 +526,91 @@ fun PostCard(
             }
         } else {
             // Normal content display
-            // Collapsible content with max height (~1 viewport)
-            val collapsedMaxHeight = 500.dp
-            var contentExpanded by remember { mutableStateOf(false) }
-            var contentExceedsMax by remember { mutableStateOf(false) }
-            val density = LocalDensity.current
-
-            Box {
-                Box(
-                    modifier = Modifier
-                        .then(
-                            if (!contentExpanded) Modifier.heightIn(max = collapsedMaxHeight) else Modifier
-                        )
-                        .clipToBounds()
-                        .onGloballyPositioned { coordinates ->
-                            if (!contentExpanded) {
-                                val maxPx = with(density) { collapsedMaxHeight.toPx() }
-                                contentExceedsMax = coordinates.size.height >= maxPx.toInt()
-                            }
-                        },
-                    contentAlignment = Alignment.TopStart
-                ) {
-                    val emojiMap = remember(event.id) { Nip30.parseEmojiTags(event) }
-                    val imetaMap = remember(event.id) { parseImetaTags(event.tags) }
-                    RichContent(
-                        content = event.content,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        emojiMap = emojiMap,
-                        imetaMap = imetaMap,
-                        eventRepo = eventRepo,
-                        onProfileClick = onNavigateToProfile,
-                        onNoteClick = onQuotedNoteClick,
-                        noteActions = noteActions
-                    )
-                }
-
-                // Gradient fade overlay when collapsed and content overflows
-                if (contentExceedsMax && !contentExpanded) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .height(80.dp)
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        MaterialTheme.colorScheme.surface
-                                    )
-                                )
-                            )
-                    )
-                }
+            val emojiMap = remember(event.id) { Nip30.parseEmojiTags(event) }
+            val imetaMap = remember(event.id) { parseImetaTags(event.tags) }
+            // Skip collapsible behavior for posts with video/audio — height
+            // constraints distort media sizing. Only truncate text-heavy posts.
+            val hasMedia = remember(event.content, imetaMap) {
+                contentHasMedia(event.content, imetaMap)
             }
 
-            if (contentExceedsMax) {
+            if (hasMedia) {
+                RichContent(
+                    content = event.content,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    emojiMap = emojiMap,
+                    imetaMap = imetaMap,
+                    eventRepo = eventRepo,
+                    onProfileClick = onNavigateToProfile,
+                    onNoteClick = onQuotedNoteClick,
+                    noteActions = noteActions
+                )
+            } else {
+                // Collapsible content with max height (~1 viewport)
+                val collapsedMaxHeight = 500.dp
+                var contentExpanded by remember { mutableStateOf(false) }
+                var contentExceedsMax by remember { mutableStateOf(false) }
+                val density = LocalDensity.current
+
+                Box {
+                    Box(
+                        modifier = Modifier
+                            .then(
+                                if (!contentExpanded) Modifier.heightIn(max = collapsedMaxHeight) else Modifier
+                            )
+                            .clipToBounds()
+                            .onGloballyPositioned { coordinates ->
+                                if (!contentExpanded) {
+                                    val maxPx = with(density) { collapsedMaxHeight.toPx() }
+                                    contentExceedsMax = coordinates.size.height >= maxPx.toInt()
+                                }
+                            },
+                        contentAlignment = Alignment.TopStart
+                    ) {
+                        RichContent(
+                            content = event.content,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            emojiMap = emojiMap,
+                            imetaMap = imetaMap,
+                            eventRepo = eventRepo,
+                            onProfileClick = onNavigateToProfile,
+                            onNoteClick = onQuotedNoteClick,
+                            noteActions = noteActions
+                        )
+                    }
+
+                    // Gradient fade overlay when collapsed and content overflows
+                    if (contentExceedsMax && !contentExpanded) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .height(80.dp)
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            MaterialTheme.colorScheme.surface
+                                        )
+                                    )
+                                )
+                        )
+                    }
+                }
+
+                if (contentExceedsMax) {
                     TextButton(
                         onClick = { contentExpanded = !contentExpanded },
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     ) {
                         Text(
                             text = if (contentExpanded) stringResource(R.string.translate_show_less) else stringResource(R.string.translate_show_more),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
 
