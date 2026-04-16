@@ -98,7 +98,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import coil3.compose.AsyncImage
-import coil3.compose.SubcomposeAsyncImage
+import coil3.compose.AsyncImagePainter
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -1324,7 +1324,7 @@ private fun ArticleCard(
                 if (image != null) {
                     val meta = remember(event.id) { parseImetaTags(event.tags)[image] ?: MediaMeta(url = image) }
                     val ratio = remember(meta.dimension) { parseAspectRatio(meta.dimension) }
-                    SubcomposeAsyncImage(
+                    LoadingAsyncImage(
                         model = image,
                         contentDescription = title,
                         contentScale = ContentScale.Crop,
@@ -1332,11 +1332,6 @@ private fun ArticleCard(
                             .fillMaxWidth()
                             .let { if (ratio != null) it.aspectRatio(ratio) else it.heightIn(max = 180.dp) }
                             .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
-                        loading = {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                            }
-                        }
                     )
                 }
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -1497,31 +1492,15 @@ private fun LiveStreamCardContent(
                         val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
                         BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
                     }
-                    SubcomposeAsyncImage(
+                    LoadingAsyncImage(
                         model = image,
                         contentDescription = title,
                         contentScale = ContentScale.Crop,
+                        blurPainter = blurPainter,
                         modifier = Modifier
                             .fillMaxWidth()
                             .let { if (ratio != null) it.aspectRatio(ratio) else it.heightIn(max = 180.dp) }
                             .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
-                        loading = {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                if (blurPainter != null) {
-                                    Image(
-                                        painter = blurPainter,
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                }
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    strokeWidth = 2.dp,
-                                    color = if (blurPainter != null) Color.White else MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
                     )
                 }
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -2084,35 +2063,17 @@ private fun ImageWithContextMenu(meta: MediaMeta, onFullScreen: () -> Unit) {
     }
 
     Box {
-        SubcomposeAsyncImage(
+        LoadingAsyncImage(
             model = url,
             contentDescription = "Image",
             contentScale = ContentScale.FillWidth,
+            blurPainter = blurPainter,
+            onClick = onFullScreen,
+            onLongClick = { showMenu = true },
             modifier = Modifier
                 .fillMaxWidth()
                 .let { if (ratio != null) it.aspectRatio(ratio) else it }
-                .clip(RoundedCornerShape(12.dp))
-                .combinedClickable(
-                    onClick = onFullScreen,
-                    onLongClick = { showMenu = true }
-                ),
-            loading = {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    if (blurPainter != null) {
-                        Image(
-                            painter = blurPainter,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.dp,
-                        color = if (blurPainter != null) Color.White else MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
+                .clip(RoundedCornerShape(12.dp)),
         )
         DropdownMenu(
             expanded = showMenu,
@@ -2881,4 +2842,53 @@ private fun GroupInviteCard(
         onFetchPreview = onFetchPreview,
         eventRepo = eventRepo
     )
+}
+
+@kotlin.OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun LoadingAsyncImage(
+    model: Any?,
+    contentDescription: String?,
+    contentScale: ContentScale,
+    modifier: Modifier = Modifier,
+    blurPainter: BitmapPainter? = null,
+    onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
+) {
+    var isLoading by remember { mutableStateOf(true) }
+
+    Box(modifier = modifier) {
+        AsyncImage(
+            model = model,
+            contentDescription = contentDescription,
+            contentScale = contentScale,
+            placeholder = blurPainter,
+            onLoading = { isLoading = true },
+            onSuccess = { isLoading = false },
+            onError = { isLoading = false },
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (onClick != null || onLongClick != null) {
+                        Modifier.combinedClickable(
+                            onClick = onClick ?: {},
+                            onLongClick = onLongClick
+                        )
+                    } else Modifier
+                )
+        )
+
+        if (isLoading) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp,
+                    color = if (blurPainter != null) Color.White else MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
 }
