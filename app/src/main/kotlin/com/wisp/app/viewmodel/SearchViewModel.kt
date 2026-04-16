@@ -129,7 +129,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         autoSearchJob?.cancel()
         val pool = relayPool ?: return
         val repo = eventRepoRef ?: return
-        val trimmed = newQuery.trim()
+        val trimmed = newQuery.trim().removePrefix("nostr:")
         if (trimmed.length < 2) return
         autoSearchJob = viewModelScope.launch {
             delay(500)
@@ -153,7 +153,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun searchAuthors(query: String, relayPool: RelayPool, eventRepo: EventRepository) {
-        val trimmed = query.trim()
+        val trimmed = query.trim().removePrefix("nostr:")
         if (trimmed.isEmpty()) {
             _authorSearchResults.value = emptyList()
             return
@@ -213,7 +213,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun search(query: String, relayPool: RelayPool, eventRepo: EventRepository, muteRepo: MuteRepository? = null) {
-        val trimmed = query.trim()
+        val trimmed = query.trim().removePrefix("nostr:")
         if (trimmed.isEmpty()) {
             clear()
             return
