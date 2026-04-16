@@ -9,16 +9,23 @@ import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.relay.SubscriptionManager
+import com.wisp.app.ml.NSpamClassifier
+import com.wisp.app.ml.NoteInput
+import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.MetadataFetcher
 import com.wisp.app.repo.MuteRepository
 import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayListRepository
+import com.wisp.app.repo.SafetyPreferences
+import com.wisp.app.repo.SpamAuthorCache
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ThreadViewModel : ViewModel() {
     private val _rootEvent = MutableStateFlow<NostrEvent?>(null)
@@ -33,6 +40,12 @@ class ThreadViewModel : ViewModel() {
     private val _scrollToIndex = MutableStateFlow(-1)
     val scrollToIndex: StateFlow<Int> = _scrollToIndex
 
+    private val _spamThread = MutableStateFlow<List<Pair<NostrEvent, Int>>>(emptyList())
+    val spamThread: StateFlow<List<Pair<NostrEvent, Int>>> = _spamThread
+
+    private val _spamExpanded = MutableStateFlow(false)
+    val spamExpanded: StateFlow<Boolean> = _spamExpanded
+
     private val threadEvents = mutableMapOf<String, NostrEvent>()
     private var rootId: String = ""
     private var scrollTargetId: String? = null
@@ -43,6 +56,14 @@ class ThreadViewModel : ViewModel() {
     private var relayListRepoRef: RelayListRepository? = null
     private var relayHintStoreRef: RelayHintStore? = null
     private var currentUserPubkey: String? = null
+
+    // Spam filter
+    private var spamClassifier: NSpamClassifier? = null
+    private var spamAuthorCache: SpamAuthorCache? = null
+    private var safetyPrefs: SafetyPreferences? = null
+    private var contactRepo: ContactRepository? = null
+    private var eventRepoRef: EventRepository? = null
+    private val spamScoringPubkeys = mutableSetOf<String>()
 
     // Jobs for cleanup
     private var collectorJob: Job? = null
@@ -61,6 +82,15 @@ class ThreadViewModel : ViewModel() {
         scrollTargetId = null
     }
 
+    fun toggleSpamExpanded() {
+        _spamExpanded.value = !_spamExpanded.value
+    }
+
+    fun markNotSpam(pubkey: String) {
+        safetyPrefs?.addToSpamSafelist(pubkey)
+        scheduleRebuild()
+    }
+
     fun loadThread(
         eventId: String,
         eventRepo: EventRepository,
@@ -71,9 +101,18 @@ class ThreadViewModel : ViewModel() {
         muteRepo: MuteRepository? = null,
         topRelayUrls: List<String> = emptyList(),
         relayListRepo: RelayListRepository? = null,
-        relayHintStore: RelayHintStore? = null
+        relayHintStore: RelayHintStore? = null,
+        spamClassifier: NSpamClassifier? = null,
+        spamAuthorCache: SpamAuthorCache? = null,
+        safetyPrefs: SafetyPreferences? = null,
+        contactRepo: ContactRepository? = null
     ) {
         this.muteRepo = muteRepo
+        this.spamClassifier = spamClassifier
+        this.spamAuthorCache = spamAuthorCache
+        this.safetyPrefs = safetyPrefs
+        this.contactRepo = contactRepo
+        this.eventRepoRef = eventRepo
         // Reactively rebuild thread when blocked users change (e.g. blocking mid-thread)
         muteObserverJob?.cancel()
         muteObserverJob = muteRepo?.let { repo ->
@@ -320,6 +359,24 @@ class ThreadViewModel : ViewModel() {
         }
     }
 
+    private fun scoreAuthorsAsync(pubkeys: Set<String>) {
+        val classifier = spamClassifier ?: return
+        val cache = spamAuthorCache ?: return
+        val repo = eventRepoRef ?: return
+        viewModelScope.launch(Dispatchers.Default) {
+            var changed = false
+            for (pubkey in pubkeys) {
+                val notes = repo.getCachedEventsByAuthor(pubkey, 1, 10)
+                if (notes.isEmpty()) continue
+                val inputs = notes.map { e -> NoteInput(e.content, e.tags, e.created_at) }
+                val score = classifier.score(inputs) ?: continue
+                cache.put(pubkey, score, inputs.size)
+                if (score >= 0.5f) changed = true
+            }
+            if (changed) withContext(Dispatchers.Main) { scheduleRebuild() }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         collectorJob?.cancel()
@@ -337,16 +394,44 @@ class ThreadViewModel : ViewModel() {
 
     private fun rebuildTree() {
         val parentToChildren = mutableMapOf<String, MutableList<NostrEvent>>()
+        val spamEnabled = safetyPrefs?.spamFilterEnabled?.value == true
+        val spamEvents = mutableListOf<NostrEvent>()
+        val pubkeysToScore = mutableSetOf<String>()
 
         for (event in threadEvents.values) {
             if (event.id == rootId) continue
             if (muteRepo?.isBlocked(event.pubkey) == true) continue
             if (Nip10.isStandaloneQuote(event)) continue
+
+            if (spamEnabled && spamClassifier != null &&
+                event.pubkey != currentUserPubkey &&
+                contactRepo?.isFollowing(event.pubkey) != true &&
+                safetyPrefs?.isSpamSafelisted(event.pubkey) != true
+            ) {
+                val noteCount = eventRepoRef?.getCachedEventsByAuthor(event.pubkey, 1, 10)?.size ?: 0
+                val cached = spamAuthorCache?.get(event.pubkey, noteCount)
+                if (cached != null && cached >= 0.5f) {
+                    spamEvents.add(event)
+                    continue
+                }
+                if (cached == null && event.pubkey !in spamScoringPubkeys) {
+                    pubkeysToScore.add(event.pubkey)
+                }
+            }
+
             var parentId = Nip10.getReplyTarget(event) ?: rootId
             if (parentId != rootId && parentId !in threadEvents) {
                 parentId = rootId
             }
             parentToChildren.getOrPut(parentId) { mutableListOf() }.add(event)
+        }
+
+        spamEvents.sortBy { it.created_at }
+        _spamThread.value = spamEvents.map { it to 0 }
+
+        if (pubkeysToScore.isNotEmpty()) {
+            spamScoringPubkeys.addAll(pubkeysToScore)
+            scoreAuthorsAsync(pubkeysToScore)
         }
 
         val myPubkey = currentUserPubkey

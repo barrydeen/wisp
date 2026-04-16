@@ -47,6 +47,7 @@ import com.wisp.app.repo.WalletProvider
 import com.wisp.app.repo.CustomEmojiRepository
 import com.wisp.app.repo.InterfacePreferences
 import com.wisp.app.repo.PowPreferences
+import com.wisp.app.repo.SafetyPreferences
 import com.wisp.app.repo.ZapPreferences
 import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayInfoRepository
@@ -232,6 +233,21 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val extendedNetworkRepo = ExtendedNetworkRepository(
         app, contactRepo, muteRepo, relayListRepo, relayPool, subManager, relayScoreBoard, pubkeyHex, socialGraphDb
     )
+    val safetyPrefs = SafetyPreferences(app, pubkeyHex)
+    val spamAuthorCache = com.wisp.app.repo.SpamAuthorCache()
+    val nspamClassifier: com.wisp.app.ml.NSpamClassifier? = try {
+        val weights = com.wisp.app.ml.NSpamWeights.loadFromAssets(app)
+        com.wisp.app.ml.NSpamClassifier(weights)
+    } catch (e: Exception) {
+        Log.e("FeedVM", "Failed to load nspam weights", e)
+        null
+    }
+    init {
+        notifRepo.spamClassifier = nspamClassifier
+        notifRepo.spamAuthorCache = spamAuthorCache
+        notifRepo.safetyPrefs = safetyPrefs
+        notifRepo.contactRepo = contactRepo
+    }
     val customEmojiRepo = CustomEmojiRepository(app, pubkeyHex)
     val translationRepo = TranslationRepository()
     val zapPrefs = ZapPreferences(app, pubkeyHex)

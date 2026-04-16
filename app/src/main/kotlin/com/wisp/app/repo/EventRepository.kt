@@ -676,6 +676,15 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             .toList()
     }
 
+    fun getCachedEventsByAuthor(pubkey: String, kind: Int, limit: Int): List<NostrEvent> {
+        return eventCache.values
+            .asSequence()
+            .filter { it.kind == kind && it.pubkey == pubkey }
+            .sortedByDescending { it.created_at }
+            .take(limit)
+            .toList()
+    }
+
     fun getLatestEventTimestamp(pubkey: String, kind: Int): Long? {
         return eventCache.values
             .asSequence()

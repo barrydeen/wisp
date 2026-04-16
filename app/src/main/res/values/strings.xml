@@ -515,6 +515,25 @@
     <string name="settings_never_share_key">Never share your private key. Anyone with your nsec has full control of your account.</string>
     <string name="settings_muted_words_description">Notes containing these words will be hidden from your feed.</string>
     <string name="settings_no_muted_users">No muted users</string>
+
+    <!-- Safety Filters -->
+    <string name="tab_filters">Filters</string>
+    <string name="safety_spam_filter_title">Spam replies</string>
+    <string name="safety_spam_filter_description">Uses an on-device model to hide likely-bot replies in threads and notifications from people you don\'t follow. Model runs locally, no data leaves your device.</string>
+    <string name="safety_wot_title">Web of Trust</string>
+    <string name="safety_wot_description">Only show content from accounts within your social graph. Requires a computed social graph.</string>
+    <string name="safety_wot_ready">Social graph ready (%d qualified accounts)</string>
+    <string name="safety_wot_last_computed">Last computed %s ago</string>
+    <string name="safety_wot_not_computed">Social graph not computed</string>
+    <string name="safety_wot_stale">Social graph is stale</string>
+    <string name="safety_wot_compute_now">Compute now</string>
+    <string name="safety_wot_recompute">Recompute</string>
+    <string name="safety_wot_inactive">Filter is inactive until graph is computed</string>
+    <string name="thread_hidden_spam">%d hidden replies from likely spam accounts</string>
+    <string name="thread_tap_to_show">Show</string>
+    <string name="thread_tap_to_hide">Hide</string>
+    <string name="thread_not_spam">Not spam</string>
+
     <string name="settings_copy_profile_json">Copy Profile JSON</string>
     <string name="settings_profile_json_copied">Profile JSON copied</string>
 
