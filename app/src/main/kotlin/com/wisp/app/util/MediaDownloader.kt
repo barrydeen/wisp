@@ -85,4 +85,43 @@ object MediaDownloader {
             }
         }
     }
+
+    suspend fun saveImageBytes(context: Context, bytes: ByteArray, format: String) {
+        try {
+            val fileName = "wisp_image_${System.currentTimeMillis()}.$format"
+            val mimeType = "image/$format"
+
+            withContext(Dispatchers.IO) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                        put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
+                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    }
+                    val uri = context.contentResolver.insert(collection, values)
+                        ?: error("Failed to create MediaStore entry")
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    values.clear()
+                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    context.contentResolver.update(uri, values, null, null)
+                } else {
+                    @Suppress("DEPRECATION")
+                    val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                    dir.mkdirs()
+                    val file = File(dir, fileName)
+                    FileOutputStream(file).use { it.write(bytes) }
+                }
+            }
+
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "Saved to Pictures", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "Save failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 }

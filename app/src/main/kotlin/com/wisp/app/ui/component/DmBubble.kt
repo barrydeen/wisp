@@ -88,6 +88,7 @@ import com.wisp.app.nostr.DmMessage
 import com.wisp.app.ui.screen.GroupChatHorizontalChipStrip
 import com.wisp.app.nostr.DmReaction
 import com.wisp.app.nostr.EncryptedMedia
+import com.wisp.app.ui.component.FullScreenEncryptedImageViewer
 import com.wisp.app.repo.EventRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -838,14 +839,29 @@ private fun EncryptedMediaContent(
                 )
             }
             bitmap != null -> {
-                Image(
-                    bitmap = bitmap!!.asImageBitmap(),
-                    contentDescription = "Encrypted image",
+                var showFullscreen by remember { mutableStateOf(false) }
+                
+                Box(
                     modifier = Modifier
                         .widthIn(max = 256.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    contentScale = androidx.compose.ui.layout.ContentScale.FillWidth
-                )
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { showFullscreen = true }
+                ) {
+                    Image(
+                        bitmap = bitmap!!.asImageBitmap(),
+                        contentDescription = "Encrypted image",
+                        modifier = Modifier.fillMaxWidth(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.FillWidth
+                    )
+                }
+                
+                if (showFullscreen) {
+                    FullScreenEncryptedImageViewer(
+                        bitmap = bitmap!!,
+                        imageUrl = metadata.fileUrl,
+                        onDismiss = { showFullscreen = false }
+                    )
+                }
             }
         }
     } else {
