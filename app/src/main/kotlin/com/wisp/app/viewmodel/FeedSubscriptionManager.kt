@@ -63,6 +63,12 @@ class FeedSubscriptionManager(
 ) {
     companion object {
         val FEED_KINDS = listOf(1, 6, 1068, 6969, 30023, 20, 21, 22)
+        private const val KEY_LAST_FEED_TYPE = "last_feed_type"
+        private const val KEY_LAST_RELAY_URL = "last_relay_url"
+        private const val KEY_LAST_RELAY_SET_NAME = "last_relay_set_name"
+        private const val KEY_LAST_RELAY_SET_RELAYS = "last_relay_set_relays"
+        private const val KEY_LAST_LIST_PUBKEY = "last_list_pubkey"
+        private const val KEY_LAST_LIST_DTAG = "last_list_dtag"
     }
 
     init {
@@ -145,6 +151,7 @@ class FeedSubscriptionManager(
     private var engagementGeneration = 0
     private val engagedEventIds = mutableSetOf<String>()
     private var viewportEngagementJob: Job? = null
+    private var hasRestoredFeedType = false
 
     fun markLoadingComplete() { _loadingScreenComplete.value = true }
 
@@ -173,6 +180,7 @@ class FeedSubscriptionManager(
         val prev = _feedType.value
         Log.d("RLC", "[FeedSub] setFeedType $prev → $type feedSize=${eventRepo.feed.value.size}")
         _feedType.value = type
+        persistFeedSelection(type)
         engagedEventIds.clear()
         viewportEngagementJob?.cancel()
         applyAuthorFilterForFeedType(type)
@@ -230,6 +238,10 @@ class FeedSubscriptionManager(
         _selectedRelaySet.value = null
         _selectedRelay.value = url
         if (_feedType.value == FeedType.RELAY) {
+            prefs.edit()
+                .putString(KEY_LAST_RELAY_URL, url)
+                .remove(KEY_LAST_RELAY_SET_NAME).remove(KEY_LAST_RELAY_SET_RELAYS)
+                .apply()
             eventRepo.clearRelayFeed()
             subscribeRelayFeed()
         }
@@ -239,6 +251,11 @@ class FeedSubscriptionManager(
         _selectedRelaySet.value = relaySet
         _selectedRelay.value = null
         if (_feedType.value == FeedType.RELAY) {
+            prefs.edit()
+                .putString(KEY_LAST_RELAY_SET_NAME, relaySet.name)
+                .putString(KEY_LAST_RELAY_SET_RELAYS, relaySet.relays.joinToString(","))
+                .remove(KEY_LAST_RELAY_URL)
+                .apply()
             eventRepo.clearRelayFeed()
             subscribeRelayFeed()
         }
@@ -425,6 +442,8 @@ class FeedSubscriptionManager(
             withContext(processingContext) {
                 metadataFetcher.sweepMissingProfiles()
             }
+
+            restoreSavedFeedType()
         }
     }
 
@@ -1174,5 +1193,80 @@ class FeedSubscriptionManager(
         _trendingUsers.value = emptyList()
         _trendingUsersLoading.value = false
         isLoadingMore = false
+        hasRestoredFeedType = false
+        prefs.edit()
+            .remove(KEY_LAST_FEED_TYPE).remove(KEY_LAST_RELAY_URL)
+            .remove(KEY_LAST_RELAY_SET_NAME).remove(KEY_LAST_RELAY_SET_RELAYS)
+            .remove(KEY_LAST_LIST_PUBKEY).remove(KEY_LAST_LIST_DTAG)
+            .apply()
+    }
+
+    private fun persistFeedSelection(type: FeedType) {
+        val editor = prefs.edit().putString(KEY_LAST_FEED_TYPE, type.name)
+        when (type) {
+            FeedType.RELAY -> {
+                val set = _selectedRelaySet.value
+                if (set != null) {
+                    editor.putString(KEY_LAST_RELAY_SET_NAME, set.name)
+                    editor.putString(KEY_LAST_RELAY_SET_RELAYS, set.relays.joinToString(","))
+                    editor.remove(KEY_LAST_RELAY_URL)
+                } else {
+                    val url = _selectedRelay.value
+                    if (url != null) editor.putString(KEY_LAST_RELAY_URL, url)
+                    editor.remove(KEY_LAST_RELAY_SET_NAME).remove(KEY_LAST_RELAY_SET_RELAYS)
+                }
+            }
+            FeedType.LIST -> {
+                val list = listRepo.selectedList.value
+                if (list != null) {
+                    editor.putString(KEY_LAST_LIST_PUBKEY, list.pubkey)
+                    editor.putString(KEY_LAST_LIST_DTAG, list.dTag)
+                }
+            }
+            else -> {}
+        }
+        editor.apply()
+    }
+
+    private fun restoreSavedFeedType() {
+        if (hasRestoredFeedType) return
+        hasRestoredFeedType = true
+
+        val savedName = prefs.getString(KEY_LAST_FEED_TYPE, null) ?: return
+        val savedType = try { FeedType.valueOf(savedName) } catch (_: Exception) { return }
+        if (savedType == FeedType.FOLLOWS) return
+
+        Log.d("RLC", "[FeedSub] restoring saved feed type: $savedType")
+        when (savedType) {
+            FeedType.TRENDING, FeedType.EXTENDED_FOLLOWS -> setFeedType(savedType)
+            FeedType.RELAY -> {
+                val relaySetName = prefs.getString(KEY_LAST_RELAY_SET_NAME, null)
+                val relaySetRelays = prefs.getString(KEY_LAST_RELAY_SET_RELAYS, null)
+                if (relaySetName != null && relaySetRelays != null) {
+                    val urls = relaySetRelays.split(",").filter { it.isNotBlank() }.toSet()
+                    if (urls.isNotEmpty()) {
+                        val set = RelaySet(pubkeyHex ?: "", dTag = "", name = relaySetName, relays = urls, createdAt = 0)
+                        _selectedRelaySet.value = set
+                        setFeedType(FeedType.RELAY)
+                        return
+                    }
+                }
+                val url = prefs.getString(KEY_LAST_RELAY_URL, null)
+                if (url != null) {
+                    _selectedRelay.value = url
+                    setFeedType(FeedType.RELAY)
+                }
+            }
+            FeedType.LIST -> {
+                val pubkey = prefs.getString(KEY_LAST_LIST_PUBKEY, null) ?: return
+                val dTag = prefs.getString(KEY_LAST_LIST_DTAG, null) ?: return
+                val list = listRepo.getList(pubkey, dTag)
+                if (list != null) {
+                    listRepo.selectList(list)
+                    setFeedType(FeedType.LIST)
+                }
+            }
+            else -> {}
+        }
     }
 }
