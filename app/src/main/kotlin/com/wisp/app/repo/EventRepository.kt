@@ -37,6 +37,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     var currentUserPubkey: String? = null
     var eventPersistence: EventPersistence? = null
     var contactRepo: ContactRepository? = null
+    var safetyPrefs: SafetyPreferences? = null
+    var extendedNetworkRepo: ExtendedNetworkRepository? = null
     /** Set of current user's DM relay URLs — used to detect private zaps. */
     var dmRelayUrls: Set<String> = emptySet()
     private val eventCache = ConcurrentHashMap<String, NostrEvent>()
@@ -294,6 +296,17 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         versionDirty.trySend(Unit)
     }
 
+    private val WOT_EXEMPT_KINDS = intArrayOf(0, 3, 4, 10002, 10050, 1059, 13, 14)
+
+    private fun isWotFiltered(pubkey: String, kind: Int): Boolean {
+        if (safetyPrefs?.wotFilterEnabled?.value != true) return false
+        val netRepo = extendedNetworkRepo ?: return false
+        if (!netRepo.isNetworkReady()) return false
+        if (kind in WOT_EXEMPT_KINDS) return false
+        if (pubkey == currentUserPubkey) return false
+        return !netRepo.isInQualifiedNetwork(pubkey)
+    }
+
     fun addEvent(event: NostrEvent) {
         if (event.kind == Nip88.KIND_POLL_RESPONSE) {
             val isNew = event.id !in seenEventIds
@@ -311,6 +324,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             if (muteRepo?.isThreadMuted(threadRoot) == true) return
         }
         if (deletedEventsRepo?.isDeleted(event.id) == true) return
+        if (isWotFiltered(event.pubkey, event.kind)) return
         // Track liveness: only count followed authors with recent active-content kinds,
         // so historical fetches, profile metadata, and strangers don't inflate the online count.
         if (event.kind == 1 || event.kind == 6 || event.kind == 7 || event.kind == 30023 || event.kind == 20 || event.kind == 21 || event.kind == 22) {
@@ -358,6 +372,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         val inner = fromJson(event.content)
                         if (muteRepo?.isBlocked(inner.pubkey) == true) return
                         if (muteRepo?.containsMutedWord(inner.content) == true) return
+                        if (isWotFiltered(event.pubkey, 6) && isWotFiltered(inner.pubkey, 1)) return
                         val authors = repostAuthors.get(inner.id)
                             ?: ConcurrentHashMap.newKeySet<String>().also { repostAuthors.put(inner.id, it) }
                         authors.add(event.pubkey)
@@ -419,6 +434,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             7 -> addReaction(event)
             30315 -> processUserStatus(event)
             9735 -> {
+                val zapperPk = Nip57.getZapperPubkey(event)
+                if (zapperPk != null && isWotFiltered(zapperPk, 9735)) return
                 val targetId = Nip57.getZappedEventId(event)
                     ?: resolveAddressableTarget(event)
                     ?: return
@@ -463,6 +480,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     private fun addReaction(event: NostrEvent) {
+        if (isWotFiltered(event.pubkey, event.kind)) return
         val targetEventId = event.tags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
             ?: resolveAddressableTarget(event)
             ?: return
@@ -1196,6 +1214,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             if (event.created_at > System.currentTimeMillis() / 1000 + 30) continue  // skip future-dated (scheduled) notes
             if (muteRepo?.isBlocked(event.pubkey) == true) continue
             if (deletedEventsRepo?.isDeleted(event.id) == true) continue
+            if (isWotFiltered(event.pubkey, event.kind)) continue
             val threadRoot = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
             if (muteRepo?.isThreadMuted(threadRoot) == true) continue
             val isReply = Nip10.isReply(event)

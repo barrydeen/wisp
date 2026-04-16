@@ -33,7 +33,8 @@ fun SafetyFiltersTab(
     safetyPrefs: SafetyPreferences,
     cachedNetwork: StateFlow<ExtendedNetworkCache?>,
     isNetworkReady: () -> Boolean,
-    onNavigateToSocialGraph: () -> Unit
+    onNavigateToSocialGraph: () -> Unit,
+    onWotToggled: () -> Unit = {}
 ) {
     val spamEnabled by safetyPrefs.spamFilterEnabled.collectAsState()
     val wotEnabled by safetyPrefs.wotFilterEnabled.collectAsState()
@@ -86,7 +87,10 @@ fun SafetyFiltersTab(
             }
             Switch(
                 checked = wotEnabled,
-                onCheckedChange = { safetyPrefs.setWotFilterEnabled(it) }
+                onCheckedChange = {
+                    safetyPrefs.setWotFilterEnabled(it)
+                    onWotToggled()
+                }
             )
         }
         Text(

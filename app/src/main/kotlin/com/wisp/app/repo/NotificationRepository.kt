@@ -29,6 +29,7 @@ class NotificationRepository(
     var spamAuthorCache: SpamAuthorCache? = null
     var safetyPrefs: SafetyPreferences? = null
     var contactRepo: ContactRepository? = null
+    var extendedNetworkRepo: com.wisp.app.repo.ExtendedNetworkRepository? = null
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("wisp_notif_${pubkeyHex ?: "anon"}", Context.MODE_PRIVATE)
@@ -142,6 +143,15 @@ class NotificationRepository(
         if (event.kind == 9735) {
             val zapperPubkey = Nip57.getZapperPubkey(event)
             if (zapperPubkey != null && muteRepo?.isBlocked(zapperPubkey) == true) return
+        }
+        if (safetyPrefs?.wotFilterEnabled?.value == true) {
+            val netRepo = extendedNetworkRepo
+            if (netRepo != null && netRepo.isNetworkReady()) {
+                val pubkeyToCheck = if (event.kind == 9735) {
+                    Nip57.getZapperPubkey(event) ?: event.pubkey
+                } else event.pubkey
+                if (!netRepo.isInQualifiedNetwork(pubkeyToCheck)) return
+            }
         }
         val hasPTag = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == myPubkey }
         // Kind 6 reposts may omit the p-tag; callers must pre-filter kind 6 ownership.
