@@ -80,9 +80,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import com.wisp.app.util.BlurHashDecoder
-import coil3.compose.SubcomposeAsyncImage
-import androidx.compose.material3.CircularProgressIndicator
 import coil3.compose.AsyncImage
+import androidx.compose.material3.CircularProgressIndicator
 import com.wisp.app.R
 import com.wisp.app.nostr.Nip13
 import com.wisp.app.nostr.Nip19
@@ -517,41 +516,36 @@ fun GalleryCard(
                         val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
                         BlurHashDecoder.decode(entry.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
                     }
-                    SubcomposeAsyncImage(
-                        model = entry.url,
-                        contentDescription = entry.alt ?: title,
-                        contentScale = ContentScale.Crop,
+                    var isLoading by remember { mutableStateOf(true) }
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable { fullScreenInitialPage = page },
-                        loading = {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                if (blurPainter != null) {
-                                    Image(
-                                        painter = blurPainter,
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                }
+                            .clickable { fullScreenInitialPage = page }
+                    ) {
+                        AsyncImage(
+                            model = entry.url,
+                            contentDescription = entry.alt ?: title,
+                            contentScale = ContentScale.Crop,
+                            placeholder = blurPainter,
+                            error = blurPainter,
+                            onLoading = { isLoading = true },
+                            onSuccess = { isLoading = false },
+                            onError = { isLoading = false },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        if (isLoading) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(24.dp),
                                     strokeWidth = 2.dp,
                                     color = if (blurPainter != null) Color.White else MaterialTheme.colorScheme.primary
                                 )
                             }
-                        },
-                        error = {
-                            if (blurPainter != null) {
-                                Image(
-                                    painter = blurPainter,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
                         }
-                    )
+                    }
                 }
                 if (imageEntries.size > 1) {
                     Spacer(Modifier.height(6.dp))
