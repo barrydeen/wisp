@@ -4,7 +4,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -25,6 +28,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.res.stringResource
+import com.wisp.app.R
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -210,6 +216,8 @@ fun ThreadScreen(
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
         } else {
+            val spamThread by viewModel.spamThread.collectAsState()
+            val spamExpanded by viewModel.spamExpanded.collectAsState()
             Box(modifier = Modifier.fillMaxSize().padding(padding)) {
                 LazyColumn(
                     state = listState,
@@ -376,6 +384,98 @@ fun ThreadScreen(
                             }
                         }
                     }
+
+                    if (spamThread.isNotEmpty()) {
+                        item(key = "spam_toggle") {
+                            SpamToggle(
+                                count = spamThread.size,
+                                expanded = spamExpanded,
+                                onToggle = { viewModel.toggleSpamExpanded() }
+                            )
+                        }
+                        if (spamExpanded) {
+                            items(items = spamThread, key = { "spam_${it.first.id}" }, contentType = { "post" }) { (event, _) ->
+                                val profileData = eventRepo.getProfileData(event.pubkey)
+                                val likeCount = reactionVersion.let { eventRepo.getReactionCount(event.id) }
+                                val replyCount = replyCountVersion.let { eventRepo.getReplyCount(event.id) }
+                                val zapSats = zapVersion.let { eventRepo.getZapSats(event.id) }
+                                val userEmojis = reactionVersion.let { userPubkey?.let { eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet() }
+                                val reactionDetails = reactionVersion.let { eventRepo.getReactionDetails(event.id) }
+                                val zapDetailsList = zapVersion.let { eventRepo.getZapDetails(event.id) }
+                                val repostCount = repostVersion.let { eventRepo.getRepostCount(event.id) }
+                                val repostPubkeys = repostVersion.let { eventRepo.getReposterPubkeys(event.id) }
+                                val hasUserReposted = repostVersion.let { eventRepo.hasUserReposted(event.id) }
+                                val hasUserZapped = zapVersion.let { eventRepo.hasUserZapped(event.id) }
+                                val eventReactionEmojiUrls = reactionVersion.let { eventRepo.getReactionEmojiUrls(event.id) }
+                                val relayIcons = remember(relaySourceVersion, event.id) {
+                                    eventRepo.getEventRelays(event.id).map { url -> url to relayInfoRepo?.getIconUrl(url) }
+                                }
+                                val translationState = remember(translationVersion, event.id) {
+                                    translationRepo?.getState(event.id) ?: com.wisp.app.repo.TranslationState()
+                                }
+                                Column {
+                                    PostCard(
+                                        event = event,
+                                        profile = profileData,
+                                        onReply = { onReply(event) },
+                                        onProfileClick = { onProfileClick(event.pubkey) },
+                                        onNavigateToProfile = onProfileClick,
+                                        onNoteClick = { onNoteClick(event) },
+                                        onReact = { emoji -> onReact(event, emoji) },
+                                        userReactionEmojis = userEmojis,
+                                        onRepost = { onRepost(event) },
+                                        onQuote = { onQuote(event) },
+                                        hasUserReposted = hasUserReposted,
+                                        repostCount = repostCount,
+                                        onZap = { onZap(event) },
+                                        hasUserZapped = hasUserZapped,
+                                        likeCount = likeCount,
+                                        replyCount = replyCount,
+                                        zapSats = zapSats,
+                                        isZapAnimating = event.id in zapAnimatingIds,
+                                        isZapInProgress = event.id in zapInProgressIds,
+                                        eventRepo = eventRepo,
+                                        reactionDetails = reactionDetails,
+                                        zapDetails = zapDetailsList,
+                                        repostDetails = repostPubkeys,
+                                        reactionEmojiUrls = eventReactionEmojiUrls,
+                                        resolvedEmojis = resolvedEmojis,
+                                        unicodeEmojis = unicodeEmojis,
+                                        onOpenEmojiLibrary = onOpenEmojiLibrary,
+                                        relayIcons = relayIcons,
+                                        onNavigateToProfileFromDetails = onProfileClick,
+                                        onFollowAuthor = { onToggleFollow(event.pubkey) },
+                                        onBlockAuthor = { onBlockUser(event.pubkey) },
+                                        isFollowingAuthor = followList.let { contactRepo.isFollowing(event.pubkey) },
+                                        isOwnEvent = event.pubkey == userPubkey,
+                                        onAddToList = { onAddToList(event.id) },
+                                        isInList = event.id in listedIds,
+                                        onPin = { onTogglePin(event.id) },
+                                        isPinned = event.id in pinnedIds,
+                                        onDelete = { onDeleteEvent(event.id, event.kind) },
+                                        nip05Repo = nip05Repo,
+                                        onQuotedNoteClick = onQuotedNoteClick,
+                                        noteActions = noteActions,
+                                        translationState = translationState,
+                                        onTranslate = { translationRepo?.translate(event.id, event.content) },
+                                    )
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(end = 16.dp, bottom = 4.dp),
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
+                                        TextButton(onClick = { viewModel.markNotSpam(event.pubkey) }) {
+                                            Text(
+                                                stringResource(R.string.thread_not_spam),
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 AnimatedVisibility(
                     visible = showRootButton,
@@ -418,3 +518,41 @@ fun ThreadScreen(
         }
     }
 }
+
+@Composable
+private fun SpamToggle(count: Int, expanded: Boolean, onToggle: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
+        onClick = onToggle
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = stringResource(R.string.thread_hidden_spam, count),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = if (expanded) stringResource(R.string.thread_tap_to_hide)
+                else stringResource(R.string.thread_tap_to_show),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
+            )
+        }
+    }
+}
+

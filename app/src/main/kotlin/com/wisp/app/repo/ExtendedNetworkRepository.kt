@@ -501,6 +501,12 @@ class ExtendedNetworkRepository(
     fun getFollowedBy(pubkey: String): Set<String> =
         socialGraphDb.getFollowers(pubkey).toSet()
 
+    fun isInQualifiedNetwork(pubkey: String): Boolean {
+        if (pubkey == pubkeyHex) return true
+        val cache = _cachedNetwork.value ?: return false
+        return pubkey in cache.firstDegreePubkeys || pubkey in cache.qualifiedPubkeys
+    }
+
     fun clear() {
         _cachedNetwork.value = null
         _discoveryState.value = DiscoveryState.Idle

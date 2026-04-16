@@ -1834,7 +1834,11 @@ fun WispNavHost(
                     muteRepo = feedViewModel.muteRepo,
                     topRelayUrls = feedViewModel.getScoredRelays().take(5).map { it.url },
                     relayListRepo = feedViewModel.relayListRepo,
-                    relayHintStore = feedViewModel.relayHintStore
+                    relayHintStore = feedViewModel.relayHintStore,
+                    spamClassifier = feedViewModel.nspamClassifier,
+                    spamAuthorCache = feedViewModel.spamAuthorCache,
+                    safetyPrefs = feedViewModel.safetyPrefs,
+                    contactRepo = feedViewModel.contactRepo
                 )
             }
             androidx.compose.runtime.DisposableEffect(Unit) {
@@ -2612,7 +2616,11 @@ fun WispNavHost(
                 profileVersion = feedViewModel.eventRepo.profileVersion,
                 fetchProfile = { feedViewModel.forceProfileFetch(it) },
                 onBack = { navController.popBackStack() },
-                onChanged = { feedViewModel.updateMutedWords() }
+                onChanged = { feedViewModel.updateMutedWords() },
+                safetyPrefs = feedViewModel.safetyPrefs,
+                cachedNetwork = feedViewModel.extendedNetworkRepo.cachedNetwork,
+                isNetworkReady = { feedViewModel.extendedNetworkRepo.isNetworkReady() },
+                onNavigateToSocialGraph = { navController.navigate(Routes.SOCIAL_GRAPH) }
             )
         }
 

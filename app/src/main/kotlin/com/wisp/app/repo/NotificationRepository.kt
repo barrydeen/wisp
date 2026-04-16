@@ -25,6 +25,11 @@ class NotificationRepository(
     private val muteRepo: MuteRepository? = null,
     private val eventRepo: EventRepository? = null
 ) {
+    var spamClassifier: com.wisp.app.ml.NSpamClassifier? = null
+    var spamAuthorCache: SpamAuthorCache? = null
+    var safetyPrefs: SafetyPreferences? = null
+    var contactRepo: ContactRepository? = null
+
     private val prefs: SharedPreferences =
         context.getSharedPreferences("wisp_notif_${pubkeyHex ?: "anon"}", Context.MODE_PRIVATE)
 
@@ -617,6 +622,32 @@ class NotificationRepository(
     }
 
     private fun mergeReply(event: NostrEvent, replyTarget: String, replyTargetHint: String?): Boolean {
+        if (safetyPrefs?.spamFilterEnabled?.value == true &&
+            contactRepo?.isFollowing(event.pubkey) != true &&
+            safetyPrefs?.isSpamSafelisted(event.pubkey) != true
+        ) {
+            val repo = eventRepo
+            val noteCount = repo?.getCachedEventsByAuthor(event.pubkey, 1, 10)?.size ?: 0
+            val cached = spamAuthorCache?.get(event.pubkey, noteCount)
+            if (cached != null && cached >= 0.5f) return false
+            if (cached == null) {
+                val classifier = spamClassifier
+                val cache = spamAuthorCache
+                if (classifier != null && cache != null && repo != null) {
+                    val notes = repo.getCachedEventsByAuthor(event.pubkey, 1, 10)
+                    if (notes.isNotEmpty()) {
+                        val inputs = notes.map { e ->
+                            com.wisp.app.ml.NoteInput(e.content, e.tags, e.created_at)
+                        }
+                        val score = classifier.score(inputs)
+                        if (score != null) {
+                            cache.put(event.pubkey, score, inputs.size)
+                            if (score >= 0.5f) return false
+                        }
+                    }
+                }
+            }
+        }
         val key = "reply:${event.id}"
         val hints = listOfNotNull(replyTargetHint)
         groupMap[key] = NotificationGroup.ReplyNotification(

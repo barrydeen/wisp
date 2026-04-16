@@ -39,8 +39,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.wisp.app.R
+import com.wisp.app.repo.ExtendedNetworkCache
 import com.wisp.app.repo.MuteRepository
 import com.wisp.app.repo.ProfileRepository
+import com.wisp.app.repo.SafetyPreferences
 import com.wisp.app.ui.component.ProfilePicture
 import kotlinx.coroutines.flow.StateFlow
 
@@ -52,7 +54,11 @@ fun SafetyScreen(
     profileVersion: StateFlow<Int>,
     fetchProfile: (String) -> Unit,
     onBack: () -> Unit,
-    onChanged: () -> Unit = {}
+    onChanged: () -> Unit = {},
+    safetyPrefs: SafetyPreferences? = null,
+    cachedNetwork: StateFlow<ExtendedNetworkCache?>? = null,
+    isNetworkReady: () -> Boolean = { false },
+    onNavigateToSocialGraph: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
 
@@ -81,18 +87,31 @@ fun SafetyScreen(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text(stringResource(R.string.tab_muted_words)) }
+                    text = { Text(stringResource(R.string.tab_filters)) }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
+                    text = { Text(stringResource(R.string.tab_muted_words)) }
+                )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
                     text = { Text(stringResource(R.string.tab_muted_users)) }
                 )
             }
 
             when (selectedTab) {
-                0 -> MutedWordsTab(muteRepo, onChanged)
-                1 -> MutedUsersTab(muteRepo, profileRepo, profileVersion, fetchProfile, onChanged)
+                0 -> if (safetyPrefs != null && cachedNetwork != null) {
+                    SafetyFiltersTab(
+                        safetyPrefs = safetyPrefs,
+                        cachedNetwork = cachedNetwork,
+                        isNetworkReady = isNetworkReady,
+                        onNavigateToSocialGraph = onNavigateToSocialGraph
+                    )
+                }
+                1 -> MutedWordsTab(muteRepo, onChanged)
+                2 -> MutedUsersTab(muteRepo, profileRepo, profileVersion, fetchProfile, onChanged)
             }
         }
     }
