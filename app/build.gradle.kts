@@ -16,8 +16,8 @@ android {
         applicationId = "com.wisp.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 72
-        versionName = "0.17.6"
+        versionCode = 73
+        versionName = "0.18.0"
 
         ndk {
             abiFilters += "arm64-v8a"
