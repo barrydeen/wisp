@@ -58,7 +58,8 @@ fun SafetyScreen(
     safetyPrefs: SafetyPreferences? = null,
     cachedNetwork: StateFlow<ExtendedNetworkCache?>? = null,
     isNetworkReady: () -> Boolean = { false },
-    onNavigateToSocialGraph: () -> Unit = {}
+    onNavigateToSocialGraph: () -> Unit = {},
+    onWotToggled: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
 
@@ -107,7 +108,8 @@ fun SafetyScreen(
                         safetyPrefs = safetyPrefs,
                         cachedNetwork = cachedNetwork,
                         isNetworkReady = isNetworkReady,
-                        onNavigateToSocialGraph = onNavigateToSocialGraph
+                        onNavigateToSocialGraph = onNavigateToSocialGraph,
+                        onWotToggled = onWotToggled
                     )
                 }
                 1 -> MutedWordsTab(muteRepo, onChanged)

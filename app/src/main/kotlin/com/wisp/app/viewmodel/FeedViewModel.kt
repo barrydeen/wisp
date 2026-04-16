@@ -243,10 +243,13 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         null
     }
     init {
+        eventRepo.safetyPrefs = safetyPrefs
+        eventRepo.extendedNetworkRepo = extendedNetworkRepo
         notifRepo.spamClassifier = nspamClassifier
         notifRepo.spamAuthorCache = spamAuthorCache
         notifRepo.safetyPrefs = safetyPrefs
         notifRepo.contactRepo = contactRepo
+        notifRepo.extendedNetworkRepo = extendedNetworkRepo
     }
     val customEmojiRepo = CustomEmojiRepository(app, pubkeyHex)
     val translationRepo = TranslationRepository()

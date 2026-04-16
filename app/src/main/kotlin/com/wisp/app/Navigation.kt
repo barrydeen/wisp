@@ -2620,7 +2620,8 @@ fun WispNavHost(
                 safetyPrefs = feedViewModel.safetyPrefs,
                 cachedNetwork = feedViewModel.extendedNetworkRepo.cachedNetwork,
                 isNetworkReady = { feedViewModel.extendedNetworkRepo.isNetworkReady() },
-                onNavigateToSocialGraph = { navController.navigate(Routes.SOCIAL_GRAPH) }
+                onNavigateToSocialGraph = { navController.navigate(Routes.SOCIAL_GRAPH) },
+                onWotToggled = { feedViewModel.eventRepo.rebuildFeedFromCache() }
             )
         }
 
