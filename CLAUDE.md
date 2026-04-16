@@ -9,12 +9,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./gradlew assembleRelease     # Build release APK (minified with R8)
 ./gradlew installDebug        # Build and install on connected device/emulator
 ./gradlew clean               # Clean build artifacts
-./gradlew ktlintFormat        # Format Kotlin code
-./gradlew ktlintCheck         # Lint Kotlin code
 ```
 
 No test suite exists yet. JDK 17 and Android SDK 35 are required.
-Run `./gradlew ktlintFormat` then `./gradlew ktlintCheck` after every change.
 
 ## Architecture
 

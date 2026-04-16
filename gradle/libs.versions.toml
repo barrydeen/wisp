@@ -1,7 +1,6 @@
 [versions]
 kotlin = "2.0.21"
 agp = "8.13.2"
-ktlint = "12.1.1"
 compose-bom = "2024.12.01"
 okhttp = "4.12.0"
 kotlinx-serialization = "1.7.3"
@@ -78,4 +77,3 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 objectbox = { id = "io.objectbox", version.ref = "objectbox" }
-ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
