@@ -39,7 +39,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.foundation.Image
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import com.wisp.app.util.BlurHashDecoder
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -93,6 +98,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import coil3.compose.AsyncImage
+import coil3.compose.SubcomposeAsyncImage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -163,12 +169,19 @@ data class NoteActions(
     val onPollVote: (String, List<String>) -> Unit = { _, _ -> },
 )
 
+data class MediaMeta(
+    val url: String,
+    val mime: String? = null,
+    val dimension: String? = null,
+    val blurhash: String? = null
+)
+
 internal sealed interface ContentSegment {
     data class TextSegment(val text: String) : ContentSegment
-    data class ImageSegment(val url: String) : ContentSegment
-    data class VideoSegment(val url: String) : ContentSegment
-    data class AudioSegment(val url: String) : ContentSegment
-    data class UnknownMediaSegment(val url: String) : ContentSegment
+    data class ImageSegment(val meta: MediaMeta) : ContentSegment
+    data class VideoSegment(val meta: MediaMeta) : ContentSegment
+    data class AudioSegment(val meta: MediaMeta) : ContentSegment
+    data class UnknownMediaSegment(val meta: MediaMeta) : ContentSegment
     data class LinkSegment(val url: String) : ContentSegment
     data class InlineLinkSegment(val url: String) : ContentSegment
     data class NostrNoteSegment(val eventId: String, val relayHints: List<String> = emptyList()) : ContentSegment
@@ -195,23 +208,29 @@ private val audioMimeTypes = setOf("audio/mpeg", "audio/wav", "audio/ogg", "audi
 private val blossomPathRegex = Regex("""^/[0-9a-f]{64}$""", RegexOption.IGNORE_CASE)
 
 /**
- * Parse NIP-92 imeta tags from an event to build a URL→mime type map.
- * Tag format: ["imeta", "url https://...", "m image/png", ...]
+ * Parse NIP-92 imeta tags from a list of tags to build a URL→metadata map.
+ * Tag format: ["imeta", "url https://...", "m image/png", "dim 1024x768", "blurhash ...", ...]
  */
-internal fun parseImetaTags(event: NostrEvent): Map<String, String> {
-    val map = mutableMapOf<String, String>()
-    for (tag in event.tags) {
+fun parseImetaTags(tags: List<List<String>>): Map<String, MediaMeta> {
+    val map = mutableMapOf<String, MediaMeta>()
+    for (tag in tags) {
         if (tag.firstOrNull() != "imeta" || tag.size < 2) continue
         var url: String? = null
         var mime: String? = null
+        var dim: String? = null
+        var blur: String? = null
         for (i in 1 until tag.size) {
             val entry = tag[i]
             when {
                 entry.startsWith("url ") -> url = entry.removePrefix("url ")
                 entry.startsWith("m ") -> mime = entry.removePrefix("m ")
+                entry.startsWith("dim ") -> dim = entry.removePrefix("dim ")
+                entry.startsWith("blurhash ") -> blur = entry.removePrefix("blurhash ")
             }
         }
-        if (url != null && mime != null) map[url] = mime
+        if (url != null) {
+            map[url] = MediaMeta(url = url, mime = mime, dimension = dim, blurhash = blur)
+        }
     }
     return map
 }
@@ -253,7 +272,7 @@ private fun isStandaloneUrl(content: String, matchRange: IntRange): Boolean {
     return true
 }
 
-internal fun parseContent(content: String, emojiMap: Map<String, String> = emptyMap(), imetaMap: Map<String, String> = emptyMap(), trimBlankLines: Boolean = true): List<ContentSegment> {
+internal fun parseContent(content: String, emojiMap: Map<String, String> = emptyMap(), imetaMap: Map<String, MediaMeta> = emptyMap(), trimBlankLines: Boolean = true): List<ContentSegment> {
     val segments = mutableListOf<ContentSegment>()
     var lastEnd = 0
 
@@ -268,16 +287,17 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
             segments.add(ContentSegment.HashtagSegment(hashtagCapture))
         } else if (!bareDomainCapture.isNullOrEmpty() && !token.startsWith("http")) {
             val url = "https://$bareDomainCapture"
-            val imetaMime = imetaMap[url]?.let { classifyByMime(it) }
+            val meta = imetaMap[url]
+            val imetaMime = meta?.mime?.let { classifyByMime(it) }
             val ext = url.substringAfterLast('.').substringBefore('?').lowercase()
             when {
-                imetaMime == "image" -> segments.add(ContentSegment.ImageSegment(url))
-                imetaMime == "video" -> segments.add(ContentSegment.VideoSegment(url))
-                imetaMime == "audio" -> segments.add(ContentSegment.AudioSegment(url))
-                ext in imageExtensions -> segments.add(ContentSegment.ImageSegment(url))
-                ext in videoExtensions -> segments.add(ContentSegment.VideoSegment(url))
-                ext in audioExtensions -> segments.add(ContentSegment.AudioSegment(url))
-                isBlossomUrl(url) -> segments.add(ContentSegment.UnknownMediaSegment(url))
+                imetaMime == "image" -> segments.add(ContentSegment.ImageSegment(meta!!))
+                imetaMime == "video" -> segments.add(ContentSegment.VideoSegment(meta!!))
+                imetaMime == "audio" -> segments.add(ContentSegment.AudioSegment(meta!!))
+                ext in imageExtensions -> segments.add(ContentSegment.ImageSegment(meta ?: MediaMeta(url)))
+                ext in videoExtensions -> segments.add(ContentSegment.VideoSegment(meta ?: MediaMeta(url)))
+                ext in audioExtensions -> segments.add(ContentSegment.AudioSegment(meta ?: MediaMeta(url)))
+                isBlossomUrl(url) -> segments.add(ContentSegment.UnknownMediaSegment(meta ?: MediaMeta(url)))
                 isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
                 else -> segments.add(ContentSegment.InlineLinkSegment(url))
             }
@@ -302,22 +322,23 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
         } else {
             val url = token.trimEnd('.', ',', ')', ']', ';', ':', '!', '?')
             val isWebSocket = url.startsWith("wss://") || url.startsWith("ws://")
-            val imetaMime = imetaMap[url]?.let { classifyByMime(it) }
+            val meta = imetaMap[url]
+            val imetaMime = meta?.mime?.let { classifyByMime(it) }
             val ext = url.substringAfterLast('.').substringBefore('?').lowercase()
             when {
-                imetaMime == "image" -> segments.add(ContentSegment.ImageSegment(url))
-                imetaMime == "video" -> segments.add(ContentSegment.VideoSegment(url))
-                imetaMime == "audio" -> segments.add(ContentSegment.AudioSegment(url))
-                ext in imageExtensions -> segments.add(ContentSegment.ImageSegment(url))
-                ext in videoExtensions -> segments.add(ContentSegment.VideoSegment(url))
-                ext in audioExtensions -> segments.add(ContentSegment.AudioSegment(url))
+                imetaMime == "image" -> segments.add(ContentSegment.ImageSegment(meta!!))
+                imetaMime == "video" -> segments.add(ContentSegment.VideoSegment(meta!!))
+                imetaMime == "audio" -> segments.add(ContentSegment.AudioSegment(meta!!))
+                ext in imageExtensions -> segments.add(ContentSegment.ImageSegment(meta ?: MediaMeta(url)))
+                ext in videoExtensions -> segments.add(ContentSegment.VideoSegment(meta ?: MediaMeta(url)))
+                ext in audioExtensions -> segments.add(ContentSegment.AudioSegment(meta ?: MediaMeta(url)))
                 isWebSocket && '\'' in url -> {
                     val parsed = Nip29.parseGroupIdentifier(url)
                     if (parsed != null) segments.add(ContentSegment.GroupInviteSegment(parsed.first, parsed.second))
                     else segments.add(ContentSegment.InlineLinkSegment(url))
                 }
                 isWebSocket -> segments.add(ContentSegment.InlineLinkSegment(url))
-                isBlossomUrl(url) -> segments.add(ContentSegment.UnknownMediaSegment(url))
+                isBlossomUrl(url) -> segments.add(ContentSegment.UnknownMediaSegment(meta ?: MediaMeta(url)))
                 isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
                 else -> segments.add(ContentSegment.InlineLinkSegment(url))
             }
@@ -566,7 +587,7 @@ fun RichContent(
     color: Color = MaterialTheme.colorScheme.onSurface,
     linkColor: Color = Color.Unspecified,
     emojiMap: Map<String, String> = emptyMap(),
-    imetaMap: Map<String, String> = emptyMap(),
+    imetaMap: Map<String, MediaMeta> = emptyMap(),
     plainLinks: Boolean = false,
     eventRepo: EventRepository? = null,
     onProfileClick: ((String) -> Unit)? = null,
@@ -764,27 +785,27 @@ fun RichContent(
                 when (segment) {
                     is ContentSegment.ImageSegment -> {
                         ImageWithContextMenu(
-                            url = segment.url,
-                            onFullScreen = { fullScreenImageUrl = segment.url }
+                            meta = segment.meta,
+                            onFullScreen = { fullScreenImageUrl = segment.meta.url }
                         )
                     }
                     is ContentSegment.VideoSegment -> {
                         InlineVideoPlayerWithFullscreen(
-                            url = segment.url,
+                            meta = segment.meta,
                             onFullScreen = { positionMs ->
-                                FullScreenVideoState.enter(segment.url, positionMs)
+                                FullScreenVideoState.enter(segment.meta.url, positionMs)
                             }
                         )
                     }
                     is ContentSegment.AudioSegment -> {
-                        InlineAudioPlayer(url = segment.url)
+                        InlineAudioPlayer(meta = segment.meta)
                     }
                     is ContentSegment.UnknownMediaSegment -> {
                         UnknownMediaContent(
-                            url = segment.url,
-                            onFullScreenImage = { fullScreenImageUrl = segment.url },
+                            meta = segment.meta,
+                            onFullScreenImage = { fullScreenImageUrl = segment.meta.url },
                             onFullScreenVideo = { positionMs ->
-                                FullScreenVideoState.enter(segment.url, positionMs)
+                                FullScreenVideoState.enter(segment.meta.url, positionMs)
                             }
                         )
                     }
@@ -1125,7 +1146,8 @@ fun QuotedNote(
                     content = event.content,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
-                    eventRepo = eventRepo
+                    eventRepo = eventRepo,
+                    imetaMap = parseImetaTags(event.tags)
                 )
             }
         }
@@ -1300,14 +1322,21 @@ private fun ArticleCard(
         } else {
             Column {
                 if (image != null) {
-                    AsyncImage(
+                    val meta = remember(event.id) { parseImetaTags(event.tags)[image] ?: MediaMeta(url = image) }
+                    val ratio = remember(meta.dimension) { parseAspectRatio(meta.dimension) }
+                    SubcomposeAsyncImage(
                         model = image,
                         contentDescription = title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 180.dp)
-                            .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                            .let { if (ratio != null) it.aspectRatio(ratio) else it.heightIn(max = 180.dp) }
+                            .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
+                        loading = {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                            }
+                        }
                     )
                 }
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -1460,14 +1489,39 @@ private fun LiveStreamCardContent(
                             .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                     )
                 } else if (image != null) {
-                    AsyncImage(
+                    val meta = remember(event.id) { parseImetaTags(event.tags)[image] ?: MediaMeta(url = image) }
+                    val ratio = remember(meta.dimension) { parseAspectRatio(meta.dimension) }
+                    val blurPainter = remember(meta.blurhash, meta.dimension) {
+                        val dims = meta.dimension?.split('x')
+                        val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+                        val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+                        BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
+                    }
+                    SubcomposeAsyncImage(
                         model = image,
                         contentDescription = title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 180.dp)
-                            .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                            .let { if (ratio != null) it.aspectRatio(ratio) else it.heightIn(max = 180.dp) }
+                            .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
+                        loading = {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                if (blurPainter != null) {
+                                    Image(
+                                        painter = blurPainter,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp,
+                                    color = if (blurPainter != null) Color.White else MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                     )
                 }
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -1748,10 +1802,11 @@ private enum class ResolvedMediaType { IMAGE, VIDEO, LINK }
 
 @Composable
 private fun UnknownMediaContent(
-    url: String,
+    meta: MediaMeta,
     onFullScreenImage: () -> Unit,
     onFullScreenVideo: (positionMs: Long) -> Unit
 ) {
+    val url = meta.url
     var resolved by remember(url) { mutableStateOf(contentTypeCache.get(url)?.let { classifyByMime(it) }) }
     var loading by remember(url) { mutableStateOf(resolved == null) }
 
@@ -1789,33 +1844,49 @@ private fun UnknownMediaContent(
                     .padding(vertical = 4.dp)
                     .clip(RoundedCornerShape(12.dp))
             ) {
+                val blurPainter = remember(meta.blurhash, meta.dimension) {
+                    val dims = meta.dimension?.split('x')
+                    val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+                    val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+                    BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
+                }
                 Box(contentAlignment = Alignment.Center) {
+                    if (blurPainter != null) {
+                        Image(
+                            painter = blurPainter,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.dp
+                        strokeWidth = 2.dp,
+                        color = if (blurPainter != null) Color.White else MaterialTheme.colorScheme.primary
                     )
                 }
             }
         }
         resolved == "image" -> {
-            ImageWithContextMenu(url = url, onFullScreen = onFullScreenImage)
+            ImageWithContextMenu(meta = meta, onFullScreen = onFullScreenImage)
         }
         resolved == "video" -> {
-            InlineVideoPlayerWithFullscreen(url = url, onFullScreen = onFullScreenVideo)
+            InlineVideoPlayerWithFullscreen(meta = meta, onFullScreen = onFullScreenVideo)
         }
         resolved == "audio" -> {
-            InlineAudioPlayer(url = url)
+            InlineAudioPlayer(meta = meta)
         }
         else -> {
             // Fallback: try loading as image (most blossom content is images)
-            ImageWithContextMenu(url = url, onFullScreen = onFullScreenImage)
+            ImageWithContextMenu(meta = meta, onFullScreen = onFullScreenImage)
         }
     }
 }
 
 @OptIn(UnstableApi::class)
 @Composable
-private fun InlineAudioPlayer(url: String) {
+private fun InlineAudioPlayer(meta: MediaMeta) {
+    val url = meta.url
     val context = LocalContext.current
     val autoLoad = LocalMediaSettings.current.autoLoadMedia
     var loaded by remember { mutableStateOf(autoLoad) }
@@ -1950,7 +2021,8 @@ private fun formatAudioTime(ms: Long): String {
 
 @kotlin.OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ImageWithContextMenu(url: String, onFullScreen: () -> Unit) {
+private fun ImageWithContextMenu(meta: MediaMeta, onFullScreen: () -> Unit) {
+    val url = meta.url
     val autoLoad = LocalMediaSettings.current.autoLoadMedia
     var loaded by remember { mutableStateOf(autoLoad) }
     var showMenu by remember { mutableStateOf(false) }
@@ -1967,6 +2039,20 @@ private fun ImageWithContextMenu(url: String, onFullScreen: () -> Unit) {
                 .clickable { loaded = true },
             color = MaterialTheme.colorScheme.surfaceVariant
         ) {
+            val blurPainter = remember(meta.blurhash, meta.dimension) {
+                val dims = meta.dimension?.split('x')
+                val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+                val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+                BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
+            }
+            if (blurPainter != null) {
+                Image(
+                    painter = blurPainter,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
             Column(
                 modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -1976,31 +2062,57 @@ private fun ImageWithContextMenu(url: String, onFullScreen: () -> Unit) {
                     imageVector = Icons.Filled.Image,
                     contentDescription = "Load image",
                     modifier = Modifier.size(40.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = if (blurPainter != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Tap to load",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (blurPainter != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
         return
     }
 
+    val ratio = remember(meta.dimension) { parseAspectRatio(meta.dimension) }
+    val blurPainter = remember(meta.blurhash, meta.dimension) {
+        val dims = meta.dimension?.split('x')
+        val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+        val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+        BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
+    }
+
     Box {
-        AsyncImage(
+        SubcomposeAsyncImage(
             model = url,
             contentDescription = "Image",
             contentScale = ContentScale.FillWidth,
             modifier = Modifier
                 .fillMaxWidth()
+                .let { if (ratio != null) it.aspectRatio(ratio) else it }
                 .clip(RoundedCornerShape(12.dp))
                 .combinedClickable(
                     onClick = onFullScreen,
                     onLongClick = { showMenu = true }
-                )
+                ),
+            loading = {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    if (blurPainter != null) {
+                        Image(
+                            painter = blurPainter,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = if (blurPainter != null) Color.White else MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         )
         DropdownMenu(
             expanded = showMenu,
@@ -2026,7 +2138,8 @@ private fun ImageWithContextMenu(url: String, onFullScreen: () -> Unit) {
 
 @OptIn(UnstableApi::class)
 @Composable
-internal fun InlineVideoPlayerWithFullscreen(url: String, onFullScreen: (positionMs: Long) -> Unit) {
+internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (positionMs: Long) -> Unit) {
+    val url = meta.url
     val mediaSettings = LocalMediaSettings.current
     var loaded by remember { mutableStateOf(mediaSettings.autoLoadMedia) }
 
@@ -2039,6 +2152,20 @@ internal fun InlineVideoPlayerWithFullscreen(url: String, onFullScreen: (positio
                 .clickable { loaded = true },
             color = MaterialTheme.colorScheme.surfaceVariant
         ) {
+            val blurPainter = remember(meta.blurhash, meta.dimension) {
+                val dims = meta.dimension?.split('x')
+                val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+                val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+                BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
+            }
+            if (blurPainter != null) {
+                Image(
+                    painter = blurPainter,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
             Column(
                 modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -2048,13 +2175,13 @@ internal fun InlineVideoPlayerWithFullscreen(url: String, onFullScreen: (positio
                     imageVector = Icons.Filled.PlayArrow,
                     contentDescription = "Load video",
                     modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = if (blurPainter != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Tap to load",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (blurPainter != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -2071,6 +2198,20 @@ internal fun InlineVideoPlayerWithFullscreen(url: String, onFullScreen: (positio
                 .clip(RoundedCornerShape(12.dp)),
             color = MaterialTheme.colorScheme.surfaceVariant
         ) {
+            val blurPainter = remember(meta.blurhash, meta.dimension) {
+                val dims = meta.dimension?.split('x')
+                val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+                val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+                BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
+            }
+            if (blurPainter != null) {
+                Image(
+                    painter = blurPainter,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
             Column(
                 modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -2080,13 +2221,13 @@ internal fun InlineVideoPlayerWithFullscreen(url: String, onFullScreen: (positio
                     painter = painterResource(R.drawable.ic_pip),
                     contentDescription = null,
                     modifier = Modifier.size(36.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = if (blurPainter != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Playing in mini player",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (blurPainter != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -2095,11 +2236,13 @@ internal fun InlineVideoPlayerWithFullscreen(url: String, onFullScreen: (positio
 
     val context = LocalContext.current
     val view = LocalView.current
-    var videoAspectRatio by remember { mutableFloatStateOf(16f / 9f) }
+    var videoAspectRatio by remember { mutableFloatStateOf(parseAspectRatio(meta.dimension) ?: (16f / 9f)) }
     val isMuted by globalMuted.collectAsState()
     var showControls by remember { mutableStateOf(false) }
     var userPaused by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
+    var isBuffering by remember { mutableStateOf(false) }
+
     val exoPlayer = remember(url) {
         PipController.reclaimPlayer(url)
             ?: HttpClientFactory.createExoPlayer(context).apply {
@@ -2127,6 +2270,9 @@ internal fun InlineVideoPlayerWithFullscreen(url: String, onFullScreen: (positio
                 if (!playing && exoPlayer.playbackState == Player.STATE_READY) {
                     userPaused = true
                 }
+            }
+            override fun onPlaybackStateChanged(state: Int) {
+                isBuffering = state == Player.STATE_BUFFERING
             }
         }
         exoPlayer.addListener(listener)
@@ -2190,6 +2336,13 @@ internal fun InlineVideoPlayerWithFullscreen(url: String, onFullScreen: (positio
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        if (isBuffering) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color.White.copy(alpha = 0.7f), strokeWidth = 2.dp)
+            }
+        }
+
         AnimatedVisibility(
             visible = showControls,
             enter = fadeIn(),
@@ -2350,6 +2503,7 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
     var showControls by remember { mutableStateOf(false) }
     var userPaused by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
+    var isBuffering by remember { mutableStateOf(false) }
     val exoPlayer = remember(url) {
         PipController.reclaimPlayer(url)
             ?: HttpClientFactory.createExoPlayer(context).apply {
@@ -2376,6 +2530,9 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
                 if (!playing && exoPlayer.playbackState == Player.STATE_READY) {
                     userPaused = true
                 }
+            }
+            override fun onPlaybackStateChanged(state: Int) {
+                isBuffering = state == Player.STATE_BUFFERING
             }
         }
         exoPlayer.addListener(listener)
@@ -2433,6 +2590,13 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        if (isBuffering) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color.White.copy(alpha = 0.7f), strokeWidth = 2.dp)
+            }
+        }
+
         AnimatedVisibility(
             visible = showControls,
             enter = fadeIn(),
@@ -2483,6 +2647,15 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+private fun parseAspectRatio(dim: String?): Float? {
+    if (dim == null) return null
+    val parts = dim.split('x')
+    if (parts.size != 2) return null
+    val w = parts[0].toFloatOrNull() ?: return null
+    val h = parts[1].toFloatOrNull() ?: return null
+    return if (h > 0) w / h else null
 }
 
 // --- Link Preview (OG tags) ---

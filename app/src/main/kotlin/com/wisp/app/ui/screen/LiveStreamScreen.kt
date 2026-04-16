@@ -90,6 +90,7 @@ import com.wisp.app.repo.LiveChatMessage
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.ui.component.EmojiReactionPopup
 import com.wisp.app.ui.component.InlineVideoPlayerWithFullscreen
+import com.wisp.app.ui.component.MediaMeta
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
 import com.wisp.app.viewmodel.LiveStreamViewModel
@@ -163,7 +164,12 @@ fun LiveStreamScreen(
                     .aspectRatio(16f / 9f)
             ) {
                 InlineVideoPlayerWithFullscreen(
-                    url = streamUrl,
+                    meta = MediaMeta(
+                        url = streamUrl,
+                        mime = "video/mp4", // Default to video for stream
+                        dimension = null,
+                        blurhash = null
+                    ),
                     onFullScreen = { posMs ->
                         onFullScreenVideo?.invoke(streamUrl, posMs)
                     }

@@ -199,8 +199,8 @@ private fun DraftItem(
 ) {
     val isReply = draft.tags.any { it.size >= 2 && it[0] == "e" }
     val displayName = userProfile?.displayString ?: stringResource(R.string.draft_label)
-    val emojiMap = remember(draft.dTag) { emptyMap<String, String>() }
-    val imetaMap = remember(draft.dTag) { emptyMap<String, String>() }
+    val emojiMap = remember(draft.dTag) { Nip30.parseEmojiTags(draft.tags) }
+    val imetaMap = remember(draft.dTag) { parseImetaTags(draft.tags) }
 
     Column(
         modifier = Modifier
@@ -287,7 +287,7 @@ private fun ScheduledPostItem(
     val publishTime = post.created_at
     val isFuture = publishTime > System.currentTimeMillis() / 1000
     val emojiMap = remember(post.id) { Nip30.parseEmojiTags(post) }
-    val imetaMap = remember(post.id) { parseImetaTags(post) }
+    val imetaMap = remember(post.id) { parseImetaTags(post.tags) }
 
     Column(
         modifier = Modifier
