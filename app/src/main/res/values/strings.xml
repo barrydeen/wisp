@@ -206,6 +206,7 @@
     <string name="tab_bad">Bad</string>
     <string name="tab_people">Profiles</string>
     <string name="tab_notes">Notes</string>
+    <string name="tab_for_you">For You</string>
     <string name="tab_follows">Follows</string>
     <string name="tab_extended">Extended</string>
     <string name="tab_trending">Trending</string>

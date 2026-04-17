@@ -16,6 +16,7 @@ import com.wisp.app.relay.SubscriptionManager
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.ExtendedNetworkRepository
+import com.wisp.app.repo.InterestRepository
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.ListRepository
 import com.wisp.app.repo.MetadataFetcher
@@ -51,6 +52,7 @@ class FeedSubscriptionManager(
     private val listRepo: ListRepository,
     private val notifRepo: NotificationRepository,
     private val extendedNetworkRepo: ExtendedNetworkRepository,
+    private val interestRepo: InterestRepository,
     private val keyRepo: KeyRepository,
     private val healthTracker: RelayHealthTracker,
     private val relayScoreBoard: RelayScoreBoard,
@@ -69,6 +71,7 @@ class FeedSubscriptionManager(
         private const val KEY_LAST_RELAY_SET_RELAYS = "last_relay_set_relays"
         private const val KEY_LAST_LIST_PUBKEY = "last_list_pubkey"
         private const val KEY_LAST_LIST_DTAG = "last_list_dtag"
+        private const val HASHTAG_BATCH_SIZE = 10
     }
 
     init {
@@ -80,7 +83,7 @@ class FeedSubscriptionManager(
         relayPool.registerDedupBypass("trending-users-")
     }
 
-    private val _feedType = MutableStateFlow(FeedType.FOLLOWS)
+    private val _feedType = MutableStateFlow(FeedType.FOR_YOU)
     val feedType: StateFlow<FeedType> = _feedType
 
     private val _selectedRelay = MutableStateFlow<String?>(null)
@@ -153,6 +156,10 @@ class FeedSubscriptionManager(
     private var viewportEngagementJob: Job? = null
     private var hasRestoredFeedType = false
 
+    // For You supplementary fetches (trending + hashtags)
+    private var forYouSupplementaryJob: Job? = null
+    private var forYouGeneration = 0L
+
     fun markLoadingComplete() { _loadingScreenComplete.value = true }
 
     /** Resolve indexer relays: user's search relays (kind 10007) with default fallback. */
@@ -194,15 +201,18 @@ class FeedSubscriptionManager(
         }
 
         when (type) {
-            FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
+            FeedType.FOR_YOU, FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
                 if (prev == FeedType.LIST) {
                     Log.d("RLC", "[FeedSub] switching from $prev to $type — rebuilding feed from cache and resubscribing")
                     eventRepo.resetFeedDisplay()
                     eventRepo.rebuildFeedFromCache()
                     resubscribeFeed()
                 } else {
-                    // Switching from RELAY or between FOLLOWS/EXTENDED — main feed still running
+                    // Switching from RELAY or between FOLLOWS/EXTENDED/FOR_YOU — main feed still running
                     Log.d("RLC", "[FeedSub] setFeedType $prev → $type — filter-only switch, no resubscribe needed, feedSize=${eventRepo.feed.value.size}")
+                }
+                if (type == FeedType.FOR_YOU && prev != FeedType.FOR_YOU) {
+                    startForYouSupplementaryFetches()
                 }
             }
             FeedType.RELAY -> {
@@ -333,7 +343,7 @@ class FeedSubscriptionManager(
         val indexerRelays = getIndexerRelays()
         val excludedUrls = getExcludedRelayUrls()
         val targetedRelays: Set<String> = when (_feedType.value) {
-            FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
+            FeedType.FOR_YOU, FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
                 val cache = extendedNetworkRepo.cachedNetwork.value
                 val firstDegree = contactRepo.getFollowList().map { it.pubkey }
                 val allAuthors = if (cache != null) {
@@ -444,6 +454,10 @@ class FeedSubscriptionManager(
             }
 
             restoreSavedFeedType()
+
+            if (_feedType.value == FeedType.FOR_YOU) {
+                startForYouSupplementaryFetches()
+            }
         }
     }
 
@@ -455,7 +469,7 @@ class FeedSubscriptionManager(
         val indexerRelays = getIndexerRelays()
         val excludedUrls = getExcludedRelayUrls()
         when (_feedType.value) {
-            FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
+            FeedType.FOR_YOU, FeedType.FOLLOWS, FeedType.EXTENDED_FOLLOWS -> {
                 val oldest = eventRepo.getOldestTimestamp() ?: run { isLoadingMore = false; return }
                 val cache = extendedNetworkRepo.cachedNetwork.value
                 val firstDegree = contactRepo.getFollowList().map { it.pubkey }
@@ -1234,11 +1248,11 @@ class FeedSubscriptionManager(
 
         val savedName = prefs.getString(KEY_LAST_FEED_TYPE, null) ?: return
         val savedType = try { FeedType.valueOf(savedName) } catch (_: Exception) { return }
-        if (savedType == FeedType.FOLLOWS) return
+        if (savedType == _feedType.value) return
 
         Log.d("RLC", "[FeedSub] restoring saved feed type: $savedType")
         when (savedType) {
-            FeedType.TRENDING, FeedType.EXTENDED_FOLLOWS -> setFeedType(savedType)
+            FeedType.FOLLOWS, FeedType.TRENDING, FeedType.EXTENDED_FOLLOWS -> setFeedType(savedType)
             FeedType.RELAY -> {
                 val relaySetName = prefs.getString(KEY_LAST_RELAY_SET_NAME, null)
                 val relaySetRelays = prefs.getString(KEY_LAST_RELAY_SET_RELAYS, null)
@@ -1267,6 +1281,78 @@ class FeedSubscriptionManager(
                 }
             }
             else -> {}
+        }
+    }
+
+    /**
+     * Fires the two supplementary event sources that make FOR_YOU feel more diverse than the
+     * plain follow/extended feed: (1) top-reactions and top-replies trending notes (fast), and
+     * (2) notes for all followed hashtags via the search relay (slow, batched). All events
+     * funnel through eventRepo.addEvent() so dedup + binary insert by created_at are free.
+     */
+    private fun startForYouSupplementaryFetches() {
+        forYouSupplementaryJob?.cancel()
+        val gen = ++forYouGeneration
+        forYouSupplementaryJob = scope.launch {
+            launch { fetchTrendingForForYou(TrendingMetric.REACTIONS, gen) }
+            launch { fetchTrendingForForYou(TrendingMetric.REPLIES, gen) }
+
+            val hashtags = interestRepo.getAllHashtags().toList()
+            if (hashtags.isEmpty()) {
+                Log.d("RLC", "[FeedSub] FOR_YOU supplementary: no followed hashtags, skipping hashtag fetch")
+                return@launch
+            }
+            val since = System.currentTimeMillis() / 1000 - 24 * 3600
+            Log.d("RLC", "[FeedSub] FOR_YOU hashtag fetch: ${hashtags.size} tags in ${(hashtags.size + HASHTAG_BATCH_SIZE - 1) / HASHTAG_BATCH_SIZE} batches")
+            hashtags.chunked(HASHTAG_BATCH_SIZE).forEachIndexed { idx, chunk ->
+                launch { fetchHashtagChunkForForYou(chunk, since, gen, idx) }
+            }
+        }
+    }
+
+    private suspend fun fetchTrendingForForYou(metric: TrendingMetric, gen: Long) {
+        val url = buildTrendingRelayUrl(metric, TrendingTimeframe.TODAY)
+        val subId = "foryou-trending-${metric.slug}-$gen"
+        val filter = Filter(kinds = FEED_KINDS, limit = 100)
+        val collector = scope.launch {
+            relayPool.relayEvents.collect { re ->
+                if (re.subscriptionId == subId && gen == forYouGeneration) {
+                    eventRepo.addEvent(re.event)
+                    eventRepo.requestProfileIfMissing(re.event.pubkey)
+                }
+            }
+        }
+        try {
+            relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(subId, filter), skipBadCheck = true)
+            subManager.awaitEoseWithTimeout(subId, timeoutMs = 10_000)
+            delay(1_500)
+        } finally {
+            collector.cancel()
+            subManager.closeSubscription(subId)
+        }
+    }
+
+    private suspend fun fetchHashtagChunkForForYou(chunk: List<String>, since: Long, gen: Long, idx: Int) {
+        val subId = "foryou-hashtags-$gen-$idx"
+        val filter = Filter(kinds = listOf(1), tTags = chunk, since = since, limit = 100)
+        val collector = scope.launch {
+            relayPool.relayEvents.collect { re ->
+                if (re.subscriptionId == subId && gen == forYouGeneration && re.event.kind == 1) {
+                    eventRepo.addEvent(re.event)
+                    eventRepo.requestProfileIfMissing(re.event.pubkey)
+                }
+            }
+        }
+        try {
+            relayPool.sendToRelayOrEphemeral(
+                SearchViewModel.DEFAULT_SEARCH_RELAY,
+                ClientMessage.req(subId, filter)
+            )
+            subManager.awaitEoseWithTimeout(subId, timeoutMs = 15_000)
+            delay(2_000)
+        } finally {
+            collector.cancel()
+            subManager.closeSubscription(subId)
         }
     }
 }
