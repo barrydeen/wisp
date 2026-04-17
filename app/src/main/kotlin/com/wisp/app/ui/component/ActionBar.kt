@@ -218,7 +218,7 @@ fun ActionBar(
                 )
             }
         }
-        if (!isZapInProgress && zapSats > 0) {
+        if (!isZapInProgress) {
             val context = LocalContext.current
             val fiatPrefs = remember { FiatPreferences.get(context) }
             fiatPrefs.fiatMode.collectAsState().value
