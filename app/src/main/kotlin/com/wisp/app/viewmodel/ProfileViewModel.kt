@@ -16,6 +16,8 @@ import com.wisp.app.repo.BlossomRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.nostr.toHex
 import com.wisp.app.repo.KeyRepository
+import com.wisp.app.ui.util.GifToMp4Converter
+import com.wisp.app.ui.util.MediaCompressor
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -70,11 +72,15 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
                     ImageTarget.PICTURE -> "Uploading avatar..."
                     ImageTarget.BANNER -> "Uploading banner..."
                 }
-                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                val raw = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     ?: throw Exception("Cannot read file")
-                val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
-                val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "bin"
-                val url = blossomRepo.uploadMedia(bytes, mimeType, ext, signer)
+                val srcMime = contentResolver.getType(uri) ?: "application/octet-stream"
+                val (bytes, mime, ext) = when {
+                    srcMime == "image/gif" -> GifToMp4Converter.convert(raw, getApplication())
+                    srcMime.startsWith("image/") -> MediaCompressor.compressForProfile(raw, srcMime).asTriple()
+                    else -> Triple(raw, srcMime, MimeTypeMap.getSingleton().getExtensionFromMimeType(srcMime) ?: "bin")
+                }
+                val url = blossomRepo.uploadMedia(bytes, mime, ext, signer)
                 when (target) {
                     ImageTarget.PICTURE -> _picture.value = url
                     ImageTarget.BANNER -> _banner.value = url
