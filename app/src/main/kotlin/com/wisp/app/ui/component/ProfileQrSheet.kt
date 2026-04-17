@@ -66,10 +66,7 @@ fun ProfileQrSheet(
     val scope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
-    val useZapBolt = remember {
-        context.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
-            .getBoolean("zap_bolt_icon", false)
-    }
+    val useZapBolt = com.wisp.app.ui.util.useBoltIcon()
 
     val npub = remember(pubkeyHex) { Nip19.npubEncode(pubkeyHex.hexToByteArray()) }
     val npubQr = remember(npub) { generateQrBitmap(npub) }

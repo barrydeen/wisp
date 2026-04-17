@@ -19,6 +19,7 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -88,19 +89,30 @@ fun WispBottomBar(
                     indicatorColor = MaterialTheme.colorScheme.surfaceVariant
                 ),
                 icon = {
+                    val useBolt = com.wisp.app.ui.util.useBoltIcon()
                     Box(
                         modifier = Modifier.requiredSize(24.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        val icon = if (tab == BottomTab.NOTIFICATIONS && isZapAnimating)
-                            Icons.Outlined.CurrencyBitcoin
-                        else if (selected) tab.selectedIcon
-                        else tab.unselectedIcon
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = stringResource(tab.labelResId),
-                            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        val zapTint = if (selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        if (tab == BottomTab.NOTIFICATIONS && isZapAnimating && useBolt) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_bolt),
+                                contentDescription = stringResource(tab.labelResId),
+                                tint = zapTint
+                            )
+                        } else {
+                            val icon = if (tab == BottomTab.NOTIFICATIONS && isZapAnimating)
+                                Icons.Outlined.CurrencyBitcoin
+                            else if (selected) tab.selectedIcon
+                            else tab.unselectedIcon
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = stringResource(tab.labelResId),
+                                tint = zapTint
+                            )
+                        }
                         if (hasUnread) {
                             Box(
                                 modifier = Modifier

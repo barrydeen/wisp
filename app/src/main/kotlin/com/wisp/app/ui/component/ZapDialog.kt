@@ -81,9 +81,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.wisp.app.R
+import com.wisp.app.repo.FiatPreferences
 import com.wisp.app.repo.ZapPreferences
 import com.wisp.app.repo.ZapPreset
 import com.wisp.app.ui.theme.WispThemeColors
+import com.wisp.app.ui.util.AmountFormatter
+import androidx.compose.runtime.collectAsState
 import kotlin.math.sin
 import kotlin.random.Random
 
@@ -128,6 +131,9 @@ fun ZapDialog(
     }
 
     val context = LocalContext.current
+    val fiatPrefs = remember { FiatPreferences.get(context) }
+    val fiatMode by fiatPrefs.fiatMode.collectAsState()
+    @Suppress("unused_variable") val fiatCurrency by fiatPrefs.currency.collectAsState()
     var presets by remember { mutableStateOf(ZapPreferences(context).getPresets().sortedBy { it.amountSats }) }
     var selectedPreset by remember { mutableStateOf<ZapPreset?>(presets.firstOrNull()) }
     var isCustom by remember { mutableStateOf(false) }
@@ -191,7 +197,9 @@ fun ZapDialog(
                     Spacer(Modifier.height(8.dp))
 
                     Text(
-                        text = stringResource(R.string.zap_send),
+                        text = stringResource(
+                            if (fiatMode) R.string.zap_send_money else R.string.zap_send
+                        ),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -229,14 +237,16 @@ fun ZapDialog(
                                 }
                             }
                         )
-                        Text(
-                            text = stringResource(R.string.zap_sats),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = LightningOrange.copy(alpha = 0.7f)
-                        )
+                        if (!fiatMode) {
+                            Text(
+                                text = stringResource(R.string.zap_sats),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = LightningOrange.copy(alpha = 0.7f)
+                            )
+                        }
                     } else if (effectiveAmount > 0) {
                         Text(
-                            text = formatDisplayAmount(effectiveAmount),
+                            text = AmountFormatter.formatShort(effectiveAmount, context),
                             style = MaterialTheme.typography.displaySmall,
                             fontWeight = FontWeight.Bold,
                             color = LightningOrange,
@@ -247,11 +257,13 @@ fun ZapDialog(
                                 }
                                 .padding(vertical = 4.dp)
                         )
-                        Text(
-                            text = stringResource(R.string.zap_sats),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = LightningOrange.copy(alpha = 0.7f)
-                        )
+                        if (!fiatMode) {
+                            Text(
+                                text = stringResource(R.string.zap_sats),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = LightningOrange.copy(alpha = 0.7f)
+                            )
+                        }
                     }
 
                     Spacer(Modifier.height(16.dp))
@@ -484,7 +496,14 @@ fun ZapDialog(
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                stringResource(R.string.zap_x_sats, effectiveAmount),
+                                if (fiatMode) {
+                                    stringResource(
+                                        R.string.zap_x_amount,
+                                        AmountFormatter.formatShort(effectiveAmount, context)
+                                    )
+                                } else {
+                                    stringResource(R.string.zap_x_sats, effectiveAmount)
+                                },
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -671,8 +690,9 @@ private fun ZapPresetChip(
                     )
                     Spacer(Modifier.width(3.dp))
                 }
+                val chipContext = LocalContext.current
                 Text(
-                    text = formatDisplayAmount(preset.amountSats),
+                    text = AmountFormatter.formatShort(preset.amountSats, chipContext),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                     color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
@@ -818,9 +838,3 @@ private fun SaveZapPresetDialog(
     )
 }
 
-private fun formatDisplayAmount(sats: Long): String = when {
-    sats >= 1_000_000 -> String.format("%.1fM", sats / 1_000_000.0)
-    sats >= 10_000 -> String.format("%.1fk", sats / 1_000.0)
-    sats >= 1_000 -> String.format("%,d", sats)
-    else -> sats.toString()
-}

@@ -417,11 +417,7 @@ fun WispDrawerContent(
             onClick = onMessages,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
-        val walletContext = androidx.compose.ui.platform.LocalContext.current
-        val useZapBolt = remember {
-            walletContext.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
-                .getBoolean("zap_bolt_icon", false)
-        }
+        val useZapBolt = com.wisp.app.ui.util.useBoltIcon()
         NavigationDrawerItem(
             icon = {
                 if (useZapBolt) {

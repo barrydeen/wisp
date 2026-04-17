@@ -24,6 +24,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.wisp.app.R
 
+/**
+ * Numeric pad for entering amounts.
+ *
+ * When [allowDecimal] is true the "✓" key is replaced with a "." key and
+ * [onConfirm] is ignored — callers are expected to render their own confirm
+ * button below the pad (see the Fiat Mode receive flow in WalletScreen).
+ * The display header (amount / unit label) is also the caller's responsibility
+ * in that mode; we only render the keypad.
+ */
 @Composable
 fun SatsNumpad(
     amount: String,
@@ -31,33 +40,36 @@ fun SatsNumpad(
     onBackspace: () -> Unit,
     onConfirm: () -> Unit,
     confirmEnabled: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    allowDecimal: Boolean = false,
+    showHeader: Boolean = true
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Amount display
-        val displayAmount = if (amount.isEmpty()) "0" else "%,d".format(amount.toLongOrNull() ?: 0)
-        Text(
-            text = displayAmount,
-            style = MaterialTheme.typography.displayMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Text(
-            text = stringResource(R.string.zap_sats),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        if (showHeader) {
+            val displayAmount = if (amount.isEmpty()) "0" else "%,d".format(amount.toLongOrNull() ?: 0)
+            Text(
+                text = displayAmount,
+                style = MaterialTheme.typography.displayMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = stringResource(R.string.zap_sats),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-        Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(32.dp))
+        }
 
-        // 4x3 grid
+        val lastKey = if (allowDecimal) "." else "✓"
         val rows = listOf(
             listOf("1", "2", "3"),
             listOf("4", "5", "6"),
             listOf("7", "8", "9"),
-            listOf("⌫", "0", "✓")
+            listOf("⌫", "0", lastKey)
         )
 
         rows.forEach { row ->
@@ -101,6 +113,22 @@ fun SatsNumpad(
                                     Icons.Default.Check,
                                     contentDescription = stringResource(R.string.cd_confirm),
                                     modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                        "." -> {
+                            FilledTonalButton(
+                                onClick = { onDigit('.') },
+                                modifier = Modifier.size(72.dp),
+                                shape = CircleShape,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                )
+                            ) {
+                                Text(
+                                    ".",
+                                    style = MaterialTheme.typography.headlineMedium
                                 )
                             }
                         }

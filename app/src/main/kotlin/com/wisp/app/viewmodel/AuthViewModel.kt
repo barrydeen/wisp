@@ -7,6 +7,7 @@ import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.nostr.toHex
 import com.wisp.app.repo.AccountInfo
+import com.wisp.app.repo.FiatPreferences
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.SigningMode
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +47,12 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             _npub.value = Nip19.npubEncode(keypair.pubkey)
             _signingMode.value = SigningMode.LOCAL
             _error.value = null
+            // Brand-new accounts default to Fiat Mode (USD). Existing-account
+            // logins do not touch these prefs, so a returning user's choice is
+            // preserved and unknown-preference logins stay in Bitcoin mode.
+            val fiatPrefs = FiatPreferences.get(getApplication())
+            fiatPrefs.setFiatMode(true)
+            fiatPrefs.setCurrency("USD")
             true
         } catch (e: Exception) {
             _error.value = "Failed to generate keys: ${e.message}"

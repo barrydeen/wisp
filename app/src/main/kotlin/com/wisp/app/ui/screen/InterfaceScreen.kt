@@ -64,10 +64,20 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import com.wisp.app.R
 import com.wisp.app.repo.DiagnosticLogger
+import com.wisp.app.repo.ExchangeRateRepository
+import com.wisp.app.repo.FiatPreferences
 import com.wisp.app.repo.InterfacePreferences
 import com.wisp.app.repo.LocaleRepository
 import com.wisp.app.ui.theme.ThemePreset
 import com.wisp.app.ui.theme.Themes
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.collectAsState
+import java.text.DateFormat
+import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -492,10 +502,101 @@ fun InterfaceScreen(
                 )
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(24.dp))
 
-            // Zap icon toggle
+            // Fiat Mode section
+            val fiatPrefs = remember { FiatPreferences.get(application) }
+            val fiatModeEnabled by fiatPrefs.fiatMode.collectAsState()
+            val fiatCurrency by fiatPrefs.currency.collectAsState()
+            val ratesUpdatedAt by ExchangeRateRepository.updatedAtMs.collectAsState()
+            var currencyPickerExpanded by remember { mutableStateOf(false) }
+
+            Text(
+                text = stringResource(R.string.fiat_settings_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.fiat_settings_enable), style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        stringResource(R.string.fiat_settings_enable_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = fiatModeEnabled,
+                    onCheckedChange = { fiatPrefs.setFiatMode(it) }
+                )
+            }
+
+            if (fiatModeEnabled) {
+                Spacer(Modifier.height(12.dp))
+                val selectedCurrency = ExchangeRateRepository.currencyFor(fiatCurrency)
+                Box {
+                    OutlinedButton(
+                        onClick = { currencyPickerExpanded = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("${selectedCurrency.symbol}  ${selectedCurrency.code} — ${selectedCurrency.name}")
+                            Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = currencyPickerExpanded,
+                        onDismissRequest = { currencyPickerExpanded = false }
+                    ) {
+                        ExchangeRateRepository.SUPPORTED.forEach { c ->
+                            DropdownMenuItem(
+                                text = { Text("${c.symbol}  ${c.code} — ${c.name}") },
+                                onClick = {
+                                    fiatPrefs.setCurrency(c.code)
+                                    currencyPickerExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                val rateLabel = if (ratesUpdatedAt > 0L) {
+                    val fmt = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                    stringResource(R.string.fiat_settings_rates_updated, fmt.format(Date(ratesUpdatedAt)))
+                } else {
+                    stringResource(R.string.fiat_settings_rates_never)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        rateLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { ExchangeRateRepository.refresh() }) {
+                        Text(stringResource(R.string.fiat_settings_refresh))
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            // Zap icon toggle — hidden in fiat mode since the bolt is forced
             var zapBoltIcon by remember { mutableStateOf(interfacePrefs.isZapBoltIcon()) }
+            if (!fiatModeEnabled) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -529,6 +630,7 @@ fun InterfaceScreen(
                             }
                     )
                 }
+            }
             }
 
             Spacer(Modifier.height(32.dp))

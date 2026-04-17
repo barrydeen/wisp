@@ -451,6 +451,7 @@ private fun LightningInvoiceCard(
     var showConfirm by remember { mutableStateOf(false) }
     var payState by remember { mutableStateOf(InvoicePayState.Idle) }
     val scope = rememberCoroutineScope()
+    val ctx = LocalContext.current
 
     if (showConfirm) {
         AlertDialog(
@@ -459,7 +460,7 @@ private fun LightningInvoiceCard(
             text = {
                 Column {
                     if (decoded.amountSats != null) {
-                        Text("%,d sats".format(decoded.amountSats))
+                        Text(com.wisp.app.ui.util.AmountFormatter.formatFull(decoded.amountSats, ctx))
                     } else {
                         Text(stringResource(com.wisp.app.R.string.lightning_invoice_any_amount))
                     }
@@ -522,8 +523,9 @@ private fun LightningInvoiceCard(
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = if (decoded.amountSats != null) "%,d sats".format(decoded.amountSats)
-                           else stringResource(com.wisp.app.R.string.lightning_invoice_any_amount),
+                    text = if (decoded.amountSats != null)
+                        com.wisp.app.ui.util.AmountFormatter.formatFull(decoded.amountSats, ctx)
+                    else stringResource(com.wisp.app.R.string.lightning_invoice_any_amount),
                     style = MaterialTheme.typography.titleSmall,
                     color = primary
                 )
