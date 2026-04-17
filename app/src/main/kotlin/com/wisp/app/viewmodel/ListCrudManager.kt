@@ -269,6 +269,21 @@ class ListCrudManager(
         }
     }
 
+    fun followHashtags(hashtags: Set<String>, dTag: String, setTitle: String? = null) {
+        if (hashtags.isEmpty()) return
+        val s = getSigner() ?: return
+        val existing = interestRepo.getSet(dTag)
+        val newHashtags = (existing?.hashtags ?: emptySet()) + hashtags.map { it.lowercase() }
+        val title = setTitle ?: existing?.name?.takeIf { it != dTag }
+        val tags = Nip51.buildInterestSetTags(dTag, newHashtags, title = title)
+        scope.launch {
+            val event = s.signEvent(kind = Nip51.KIND_INTEREST_SET, content = "", tags = tags)
+            eventRepo.cacheEvent(event)
+            relayPool.sendToWriteRelays(ClientMessage.event(event))
+            interestRepo.updateFromEvent(event)
+        }
+    }
+
     fun unfollowHashtag(hashtag: String, dTag: String) {
         val s = getSigner() ?: return
         val existing = interestRepo.getSet(dTag) ?: return

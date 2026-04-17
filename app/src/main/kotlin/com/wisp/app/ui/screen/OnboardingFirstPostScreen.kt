@@ -12,12 +12,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -29,8 +32,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import com.wisp.app.R
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
@@ -124,30 +129,51 @@ fun OnboardingFirstPostScreen(
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            Button(
-                onClick = {
-                    if (countdown != null) {
-                        viewModel.cancelPublish()
-                    } else {
+            if (countdown != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = { viewModel.cancelPublish() },
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(stringResource(R.string.btn_undo))
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = { viewModel.publishNow() },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            stringResource(R.string.compose_post_now, countdown!!),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+                }
+            } else {
+                Button(
+                    onClick = {
                         viewModel.publish(
                             relayPool = relayPool,
                             outboxRouter = outboxRouter,
                             signer = signer,
                             onSuccess = onPosted
                         )
-                    }
-                },
-                enabled = (countdown != null) ||
-                    (!publishing && content.text.trim().isNotEmpty() && signer != null),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                val label = when {
-                    countdown != null -> "Cancel — sending in ${countdown}s"
-                    publishing -> "Publishing..."
-                    else -> "Post introduction"
+                    },
+                    enabled = !publishing && content.text.trim().isNotEmpty() && signer != null,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        if (publishing) "Publishing..." else "Post introduction",
+                        style = MaterialTheme.typography.labelLarge
+                    )
                 }
-                Text(label, style = MaterialTheme.typography.labelLarge)
             }
         }
     }

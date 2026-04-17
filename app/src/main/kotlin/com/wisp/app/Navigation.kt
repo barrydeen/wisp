@@ -3018,13 +3018,10 @@ fun WispNavHost(
                 onContinue = {
                     val selected = topicOnboardingViewModel.selectedTopics.value
                     if (selected.isNotEmpty()) {
-                        // Create the default "Interests" set once, then add each topic to it.
-                        // followHashtag creates-on-first-add if the set does not exist yet,
-                        // but calling createInterestSet first gives it a nice title.
-                        feedViewModel.createInterestSet("Interests")
-                        for (tag in selected) {
-                            feedViewModel.followHashtag(tag, "interests")
-                        }
+                        // Publish a single kind 30015 with all selected tags. Per-tag
+                        // followHashtag calls race on the same d-tag, so use the bulk
+                        // API to produce one atomic event with a nice title.
+                        feedViewModel.followHashtags(selected, dTag = "interests", setTitle = "Interests")
                     }
                     navController.navigate(Routes.ONBOARDING_FIRST_POST)
                 },
