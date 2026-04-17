@@ -621,6 +621,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     // -- Interest set CRUD delegates --
     fun followHashtag(tag: String, dTag: String) = listCrud.followHashtag(tag, dTag)
+    fun followHashtags(tags: Set<String>, dTag: String, setTitle: String? = null) =
+        listCrud.followHashtags(tags, dTag, setTitle)
     fun unfollowHashtag(tag: String, dTag: String) = listCrud.unfollowHashtag(tag, dTag)
     fun createInterestSet(name: String) = listCrud.createInterestSet(name)
     fun renameInterestSet(dTag: String, newName: String) = listCrud.renameInterestSet(dTag, newName)
