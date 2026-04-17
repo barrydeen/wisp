@@ -2368,6 +2368,9 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
                     .clickable {
                         activeVideoUrl.value = url
                         userPaused = false
+                        if (exoPlayer.playbackState == Player.STATE_ENDED) {
+                            exoPlayer.seekTo(0)
+                        }
                         exoPlayer.play()
                     },
                 contentAlignment = Alignment.Center
@@ -2591,6 +2594,9 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
                     .clickable {
                         activeVideoUrl.value = url
                         userPaused = false
+                        if (exoPlayer.playbackState == Player.STATE_ENDED) {
+                            exoPlayer.seekTo(0)
+                        }
                         exoPlayer.play()
                     },
                 contentAlignment = Alignment.Center
