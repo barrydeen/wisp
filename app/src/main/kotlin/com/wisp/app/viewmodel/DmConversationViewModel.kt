@@ -30,6 +30,8 @@ import com.wisp.app.repo.BlossomRepository
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.PowPreferences
 import com.wisp.app.repo.RelayListRepository
+import com.wisp.app.ui.util.GifToMp4Converter
+import com.wisp.app.ui.util.MediaCompressor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -307,16 +309,17 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
             for ((index, uri) in uris.withIndex()) {
                 try {
                     _uploadProgress.value = if (total > 1) "Encrypting & uploading ${index + 1}/$total..." else "Encrypting & uploading..."
-                    val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    val rawBytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                         ?: throw Exception("Cannot read file")
-                    val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
+                    val srcMime = contentResolver.getType(uri) ?: "application/octet-stream"
 
-                    // Compute image dimensions if applicable
-                    val dimensions = if (mimeType.startsWith("image/")) {
-                        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
-                        if (opts.outWidth > 0 && opts.outHeight > 0) "${opts.outWidth}x${opts.outHeight}" else null
-                    } else null
+                    val (bytes, mimeType, _) = when {
+                        srcMime == "image/gif" -> GifToMp4Converter.convert(rawBytes, getApplication())
+                        srcMime.startsWith("image/") -> MediaCompressor.compressForContent(rawBytes, srcMime).asTriple()
+                        else -> Triple(rawBytes, srcMime, "")
+                    }
+
+                    val dimensions = dimsTagFor(bytes, mimeType)
 
                     val result = blossomRepo.uploadEncryptedMedia(bytes, mimeType, signer)
                     sendFileMessage(result, mimeType, dimensions, bytes.size.toLong(), relayPool, signer)
@@ -327,6 +330,32 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
             }
             _uploadProgress.value = null
         }
+    }
+
+    private fun dimsTagFor(bytes: ByteArray, mime: String): String? {
+        return try {
+            if (mime.startsWith("image/")) {
+                val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+                if (opts.outWidth > 0 && opts.outHeight > 0) "${opts.outWidth}x${opts.outHeight}" else null
+            } else if (mime.startsWith("video/")) {
+                val tmp = java.io.File.createTempFile("dmdims_", ".mp4", getApplication<Application>().cacheDir)
+                try {
+                    tmp.writeBytes(bytes)
+                    val retriever = android.media.MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(tmp.absolutePath)
+                        val w = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+                        val h = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+                        if (w != null && h != null && w > 0 && h > 0) "${w}x${h}" else null
+                    } finally {
+                        retriever.release()
+                    }
+                } finally {
+                    tmp.delete()
+                }
+            } else null
+        } catch (_: Exception) { null }
     }
 
     /**

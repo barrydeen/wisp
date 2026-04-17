@@ -34,6 +34,8 @@ import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.InterfacePreferences
 import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.R
+import com.wisp.app.ui.util.GifToMp4Converter
+import com.wisp.app.ui.util.MediaCompressor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -232,7 +234,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 // Gallery mode limits: 1 video max, 21 images max, no mixing
                 if (_galleryMode.value) {
                     val mime = contentResolver.getType(uri) ?: ""
-                    val isVideo = mime.startsWith("video/")
+                    // GIFs are transcoded to MP4 during upload, so treat them as video for gallery constraints.
+                    val isVideo = mime.startsWith("video/") || mime == "image/gif"
                     val currentUrls = _uploadedUrls.value
                     if (isVideo && currentUrls.isNotEmpty()) {
                         _error.value = "Video gallery posts can only contain one video"
@@ -253,9 +256,14 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 }
                 try {
                     _uploadProgress.value = if (total > 1) "Uploading ${index + 1}/$total..." else "Uploading..."
-                    // Extract dimensions before upload for dim tags and video orientation
-                    val dims = extractMediaDimensions(uri, contentResolver)
-                    val (bytes, mime, ext) = readFileFromUri(contentResolver, uri)
+                    val (rawBytes, rawMime, rawExt) = readFileFromUri(contentResolver, uri)
+                    val (bytes, mime, ext) = when {
+                        rawMime == "image/gif" -> GifToMp4Converter.convert(rawBytes, getApplication())
+                        rawMime.startsWith("image/") -> MediaCompressor.compressForContent(rawBytes, rawMime).asTriple()
+                        else -> Triple(rawBytes, rawMime, rawExt)
+                    }
+                    // Re-extract dimensions from post-pipeline bytes so dim tags match what's uploaded.
+                    val dims = extractDimensionsFromBytes(bytes, mime)
                     val url = blossomRepo.uploadMedia(bytes, mime, ext, signer)
                     _uploadedUrls.value = _uploadedUrls.value + url
                     if (dims != null) _mediaDimensions[url] = dims
@@ -746,25 +754,28 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         return Triple(bytes, mimeType, ext)
     }
 
-    private fun extractMediaDimensions(uri: Uri, contentResolver: ContentResolver): Pair<Int, Int>? {
+    private fun extractDimensionsFromBytes(bytes: ByteArray, mime: String): Pair<Int, Int>? {
         return try {
-            val mime = contentResolver.getType(uri) ?: ""
             if (mime.startsWith("video/")) {
-                val retriever = android.media.MediaMetadataRetriever()
+                val tmp = java.io.File.createTempFile("dims_", ".mp4", getApplication<Application>().cacheDir)
                 try {
-                    retriever.setDataSource(getApplication<Application>(), uri)
-                    val w = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
-                    val h = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
-                    if (w != null && h != null && w > 0 && h > 0) w to h else null
+                    tmp.writeBytes(bytes)
+                    val retriever = android.media.MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(tmp.absolutePath)
+                        val w = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+                        val h = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+                        if (w != null && h != null && w > 0 && h > 0) w to h else null
+                    } finally {
+                        retriever.release()
+                    }
                 } finally {
-                    retriever.release()
+                    tmp.delete()
                 }
             } else if (mime.startsWith("image/")) {
                 val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, opts) }
-                val w = opts.outWidth
-                val h = opts.outHeight
-                if (w > 0 && h > 0) w to h else null
+                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+                if (opts.outWidth > 0 && opts.outHeight > 0) opts.outWidth to opts.outHeight else null
             } else null
         } catch (_: Exception) { null }
     }
