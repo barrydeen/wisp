@@ -95,6 +95,8 @@ import com.wisp.app.ui.component.PipController
 import com.wisp.app.ui.component.FullScreenVideoPlayer
 import com.wisp.app.ui.component.FullScreenVideoState
 import com.wisp.app.ui.screen.OnboardingSuggestionsScreen
+import com.wisp.app.ui.screen.OnboardingTopicsScreen
+import com.wisp.app.ui.screen.OnboardingFirstPostScreen
 import com.wisp.app.ui.screen.RelayDetailScreen
 import com.wisp.app.ui.screen.WalletScreen
 import com.wisp.app.viewmodel.BlossomServersViewModel
@@ -154,6 +156,8 @@ object Routes {
     const val LOADING = "loading"
     const val ONBOARDING_PROFILE = "onboarding/profile"
     const val ONBOARDING_SUGGESTIONS = "onboarding/suggestions"
+    const val ONBOARDING_TOPICS = "onboarding/topics"
+    const val ONBOARDING_FIRST_POST = "onboarding/first-post"
     const val RELAY_DETAIL = "relay_detail/{relayUrl}"
     const val CUSTOM_EMOJIS = "custom_emojis"
     const val HASHTAG_FEED = "hashtag/{tag}"
@@ -210,6 +214,7 @@ fun WispNavHost(
     val consoleViewModel: ConsoleViewModel = viewModel()
     val relayHealthViewModel: RelayHealthViewModel = viewModel()
     val onboardingViewModel: OnboardingViewModel = viewModel()
+    val topicOnboardingViewModel: com.wisp.app.viewmodel.TopicOnboardingViewModel = viewModel()
     val splashViewModel: SplashViewModel = viewModel()
 
     relayViewModel.relayPool = feedViewModel.relayPool
@@ -2978,24 +2983,78 @@ fun WispNavHost(
                             selectedPubkeys = selectedPubkeys,
                             signer = activeSigner
                         )
-                        feedViewModel.initRelays()
-                        navController.navigate(Routes.LOADING) {
-                            popUpTo(0) { inclusive = true }
-                        }
+                        navController.navigate(Routes.ONBOARDING_TOPICS)
                     }
                 },
                 onSkip = {
-                    authViewModel.keyRepo.markOnboardingComplete()
-                    feedViewModel.setFeedType(FeedType.EXTENDED_FOLLOWS)
-                    feedViewModel.reloadForNewAccount()
-                    relayViewModel.reload()
-                    blossomServersViewModel.reload()
-                    composeViewModel.reloadBlossomRepo()
-                    walletViewModel.refreshState()
+                    scope.launch {
+                        feedViewModel.setFeedType(FeedType.EXTENDED_FOLLOWS)
+                        feedViewModel.reloadForNewAccount()
+                        relayViewModel.reload()
+                        blossomServersViewModel.reload()
+                        composeViewModel.reloadBlossomRepo()
+                        walletViewModel.refreshState()
+                        // Publish a kind 3 that at least follows the user themselves so
+                        // their own posts land in their feed — finishOnboarding also
+                        // marks onboarding complete.
+                        onboardingViewModel.finishOnboarding(
+                            relayPool = feedViewModel.relayPool,
+                            contactRepo = feedViewModel.contactRepo,
+                            selectedPubkeys = emptySet(),
+                            signer = activeSigner
+                        )
+                        navController.navigate(Routes.ONBOARDING_TOPICS)
+                    }
+                }
+            )
+        }
+
+        composable(Routes.ONBOARDING_TOPICS) {
+            LaunchedEffect(Unit) {
+                topicOnboardingViewModel.load(feedViewModel.relayPool)
+            }
+            OnboardingTopicsScreen(
+                viewModel = topicOnboardingViewModel,
+                onContinue = {
+                    val selected = topicOnboardingViewModel.selectedTopics.value
+                    if (selected.isNotEmpty()) {
+                        // Create the default "Interests" set once, then add each topic to it.
+                        // followHashtag creates-on-first-add if the set does not exist yet,
+                        // but calling createInterestSet first gives it a nice title.
+                        feedViewModel.createInterestSet("Interests")
+                        for (tag in selected) {
+                            feedViewModel.followHashtag(tag, "interests")
+                        }
+                    }
+                    navController.navigate(Routes.ONBOARDING_FIRST_POST)
+                },
+                onSkip = {
+                    navController.navigate(Routes.ONBOARDING_FIRST_POST)
+                }
+            )
+        }
+
+        composable(Routes.ONBOARDING_FIRST_POST) {
+            LaunchedEffect(Unit) {
+                // Kick off the feed subscription while the user composes their intro.
+                feedViewModel.initRelays()
+            }
+            OnboardingFirstPostScreen(
+                viewModel = composeViewModel,
+                relayPool = feedViewModel.relayPool,
+                outboxRouter = feedViewModel.outboxRouter,
+                signer = activeSigner,
+                onPosted = {
+                    topicOnboardingViewModel.reset()
                     navController.navigate(Routes.FEED) {
                         popUpTo(0) { inclusive = true }
                     }
-                    scope.launch { feedViewModel.initRelays() }
+                },
+                onSkip = {
+                    topicOnboardingViewModel.reset()
+                    navController.navigate(Routes.FEED) {
+                        popUpTo(0) { inclusive = true }
+                    }
                 }
             )
         }
