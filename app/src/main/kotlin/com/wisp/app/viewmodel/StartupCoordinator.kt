@@ -494,6 +494,21 @@ class StartupCoordinator(
                         feedSub.resubscribeFeed()
                     }
                 }
+            } else {
+                // Safety retry for fresh signup / incomplete routing: when the initial
+                // subscribe fires, author kind 10002 relay lists may not have fully
+                // propagated, so outbox routing falls back to pinned relays that
+                // may not carry the followed authors' posts. If the feed is still
+                // empty after a short wait, resubscribe once — by then relay-list
+                // data has typically arrived and routing targets the correct relays.
+                launch {
+                    delay(5_000)
+                    if (eventRepo.getNewestFeedEventTimestamp() == null) {
+                        Log.d("StartupCoord", "Feed empty after 5s with ${follows.size} follows, resubscribing with updated routing")
+                        feedSub.applyAuthorFilterForFeedType(feedSub.feedType.value)
+                        feedSub.resubscribeFeed()
+                    }
+                }
             }
 
             // Background: fetch relay lists for any new follows (non-blocking)
