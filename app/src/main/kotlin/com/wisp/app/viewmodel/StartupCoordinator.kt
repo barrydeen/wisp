@@ -343,7 +343,9 @@ class StartupCoordinator(
                 }
 
                 if ((added.isNotEmpty() || removed.isNotEmpty()) &&
-                    (feedSub.feedType.value == FeedType.FOLLOWS || feedSub.feedType.value == FeedType.EXTENDED_FOLLOWS)) {
+                    (feedSub.feedType.value == FeedType.FOR_YOU ||
+                     feedSub.feedType.value == FeedType.FOLLOWS ||
+                     feedSub.feedType.value == FeedType.EXTENDED_FOLLOWS)) {
                     rebuildRelayPool()
                     feedSub.resubscribeFeed()
                     feedSub.applyAuthorFilterForFeedType(feedSub.feedType.value)

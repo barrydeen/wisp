@@ -759,6 +759,7 @@ fun FeedScreen(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             val feedLabel = when (feedType) {
+                                                FeedType.FOR_YOU -> stringResource(R.string.tab_for_you)
                                                 FeedType.FOLLOWS -> stringResource(R.string.tab_follows)
                                                 FeedType.EXTENDED_FOLLOWS -> stringResource(R.string.tab_extended)
                                                 FeedType.RELAY -> if (selectedRelay != null) {
@@ -789,6 +790,16 @@ fun FeedScreen(
                                     onDismissRequest = { showFeedTypeDropdown = false },
                                     containerColor = MaterialTheme.colorScheme.surface
                                 ) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.tab_for_you)) },
+                                        onClick = {
+                                            showFeedTypeDropdown = false
+                                            viewModel.setFeedType(FeedType.FOR_YOU)
+                                        },
+                                        trailingIcon = if (feedType == FeedType.FOR_YOU) {{
+                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        }} else null
+                                    )
                                     DropdownMenuItem(
                                         text = { Text(stringResource(R.string.tab_follows)) },
                                         onClick = {

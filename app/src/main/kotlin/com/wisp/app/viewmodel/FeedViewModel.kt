@@ -76,7 +76,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
-enum class FeedType { FOLLOWS, EXTENDED_FOLLOWS, RELAY, LIST, TRENDING }
+enum class FeedType { FOR_YOU, FOLLOWS, EXTENDED_FOLLOWS, RELAY, LIST, TRENDING }
 
 enum class TrendingMode { NOTES, USERS }
 
@@ -284,7 +284,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     // -- Manager classes --
     val feedSub: FeedSubscriptionManager = FeedSubscriptionManager(
         relayPool, outboxRouter, subManager, eventRepo, contactRepo, listRepo, notifRepo,
-        extendedNetworkRepo, keyRepo, healthTracker, relayScoreBoard, profileRepo,
+        extendedNetworkRepo, interestRepo, keyRepo, healthTracker, relayScoreBoard, profileRepo,
         metadataFetcher, viewModelScope, processingDispatcher, pubkeyHex,
         getApplication<Application>().getSharedPreferences("wisp_feed", android.content.Context.MODE_PRIVATE)
     )
