@@ -313,10 +313,7 @@ fun DmBubble(
         ) {
             val clipboardManager = LocalClipboardManager.current
             val context = LocalContext.current
-            val useZapBoltIcon = remember {
-                context.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
-                    .getBoolean("zap_bolt_icon", false)
-            }
+            val useZapBoltIcon = com.wisp.app.ui.util.useBoltIcon()
             val sheetScroll = rememberScrollState()
             val reactScroll = rememberScrollState()
             val stripBg = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.5f)

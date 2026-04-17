@@ -1187,11 +1187,7 @@ private fun ProfileHeader(
                         }
                     }
                     if (profile?.lud16 != null && onZapClick != null) {
-                        val zapContext = LocalContext.current
-                        val useZapBolt = remember {
-                            zapContext.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
-                                .getBoolean("zap_bolt_icon", false)
-                        }
+                        val useZapBolt = com.wisp.app.ui.util.useBoltIcon()
                         IconButton(onClick = onZapClick) {
                             if (useZapBolt) {
                                 Icon(
@@ -1278,11 +1274,7 @@ private fun ProfileHeader(
                     Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
                 }
             ) {
-                val lnContext = LocalContext.current
-                val useBoltIcon = remember {
-                    lnContext.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
-                        .getBoolean("zap_bolt_icon", false)
-                }
+                val useBoltIcon = com.wisp.app.ui.util.useBoltIcon()
                 if (useBoltIcon) {
                     Icon(
                         painter = painterResource(R.drawable.ic_bolt),

@@ -44,10 +44,7 @@ fun LightningQrDialog(lud16: String, onDismiss: () -> Unit) {
     val qrBitmap = remember(lud16) { generateQrBitmap(lud16) }
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
-    val useZapBolt = remember {
-        context.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
-            .getBoolean("zap_bolt_icon", false)
-    }
+    val useZapBolt = com.wisp.app.ui.util.useBoltIcon()
 
     Dialog(
         onDismissRequest = onDismiss,

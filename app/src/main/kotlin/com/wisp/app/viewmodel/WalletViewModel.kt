@@ -1057,9 +1057,13 @@ class WalletViewModel(
 
     fun updateReceiveAmount(digit: Char) {
         val current = _receiveAmount.value
-        if (current.length < 10) {
-            _receiveAmount.value = current + digit
+        if (current.length >= 12) return
+        if (digit == '.') {
+            if (current.contains('.')) return
+            _receiveAmount.value = if (current.isEmpty()) "0." else "$current."
+            return
         }
+        _receiveAmount.value = current + digit
     }
 
     fun receiveAmountBackspace() {

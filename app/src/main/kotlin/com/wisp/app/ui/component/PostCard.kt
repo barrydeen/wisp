@@ -1141,9 +1141,7 @@ internal fun TopZapperBanner(
             Spacer(Modifier.width(5.dp))
 
             // Zap icon
-            val context = androidx.compose.ui.platform.LocalContext.current
-            val useZapBolt = remember { context.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE) }
-                .getBoolean("zap_bolt_icon", false)
+            val useZapBolt = com.wisp.app.ui.util.useBoltIcon()
             if (useZapBolt) {
                 Icon(
                     painter = painterResource(R.drawable.ic_bolt),
@@ -1162,7 +1160,10 @@ internal fun TopZapperBanner(
 
             // Amount
             Text(
-                text = formatZapAmount(sats),
+                text = com.wisp.app.ui.util.AmountFormatter.formatShort(
+                    sats,
+                    androidx.compose.ui.platform.LocalContext.current
+                ),
                 style = MaterialTheme.typography.labelSmall,
                 color = orange
             )
@@ -1180,12 +1181,6 @@ internal fun TopZapperBanner(
             }
         }
     }
-}
-
-internal fun formatZapAmount(sats: Long): String = when {
-    sats >= 1_000_000 -> String.format("%.1fM", sats / 1_000_000.0)
-    sats >= 1_000 -> String.format("%.1fk", sats / 1_000.0)
-    else -> "$sats"
 }
 
 private val dateTimeFormat = SimpleDateFormat("MMM d, HH:mm", Locale.US)

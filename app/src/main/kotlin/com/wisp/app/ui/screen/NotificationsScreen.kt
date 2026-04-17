@@ -514,11 +514,7 @@ private fun NotificationFilterSheet(
                     val iconTint = if (enabled) MaterialTheme.colorScheme.primary
                                    else MaterialTheme.colorScheme.outline
                     if (filter == NotificationFilter.ZAPS) {
-                        val zapContext = LocalContext.current
-                        val useBolt = remember {
-                            zapContext.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
-                                .getBoolean("zap_bolt_icon", false)
-                        }
+                        val useBolt = com.wisp.app.ui.util.useBoltIcon()
                         if (useBolt) {
                             Icon(
                                 painter = painterResource(R.drawable.ic_bolt),
@@ -1096,7 +1092,7 @@ private fun DmExpansion(
             }
             if (dmZapSats > 0 && !isDmZapInProgress) {
                 Text(
-                    text = formatSatsCompact(dmZapSats),
+                    text = com.wisp.app.ui.util.AmountFormatter.formatShort(dmZapSats, LocalContext.current),
                     style = MaterialTheme.typography.labelSmall,
                     color = WispThemeColors.zapColor
                 )
@@ -1870,7 +1866,7 @@ private fun NotificationTypeIcon(item: FlatNotificationItem, showSats: Boolean =
             )
             if (showSats && item.zapSats > 0) {
                 Text(
-                    text = formatSatsCompact(item.zapSats),
+                    text = com.wisp.app.ui.util.AmountFormatter.formatShort(item.zapSats, LocalContext.current),
                     style = MaterialTheme.typography.labelSmall,
                     color = WispThemeColors.zapColor,
                     maxLines = 1
@@ -2028,17 +2024,15 @@ private fun DailySummaryBar(
                 active = isFiltered && NotificationFilter.REACTIONS in enabledTypes,
                 onClick = { onFilterSelect(NotificationFilter.REACTIONS) })
             run {
-                val zapContext = LocalContext.current
-                val useZapBolt = remember {
-                    zapContext.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
-                        .getBoolean("zap_bolt_icon", false)
-                }
+                val useZapBolt = com.wisp.app.ui.util.useBoltIcon()
                 val zapActive = isFiltered && NotificationFilter.ZAPS in enabledTypes
+                val zapCtx = LocalContext.current
+                val zapLabel = com.wisp.app.ui.util.AmountFormatter.formatShort(summary.zapSats, zapCtx)
                 if (useZapBolt) {
-                    SummaryStatPainter(painterResource(R.drawable.ic_bolt), formatSatsCompact(summary.zapSats),
+                    SummaryStatPainter(painterResource(R.drawable.ic_bolt), zapLabel,
                         active = zapActive, onClick = { onFilterSelect(NotificationFilter.ZAPS) })
                 } else {
-                    SummaryStat(Icons.Outlined.CurrencyBitcoin, formatSatsCompact(summary.zapSats),
+                    SummaryStat(Icons.Outlined.CurrencyBitcoin, zapLabel,
                         active = zapActive, onClick = { onFilterSelect(NotificationFilter.ZAPS) })
                 }
             }

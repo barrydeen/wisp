@@ -130,9 +130,11 @@ import com.google.zxing.qrcode.QRCodeWriter
 import com.wisp.app.BuildConfig
 import com.wisp.app.R
 import com.wisp.app.repo.BalanceUnit
+import com.wisp.app.repo.FiatPreferences
 import com.wisp.app.repo.WalletMode
 import com.wisp.app.repo.WalletTransaction
 import com.wisp.app.ui.component.SatsNumpad
+import com.wisp.app.ui.util.AmountFormatter
 import com.wisp.app.viewmodel.AutoCheckState
 import com.wisp.app.viewmodel.FeeState
 import com.wisp.app.viewmodel.BackupStatus
@@ -365,10 +367,7 @@ fun WalletScreen(
                         isLoading = viewModel.isLoading.collectAsState().value,
                         onDigit = { viewModel.updateReceiveAmount(it) },
                         onBackspace = { viewModel.receiveAmountBackspace() },
-                        onConfirm = {
-                            val sats = viewModel.receiveAmount.value.toLongOrNull() ?: return@ReceiveAmountContent
-                            viewModel.generateInvoice(sats)
-                        },
+                        onGenerate = { sats -> viewModel.generateInvoice(sats) },
                         modifier = Modifier.padding(padding)
                     )
                     is WalletPage.ReceiveInvoice -> {
@@ -682,6 +681,9 @@ private fun WalletHomeContent(
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE) }
     var balanceHidden by remember { mutableStateOf(prefs.getBoolean("balance_hidden", false)) }
+    val fiatPrefs = remember { FiatPreferences.get(context) }
+    val fiatMode by fiatPrefs.fiatMode.collectAsState()
+    @Suppress("unused_variable") val fiatCurrency by fiatPrefs.currency.collectAsState()
 
     Column(
         modifier = modifier
@@ -817,7 +819,13 @@ private fun WalletHomeContent(
                 )
             } else {
                 Row(verticalAlignment = Alignment.Bottom) {
-                    when (balanceUnit) {
+                    if (fiatMode) {
+                        Text(
+                            AmountFormatter.formatShort(balanceSats, context),
+                            style = MaterialTheme.typography.displaySmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    } else when (balanceUnit) {
                         BalanceUnit.BITCOIN -> {
                             Text(
                                 "\u20BF",
@@ -1441,6 +1449,7 @@ private fun SendConfirmContent(
 ) {
     val feeSats = (feeState as? FeeState.Estimated)?.feeSats
     val totalSats = if (amountSats != null && feeSats != null) amountSats + feeSats else amountSats
+    val ctx = LocalContext.current
 
     Column(
         modifier = modifier
@@ -1461,7 +1470,7 @@ private fun SendConfirmContent(
 
         if (amountSats != null) {
             Text(
-                "%,d ${stringResource(R.string.wallet_sats)}".format(amountSats),
+                AmountFormatter.formatFull(amountSats, ctx),
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -1508,7 +1517,7 @@ private fun SendConfirmContent(
                             strokeWidth = 2.dp
                         )
                         is FeeState.Estimated -> Text(
-                            "%,d ${stringResource(R.string.wallet_sats)}".format(feeState.feeSats),
+                            AmountFormatter.formatFull(feeState.feeSats, ctx),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -1524,7 +1533,7 @@ private fun SendConfirmContent(
                 // Total spent
                 SummaryRow(
                     label = stringResource(R.string.wallet_total_spent),
-                    value = if (totalSats != null) "%,d ${stringResource(R.string.wallet_sats)}".format(totalSats) else amountSats?.let { "%,d ${stringResource(R.string.wallet_sats)}".format(it) } ?: "\u2014",
+                    value = if (totalSats != null) AmountFormatter.formatFull(totalSats, ctx) else amountSats?.let { AmountFormatter.formatFull(it, ctx) } ?: "\u2014",
                     bold = true
                 )
             }
@@ -1700,9 +1709,23 @@ private fun ReceiveAmountContent(
     isLoading: Boolean,
     onDigit: (Char) -> Unit,
     onBackspace: () -> Unit,
-    onConfirm: () -> Unit,
+    onGenerate: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val receiveCtx = LocalContext.current
+    val fiatPrefs = remember { FiatPreferences.get(receiveCtx) }
+    val fiatMode by fiatPrefs.fiatMode.collectAsState()
+    val fiatCurrency by fiatPrefs.currency.collectAsState()
+    val currency = remember(fiatCurrency) { com.wisp.app.repo.ExchangeRateRepository.currencyFor(fiatCurrency) }
+
+    val fiatValue = if (fiatMode) amount.toDoubleOrNull() ?: 0.0 else 0.0
+    val fiatSats = if (fiatMode && fiatValue > 0.0) {
+        val btcPrice = com.wisp.app.repo.ExchangeRateRepository.rates.collectAsState().value[fiatCurrency.uppercase()]
+        if (btcPrice != null && btcPrice > 0.0) {
+            ((fiatValue / btcPrice) * 100_000_000.0).toLong()
+        } else null
+    } else null
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -1723,12 +1746,59 @@ private fun ReceiveAmountContent(
             CircularProgressIndicator()
             Spacer(Modifier.height(8.dp))
             Text(stringResource(R.string.wallet_creating_invoice), style = MaterialTheme.typography.bodyMedium)
+        } else if (fiatMode) {
+            val displayAmount = if (amount.isEmpty()) "0" else amount
+            Text(
+                text = "${currency.symbol}$displayAmount",
+                style = MaterialTheme.typography.displayMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = currency.code,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (fiatSats != null && fiatSats > 0L) {
+                Text(
+                    text = "≈ %,d sats".format(fiatSats),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            SatsNumpad(
+                amount = amount,
+                onDigit = onDigit,
+                onBackspace = onBackspace,
+                onConfirm = {},
+                confirmEnabled = false,
+                allowDecimal = true,
+                showHeader = false
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            Button(
+                onClick = { fiatSats?.let { onGenerate(it) } },
+                enabled = fiatSats != null && fiatSats > 0L,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp),
+                shape = RoundedCornerShape(50)
+            ) {
+                Text(stringResource(R.string.wallet_generate_invoice))
+            }
         } else {
             SatsNumpad(
                 amount = amount,
                 onDigit = onDigit,
                 onBackspace = onBackspace,
-                onConfirm = onConfirm,
+                onConfirm = {
+                    val sats = amount.toLongOrNull() ?: return@SatsNumpad
+                    onGenerate(sats)
+                },
                 confirmEnabled = amount.isNotEmpty() && (amount.toLongOrNull() ?: 0) > 0
             )
         }
@@ -1745,6 +1815,7 @@ private fun ReceiveInvoiceContent(
     modifier: Modifier = Modifier
 ) {
     val clipboardManager = LocalClipboardManager.current
+    val ctx = LocalContext.current
 
     val qrBitmap = remember(invoice) {
         val writer = QRCodeWriter()
@@ -1769,7 +1840,7 @@ private fun ReceiveInvoiceContent(
         Spacer(Modifier.height(16.dp))
 
         Text(
-            "%,d ${stringResource(R.string.wallet_sats)}".format(amountSats),
+            AmountFormatter.formatFull(amountSats, ctx),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -1841,6 +1912,7 @@ private fun ReceiveSuccessContent(
     modifier: Modifier = Modifier
 ) {
     val primary = MaterialTheme.colorScheme.primary
+    val ctx = LocalContext.current
 
     // Animation progress: 0 → 1 over ~1.6s
     val animProgress = remember { Animatable(0f) }
@@ -1962,7 +2034,7 @@ private fun ReceiveSuccessContent(
         Spacer(Modifier.height(8.dp))
 
         Text(
-            "%,d ${stringResource(R.string.wallet_sats)}".format(amountSats),
+            AmountFormatter.formatFull(amountSats, ctx),
             style = MaterialTheme.typography.headlineMedium,
             color = primary.copy(alpha = contentAlpha.value)
         )
@@ -2087,6 +2159,8 @@ private fun TransactionRow(
     val isIncoming = tx.type == "incoming"
     val amountSats = tx.amountMsats / 1000
     val profile = tx.counterpartyPubkey?.let { profileLookup(it) }
+    val ctx = LocalContext.current
+    val fiatMode by FiatPreferences.get(ctx).fiatMode.collectAsState()
 
     Row(
         modifier = Modifier
@@ -2153,22 +2227,32 @@ private fun TransactionRow(
         // Amount + fee
         Column(horizontalAlignment = Alignment.End) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "${if (isIncoming) "+" else "-"}%,d".format(amountSats),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    stringResource(R.string.wallet_sats),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                val sign = if (isIncoming) "+" else "-"
+                if (fiatMode) {
+                    Text(
+                        "$sign${AmountFormatter.formatFull(amountSats, ctx)}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                    )
+                } else {
+                    Text(
+                        "$sign%,d".format(amountSats),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        stringResource(R.string.wallet_sats),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             if (!isIncoming && tx.feeMsats > 0) {
                 val feeSats = tx.feeMsats / 1000
                 Text(
-                    stringResource(R.string.wallet_fee, feeSats),
+                    if (fiatMode) stringResource(R.string.wallet_fee_money, AmountFormatter.formatFull(feeSats, ctx))
+                    else stringResource(R.string.wallet_fee, feeSats),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -2671,7 +2755,7 @@ private fun SparkBackupContent(
     Spacer(Modifier.height(12.dp))
 
     Text(
-        "This recovery phrase is specific to Spark wallets. It will not work with other Lightning or Bitcoin wallet apps.",
+        stringResource(R.string.wallet_seed_spark_only),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
@@ -2712,6 +2796,8 @@ private fun WalletSettingsContent(
     modifier: Modifier = Modifier
 ) {
     val clipboardManager = LocalClipboardManager.current
+    val settingsCtx = LocalContext.current
+    val fiatMode by FiatPreferences.get(settingsCtx).fiatMode.collectAsState()
 
     Column(
         modifier = modifier
@@ -2819,29 +2905,30 @@ private fun WalletSettingsContent(
             }
         }
 
-        // Display section
-        Spacer(Modifier.height(24.dp))
+        // Display section — only relevant when showing sats
+        if (!fiatMode) {
+            Spacer(Modifier.height(24.dp))
 
-        Text(
-            "Display",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
+            Text(
+                "Display",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
 
-        Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(12.dp))
 
-        Text(
-            "Balance Unit",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+            Text(
+                "Balance Unit",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-        Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(8.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
             val units = listOf(BalanceUnit.SATS, BalanceUnit.BITCOIN, BalanceUnit.LIGHTNING)
             units.forEach { unit ->
                 val selected = balanceUnit == unit
@@ -2887,6 +2974,7 @@ private fun WalletSettingsContent(
                         )
                     }
                 }
+            }
             }
         }
 

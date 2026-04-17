@@ -43,7 +43,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
+import androidx.compose.ui.platform.LocalContext
 import com.wisp.app.R
+import com.wisp.app.ui.util.AmountFormatter
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.repo.EventRepository
@@ -179,7 +181,7 @@ fun ZapRow(
         )
         Spacer(Modifier.width(2.dp))
         Text(
-            text = formatSats(sats),
+            text = AmountFormatter.formatFull(sats, LocalContext.current),
             style = MaterialTheme.typography.labelLarge,
             color = Color(0xFFFF8C00)
         )
@@ -539,10 +541,3 @@ fun ClientTagSection(
     }
 }
 
-private fun formatSats(sats: Long): String {
-    return when {
-        sats >= 1_000_000 -> "${sats / 1_000_000}M sats"
-        sats >= 1_000 -> "${sats / 1_000}K sats"
-        else -> "$sats sats"
-    }
-}

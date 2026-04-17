@@ -12,6 +12,7 @@ import com.wisp.app.db.WispObjectBox
 import com.wisp.app.relay.HttpClientFactory
 import com.wisp.app.relay.TorManager
 import com.wisp.app.repo.DiagnosticLogger
+import com.wisp.app.repo.ExchangeRateRepository
 import com.wisp.app.repo.ZapSender
 import okhttp3.Call
 
@@ -24,6 +25,7 @@ class WispApp : Application(), SingletonImageLoader.Factory {
         WispObjectBox.init(this)
         TorManager.initialize(this)
         ZapSender.init(this)
+        ExchangeRateRepository.init(this)
     }
 
     override fun newImageLoader(context: android.content.Context): ImageLoader {

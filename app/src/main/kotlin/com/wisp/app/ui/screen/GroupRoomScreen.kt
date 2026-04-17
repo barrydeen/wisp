@@ -1632,8 +1632,7 @@ private fun GroupMessageBubble(
                 // Actions panel — eyebrow + bare horizontally scrollable row of panel buttons
                 val showFollow = !isOwnMessage && onFollowAuthor != null
                 val showBlock = !isOwnMessage && onBlockAuthor != null
-                val actionsPanelPrefs = context.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE)
-                val useZapBoltIcon = actionsPanelPrefs.getBoolean("zap_bolt_icon", false)
+                val useZapBoltIcon = com.wisp.app.ui.util.useBoltIcon()
                 Column(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {

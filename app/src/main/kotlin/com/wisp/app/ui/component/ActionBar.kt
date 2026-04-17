@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -49,7 +50,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wisp.app.R
+import com.wisp.app.repo.FiatPreferences
 import com.wisp.app.ui.theme.WispThemeColors
+import com.wisp.app.ui.util.AmountFormatter
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import coil3.compose.AsyncImage
@@ -82,8 +86,7 @@ fun ActionBar(
     modifier: Modifier = Modifier
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val prefs = remember { context.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE) }
-    val useZapBoltIcon = prefs.getBoolean("zap_bolt_icon", false)
+    val useZapBoltIcon = com.wisp.app.ui.util.useBoltIcon()
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showRepostMenu by remember { mutableStateOf(false) }
 
@@ -216,8 +219,12 @@ fun ActionBar(
             }
         }
         if (!isZapInProgress && zapSats > 0) {
+            val context = LocalContext.current
+            val fiatPrefs = remember { FiatPreferences.get(context) }
+            fiatPrefs.fiatMode.collectAsState().value
+            fiatPrefs.currency.collectAsState().value
             Text(
-                text = formatSats(zapSats),
+                text = AmountFormatter.formatShort(zapSats, context),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (hasUserZapped) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -332,8 +339,3 @@ private fun RepostPopup(
     }
 }
 
-private fun formatSats(sats: Long): String = when {
-    sats >= 1_000_000 -> String.format("%.1fM", sats / 1_000_000.0)
-    sats >= 1_000 -> String.format("%.1fk", sats / 1_000.0)
-    else -> sats.toString()
-}

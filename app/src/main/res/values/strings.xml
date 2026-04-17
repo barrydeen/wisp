@@ -787,4 +787,24 @@
     <string name="label_notifications">Notifications</string>
     <string name="label_notifications_on">On — new messages will be tracked</string>
     <string name="label_notifications_off">Off — tap to enable</string>
+
+    <!-- Fiat mode -->
+    <string name="drawer_fiat_mode">Fiat Mode</string>
+    <string name="fiat_settings_title">Fiat Mode</string>
+    <string name="fiat_settings_description">Show zap and wallet amounts in a fiat currency instead of satoshis. Rates are fetched once when the app starts — this is an approximation, not real‑time pricing.</string>
+    <string name="fiat_settings_enable">Enable Fiat Mode</string>
+    <string name="fiat_settings_enable_subtitle">Display amounts in your chosen currency across the app.</string>
+    <string name="fiat_settings_currency">Currency</string>
+    <string name="fiat_settings_rates_updated">Rates updated %1$s</string>
+    <string name="fiat_settings_rates_never">Rates not yet fetched</string>
+    <string name="fiat_settings_refresh">Refresh</string>
+    <string name="fiat_settings_rate_line">1 BTC ≈ %1$s %2$,.2f</string>
+
+    <string name="zap_send_money">Send Money</string>
+    <string name="zap_x_amount">Zap %1$s</string>
+
+    <string name="amount_sats_format">%1$s sats</string>
+    <string name="wallet_fee_money">fee: %1$s</string>
+    <string name="wallet_seed_spark_only">This recovery phrase is specific to Spark wallets. It will not work with other wallet apps.</string>
+    <string name="wallet_generate_invoice">Generate invoice</string>
 </resources>
