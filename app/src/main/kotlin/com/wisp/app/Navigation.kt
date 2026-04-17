@@ -610,20 +610,15 @@ fun WispNavHost(
         )
     }
 
-    // Prevent the system back button from ever closing the app.
-    // On FEED: consume the press (nowhere to go).
-    // On any other app screen: pop the back stack, falling back to FEED if empty.
+    // On non-FEED app screens: pop the back stack, falling back to FEED if empty.
+    // On FEED: let the system handle back (minimizes the app).
     val isAppRoute = currentRoute != null && currentRoute !in nonAppRoutes
-    BackHandler(enabled = isAppRoute) {
-        if (currentRoute == Routes.FEED) {
-            // Already on home — do nothing
-        } else {
-            val popped = navController.popBackStack()
-            if (!popped) {
-                navController.navigate(Routes.FEED) {
-                    popUpTo(0) { inclusive = true }
-                    launchSingleTop = true
-                }
+    BackHandler(enabled = isAppRoute && currentRoute != Routes.FEED) {
+        val popped = navController.popBackStack()
+        if (!popped) {
+            navController.navigate(Routes.FEED) {
+                popUpTo(0) { inclusive = true }
+                launchSingleTop = true
             }
         }
     }
