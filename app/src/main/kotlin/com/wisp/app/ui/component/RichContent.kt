@@ -193,15 +193,15 @@ internal sealed interface ContentSegment {
     data class GroupInviteSegment(val relayUrl: String, val groupId: String) : ContentSegment
 }
 
-private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp")
+private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp", "heic", "heif")
 private inline val globalMuted: MutableStateFlow<Boolean> get() = PipController.globalMuted
 private inline val activeVideoUrl: MutableStateFlow<String?> get() = PipController.activeVideoUrl
 
-private val videoExtensions = setOf("mp4", "mov", "webm")
+private val videoExtensions = setOf("mp4", "mov", "webm", "m3u8")
 private val audioExtensions = setOf("mp3", "wav", "ogg", "m4a", "flac", "aac")
 
-private val imageMimeTypes = setOf("image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml")
-private val videoMimeTypes = setOf("video/mp4", "video/quicktime", "video/webm")
+private val imageMimeTypes = setOf("image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml", "image/heic", "image/heif")
+private val videoMimeTypes = setOf("video/mp4", "video/quicktime", "video/webm", "application/vnd.apple.mpegurl", "application/x-mpegurl")
 private val audioMimeTypes = setOf("audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/flac", "audio/aac", "audio/x-wav")
 
 // Matches a bare SHA-256 hex hash as the URL path (no extension)
