@@ -1,0 +1,26 @@
+repository: https://github.com/barrydeen/wisp
+description: A lightning fast, feature rich and highly polished nostr client. Watch live streams, join chat rooms, view trending and hashtags feeds and enjoy state of the art nostr searh and AI powered spam detection.
+summary: The Client that Just Works
+tags:
+    - nostr
+    - client
+    - nip29
+    - groups
+    - chat
+    - hashtag
+    - streams
+    - nip17
+    - dms
+license: MIT
+website: https://wisp.talk
+images:
+    - https://miro.medium.com/v2/resize:fit:1400/format:webp/1*NYKzYicGd5jRKt5AA1oh8A.jpeg
+supported_nips:
+    - "01"
+    - "29"
+    - "17"
+    - "20"
+    - "21"
+    - "22"
+metadata_sources:
+    - github

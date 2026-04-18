@@ -969,7 +969,7 @@ fun WispNavHost(
 
         composable(Routes.DRAFTS) {
             LaunchedEffect(Unit) {
-                draftsViewModel.loadDrafts(feedViewModel.relayPool, activeSigner)
+                draftsViewModel.loadDrafts(feedViewModel.relayPool, activeSigner, feedViewModel.deletedEventsRepo)
                 draftsViewModel.loadScheduledPosts(feedViewModel.relayPool, activeSigner)
             }
             val profileVersion by feedViewModel.eventRepo.profileVersion.collectAsState()
@@ -1011,7 +1011,7 @@ fun WispNavHost(
                     navController.navigate(Routes.COMPOSE)
                 },
                 onDeleteDraft = { dTag ->
-                    draftsViewModel.deleteDraft(dTag, feedViewModel.relayPool, activeSigner)
+                    draftsViewModel.deleteDraft(dTag, feedViewModel.relayPool, activeSigner, feedViewModel.deletedEventsRepo)
                 },
                 onDeleteScheduled = { eventId ->
                     draftsViewModel.deleteScheduledPost(eventId, feedViewModel.relayPool, activeSigner)

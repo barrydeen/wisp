@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
+import com.wisp.app.nostr.Nip09
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.OutboxRouter
@@ -71,6 +72,7 @@ class ThreadViewModel : ViewModel() {
     private var rebuildJob: Job? = null
     private var metadataBatchJob: Job? = null
     private var muteObserverJob: Job? = null
+    private var deletionObserverJob: Job? = null
 
     // Incremental metadata tracking
     private val metadataSubscribedIds = mutableSetOf<String>()
@@ -147,7 +149,7 @@ class ThreadViewModel : ViewModel() {
             rootId = eventId
         }
 
-        // Seed from cache: BFS walks nested replies
+        // Seed from cache: BFS walks nested replies (getCachedThreadEvents already filters deletions)
         val cachedEvents = eventRepo.getCachedThreadEvents(rootId)
         for (event in cachedEvents) {
             threadEvents[event.id] = event
@@ -158,11 +160,36 @@ class ThreadViewModel : ViewModel() {
             _isLoading.value = false
         }
 
+        // Prune thread state when any event is removed (e.g. NIP-09 deletion processed by EventRepository
+        // via the feed sub, thread-reactions sub, or anywhere else).
+        deletionObserverJob?.cancel()
+        deletionObserverJob = viewModelScope.launch {
+            eventRepo.removedEvents.collect { removedId ->
+                if (threadEvents.remove(removedId) != null) {
+                    synchronized(pendingMetadataIds) { pendingMetadataIds.remove(removedId) }
+                    metadataSubscribedIds.remove(removedId)
+                    if (removedId == rootId) _rootEvent.value = null
+                    scheduleRebuild()
+                }
+            }
+        }
+
         // Direct RelayPool collection — no dependency on FeedViewModel
         collectorJob = viewModelScope.launch {
             relayPool.relayEvents.collect { (event, relayUrl, subscriptionId) ->
                 if (subscriptionId != "thread-root" && subscriptionId != "thread-replies") return@collect
+
+                // Route kind 5 deletions through EventRepository so they mark the target deleted
+                // and fire removedEvents; the observer above will prune threadEvents.
+                if (event.kind == 5) {
+                    eventRepo.addEvent(event)
+                    return@collect
+                }
+
                 if (event.kind != 1) return@collect
+
+                // Silently drop events the user has already deleted on some other client/session.
+                if (eventRepo.deletedEventsRepo?.isDeleted(event.id) == true) return@collect
 
                 eventRepo.cacheEvent(event)
                 eventRepo.addEventRelay(event.id, relayUrl)
@@ -194,12 +221,12 @@ class ThreadViewModel : ViewModel() {
             }
         }
 
-        // Also collect thread reactions/engagement
+        // Also collect thread reactions/engagement + deletions for replies
         viewModelScope.launch {
             relayPool.relayEvents.collect { (event, _, subscriptionId) ->
                 if (!subscriptionId.startsWith("thread-reactions")) return@collect
                 when (event.kind) {
-                    7, 6, 1018 -> eventRepo.addEvent(event)
+                    5, 7, 6, 1018 -> eventRepo.addEvent(event)
                     9735 -> {
                         eventRepo.addEvent(event)
                         val zapperPubkey = com.wisp.app.nostr.Nip57.getZapperPubkey(event)
@@ -222,7 +249,8 @@ class ThreadViewModel : ViewModel() {
 
             // Phase 2: Now we (hopefully) have the root — use outbox routing for replies
             val rootEvent = _rootEvent.value
-            val repliesFilter = Filter(kinds = listOf(1), eTags = listOf(rootId))
+            // Include kind 5 so deletions of the root (or any event tagging the root) come through.
+            val repliesFilter = Filter(kinds = listOf(1, 5), eTags = listOf(rootId))
             if (rootEvent != null) {
                 outboxRouter.subscribeToUserReadRelays(
                     "thread-replies", rootEvent.pubkey, repliesFilter
@@ -317,7 +345,8 @@ class ThreadViewModel : ViewModel() {
         // Phase 1: Root note engagement (high priority) — await EOSE for reliable counts
         val rootSubId = "thread-reactions"
         activeMetadataSubs.add(rootSubId)
-        val rootFilter = Filter(kinds = listOf(7, 6, 1018, 9735), eTags = listOf(rootId))
+        // Include kind 5 so reply deletions (which reference the reply id, not the root) also arrive here.
+        val rootFilter = Filter(kinds = listOf(5, 7, 6, 1018, 9735), eTags = listOf(rootId))
         sendToEngagementRelays(relayPool, rootSubId, rootFilter, rootAuthorPubkey)
         subManager.awaitEoseWithTimeout(rootSubId, 3_500)
 
@@ -327,7 +356,7 @@ class ThreadViewModel : ViewModel() {
             replyIds.chunked(50).forEachIndexed { index, batch ->
                 val subId = "thread-reactions-${index + 1}"
                 activeMetadataSubs.add(subId)
-                val filter = Filter(kinds = listOf(7, 6, 1018, 9735), eTags = batch)
+                val filter = Filter(kinds = listOf(5, 7, 6, 1018, 9735), eTags = batch)
                 sendToEngagementRelays(relayPool, subId, filter, rootAuthorPubkey)
             }
         }
@@ -353,7 +382,7 @@ class ThreadViewModel : ViewModel() {
                 metadataBatchIndex++
                 val subId = "thread-reactions-b$metadataBatchIndex"
                 activeMetadataSubs.add(subId)
-                val filter = Filter(kinds = listOf(7, 6, 1018, 9735), eTags = batch)
+                val filter = Filter(kinds = listOf(5, 7, 6, 1018, 9735), eTags = batch)
                 sendToEngagementRelays(relayPool, subId, filter, _rootEvent.value?.pubkey)
             }
         }
@@ -384,6 +413,7 @@ class ThreadViewModel : ViewModel() {
         rebuildJob?.cancel()
         metadataBatchJob?.cancel()
         muteObserverJob?.cancel()
+        deletionObserverJob?.cancel()
         relayPoolRef?.let { pool ->
             pool.closeOnAllRelays("thread-root")
             pool.closeOnAllRelays("thread-replies")
@@ -398,8 +428,10 @@ class ThreadViewModel : ViewModel() {
         val spamEvents = mutableListOf<NostrEvent>()
         val pubkeysToScore = mutableSetOf<String>()
 
+        val deletedRepo = eventRepoRef?.deletedEventsRepo
         for (event in threadEvents.values) {
             if (event.id == rootId) continue
+            if (deletedRepo?.isDeleted(event.id) == true) continue
             if (muteRepo?.isBlocked(event.pubkey) == true) continue
             if (Nip10.isStandaloneQuote(event)) continue
 

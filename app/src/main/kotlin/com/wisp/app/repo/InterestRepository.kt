@@ -11,7 +11,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-class InterestRepository(private val context: Context, pubkeyHex: String? = null) {
+class InterestRepository(
+    private val context: Context,
+    private var pubkeyHex: String? = null,
+    private val deletedEventsRepo: DeletedEventsRepository? = null
+) {
     private var prefs: SharedPreferences =
         context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
@@ -27,6 +31,10 @@ class InterestRepository(private val context: Context, pubkeyHex: String? = null
 
     fun updateFromEvent(event: NostrEvent) {
         val set = Nip51.parseInterestSet(event) ?: return
+        val pk = pubkeyHex
+        if (pk != null && deletedEventsRepo?.isAddressDeleted(Nip51.KIND_INTEREST_SET, pk, set.dTag) == true) {
+            return
+        }
         val existing = interestSets[set.dTag]
         if (existing != null && existing.createdAt >= set.createdAt) return
         interestSets[set.dTag] = set
@@ -60,6 +68,7 @@ class InterestRepository(private val context: Context, pubkeyHex: String? = null
 
     fun reload(pubkeyHex: String?) {
         clear()
+        this.pubkeyHex = pubkeyHex
         prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
         loadFromPrefs()
     }
@@ -81,10 +90,17 @@ class InterestRepository(private val context: Context, pubkeyHex: String? = null
         val str = prefs.getString("interest_sets", null) ?: return
         try {
             val serializable = json.decodeFromString<List<SerializableInterestSet>>(str)
+            val pk = pubkeyHex
+            var dropped = false
             for (s in serializable) {
+                if (pk != null && deletedEventsRepo?.isAddressDeleted(Nip51.KIND_INTEREST_SET, pk, s.dTag) == true) {
+                    dropped = true
+                    continue
+                }
                 interestSets[s.dTag] = InterestSet(s.dTag, s.name, s.hashtags.toSet(), s.createdAt)
             }
             _sets.value = interestSets.values.sortedBy { it.name }
+            if (dropped) saveToPrefs(_sets.value)
         } catch (_: Exception) {}
     }
 

@@ -12,11 +12,18 @@ object Nip09 {
     fun getDeletedEventIds(event: NostrEvent): List<String> =
         event.tags.filter { it.size >= 2 && it[0] == "e" }.map { it[1] }
 
+    /** Extract deleted addressable coordinates ("a" tags) from a kind 5 deletion event.
+     *  Each returned string is in the form "kind:pubkey:dTag". */
+    fun getDeletedAddresses(event: NostrEvent): List<String> =
+        event.tags.filter { it.size >= 2 && it[0] == "a" }.map { it[1] }
+
     /** Build deletion tags for an addressable event (kinds 30000-39999) using an "a" tag. */
     fun buildAddressableDeletionTags(kind: Int, pubkey: String, dTag: String): List<List<String>> {
         return listOf(
-            listOf("a", "$kind:$pubkey:$dTag"),
+            listOf("a", addressCoord(kind, pubkey, dTag)),
             listOf("k", kind.toString())
         )
     }
+
+    fun addressCoord(kind: Int, pubkey: String, dTag: String): String = "$kind:$pubkey:$dTag"
 }
