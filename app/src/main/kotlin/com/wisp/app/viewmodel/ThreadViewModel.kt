@@ -371,7 +371,7 @@ class ThreadViewModel : ViewModel() {
                 val inputs = notes.map { e -> NoteInput(e.content, e.tags, e.created_at) }
                 val score = classifier.score(inputs) ?: continue
                 cache.put(pubkey, score, inputs.size)
-                if (score >= 0.5f) changed = true
+                if (score >= 0.7f) changed = true
             }
             if (changed) withContext(Dispatchers.Main) { scheduleRebuild() }
         }
@@ -410,7 +410,7 @@ class ThreadViewModel : ViewModel() {
             ) {
                 val noteCount = eventRepoRef?.getCachedEventsByAuthor(event.pubkey, 1, 10)?.size ?: 0
                 val cached = spamAuthorCache?.get(event.pubkey, noteCount)
-                if (cached != null && cached >= 0.5f) {
+                if (cached != null && cached >= 0.7f) {
                     spamEvents.add(event)
                     continue
                 }

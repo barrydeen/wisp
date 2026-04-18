@@ -639,7 +639,7 @@ class NotificationRepository(
             val repo = eventRepo
             val noteCount = repo?.getCachedEventsByAuthor(event.pubkey, 1, 10)?.size ?: 0
             val cached = spamAuthorCache?.get(event.pubkey, noteCount)
-            if (cached != null && cached >= 0.5f) return false
+            if (cached != null && cached >= 0.7f) return false
             if (cached == null) {
                 val classifier = spamClassifier
                 val cache = spamAuthorCache
@@ -652,7 +652,7 @@ class NotificationRepository(
                         val score = classifier.score(inputs)
                         if (score != null) {
                             cache.put(event.pubkey, score, inputs.size)
-                            if (score >= 0.5f) return false
+                            if (score >= 0.7f) return false
                         }
                     }
                 }
