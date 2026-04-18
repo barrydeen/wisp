@@ -18,6 +18,8 @@ data class GroupMetaEntity(
     val about: String? = null,
     val isPrivate: Boolean = false,
     val isClosed: Boolean = false,
+    val isRestricted: Boolean = false,
+    val isHidden: Boolean = false,
     val adminsJson: String = "[]",
     val membersJson: String = "[]",
     val lastMessageAt: Long = 0L

@@ -81,7 +81,8 @@ class GroupRepository(private val context: Context, pubkeyHex: String? = null) {
                 val metadata = when {
                     persisted != null && (persisted.name != null || persisted.picture != null) ->
                         Nip29.GroupMetadata(groupId, persisted.name, persisted.picture,
-                            persisted.about, persisted.isPrivate, persisted.isClosed)
+                            persisted.about, persisted.isPrivate, persisted.isClosed,
+                            persisted.isRestricted, persisted.isHidden)
                     else -> {
                         // Fall back to locally-stored name in SharedPreferences
                         val localName = prefs.getString("local_name_$key", null)

@@ -11,6 +11,7 @@ import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.nostr.SimpleGroupEntry
+import com.wisp.app.relay.PublishResult
 import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.EventRepository
@@ -25,6 +26,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -57,6 +61,11 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
     val discoveryLoading: StateFlow<Boolean> = _discoveryLoading
     private var discoverGen = 0
 
+    /** One-shot join-rejection signal — the UI listens and surfaces a dialog. */
+    data class JoinError(val relayUrl: String, val groupId: String, val message: String)
+    private val _joinErrors = MutableSharedFlow<JoinError>(extraBufferCapacity = 8)
+    val joinErrors: SharedFlow<JoinError> = _joinErrors
+
     val groups: StateFlow<List<GroupRoom>>
         get() = groupRepo?.joinedGroups ?: MutableStateFlow(emptyList())
 
@@ -86,9 +95,28 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         notifRepo = nRepo
         myPubkey = pubkey
         collectRelayEvents()
+        collectAuthCompleted()
         // Auto-subscribe to groups with notifications enabled so messages arrive in the background
         for ((relayUrl, groupId) in repository.getNotifiedGroupKeys()) {
             subscribeToGroup(relayUrl, groupId)
+        }
+    }
+
+    /** When NIP-42 AUTH completes for a relay we have groups on, re-fire the group
+     *  subscriptions — the relay likely closed them with "auth-required:" and they won't
+     *  deliver events until we re-send the REQs post-auth. */
+    private fun collectAuthCompleted() {
+        val pool = relayPool ?: return
+        viewModelScope.launch(Dispatchers.Default) {
+            pool.authCompleted.collect { relayUrl ->
+                val repo = groupRepo ?: return@collect
+                val groupsOnRelay = repo.getJoinedGroupKeys().filter { it.first == relayUrl }
+                if (groupsOnRelay.isEmpty()) return@collect
+                Log.d("GroupListVM", "[authCompleted] re-firing subs for ${groupsOnRelay.size} groups on $relayUrl")
+                for ((url, groupId) in groupsOnRelay) {
+                    sendGroupReqs(url, groupId)
+                }
+            }
         }
     }
 
@@ -249,17 +277,20 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
                         repo.addReaction(relayUrl, groupId, messageId, event.pubkey, emoji, emojiUrl)
                     }
                     Nip29.KIND_GROUP_METADATA -> {
+                        Log.d("GroupListVM", "[raw 39000 metadata] relay=$relayUrl ${event.toJson()}")
                         val metadata = Nip29.parseGroupMetadata(event) ?: return@collect
                         repo.getRoom(relayUrl, metadata.groupId) ?: return@collect
                         repo.updateMetadata(relayUrl, metadata.groupId, metadata)
                     }
                     Nip29.KIND_GROUP_ADMINS -> {
+                        Log.d("GroupListVM", "[raw 39001 admins] relay=$relayUrl ${event.toJson()}")
                         val groupId = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)
                             ?: return@collect
                         repo.getRoom(relayUrl, groupId) ?: return@collect
-                        repo.updateAdmins(relayUrl, groupId, Nip29.parseGroupAdmins(event))
+                        repo.updateAdmins(relayUrl, groupId, Nip29.parseGroupAdminPubkeys(event))
                     }
                     Nip29.KIND_GROUP_MEMBERS -> {
+                        Log.d("GroupListVM", "[raw 39002 members] relay=$relayUrl ${event.toJson()}")
                         val groupId = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)
                             ?: return@collect
                         repo.getRoom(relayUrl, groupId) ?: return@collect
@@ -296,33 +327,92 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         publishGroupList(signer)
     }
 
-    fun joinGroup(relayUrl: String, groupId: String, signer: NostrSigner?) {
+    fun joinGroup(relayUrl: String, groupId: String, signer: NostrSigner?, inviteCode: String? = null) {
         val repo = groupRepo ?: return
         val pool = relayPool ?: return
-        val relayUrl = relayUrl.lowercase().trimEnd('/')
+        val normalizedUrl = relayUrl.lowercase().trimEnd('/')
+
+        // Without a signer we can't prove identity — nothing to do.
+        val s = signer ?: return
+
+        // Bring up the relay connection up front so the OK response lands on a live socket.
+        pool.ensureGroupRelay(normalizedUrl)
+
+        viewModelScope.launch(Dispatchers.Default) {
+            val event = try {
+                val tags = mutableListOf(listOf("h", groupId))
+                inviteCode?.takeIf { it.isNotEmpty() }?.let { tags.add(listOf("code", it)) }
+                s.signEvent(kind = Nip29.KIND_JOIN_REQUEST, content = "", tags = tags)
+            } catch (e: Exception) {
+                Log.w("GroupListVM", "[joinGroup] sign failed: ${e.message}")
+                _joinErrors.tryEmit(JoinError(normalizedUrl, groupId,
+                    "Couldn't sign join request: ${e.message ?: "unknown error"}"))
+                return@launch
+            }
+
+            // Subscribe to publishResults BEFORE sending so we don't miss a fast OK response.
+            val resultDeferred = CompletableDeferred<PublishResult>()
+            val collectJob = launch {
+                pool.publishResults
+                    .filter { it.eventId == event.id && it.relayUrl == normalizedUrl }
+                    .collect { resultDeferred.complete(it); return@collect }
+            }
+
+            Log.d("GroupListVM", "[joinGroup] sending 9021 group=$groupId relay=$normalizedUrl code=${inviteCode != null}")
+            pool.sendToRelayOrEphemeral(normalizedUrl, ClientMessage.event(event), skipBadCheck = true)
+
+            val result = withTimeoutOrNull(10_000) { resultDeferred.await() }
+            collectJob.cancel()
+
+            when {
+                // No OK came back in 10s — some relays silently accept. Be optimistic and admit,
+                // then let subsequent REQs surface reality (no messages = they never got in).
+                result == null -> {
+                    Log.d("GroupListVM", "[joinGroup] no OK in 10s — optimistically admitting")
+                    commitJoin(repo, normalizedUrl, groupId, s)
+                }
+                // Accepted outright, or relay says we're already a member (per NIP-29 spec).
+                result.accepted || result.message.startsWith("duplicate:", ignoreCase = true) -> {
+                    Log.d("GroupListVM", "[joinGroup] accepted relay=$normalizedUrl msg=${result.message}")
+                    commitJoin(repo, normalizedUrl, groupId, s)
+                }
+                else -> {
+                    // Rejection. Don't add the room locally — surface the relay's reason to the UI.
+                    Log.w("GroupListVM", "[joinGroup] rejected relay=$normalizedUrl msg=${result.message}")
+                    _joinErrors.tryEmit(JoinError(normalizedUrl, groupId, result.message))
+                    // Tear the relay connection back down if we're not using it for any other
+                    // group — no reason to hold an open socket after a rejected join.
+                    if (groupRepo?.getJoinedGroupKeys()?.none { it.first == normalizedUrl } == true) {
+                        pool.removeGroupRelay(normalizedUrl)
+                    }
+                }
+            }
+        }
+    }
+
+    /** Shared post-accept path: add the group locally, subscribe, publish kind 10009. */
+    private fun commitJoin(repo: GroupRepository, relayUrl: String, groupId: String, signer: NostrSigner?) {
         repo.addGroup(relayUrl, groupId)
         applyCachedPreview(relayUrl, groupId)
         subscribeToGroup(relayUrl, groupId)
         publishGroupList(signer)
+        // Re-request all subscriptions after a short delay — private relays close the initial
+        // REQs with "restricted: not a member" and only respond after the join is processed.
         viewModelScope.launch(Dispatchers.Default) {
-            signer?.let { s ->
-                try {
-                    val event = s.signEvent(
-                        kind = Nip29.KIND_JOIN_REQUEST,
-                        content = "",
-                        tags = listOf(listOf("h", groupId))
-                    )
-                    pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.event(event), skipBadCheck = true)
-                } catch (_: Exception) { }
-            }
-            // Re-request all subscriptions after a short delay — private relays close the initial
-            // REQs with "restricted: not a member" and only respond after the join is processed.
             kotlinx.coroutines.delay(2_000)
             sendGroupReqs(relayUrl, groupId)
         }
     }
 
-    fun createGroup(relayUrl: String, name: String, signer: NostrSigner?) {
+    fun createGroup(
+        relayUrl: String,
+        name: String,
+        signer: NostrSigner?,
+        isPrivate: Boolean = false,
+        isClosed: Boolean = false,
+        isRestricted: Boolean = false,
+        isHidden: Boolean = false
+    ) {
         val repo = groupRepo ?: return
         val pool = relayPool ?: return
         val relayUrl = relayUrl.lowercase().trimEnd('/')
@@ -330,8 +420,21 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         // Store name locally — avoids a second signing operation at create time which
         // causes an infinite loop in the remote signer bridge after "Always allow" is granted.
         repo.addGroup(relayUrl, groupId, localName = name.trim().ifEmpty { null })
+        // Optimistically record the chosen flags so the UI reflects the intended posture
+        // before the 39000 metadata event round-trips back from the relay.
+        repo.updateMetadata(relayUrl, groupId, Nip29.GroupMetadata(
+            groupId = groupId,
+            name = name.trim().ifEmpty { null },
+            picture = null,
+            about = null,
+            isPrivate = isPrivate,
+            isClosed = isClosed,
+            isRestricted = isRestricted,
+            isHidden = isHidden
+        ))
         subscribeToGroup(relayUrl, groupId)
         publishGroupList(signer)
+        val anyFlagSet = isPrivate || isClosed || isRestricted || isHidden
         signer?.let { s ->
             viewModelScope.launch(Dispatchers.Default) {
                 try {
@@ -340,8 +443,41 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
                         content = "",
                         tags = listOf(listOf("h", groupId))
                     )
+                    Log.d("GroupListVM", "[createGroup] publishing 9007 group=$groupId relay=$relayUrl")
                     pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.event(createEvent), skipBadCheck = true)
-                } catch (_: Exception) { }
+                } catch (e: Exception) {
+                    Log.w("GroupListVM", "[createGroup] 9007 sign/publish failed: ${e.message}")
+                    return@launch
+                }
+
+                // Only fire the follow-up 9002 if the user actually customized the group's
+                // posture. This keeps default "open" creations to a single signing op (the
+                // original behavior that avoided the remote-signer bridge infinite loop).
+                if (!anyFlagSet) return@launch
+
+                // Give the relay time to process 9007 and mark us as admin before 9002 —
+                // relay29 rejects edit-metadata from non-admins, and back-to-back events
+                // can race against the admin grant.
+                kotlinx.coroutines.delay(1_500)
+
+                try {
+                    val editTags = mutableListOf(listOf("h", groupId))
+                    if (name.isNotBlank()) editTags.add(listOf("name", name.trim()))
+                    editTags.add(listOf(if (isPrivate) "private" else "public"))
+                    editTags.add(listOf(if (isClosed) "closed" else "open"))
+                    editTags.add(listOf(if (isRestricted) "restricted" else "unrestricted"))
+                    editTags.add(listOf(if (isHidden) "hidden" else "visible"))
+                    val editEvent = s.signEvent(
+                        kind = Nip29.KIND_EDIT_METADATA,
+                        content = "",
+                        tags = editTags
+                    )
+                    Log.d("GroupListVM", "[createGroup] publishing 9002 group=$groupId " +
+                        "private=$isPrivate closed=$isClosed restricted=$isRestricted hidden=$isHidden")
+                    pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.event(editEvent), skipBadCheck = true)
+                } catch (e: Exception) {
+                    Log.w("GroupListVM", "[createGroup] 9002 sign/publish failed: ${e.message}")
+                }
             }
         }
     }
@@ -378,12 +514,69 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
                     picture = picture.trim().ifEmpty { existing?.picture },
                     about = about.trim().ifEmpty { existing?.about },
                     isPrivate = existing?.isPrivate ?: false,
-                    isClosed = existing?.isClosed ?: false
+                    isClosed = existing?.isClosed ?: false,
+                    isRestricted = existing?.isRestricted ?: false,
+                    isHidden = existing?.isHidden ?: false
                 ))
                 // Persist updated name locally
                 if (name.isNotBlank()) {
                     repo.addGroup(relayUrl, groupId, localName = name.trim())
                 }
+            } catch (_: Exception) { }
+        }
+    }
+
+    /**
+     * Admin action: generate a new invite code and publish it via kind 9009. Returns the code
+     * immediately so the caller can display / copy it; the relay publish happens asynchronously.
+     */
+    fun createInvite(relayUrl: String, groupId: String, signer: NostrSigner?): String? {
+        val pool = relayPool ?: return null
+        signer ?: return null
+        val code = Nip29.generateInviteCode()
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                val event = signer.signEvent(
+                    kind = Nip29.KIND_CREATE_INVITE,
+                    content = "",
+                    tags = listOf(listOf("h", groupId), listOf("code", code))
+                )
+                pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.event(event), skipBadCheck = true)
+            } catch (_: Exception) { }
+        }
+        return code
+    }
+
+    /** Admin action: assign one or more roles to a user (kind 9000). */
+    fun putUser(
+        relayUrl: String,
+        groupId: String,
+        targetPubkey: String,
+        roles: List<String>,
+        signer: NostrSigner?
+    ) {
+        val pool = relayPool ?: return
+        val repo = groupRepo ?: return
+        signer ?: return
+        val cleanedRoles = roles.map { it.trim() }.filter { it.isNotEmpty() }
+        // Optimistic local promotion — if any role was assigned, reflect the user in the
+        // admins list immediately so the UI updates without waiting for a 39001 replay.
+        if (cleanedRoles.isNotEmpty()) {
+            repo.getRoom(relayUrl, groupId)?.let { room ->
+                if (targetPubkey !in room.admins) {
+                    repo.updateAdmins(relayUrl, groupId, room.admins + targetPubkey)
+                }
+            }
+        }
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                val pTag = mutableListOf("p", targetPubkey).apply { addAll(cleanedRoles) }
+                val event = signer.signEvent(
+                    kind = Nip29.KIND_PUT_USER,
+                    content = "",
+                    tags = listOf(listOf("h", groupId), pTag)
+                )
+                pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.event(event), skipBadCheck = true)
             } catch (_: Exception) { }
         }
     }

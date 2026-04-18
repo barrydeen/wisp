@@ -86,6 +86,15 @@ class GroupRoomViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+
+        // Clear a stale "auth-required" (or any) error as soon as NIP-42 AUTH completes
+        // for our relay. GroupListViewModel re-fires the subs in parallel, so messages
+        // should start flowing again; this just keeps the banner from lingering.
+        viewModelScope.launch {
+            pool.authCompleted.collect { url ->
+                if (url == relayUrl) _relayError.value = null
+            }
+        }
     }
 
     fun updateText(text: String) {

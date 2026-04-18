@@ -48,6 +48,8 @@ class GroupPersistence {
         val about: String?,
         val isPrivate: Boolean,
         val isClosed: Boolean,
+        val isRestricted: Boolean,
+        val isHidden: Boolean,
         val admins: List<String>,
         val members: List<String>,
         val lastMessageAt: Long,
@@ -82,6 +84,8 @@ class GroupPersistence {
                     about = meta.about,
                     isPrivate = meta.isPrivate,
                     isClosed = meta.isClosed,
+                    isRestricted = meta.isRestricted,
+                    isHidden = meta.isHidden,
                     admins = admins,
                     members = members,
                     // Derive lastMessageAt from newest stored message; fall back to stored value
@@ -114,6 +118,8 @@ class GroupPersistence {
                     about = room.metadata?.about,
                     isPrivate = room.metadata?.isPrivate ?: false,
                     isClosed = room.metadata?.isClosed ?: false,
+                    isRestricted = room.metadata?.isRestricted ?: false,
+                    isHidden = room.metadata?.isHidden ?: false,
                     adminsJson = json.encodeToString(room.admins),
                     membersJson = json.encodeToString(room.members),
                     lastMessageAt = room.lastMessageAt

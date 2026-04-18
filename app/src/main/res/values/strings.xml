@@ -749,6 +749,8 @@
     <string name="title_join_chat_room">Join Chat Room</string>
     <string name="title_create_group">Create Chat Room</string>
     <string name="error_invalid_invite_link">Invalid invite link</string>
+    <string name="title_join_rejected">Couldn\'t join chat room</string>
+    <string name="msg_join_rejected_body">The relay rejected your join request. This room may be invite-only — ask an admin for an invite link with a code.</string>
     <string name="label_relay_url">Relay URL</string>
     <string name="label_group_id">Room ID</string>
     <string name="label_group_name">Room Name</string>
@@ -788,6 +790,36 @@
     <string name="label_notifications">Notifications</string>
     <string name="label_notifications_on">On — new messages will be tracked</string>
     <string name="label_notifications_off">Off — tap to enable</string>
+
+    <!-- NIP-29 group configuration flags -->
+    <string name="group_flag_private_label">Private</string>
+    <string name="group_flag_private_desc">Only members can read messages</string>
+    <string name="group_flag_closed_label">Closed</string>
+    <string name="group_flag_closed_desc">Only invited users can join</string>
+    <string name="group_flag_restricted_label">Restricted</string>
+    <string name="group_flag_restricted_desc">Only members can post</string>
+    <string name="group_flag_hidden_label">Hidden</string>
+    <string name="group_flag_hidden_desc">Group info is hidden from non-members</string>
+    <string name="group_flag_public_label">Public</string>
+    <string name="group_flag_public_desc">Anyone can read messages</string>
+    <string name="group_flag_open_label">Open</string>
+    <string name="group_flag_open_desc">Anyone can join</string>
+    <string name="group_flag_unrestricted_label">Unrestricted</string>
+    <string name="group_flag_unrestricted_desc">Anyone can post</string>
+    <string name="group_flag_visible_label">Visible</string>
+    <string name="group_flag_visible_desc">Group info can be found by anyone</string>
+
+    <!-- NIP-29 invites + roles -->
+    <string name="section_room_access">Access &amp; visibility</string>
+    <string name="section_invite_codes">Invite codes</string>
+    <string name="action_generate_invite">Generate invite code</string>
+    <string name="label_latest_invite_code">Latest invite code</string>
+    <string name="action_copy_code">Copy code</string>
+    <string name="action_copy_invite_link">Copy invite link</string>
+    <string name="title_assign_role">Assign role</string>
+    <string name="label_roles">Roles (comma-separated)</string>
+    <string name="msg_assign_role">Set roles for %s. Leave empty to revoke admin status.</string>
+    <string name="cd_assign_role">Assign role</string>
 
     <!-- Fiat mode -->
     <string name="drawer_fiat_mode">Fiat Mode</string>

@@ -37,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -92,6 +93,12 @@ fun DmListScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     var showDiscoverSheet by remember { mutableStateOf(false) }
     var showFabMenu by remember { mutableStateOf(false) }
+    var joinError by remember { mutableStateOf<GroupListViewModel.JoinError?>(null) }
+
+    // Collect one-shot join rejections from the relay and surface them as a dialog.
+    LaunchedEffect(groupListViewModel) {
+        groupListViewModel.joinErrors.collect { joinError = it }
+    }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -187,9 +194,9 @@ fun DmListScreen(
     if (showJoinDialog) {
         JoinGroupDialog(
             onDismiss = { showJoinDialog = false },
-            onJoin = { relayUrl, groupId ->
+            onJoin = { relayUrl, groupId, inviteCode ->
                 showJoinDialog = false
-                groupListViewModel.joinGroup(relayUrl, groupId, signer)
+                groupListViewModel.joinGroup(relayUrl, groupId, signer, inviteCode)
             }
         )
     }
@@ -197,9 +204,13 @@ fun DmListScreen(
     if (showCreateDialog) {
         CreateGroupDialog(
             onDismiss = { showCreateDialog = false },
-            onCreate = { relayUrl, name ->
+            onCreate = { relayUrl, name, isPrivate, isClosed, isRestricted, isHidden ->
                 showCreateDialog = false
-                groupListViewModel.createGroup(relayUrl, name, signer)
+                groupListViewModel.createGroup(relayUrl, name, signer,
+                    isPrivate = isPrivate,
+                    isClosed = isClosed,
+                    isRestricted = isRestricted,
+                    isHidden = isHidden)
             }
         )
     }
@@ -212,6 +223,34 @@ fun DmListScreen(
             onJoin = { relayUrl, groupId ->
                 showDiscoverSheet = false
                 groupListViewModel.joinGroup(relayUrl, groupId, signer)
+            }
+        )
+    }
+
+    joinError?.let { err ->
+        AlertDialog(
+            onDismissRequest = { joinError = null },
+            title = { Text(stringResource(R.string.title_join_rejected)) },
+            text = {
+                Column {
+                    Text(
+                        stringResource(R.string.msg_join_rejected_body),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (err.message.isNotBlank()) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = "Relay said: ${err.message}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { joinError = null }) {
+                    Text(stringResource(R.string.btn_ok))
+                }
             }
         )
     }
@@ -376,7 +415,7 @@ private fun GroupRoomRow(
 @Composable
 private fun JoinGroupDialog(
     onDismiss: () -> Unit,
-    onJoin: (relayUrl: String, groupId: String) -> Unit
+    onJoin: (relayUrl: String, groupId: String, inviteCode: String?) -> Unit
 ) {
     var inviteLink by remember { mutableStateOf("") }
     var showError by remember { mutableStateOf(false) }
@@ -390,7 +429,7 @@ private fun JoinGroupDialog(
                     value = inviteLink,
                     onValueChange = { inviteLink = it; showError = false },
                     label = { Text(stringResource(R.string.label_invite_link)) },
-                    placeholder = { Text("groups.0xchat.com'roomid") },
+                    placeholder = { Text("chat.wisp.talk'roomid") },
                     singleLine = true,
                     isError = showError,
                     supportingText = if (showError) {
@@ -403,9 +442,9 @@ private fun JoinGroupDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    val parsed = com.wisp.app.nostr.Nip29.parseGroupIdentifier(inviteLink.trim())
+                    val parsed = com.wisp.app.nostr.Nip29.parseInviteLink(inviteLink.trim())
                     if (parsed != null) {
-                        onJoin(parsed.first, parsed.second)
+                        onJoin(parsed.first, parsed.second, parsed.third)
                     } else {
                         showError = true
                     }
@@ -425,10 +464,21 @@ private fun JoinGroupDialog(
 @Composable
 private fun CreateGroupDialog(
     onDismiss: () -> Unit,
-    onCreate: (relayUrl: String, name: String) -> Unit
+    onCreate: (
+        relayUrl: String,
+        name: String,
+        isPrivate: Boolean,
+        isClosed: Boolean,
+        isRestricted: Boolean,
+        isHidden: Boolean
+    ) -> Unit
 ) {
     var groupName by remember { mutableStateOf("") }
     var relayUrl by remember { mutableStateOf(com.wisp.app.nostr.Nip29.DEFAULT_GROUP_RELAYS.first()) }
+    var isPrivate by remember { mutableStateOf(false) }
+    var isClosed by remember { mutableStateOf(false) }
+    var isRestricted by remember { mutableStateOf(false) }
+    var isHidden by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -450,13 +500,41 @@ private fun CreateGroupDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(Modifier.height(8.dp))
+                GroupFlagSwitch(
+                    label = stringResource(R.string.group_flag_private_label),
+                    description = stringResource(R.string.group_flag_private_desc),
+                    checked = isPrivate,
+                    onCheckedChange = { isPrivate = it }
+                )
+                GroupFlagSwitch(
+                    label = stringResource(R.string.group_flag_closed_label),
+                    description = stringResource(R.string.group_flag_closed_desc),
+                    checked = isClosed,
+                    onCheckedChange = { isClosed = it }
+                )
+                GroupFlagSwitch(
+                    label = stringResource(R.string.group_flag_restricted_label),
+                    description = stringResource(R.string.group_flag_restricted_desc),
+                    checked = isRestricted,
+                    onCheckedChange = { isRestricted = it }
+                )
+                GroupFlagSwitch(
+                    label = stringResource(R.string.group_flag_hidden_label),
+                    description = stringResource(R.string.group_flag_hidden_desc),
+                    checked = isHidden,
+                    onCheckedChange = { isHidden = it }
+                )
             }
         },
         confirmButton = {
             TextButton(
                 onClick = {
                     val url = relayUrl.trim()
-                    if (url.isNotEmpty()) onCreate(url, groupName.trim())
+                    if (url.isNotEmpty()) onCreate(
+                        url, groupName.trim(),
+                        isPrivate, isClosed, isRestricted, isHidden
+                    )
                 }
             ) {
                 Text(stringResource(R.string.action_create))
@@ -468,6 +546,30 @@ private fun CreateGroupDialog(
             }
         }
     )
+}
+
+@Composable
+private fun GroupFlagSwitch(
+    label: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 6.dp)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface)
+            Text(description, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
 }
 
 @Composable

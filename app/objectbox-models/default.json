@@ -115,7 +115,7 @@
     },
     {
       "id": "3:4980149860826606366",
-      "lastPropertyId": "13:2695266999059672518",
+      "lastPropertyId": "15:5858957648151141575",
       "name": "GroupMetaEntity",
       "properties": [
         {
@@ -187,6 +187,16 @@
           "id": "13:2695266999059672518",
           "name": "lastMessageAt",
           "type": 6
+        },
+        {
+          "id": "14:2327490369406932737",
+          "name": "isRestricted",
+          "type": 1
+        },
+        {
+          "id": "15:5858957648151141575",
+          "name": "isHidden",
+          "type": 1
         }
       ],
       "relations": []
