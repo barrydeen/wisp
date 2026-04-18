@@ -59,6 +59,11 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
     /** Mark a relay URL as a DM delivery target (tier 2 AUTH). */
     fun markDmDeliveryTarget(url: String) { dmDeliveryTargets.add(url) }
 
+    /** URLs of NIP-29 chat relays the user has intentionally joined (tier 2 for AUTH).
+     *  Populated by [ensureGroupRelay] — AUTH challenges from these relays trigger a
+     *  one-time user approval prompt and are persisted via [userApprovedAuthRelays]. */
+    private val groupRelayAuthTargets: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
     /** Relay URLs the user has approved for AUTH — persisted across sessions. */
     private val userApprovedAuthRelays: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet<String>().also { set ->
         prefs?.getStringSet(PREF_APPROVED_AUTH_RELAYS, emptySet())?.let { set.addAll(it) }
@@ -67,7 +72,7 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
     data class PendingAuthRequest(val relayUrl: String, val challenge: String)
 
     private val _pendingAuthRequest = MutableStateFlow<PendingAuthRequest?>(null)
-    /** Emitted when a tier-2 (DM delivery) relay needs user approval to authenticate. */
+    /** Emitted when a tier-2 relay (DM delivery or joined chat relay) needs user approval to authenticate. */
     val pendingAuthRequest: StateFlow<PendingAuthRequest?> = _pendingAuthRequest
 
     /** Approve a pending AUTH request — signs and sends AUTH, persists approval. */
@@ -321,6 +326,9 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
     fun ensureGroupRelay(url: String) {
         ensureClientCurrent()
         if (url in blockedUrls || !RelayConfig.isConnectableUrl(url)) return
+        // Chat relay AUTH challenges route through the tier-2 prompt flow so the user
+        // can decide to reveal their pubkey for private/hidden group access.
+        groupRelayAuthTargets.add(url)
         if (groupRelays.containsKey(url)) return
         // Remove any stale ephemeral relay for this URL — otherwise sendToRelayOrEphemeral
         // will skip the group relay fast-path and send REQs on the disconnected ephemeral.
@@ -556,20 +564,21 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
                     return@collect
                 }
 
-                // Tier 2: Recipient DM delivery relays — prompt user (or auto-sign if already approved)
-                if (url in dmDeliveryTargets) {
+                // Tier 2: DM delivery relays and joined NIP-29 chat relays — prompt user
+                // (or auto-sign if they've already granted approval for this URL).
+                if (url in dmDeliveryTargets || url in groupRelayAuthTargets) {
                     if (url in userApprovedAuthRelays) {
                         try {
                             val authEvent = signer(url, challenge)
                             relay.send(ClientMessage.auth(authEvent))
                             authenticatedRelays.add(url)
-                            Log.d("RelayPool", "AUTH auto-signed for approved DM delivery relay $url")
+                            Log.d("RelayPool", "AUTH auto-signed for approved relay $url")
                             _authCompleted.tryEmit(url)
                         } catch (e: Exception) {
-                            Log.e("RelayPool", "AUTH failed for approved DM delivery relay $url: ${e.message}")
+                            Log.e("RelayPool", "AUTH failed for approved relay $url: ${e.message}")
                         }
                     } else {
-                        Log.d("RelayPool", "AUTH challenge from DM delivery relay $url — prompting user")
+                        Log.d("RelayPool", "AUTH challenge from $url — prompting user")
                         _pendingAuthRequest.value = PendingAuthRequest(url, challenge)
                     }
                     return@collect

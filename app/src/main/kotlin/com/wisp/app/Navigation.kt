@@ -600,7 +600,8 @@ fun WispNavHost(
         )
     }
 
-    // NIP-42 AUTH approval dialog — shown when a DM delivery relay requests authentication
+    // NIP-42 AUTH approval dialog — shown when a tier-2 relay (DM delivery or joined chat relay)
+    // requests authentication so the user can decide whether to reveal their pubkey.
     val pendingAuth by feedViewModel.relayPool.pendingAuthRequest.collectAsState()
     pendingAuth?.let { request ->
         AuthApprovalDialog(

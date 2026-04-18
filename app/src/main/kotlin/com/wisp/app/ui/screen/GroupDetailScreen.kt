@@ -1,5 +1,6 @@
 package com.wisp.app.ui.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,10 +21,19 @@ import androidx.compose.material.icons.automirrored.outlined.ExitToApp
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.EditOff
 import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.NotificationsOff
+import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.PersonOff
 import androidx.compose.material.icons.outlined.PersonRemove
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -89,9 +99,12 @@ fun GroupDetailScreen(
     var showLeaveDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var removeTarget by remember { mutableStateOf<String?>(null) }
+    var assignRoleTarget by remember { mutableStateOf<String?>(null) }
+    var latestInviteCode by remember { mutableStateOf<String?>(null) }
 
     val clipboardManager = LocalClipboardManager.current
     val inviteLink = Nip29.inviteLink(relayUrl, groupId)
+    val codedInviteLink = latestInviteCode?.let { Nip29.inviteLink(relayUrl, groupId, it) }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -124,6 +137,65 @@ fun GroupDetailScreen(
             // Group header
             item {
                 GroupHeader(room = room)
+            }
+
+            // Access & visibility — show all 4 dimensions with icon + label + description,
+            // so users always know the room's posture (public/private, open/closed, etc.).
+            val metadata = room?.metadata
+            if (metadata != null) {
+                item {
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
+                    Text(
+                        stringResource(R.string.section_room_access),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                    )
+                    GroupFlagDetailRow(
+                        icon = if (metadata.isPrivate) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
+                        label = stringResource(
+                            if (metadata.isPrivate) R.string.group_flag_private_label
+                            else R.string.group_flag_public_label
+                        ),
+                        description = stringResource(
+                            if (metadata.isPrivate) R.string.group_flag_private_desc
+                            else R.string.group_flag_public_desc
+                        )
+                    )
+                    GroupFlagDetailRow(
+                        icon = if (metadata.isClosed) Icons.Outlined.PersonOff else Icons.Outlined.Groups,
+                        label = stringResource(
+                            if (metadata.isClosed) R.string.group_flag_closed_label
+                            else R.string.group_flag_open_label
+                        ),
+                        description = stringResource(
+                            if (metadata.isClosed) R.string.group_flag_closed_desc
+                            else R.string.group_flag_open_desc
+                        )
+                    )
+                    GroupFlagDetailRow(
+                        icon = if (metadata.isRestricted) Icons.Outlined.EditOff else Icons.Outlined.Edit,
+                        label = stringResource(
+                            if (metadata.isRestricted) R.string.group_flag_restricted_label
+                            else R.string.group_flag_unrestricted_label
+                        ),
+                        description = stringResource(
+                            if (metadata.isRestricted) R.string.group_flag_restricted_desc
+                            else R.string.group_flag_unrestricted_desc
+                        )
+                    )
+                    GroupFlagDetailRow(
+                        icon = if (metadata.isHidden) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                        label = stringResource(
+                            if (metadata.isHidden) R.string.group_flag_hidden_label
+                            else R.string.group_flag_visible_label
+                        ),
+                        description = stringResource(
+                            if (metadata.isHidden) R.string.group_flag_hidden_desc
+                            else R.string.group_flag_visible_desc
+                        )
+                    )
+                }
             }
 
             // Invite link
@@ -205,6 +277,103 @@ fun GroupDetailScreen(
                 HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
             }
 
+            // Admin-only invite codes section
+            if (isAdmin) {
+                item {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            stringResource(R.string.section_invite_codes),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val code = groupListViewModel.createInvite(relayUrl, groupId, signer)
+                                    if (code != null) latestInviteCode = code
+                                }
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.PersonAdd,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                stringResource(R.string.action_generate_invite),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        latestInviteCode?.let { code ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        clipboardManager.setText(AnnotatedString(code))
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        stringResource(R.string.label_latest_invite_code),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        code,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                IconButton(onClick = {
+                                    clipboardManager.setText(AnnotatedString(code))
+                                }) {
+                                    Icon(
+                                        Icons.Outlined.ContentCopy,
+                                        contentDescription = stringResource(R.string.action_copy_code),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            codedInviteLink?.let { link ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            clipboardManager.setText(AnnotatedString(link))
+                                        }
+                                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                                ) {
+                                    Text(
+                                        stringResource(R.string.action_copy_invite_link),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Icon(
+                                        Icons.Outlined.ContentCopy,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+
             // Leave / Delete actions
             item {
                 Row(
@@ -271,8 +440,10 @@ fun GroupDetailScreen(
                         pubkey = pubkey,
                         isAdmin = admins.contains(pubkey),
                         showRemove = isAdmin && pubkey != myPubkey && !admins.contains(pubkey),
+                        showAssignRole = isAdmin && pubkey != myPubkey,
                         eventRepo = eventRepo,
-                        onRemove = { removeTarget = pubkey }
+                        onRemove = { removeTarget = pubkey },
+                        onAssignRole = { assignRoleTarget = pubkey }
                     )
                     HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
                 }
@@ -369,6 +540,46 @@ fun GroupDetailScreen(
             }
         )
     }
+
+    assignRoleTarget?.let { target ->
+        val profile = remember(target) { eventRepo.getProfileData(target) }
+        val displayName = profile?.displayString ?: target.take(10) + "…"
+        var rolesText by remember(target) { mutableStateOf("admin") }
+        AlertDialog(
+            onDismissRequest = { assignRoleTarget = null },
+            title = { Text(stringResource(R.string.title_assign_role)) },
+            text = {
+                Column {
+                    Text(
+                        stringResource(R.string.msg_assign_role, displayName),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = rolesText,
+                        onValueChange = { rolesText = it },
+                        label = { Text(stringResource(R.string.label_roles)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val roles = rolesText.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                    groupListViewModel.putUser(relayUrl, groupId, target, roles, signer)
+                    assignRoleTarget = null
+                }) {
+                    Text(stringResource(R.string.action_save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { assignRoleTarget = null }) {
+                    Text(stringResource(R.string.btn_cancel))
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -396,20 +607,93 @@ private fun GroupHeader(room: GroupRoom?) {
                 modifier = Modifier.padding(horizontal = 24.dp)
             )
         }
-        if (metadata?.isPrivate == true || metadata?.isClosed == true) {
-            Spacer(Modifier.height(4.dp))
-            Row {
-                if (metadata.isPrivate) {
-                    Text("private", style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 4.dp))
-                }
-                if (metadata.isClosed) {
-                    Text("closed", style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 4.dp))
+        // Header posture chip(s): show restrictive flags when set, otherwise a single
+        // "Public" chip so a fully-open room still carries a clear badge.
+        if (metadata != null) {
+            val anyFlag = metadata.isPrivate || metadata.isClosed || metadata.isRestricted || metadata.isHidden
+            Spacer(Modifier.height(10.dp))
+            Row(
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(horizontal = 16.dp)
+            ) {
+                if (!anyFlag) {
+                    GroupFlagChip(Icons.Outlined.LockOpen,
+                        stringResource(R.string.group_flag_public_label))
+                } else {
+                    if (metadata.isPrivate) {
+                        GroupFlagChip(Icons.Outlined.Lock,
+                            stringResource(R.string.group_flag_private_label))
+                    }
+                    if (metadata.isClosed) {
+                        GroupFlagChip(Icons.Outlined.PersonOff,
+                            stringResource(R.string.group_flag_closed_label))
+                    }
+                    if (metadata.isRestricted) {
+                        GroupFlagChip(Icons.Outlined.EditOff,
+                            stringResource(R.string.group_flag_restricted_label))
+                    }
+                    if (metadata.isHidden) {
+                        GroupFlagChip(Icons.Outlined.VisibilityOff,
+                            stringResource(R.string.group_flag_hidden_label))
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun GroupFlagChip(icon: ImageVector, label: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .background(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+            )
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onPrimaryContainer
+        )
+    }
+}
+
+@Composable
+private fun GroupFlagDetailRow(icon: ImageVector, label: String, description: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -419,8 +703,10 @@ private fun MemberRow(
     pubkey: String,
     isAdmin: Boolean,
     showRemove: Boolean,
+    showAssignRole: Boolean,
     eventRepo: EventRepository,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onAssignRole: () -> Unit
 ) {
     val profile = remember(pubkey) { eventRepo.getProfileData(pubkey) }
     Row(
@@ -448,6 +734,16 @@ private fun MemberRow(
                 modifier = Modifier.size(18.dp)
             )
             Spacer(Modifier.width(4.dp))
+        }
+        if (showAssignRole) {
+            IconButton(onClick = onAssignRole) {
+                Icon(
+                    Icons.Outlined.PersonAdd,
+                    contentDescription = stringResource(R.string.cd_assign_role),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
         if (showRemove) {
             IconButton(onClick = onRemove) {
