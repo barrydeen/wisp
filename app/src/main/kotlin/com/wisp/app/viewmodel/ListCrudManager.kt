@@ -326,6 +326,8 @@ class ListCrudManager(
     fun deleteInterestSet(dTag: String) {
         val s = getSigner() ?: return
         val myPubkey = s.pubkeyHex
+        // Persist the deletion locally so any future event for this coord returned by a relay is silently dropped.
+        eventRepo.deletedEventsRepo?.markDeletedAddress(Nip51.KIND_INTEREST_SET, myPubkey, dTag)
         val deletionTags = Nip09.buildAddressableDeletionTags(Nip51.KIND_INTEREST_SET, myPubkey, dTag)
         scope.launch {
             val deleteEvent = s.signEvent(kind = 5, content = "", tags = deletionTags)

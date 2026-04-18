@@ -17,7 +17,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import com.wisp.app.db.EventPersistence
@@ -43,6 +45,11 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     var dmRelayUrls: Set<String> = emptySet()
     private val eventCache = ConcurrentHashMap<String, NostrEvent>()
     private val seenEventIds = ConcurrentHashMap.newKeySet<String>()  // thread-safe dedup that doesn't evict
+
+    /** Emits event IDs that were removed (e.g. via NIP-09 deletion). Screens like ThreadScreen
+     *  observe this to prune their local state when a deletion arrives on any subscription. */
+    private val _removedEvents = MutableSharedFlow<String>(extraBufferCapacity = 64)
+    val removedEvents: SharedFlow<String> = _removedEvents
 
     // NIP-38: user status cache (pubkey -> status content + timestamp for dedup)
     private val userStatusCache = ConcurrentHashMap<String, String>()
@@ -425,6 +432,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         removeEvent(id)
                     }
                 }
+                // NIP-09 also allows deleting addressable events via "a" tags. Only honor
+                // coords whose embedded pubkey matches the deletion event author.
+                for (coord in Nip09.getDeletedAddresses(event)) {
+                    val parts = coord.split(":", limit = 3)
+                    if (parts.size == 3 && parts[1] == event.pubkey) {
+                        deletedEventsRepo?.markDeletedAddress(coord)
+                    }
+                }
             }
             Nip88.KIND_POLL, Nip69.KIND_ZAP_POLL -> {
                 // Polls are top-level feed events like kind 1
@@ -746,6 +761,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             }
         }
         feedDirty.trySend(Unit)
+        _removedEvents.tryEmit(eventId)
     }
 
     fun requestQuotedEvent(eventId: String, relayHints: List<String> = emptyList()) {
@@ -985,13 +1001,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         val queue = ArrayDeque<String>()
         queue.add(rootId)
         visited.add(rootId)
-        eventCache[rootId]?.let { result.add(it) }
+        eventCache[rootId]?.let { if (deletedEventsRepo?.isDeleted(it.id) != true) result.add(it) }
         while (queue.isNotEmpty()) {
             val parentId = queue.removeFirst()
             val childIds = rootReplyIds[parentId] ?: continue
             for (id in childIds) {
                 if (id in visited) continue
                 visited.add(id)
+                if (deletedEventsRepo?.isDeleted(id) == true) continue
                 eventCache[id]?.let { result.add(it) }
                 queue.add(id)
             }

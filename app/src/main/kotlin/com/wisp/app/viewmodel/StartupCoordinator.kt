@@ -19,6 +19,7 @@ import com.wisp.app.repo.BookmarkRepository
 import com.wisp.app.repo.BookmarkSetRepository
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.CustomEmojiRepository
+import com.wisp.app.repo.DeletedEventsRepository
 import com.wisp.app.repo.DiscoveryState
 import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.EventRepository
@@ -75,6 +76,7 @@ class StartupCoordinator(
     private val relaySetRepo: RelaySetRepository,
     private val pinRepo: PinRepository,
     private val blossomRepo: BlossomRepository,
+    private val deletedEventsRepo: DeletedEventsRepository,
     private val interestRepo: InterestRepository,
     private val customEmojiRepo: CustomEmojiRepository,
     private val relayListRepo: RelayListRepository,
@@ -183,6 +185,7 @@ class StartupCoordinator(
         pinRepo.reload(newPubkey)
         listRepo.reload(newPubkey)
         blossomRepo.reload(newPubkey)
+        deletedEventsRepo.reload(newPubkey)
         interestRepo.reload(newPubkey)
         nwcRepo.reload(newPubkey)
         sparkRepo.reload(newPubkey)

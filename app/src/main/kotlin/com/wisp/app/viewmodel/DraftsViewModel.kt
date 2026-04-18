@@ -10,6 +10,7 @@ import com.wisp.app.nostr.Nip37
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.relay.RelayPool
+import com.wisp.app.repo.DeletedEventsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -38,7 +39,7 @@ class DraftsViewModel(app: Application) : AndroidViewModel(app) {
         val SCHEDULER_RELAY = "wss://scheduler.nostrarchives.com"
     }
 
-    fun loadDrafts(relayPool: RelayPool, signer: NostrSigner?) {
+    fun loadDrafts(relayPool: RelayPool, signer: NostrSigner?, deletedEventsRepo: DeletedEventsRepository? = null) {
         if (draftsLoaded || signer == null) return
         draftsLoaded = true
 
@@ -54,10 +55,16 @@ class DraftsViewModel(app: Application) : AndroidViewModel(app) {
                 if (event.kind != Nip37.KIND_DRAFT) return@collect
                 if (event.pubkey != signer.pubkeyHex) return@collect
 
+                val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)
+                if (dTag != null &&
+                    deletedEventsRepo?.isAddressDeleted(Nip37.KIND_DRAFT, signer.pubkeyHex, dTag) == true) {
+                    _drafts.value = _drafts.value.filter { it.dTag != dTag }
+                    return@collect
+                }
+
                 try {
                     val decrypted = signer.nip44Decrypt(event.content, signer.pubkeyHex)
                     if (decrypted.isBlank()) {
-                        val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)
                         if (dTag != null) {
                             _drafts.value = _drafts.value.filter { it.dTag != dTag }
                         }
@@ -149,20 +156,35 @@ class DraftsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun deleteDraft(dTag: String, relayPool: RelayPool, signer: NostrSigner?) {
+    fun deleteDraft(
+        dTag: String,
+        relayPool: RelayPool,
+        signer: NostrSigner?,
+        deletedEventsRepo: DeletedEventsRepository? = null
+    ) {
         if (signer == null) return
         removeDraftLocally(dTag)
+        // Persist locally first so any future relay response for this coord is silently dropped,
+        // even before the kind 5 deletion propagates.
+        deletedEventsRepo?.markDeletedAddress(Nip37.KIND_DRAFT, signer.pubkeyHex, dTag)
 
         viewModelScope.launch(Dispatchers.Default) {
             try {
-                val tags = Nip37.buildDraftTags(dTag, 1)
+                // NIP-09: publish an addressable-delete (kind 5 with "a" tag) so relays drop the draft.
+                val deletionTags = Nip09.buildAddressableDeletionTags(Nip37.KIND_DRAFT, signer.pubkeyHex, dTag)
+                val deleteEvent = signer.signEvent(kind = 5, content = "", tags = deletionTags)
+                relayPool.sendToWriteRelays(ClientMessage.event(deleteEvent))
+
+                // Also publish an empty-content replacement so clients that don't honor NIP-09
+                // (or that use the replace-by-address semantics of NIP-37) still observe deletion.
+                val replacementTags = Nip37.buildDraftTags(dTag, 1)
                 val encrypted = signer.nip44Encrypt("", signer.pubkeyHex)
-                val event = signer.signEvent(
+                val replacement = signer.signEvent(
                     kind = Nip37.KIND_DRAFT,
                     content = encrypted,
-                    tags = tags
+                    tags = replacementTags
                 )
-                relayPool.sendToWriteRelays(ClientMessage.event(event))
+                relayPool.sendToWriteRelays(ClientMessage.event(replacement))
             } catch (_: Exception) {
                 // Best effort
             }

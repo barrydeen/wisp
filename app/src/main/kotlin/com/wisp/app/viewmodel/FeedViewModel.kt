@@ -194,7 +194,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val relaySetRepo = RelaySetRepository(app, pubkeyHex)
     val pinRepo = PinRepository(app, pubkeyHex)
     val blossomRepo = BlossomRepository(app, pubkeyHex)
-    val interestRepo = InterestRepository(app, pubkeyHex)
+    val interestRepo = InterestRepository(app, pubkeyHex, deletedEventsRepo)
     val relayInfoRepo = RelayInfoRepository()
     val relayScoreBoard = RelayScoreBoard(app, relayListRepo, contactRepo, pubkeyHex)
     val outboxRouter = OutboxRouter(relayPool, relayListRepo, relayHintStore, relayScoreBoard)
@@ -317,7 +317,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     val startup: StartupCoordinator = StartupCoordinator(
         relayPool, outboxRouter, subManager, eventRepo, eventPersistence, contactRepo, muteRepo, notifRepo,
-        listRepo, bookmarkRepo, bookmarkSetRepo, relaySetRepo, pinRepo, blossomRepo, interestRepo, customEmojiRepo,
+        listRepo, bookmarkRepo, bookmarkSetRepo, relaySetRepo, pinRepo, blossomRepo, deletedEventsRepo, interestRepo, customEmojiRepo,
         relayListRepo, relayScoreBoard, relayHintStore, healthTracker, keyRepo,
         extendedNetworkRepo, metadataFetcher, profileRepo, relayInfoRepo, nip05Repo,
         nwcRepo, sparkRepo, walletModeRepo, dmRepo, liveStreamRepo, zapPrefs, lifecycleManager, eventRouter, feedSub,
