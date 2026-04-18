@@ -7,42 +7,34 @@ import java.nio.ByteOrder
 import java.util.zip.ZipInputStream
 
 class NSpamWeights private constructor(
-    val coef: FloatArray,
-    val intercept: Float,
+    val model: LightGbmModel,
     val calibX: FloatArray,
     val calibY: FloatArray
 ) {
     companion object {
-        fun loadFromAssets(context: Context, path: String = "nspam/weights.npz"): NSpamWeights {
-            val arrays = mutableMapOf<String, FloatArray>()
-            val scalars = mutableMapOf<String, Float>()
-            context.assets.open(path).use { stream ->
-                parseNpz(stream, arrays, scalars)
-            }
+        fun loadFromAssets(
+            context: Context,
+            modelPath: String = "nspam/model.txt",
+            calibrationPath: String = "nspam/calibration.npz"
+        ): NSpamWeights {
+            val model = context.assets.open(modelPath).use { LightGbmModel.parse(it) }
+
+            val arrays = HashMap<String, FloatArray>()
+            context.assets.open(calibrationPath).use { parseNpz(it, arrays) }
+
             return NSpamWeights(
-                coef = arrays["effective_coef"] ?: error("missing effective_coef"),
-                intercept = scalars["intercept"] ?: error("missing intercept"),
+                model = model,
                 calibX = arrays["calib_x"] ?: error("missing calib_x"),
                 calibY = arrays["calib_y"] ?: error("missing calib_y")
             )
         }
 
-        private fun parseNpz(
-            input: InputStream,
-            arrays: MutableMap<String, FloatArray>,
-            scalars: MutableMap<String, Float>
-        ) {
+        private fun parseNpz(input: InputStream, arrays: MutableMap<String, FloatArray>) {
             val zip = ZipInputStream(input)
             var entry = zip.nextEntry
             while (entry != null) {
                 val name = entry.name.removeSuffix(".npy")
-                val data = zip.readBytes()
-                val npy = parseNpy(data)
-                if (npy.size == 1) {
-                    scalars[name] = npy[0]
-                } else {
-                    arrays[name] = npy
-                }
+                arrays[name] = parseNpy(zip.readBytes())
                 zip.closeEntry()
                 entry = zip.nextEntry
             }
