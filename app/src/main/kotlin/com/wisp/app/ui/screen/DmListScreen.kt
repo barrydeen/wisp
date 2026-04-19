@@ -94,10 +94,16 @@ fun DmListScreen(
     var showDiscoverSheet by remember { mutableStateOf(false) }
     var showFabMenu by remember { mutableStateOf(false) }
     var joinError by remember { mutableStateOf<GroupListViewModel.JoinError?>(null) }
+    var adminError by remember { mutableStateOf<GroupListViewModel.AdminError?>(null) }
 
     // Collect one-shot join rejections from the relay and surface them as a dialog.
     LaunchedEffect(groupListViewModel) {
         groupListViewModel.joinErrors.collect { joinError = it }
+    }
+    // Admin-action rejections (create group / invite / edit / kick / leave / delete) that
+    // would otherwise fail silently. A shared dialog tells the admin what the relay said.
+    LaunchedEffect(groupListViewModel) {
+        groupListViewModel.adminErrors.collect { adminError = it }
     }
 
     Scaffold(
@@ -249,6 +255,40 @@ fun DmListScreen(
             },
             confirmButton = {
                 TextButton(onClick = { joinError = null }) {
+                    Text(stringResource(R.string.btn_ok))
+                }
+            }
+        )
+    }
+
+    adminError?.let { err ->
+        AlertDialog(
+            onDismissRequest = { adminError = null },
+            title = { Text("Action failed") },
+            text = {
+                Column {
+                    Text(
+                        "The relay rejected this action.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Step: ${err.action}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (err.message.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Relay said: ${err.message}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { adminError = null }) {
                     Text(stringResource(R.string.btn_ok))
                 }
             }
