@@ -99,7 +99,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
             "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d", // fiatjaf
             "e2ccf7cf20403f3f2a4a55b328f0de3be38558a7d5f33632fdaaefc726c1c8eb"  // utxo
         )
-        private val ACTIVE_RELAYS = listOf("wss://premium.primal.net", "wss://nostr.wine")
+        private val ACTIVE_RELAYS = listOf("wss://premium.primal.net", "wss://nostr.wine", "wss://relay.wisp.talk", "wss://pyramid.fiatjaf.com")
         private const val NEWS_RELAY = "wss://news.utxo.one"
 
         private val COLORS = listOf(
@@ -358,7 +358,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
             for (url in ACTIVE_RELAYS) relayPool.sendToRelayOrEphemeral(url, reqMsg)
 
             val authors = mutableSetOf<String>()
-            collectUntilEose(relayPool, subId, ACTIVE_RELAYS.size, 3_000) { event ->
+            collectUntilEose(relayPool, subId, ACTIVE_RELAYS.size, 8_000) { event ->
                 authors.add(event.pubkey)
             }
 
@@ -394,7 +394,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
             relayPool.sendToRelayOrEphemeral(NEWS_RELAY, reqMsg)
 
             val authors = mutableSetOf<String>()
-            collectUntilEose(relayPool, subId, 1, 3_000) { event ->
+            collectUntilEose(relayPool, subId, 1, 8_000) { event ->
                 authors.add(event.pubkey)
             }
 
@@ -435,7 +435,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val profiles = mutableMapOf<String, ProfileData>()
-        collectUntilEose(relayPool, subId, expectedEose, 3_000) { event ->
+        collectUntilEose(relayPool, subId, expectedEose, 8_000) { event ->
             if (event.kind == 0) {
                 val profile = ProfileData.fromEvent(event)
                 if (profile != null) {
