@@ -496,10 +496,16 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         signer ?: return
         viewModelScope.launch(Dispatchers.Default) {
             try {
+                val existing = repo.getRoom(relayUrl, groupId)
+                val existingMeta = existing?.metadata
                 val tags = mutableListOf(listOf("h", groupId))
                 if (name.isNotBlank()) tags.add(listOf("name", name.trim()))
                 if (about.isNotBlank()) tags.add(listOf("about", about.trim()))
                 if (picture.isNotBlank()) tags.add(listOf("picture", picture.trim()))
+                tags.add(listOf(if (existingMeta?.isPrivate == true) "private" else "public"))
+                tags.add(listOf(if (existingMeta?.isClosed == true) "closed" else "open"))
+                tags.add(listOf(if (existingMeta?.isRestricted == true) "restricted" else "unrestricted"))
+                tags.add(listOf(if (existingMeta?.isHidden == true) "hidden" else "visible"))
                 val event = signer.signEvent(
                     kind = Nip29.KIND_EDIT_METADATA,
                     content = "",
@@ -507,16 +513,15 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.event(event), skipBadCheck = true)
                 // Optimistically update local metadata
-                val existing = repo.getRoom(relayUrl, groupId)?.metadata
                 repo.updateMetadata(relayUrl, groupId, Nip29.GroupMetadata(
                     groupId = groupId,
-                    name = name.trim().ifEmpty { existing?.name },
-                    picture = picture.trim().ifEmpty { existing?.picture },
-                    about = about.trim().ifEmpty { existing?.about },
-                    isPrivate = existing?.isPrivate ?: false,
-                    isClosed = existing?.isClosed ?: false,
-                    isRestricted = existing?.isRestricted ?: false,
-                    isHidden = existing?.isHidden ?: false
+                    name = name.trim().ifEmpty { existingMeta?.name },
+                    picture = picture.trim().ifEmpty { existingMeta?.picture },
+                    about = about.trim().ifEmpty { existingMeta?.about },
+                    isPrivate = existingMeta?.isPrivate ?: false,
+                    isClosed = existingMeta?.isClosed ?: false,
+                    isRestricted = existingMeta?.isRestricted ?: false,
+                    isHidden = existingMeta?.isHidden ?: false
                 ))
                 // Persist updated name locally
                 if (name.isNotBlank()) {
