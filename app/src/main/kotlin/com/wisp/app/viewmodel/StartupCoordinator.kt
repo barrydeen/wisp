@@ -115,6 +115,7 @@ class StartupCoordinator(
     private var notifRefreshJob: Job? = null
     private var startupJob: Job? = null
     private var healthSnapshotJob: Job? = null
+    private var notifSeedJob: Job? = null
 
     var relaysInitialized = false
         private set
@@ -130,6 +131,7 @@ class StartupCoordinator(
         notifRefreshJob?.cancel()
         startupJob?.cancel()
         healthSnapshotJob?.cancel()
+        notifSeedJob?.cancel()
         feedSub.reset()
 
         // Stop lifecycle manager and disconnect relays
@@ -169,7 +171,7 @@ class StartupCoordinator(
         val newPubkey = getUserPubkey()
 
         // Clear stale data from previous account and re-key to new pubkey
-        notifRepo.clear()
+        notifRepo.reload(newPubkey)
         eventRepo.clearAll()
         if (newPubkey != null) dmRepo.reload(newPubkey) else dmRepo.clear()
 
@@ -639,7 +641,8 @@ class StartupCoordinator(
         // immediately without waiting for relay responses. addEvent handles all
         // p-tag / ownership filtering, so we can pass events through unfiltered.
         eventPersistence?.let { persistence ->
-            scope.launch(processingContext) {
+            notifSeedJob?.cancel()
+            notifSeedJob = scope.launch(processingContext) {
                 val cached = persistence.getRecentNotificationEvents(limit = 500)
                     .filter { event ->
                         // Only seed events that reference the current user via p-tag.
@@ -648,7 +651,13 @@ class StartupCoordinator(
                         // kind 6 p-tag bypass in addEvent.
                         event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == myPubkey }
                     }
-                for (event in cached) notifRepo.addEvent(event, myPubkey)
+                for (event in cached) {
+                    if (getUserPubkey() != myPubkey) {
+                        Log.d("StartupCoord", "Notif seeding aborted: pubkey changed mid-seed")
+                        return@launch
+                    }
+                    notifRepo.addEvent(event, myPubkey)
+                }
                 Log.d("StartupCoord", "Seeded notifRepo with ${cached.size} cached events")
             }
         }

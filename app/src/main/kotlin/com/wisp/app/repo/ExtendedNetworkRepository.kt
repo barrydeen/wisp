@@ -511,15 +511,14 @@ class ExtendedNetworkRepository(
         _cachedNetwork.value = null
         _discoveryState.value = DiscoveryState.Idle
         pendingFollowLists.clear()
-        socialGraphDb.clearAll()
         discoveryTotal = 0
-        prefs.edit().clear().apply()
     }
 
     fun reload(pubkeyHex: String?) {
         clear()
         this.pubkeyHex = pubkeyHex
         prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
+        socialGraphDb.reload(pubkeyHex)
         loadFromPrefs()
     }
 
