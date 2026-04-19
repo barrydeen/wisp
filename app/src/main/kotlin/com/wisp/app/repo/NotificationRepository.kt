@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 class NotificationRepository(
-    context: Context,
+    private val context: Context,
     pubkeyHex: String?,
     private val muteRepo: MuteRepository? = null,
     private val eventRepo: EventRepository? = null
@@ -31,7 +31,9 @@ class NotificationRepository(
     var contactRepo: ContactRepository? = null
     var extendedNetworkRepo: com.wisp.app.repo.ExtendedNetworkRepository? = null
 
-    private val prefs: SharedPreferences =
+    @Volatile private var currentPubkeyHex: String? = pubkeyHex
+
+    private var prefs: SharedPreferences =
         context.getSharedPreferences("wisp_notif_${pubkeyHex ?: "anon"}", Context.MODE_PRIVATE)
 
     private val seenEvents = LruCache<String, Boolean>(2000)
@@ -71,8 +73,8 @@ class NotificationRepository(
 
     @Volatile var isViewing: Boolean = false
 
-    private var lastReadTimestamp: Long = prefs.getLong(KEY_LAST_READ, 0L)
-    private var latestNotifTs: Long = prefs.getLong(KEY_LATEST_NOTIF_TS, 0L)
+    @Volatile private var lastReadTimestamp: Long = prefs.getLong(KEY_LAST_READ, 0L)
+    @Volatile private var latestNotifTs: Long = prefs.getLong(KEY_LATEST_NOTIF_TS, 0L)
 
     private val _replyReceived = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val replyReceived: SharedFlow<Unit> = _replyReceived
@@ -136,6 +138,17 @@ class NotificationRepository(
     }
 
     fun addEvent(event: NostrEvent, myPubkey: String, replyToMyEvent: Boolean = false, source: String = "") {
+        // Reject events whose target pubkey does not match the active account.
+        // Catches stale in-flight coroutines (e.g. ObjectBox seeding) that captured
+        // a pubkey from a previous account and are still running after a switch.
+        val currentOwner = currentPubkeyHex
+        if (currentOwner != null && myPubkey != currentOwner) {
+            if (DiagnosticLogger.isEnabled) {
+                DiagnosticLogger.log("NOTIF", "REJECTED:stale_pubkey id=${event.id.take(12)} " +
+                    "kind=${event.kind} myPubkey=${myPubkey.take(8)} currentOwner=${currentOwner.take(8)} source=$source")
+            }
+            return
+        }
         if (event.pubkey == myPubkey) return
         // Defense-in-depth: reject events from blocked users even if the caller forgot to check.
         // For zap receipts, event.pubkey is the lightning service — check the actual zapper too.
@@ -290,8 +303,23 @@ class NotificationRepository(
             _hasUnread.value = false
             soundEligibleAfter = System.currentTimeMillis() / 1000
         }
-        latestNotifTs = 0L
-        prefs.edit().clear().apply()
+        // DO NOT reset latestNotifTs or wipe prefs here — `prefs` may still
+        // point to the outgoing account during switch. `reload()` re-points
+        // prefs and re-reads these timestamps from the correct file.
+    }
+
+    /** Re-keys the repository to a new account: wipes in-memory state and
+     *  re-points `prefs` to the new account's file. */
+    fun reload(newPubkeyHex: String?) {
+        clear()
+        synchronized(lock) {
+            currentPubkeyHex = newPubkeyHex
+            prefs = context.getSharedPreferences("wisp_notif_${newPubkeyHex ?: "anon"}", Context.MODE_PRIVATE)
+            @Suppress("ktlint:standard:property-naming")
+            lastReadTimestamp = prefs.getLong("last_read_timestamp", 0L)
+            @Suppress("ktlint:standard:property-naming")
+            latestNotifTs = prefs.getLong("latest_notif_ts", 0L)
+        }
     }
 
     fun purgeUser(pubkey: String) = synchronized(lock) {

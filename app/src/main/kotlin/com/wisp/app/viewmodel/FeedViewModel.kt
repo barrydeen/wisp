@@ -229,7 +229,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             onGroupReconnect?.invoke()
         }
     )
-    val socialGraphDb = SocialGraphDb(app)
+    val socialGraphDb = SocialGraphDb(app, pubkeyHex)
     val extendedNetworkRepo = ExtendedNetworkRepository(
         app, contactRepo, muteRepo, relayListRepo, relayPool, subManager, relayScoreBoard, pubkeyHex, socialGraphDb
     )
@@ -432,6 +432,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         liveStreamRepo.clear()
     }
     fun reloadForNewAccount() {
+        safetyPrefs.reload(getUserPubkey())
         startup.reloadForNewAccount()
         groupRepo.reload(getUserPubkey())
     }
