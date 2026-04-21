@@ -44,6 +44,7 @@ class PowManager(
         tags: List<List<String>>,
         kind: Int = 1,
         replyToPubkey: String? = null,
+        inboxPubkeys: Collection<String> = replyToPubkey?.let { listOf(it) } ?: emptyList(),
         onPublished: (() -> Unit)? = null
     ) {
         miningJob?.cancel()
@@ -76,8 +77,8 @@ class PowManager(
                 )
 
                 val msg = ClientMessage.event(event)
-                var sentCount = if (replyToPubkey != null) {
-                    outboxRouter.publishToInbox(msg, replyToPubkey)
+                var sentCount = if (inboxPubkeys.isNotEmpty()) {
+                    outboxRouter.publishToInbox(msg, inboxPubkeys)
                 } else {
                     relayPool.sendToWriteRelays(msg)
                 }
@@ -85,8 +86,8 @@ class PowManager(
                 if (sentCount == 0) {
                     val reconnected = relayPool.ensureWriteRelaysConnected()
                     if (reconnected > 0) {
-                        sentCount = if (replyToPubkey != null) {
-                            outboxRouter.publishToInbox(msg, replyToPubkey)
+                        sentCount = if (inboxPubkeys.isNotEmpty()) {
+                            outboxRouter.publishToInbox(msg, inboxPubkeys)
                         } else {
                             relayPool.sendToWriteRelays(msg)
                         }
