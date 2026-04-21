@@ -653,15 +653,21 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             return sentCount
         }
 
+        // Pubkeys whose inbox relays should also receive this note: the reply target plus
+        // anyone mentioned in the content. Dedup happens inside OutboxRouter.publishToInbox.
+        val inboxPubkeys = buildSet {
+            replyTo?.pubkey?.let { add(it) }
+            addAll(mentionedPubkeys)
+        }
+
         // Hand off to PowManager for background mining if PoW enabled
         if (_powEnabled.value && powManager != null) {
-            val replyPubkey = replyTo?.pubkey
             powManager.submitNote(
                 signer = signer,
                 content = finalContent,
                 tags = tags,
                 kind = eventKind,
-                replyToPubkey = replyPubkey,
+                inboxPubkeys = inboxPubkeys,
                 onPublished = {
                     if (replyTo != null) {
                         eventRepo?.addReplyCount(replyTo.id, "pow-pending")
@@ -684,8 +690,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         val event = signer.signEvent(kind = eventKind, content = finalContent, tags = tags)
         android.util.Log.d("GALLERY", "[ComposeVM] publishNote kind=$eventKind id=${event.id.take(12)} content='${finalContent.take(50)}' tags=${tags.size} galleryMode=${_galleryMode.value} uploadedUrls=${_uploadedUrls.value.size}")
         val msg = ClientMessage.event(event)
-        var sentCount = if (replyTo != null && outboxRouter != null) {
-            outboxRouter.publishToInbox(msg, replyTo.pubkey)
+        var sentCount = if (outboxRouter != null && inboxPubkeys.isNotEmpty()) {
+            outboxRouter.publishToInbox(msg, inboxPubkeys)
         } else {
             relayPool.sendToWriteRelays(msg)
         }
@@ -693,8 +699,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         if (sentCount == 0) {
             val reconnected = relayPool.ensureWriteRelaysConnected()
             if (reconnected > 0) {
-                sentCount = if (replyTo != null && outboxRouter != null) {
-                    outboxRouter.publishToInbox(msg, replyTo.pubkey)
+                sentCount = if (outboxRouter != null && inboxPubkeys.isNotEmpty()) {
+                    outboxRouter.publishToInbox(msg, inboxPubkeys)
                 } else {
                     relayPool.sendToWriteRelays(msg)
                 }
