@@ -203,18 +203,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         context = app,
         relayPool = relayPool,
         scope = viewModelScope,
-        onPreReconnect = {
-            // Start the trending relay connection early so it connects in parallel
-            // with persistent relays, not sequentially after them.
-            if (feedSub.feedType.value == FeedType.TRENDING) {
-                val url = if (feedSub.trendingMode.value == TrendingMode.USERS) {
-                    TRENDING_USERS_RELAY_URL
-                } else {
-                    buildTrendingRelayUrl(feedSub.trendingMetric.value, feedSub.trendingTimeframe.value)
-                }
-                relayPool.preConnectEphemeral(url)
-            }
-        },
         onReconnected = { force ->
             Log.d("RLC", "[FeedVM] onReconnected(force=$force) feedType=${feedSub.feedType.value} selectedRelay=${feedSub.selectedRelay.value} feedSize=${eventRepo.feed.value.size}")
             feedSub.subscribeFeed()
