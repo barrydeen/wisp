@@ -569,7 +569,8 @@ fun PostCard(
                     eventRepo = eventRepo,
                     onProfileClick = onNavigateToProfile,
                     onNoteClick = onQuotedNoteClick,
-                    noteActions = noteActions
+                    noteActions = noteActions,
+                    authorPubkey = event.pubkey
                 )
             } else {
                 // Collapsible content with max height (~1 viewport)

@@ -44,7 +44,7 @@
             </intent-filter>
         </activity>
         <service
-            android:name=".ui.component.VideoPlaybackService"
+            android:name=".ui.component.WispPlaybackService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="true">
             <intent-filter>

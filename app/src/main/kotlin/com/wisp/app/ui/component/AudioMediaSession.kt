@@ -5,7 +5,7 @@ import android.content.Intent
 import androidx.media3.common.Player
 import androidx.media3.session.MediaSession
 
-object VideoMediaSession {
+object AudioMediaSession {
     internal var session: MediaSession? = null
         private set
     private var appContext: Context? = null
@@ -15,7 +15,7 @@ object VideoMediaSession {
         val ctx = context.applicationContext
         release()
         appContext = ctx
-        session = MediaSession.Builder(ctx, player).build()
+        session = MediaSession.Builder(ctx, player).setId("wisp-audio").build()
         ctx.startService(Intent(ctx, WispPlaybackService::class.java))
     }
 
@@ -23,8 +23,8 @@ object VideoMediaSession {
         session?.release()
         session = null
         appContext?.let {
-            // Only stop the service if audio isn't also holding it.
-            if (AudioMediaSession.session == null) {
+            // Only stop the service if video isn't also holding it.
+            if (VideoMediaSession.session == null) {
                 it.stopService(Intent(it, WispPlaybackService::class.java))
             }
         }

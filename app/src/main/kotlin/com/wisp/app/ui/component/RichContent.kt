@@ -135,6 +135,13 @@ data class MediaSettings(
 
 val LocalMediaSettings = compositionLocalOf { MediaSettings() }
 
+internal data class AudioPostContext(
+    val authorPubkey: String? = null,
+    val eventRepo: EventRepository? = null
+)
+
+internal val LocalAudioPostContext = compositionLocalOf { AudioPostContext() }
+
 /**
  * Bundles event-generic action callbacks so quoted notes can render
  * a full PostCard (action bar, triple-dot menu, expandable details, etc.).
@@ -597,6 +604,7 @@ fun RichContent(
     onHashtagClick: ((String) -> Unit)? = null,
     onLiveStreamClick: ((String, String, String?) -> Unit)? = null,
     noteActions: NoteActions? = null,
+    authorPubkey: String? = null,
     modifier: Modifier = Modifier
 ) {
     val segments = remember(content, emojiMap, imetaMap, plainLinks) { parseContent(content.trimEnd('\n', '\r'), emojiMap, imetaMap, trimBlankLines = !plainLinks) }
@@ -641,6 +649,9 @@ fun RichContent(
     val effectiveRelayClick = noteActions?.onRelayClick
 
     SelectionContainer {
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalAudioPostContext provides AudioPostContext(authorPubkey = authorPubkey, eventRepo = eventRepo)
+    ) {
     Column(modifier = modifier) {
         for (group in groups) {
             if (group is List<*>) {
@@ -800,7 +811,11 @@ fun RichContent(
                         )
                     }
                     is ContentSegment.AudioSegment -> {
-                        InlineAudioPlayer(meta = segment.meta)
+                        InlineAudioPlayer(
+                            meta = segment.meta,
+                            authorPubkey = authorPubkey,
+                            eventRepo = eventRepo
+                        )
                     }
                     is ContentSegment.UnknownMediaSegment -> {
                         UnknownMediaContent(
@@ -924,6 +939,7 @@ fun RichContent(
                 }
             }
         }
+    }
     }
     }
 }
@@ -1855,7 +1871,8 @@ private fun UnknownMediaContent(
             InlineVideoPlayerWithFullscreen(meta = meta, onFullScreen = onFullScreenVideo)
         }
         resolved == "audio" -> {
-            InlineAudioPlayer(meta = meta)
+            val ctx = LocalAudioPostContext.current
+            InlineAudioPlayer(meta = meta, authorPubkey = ctx.authorPubkey, eventRepo = ctx.eventRepo)
         }
         else -> {
             // Fallback: try loading as image (most blossom content is images)
@@ -1864,15 +1881,41 @@ private fun UnknownMediaContent(
     }
 }
 
-@OptIn(UnstableApi::class)
 @Composable
-private fun InlineAudioPlayer(meta: MediaMeta) {
+private fun InlineAudioPlayer(
+    meta: MediaMeta,
+    authorPubkey: String? = null,
+    eventRepo: EventRepository? = null
+) {
     val url = meta.url
     val context = LocalContext.current
     val autoLoad = LocalMediaSettings.current.autoLoadMedia
     var loaded by remember { mutableStateOf(autoLoad) }
 
-    if (!loaded) {
+    val globalState by AudioPlayerController.state.collectAsState()
+    val isCurrent = globalState?.track?.url == url
+    val isPlaying = isCurrent && globalState?.isPlaying == true
+
+    val profileVer = eventRepo?.profileVersion?.collectAsState()?.value ?: 0
+    val profile = remember(authorPubkey, profileVer) {
+        authorPubkey?.let { eventRepo?.getProfileData(it) }
+    }
+    LaunchedEffect(authorPubkey) {
+        if (authorPubkey != null) eventRepo?.requestProfileIfMissing(authorPubkey, emptyList())
+    }
+
+    val title = profile?.displayString
+        ?: url.substringAfterLast('/').substringBeforeLast('.').ifBlank { "Audio" }
+
+    fun buildTrack() = AudioTrack(
+        url = url,
+        title = title,
+        artist = null,
+        artworkUrl = profile?.picture,
+        authorPubkey = authorPubkey
+    )
+
+    if (!loaded && !isCurrent) {
         Surface(
             shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
@@ -1880,7 +1923,10 @@ private fun InlineAudioPlayer(meta: MediaMeta) {
                 .fillMaxWidth()
                 .padding(vertical = 4.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .clickable { loaded = true }
+                .clickable {
+                    loaded = true
+                    AudioPlayerController.play(context, buildTrack())
+                }
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1893,55 +1939,13 @@ private fun InlineAudioPlayer(meta: MediaMeta) {
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "Tap to load audio",
+                    text = "Tap to play audio",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
         return
-    }
-
-    val player = remember {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(url))
-            prepare()
-        }
-    }
-
-    DisposableEffect(url) {
-        onDispose { player.release() }
-    }
-
-    var isPlaying by remember { mutableStateOf(false) }
-    var currentPosition by remember { mutableLongStateOf(0L) }
-    var duration by remember { mutableLongStateOf(0L) }
-
-    DisposableEffect(player) {
-        val listener = object : Player.Listener {
-            override fun onIsPlayingChanged(playing: Boolean) {
-                isPlaying = playing
-            }
-            override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_READY) {
-                    duration = player.duration.coerceAtLeast(0L)
-                }
-            }
-        }
-        player.addListener(listener)
-        onDispose { player.removeListener(listener) }
-    }
-
-    // Poll position while playing
-    LaunchedEffect(isPlaying) {
-        while (isPlaying) {
-            currentPosition = player.currentPosition.coerceAtLeast(0L)
-            withContext(Dispatchers.Main) {
-                kotlinx.coroutines.delay(250)
-            }
-        }
-        // Update once more when paused
-        currentPosition = player.currentPosition.coerceAtLeast(0L)
     }
 
     Surface(
@@ -1958,8 +1962,11 @@ private fun InlineAudioPlayer(meta: MediaMeta) {
         ) {
             IconButton(
                 onClick = {
-                    if (isPlaying) player.pause()
-                    else player.play()
+                    if (isCurrent) {
+                        AudioPlayerController.togglePlayPause()
+                    } else {
+                        AudioPlayerController.play(context, buildTrack())
+                    }
                 }
             ) {
                 Icon(
@@ -1969,8 +1976,9 @@ private fun InlineAudioPlayer(meta: MediaMeta) {
                 )
             }
 
-            // Progress bar
-            val progress = if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f
+            val position = if (isCurrent) globalState?.positionMs ?: 0L else 0L
+            val duration = if (isCurrent) globalState?.durationMs ?: 0L else 0L
+            val progress = if (duration > 0) position.toFloat() / duration.toFloat() else 0f
             androidx.compose.material3.LinearProgressIndicator(
                 progress = { progress },
                 modifier = Modifier
@@ -1983,9 +1991,8 @@ private fun InlineAudioPlayer(meta: MediaMeta) {
 
             Spacer(Modifier.width(8.dp))
 
-            // Timestamp
             Text(
-                text = formatAudioTime(currentPosition) + " / " + formatAudioTime(duration),
+                text = formatAudioTime(position) + " / " + formatAudioTime(duration),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1994,6 +2001,7 @@ private fun InlineAudioPlayer(meta: MediaMeta) {
 }
 
 private fun formatAudioTime(ms: Long): String {
+    if (ms <= 0L) return "0:00"
     val totalSeconds = (ms / 1000).toInt()
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
