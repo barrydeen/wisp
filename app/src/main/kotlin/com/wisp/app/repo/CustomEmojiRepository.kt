@@ -153,6 +153,9 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
         _sortedUnicodeEmojis.value = all.sortedByDescending { freq[it] ?: 0 }
     }
 
+    // Resets in-memory state only; does NOT touch disk. On account switch the
+    // repo is called before the pubkey swap, so wiping `prefs` here would
+    // destroy the outgoing account's per-pubkey file.
     fun clear() {
         _userEmojiList.value = null
         _ownSets.value = emptyList()
@@ -162,7 +165,6 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
         _unicodeEmojis.value = emptyList()
         _emojiFrequency.value = emptyMap()
         _sortedUnicodeEmojis.value = emptyList()
-        prefs.edit().clear().apply()
     }
 
     fun reload(pubkeyHex: String?) {
