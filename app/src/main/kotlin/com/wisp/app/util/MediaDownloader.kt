@@ -33,46 +33,46 @@ object MediaDownloader {
 
     suspend fun downloadMedia(context: Context, url: String) {
         try {
-            val (bytes, responseMimeType) = withContext(Dispatchers.IO) {
+            withContext(Dispatchers.IO) {
                 val request = Request.Builder().url(url).build()
                 httpClient.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) error("Download failed: ${response.code}")
-                    val contentType = response.header("Content-Type")?.substringBefore(';')?.trim()
-                    val body = response.body?.bytes() ?: error("Empty response")
-                    body to contentType
-                }
-            }
+                    val responseMimeType = response.header("Content-Type")?.substringBefore(';')?.trim()
+                    val body = response.body ?: error("Empty response")
 
-            val rawName = url.substringAfterLast('/').substringBefore('?').ifEmpty { "download" }
-            val ext = rawName.substringAfterLast('.', "").lowercase()
-            val mimeType = mimeTypes[ext] ?: responseMimeType ?: "application/octet-stream"
-            // If no extension, append one based on mime type
-            val fileName = if (ext.isEmpty() || ext == rawName) {
-                val guessedExt = mimeTypes.entries.firstOrNull { it.value == mimeType }?.key ?: "bin"
-                "$rawName.$guessedExt"
-            } else rawName
+                    val rawName = url.substringAfterLast('/').substringBefore('?').ifEmpty { "download" }
+                    val ext = rawName.substringAfterLast('.', "").lowercase()
+                    val mimeType = mimeTypes[ext] ?: responseMimeType ?: "application/octet-stream"
+                    val fileName = if (ext.isEmpty() || ext == rawName) {
+                        val guessedExt = mimeTypes.entries.firstOrNull { it.value == mimeType }?.key ?: "bin"
+                        "$rawName.$guessedExt"
+                    } else rawName
 
-            withContext(Dispatchers.IO) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                    val values = ContentValues().apply {
-                        put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                        put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                        val values = ContentValues().apply {
+                            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                            put(MediaStore.MediaColumns.IS_PENDING, 1)
+                        }
+                        val uri = context.contentResolver.insert(collection, values)
+                            ?: error("Failed to create MediaStore entry")
+                        context.contentResolver.openOutputStream(uri)?.use { out ->
+                            body.byteStream().use { input -> input.copyTo(out) }
+                        } ?: error("Failed to open output stream")
+                        values.clear()
+                        values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                        context.contentResolver.update(uri, values, null, null)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                        dir.mkdirs()
+                        val file = File(dir, fileName)
+                        FileOutputStream(file).use { out ->
+                            body.byteStream().use { input -> input.copyTo(out) }
+                        }
                     }
-                    val uri = context.contentResolver.insert(collection, values)
-                        ?: error("Failed to create MediaStore entry")
-                    context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-                    values.clear()
-                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                    context.contentResolver.update(uri, values, null, null)
-                } else {
-                    @Suppress("DEPRECATION")
-                    val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                    dir.mkdirs()
-                    val file = File(dir, fileName)
-                    FileOutputStream(file).use { it.write(bytes) }
                 }
             }
 
