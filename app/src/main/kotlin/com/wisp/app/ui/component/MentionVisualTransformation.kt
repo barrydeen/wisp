@@ -7,7 +7,11 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 
-private val NOSTR_URI_REGEX = Regex("nostr:(npub1[a-z0-9]{58}|nprofile1[a-z0-9]+|note1[a-z0-9]{58}|nevent1[a-z0-9]+)")
+// Mentions are now stored in the compose text as plain `@Name`, tracked out-of-band by
+// ComposeViewModel and spliced to nostr:nprofile URIs at publish time. The OutputTransformation
+// only still abbreviates pasted note/nevent quote URIs, where identity cursor mapping isn't a
+// concern (atomic paste, no interleaved typing).
+private val NOSTR_URI_REGEX = Regex("nostr:(note1[a-z0-9]{58}|nevent1[a-z0-9]+)")
 private val SHORTCODE_REGEX = Regex(":([a-zA-Z0-9_-]+):")
 
 class MentionOutputTransformation(
@@ -18,20 +22,14 @@ class MentionOutputTransformation(
     override fun TextFieldBuffer.transformOutput() {
         val original = asCharSequence().toString()
 
-        // Collect all replacements (mention + emoji) then apply in reverse order
         data class Replacement(val start: Int, val end: Int, val display: String)
         val replacements = mutableListOf<Replacement>()
 
-        // Mention replacements
         for (match in NOSTR_URI_REGEX.findAll(original)) {
             val bech32 = match.groupValues[1]
             val display = when {
-                bech32.startsWith("npub1") || bech32.startsWith("nprofile1") -> {
-                    val name = resolveDisplayName(bech32) ?: bech32.take(12) + "..."
-                    "@$name"
-                }
-                bech32.startsWith("note1") -> "\uD83D\uDD17${bech32.take(12)}..."
-                bech32.startsWith("nevent1") -> "\uD83D\uDD17${bech32.take(14)}..."
+                bech32.startsWith("note1") -> "🔗${bech32.take(12)}..."
+                bech32.startsWith("nevent1") -> "🔗${bech32.take(14)}..."
                 else -> bech32.take(12) + "..."
             }
             replacements.add(Replacement(match.range.first, match.range.last + 1, display))
@@ -42,12 +40,12 @@ class MentionOutputTransformation(
             for (match in SHORTCODE_REGEX.findAll(original)) {
                 val shortcode = match.groupValues[1]
                 if (resolvedEmojis.containsKey(shortcode)) {
-                    // Check this range doesn't overlap with a mention replacement
+                    // Check this range doesn't overlap with a quote URI replacement
                     val start = match.range.first
                     val end = match.range.last + 1
                     val overlaps = replacements.any { it.start < end && it.end > start }
                     if (!overlaps) {
-                        replacements.add(Replacement(start, end, "\u2B21$shortcode"))
+                        replacements.add(Replacement(start, end, "⬡$shortcode"))
                     }
                 }
             }
@@ -90,7 +88,7 @@ class EmojiVisualTransformation(
             val shortcode = match.groupValues[1]
             sb.append(original, lastEnd, match.range.first)
             val transStart = sb.length
-            val display = "\u2B21$shortcode"
+            val display = "⬡$shortcode"
             sb.append(display)
             ranges.add(Range(match.range.first, match.range.last + 1, transStart, sb.length))
             lastEnd = match.range.last + 1
