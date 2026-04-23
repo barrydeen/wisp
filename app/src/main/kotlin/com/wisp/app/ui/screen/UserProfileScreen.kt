@@ -69,6 +69,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -187,19 +188,24 @@ fun UserProfileScreen(
     onRemoveEmojiSet: ((String, String) -> Unit)? = null,
     isEmojiSetAdded: ((String, String) -> Boolean)? = null
 ) {
-    val invoiceNoteActions = remember(onPayInvoice, onGroupRoom, onLiveStreamClick, fetchGroupPreview, onAddEmojiSet) {
-        if (onPayInvoice != null || onGroupRoom != null || fetchGroupPreview != null || onAddEmojiSet != null || onLiveStreamClick != null) {
+    val resolvedEmojisState = rememberUpdatedState(resolvedEmojis)
+    val unicodeEmojisState = rememberUpdatedState(unicodeEmojis)
+    val invoiceNoteActions = remember(onPayInvoice, onGroupRoom, onLiveStreamClick, fetchGroupPreview, onAddEmojiSet, onOpenEmojiLibrary) {
+        if (onPayInvoice != null || onGroupRoom != null || fetchGroupPreview != null || onAddEmojiSet != null || onLiveStreamClick != null || onOpenEmojiLibrary != null) {
             com.wisp.app.ui.component.NoteActions(
-                onPayInvoice = onPayInvoice,
-                onGroupRoom = onGroupRoom,
-                onLiveStreamClick = onLiveStreamClick,
-                fetchGroupPreview = fetchGroupPreview,
-                onAddEmojiSet = onAddEmojiSet,
-                onRemoveEmojiSet = onRemoveEmojiSet,
-                isEmojiSetAdded = isEmojiSetAdded,
-                onPollVote = onPollVote,
-                nip05Repo = nip05Repo
-            )
+            onPayInvoice = onPayInvoice,
+            onGroupRoom = onGroupRoom,
+            onLiveStreamClick = onLiveStreamClick,
+            fetchGroupPreview = fetchGroupPreview,
+            onAddEmojiSet = onAddEmojiSet,
+            onRemoveEmojiSet = onRemoveEmojiSet,
+            isEmojiSetAdded = isEmojiSetAdded,
+            onPollVote = onPollVote,
+            nip05Repo = nip05Repo,
+            resolvedEmojisProvider = { resolvedEmojisState.value },
+            unicodeEmojisProvider = { unicodeEmojisState.value },
+            onOpenEmojiLibrary = onOpenEmojiLibrary
+        )
         } else null
     }
     val profile by viewModel.profile.collectAsState()

@@ -174,6 +174,9 @@ data class NoteActions(
     val onRemoveEmojiSet: ((pubkey: String, dTag: String) -> Unit)? = null,
     val isEmojiSetAdded: ((pubkey: String, dTag: String) -> Boolean)? = null,
     val onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    val resolvedEmojisProvider: () -> Map<String, String> = { emptyMap() },
+    val unicodeEmojisProvider: () -> List<String> = { emptyList() },
+    val onOpenEmojiLibrary: (() -> Unit)? = null,
 )
 
 data class MediaMeta(
@@ -996,6 +999,7 @@ fun QuotedNote(
         val hasUserZapped = remember(zapVersion, eventId) { eventRepo.hasUserZapped(eventId) }
         val reactionDetails = remember(reactionVersion, eventId) { eventRepo.getReactionDetails(eventId) }
         val zapDetails = remember(zapVersion, eventId) { eventRepo.getZapDetails(eventId) }
+        val reactionEmojiUrls = remember(reactionVersion, eventId) { eventRepo.getReactionEmojiUrls(eventId) }
 
         // Poll data for quoted polls
         val pollVoteCounts = remember(pollVoteVersion, eventId) {
@@ -1060,6 +1064,10 @@ fun QuotedNote(
                     onPin = { noteActions.onPin(eventId) },
                     onQuotedNoteClick = effectiveNoteClick,
                     noteActions = noteActions,
+                    reactionEmojiUrls = reactionEmojiUrls,
+                    resolvedEmojis = noteActions.resolvedEmojisProvider(),
+                    unicodeEmojis = noteActions.unicodeEmojisProvider(),
+                    onOpenEmojiLibrary = noteActions.onOpenEmojiLibrary,
                     showDivider = false
                 )
             } else {
@@ -1102,6 +1110,10 @@ fun QuotedNote(
                     zapPollSatsCounts = zapPollSatsCounts,
                     zapPollTotalSats = zapPollTotalSats,
                     userZapPollVote = userZapPollVote,
+                    reactionEmojiUrls = reactionEmojiUrls,
+                    resolvedEmojis = noteActions.resolvedEmojisProvider(),
+                    unicodeEmojis = noteActions.unicodeEmojisProvider(),
+                    onOpenEmojiLibrary = noteActions.onOpenEmojiLibrary,
                     showDivider = false
                 )
             }

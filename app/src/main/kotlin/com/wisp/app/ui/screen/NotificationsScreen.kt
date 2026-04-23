@@ -1371,7 +1371,7 @@ private fun ReferencedNotePostCard(
             onQuotedNoteClick = params.onNoteClick,
             noteActions = run {
                 val p = params
-                if (p.onPayInvoice != null || p.onGroupRoom != null || p.fetchGroupPreview != null || p.onAddEmojiSet != null) {
+                if (p.onPayInvoice != null || p.onGroupRoom != null || p.fetchGroupPreview != null || p.onAddEmojiSet != null || p.onOpenEmojiLibrary != null) {
                     com.wisp.app.ui.component.NoteActions(
                         onPayInvoice = p.onPayInvoice,
                         onGroupRoom = p.onGroupRoom,
@@ -1380,7 +1380,10 @@ private fun ReferencedNotePostCard(
                         onRemoveEmojiSet = p.onRemoveEmojiSet,
                         isEmojiSetAdded = p.isEmojiSetAdded,
                         onPollVote = p.onPollVote,
-                        nip05Repo = p.nip05Repo
+                        nip05Repo = p.nip05Repo,
+                        resolvedEmojisProvider = { p.resolvedEmojis },
+                        unicodeEmojisProvider = { p.unicodeEmojis },
+                        onOpenEmojiLibrary = p.onOpenEmojiLibrary
                     )
                 } else null
             },
@@ -1457,7 +1460,7 @@ private fun ReferencedNotePostCard(
             onZapPollVote = { idx -> params.onZapPollVote(event.id, idx) },
             noteActions = run {
                 val p = params
-                if (p.onPayInvoice != null || p.onGroupRoom != null || p.fetchGroupPreview != null || p.onAddEmojiSet != null) {
+                if (p.onPayInvoice != null || p.onGroupRoom != null || p.fetchGroupPreview != null || p.onAddEmojiSet != null || p.onOpenEmojiLibrary != null) {
                     com.wisp.app.ui.component.NoteActions(
                         onPayInvoice = p.onPayInvoice,
                         onGroupRoom = p.onGroupRoom,
@@ -1466,7 +1469,10 @@ private fun ReferencedNotePostCard(
                         onRemoveEmojiSet = p.onRemoveEmojiSet,
                         isEmojiSetAdded = p.isEmojiSetAdded,
                         onPollVote = p.onPollVote,
-                        nip05Repo = p.nip05Repo
+                        nip05Repo = p.nip05Repo,
+                        resolvedEmojisProvider = { p.resolvedEmojis },
+                        unicodeEmojisProvider = { p.unicodeEmojis },
+                        onOpenEmojiLibrary = p.onOpenEmojiLibrary
                     )
                 } else null
             },
