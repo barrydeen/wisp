@@ -2219,6 +2219,7 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
 
     val context = LocalContext.current
     val view = LocalView.current
+    val scope = rememberCoroutineScope()
     var videoAspectRatio by remember { mutableFloatStateOf(parseAspectRatio(meta.dimension) ?: (16f / 9f)) }
     val isMuted by globalMuted.collectAsState()
     var showControls by remember { mutableStateOf(false) }
@@ -2348,6 +2349,19 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
                         imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff
                             else Icons.AutoMirrored.Filled.VolumeUp,
                         contentDescription = if (isMuted) "Unmute" else "Mute"
+                    )
+                }
+                Spacer(Modifier.width(4.dp))
+                IconButton(
+                    onClick = {
+                        scope.launch { MediaDownloader.downloadMedia(context, url) }
+                    },
+                    colors = buttonColors,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_download),
+                        contentDescription = "Download"
                     )
                 }
                 Spacer(Modifier.width(4.dp))
