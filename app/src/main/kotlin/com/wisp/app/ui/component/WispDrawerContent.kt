@@ -144,6 +144,7 @@ fun WispDrawerContent(
                     if (crashTapCount >= 7) {
                         throw RuntimeException("Test crash")
                     }
+                    onProfile()
                 }) {
                     ProfilePicture(url = profile?.picture, size = 64)
                 }
