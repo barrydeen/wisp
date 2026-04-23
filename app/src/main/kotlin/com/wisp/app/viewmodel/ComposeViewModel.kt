@@ -50,6 +50,20 @@ private val NOSTR_URI_REGEX = Regex("nostr:(npub1[a-z0-9]{58}|nprofile1[a-z0-9]+
 private val BARE_BECH32_REGEX = Regex("(?<!nostr:)(?<![a-z0-9/.:#])((note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]{10,})")
 private val HASHTAG_REGEX = Regex("(?:^|(?<=\\s))#([a-zA-Z0-9_]+)")
 
+/** Tracks an inserted @mention as a range in the compose text, mapped to its pubkey. */
+data class Mention(val start: Int, val end: Int, val pubkey: String)
+
+private fun restoreMentionsFromState(state: SavedStateHandle): List<Mention> {
+    val raw = state.get<Array<String>>("draft_mentions") ?: return emptyList()
+    return raw.mapNotNull { entry ->
+        val parts = entry.split(',', limit = 3)
+        if (parts.size != 3) return@mapNotNull null
+        val start = parts[0].toIntOrNull() ?: return@mapNotNull null
+        val end = parts[1].toIntOrNull() ?: return@mapNotNull null
+        Mention(start, end, parts[2])
+    }
+}
+
 class ComposeViewModel(app: Application, private val savedStateHandle: SavedStateHandle) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
     private val interfacePrefs = InterfacePreferences(app)
@@ -84,6 +98,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
     private val _mentionCandidates = MutableStateFlow<List<MentionCandidate>>(emptyList())
     val mentionCandidates: StateFlow<List<MentionCandidate>> = _mentionCandidates
+
+    private val _mentions = MutableStateFlow<List<Mention>>(restoreMentionsFromState(savedStateHandle))
+    val mentions: StateFlow<List<Mention>> = _mentions
 
     private val _hashtags = MutableStateFlow<List<String>>(emptyList())
     val hashtags: StateFlow<List<String>> = _hashtags
@@ -300,22 +317,20 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     }
 
     fun updateContent(value: TextFieldValue) {
-        // Check if cursor entered a nostr: URI and user backspaced — delete entire mention
         val prev = _content.value
-        if (value.text.length < prev.text.length && value.text.length == prev.text.length - 1) {
-            // Single character deletion — check if we're inside a nostr: URI
-            val deletedAt = value.selection.start
-            for (match in NOSTR_URI_REGEX.findAll(prev.text)) {
-                if (deletedAt > match.range.first && deletedAt <= match.range.last + 1) {
-                    // Delete the entire mention
-                    val before = prev.text.substring(0, match.range.first)
-                    val after = prev.text.substring(match.range.last + 1)
-                    val newText = before + after
-                    _content.value = TextFieldValue(newText, TextRange(match.range.first))
-                    savedStateHandle["draft_content"] = newText
-                    detectMentionQuery(_content.value)
-                    return
+        // Shift/drop tracked mention ranges based on the edit delta between prev and value.
+        if (prev.text != value.text) {
+            val (editStart, oldEnd, newEnd) = diffRange(prev.text, value.text)
+            if (editStart >= 0) {
+                val delta = (newEnd - editStart) - (oldEnd - editStart)
+                _mentions.value = _mentions.value.mapNotNull { m ->
+                    when {
+                        oldEnd <= m.start -> m.copy(start = m.start + delta, end = m.end + delta)
+                        editStart >= m.end -> m
+                        else -> null // edit overlaps the mention range — user is breaking it; drop
+                    }
                 }
+                saveMentionsToState()
             }
         }
 
@@ -325,6 +340,20 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         savedStateHandle["draft_content"] = prefixed.text
         detectMentionQuery(prefixed)
         detectHashtags(prefixed.text)
+    }
+
+    /** Returns (editStart, oldEnd, newEnd) for the minimal edit between [old] and [new].
+     *  editStart is the first differing index; oldEnd/newEnd are the exclusive ends of the
+     *  changed regions in [old] and [new] respectively. Returns (-1,-1,-1) if strings are equal. */
+    private fun diffRange(old: String, new: String): Triple<Int, Int, Int> {
+        if (old == new) return Triple(-1, -1, -1)
+        val maxPrefix = minOf(old.length, new.length)
+        var prefix = 0
+        while (prefix < maxPrefix && old[prefix] == new[prefix]) prefix++
+        var suffix = 0
+        val maxSuffix = minOf(old.length - prefix, new.length - prefix)
+        while (suffix < maxSuffix && old[old.length - 1 - suffix] == new[new.length - 1 - suffix]) suffix++
+        return Triple(prefix, old.length - suffix, new.length - suffix)
     }
 
     private fun prefixBareBech32(value: TextFieldValue): TextFieldValue {
@@ -399,14 +428,39 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             return
         }
 
-        val nprofile = "nostr:" + Nip19.nprofileEncode(candidate.profile.pubkey)
+        val displayName = sanitizeMentionDisplay(candidate)
+        val insert = "@$displayName"
         val before = text.substring(0, mentionStartIndex)
         val after = if (cursor < text.length) text.substring(cursor) else ""
-        val newText = before + nprofile + " " + after
-        val newCursor = before.length + nprofile.length + 1
+        val newText = before + insert + after
+        val newCursor = before.length + insert.length
+
+        // The replaced range is [mentionStartIndex, cursor); new content has length `insert.length` there.
+        val replacedLen = cursor - mentionStartIndex
+        val lenDelta = insert.length - replacedLen
+        val shifted = _mentions.value.mapNotNull { m ->
+            when {
+                m.end <= mentionStartIndex -> m
+                m.start >= cursor -> m.copy(start = m.start + lenDelta, end = m.end + lenDelta)
+                else -> null // range overlaps replaced @query — drop (shouldn't normally happen)
+            }
+        }
+        val newMention = Mention(before.length, before.length + insert.length, candidate.profile.pubkey)
+        _mentions.value = shifted + newMention
+        saveMentionsToState()
 
         _content.value = TextFieldValue(newText, TextRange(newCursor))
+        savedStateHandle["draft_content"] = newText
         clearMentionState()
+    }
+
+    private fun sanitizeMentionDisplay(candidate: MentionCandidate): String {
+        val raw = candidate.profile.displayName?.takeIf { it.isNotBlank() }
+            ?: candidate.profile.name?.takeIf { it.isNotBlank() }
+            ?: return candidate.profile.pubkey.take(8) + "…" + candidate.profile.pubkey.takeLast(4)
+        // Strip whitespace and leading @ so the mention remains a single token and mention detection
+        // can't re-trigger on a name that itself contains spaces.
+        return raw.trim().removePrefix("@").replace(Regex("\\s+"), "_")
     }
 
 
@@ -421,7 +475,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         powManager: PowManager? = null,
         resolvedEmojis: Map<String, String> = emptyMap()
     ) {
-        val text = _content.value.text.trim()
+        val rawText = _content.value.text
+        val (materialized, _) = materializeMentions(rawText, _mentions.value)
+        val text = materialized.trim()
 
         // Gallery posts can have an empty caption — the media is the content
         if (text.isBlank() && !_galleryMode.value) {
@@ -644,7 +700,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             }
             deleteDraftOnPublish(relayPool, signer)
             _content.value = TextFieldValue()
+            _mentions.value = emptyList()
             savedStateHandle.remove<String>("draft_content")
+            savedStateHandle.remove<Array<String>>("draft_mentions")
             _uploadedUrls.value = emptyList()
             _error.value = null
             _publishing.value = false
@@ -680,7 +738,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             )
             deleteDraftOnPublish(relayPool, signer)
             _content.value = TextFieldValue()
+            _mentions.value = emptyList()
             savedStateHandle.remove<String>("draft_content")
+            savedStateHandle.remove<Array<String>>("draft_mentions")
             _uploadedUrls.value = emptyList()
             _error.value = null
             _publishing.value = false
@@ -730,6 +790,26 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _error.value = null
         _publishing.value = false
         return sentCount
+    }
+
+    private fun saveMentionsToState() {
+        savedStateHandle["draft_mentions"] = _mentions.value.map { "${it.start},${it.end},${it.pubkey}" }.toTypedArray()
+    }
+
+    /** Builds the publish-ready content by splicing tracked mention ranges into nostr:nprofile URIs.
+     *  Stale ranges (beyond text length) are skipped defensively. */
+    private fun materializeMentions(text: String, mentions: List<Mention>): Pair<String, Set<String>> {
+        if (mentions.isEmpty()) return text to emptySet()
+        val sorted = mentions.filter { it.start in 0..text.length && it.end in it.start..text.length }
+            .sortedByDescending { it.start }
+        var out = text
+        val pubkeys = mutableSetOf<String>()
+        for (m in sorted) {
+            val uri = "nostr:" + Nip19.nprofileEncode(m.pubkey)
+            out = out.substring(0, m.start) + uri + out.substring(m.end)
+            pubkeys.add(m.pubkey)
+        }
+        return out to pubkeys
     }
 
     private fun extractNostrRefs(content: String): Pair<Set<String>, Set<String>> {
@@ -798,7 +878,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         replyTo: NostrEvent?,
         signer: NostrSigner?
     ) {
-        val text = _content.value.text.trim()
+        // Materialize @mentions into nostr:nprofile URIs so the draft is restorable as a standalone text.
+        val (materialized, _) = materializeMentions(_content.value.text, _mentions.value)
+        val text = materialized.trim()
         if (text.isBlank() || signer == null) return
 
         val draftId = currentDraftId ?: Nip37.newDraftId()
@@ -854,7 +936,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     fun clear() {
         currentDraftId = null
         _content.value = TextFieldValue()
+        _mentions.value = emptyList()
         savedStateHandle.remove<String>("draft_content")
+        savedStateHandle.remove<Array<String>>("draft_mentions")
         _error.value = null
         _uploadedUrls.value = emptyList()
         _uploadProgress.value = null
