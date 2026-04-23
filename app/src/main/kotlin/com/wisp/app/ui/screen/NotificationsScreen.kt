@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -381,9 +382,9 @@ fun NotificationsScreen(
                         }
                     )
                 }
-                items(items = notifications, key = { it.id }, contentType = { "notification" }) { item ->
+                itemsIndexed(items = notifications, key = { _, it -> it.id }, contentType = { _, _ -> "notification" }) { index, item ->
                     val isExpanded = expandedId == item.id
-                    val itemIndex = notifications.indexOf(item) + 1 // +1 for summary header
+                    val itemIndex = index + 1 // +1 for summary header
                     val coroutineScope = rememberCoroutineScope()
                     ZenNotificationRow(
                         item = item,
