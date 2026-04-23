@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -359,6 +360,7 @@ fun PostCard(
             }
             Box {
                 var menuExpanded by remember { mutableStateOf(false) }
+                var showDeleteConfirm by remember { mutableStateOf(false) }
                 val context = LocalContext.current
                 val clipboardManager = LocalClipboardManager.current
                 IconButton(
@@ -420,7 +422,7 @@ fun PostCard(
                             text = { Text(stringResource(R.string.btn_delete)) },
                             onClick = {
                                 menuExpanded = false
-                                onDelete()
+                                showDeleteConfirm = true
                             }
                         )
                     }
@@ -482,6 +484,29 @@ fun PostCard(
                                 showTranslation = !showTranslation
                             } else {
                                 onTranslate()
+                            }
+                        }
+                    )
+                }
+                if (showDeleteConfirm) {
+                    AlertDialog(
+                        onDismissRequest = { showDeleteConfirm = false },
+                        title = { Text(stringResource(R.string.title_delete_note)) },
+                        text = { Text(stringResource(R.string.msg_delete_note_confirm)) },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showDeleteConfirm = false
+                                onDelete()
+                            }) {
+                                Text(
+                                    stringResource(R.string.btn_delete),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showDeleteConfirm = false }) {
+                                Text(stringResource(R.string.btn_cancel))
                             }
                         }
                     )

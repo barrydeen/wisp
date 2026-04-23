@@ -687,6 +687,8 @@
     <string name="action_delete_group">Eliminar sala de chat</string>
     <string name="title_delete_group">Eliminar sala de chat</string>
     <string name="msg_delete_group_confirm">¿Eliminar permanentemente esta sala de chat? Esta acción no se puede deshacer.</string>
+    <string name="title_delete_note">¿Eliminar nota?</string>
+    <string name="msg_delete_note_confirm">¿Enviar una solicitud de eliminación de esta nota a los relays? No se puede garantizar.</string>
 
     <string name="local_relay_my_relay">Mi Relay Local</string>
     <string name="local_relay_url_hint">ws://localhost:7777</string>

@@ -687,6 +687,8 @@
     <string name="action_delete_group">Chatruimte verwijderen</string>
     <string name="title_delete_group">Chatruimte verwijderen</string>
     <string name="msg_delete_group_confirm">Deze chatruimte definitief verwijderen? Dit kan niet ongedaan worden gemaakt.</string>
+    <string name="title_delete_note">Notitie verwijderen?</string>
+    <string name="msg_delete_note_confirm">Een verwijderverzoek voor deze notitie naar de relays sturen? Dit kan niet worden gegarandeerd.</string>
 
     <string name="local_relay_my_relay">Mijn lokale relay</string>
     <string name="local_relay_url_hint">ws://localhost:7777</string>

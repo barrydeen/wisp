@@ -687,6 +687,8 @@
     <string name="action_delete_group">Chatroom löschen</string>
     <string name="title_delete_group">Chatroom löschen</string>
     <string name="msg_delete_group_confirm">Diesen Chatroom dauerhaft löschen? Dies kann nicht rückgängig gemacht werden.</string>
+    <string name="title_delete_note">Notiz löschen?</string>
+    <string name="msg_delete_note_confirm">Eine Löschanfrage für diese Notiz an die Relays senden? Dies kann nicht garantiert werden.</string>
 
     <!-- Local Relay -->
     <string name="local_relay_my_relay">Mein lokales Relay</string>

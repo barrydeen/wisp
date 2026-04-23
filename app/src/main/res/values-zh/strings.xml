@@ -687,6 +687,8 @@
     <string name="action_delete_group">删除聊天室</string>
     <string name="title_delete_group">删除聊天室</string>
     <string name="msg_delete_group_confirm">永久删除此聊天室？此操作无法撤销。</string>
+    <string name="title_delete_note">删除笔记？</string>
+    <string name="msg_delete_note_confirm">向中继发送删除此笔记的请求？无法保证一定成功。</string>
 
     <!-- Local Relay -->
     <string name="local_relay_my_relay">我的本地中继</string>
