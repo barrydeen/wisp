@@ -6,6 +6,7 @@ import com.wisp.app.nostr.DmMessage
 import com.wisp.app.nostr.DmReaction
 import com.wisp.app.nostr.EncryptedMedia
 import com.wisp.app.nostr.DmZap
+import com.wisp.app.nostr.Nip09
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip17
 import com.wisp.app.nostr.Nip53
@@ -439,6 +440,23 @@ class EventRouter(
                     interestRepo.updateFromEvent(event)
                 }
             }
+            if (event.kind == 5) {
+                val myPubkey = getUserPubkey()
+                if (myPubkey != null && event.pubkey == myPubkey) {
+                    // Run through EventRepository so deletion coords/ids are persisted
+                    // in DeletedEventsRepository. Safe to call repeatedly.
+                    eventRepo.addEvent(event)
+                    // Relays often keep re-serving deleted addressable events; sweep
+                    // matching entries out of the repos that hold them in memory.
+                    for (coord in Nip09.getDeletedAddresses(event)) {
+                        val parts = coord.split(":", limit = 3)
+                        if (parts.size != 3 || parts[1] != myPubkey) continue
+                        val kind = parts[0].toIntOrNull() ?: continue
+                        val dTag = parts[2]
+                        if (kind == Nip51.KIND_INTEREST_SET) interestRepo.removeSet(dTag)
+                    }
+                }
+            }
             if (event.kind == Nip51.KIND_BOOKMARK_SET) {
                 val myPubkey = getUserPubkey()
                 val s = getSigner()
@@ -565,7 +583,7 @@ class EventRouter(
 
     companion object {
         private val SELF_DATA_KINDS = intArrayOf(
-            0, 3, 10002, 10050, 10007, 10006,
+            0, 3, 5, 10002, 10050, 10007, 10006,
             Nip51.KIND_MUTE_LIST, Nip51.KIND_SIMPLE_GROUPS, Nip51.KIND_BOOKMARK_LIST,
             Nip51.KIND_PIN_LIST, Blossom.KIND_SERVER_LIST, Nip51.KIND_FOLLOW_SET,
             Nip51.KIND_INTEREST_SET, Nip51.KIND_BOOKMARK_SET, Nip51.KIND_RELAY_SET,
