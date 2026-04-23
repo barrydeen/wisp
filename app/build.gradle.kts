@@ -51,7 +51,7 @@ android {
     }
 
     packaging {
-        jniLibs.useLegacyPackaging = true
+        jniLibs.useLegacyPackaging = false
     }
 
     buildFeatures {
