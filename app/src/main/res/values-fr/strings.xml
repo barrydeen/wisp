@@ -687,6 +687,8 @@
     <string name="action_delete_group">Supprimer la salle de chat</string>
     <string name="title_delete_group">Supprimer la salle de chat</string>
     <string name="msg_delete_group_confirm">Supprimer définitivement cette salle de chat ? Cette action est irréversible.</string>
+    <string name="title_delete_note">Supprimer la note ?</string>
+    <string name="msg_delete_note_confirm">Envoyer une demande de suppression de cette note aux relays ? Cela ne peut pas être garanti.</string>
 
     <!-- Local Relay -->
     <string name="local_relay_my_relay">Mon relais local</string>

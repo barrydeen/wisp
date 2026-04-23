@@ -687,6 +687,8 @@
     <string name="action_delete_group">チャットルームを削除</string>
     <string name="title_delete_group">チャットルームを削除</string>
     <string name="msg_delete_group_confirm">このチャットルームを完全に削除しますか？この操作は元に戻せません。</string>
+    <string name="title_delete_note">ノートを削除しますか？</string>
+    <string name="msg_delete_note_confirm">このノートの削除リクエストをリレーに送信しますか？保証はされません。</string>
 
     <string name="local_relay_my_relay">マイローカルリレー</string>
     <string name="local_relay_url_hint">ws://localhost:7777</string>

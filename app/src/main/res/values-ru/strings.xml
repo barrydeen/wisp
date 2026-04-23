@@ -648,6 +648,8 @@
     <string name="action_delete_group">Удалить чат-комнату</string>
     <string name="title_delete_group">Удалить чат-комнату</string>
     <string name="msg_delete_group_confirm">Навсегда удалить эту чат-комнату? Это действие нельзя отменить.</string>
+    <string name="title_delete_note">Удалить заметку?</string>
+    <string name="msg_delete_note_confirm">Отправить запрос на удаление этой заметки на реле? Это не может быть гарантировано.</string>
 
     <string name="local_relay_my_relay">Моё локальное реле</string>
     <string name="local_relay_url_hint">ws://localhost:7777</string>

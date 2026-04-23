@@ -687,6 +687,8 @@
     <string name="action_delete_group">채팅방 삭제</string>
     <string name="title_delete_group">채팅방 삭제</string>
     <string name="msg_delete_group_confirm">이 채팅방을 영구적으로 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.</string>
+    <string name="title_delete_note">노트를 삭제하시겠습니까?</string>
+    <string name="msg_delete_note_confirm">이 노트에 대한 삭제 요청을 릴레이로 보내시겠습니까? 보장되지는 않습니다.</string>
 
     <!-- Local Relay -->
     <string name="local_relay_my_relay">내 로컬 릴레이</string>
