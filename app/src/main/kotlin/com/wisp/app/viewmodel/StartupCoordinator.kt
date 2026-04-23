@@ -572,7 +572,11 @@ class StartupCoordinator(
         )
         val selfDataFilters = listOf(
             Filter(kinds = replaceableKinds, authors = listOf(myPubkey), limit = replaceableKinds.size),
-            Filter(kinds = addressableKinds, authors = listOf(myPubkey), limit = 250)
+            Filter(kinds = addressableKinds, authors = listOf(myPubkey), limit = 250),
+            // NIP-09 deletion events the user has published. Pulled so that deletions
+            // survive across devices and fresh installs even when relays keep re-serving
+            // the deleted replaceable/addressable events.
+            Filter(kinds = listOf(5), authors = listOf(myPubkey), limit = 500)
         )
         // Send to indexer relays (ephemeral if not already connected) AND the user's own
         // write relays — write relays are the authoritative source since the user published
