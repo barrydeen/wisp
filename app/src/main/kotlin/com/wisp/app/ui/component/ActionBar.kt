@@ -87,6 +87,7 @@ fun ActionBar(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val useZapBoltIcon = com.wisp.app.ui.util.useBoltIcon()
+    val fiatMode = com.wisp.app.ui.util.isFiatMode()
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showRepostMenu by remember { mutableStateOf(false) }
 
@@ -190,6 +191,13 @@ fun ActionBar(
             IconButton(onClick = onZap, enabled = !isZapInProgress) {
                 if (isZapInProgress) {
                     LightningAnimation(modifier = Modifier.size(width = 14.dp, height = 22.dp))
+                } else if (fiatMode) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_coin_stack),
+                        contentDescription = stringResource(R.string.cd_zaps),
+                        tint = if (hasUserZapped) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
                 } else if (useZapBoltIcon) {
                     Icon(
                         painter = painterResource(R.drawable.ic_bolt),

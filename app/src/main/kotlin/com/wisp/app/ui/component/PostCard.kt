@@ -1168,7 +1168,15 @@ internal fun TopZapperBanner(
 
             // Zap icon
             val useZapBolt = com.wisp.app.ui.util.useBoltIcon()
-            if (useZapBolt) {
+            val fiatMode = com.wisp.app.ui.util.isFiatMode()
+            if (fiatMode) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_coin_stack),
+                    contentDescription = null,
+                    tint = orange,
+                    modifier = Modifier.size(16.dp)
+                )
+            } else if (useZapBolt) {
                 Icon(
                     painter = painterResource(R.drawable.ic_bolt),
                     contentDescription = null,
