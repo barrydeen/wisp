@@ -2,6 +2,7 @@ package com.wisp.app
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
@@ -90,6 +91,7 @@ import com.wisp.app.ui.screen.OnboardingScreen
 import com.wisp.app.ui.component.AddNoteToListDialog
 import com.wisp.app.ui.component.CrashReportDialog
 import androidx.media3.exoplayer.ExoPlayer
+import com.wisp.app.ui.component.FloatingAudioPlayer
 import com.wisp.app.ui.component.FloatingVideoPlayer
 import com.wisp.app.ui.component.PipController
 import com.wisp.app.ui.component.FullScreenVideoPlayer
@@ -627,27 +629,30 @@ fun WispNavHost(
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            if (showBottomBar) {
-                WispBottomBar(
-                    currentRoute = currentRoute,
-                    hasUnreadHome = newNoteCount > 0,
-                    hasUnreadMessages = hasUnreadDms,
-                    hasUnreadNotifications = hasUnreadNotifications,
-                    isZapAnimating = isZapAnimating,
-                    isReplyAnimating = isReplyAnimating,
-                    notifSoundEnabled = notifSoundEnabled,
-                    onTabSelected = { tab ->
-                        if (currentRoute == tab.route) {
-                            scrollToTopTrigger++
-                        } else {
-                            if (tab == BottomTab.WALLET) walletViewModel.navigateHome()
-                            navController.navigate(tab.route) {
-                                popUpTo(Routes.FEED) { inclusive = false }
-                                launchSingleTop = true
+            Column {
+                FloatingAudioPlayer()
+                if (showBottomBar) {
+                    WispBottomBar(
+                        currentRoute = currentRoute,
+                        hasUnreadHome = newNoteCount > 0,
+                        hasUnreadMessages = hasUnreadDms,
+                        hasUnreadNotifications = hasUnreadNotifications,
+                        isZapAnimating = isZapAnimating,
+                        isReplyAnimating = isReplyAnimating,
+                        notifSoundEnabled = notifSoundEnabled,
+                        onTabSelected = { tab ->
+                            if (currentRoute == tab.route) {
+                                scrollToTopTrigger++
+                            } else {
+                                if (tab == BottomTab.WALLET) walletViewModel.navigateHome()
+                                navController.navigate(tab.route) {
+                                    popUpTo(Routes.FEED) { inclusive = false }
+                                    launchSingleTop = true
+                                }
                             }
                         }
-                    }
-                )
+                    )
+                }
             }
         }
     ) { innerPadding ->
