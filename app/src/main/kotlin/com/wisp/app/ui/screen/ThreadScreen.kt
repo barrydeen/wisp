@@ -40,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -161,6 +162,8 @@ fun ThreadScreen(
     val pollVoteVersion by eventRepo.pollVoteVersion.collectAsState()
     val followList by contactRepo.followList.collectAsState()
 
+    val resolvedEmojisState = rememberUpdatedState(resolvedEmojis)
+    val unicodeEmojisState = rememberUpdatedState(unicodeEmojis)
     val noteActions = remember(userPubkey) {
         NoteActions(
             onReply = onReply,
@@ -188,7 +191,10 @@ fun ThreadScreen(
             onAddEmojiSet = onAddEmojiSet,
             onRemoveEmojiSet = onRemoveEmojiSet,
             isEmojiSetAdded = isEmojiSetAdded,
-            onPollVote = onPollVote
+            onPollVote = onPollVote,
+            resolvedEmojisProvider = { resolvedEmojisState.value },
+            unicodeEmojisProvider = { unicodeEmojisState.value },
+            onOpenEmojiLibrary = onOpenEmojiLibrary
         )
     }
 

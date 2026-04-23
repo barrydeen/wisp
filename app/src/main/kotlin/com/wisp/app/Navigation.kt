@@ -1416,7 +1416,10 @@ fun WispNavHost(
                         isEmojiSetAdded = { pk, dTag ->
                             val ref = com.wisp.app.nostr.Nip30.buildSetReference(pk, dTag)
                             feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
-                        }
+                        },
+                        resolvedEmojisProvider = { feedViewModel.customEmojiRepo.resolvedEmojis.value },
+                        unicodeEmojisProvider = { feedViewModel.customEmojiRepo.sortedUnicodeEmojis.value },
+                        onOpenEmojiLibrary = { showDmEmojiLibrary = true }
                     )
                 },
                 resolvedEmojis = dmResolvedEmojis,
@@ -1500,7 +1503,10 @@ fun WispNavHost(
                         isEmojiSetAdded = { pk, dTag ->
                             val ref = com.wisp.app.nostr.Nip30.buildSetReference(pk, dTag)
                             feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
-                        }
+                        },
+                        resolvedEmojisProvider = { feedViewModel.customEmojiRepo.resolvedEmojis.value },
+                        unicodeEmojisProvider = { feedViewModel.customEmojiRepo.sortedUnicodeEmojis.value },
+                        onOpenEmojiLibrary = { showDmGroupEmojiLibrary = true }
                     )
                 },
                 resolvedEmojis = dmGroupResolvedEmojis,
@@ -1733,7 +1739,10 @@ fun WispNavHost(
                         isEmojiSetAdded = { pk, dTag ->
                             val ref = com.wisp.app.nostr.Nip30.buildSetReference(pk, dTag)
                             feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
-                        }
+                        },
+                        resolvedEmojisProvider = { feedViewModel.customEmojiRepo.resolvedEmojis.value },
+                        unicodeEmojisProvider = { feedViewModel.customEmojiRepo.sortedUnicodeEmojis.value },
+                        onOpenEmojiLibrary = { showGroupRoomEmojiLibrary = true }
                     )
                 },
                 onEmojiUsed = { feedViewModel.customEmojiRepo.recordEmojiUsage(it) }
@@ -2105,7 +2114,9 @@ fun WispNavHost(
                     isEmojiSetAdded = { pubkey, dTag ->
                         val ref = com.wisp.app.nostr.Nip30.buildSetReference(pubkey, dTag)
                         feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
-                    }
+                    },
+                    resolvedEmojisProvider = { feedViewModel.customEmojiRepo.resolvedEmojis.value },
+                    unicodeEmojisProvider = { feedViewModel.customEmojiRepo.sortedUnicodeEmojis.value }
                 )
             }
             val interestSets by feedViewModel.interestRepo.sets.collectAsState()
@@ -2254,7 +2265,9 @@ fun WispNavHost(
                     isEmojiSetAdded = { pubkey, dTag ->
                         val ref = com.wisp.app.nostr.Nip30.buildSetReference(pubkey, dTag)
                         feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
-                    }
+                    },
+                    resolvedEmojisProvider = { feedViewModel.customEmojiRepo.resolvedEmojis.value },
+                    unicodeEmojisProvider = { feedViewModel.customEmojiRepo.sortedUnicodeEmojis.value }
                 )
             }
             val interestSets by feedViewModel.interestRepo.sets.collectAsState()
@@ -2411,7 +2424,10 @@ fun WispNavHost(
                     isEmojiSetAdded = { pubkey, dTag ->
                         val ref = com.wisp.app.nostr.Nip30.buildSetReference(pubkey, dTag)
                         feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
-                    }
+                    },
+                    resolvedEmojisProvider = { feedViewModel.customEmojiRepo.resolvedEmojis.value },
+                    unicodeEmojisProvider = { feedViewModel.customEmojiRepo.sortedUnicodeEmojis.value },
+                    onOpenEmojiLibrary = { showArticleEmojiLibrary = true }
                 )
             }
 
