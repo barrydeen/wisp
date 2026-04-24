@@ -9,15 +9,19 @@ plugins {
 }
 
 android {
+    val baseApplicationId = rootProject.extra["baseApplicationId"] as String
+    val debugApplicationIdSuffix = rootProject.extra["debugApplicationIdSuffix"] as String
+
     namespace = "com.wisp.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.wisp.app"
+        applicationId = baseApplicationId
         minSdk = 26
         targetSdk = 35
-        versionCode = 76
-        versionName = "1.0.2"
+        versionCode = 74
+        versionName = "1.0.0"
+        resValue("string", "app_name", "Wisp")
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -34,6 +38,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = debugApplicationIdSuffix
+            resValue("string", "app_name", "Wisp Debug")
+        }
+
         release {
             isMinifyEnabled = true
             isShrinkResources = true
