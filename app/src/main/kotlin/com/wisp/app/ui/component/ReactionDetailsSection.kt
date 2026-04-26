@@ -174,7 +174,9 @@ fun ZapRow(
             Spacer(Modifier.width(2.dp))
         }
         Icon(
-            painter = androidx.compose.ui.res.painterResource(R.drawable.ic_bolt),
+            painter = androidx.compose.ui.res.painterResource(
+                if (com.wisp.app.ui.util.isFiatMode()) R.drawable.ic_coin_stack else R.drawable.ic_bolt
+            ),
             contentDescription = null,
             tint = Color(0xFFFF8C00),
             modifier = Modifier.size(14.dp)

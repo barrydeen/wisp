@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -103,7 +104,8 @@ fun ActionBar(
         Text(
             text = replyCount.toString(),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
         )
         Spacer(Modifier.width(8.dp))
         Box {
@@ -155,7 +157,8 @@ fun ActionBar(
         Text(
             text = likeCount.toString(),
             style = MaterialTheme.typography.labelSmall,
-            color = if (userReactionEmojis.isNotEmpty()) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant
+            color = if (userReactionEmojis.isNotEmpty()) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
         )
         Spacer(Modifier.width(8.dp))
         Box {
@@ -184,7 +187,8 @@ fun ActionBar(
         Text(
             text = repostCount.toString(),
             style = MaterialTheme.typography.labelSmall,
-            color = if (hasUserReposted) WispThemeColors.repostColor else MaterialTheme.colorScheme.onSurfaceVariant
+            color = if (hasUserReposted) WispThemeColors.repostColor else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
         )
         Spacer(Modifier.width(8.dp))
         Box {
@@ -234,7 +238,9 @@ fun ActionBar(
             Text(
                 text = AmountFormatter.formatShort(zapSats, context),
                 style = MaterialTheme.typography.labelSmall,
-                color = if (hasUserZapped) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (hasUserZapped) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
         Spacer(Modifier.width(8.dp))
