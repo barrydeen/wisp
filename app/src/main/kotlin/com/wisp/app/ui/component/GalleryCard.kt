@@ -152,6 +152,7 @@ fun GalleryCard(
     onPin: () -> Unit = {},
     isPinned: Boolean = false,
     onDelete: () -> Unit = {},
+    quoteDepth: Int = 0,
     modifier: Modifier = Modifier,
     showDivider: Boolean = true
 ) {
@@ -220,6 +221,7 @@ fun GalleryCard(
             onPin = onPin,
             isPinned = isPinned,
             onDelete = onDelete,
+            quoteDepth = quoteDepth,
             modifier = modifier,
             showDivider = showDivider
         )

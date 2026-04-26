@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -87,6 +88,7 @@ fun ActionBar(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val useZapBoltIcon = com.wisp.app.ui.util.useBoltIcon()
+    val fiatMode = com.wisp.app.ui.util.isFiatMode()
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showRepostMenu by remember { mutableStateOf(false) }
 
@@ -102,7 +104,8 @@ fun ActionBar(
         Text(
             text = replyCount.toString(),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
         )
         Spacer(Modifier.width(8.dp))
         Box {
@@ -154,7 +157,8 @@ fun ActionBar(
         Text(
             text = likeCount.toString(),
             style = MaterialTheme.typography.labelSmall,
-            color = if (userReactionEmojis.isNotEmpty()) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant
+            color = if (userReactionEmojis.isNotEmpty()) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
         )
         Spacer(Modifier.width(8.dp))
         Box {
@@ -183,13 +187,21 @@ fun ActionBar(
         Text(
             text = repostCount.toString(),
             style = MaterialTheme.typography.labelSmall,
-            color = if (hasUserReposted) WispThemeColors.repostColor else MaterialTheme.colorScheme.onSurfaceVariant
+            color = if (hasUserReposted) WispThemeColors.repostColor else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
         )
         Spacer(Modifier.width(8.dp))
         Box {
             IconButton(onClick = onZap, enabled = !isZapInProgress) {
                 if (isZapInProgress) {
                     LightningAnimation(modifier = Modifier.size(width = 14.dp, height = 22.dp))
+                } else if (fiatMode) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_coin_stack),
+                        contentDescription = stringResource(R.string.cd_zaps),
+                        tint = if (hasUserZapped) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
                 } else if (useZapBoltIcon) {
                     Icon(
                         painter = painterResource(R.drawable.ic_bolt),
@@ -226,7 +238,9 @@ fun ActionBar(
             Text(
                 text = AmountFormatter.formatShort(zapSats, context),
                 style = MaterialTheme.typography.labelSmall,
-                color = if (hasUserZapped) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (hasUserZapped) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
         Spacer(Modifier.width(8.dp))

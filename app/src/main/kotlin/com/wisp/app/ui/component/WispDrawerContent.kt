@@ -419,9 +419,12 @@ fun WispDrawerContent(
             modifier = Modifier.padding(horizontal = 12.dp)
         )
         val useZapBolt = com.wisp.app.ui.util.useBoltIcon()
+        val fiatMode = com.wisp.app.ui.util.isFiatMode()
         NavigationDrawerItem(
             icon = {
-                if (useZapBolt) {
+                if (fiatMode) {
+                    Icon(Icons.Outlined.AccountBalanceWallet, contentDescription = null)
+                } else if (useZapBolt) {
                     Icon(
                         painter = painterResource(R.drawable.ic_bolt),
                         contentDescription = null,

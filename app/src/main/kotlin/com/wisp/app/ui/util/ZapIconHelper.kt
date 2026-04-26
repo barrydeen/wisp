@@ -24,3 +24,14 @@ fun useBoltIcon(): Boolean {
     }
     return prefs.getBoolean("zap_bolt_icon", false)
 }
+
+/**
+ * True when fiat mode is active — callers can use this to show
+ * a fiat-specific icon (e.g. coin stack) instead of the bolt.
+ */
+@Composable
+fun isFiatMode(): Boolean {
+    val context = LocalContext.current
+    val fiatMode by FiatPreferences.get(context).fiatMode.collectAsState()
+    return fiatMode
+}
