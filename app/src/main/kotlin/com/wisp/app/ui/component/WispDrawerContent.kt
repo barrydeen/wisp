@@ -110,7 +110,8 @@ fun WispDrawerContent(
     onLogout: () -> Unit,
     hasEmbeddedWallet: Boolean = false,
     userStatus: String? = null,
-    onUpdateStatus: ((String) -> Unit)? = null
+    onUpdateStatus: ((String) -> Unit)? = null,
+    onScanResult: (String) -> Unit = {},
 ) {
     ModalDrawerSheet(
         drawerContainerColor = MaterialTheme.colorScheme.surface,
@@ -384,6 +385,10 @@ fun WispDrawerContent(
                 pubkeyHex = pubkey,
                 avatarUrl = profile?.picture,
                 lud16 = profile?.lud16,
+                onNavigate = { route ->
+                    showProfileQr = false
+                    onScanResult(route)
+                },
                 onDismiss = { showProfileQr = false }
             )
         }

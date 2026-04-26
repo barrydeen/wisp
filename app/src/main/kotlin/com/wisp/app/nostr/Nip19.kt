@@ -155,6 +155,21 @@ object Nip19 {
         return NostrUriData.ProfileRef(pubkey, relays)
     }
 
+    /**
+     * Decode a value scanned from a QR code that may or may not include the
+     * `nostr:` URI scheme. Returns null if the payload isn't a recognised
+     * NIP-19 entity.
+     */
+    fun decodeNostrQr(raw: String): NostrUriData? {
+        val trimmed = raw.trim()
+        val withoutScheme = if (trimmed.startsWith("nostr:", ignoreCase = true)) {
+            trimmed.substring("nostr:".length)
+        } else {
+            trimmed
+        }
+        return decodeNostrUri("nostr:$withoutScheme")
+    }
+
     fun decodeNostrUri(uri: String): NostrUriData? {
         val bech32 = uri.removePrefix("nostr:")
         return try {
