@@ -189,7 +189,8 @@ fun FeedScreen(
     onGroupRoom: ((String, String) -> Unit)? = null,
     onLiveStreamClick: ((String, String, String?) -> Unit)? = null,
     fetchGroupPreview: (suspend (String, String) -> com.wisp.app.repo.GroupPreview?)? = null,
-    scrollToTopTrigger: Int = 0
+    scrollToTopTrigger: Int = 0,
+    onScanResult: (String) -> Unit = {},
 ) {
     val feed by viewModel.feed.collectAsState()
     val feedType by viewModel.feedType.collectAsState()
@@ -742,6 +743,10 @@ fun FeedScreen(
                 userStatus = statusVersion.let { userPubkey?.let { viewModel.eventRepo.getUserStatus(it) } },
                 onUpdateStatus = { status ->
                     viewModel.publishUserStatus(status)
+                },
+                onScanResult = { route ->
+                    scope.launch { drawerState.close() }
+                    onScanResult(route)
                 }
             )
         }

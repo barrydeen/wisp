@@ -1202,26 +1202,6 @@ private fun ScanQRContent(
     onResult: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var hasCameraPermission by remember { mutableStateOf(false) }
-    var scanned by remember { mutableStateOf(false) }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasCameraPermission = granted
-    }
-
-    LaunchedEffect(Unit) {
-        hasCameraPermission = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.CAMERA
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (!hasCameraPermission) {
-            permissionLauncher.launch(Manifest.permission.CAMERA)
-        }
-    }
-
     Column(
         modifier = modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -1236,142 +1216,18 @@ private fun ScanQRContent(
 
         Spacer(Modifier.height(16.dp))
 
-        if (!hasCameraPermission) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        Icons.Default.CameraAlt,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        stringResource(R.string.wallet_camera_permission),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Button(onClick = {
-                        permissionLauncher.launch(Manifest.permission.CAMERA)
-                    }) {
-                        Text(stringResource(R.string.wallet_grant_permission))
-                    }
-                }
-            }
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 16.dp)
-                    .clip(RoundedCornerShape(16.dp))
-            ) {
-                AndroidView(
-                    factory = { ctx ->
-                        val previewView = PreviewView(ctx)
-                        val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                        cameraProviderFuture.addListener({
-                            val cameraProvider = cameraProviderFuture.get()
-                            val preview = Preview.Builder().build().also {
-                                it.surfaceProvider = previewView.surfaceProvider
-                            }
-
-                            val options = BarcodeScannerOptions.Builder()
-                                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-                                .build()
-                            val scanner = BarcodeScanning.getClient(options)
-
-                            val analysis = ImageAnalysis.Builder()
-                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                .build()
-                            analysis.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
-                                @androidx.camera.core.ExperimentalGetImage
-                                val mediaImage = imageProxy.image
-                                if (mediaImage != null && !scanned) {
-                                    val inputImage = InputImage.fromMediaImage(
-                                        mediaImage, imageProxy.imageInfo.rotationDegrees
-                                    )
-                                    scanner.process(inputImage)
-                                        .addOnSuccessListener { barcodes ->
-                                            val value = barcodes.firstOrNull()?.rawValue
-                                            if (value != null && !scanned) {
-                                                scanned = true
-                                                val cleaned = value
-                                                    .removePrefix("lightning:")
-                                                    .removePrefix("LIGHTNING:")
-                                                    .removePrefix("bitcoin:")
-                                                    .removePrefix("BITCOIN:")
-                                                onResult(cleaned)
-                                            }
-                                        }
-                                        .addOnCompleteListener { imageProxy.close() }
-                                } else {
-                                    imageProxy.close()
-                                }
-                            }
-
-                            try {
-                                cameraProvider.unbindAll()
-                                cameraProvider.bindToLifecycle(
-                                    lifecycleOwner,
-                                    CameraSelector.DEFAULT_BACK_CAMERA,
-                                    preview,
-                                    analysis
-                                )
-                            } catch (e: Exception) {
-                                Log.e("ScanQR", "Camera bind failed", e)
-                            }
-                        }, ContextCompat.getMainExecutor(ctx))
-                        previewView
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                // Viewfinder overlay
-                Box(
-                    modifier = Modifier
-                        .size(250.dp)
-                        .align(Alignment.Center)
-                        .background(Color.Transparent)
-                ) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val strokeW = 3.dp.toPx()
-                        val cornerLen = 30.dp.toPx()
-                        val color = Color.White
-                        // Top-left corner
-                        drawLine(color, start = androidx.compose.ui.geometry.Offset(0f, 0f), end = androidx.compose.ui.geometry.Offset(cornerLen, 0f), strokeWidth = strokeW)
-                        drawLine(color, start = androidx.compose.ui.geometry.Offset(0f, 0f), end = androidx.compose.ui.geometry.Offset(0f, cornerLen), strokeWidth = strokeW)
-                        // Top-right corner
-                        drawLine(color, start = androidx.compose.ui.geometry.Offset(size.width, 0f), end = androidx.compose.ui.geometry.Offset(size.width - cornerLen, 0f), strokeWidth = strokeW)
-                        drawLine(color, start = androidx.compose.ui.geometry.Offset(size.width, 0f), end = androidx.compose.ui.geometry.Offset(size.width, cornerLen), strokeWidth = strokeW)
-                        // Bottom-left corner
-                        drawLine(color, start = androidx.compose.ui.geometry.Offset(0f, size.height), end = androidx.compose.ui.geometry.Offset(cornerLen, size.height), strokeWidth = strokeW)
-                        drawLine(color, start = androidx.compose.ui.geometry.Offset(0f, size.height), end = androidx.compose.ui.geometry.Offset(0f, size.height - cornerLen), strokeWidth = strokeW)
-                        // Bottom-right corner
-                        drawLine(color, start = androidx.compose.ui.geometry.Offset(size.width, size.height), end = androidx.compose.ui.geometry.Offset(size.width - cornerLen, size.height), strokeWidth = strokeW)
-                        drawLine(color, start = androidx.compose.ui.geometry.Offset(size.width, size.height), end = androidx.compose.ui.geometry.Offset(size.width, size.height - cornerLen), strokeWidth = strokeW)
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        Text(
-            stringResource(R.string.wallet_point_camera),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 32.dp)
+        com.wisp.app.ui.component.QrScanner(
+            onResult = { value ->
+                val cleaned = value
+                    .removePrefix("lightning:")
+                    .removePrefix("LIGHTNING:")
+                    .removePrefix("bitcoin:")
+                    .removePrefix("BITCOIN:")
+                onResult(cleaned)
+            },
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            promptText = stringResource(R.string.wallet_point_camera),
         )
-
-        Spacer(Modifier.height(16.dp))
     }
 }
 

@@ -174,6 +174,17 @@ object Routes {
     const val LIVE_STREAM = "live_stream/{hostPubkey}/{dTag}?relayHint={relayHint}"
 }
 
+/**
+ * Map a decoded NIP-19 entity to a navigation route, or null if there is no
+ * route for it (e.g. an addressable event whose kind we don't render).
+ */
+fun NostrUriData.toRoute(): String? = when (this) {
+    is NostrUriData.ProfileRef -> "profile/$pubkey"
+    is NostrUriData.NoteRef -> "thread/$eventId"
+    is NostrUriData.AddressRef ->
+        if (kind == 30023 && author != null) "article/$kind/$author/$dTag" else null
+}
+
 @Composable
 fun WispNavHost(
     deepLinkUri: String? = null,
@@ -414,16 +425,7 @@ fun WispNavHost(
     // Resolve deep link URI to a navigation route
     val deepLinkRoute = remember(deepLinkUri) {
         val uri = deepLinkUri ?: return@remember null
-        val parsed = Nip19.decodeNostrUri(uri) ?: return@remember null
-        when (parsed) {
-            is NostrUriData.ProfileRef -> "profile/${parsed.pubkey}"
-            is NostrUriData.NoteRef -> "thread/${parsed.eventId}"
-            is NostrUriData.AddressRef -> {
-                if (parsed.kind == 30023 && parsed.author != null) {
-                    "article/${parsed.kind}/${parsed.author}/${parsed.dTag}"
-                } else null
-            }
-        }
+        Nip19.decodeNostrUri(uri)?.toRoute()
     }
 
     // Handle deep links when app is already past loading (onNewIntent)
@@ -830,6 +832,9 @@ fun WispNavHost(
                 },
                 onQuotedNoteClick = { eventId ->
                     navController.navigate("thread/$eventId")
+                },
+                onScanResult = { route ->
+                    navController.navigate(route)
                 },
                 accounts = accounts,
                 onSwitchAccount = onSwitchAccount,
