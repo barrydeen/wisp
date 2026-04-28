@@ -69,6 +69,7 @@ import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.GroupRoom
 import com.wisp.app.ui.component.ProfilePicture
+import com.wisp.app.ui.theme.wispSwitchColors
 import com.wisp.app.viewmodel.GroupListViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -271,7 +272,8 @@ fun GroupDetailScreen(
                         onCheckedChange = {
                             notified = it
                             groupListViewModel.setGroupNotified(relayUrl, groupId, it)
-                        }
+                        },
+                        colors = wispSwitchColors()
                     )
                 }
                 HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)

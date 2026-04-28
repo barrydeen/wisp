@@ -70,6 +70,7 @@ import com.wisp.app.repo.InterfacePreferences
 import com.wisp.app.repo.LocaleRepository
 import com.wisp.app.ui.theme.ThemePreset
 import com.wisp.app.ui.theme.Themes
+import com.wisp.app.ui.theme.wispSwitchColors
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -230,7 +231,8 @@ fun InterfaceScreen(
                         isLargeText = it
                         interfacePrefs.setLargeText(it)
                         onChanged()
-                    }
+                    },
+                    colors = wispSwitchColors()
                 )
             }
 
@@ -393,7 +395,8 @@ fun InterfaceScreen(
                         newNotesHidden = it
                         interfacePrefs.setNewNotesButtonHidden(it)
                         onChanged()
-                    }
+                    },
+                    colors = wispSwitchColors()
                 )
             }
 
@@ -424,7 +427,8 @@ fun InterfaceScreen(
                         autoLoadMedia = it
                         interfacePrefs.setAutoLoadMedia(it)
                         onChanged()
-                    }
+                    },
+                    colors = wispSwitchColors()
                 )
             }
             Spacer(Modifier.height(12.dp))
@@ -446,7 +450,8 @@ fun InterfaceScreen(
                         videoAutoPlay = it
                         interfacePrefs.setVideoAutoPlay(it)
                         onChanged()
-                    }
+                    },
+                    colors = wispSwitchColors()
                 )
             }
             Spacer(Modifier.height(12.dp))
@@ -468,7 +473,8 @@ fun InterfaceScreen(
                         liveStreamsHidden = it
                         interfacePrefs.setLiveStreamsHidden(it)
                         onChanged()
-                    }
+                    },
+                    colors = wispSwitchColors()
                 )
             }
 
@@ -498,7 +504,8 @@ fun InterfaceScreen(
                     onCheckedChange = {
                         clientTagEnabled = it
                         interfacePrefs.setClientTagEnabled(it)
-                    }
+                    },
+                    colors = wispSwitchColors()
                 )
             }
 
@@ -531,7 +538,8 @@ fun InterfaceScreen(
                 }
                 Switch(
                     checked = fiatModeEnabled,
-                    onCheckedChange = { fiatPrefs.setFiatMode(it) }
+                    onCheckedChange = { fiatPrefs.setFiatMode(it) },
+                    colors = wispSwitchColors()
                 )
             }
 
@@ -684,7 +692,8 @@ fun InterfaceScreen(
                         onCheckedChange = {
                             diagnosticEnabled = it
                             DiagnosticLogger.setEnabled(context, it)
-                        }
+                        },
+                        colors = wispSwitchColors()
                     )
                 }
 

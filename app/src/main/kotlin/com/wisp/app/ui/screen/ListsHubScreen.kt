@@ -55,6 +55,7 @@ import com.wisp.app.repo.BookmarkSetRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.ListRepository
 import com.wisp.app.ui.component.ProfilePicture
+import com.wisp.app.ui.theme.wispSwitchColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -549,7 +550,8 @@ private fun CreateListDialog(
                     )
                     Switch(
                         checked = isPrivate,
-                        onCheckedChange = { isPrivate = it }
+                        onCheckedChange = { isPrivate = it },
+                        colors = wispSwitchColors()
                     )
                 }
                 if (isPrivate) {
