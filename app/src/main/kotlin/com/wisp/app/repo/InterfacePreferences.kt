@@ -3,6 +3,10 @@ package com.wisp.app.repo
 import android.content.Context
 
 class InterfacePreferences(context: Context) {
+    companion object {
+        val postUndoTimerOptions = listOf(5, 10, 15, 20, 30)
+    }
+
     private val prefs = context.getSharedPreferences("wisp_settings", Context.MODE_PRIVATE)
 
     fun getAccentColor(): Int = prefs.getInt("accent_color", 0xFFFF9800.toInt())
@@ -35,6 +39,18 @@ class InterfacePreferences(context: Context) {
     fun isLiveStreamsHidden(): Boolean = prefs.getBoolean("live_streams_hidden", false)
     fun setLiveStreamsHidden(hidden: Boolean) = prefs.edit().putBoolean("live_streams_hidden", hidden).apply()
 
+    fun isPostUndoTimerEnabled(): Boolean = prefs.getBoolean("post_undo_timer_enabled", true)
+    fun setPostUndoTimerEnabled(enabled: Boolean) = prefs.edit().putBoolean("post_undo_timer_enabled", enabled).apply()
+
+    fun getPostUndoTimerSeconds(): Int {
+        val stored = prefs.getInt("post_undo_timer_seconds", 10)
+        return if (stored in postUndoTimerOptions) stored else 10
+    }
+    fun setPostUndoTimerSeconds(seconds: Int) = prefs.edit().putInt("post_undo_timer_seconds", seconds).apply()
+
+    fun isPostUndoTimerForReplies(): Boolean = prefs.getBoolean("post_undo_timer_for_replies", false)
+    fun setPostUndoTimerForReplies(enabled: Boolean) = prefs.edit().putBoolean("post_undo_timer_for_replies", enabled).apply()
+
     /** Reset all interface preferences to defaults (called on full logout). */
     fun reset() {
         prefs.edit()
@@ -46,6 +62,9 @@ class InterfacePreferences(context: Context) {
             .remove("dark_theme")
             .remove("balance_hidden")
             .remove("live_streams_hidden")
+            .remove("post_undo_timer_enabled")
+            .remove("post_undo_timer_seconds")
+            .remove("post_undo_timer_for_replies")
             .apply()
     }
 }

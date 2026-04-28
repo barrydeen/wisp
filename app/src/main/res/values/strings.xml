@@ -507,6 +507,12 @@
     <string name="settings_client_tag">Client Tag</string>
     <string name="settings_tag_notes">Tag notes with Wisp</string>
     <string name="settings_tag_notes_description">Include a tag identifying Wisp as the client. This is visible to others.</string>
+    <string name="settings_posting">Posting</string>
+    <string name="settings_undo_countdown">Undo countdown</string>
+    <string name="settings_undo_countdown_description">Holds new posts for a few seconds before publishing so you can cancel.</string>
+    <string name="settings_undo_duration">Duration</string>
+    <string name="settings_undo_include_replies">Include replies</string>
+    <string name="settings_undo_include_replies_description">Off by default — replies send immediately. Turn on to apply the same countdown to replies.</string>
     <string name="settings_public_key">Public Key</string>
     <string name="settings_private_key">Private Key</string>
     <string name="settings_public_key_copied">Public key copied</string>
