@@ -29,6 +29,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -40,6 +41,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -58,6 +60,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import android.content.Intent
 import androidx.compose.ui.platform.LocalContext
@@ -74,6 +77,9 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.collectAsState
 import java.text.DateFormat
@@ -500,6 +506,85 @@ fun InterfaceScreen(
                         interfacePrefs.setClientTagEnabled(it)
                     }
                 )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            // Posting section
+            Text(
+                text = stringResource(R.string.settings_posting),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            var undoTimerEnabled by remember { mutableStateOf(interfacePrefs.isPostUndoTimerEnabled()) }
+            var undoTimerSeconds by remember { mutableIntStateOf(interfacePrefs.getPostUndoTimerSeconds()) }
+            var undoTimerForReplies by remember { mutableStateOf(interfacePrefs.isPostUndoTimerForReplies()) }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.settings_undo_countdown), style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        stringResource(R.string.settings_undo_countdown_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = undoTimerEnabled,
+                    onCheckedChange = {
+                        undoTimerEnabled = it
+                        interfacePrefs.setPostUndoTimerEnabled(it)
+                    }
+                )
+            }
+
+            if (undoTimerEnabled) {
+                Spacer(Modifier.height(8.dp))
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    InterfacePreferences.postUndoTimerOptions.forEachIndexed { index, secs ->
+                        SegmentedButton(
+                            selected = undoTimerSeconds == secs,
+                            onClick = {
+                                undoTimerSeconds = secs
+                                interfacePrefs.setPostUndoTimerSeconds(secs)
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(
+                                index = index,
+                                count = InterfacePreferences.postUndoTimerOptions.size
+                            )
+                        ) {
+                            Text("${secs}s")
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.settings_undo_include_replies), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            stringResource(R.string.settings_undo_include_replies_description),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
+                        Switch(
+                            checked = undoTimerForReplies,
+                            onCheckedChange = {
+                                undoTimerForReplies = it
+                                interfacePrefs.setPostUndoTimerForReplies(it)
+                            }
+                        )
+                    }
+                }
             }
 
             Spacer(Modifier.height(24.dp))

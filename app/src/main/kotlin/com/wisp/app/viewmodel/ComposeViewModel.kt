@@ -507,8 +507,27 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             }
         }
 
+        val interfacePrefs = InterfacePreferences(getApplication())
+        val isReply = replyTo != null
+        val useTimer = interfacePrefs.isPostUndoTimerEnabled() && (!isReply || interfacePrefs.isPostUndoTimerForReplies())
+        val timerSeconds = interfacePrefs.getPostUndoTimerSeconds()
+
         _publishing.value = true
-        startCountdown(text, s, relayPool, replyTo, quoteTo, outboxRouter, onSuccess, onNotePublished, powManager, resolvedEmojis)
+        if (!useTimer || timerSeconds <= 0) {
+            viewModelScope.launch {
+                try {
+                    val sentCount = publishNote(text, s, relayPool, replyTo, quoteTo, outboxRouter, powManager, resolvedEmojis)
+                    if (sentCount == 0) return@launch
+                    onNotePublished?.invoke()
+                    onSuccess()
+                } catch (e: Exception) {
+                    _error.value = getApplication<Application>().getString(R.string.error_publish_failed, e.message ?: "Unknown error")
+                    _publishing.value = false
+                }
+            }
+            return
+        }
+        startCountdown(text, s, relayPool, replyTo, quoteTo, outboxRouter, onSuccess, onNotePublished, powManager, resolvedEmojis, timerSeconds)
     }
 
     private fun startCountdown(
@@ -521,7 +540,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         onSuccess: () -> Unit,
         onNotePublished: (() -> Unit)? = null,
         powManager: PowManager? = null,
-        resolvedEmojis: Map<String, String> = emptyMap()
+        resolvedEmojis: Map<String, String> = emptyMap(),
+        seconds: Int = 10
     ) {
         countdownJob?.cancel()
         pendingPublish = {
@@ -537,12 +557,13 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 }
             }
         }
-        _countdownSeconds.value = 10
+        _countdownSeconds.value = seconds
         countdownJob = viewModelScope.launch {
-            for (i in 10 downTo 1) {
-                _countdownSeconds.value = i
+            for (i in (seconds - 1) downTo 1) {
                 delay(1000)
+                _countdownSeconds.value = i
             }
+            delay(1000)
             _countdownSeconds.value = null
             pendingPublish?.invoke()
             pendingPublish = null
