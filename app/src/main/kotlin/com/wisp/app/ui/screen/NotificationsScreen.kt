@@ -128,7 +128,7 @@ import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.theme.WispThemeColors
 import com.wisp.app.viewmodel.NotificationFilter
 import com.wisp.app.viewmodel.NotificationsViewModel
-import androidx.compose.material3.SwitchDefaults
+import com.wisp.app.ui.theme.wispSwitchColors
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import com.wisp.app.R
@@ -540,11 +540,7 @@ private fun NotificationFilterSheet(
                     androidx.compose.material3.Switch(
                         checked = enabled,
                         onCheckedChange = { onToggleType(filter) },
-                        colors = SwitchDefaults.colors(
-                            uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                            uncheckedBorderColor = MaterialTheme.colorScheme.outline
-                        )
+                        colors = wispSwitchColors()
                     )
                 }
             }
@@ -580,11 +576,7 @@ private fun NotificationFilterSheet(
                 androidx.compose.material3.Switch(
                     checked = chatRoomsEnabled,
                     onCheckedChange = { onToggleChatRooms() },
-                    colors = SwitchDefaults.colors(
-                        uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                        uncheckedBorderColor = MaterialTheme.colorScheme.outline
-                    )
+                    colors = wispSwitchColors()
                 )
             }
 

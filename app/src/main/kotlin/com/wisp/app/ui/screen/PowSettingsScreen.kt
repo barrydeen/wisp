@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.wisp.app.repo.PowPreferences
+import com.wisp.app.ui.theme.wispSwitchColors
 import com.wisp.app.R
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -103,7 +104,8 @@ fun PowSettingsScreen(
                     onCheckedChange = {
                         noteEnabled = it
                         powPrefs.setNotePowEnabled(it)
-                    }
+                    },
+                    colors = wispSwitchColors()
                 )
             }
             if (noteEnabled) {
@@ -144,7 +146,8 @@ fun PowSettingsScreen(
                     onCheckedChange = {
                         reactionEnabled = it
                         powPrefs.setReactionPowEnabled(it)
-                    }
+                    },
+                    colors = wispSwitchColors()
                 )
             }
             if (reactionEnabled) {
@@ -185,7 +188,8 @@ fun PowSettingsScreen(
                     onCheckedChange = {
                         dmEnabled = it
                         powPrefs.setDmPowEnabled(it)
-                    }
+                    },
+                    colors = wispSwitchColors()
                 )
             }
             if (dmEnabled) {
