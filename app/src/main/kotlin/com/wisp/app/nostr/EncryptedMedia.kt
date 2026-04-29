@@ -37,6 +37,7 @@ object EncryptedMedia {
         val originalHash: String,
         val size: Long?,
         val dimensions: String?,
+        val thumbhash: String?,
         val blurhash: String?
     )
 
@@ -123,6 +124,7 @@ object EncryptedMedia {
             originalHash = tagMap["ox"] ?: "",
             size = tagMap["size"]?.toLongOrNull(),
             dimensions = tagMap["dim"],
+            thumbhash = tagMap["thumbhash"],
             blurhash = tagMap["blurhash"]
         )
     }
