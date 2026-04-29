@@ -10,6 +10,7 @@ object Nip71 {
         val dim: String? = null,
         val thumbnailUrl: String? = null,
         val duration: Int? = null,
+        val thumbhash: String? = null,
         val blurhash: String? = null,
         val hash: String? = null,
         val fallback: List<String> = emptyList()
@@ -37,6 +38,7 @@ object Nip71 {
                     dim = fields["dim"],
                     thumbnailUrl = fields["image"],
                     duration = fields["duration"]?.toIntOrNull(),
+                    thumbhash = fields["thumbhash"],
                     blurhash = fields["blurhash"],
                     hash = fields["x"],
                     fallback = fallbacks
@@ -61,6 +63,7 @@ object Nip71 {
             entry.dim?.let { imetaParts.add("dim $it") }
             entry.thumbnailUrl?.let { imetaParts.add("image $it") }
             entry.duration?.let { imetaParts.add("duration $it") }
+            entry.thumbhash?.let { imetaParts.add("thumbhash $it") }
             entry.blurhash?.let { imetaParts.add("blurhash $it") }
             entry.hash?.let { imetaParts.add("x $it") }
             for (fb in entry.fallback) imetaParts.add("fallback $fb")

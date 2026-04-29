@@ -44,7 +44,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
-import com.wisp.app.util.BlurHashDecoder
+import com.wisp.app.util.MediaHashDecoder
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -183,6 +183,7 @@ data class MediaMeta(
     val url: String,
     val mime: String? = null,
     val dimension: String? = null,
+    val thumbhash: String? = null,
     val blurhash: String? = null
 )
 
@@ -219,7 +220,7 @@ private val blossomPathRegex = Regex("""^/[0-9a-f]{64}$""", RegexOption.IGNORE_C
 
 /**
  * Parse NIP-92 imeta tags from a list of tags to build a URL→metadata map.
- * Tag format: ["imeta", "url https://...", "m image/png", "dim 1024x768", "blurhash ...", ...]
+ * Tag format: ["imeta", "url https://...", "m image/png", "dim 1024x768", "thumbhash ...", "blurhash ...", ...]
  */
 fun parseImetaTags(tags: List<List<String>>): Map<String, MediaMeta> {
     val map = mutableMapOf<String, MediaMeta>()
@@ -228,6 +229,7 @@ fun parseImetaTags(tags: List<List<String>>): Map<String, MediaMeta> {
         var url: String? = null
         var mime: String? = null
         var dim: String? = null
+        var thumb: String? = null
         var blur: String? = null
         for (i in 1 until tag.size) {
             val entry = tag[i]
@@ -235,11 +237,12 @@ fun parseImetaTags(tags: List<List<String>>): Map<String, MediaMeta> {
                 entry.startsWith("url ") -> url = entry.removePrefix("url ")
                 entry.startsWith("m ") -> mime = entry.removePrefix("m ")
                 entry.startsWith("dim ") -> dim = entry.removePrefix("dim ")
+                entry.startsWith("thumbhash ") -> thumb = entry.removePrefix("thumbhash ")
                 entry.startsWith("blurhash ") -> blur = entry.removePrefix("blurhash ")
             }
         }
         if (url != null) {
-            map[url] = MediaMeta(url = url, mime = mime, dimension = dim, blurhash = blur)
+            map[url] = MediaMeta(url = url, mime = mime, dimension = dim, thumbhash = thumb, blurhash = blur)
         }
     }
     return map
@@ -1516,12 +1519,7 @@ private fun LiveStreamCardContent(
                 } else if (image != null) {
                     val meta = remember(event.id) { parseImetaTags(event.tags)[image] ?: MediaMeta(url = image) }
                     val ratio = remember(meta.dimension) { parseAspectRatio(meta.dimension) }
-                    val blurPainter = remember(meta.blurhash, meta.dimension) {
-                        val dims = meta.dimension?.split('x')
-                        val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                        val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                        BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
-                    }
+                    val blurPainter = rememberMediaPlaceholderPainter(meta.thumbhash, meta.blurhash, meta.dimension)
                     LoadingAsyncImage(
                         model = image,
                         contentDescription = title,
@@ -1853,12 +1851,7 @@ private fun UnknownMediaContent(
                     .padding(vertical = 4.dp)
                     .clip(RoundedCornerShape(12.dp))
             ) {
-                val blurPainter = remember(meta.blurhash, meta.dimension) {
-                    val dims = meta.dimension?.split('x')
-                    val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                    val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                    BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
-                }
+                val blurPainter = rememberMediaPlaceholderPainter(meta.thumbhash, meta.blurhash, meta.dimension)
                 Box(contentAlignment = Alignment.Center) {
                     if (blurPainter != null) {
                         Image(
@@ -2040,12 +2033,7 @@ private fun ImageWithContextMenu(meta: MediaMeta, onFullScreen: () -> Unit) {
                 .clickable { loaded = true },
             color = MaterialTheme.colorScheme.surfaceVariant
         ) {
-            val blurPainter = remember(meta.blurhash, meta.dimension) {
-                val dims = meta.dimension?.split('x')
-                val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
-            }
+            val blurPainter = rememberMediaPlaceholderPainter(meta.thumbhash, meta.blurhash, meta.dimension)
             if (blurPainter != null) {
                 Image(
                     painter = blurPainter,
@@ -2077,12 +2065,7 @@ private fun ImageWithContextMenu(meta: MediaMeta, onFullScreen: () -> Unit) {
     }
 
     val ratio = remember(meta.dimension) { parseAspectRatio(meta.dimension) }
-    val blurPainter = remember(meta.blurhash, meta.dimension) {
-        val dims = meta.dimension?.split('x')
-        val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-        val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-        BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
-    }
+    val blurPainter = rememberMediaPlaceholderPainter(meta.thumbhash, meta.blurhash, meta.dimension)
 
     Box {
         LoadingAsyncImage(
@@ -2135,12 +2118,7 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
                 .clickable { loaded = true },
             color = MaterialTheme.colorScheme.surfaceVariant
         ) {
-            val blurPainter = remember(meta.blurhash, meta.dimension) {
-                val dims = meta.dimension?.split('x')
-                val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
-            }
+            val blurPainter = rememberMediaPlaceholderPainter(meta.thumbhash, meta.blurhash, meta.dimension)
             if (blurPainter != null) {
                 Image(
                     painter = blurPainter,
@@ -2181,12 +2159,7 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
                 .clip(RoundedCornerShape(12.dp)),
             color = MaterialTheme.colorScheme.surfaceVariant
         ) {
-            val blurPainter = remember(meta.blurhash, meta.dimension) {
-                val dims = meta.dimension?.split('x')
-                val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
-            }
+            val blurPainter = rememberMediaPlaceholderPainter(meta.thumbhash, meta.blurhash, meta.dimension)
             if (blurPainter != null) {
                 Image(
                     painter = blurPainter,
@@ -2659,6 +2632,22 @@ private fun parseAspectRatio(dim: String?): Float? {
     val w = parts[0].toFloatOrNull() ?: return null
     val h = parts[1].toFloatOrNull() ?: return null
     return if (h > 0) w / h else null
+}
+
+@Composable
+internal fun rememberMediaPlaceholderPainter(
+    thumbhash: String?,
+    blurhash: String?,
+    dimension: String?
+): BitmapPainter? {
+    return remember(thumbhash, blurhash, dimension) {
+        val dims = dimension?.split('x')
+        val width = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+        val height = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+        MediaHashDecoder.decode(thumbhash, blurhash, width, height)
+            ?.asImageBitmap()
+            ?.let { BitmapPainter(it) }
+    }
 }
 
 // --- Link Preview (OG tags) ---
