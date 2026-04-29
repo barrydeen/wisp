@@ -2,13 +2,17 @@ package com.wisp.app.viewmodel
 
 import android.app.Application
 import android.content.ContentResolver
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Base64
 import android.webkit.MimeTypeMap
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import com.madebyevan.thumbhash.ThumbHash
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Keys
 import com.wisp.app.nostr.Nip10
@@ -131,8 +135,14 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     /** Tracks whether the current gallery upload contains a video (to prevent mixing). */
     private val _galleryHasVideo = MutableStateFlow(false)
 
-    /** Tracks media dimensions per URL (width x height) for dim tags and video orientation detection. */
-    private val _mediaDimensions = mutableMapOf<String, Pair<Int, Int>>()
+    /** Tracks uploaded media metadata for imeta tags and gallery orientation detection. */
+    private val _uploadedMediaMeta = mutableMapOf<String, UploadedMediaMeta>()
+
+    private data class UploadedMediaMeta(
+        val mimeType: String,
+        val dimensions: Pair<Int, Int>? = null,
+        val thumbhash: String? = null
+    )
 
     companion object {
         val SCHEDULER_RELAYS = listOf("wss://scheduler.nostrarchives.com")
@@ -281,9 +291,14 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                     }
                     // Re-extract dimensions from post-pipeline bytes so dim tags match what's uploaded.
                     val dims = extractDimensionsFromBytes(bytes, mime)
+                    val thumbhash = if (mime.startsWith("image/")) createThumbhash(bytes) else null
                     val url = blossomRepo.uploadMedia(bytes, mime, ext, signer)
                     _uploadedUrls.value = _uploadedUrls.value + url
-                    if (dims != null) _mediaDimensions[url] = dims
+                    _uploadedMediaMeta[url] = UploadedMediaMeta(
+                        mimeType = mime,
+                        dimensions = dims,
+                        thumbhash = thumbhash
+                    )
                     if (_galleryMode.value && mime.startsWith("video/")) {
                         _galleryHasVideo.value = true
                     }
@@ -305,7 +320,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
     fun removeMediaUrl(url: String) {
         _uploadedUrls.value = _uploadedUrls.value - url
-        _mediaDimensions.remove(url)
+        _uploadedMediaMeta.remove(url)
         // Reset video flag if all media removed
         if (_uploadedUrls.value.isEmpty()) _galleryHasVideo.value = false
         if (!_galleryMode.value) {
@@ -622,17 +637,23 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             }
             if (isVideo) {
                 val videoUrl = urls.first()
-                val dims = _mediaDimensions[videoUrl]
+                val meta = _uploadedMediaMeta[videoUrl]
+                val dims = meta?.dimensions
                 val dimStr = dims?.let { "${it.first}x${it.second}" }
                 val isVertical = dims != null && dims.second > dims.first
-                val videoMeta = listOf(Nip71.VideoMeta(url = videoUrl, dim = dimStr))
+                val videoMeta = listOf(Nip71.VideoMeta(url = videoUrl, mimeType = meta?.mimeType, dim = dimStr))
                 tags.addAll(Nip71.buildVideoTags(title = null, media = videoMeta, hashtags = _hashtags.value))
                 eventKind = if (isVertical) Nip71.KIND_VIDEO_VERTICAL else Nip71.KIND_VIDEO_HORIZONTAL
             } else {
                 val imetaEntries = urls.map { url ->
-                    val dims = _mediaDimensions[url]
-                    val dimStr = dims?.let { "${it.first}x${it.second}" }
-                    Nip68.ImetaEntry(url = url, dim = dimStr)
+                    val meta = _uploadedMediaMeta[url]
+                    val dimStr = meta?.dimensions?.let { "${it.first}x${it.second}" }
+                    Nip68.ImetaEntry(
+                        url = url,
+                        mimeType = meta?.mimeType,
+                        thumbhash = meta?.thumbhash,
+                        dim = dimStr
+                    )
                 }
                 tags.addAll(Nip68.buildPictureTags(title = null, media = imetaEntries, hashtags = _hashtags.value))
                 eventKind = Nip68.KIND_PICTURE
@@ -667,6 +688,22 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             }
         } else {
             eventKind = 1
+        }
+
+        if (!_galleryMode.value) {
+            val imageEntries = _uploadedUrls.value.mapNotNull { url ->
+                val meta = _uploadedMediaMeta[url] ?: return@mapNotNull null
+                if (!meta.mimeType.startsWith("image/")) return@mapNotNull null
+                Nip68.ImetaEntry(
+                    url = url,
+                    mimeType = meta.mimeType,
+                    thumbhash = meta.thumbhash,
+                    dim = meta.dimensions?.let { "${it.first}x${it.second}" }
+                )
+            }
+            if (imageEntries.isNotEmpty()) {
+                tags.addAll(Nip68.buildPictureTags(title = null, media = imageEntries))
+            }
         }
 
         // Add emoji tags for any :shortcode: references in the content
@@ -704,6 +741,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             savedStateHandle.remove<String>("draft_content")
             savedStateHandle.remove<Array<String>>("draft_mentions")
             _uploadedUrls.value = emptyList()
+            _uploadedMediaMeta.clear()
             _error.value = null
             _publishing.value = false
             _scheduleEnabled.value = false
@@ -742,6 +780,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             savedStateHandle.remove<String>("draft_content")
             savedStateHandle.remove<Array<String>>("draft_mentions")
             _uploadedUrls.value = emptyList()
+            _uploadedMediaMeta.clear()
             _error.value = null
             _publishing.value = false
             return -1
@@ -787,6 +826,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _content.value = TextFieldValue()
         savedStateHandle.remove<String>("draft_content")
         _uploadedUrls.value = emptyList()
+        _uploadedMediaMeta.clear()
         _error.value = null
         _publishing.value = false
         return sentCount
@@ -864,6 +904,65 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 if (opts.outWidth > 0 && opts.outHeight > 0) opts.outWidth to opts.outHeight else null
             } else null
         } catch (_: Exception) { null }
+    }
+
+    private fun createThumbhash(bytes: ByteArray): String? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            val srcWidth = bounds.outWidth
+            val srcHeight = bounds.outHeight
+            if (srcWidth <= 0 || srcHeight <= 0) return null
+
+            val sampleSize = calculateThumbhashSampleSize(srcWidth, srcHeight)
+            val bitmap = BitmapFactory.decodeByteArray(
+                bytes,
+                0,
+                bytes.size,
+                BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            ) ?: return null
+
+            val scaled = if (bitmap.width <= 100 && bitmap.height <= 100) bitmap else {
+                val scale = minOf(100f / bitmap.width, 100f / bitmap.height)
+                Bitmap.createScaledBitmap(
+                    bitmap,
+                    (bitmap.width * scale).toInt().coerceAtLeast(1),
+                    (bitmap.height * scale).toInt().coerceAtLeast(1),
+                    true
+                )
+            }
+
+            try {
+                val pixels = IntArray(scaled.width * scaled.height)
+                scaled.getPixels(pixels, 0, scaled.width, 0, 0, scaled.width, scaled.height)
+                val rgba = ByteArray(pixels.size * 4)
+                for (i in pixels.indices) {
+                    val pixel = pixels[i]
+                    val px = i * 4
+                    rgba[px] = ((pixel shr 16) and 0xFF).toByte()
+                    rgba[px + 1] = ((pixel shr 8) and 0xFF).toByte()
+                    rgba[px + 2] = (pixel and 0xFF).toByte()
+                    rgba[px + 3] = ((pixel ushr 24) and 0xFF).toByte()
+                }
+                Base64.encodeToString(
+                    ThumbHash.rgbaToThumbHash(scaled.width, scaled.height, rgba),
+                    Base64.NO_WRAP
+                )
+            } finally {
+                if (scaled !== bitmap) bitmap.recycle()
+                scaled.recycle()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun calculateThumbhashSampleSize(width: Int, height: Int): Int {
+        var sampleSize = 1
+        while (width / (sampleSize * 2) >= 100 || height / (sampleSize * 2) >= 100) {
+            sampleSize *= 2
+        }
+        return sampleSize
     }
 
     fun loadDraft(draft: Nip37.Draft) {
@@ -947,7 +1046,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         _powEnabled.value = false
         _galleryMode.value = false
         _galleryHasVideo.value = false
-        _mediaDimensions.clear()
+        _uploadedMediaMeta.clear()
         _pollEnabled.value = false
         _pollOptions.value = listOf("", "")
         _pollType.value = Nip88.PollType.SINGLECHOICE
