@@ -163,6 +163,7 @@ fun PostCard(
     onZapPollVote: (Int) -> Unit = {},
     translationState: TranslationState = TranslationState(),
     onTranslate: () -> Unit = {},
+    quoteDepth: Int = 0,
     modifier: Modifier = Modifier,
     showDivider: Boolean = true
 ) {
@@ -570,7 +571,8 @@ fun PostCard(
                     onProfileClick = onNavigateToProfile,
                     onNoteClick = onQuotedNoteClick,
                     noteActions = noteActions,
-                    authorPubkey = event.pubkey
+                    authorPubkey = event.pubkey,
+                    quoteDepth = quoteDepth
                 )
             } else {
                 // Collapsible content with max height (~1 viewport)
@@ -603,7 +605,8 @@ fun PostCard(
                             eventRepo = eventRepo,
                             onProfileClick = onNavigateToProfile,
                             onNoteClick = onQuotedNoteClick,
-                            noteActions = noteActions
+                            noteActions = noteActions,
+                            quoteDepth = quoteDepth
                         )
                     }
 
@@ -704,7 +707,8 @@ fun PostCard(
                                 eventRepo = eventRepo,
                                 onProfileClick = onNavigateToProfile,
                                 onNoteClick = onQuotedNoteClick,
-                                noteActions = noteActions
+                                noteActions = noteActions,
+                                quoteDepth = quoteDepth
                             )
                         }
                     }
@@ -1168,7 +1172,15 @@ internal fun TopZapperBanner(
 
             // Zap icon
             val useZapBolt = com.wisp.app.ui.util.useBoltIcon()
-            if (useZapBolt) {
+            val fiatMode = com.wisp.app.ui.util.isFiatMode()
+            if (fiatMode) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_coin_stack),
+                    contentDescription = null,
+                    tint = orange,
+                    modifier = Modifier.size(16.dp)
+                )
+            } else if (useZapBolt) {
                 Icon(
                     painter = painterResource(R.drawable.ic_bolt),
                     contentDescription = null,
