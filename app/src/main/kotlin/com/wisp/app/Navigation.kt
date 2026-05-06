@@ -1,5 +1,6 @@
 package com.wisp.app
 
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -314,47 +315,6 @@ fun WispNavHost(
         }
     }
 
-    // Tor state
-    val torPrefs = remember { context.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE) }
-    val torStatus by com.wisp.app.relay.TorManager.status.collectAsState()
-    val isTorEnabled = torStatus != com.wisp.app.relay.TorStatus.DISABLED
-
-    // Auto-start Tor if previously enabled
-    val torScope = androidx.compose.runtime.rememberCoroutineScope()
-    LaunchedEffect(Unit) {
-        if (torPrefs.getBoolean("tor_enabled", false)) {
-            com.wisp.app.relay.TorManager.start()
-        }
-    }
-    // When Tor finishes connecting/disconnecting, swap the relay pool client.
-    // Skip the initial DISABLED state on first composition — only react to changes.
-    var torStatusInitialized by remember { mutableStateOf(false) }
-    LaunchedEffect(torStatus) {
-        if (!torStatusInitialized) {
-            torStatusInitialized = true
-            return@LaunchedEffect
-        }
-        if (torStatus == com.wisp.app.relay.TorStatus.CONNECTED ||
-            torStatus == com.wisp.app.relay.TorStatus.DISABLED) {
-            if (authViewModel.isLoggedIn) {
-                feedViewModel.lifecycleManager.onTorSwitch(
-                    savedConfigs = feedViewModel.keyRepo.getRelays(),
-                    savedDmUrls = feedViewModel.keyRepo.getDmRelays()
-                )
-            }
-        }
-    }
-    val onToggleTor: (Boolean) -> Unit = { enabled ->
-        torPrefs.edit().putBoolean("tor_enabled", enabled).apply()
-        torScope.launch {
-            if (enabled) {
-                com.wisp.app.relay.TorManager.start()
-            } else {
-                com.wisp.app.relay.TorManager.stop()
-            }
-        }
-    }
-
     val startDestination = rememberSaveable {
         when {
             !authViewModel.isLoggedIn -> Routes.SPLASH
@@ -568,6 +528,16 @@ fun WispNavHost(
         }
     }
 
+    var lastInboxRefreshElapsedMs by rememberSaveable { mutableLongStateOf(0L) }
+    fun refreshInboxSubscriptionsIfStale() {
+        val now = SystemClock.elapsedRealtime()
+        // Inbox subscriptions already stay live in the background; avoid re-sending the
+        // same REQs every time the user bounces between top-level tabs.
+        if (now - lastInboxRefreshElapsedMs < 30_000L) return
+        lastInboxRefreshElapsedMs = now
+        feedViewModel.refreshDmsAndNotifications()
+    }
+
     // Crash report dialog — check on launch if a crash log exists
     var showCrashDialog by remember { mutableStateOf(CrashHandler.hasCrashLog(context)) }
     if (showCrashDialog) {
@@ -677,9 +647,6 @@ fun WispNavHost(
         composable(Routes.SPLASH) {
             SplashScreen(
                 viewModel = splashViewModel,
-                isTorEnabled = isTorEnabled,
-                torStatus = torStatus,
-                onToggleTor = onToggleTor,
                 onSignUp = {
                     if (authViewModel.signUp()) {
                         navController.navigate(Routes.ONBOARDING_PROFILE) {
@@ -696,9 +663,6 @@ fun WispNavHost(
         composable(Routes.AUTH) {
             AuthScreen(
                 viewModel = authViewModel,
-                isTorEnabled = isTorEnabled,
-                torStatus = torStatus,
-                onToggleTor = onToggleTor,
                 showSignUp = false,
                 onAuthenticated = { isNewAccount ->
                     val wasAddingAccount = authViewModel.isAddingAccount
@@ -787,9 +751,6 @@ fun WispNavHost(
                 viewModel = feedViewModel,
                 isDarkTheme = isDarkTheme,
                 onToggleTheme = onToggleTheme,
-                isTorEnabled = isTorEnabled,
-                torStatus = torStatus,
-                onToggleTor = onToggleTor,
                 scrollToTopTrigger = scrollToTopTrigger,
                 onCompose = {
                     replyTarget = null
@@ -1324,7 +1285,7 @@ fun WispNavHost(
 
         composable(Routes.DM_LIST) {
             LaunchedEffect(Unit) {
-                feedViewModel.refreshDmsAndNotifications()
+                refreshInboxSubscriptionsIfStale()
                 // Decrypt pending gift wraps when signer is available
                 activeSigner?.let { dmListViewModel.decryptPending(it) }
                 dmListViewModel.markDmsRead()
@@ -1384,7 +1345,7 @@ fun WispNavHost(
             val dmConvoViewModel: DmConversationViewModel = viewModel()
             val userPubkey = feedViewModel.getUserPubkey()
             LaunchedEffect(pubkey) {
-                feedViewModel.refreshDmsAndNotifications()
+                refreshInboxSubscriptionsIfStale()
                 dmConvoViewModel.init(
                     peerPubkeyHex = pubkey,
                     dmRepository = feedViewModel.dmRepo,
@@ -1466,7 +1427,7 @@ fun WispNavHost(
             val dmConvoViewModel: DmConversationViewModel = viewModel()
             val userPubkey = feedViewModel.getUserPubkey()
             LaunchedEffect(convKey) {
-                feedViewModel.refreshDmsAndNotifications()
+                refreshInboxSubscriptionsIfStale()
                 dmConvoViewModel.init(
                     peerPubkeyHex = participantList.firstOrNull() ?: "",
                     dmRepository = feedViewModel.dmRepo,
@@ -3114,7 +3075,7 @@ fun WispNavHost(
                 onDispose { feedViewModel.notifRepo.isViewing = false }
             }
             LaunchedEffect(Unit) {
-                feedViewModel.refreshDmsAndNotifications()
+                refreshInboxSubscriptionsIfStale()
                 notificationsViewModel.markRead()
             }
 

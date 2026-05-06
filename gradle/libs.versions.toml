@@ -14,8 +14,6 @@ coroutines = "1.9.0"
 profileinstaller = "1.4.1"
 splashscreen = "1.0.1"
 zxing = "3.5.3"
-kmp-tor = "2.0.0"
-kmp-tor-resource = "408.16.4"
 mlkit-translate = "17.0.3"
 mlkit-language-id = "17.0.6"
 mlkit-barcode = "17.3.0"
@@ -56,8 +54,6 @@ biometric = { group = "androidx.biometric", name = "biometric", version.ref = "b
 profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "profileinstaller" }
 splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashscreen" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
-kmp-tor-runtime = { group = "io.matthewnelson.kmp-tor", name = "runtime", version.ref = "kmp-tor" }
-kmp-tor-resource-exec = { group = "io.matthewnelson.kmp-tor", name = "resource-exec-tor", version.ref = "kmp-tor-resource" }
 mlkit-translate = { group = "com.google.mlkit", name = "translate", version.ref = "mlkit-translate" }
 mlkit-language-id = { group = "com.google.mlkit", name = "language-id", version.ref = "mlkit-language-id" }
 mlkit-barcode = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkit-barcode" }

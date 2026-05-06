@@ -6,6 +6,7 @@ object Nip68 {
     data class ImetaEntry(
         val url: String,
         val mimeType: String? = null,
+        val thumbhash: String? = null,
         val blurhash: String? = null,
         val dim: String? = null,
         val alt: String? = null,
@@ -32,6 +33,7 @@ object Nip68 {
                 ImetaEntry(
                     url = url,
                     mimeType = fields["m"],
+                    thumbhash = fields["thumbhash"],
                     blurhash = fields["blurhash"],
                     dim = fields["dim"],
                     alt = fields["alt"],
@@ -55,6 +57,7 @@ object Nip68 {
             val imetaParts = mutableListOf("imeta")
             imetaParts.add("url ${entry.url}")
             entry.mimeType?.let { imetaParts.add("m $it") }
+            entry.thumbhash?.let { imetaParts.add("thumbhash $it") }
             entry.blurhash?.let { imetaParts.add("blurhash $it") }
             entry.dim?.let { imetaParts.add("dim $it") }
             entry.alt?.let { imetaParts.add("alt $it") }

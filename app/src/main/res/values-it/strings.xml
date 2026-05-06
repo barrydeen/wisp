@@ -60,10 +60,6 @@
     <string name="auth_login_with_signer">Accedi con Signer</string>
     <string name="auth_or_log_in_with_key">O accedi con la tua chiave</string>
     <string name="auth_nsec_or_npub">nsec o npub…</string>
-    <string name="auth_connect_via_tor">Connetti via Tor</string>
-    <string name="auth_connecting_to_tor">Connessione a Tor…</string>
-    <string name="auth_connected_via_tor">Connesso via Tor</string>
-    <string name="auth_tor_error">Errore Tor</string>
     <string name="auth_wisp">wisp</string>
     <string name="auth_tagline">una piccola interfaccia per scorrere i post</string>
     <string name="auth_hide_key">Nascondi chiave</string>
@@ -161,7 +157,7 @@
     <string name="placeholder_banner_url">URL Banner</string>
     <string name="placeholder_nip05">NIP-05 (es. utente@dominio.com)</string>
     <string name="placeholder_lightning_address">Indirizzo Lightning</string>
-    <string name="placeholder_relay_url">wss:// o ws://.onion</string>
+    <string name="placeholder_relay_url">wss://</string>
     <string name="placeholder_search_users_notes">Cerca utenti e note</string>
     <string name="placeholder_search_relay">Cerca relay</string>
     <string name="placeholder_add_relay">wss://relay.esempio.com</string>
@@ -234,7 +230,6 @@
 
     <!-- Content Descriptions -->
     <string name="cd_back">Indietro</string>
-    <string name="cd_toggle_tor">Attiva/Disattiva Tor</string>
     <string name="cd_toggle_theme">Attiva/Disattiva tema</string>
     <string name="cd_show_qr_code">Mostra codice QR</string>
     <string name="cd_lightning_address">Indirizzo Lightning</string>
@@ -638,10 +633,6 @@
     <!-- Splash Screen -->
     <string name="splash_create_account">Crea account</string>
     <string name="splash_log_in">Accedi</string>
-    <string name="splash_connecting_tor">Connessione a Tor…</string>
-    <string name="splash_connected_tor">Connesso tramite Tor</string>
-    <string name="splash_tor_error">Errore Tor</string>
-    <string name="splash_connect_tor">Connetti tramite Tor</string>
     <string name="online_now">Online ora</string>
     <string name="online_in_network">%d online nella tua rete</string>
     <string name="online_all_nostr">%d online su tutto Nostr</string>

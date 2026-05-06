@@ -1,6 +1,8 @@
 package com.wisp.app.ui.theme
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SwitchColors
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.Typography
@@ -39,6 +41,13 @@ object WispThemeColors {
     val bookmarkColor: Color @Composable get() = LocalWispColors.current.bookmarkColor
     val paidColor: Color @Composable get() = LocalWispColors.current.paidColor
 }
+
+@Composable
+fun wispSwitchColors(): SwitchColors = SwitchDefaults.colors(
+    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+    uncheckedBorderColor = MaterialTheme.colorScheme.outline
+)
 
 private val WispTypography = Typography(
     titleLarge = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold),

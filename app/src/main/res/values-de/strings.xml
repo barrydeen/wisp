@@ -60,10 +60,6 @@
     <string name="auth_login_with_signer">Mit Signer anmelden</string>
     <string name="auth_or_log_in_with_key">Oder melde dich mit deinem Schlüssel an</string>
     <string name="auth_nsec_or_npub">nsec oder npub…</string>
-    <string name="auth_connect_via_tor">Via Tor verbinden</string>
-    <string name="auth_connecting_to_tor">Verbindung zu Tor wird hergestellt…</string>
-    <string name="auth_connected_via_tor">Via Tor verbunden</string>
-    <string name="auth_tor_error">Tor-Fehler</string>
     <string name="auth_wisp">wisp</string>
     <string name="auth_tagline">eine kleine Oberfläche zum Scrollen durch Posts</string>
     <string name="auth_hide_key">Schlüssel verbergen</string>
@@ -161,7 +157,7 @@
     <string name="placeholder_banner_url">Banner-URL</string>
     <string name="placeholder_nip05">NIP-05 (z.B. user@domain.com)</string>
     <string name="placeholder_lightning_address">Lightning-Adresse</string>
-    <string name="placeholder_relay_url">wss:// oder ws://.onion</string>
+    <string name="placeholder_relay_url">wss://</string>
     <string name="placeholder_search_users_notes">Nutzer und Notizen suchen</string>
     <string name="placeholder_search_relay">Relay suchen</string>
     <string name="placeholder_add_relay">wss://relay.beispiel.com</string>
@@ -234,7 +230,6 @@
 
     <!-- Content Descriptions -->
     <string name="cd_back">Zurück</string>
-    <string name="cd_toggle_tor">Tor umschalten</string>
     <string name="cd_toggle_theme">Design umschalten</string>
     <string name="cd_show_qr_code">QR-Code anzeigen</string>
     <string name="cd_lightning_address">Lightning-Adresse</string>
@@ -638,10 +633,6 @@
     <!-- Splash Screen -->
     <string name="splash_create_account">Konto erstellen</string>
     <string name="splash_log_in">Anmelden</string>
-    <string name="splash_connecting_tor">Verbindung zu Tor wird hergestellt…</string>
-    <string name="splash_connected_tor">Mit Tor verbunden</string>
-    <string name="splash_tor_error">Tor-Fehler</string>
-    <string name="splash_connect_tor">Mit Tor verbinden</string>
     <string name="online_now">Jetzt online</string>
     <string name="online_in_network">%d online in deinem Netzwerk</string>
     <string name="online_all_nostr">%d online überall auf Nostr</string>

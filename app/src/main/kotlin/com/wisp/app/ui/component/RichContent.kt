@@ -44,7 +44,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
-import com.wisp.app.util.BlurHashDecoder
+import com.wisp.app.util.MediaHashDecoder
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -54,6 +54,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -183,6 +184,7 @@ data class MediaMeta(
     val url: String,
     val mime: String? = null,
     val dimension: String? = null,
+    val thumbhash: String? = null,
     val blurhash: String? = null
 )
 
@@ -219,7 +221,7 @@ private val blossomPathRegex = Regex("""^/[0-9a-f]{64}$""", RegexOption.IGNORE_C
 
 /**
  * Parse NIP-92 imeta tags from a list of tags to build a URL→metadata map.
- * Tag format: ["imeta", "url https://...", "m image/png", "dim 1024x768", "blurhash ...", ...]
+ * Tag format: ["imeta", "url https://...", "m image/png", "dim 1024x768", "thumbhash ...", "blurhash ...", ...]
  */
 fun parseImetaTags(tags: List<List<String>>): Map<String, MediaMeta> {
     val map = mutableMapOf<String, MediaMeta>()
@@ -228,6 +230,7 @@ fun parseImetaTags(tags: List<List<String>>): Map<String, MediaMeta> {
         var url: String? = null
         var mime: String? = null
         var dim: String? = null
+        var thumb: String? = null
         var blur: String? = null
         for (i in 1 until tag.size) {
             val entry = tag[i]
@@ -235,11 +238,12 @@ fun parseImetaTags(tags: List<List<String>>): Map<String, MediaMeta> {
                 entry.startsWith("url ") -> url = entry.removePrefix("url ")
                 entry.startsWith("m ") -> mime = entry.removePrefix("m ")
                 entry.startsWith("dim ") -> dim = entry.removePrefix("dim ")
+                entry.startsWith("thumbhash ") -> thumb = entry.removePrefix("thumbhash ")
                 entry.startsWith("blurhash ") -> blur = entry.removePrefix("blurhash ")
             }
         }
         if (url != null) {
-            map[url] = MediaMeta(url = url, mime = mime, dimension = dim, blurhash = blur)
+            map[url] = MediaMeta(url = url, mime = mime, dimension = dim, thumbhash = thumb, blurhash = blur)
         }
     }
     return map
@@ -525,7 +529,9 @@ private fun LightningInvoiceCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                painter = painterResource(com.wisp.app.R.drawable.ic_bolt),
+                painter = painterResource(
+                    if (com.wisp.app.ui.util.isFiatMode()) com.wisp.app.R.drawable.ic_coin_stack else com.wisp.app.R.drawable.ic_bolt
+                ),
                 contentDescription = null,
                 tint = primary,
                 modifier = Modifier.size(20.dp)
@@ -608,6 +614,7 @@ fun RichContent(
     onLiveStreamClick: ((String, String, String?) -> Unit)? = null,
     noteActions: NoteActions? = null,
     authorPubkey: String? = null,
+    quoteDepth: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val segments = remember(content, emojiMap, imetaMap, plainLinks) { parseContent(content.trimEnd('\n', '\r'), emojiMap, imetaMap, trimBlankLines = !plainLinks) }
@@ -621,27 +628,29 @@ fun RichContent(
         )
     }
 
-    // Group segments into inline runs vs block-level items
-    val groups = mutableListOf<Any>() // Either MutableList<ContentSegment> (inline run) or ContentSegment (block)
-    fun isInline(s: ContentSegment) = s is ContentSegment.TextSegment ||
-            s is ContentSegment.HashtagSegment ||
-            s is ContentSegment.NostrProfileSegment ||
-            s is ContentSegment.CustomEmojiSegment ||
-            s is ContentSegment.InlineLinkSegment ||
-            (plainLinks && s is ContentSegment.LinkSegment)
+    val groups = remember(segments, plainLinks) {
+        val built = mutableListOf<Any>() // Either List<ContentSegment> (inline run) or ContentSegment (block)
+        fun isInline(s: ContentSegment) = s is ContentSegment.TextSegment ||
+                s is ContentSegment.HashtagSegment ||
+                s is ContentSegment.NostrProfileSegment ||
+                s is ContentSegment.CustomEmojiSegment ||
+                s is ContentSegment.InlineLinkSegment ||
+                (plainLinks && s is ContentSegment.LinkSegment)
 
-    for (segment in segments) {
-        if (isInline(segment)) {
-            val last = groups.lastOrNull()
-            if (last is MutableList<*>) {
-                @Suppress("UNCHECKED_CAST")
-                (last as MutableList<ContentSegment>).add(segment)
+        for (segment in segments) {
+            if (isInline(segment)) {
+                val last = built.lastOrNull()
+                if (last is MutableList<*>) {
+                    @Suppress("UNCHECKED_CAST")
+                    (last as MutableList<ContentSegment>).add(segment)
+                } else {
+                    built.add(mutableListOf(segment))
+                }
             } else {
-                groups.add(mutableListOf(segment))
+                built.add(segment)
             }
-        } else {
-            groups.add(segment)
         }
+        built
     }
 
     val defaultLinkColor = MaterialTheme.colorScheme.primary
@@ -839,7 +848,8 @@ fun RichContent(
                                 eventRepo = eventRepo,
                                 relayHints = segment.relayHints,
                                 onNoteClick = onNoteClick,
-                                noteActions = noteActions
+                                noteActions = noteActions,
+                                quoteDepth = quoteDepth
                             )
                         } else {
                             Text(
@@ -863,6 +873,7 @@ fun RichContent(
                                         onNoteClick = onNoteClick,
                                         onProfileClick = onProfileClick,
                                         noteActions = noteActions,
+                                        quoteDepth = quoteDepth,
                                         style = style
                                     )
                                 } else {
@@ -953,7 +964,8 @@ fun QuotedNote(
     eventRepo: EventRepository,
     relayHints: List<String> = emptyList(),
     onNoteClick: ((String) -> Unit)? = null,
-    noteActions: NoteActions? = null
+    noteActions: NoteActions? = null,
+    quoteDepth: Int = 0
 ) {
     // Observe versions so we recompose when data arrives from relays
     val version by eventRepo.quotedEventVersion.collectAsState()
@@ -967,7 +979,10 @@ fun QuotedNote(
         }
     }
 
-    val effectiveNoteClick = noteActions?.onNoteClick ?: onNoteClick
+    // Cap nesting: depth >= 1 means we're already inside a quoted note,
+    // so force compact preview to avoid squashed action bars
+    val effectiveActions = if (quoteDepth >= 1) null else noteActions
+    val effectiveNoteClick = effectiveActions?.onNoteClick ?: noteActions?.onNoteClick ?: onNoteClick
 
     // Fetch poll votes when quoted event is a poll
     LaunchedEffect(event?.id, event?.kind) {
@@ -979,7 +994,7 @@ fun QuotedNote(
         }
     }
 
-    if (event != null && noteActions != null) {
+    if (event != null && effectiveActions != null) {
         // Full rendering with all interactive features
         val reactionVersion by eventRepo.reactionVersion.collectAsState()
         val zapVersion by eventRepo.zapVersion.collectAsState()
@@ -992,8 +1007,8 @@ fun QuotedNote(
         val zapSats = remember(zapVersion, eventId) { eventRepo.getZapSats(eventId) }
         val repostCount = remember(repostVersion, eventId) { eventRepo.getRepostCount(eventId) }
         val repostPubkeys = remember(repostVersion, eventId) { eventRepo.getReposterPubkeys(eventId) }
-        val userEmojis = remember(reactionVersion, eventId, noteActions.userPubkey) {
-            noteActions.userPubkey?.let { eventRepo.getUserReactionEmojis(eventId, it) } ?: emptySet()
+        val userEmojis = remember(reactionVersion, eventId, effectiveActions.userPubkey) {
+            effectiveActions.userPubkey?.let { eventRepo.getUserReactionEmojis(eventId, it) } ?: emptySet()
         }
         val hasUserReposted = remember(repostVersion, eventId) { eventRepo.hasUserReposted(eventId) }
         val hasUserZapped = remember(zapVersion, eventId) { eventRepo.hasUserZapped(eventId) }
@@ -1035,17 +1050,17 @@ fun QuotedNote(
                 GalleryCard(
                     event = event,
                     profile = profile,
-                    onReply = { noteActions.onReply(event) },
-                    onProfileClick = { noteActions.onProfileClick(event.pubkey) },
-                    onNavigateToProfile = noteActions.onProfileClick,
+                    onReply = { effectiveActions.onReply(event) },
+                    onProfileClick = { effectiveActions.onProfileClick(event.pubkey) },
+                    onNavigateToProfile = effectiveActions.onProfileClick,
                     onNoteClick = { effectiveNoteClick?.invoke(eventId) },
-                    onReact = { emoji -> noteActions.onReact(event, emoji) },
+                    onReact = { emoji -> effectiveActions.onReact(event, emoji) },
                     userReactionEmojis = userEmojis,
-                    onRepost = { noteActions.onRepost(event) },
-                    onQuote = { noteActions.onQuote(event) },
+                    onRepost = { effectiveActions.onRepost(event) },
+                    onQuote = { effectiveActions.onQuote(event) },
                     hasUserReposted = hasUserReposted,
                     repostCount = repostCount,
-                    onZap = { noteActions.onZap(event) },
+                    onZap = { effectiveActions.onZap(event) },
                     hasUserZapped = hasUserZapped,
                     likeCount = likeCount,
                     replyCount = replyCount,
@@ -1054,37 +1069,38 @@ fun QuotedNote(
                     reactionDetails = reactionDetails,
                     zapDetails = zapDetails,
                     repostDetails = repostPubkeys,
-                    onNavigateToProfileFromDetails = noteActions.onProfileClick,
-                    onFollowAuthor = { noteActions.onFollowAuthor(event.pubkey) },
-                    onBlockAuthor = { noteActions.onBlockAuthor(event.pubkey) },
-                    isFollowingAuthor = noteActions.isFollowing(event.pubkey),
-                    isOwnEvent = event.pubkey == noteActions.userPubkey,
-                    nip05Repo = noteActions.nip05Repo,
-                    onAddToList = { noteActions.onAddToList(eventId) },
-                    onPin = { noteActions.onPin(eventId) },
+                    onNavigateToProfileFromDetails = effectiveActions.onProfileClick,
+                    onFollowAuthor = { effectiveActions.onFollowAuthor(event.pubkey) },
+                    onBlockAuthor = { effectiveActions.onBlockAuthor(event.pubkey) },
+                    isFollowingAuthor = effectiveActions.isFollowing(event.pubkey),
+                    isOwnEvent = event.pubkey == effectiveActions.userPubkey,
+                    nip05Repo = effectiveActions.nip05Repo,
+                    onAddToList = { effectiveActions.onAddToList(eventId) },
+                    onPin = { effectiveActions.onPin(eventId) },
                     onQuotedNoteClick = effectiveNoteClick,
-                    noteActions = noteActions,
+                    noteActions = effectiveActions,
                     reactionEmojiUrls = reactionEmojiUrls,
-                    resolvedEmojis = noteActions.resolvedEmojisProvider(),
-                    unicodeEmojis = noteActions.unicodeEmojisProvider(),
-                    onOpenEmojiLibrary = noteActions.onOpenEmojiLibrary,
-                    showDivider = false
+                    resolvedEmojis = effectiveActions.resolvedEmojisProvider(),
+                    unicodeEmojis = effectiveActions.unicodeEmojisProvider(),
+                    onOpenEmojiLibrary = effectiveActions.onOpenEmojiLibrary,
+                    showDivider = false,
+                    quoteDepth = quoteDepth + 1
                 )
             } else {
                 PostCard(
                     event = event,
                     profile = profile,
-                    onReply = { noteActions.onReply(event) },
-                    onProfileClick = { noteActions.onProfileClick(event.pubkey) },
-                    onNavigateToProfile = noteActions.onProfileClick,
+                    onReply = { effectiveActions.onReply(event) },
+                    onProfileClick = { effectiveActions.onProfileClick(event.pubkey) },
+                    onNavigateToProfile = effectiveActions.onProfileClick,
                     onNoteClick = { effectiveNoteClick?.invoke(eventId) },
-                    onReact = { emoji -> noteActions.onReact(event, emoji) },
+                    onReact = { emoji -> effectiveActions.onReact(event, emoji) },
                     userReactionEmojis = userEmojis,
-                    onRepost = { noteActions.onRepost(event) },
-                    onQuote = { noteActions.onQuote(event) },
+                    onRepost = { effectiveActions.onRepost(event) },
+                    onQuote = { effectiveActions.onQuote(event) },
                     hasUserReposted = hasUserReposted,
                     repostCount = repostCount,
-                    onZap = { noteActions.onZap(event) },
+                    onZap = { effectiveActions.onZap(event) },
                     hasUserZapped = hasUserZapped,
                     likeCount = likeCount,
                     replyCount = replyCount,
@@ -1093,28 +1109,29 @@ fun QuotedNote(
                     reactionDetails = reactionDetails,
                     zapDetails = zapDetails,
                     repostDetails = repostPubkeys,
-                    onNavigateToProfileFromDetails = noteActions.onProfileClick,
-                    onFollowAuthor = { noteActions.onFollowAuthor(event.pubkey) },
-                    onBlockAuthor = { noteActions.onBlockAuthor(event.pubkey) },
-                    isFollowingAuthor = noteActions.isFollowing(event.pubkey),
-                    isOwnEvent = event.pubkey == noteActions.userPubkey,
-                    nip05Repo = noteActions.nip05Repo,
-                    onAddToList = { noteActions.onAddToList(eventId) },
-                    onPin = { noteActions.onPin(eventId) },
+                    onNavigateToProfileFromDetails = effectiveActions.onProfileClick,
+                    onFollowAuthor = { effectiveActions.onFollowAuthor(event.pubkey) },
+                    onBlockAuthor = { effectiveActions.onBlockAuthor(event.pubkey) },
+                    isFollowingAuthor = effectiveActions.isFollowing(event.pubkey),
+                    isOwnEvent = event.pubkey == effectiveActions.userPubkey,
+                    nip05Repo = effectiveActions.nip05Repo,
+                    onAddToList = { effectiveActions.onAddToList(eventId) },
+                    onPin = { effectiveActions.onPin(eventId) },
                     onQuotedNoteClick = effectiveNoteClick,
-                    noteActions = noteActions,
+                    noteActions = effectiveActions,
                     pollVoteCounts = pollVoteCounts,
                     pollTotalVotes = pollTotalVotes,
                     userPollVotes = userPollVotes,
-                    onPollVote = { optionIds -> noteActions.onPollVote(eventId, optionIds) },
+                    onPollVote = { optionIds -> effectiveActions.onPollVote(eventId, optionIds) },
                     zapPollSatsCounts = zapPollSatsCounts,
                     zapPollTotalSats = zapPollTotalSats,
                     userZapPollVote = userZapPollVote,
                     reactionEmojiUrls = reactionEmojiUrls,
-                    resolvedEmojis = noteActions.resolvedEmojisProvider(),
-                    unicodeEmojis = noteActions.unicodeEmojisProvider(),
-                    onOpenEmojiLibrary = noteActions.onOpenEmojiLibrary,
-                    showDivider = false
+                    resolvedEmojis = effectiveActions.resolvedEmojisProvider(),
+                    unicodeEmojis = effectiveActions.unicodeEmojisProvider(),
+                    onOpenEmojiLibrary = effectiveActions.onOpenEmojiLibrary,
+                    showDivider = false,
+                    quoteDepth = quoteDepth + 1
                 )
             }
         }
@@ -1223,6 +1240,7 @@ private fun QuotedAddressableNote(
     onNoteClick: ((String) -> Unit)?,
     onProfileClick: ((String) -> Unit)?,
     noteActions: NoteActions?,
+    quoteDepth: Int = 0,
     style: TextStyle
 ) {
     val version by eventRepo.quotedEventVersion.collectAsState()
@@ -1241,7 +1259,8 @@ private fun QuotedAddressableNote(
             eventId = event.id,
             eventRepo = eventRepo,
             onNoteClick = onNoteClick,
-            noteActions = noteActions
+            noteActions = noteActions,
+            quoteDepth = quoteDepth
         )
     } else {
         // Loading state
@@ -1516,12 +1535,7 @@ private fun LiveStreamCardContent(
                 } else if (image != null) {
                     val meta = remember(event.id) { parseImetaTags(event.tags)[image] ?: MediaMeta(url = image) }
                     val ratio = remember(meta.dimension) { parseAspectRatio(meta.dimension) }
-                    val blurPainter = remember(meta.blurhash, meta.dimension) {
-                        val dims = meta.dimension?.split('x')
-                        val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                        val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                        BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
-                    }
+                    val blurPainter = rememberMediaPlaceholderPainter(meta.thumbhash, meta.blurhash, meta.dimension)
                     LoadingAsyncImage(
                         model = image,
                         contentDescription = title,
@@ -1824,10 +1838,7 @@ private fun UnknownMediaContent(
             val type = withContext(Dispatchers.IO) {
                 try {
                     val request = Request.Builder().url(url).head().build()
-                    val client = HttpClientFactory.createHttpClient(
-                        connectTimeoutSeconds = 5,
-                        readTimeoutSeconds = 5
-                    )
+                    val client = HttpClientFactory.getShortTimeoutClient()
                     client.newCall(request).execute().use { response ->
                         response.header("Content-Type")
                     }
@@ -1853,12 +1864,7 @@ private fun UnknownMediaContent(
                     .padding(vertical = 4.dp)
                     .clip(RoundedCornerShape(12.dp))
             ) {
-                val blurPainter = remember(meta.blurhash, meta.dimension) {
-                    val dims = meta.dimension?.split('x')
-                    val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                    val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                    BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
-                }
+                val blurPainter = rememberMediaPlaceholderPainter(meta.thumbhash, meta.blurhash, meta.dimension)
                 Box(contentAlignment = Alignment.Center) {
                     if (blurPainter != null) {
                         Image(
@@ -2040,12 +2046,7 @@ private fun ImageWithContextMenu(meta: MediaMeta, onFullScreen: () -> Unit) {
                 .clickable { loaded = true },
             color = MaterialTheme.colorScheme.surfaceVariant
         ) {
-            val blurPainter = remember(meta.blurhash, meta.dimension) {
-                val dims = meta.dimension?.split('x')
-                val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
-            }
+            val blurPainter = rememberMediaPlaceholderPainter(meta.thumbhash, meta.blurhash, meta.dimension)
             if (blurPainter != null) {
                 Image(
                     painter = blurPainter,
@@ -2077,12 +2078,7 @@ private fun ImageWithContextMenu(meta: MediaMeta, onFullScreen: () -> Unit) {
     }
 
     val ratio = remember(meta.dimension) { parseAspectRatio(meta.dimension) }
-    val blurPainter = remember(meta.blurhash, meta.dimension) {
-        val dims = meta.dimension?.split('x')
-        val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-        val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-        BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
-    }
+    val blurPainter = rememberMediaPlaceholderPainter(meta.thumbhash, meta.blurhash, meta.dimension)
 
     Box {
         LoadingAsyncImage(
@@ -2135,12 +2131,7 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
                 .clickable { loaded = true },
             color = MaterialTheme.colorScheme.surfaceVariant
         ) {
-            val blurPainter = remember(meta.blurhash, meta.dimension) {
-                val dims = meta.dimension?.split('x')
-                val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
-            }
+            val blurPainter = rememberMediaPlaceholderPainter(meta.thumbhash, meta.blurhash, meta.dimension)
             if (blurPainter != null) {
                 Image(
                     painter = blurPainter,
@@ -2181,12 +2172,7 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
                 .clip(RoundedCornerShape(12.dp)),
             color = MaterialTheme.colorScheme.surfaceVariant
         ) {
-            val blurPainter = remember(meta.blurhash, meta.dimension) {
-                val dims = meta.dimension?.split('x')
-                val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                BlurHashDecoder.decode(meta.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
-            }
+            val blurPainter = rememberMediaPlaceholderPainter(meta.thumbhash, meta.blurhash, meta.dimension)
             if (blurPainter != null) {
                 Image(
                     painter = blurPainter,
@@ -2228,12 +2214,14 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
     var isBuffering by remember { mutableStateOf(false) }
 
     val exoPlayer = remember(url) {
-        PipController.reclaimPlayer(url)
+        (PipController.reclaimPlayer(url)
             ?: HttpClientFactory.createExoPlayer(context).apply {
                 setMediaItem(MediaItem.fromUri(Uri.parse(url)))
                 prepare()
                 volume = if (globalMuted.value) 0f else 1f
                 playWhenReady = false
+            }).apply {
+                repeatMode = Player.REPEAT_MODE_ONE
             }
     }
 
@@ -2505,12 +2493,14 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
     var isPlaying by remember { mutableStateOf(false) }
     var isBuffering by remember { mutableStateOf(false) }
     val exoPlayer = remember(url) {
-        PipController.reclaimPlayer(url)
+        (PipController.reclaimPlayer(url)
             ?: HttpClientFactory.createExoPlayer(context).apply {
                 setMediaItem(MediaItem.fromUri(Uri.parse(url)))
                 prepare()
                 volume = if (globalMuted.value) 0f else 1f
                 playWhenReady = false
+            }).apply {
+                repeatMode = Player.REPEAT_MODE_ONE
             }
     }
 
@@ -2661,6 +2651,33 @@ private fun parseAspectRatio(dim: String?): Float? {
     return if (h > 0) w / h else null
 }
 
+private val mediaPlaceholderCache = LruCache<String, BitmapPainter>(200)
+
+@Composable
+internal fun rememberMediaPlaceholderPainter(
+    thumbhash: String?,
+    blurhash: String?,
+    dimension: String?
+): BitmapPainter? {
+    val painter by produceState<BitmapPainter?>(null, thumbhash, blurhash, dimension) {
+        val key = listOf(thumbhash.orEmpty(), blurhash.orEmpty(), dimension.orEmpty()).joinToString("|")
+        mediaPlaceholderCache.get(key)?.let {
+            value = it
+            return@produceState
+        }
+        val dims = dimension?.split('x')
+        val width = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+        val height = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+        value = withContext(Dispatchers.Default) {
+            MediaHashDecoder.decode(thumbhash, blurhash, width, height)
+                ?.asImageBitmap()
+                ?.let { BitmapPainter(it) }
+        }
+        value?.let { mediaPlaceholderCache.put(key, it) }
+    }
+    return painter
+}
+
 // --- Link Preview (OG tags) ---
 
 private data class OgData(
@@ -2673,10 +2690,7 @@ private data class OgData(
 private val ogCache = LruCache<String, OgData>(200)
 
 private val httpClient
-    get() = com.wisp.app.relay.HttpClientFactory.createHttpClient(
-        connectTimeoutSeconds = 5,
-        readTimeoutSeconds = 5
-    )
+    get() = com.wisp.app.relay.HttpClientFactory.getShortTimeoutClient()
 
 private val ogTagRegex = Regex(
     """<meta[^>]+property\s*=\s*["']og:(\w+)["'][^>]+content\s*=\s*["']([^"']*)["'][^>]*/?>|<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:(\w+)["'][^>]*/?>""",

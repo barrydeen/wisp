@@ -60,10 +60,6 @@
     <string name="auth_login_with_signer">サイナーでログイン</string>
     <string name="auth_or_log_in_with_key">または鍵でログイン</string>
     <string name="auth_nsec_or_npub">nsecまたはnpub…</string>
-    <string name="auth_connect_via_tor">Tor経由で接続</string>
-    <string name="auth_connecting_to_tor">Torに接続中…</string>
-    <string name="auth_connected_via_tor">Tor経由で接続済み</string>
-    <string name="auth_tor_error">Torエラー</string>
     <string name="auth_wisp">wisp</string>
     <string name="auth_tagline">投稿をスクロールするための小さなインターフェース</string>
     <string name="auth_hide_key">鍵を隠す</string>
@@ -161,7 +157,7 @@
     <string name="placeholder_banner_url">バナーのURL</string>
     <string name="placeholder_nip05">NIP-05（例：user@domain.com）</string>
     <string name="placeholder_lightning_address">Lightningアドレス</string>
-    <string name="placeholder_relay_url">wss://またはws://.onion</string>
+    <string name="placeholder_relay_url">wss://</string>
     <string name="placeholder_search_users_notes">ユーザーとノートを検索</string>
     <string name="placeholder_search_relay">リレーを検索</string>
     <string name="placeholder_add_relay">wss://relay.example.com</string>
@@ -234,7 +230,6 @@
 
     <!-- Content Descriptions -->
     <string name="cd_back">戻る</string>
-    <string name="cd_toggle_tor">Tor切り替え</string>
     <string name="cd_toggle_theme">テーマ切り替え</string>
     <string name="cd_show_qr_code">QRコードを表示</string>
     <string name="cd_lightning_address">Lightningアドレス</string>
@@ -638,10 +633,6 @@
     <!-- Splash Screen -->
     <string name="splash_create_account">アカウント作成</string>
     <string name="splash_log_in">ログイン</string>
-    <string name="splash_connecting_tor">Torに接続中…</string>
-    <string name="splash_connected_tor">Tor経由で接続済み</string>
-    <string name="splash_tor_error">Torエラー</string>
-    <string name="splash_connect_tor">Tor経由で接続</string>
     <string name="online_now">オンライン中</string>
     <string name="online_in_network">ネットワーク内で%d人がオンライン</string>
     <string name="online_all_nostr">Nostr全体で%d人がオンライン</string>

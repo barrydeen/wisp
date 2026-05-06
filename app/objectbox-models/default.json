@@ -200,10 +200,120 @@
         }
       ],
       "relations": []
+    },
+    {
+      "id": "4:7887606620514562424",
+      "lastPropertyId": "19:4886434588165198685",
+      "name": "DmMessageEntity",
+      "properties": [
+        {
+          "id": "1:5692570271165246660",
+          "name": "dbId",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:7000677822556314201",
+          "name": "ownerPubkey",
+          "indexId": "9:6602733161228465634",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "3:6290484962841828502",
+          "name": "msgId",
+          "type": 9
+        },
+        {
+          "id": "4:2348777899365035302",
+          "name": "giftWrapId",
+          "type": 9
+        },
+        {
+          "id": "5:2069465575936337164",
+          "name": "ownerPlusGiftWrap",
+          "indexId": "10:3019350336205317210",
+          "type": 9,
+          "flags": 2080
+        },
+        {
+          "id": "6:2553884322257857954",
+          "name": "conversationKey",
+          "indexId": "11:2796688777436521560",
+          "type": 9,
+          "flags": 2048
+        },
+        {
+          "id": "7:8809979439595500948",
+          "name": "senderPubkey",
+          "type": 9
+        },
+        {
+          "id": "8:8843109929728616712",
+          "name": "content",
+          "type": 9
+        },
+        {
+          "id": "9:171907408823158128",
+          "name": "createdAt",
+          "type": 6
+        },
+        {
+          "id": "10:2547972877937268396",
+          "name": "rumorId",
+          "type": 9
+        },
+        {
+          "id": "11:1673398814149095965",
+          "name": "replyToId",
+          "type": 9
+        },
+        {
+          "id": "12:50500640324097366",
+          "name": "participantsJson",
+          "type": 9
+        },
+        {
+          "id": "13:8309166603960799477",
+          "name": "relayUrlsJson",
+          "type": 9
+        },
+        {
+          "id": "14:2180681062962341429",
+          "name": "reactionsJson",
+          "type": 9
+        },
+        {
+          "id": "15:4091937178395226174",
+          "name": "zapsJson",
+          "type": 9
+        },
+        {
+          "id": "16:3800181430749026871",
+          "name": "emojiMapJson",
+          "type": 9
+        },
+        {
+          "id": "17:3371948627029311978",
+          "name": "encryptedFileMetadataJson",
+          "type": 9
+        },
+        {
+          "id": "18:2402319826123827739",
+          "name": "debugGiftWrapJson",
+          "type": 9
+        },
+        {
+          "id": "19:4886434588165198685",
+          "name": "debugRumorJson",
+          "type": 9
+        }
+      ],
+      "relations": []
     }
   ],
-  "lastEntityId": "3:4980149860826606366",
-  "lastIndexId": "8:8850647956925906315",
+  "lastEntityId": "4:7887606620514562424",
+  "lastIndexId": "11:2796688777436521560",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

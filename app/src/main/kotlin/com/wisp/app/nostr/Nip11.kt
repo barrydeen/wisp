@@ -36,10 +36,7 @@ data class RelayInfo(
 object Nip11 {
     private val json = Json { ignoreUnknownKeys = true }
     private val httpClient
-        get() = com.wisp.app.relay.HttpClientFactory.createHttpClient(
-            connectTimeoutSeconds = 10,
-            readTimeoutSeconds = 10
-        )
+        get() = com.wisp.app.relay.HttpClientFactory.getGeneralClient()
 
     suspend fun fetchRelayInfo(url: String, httpClient: OkHttpClient? = null): RelayInfo? {
         val client = httpClient ?: this.httpClient

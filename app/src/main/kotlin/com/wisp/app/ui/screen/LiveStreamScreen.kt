@@ -168,6 +168,7 @@ fun LiveStreamScreen(
                         url = streamUrl,
                         mime = "video/mp4", // Default to video for stream
                         dimension = null,
+                        thumbhash = null,
                         blurhash = null
                     ),
                     onFullScreen = { posMs ->

@@ -30,10 +30,7 @@ class Nip05Repository {
     val version: StateFlow<Int> = _version
 
     private val httpClient
-        get() = com.wisp.app.relay.HttpClientFactory.createHttpClient(
-            connectTimeoutSeconds = 5,
-            readTimeoutSeconds = 10
-        )
+        get() = com.wisp.app.relay.HttpClientFactory.getNip05Client()
 
     fun clear() {
         statusCache.clear()

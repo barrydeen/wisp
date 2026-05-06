@@ -3,6 +3,7 @@ package com.wisp.app.repo
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.LruCache
+import com.wisp.app.db.DmPersistence
 import com.wisp.app.nostr.DmConversation
 import com.wisp.app.nostr.DmMessage
 import com.wisp.app.nostr.DmReaction
@@ -11,13 +12,21 @@ import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.wipe
 import com.wisp.app.nostr.FlatNotificationItem
 import com.wisp.app.nostr.NotificationType
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
-class DmRepository(private val context: Context? = null, pubkeyHex: String? = null) {
+class DmRepository(
+    private val context: Context? = null,
+    pubkeyHex: String? = null,
+    private val persistence: DmPersistence? = null
+) {
 
     companion object {
         /**
@@ -83,6 +92,108 @@ class DmRepository(private val context: Context? = null, pubkeyHex: String? = nu
     private val _dmNotifications = MutableStateFlow<List<FlatNotificationItem>>(emptyList())
     val dmNotifications: StateFlow<List<FlatNotificationItem>> = _dmNotifications
 
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    init {
+        // Seeding queries ObjectBox — dispatch off the main thread so cold-start UI isn't blocked.
+        ioScope.launch { seedFromPersistence() }
+    }
+
+    /**
+     * Hydrate in-memory state from disk so we don't need to re-decrypt every gift wrap on
+     * each cold start. Populates [conversations], [seenGiftWraps] and [rumorIdIndex]; the
+     * existing dedup in [addPendingGiftWrap] then short-circuits relay-redelivered wraps
+     * before they hit the signer.
+     */
+    private fun seedFromPersistence() {
+        val owner = myPubkey ?: return
+        val p = persistence ?: return
+        val loaded = p.loadAll(owner)
+        if (loaded.isEmpty()) return
+        var newestSeen = 0L
+        synchronized(lock) {
+            for ((convKey, msg) in loaded) {
+                if (seenGiftWraps.containsKey(msg.giftWrapId)) continue
+                seenGiftWraps[msg.giftWrapId] = msg.id
+                if (msg.rumorId.isNotEmpty()) {
+                    rumorIdIndex[msg.rumorId] = Pair(convKey, msg.id)
+                }
+                if (msg.participants.isNotEmpty()) {
+                    conversationParticipants[convKey] = msg.participants
+                }
+                val list = conversations.getOrPut(convKey) { mutableListOf() }
+                list.add(msg)
+                if (msg.createdAt > latestGiftWrapTs) latestGiftWrapTs = msg.createdAt
+                if (msg.createdAt > newestSeen) newestSeen = msg.createdAt
+                rebuildNotifItemsLocked(convKey, msg)
+            }
+            for ((_, list) in conversations) list.sortBy { it.createdAt }
+            val sorted = dmNotifItems.sortedByDescending { it.timestamp }
+            _dmNotifications.value = if (sorted.size > 200) sorted.take(200) else sorted
+        }
+        if (newestSeen > lastReadDmTimestamp) _hasUnreadDms.value = true
+        updateConversationList()
+    }
+
+    /**
+     * Rebuild incoming-DM, reaction and zap notification items for a single persisted message.
+     * Caller must hold [lock]. Used only for hydration — the live `addMessage` path inlines
+     * the same logic with extra audio/haptic side-effects we want to skip on cold start.
+     */
+    private fun rebuildNotifItemsLocked(convKey: String, msg: DmMessage) {
+        val owner = myPubkey ?: return
+        if (msg.senderPubkey != owner) {
+            val flatId = "dm:${msg.id}"
+            if (dmNotifIds.add(flatId)) {
+                val peerPubkey = msg.participants.firstOrNull() ?: convKey
+                dmNotifItems.add(FlatNotificationItem(
+                    id = flatId,
+                    type = NotificationType.DM,
+                    actorPubkey = msg.senderPubkey,
+                    referencedEventId = msg.id,
+                    timestamp = msg.createdAt,
+                    dmContent = msg.content,
+                    dmPeerPubkey = peerPubkey,
+                    dmRumorId = msg.rumorId.ifEmpty { null }
+                ))
+            }
+        } else {
+            // Reactions and zaps appear in the notifications screen only for the user's own messages.
+            for (reaction in msg.reactions) {
+                val flatId = "dmreact:${reaction.authorPubkey}:${msg.rumorId.ifEmpty { msg.id }}"
+                if (dmNotifIds.add(flatId)) {
+                    val peerPubkey = if (msg.participants.size > 1) convKey
+                                     else msg.participants.firstOrNull() ?: convKey
+                    dmNotifItems.add(FlatNotificationItem(
+                        id = flatId,
+                        type = NotificationType.DM_REACTION,
+                        actorPubkey = reaction.authorPubkey,
+                        referencedEventId = msg.rumorId.ifEmpty { msg.id },
+                        timestamp = reaction.timestamp,
+                        emoji = reaction.emoji,
+                        dmPeerPubkey = peerPubkey
+                    ))
+                }
+            }
+            for (zap in msg.zaps) {
+                val flatId = "dmzap:${zap.zapperPubkey}:${msg.rumorId.ifEmpty { msg.id }}"
+                if (dmNotifIds.add(flatId)) {
+                    val peerPubkey = if (msg.participants.size > 1) convKey
+                                     else msg.participants.firstOrNull() ?: convKey
+                    dmNotifItems.add(FlatNotificationItem(
+                        id = flatId,
+                        type = NotificationType.DM_ZAP,
+                        actorPubkey = zap.zapperPubkey,
+                        referencedEventId = msg.rumorId.ifEmpty { msg.id },
+                        timestamp = zap.timestamp,
+                        zapSats = zap.sats,
+                        dmPeerPubkey = peerPubkey
+                    ))
+                }
+            }
+        }
+    }
+
     fun markDecryptingStart() {
         decryptingRefCount.incrementAndGet()
         _decrypting.value = true
@@ -145,6 +256,7 @@ class DmRepository(private val context: Context? = null, pubkeyHex: String? = nu
             messages.add(msg)
             messages.sortBy { it.createdAt }
         }
+        myPubkey?.let { persistence?.queueMessage(it, msg) }
         if (isNewIncoming) {
             _dmReceived.tryEmit(Unit)
         }
@@ -159,6 +271,7 @@ class DmRepository(private val context: Context? = null, pubkeyHex: String? = nu
      * in conversation [convKey].
      */
     fun addZap(convKey: String, messageId: String, zap: DmZap) {
+        var updated: DmMessage? = null
         synchronized(lock) {
             val messages = conversations.get(convKey) ?: return
             val idx = messages.indexOfFirst { it.rumorId == messageId || it.id == messageId }
@@ -167,6 +280,7 @@ class DmRepository(private val context: Context? = null, pubkeyHex: String? = nu
             // Dedupe by zapperPubkey + timestamp
             if (existing.zaps.any { it.zapperPubkey == zap.zapperPubkey && it.timestamp == zap.timestamp }) return
             messages[idx] = existing.copy(zaps = existing.zaps + zap)
+            updated = messages[idx]
 
             // Notify if the original message was sent by the local user
             val isMine = myPubkey != null && existing.senderPubkey == myPubkey
@@ -189,6 +303,7 @@ class DmRepository(private val context: Context? = null, pubkeyHex: String? = nu
                 }
             }
         }
+        updated?.let { msg -> myPubkey?.let { persistence?.queueMessage(it, msg) } }
         updateConversationList()
     }
 
@@ -197,6 +312,7 @@ class DmRepository(private val context: Context? = null, pubkeyHex: String? = nu
      * If the original message was sent by the local user, also emits a DM_REACTION notification.
      */
     fun addReaction(convKey: String, messageId: String, reaction: DmReaction) {
+        var updated: DmMessage? = null
         synchronized(lock) {
             val messages = conversations.get(convKey) ?: return
             val idx = messages.indexOfFirst { it.rumorId == messageId || it.id == messageId }
@@ -207,6 +323,7 @@ class DmRepository(private val context: Context? = null, pubkeyHex: String? = nu
             }
             if (alreadyReacted) return
             messages[idx] = existing.copy(reactions = existing.reactions + reaction)
+            updated = messages[idx]
 
             // Notify if the original message was sent by the local user
             val isMine = myPubkey != null && existing.senderPubkey == myPubkey
@@ -231,6 +348,7 @@ class DmRepository(private val context: Context? = null, pubkeyHex: String? = nu
                 }
             }
         }
+        updated?.let { msg -> myPubkey?.let { persistence?.queueMessage(it, msg) } }
         updateConversationList()
     }
 
@@ -308,16 +426,34 @@ class DmRepository(private val context: Context? = null, pubkeyHex: String? = nu
         synchronized(lock) {
             // Remove all conversations that include this pubkey
             val keysToRemove = conversations.keys.filter { key -> key.split(",").contains(pubkey) }
-            keysToRemove.forEach {
-                conversations.remove(it)
-                conversationParticipants.remove(it)
+            keysToRemove.forEach { convKey ->
+                conversations.remove(convKey)?.forEach { msg ->
+                    seenGiftWraps.remove(msg.giftWrapId)
+                    if (msg.rumorId.isNotEmpty()) rumorIdIndex.remove(msg.rumorId)
+                }
+                conversationParticipants.remove(convKey)
             }
             conversationKeyCache.remove(pubkey)
         }
+        myPubkey?.let { persistence?.deleteConversationsWithPubkey(it, pubkey) }
         updateConversationList()
     }
 
     fun addPendingGiftWrap(event: NostrEvent, relayUrl: String) {
+        // Already-decrypted (and persisted) wraps must skip the queue — otherwise we'd
+        // re-hit the signer for every wrap on every cold start.
+        if (seenGiftWraps.containsKey(event.id)) {
+            if (relayUrl.isNotEmpty()) {
+                synchronized(lock) {
+                    val msgId = seenGiftWraps[event.id] ?: return@synchronized
+                    val convKey = conversations.entries.firstOrNull { (_, msgs) ->
+                        msgs.any { it.id == msgId }
+                    }?.key ?: return@synchronized
+                    mergeRelayUrlsLocked(convKey, msgId, setOf(relayUrl))
+                }
+            }
+            return
+        }
         synchronized(pendingLock) {
             // Dedup by event id
             if (pendingGiftWraps.any { it.event.id == event.id }) return
@@ -351,9 +487,14 @@ class DmRepository(private val context: Context? = null, pubkeyHex: String? = nu
         prefs = context?.getSharedPreferences("wisp_dm_$pubkeyHex", Context.MODE_PRIVATE)
         lastReadDmTimestamp = prefs?.getLong("last_read_dm", 0L) ?: 0L
         latestGiftWrapTs = prefs?.getLong("latest_gwrap_ts", 0L) ?: 0L
+        // Hydrate decrypted DMs for the new account so we don't re-decrypt on switch.
+        ioScope.launch { seedFromPersistence() }
     }
 
     fun clear() {
+        // Wipe persistence for the previous owner — clear() is invoked on logout / account
+        // switch where keeping decrypted DMs around would be wrong.
+        myPubkey?.let { persistence?.deleteAllForOwner(it) }
         synchronized(lock) {
             conversations.clear()
             conversationParticipants.clear()

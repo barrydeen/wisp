@@ -60,10 +60,6 @@
     <string name="auth_login_with_signer">Inloggen met Signer</string>
     <string name="auth_or_log_in_with_key">Of log in met je sleutel</string>
     <string name="auth_nsec_or_npub">nsec of npub…</string>
-    <string name="auth_connect_via_tor">Verbind via Tor</string>
-    <string name="auth_connecting_to_tor">Verbinden met Tor…</string>
-    <string name="auth_connected_via_tor">Verbonden via Tor</string>
-    <string name="auth_tor_error">Tor fout</string>
     <string name="auth_wisp">wisp</string>
     <string name="auth_tagline">een kleine interface om door posts te scrollen</string>
     <string name="auth_hide_key">Sleutel verbergen</string>
@@ -161,7 +157,7 @@
     <string name="placeholder_banner_url">URL Banner</string>
     <string name="placeholder_nip05">NIP-05 (bijv. gebruiker@domein.com)</string>
     <string name="placeholder_lightning_address">Lightning Adres</string>
-    <string name="placeholder_relay_url">wss:// of ws://.onion</string>
+    <string name="placeholder_relay_url">wss://</string>
     <string name="placeholder_search_users_notes">Gebruikers en notities zoeken</string>
     <string name="placeholder_search_relay">Relay zoeken</string>
     <string name="placeholder_add_relay">wss://relay.voorbeeld.com</string>
@@ -234,7 +230,6 @@
 
     <!-- Content Descriptions -->
     <string name="cd_back">Terug</string>
-    <string name="cd_toggle_tor">Tor Toggle</string>
     <string name="cd_toggle_theme">Theme Toggle</string>
     <string name="cd_show_qr_code">QR-code Tonen</string>
     <string name="cd_lightning_address">Lightning Adres</string>
@@ -638,10 +633,6 @@
     <!-- Splash Screen -->
     <string name="splash_create_account">Account maken</string>
     <string name="splash_log_in">Inloggen</string>
-    <string name="splash_connecting_tor">Verbinden met Tor…</string>
-    <string name="splash_connected_tor">Verbonden via Tor</string>
-    <string name="splash_tor_error">Tor-fout</string>
-    <string name="splash_connect_tor">Verbinden via Tor</string>
     <string name="online_now">Nu online</string>
     <string name="online_in_network">%d online in je netwerk</string>
     <string name="online_all_nostr">%d online overal op Nostr</string>

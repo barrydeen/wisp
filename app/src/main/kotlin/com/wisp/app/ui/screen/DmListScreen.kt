@@ -67,6 +67,7 @@ import com.wisp.app.repo.GroupRoom
 import com.wisp.app.ui.component.GroupCard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.viewmodel.DmListViewModel
+import com.wisp.app.ui.theme.wispSwitchColors
 import com.wisp.app.viewmodel.GroupListViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -608,7 +609,7 @@ private fun GroupFlagSwitch(
             Text(description, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, colors = wispSwitchColors())
     }
 }
 

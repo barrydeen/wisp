@@ -79,7 +79,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
-import com.wisp.app.util.BlurHashDecoder
 import coil3.compose.AsyncImage
 import androidx.compose.material3.CircularProgressIndicator
 import com.wisp.app.R
@@ -152,6 +151,7 @@ fun GalleryCard(
     onPin: () -> Unit = {},
     isPinned: Boolean = false,
     onDelete: () -> Unit = {},
+    quoteDepth: Int = 0,
     modifier: Modifier = Modifier,
     showDivider: Boolean = true
 ) {
@@ -220,6 +220,7 @@ fun GalleryCard(
             onPin = onPin,
             isPinned = isPinned,
             onDelete = onDelete,
+            quoteDepth = quoteDepth,
             modifier = modifier,
             showDivider = showDivider
         )
@@ -510,12 +511,7 @@ fun GalleryCard(
                         .clip(RoundedCornerShape(12.dp))
                 ) { page ->
                     val entry = imageEntries[page]
-                    val blurPainter = remember(entry.blurhash, entry.dim) {
-                        val dims = entry.dim?.split('x')
-                        val w = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                        val h = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-                        BlurHashDecoder.decode(entry.blurhash, w, h)?.asImageBitmap()?.let { BitmapPainter(it) }
-                    }
+                    val blurPainter = rememberMediaPlaceholderPainter(entry.thumbhash, entry.blurhash, entry.dim)
                     var isLoading by remember { mutableStateOf(true) }
                     Box(
                         modifier = Modifier
@@ -578,6 +574,7 @@ fun GalleryCard(
                     url = video.url,
                     mime = video.mimeType,
                     dimension = video.dim,
+                    thumbhash = video.thumbhash,
                     blurhash = video.blurhash
                 ),
                 onFullScreen = { positionMs ->

@@ -423,7 +423,10 @@ fun ZapDialog(
                             },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = LightningOrange,
-                                checkedTrackColor = LightningOrange.copy(alpha = 0.5f)
+                                checkedTrackColor = LightningOrange.copy(alpha = 0.5f),
+                                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                uncheckedBorderColor = MaterialTheme.colorScheme.outline
                             )
                         )
                     }
@@ -458,7 +461,10 @@ fun ZapDialog(
                             enabled = canPrivateZap,
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = LightningOrange,
-                                checkedTrackColor = LightningOrange.copy(alpha = 0.5f)
+                                checkedTrackColor = LightningOrange.copy(alpha = 0.5f),
+                                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                uncheckedBorderColor = MaterialTheme.colorScheme.outline
                             )
                         )
                     }

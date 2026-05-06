@@ -60,10 +60,6 @@
     <string name="auth_login_with_signer">使用签名器登录</string>
     <string name="auth_or_log_in_with_key">或使用密钥登录</string>
     <string name="auth_nsec_or_npub">nsec 或 npub…</string>
-    <string name="auth_connect_via_tor">通过 Tor 连接</string>
-    <string name="auth_connecting_to_tor">正在连接 Tor…</string>
-    <string name="auth_connected_via_tor">已通过 Tor 连接</string>
-    <string name="auth_tor_error">Tor 错误</string>
     <string name="auth_wisp">wisp</string>
     <string name="auth_tagline">滚动帖子的轻量界面</string>
     <string name="auth_hide_key">隐藏密钥</string>
@@ -161,7 +157,7 @@
     <string name="placeholder_banner_url">横幅 URL</string>
     <string name="placeholder_nip05">NIP-05（例如：user@domain.com）</string>
     <string name="placeholder_lightning_address">闪电地址</string>
-    <string name="placeholder_relay_url">wss:// 或 ws://.onion</string>
+    <string name="placeholder_relay_url">wss://</string>
     <string name="placeholder_search_users_notes">搜索用户和笔记</string>
     <string name="placeholder_search_relay">搜索中继</string>
     <string name="placeholder_add_relay">wss://relay.example.com</string>
@@ -234,7 +230,6 @@
 
     <!-- Content Descriptions -->
     <string name="cd_back">返回</string>
-    <string name="cd_toggle_tor">切换 Tor</string>
     <string name="cd_toggle_theme">切换主题</string>
     <string name="cd_show_qr_code">显示二维码</string>
     <string name="cd_lightning_address">闪电地址</string>
@@ -638,10 +633,6 @@
     <!-- Splash Screen -->
     <string name="splash_create_account">创建账户</string>
     <string name="splash_log_in">登录</string>
-    <string name="splash_connecting_tor">正在连接Tor…</string>
-    <string name="splash_connected_tor">已通过Tor连接</string>
-    <string name="splash_tor_error">Tor错误</string>
-    <string name="splash_connect_tor">通过Tor连接</string>
     <string name="online_now">当前在线</string>
     <string name="online_in_network">你的网络中有%d人在线</string>
     <string name="online_all_nostr">整个Nostr有%d人在线</string>

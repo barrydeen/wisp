@@ -53,10 +53,6 @@
     <string name="auth_login_with_signer">Войти через подписчик</string>
     <string name="auth_or_log_in_with_key">Или войдите по ключу</string>
     <string name="auth_nsec_or_npub">nsec или npub…</string>
-    <string name="auth_connect_via_tor">Подключиться через Tor</string>
-    <string name="auth_connecting_to_tor">Подключение к Tor…</string>
-    <string name="auth_connected_via_tor">Подключено через Tor</string>
-    <string name="auth_tor_error">Ошибка Tor</string>
     <string name="auth_wisp">wisp</string>
     <string name="auth_tagline">небольшой интерфейс для прокрутки постов</string>
     <string name="auth_hide_key">Скрыть ключ</string>
@@ -150,7 +146,7 @@
     <string name="placeholder_banner_url">URL баннера</string>
     <string name="placeholder_nip05">NIP-05 (напр. user@domain.com)</string>
     <string name="placeholder_lightning_address">Lightning-адрес</string>
-    <string name="placeholder_relay_url">wss:// или ws://.onion</string>
+    <string name="placeholder_relay_url">wss://</string>
     <string name="placeholder_search_users_notes">Искать пользователей и заметки</string>
     <string name="placeholder_search_relay">Искать рилэй</string>
     <string name="placeholder_add_relay">wss://relay.example.com</string>
@@ -217,7 +213,6 @@
     <string name="btn_add_to_set">+Набор</string>
     <string name="btn_details">Подробнее</string>
     <string name="cd_back">Назад</string>
-    <string name="cd_toggle_tor">Переключить Tor</string>
     <string name="cd_toggle_theme">Переключить тему</string>
     <string name="cd_show_qr_code">Показать QR-код</string>
     <string name="cd_lightning_address">Lightning-адрес</string>
@@ -599,10 +594,6 @@
     <!-- Splash Screen -->
     <string name="splash_create_account">Создать аккаунт</string>
     <string name="splash_log_in">Войти</string>
-    <string name="splash_connecting_tor">Подключение к Tor…</string>
-    <string name="splash_connected_tor">Подключено через Tor</string>
-    <string name="splash_tor_error">Ошибка Tor</string>
-    <string name="splash_connect_tor">Подключиться через Tor</string>
     <string name="online_now">Сейчас онлайн</string>
     <string name="online_in_network">%d онлайн в вашей сети</string>
     <string name="online_all_nostr">%d онлайн во всём Nostr</string>

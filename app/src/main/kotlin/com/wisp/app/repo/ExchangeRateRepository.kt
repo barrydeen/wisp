@@ -83,10 +83,7 @@ object ExchangeRateRepository {
         scope.launch {
             try {
                 val url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=$vsCurrencies"
-                val client = HttpClientFactory.createHttpClient(
-                    connectTimeoutSeconds = 10,
-                    readTimeoutSeconds = 15
-                )
+                val client = HttpClientFactory.getGeneralClient()
                 val request = Request.Builder().url(url).build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {

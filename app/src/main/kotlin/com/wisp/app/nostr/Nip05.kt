@@ -41,21 +41,23 @@ object Nip05 {
                 val request = Request.Builder().url(url).build()
                 val response = httpClient.newCall(request).execute()
 
-                if (!response.isSuccessful) return@withContext Nip05Result.ERROR
+                response.use {
+                    if (!it.isSuccessful) return@withContext Nip05Result.ERROR
 
-                val body = response.body?.string() ?: return@withContext Nip05Result.ERROR
-                val root = json.parseToJsonElement(body).jsonObject
-                val names = root["names"]?.jsonObject ?: return@withContext Nip05Result.MISMATCH
-                // Case-insensitive lookup per NIP-05 spec (servers may return capitalized keys)
-                val registeredPubkey = (names[local] ?: names.entries.firstOrNull {
-                    it.key.equals(local, ignoreCase = true)
-                }?.value)?.jsonPrimitive?.content
-                    ?: return@withContext Nip05Result.MISMATCH
+                    val body = it.body?.string() ?: return@withContext Nip05Result.ERROR
+                    val root = json.parseToJsonElement(body).jsonObject
+                    val names = root["names"]?.jsonObject ?: return@withContext Nip05Result.MISMATCH
+                    // Case-insensitive lookup per NIP-05 spec (servers may return capitalized keys)
+                    val registeredPubkey = (names[local] ?: names.entries.firstOrNull { entry ->
+                        entry.key.equals(local, ignoreCase = true)
+                    }?.value)?.jsonPrimitive?.content
+                        ?: return@withContext Nip05Result.MISMATCH
 
-                if (registeredPubkey.equals(pubkeyHex, ignoreCase = true))
-                    Nip05Result.VERIFIED
-                else
-                    Nip05Result.MISMATCH
+                    if (registeredPubkey.equals(pubkeyHex, ignoreCase = true))
+                        Nip05Result.VERIFIED
+                    else
+                        Nip05Result.MISMATCH
+                }
             } catch (_: Exception) {
                 Nip05Result.ERROR
             }

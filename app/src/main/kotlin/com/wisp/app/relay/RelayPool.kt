@@ -36,7 +36,6 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         private set
 
     private var client: OkHttpClient = Relay.createClient()
-    private var clientBuiltWithTor: Boolean = TorManager.isEnabled()
     private val relays = CopyOnWriteArrayList<Relay>()
     private val dmRelays = CopyOnWriteArrayList<Relay>()
     /** Persistent connections for NIP-29 group chat relays — auto-reconnect enabled. */
@@ -110,18 +109,6 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
     fun autoApproveRelayAuth(url: String) {
         dmDeliveryTargets.add(url)
         userApprovedAuthRelays.add(url)
-    }
-
-    /**
-     * Ensure the OkHttpClient matches the current Tor state.
-     * If Tor was enabled/disabled since the client was built, rebuild it.
-     */
-    private fun ensureClientCurrent() {
-        val torNow = TorManager.isEnabled()
-        if (torNow != clientBuiltWithTor) {
-            client = HttpClientFactory.createRelayClient()
-            clientBuiltWithTor = torNow
-        }
     }
 
     @Volatile var appIsActive = false
@@ -256,10 +243,9 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
     }
 
     fun updateRelays(configs: List<RelayConfig>) {
-        ensureClientCurrent()
         val badRelays = healthTracker?.getBadRelays() ?: emptySet()
         val filtered = configs.filter {
-            it.url !in blockedUrls && it.url !in badRelays && RelayConfig.isConnectableUrl(it.url)
+            it.url !in blockedUrls && it.url !in badRelays && RelayConfig.isValidUrl(it.url)
         }.take(MAX_PERSISTENT)
 
         // Disconnect removed relays
@@ -288,8 +274,7 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
     }
 
     fun updateDmRelays(urls: List<String>) {
-        ensureClientCurrent()
-        val filtered = urls.filter { it !in blockedUrls && RelayConfig.isConnectableUrl(it) }.take(MAX_DM_RELAYS)
+        val filtered = urls.filter { it !in blockedUrls && RelayConfig.isValidUrl(it) }.take(MAX_DM_RELAYS)
         val currentUrls = filtered.toSet()
         dmRelays.filter { it.config.url !in currentUrls }.forEach {
             it.disconnect()
@@ -324,8 +309,7 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
      * Must be called before sending subscriptions so the relay survives disconnection.
      */
     fun ensureGroupRelay(url: String) {
-        ensureClientCurrent()
-        if (url in blockedUrls || !RelayConfig.isConnectableUrl(url)) return
+        if (url in blockedUrls || !RelayConfig.isValidUrl(url)) return
         // Chat relay AUTH challenges route through the tier-2 prompt flow so the user
         // can decide to reveal their pubkey for private/hidden group access.
         groupRelayAuthTargets.add(url)
@@ -861,9 +845,8 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
      * handshake before sending an event that requires authentication.
      */
     fun connectEphemeralRelay(url: String) {
-        ensureClientCurrent()
         if (url in blockedUrls) return
-        if (!RelayConfig.isConnectableUrl(url) && !RelayConfig.isLocalRelayUrl(url)) return
+        if (!RelayConfig.isValidUrl(url) && !RelayConfig.isLocalRelayUrl(url)) return
         if (ephemeralRelays.containsKey(url) || relayIndex.containsKey(url)) return
         if (ephemeralRelays.size >= MAX_EPHEMERAL) return
         ephemeralRelays.computeIfAbsent(url) {
@@ -885,10 +868,9 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         write: Boolean = false,
         autoReconnect: Boolean = false
     ): Boolean {
-        ensureClientCurrent()
         if (url in blockedUrls) return false
         if (!skipBadCheck && healthTracker?.isBad(url) == true) return false
-        if (!RelayConfig.isConnectableUrl(url) && !RelayConfig.isLocalRelayUrl(url)) return false
+        if (!RelayConfig.isValidUrl(url) && !RelayConfig.isLocalRelayUrl(url)) return false
 
         // Check cooldown for failed relays
         val cooldownUntil = relayCooldowns[url]
@@ -1216,9 +1198,8 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
      * the WebSocket connection early so it's ready when the first REQ arrives.
      */
     fun preConnectEphemeral(url: String) {
-        ensureClientCurrent()
         if (url in blockedUrls) return
-        if (!RelayConfig.isConnectableUrl(url) && !RelayConfig.isLocalRelayUrl(url)) return
+        if (!RelayConfig.isValidUrl(url) && !RelayConfig.isLocalRelayUrl(url)) return
         if (ephemeralRelays.containsKey(url)) return
         if (ephemeralRelays.size >= MAX_EPHEMERAL) return
         val relay = Relay(RelayConfig(url, read = true, write = false), client, scope)
@@ -1289,29 +1270,6 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         synchronized(seenLock) {
             seenEvents.evictAll()
         }
-    }
-
-    /**
-     * Rebuild the OkHttpClient (e.g. after Tor toggle) and reconnect all relays.
-     * When [allConfigs] / [allDmUrls] are provided (e.g. from saved prefs), they
-     * are used instead of the currently-connected set so that .onion relays are
-     * picked up when Tor turns on.
-     */
-    fun swapClientAndReconnect(
-        allConfigs: List<RelayConfig>? = null,
-        allDmUrls: List<String>? = null
-    ) {
-        val configs = allConfigs ?: relays.map { it.config }.toList()
-        val dmUrls = allDmUrls ?: dmRelays.map { it.config.url }.toList()
-        Log.d("RLC", "[Pool] swapClientAndReconnect — persistent=${configs.size} dm=${dmUrls.size}")
-
-        val oldClient = client
-        disconnectAll()
-        client = HttpClientFactory.createRelayClient()
-        clientBuiltWithTor = TorManager.isEnabled()
-        updateRelays(configs)
-        updateDmRelays(dmUrls)
-        scope.launch { HttpClientFactory.safeShutdownClient(oldClient) }
     }
 
     // --- Local relay management ---

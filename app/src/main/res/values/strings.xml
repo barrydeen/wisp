@@ -45,10 +45,6 @@
     <!-- Splash Screen -->
     <string name="splash_create_account">Create Account</string>
     <string name="splash_log_in">Log In</string>
-    <string name="splash_connecting_tor">Connecting to Tor…</string>
-    <string name="splash_connected_tor">Connected via Tor</string>
-    <string name="splash_tor_error">Tor error</string>
-    <string name="splash_connect_tor">Connect via Tor</string>
     <string name="splash_people_online">%d people online now</string>
     <string name="online_now">Online Now</string>
     <string name="online_in_network">%d online in your network</string>
@@ -61,10 +57,6 @@
     <string name="auth_login_with_signer">Login with Signer</string>
     <string name="auth_or_log_in_with_key">Or log in with your key</string>
     <string name="auth_nsec_or_npub">nsec or npub…</string>
-    <string name="auth_connect_via_tor">Connect via Tor</string>
-    <string name="auth_connecting_to_tor">Connecting to Tor…</string>
-    <string name="auth_connected_via_tor">Connected via Tor</string>
-    <string name="auth_tor_error">Tor error</string>
     <string name="auth_wisp">wisp</string>
     <string name="auth_tagline">a wee interface to scroll posts</string>
     <string name="auth_hide_key">Hide key</string>
@@ -165,7 +157,7 @@
     <string name="placeholder_banner_url">Banner URL</string>
     <string name="placeholder_nip05">NIP-05 (e.g. user@domain.com)</string>
     <string name="placeholder_lightning_address">Lightning Address</string>
-    <string name="placeholder_relay_url">wss:// or ws://.onion</string>
+    <string name="placeholder_relay_url">wss://</string>
     <string name="placeholder_search_users_notes">Search users and notes</string>
     <string name="placeholder_search_relay">Search relay</string>
     <string name="placeholder_add_relay">wss://relay.example.com</string>
@@ -252,7 +244,6 @@
 
     <!-- Content Descriptions -->
     <string name="cd_back">Back</string>
-    <string name="cd_toggle_tor">Toggle Tor</string>
     <string name="cd_toggle_theme">Toggle theme</string>
     <string name="cd_show_qr_code">Show QR code</string>
     <string name="cd_lightning_address">Lightning address</string>
@@ -507,6 +498,12 @@
     <string name="settings_client_tag">Client Tag</string>
     <string name="settings_tag_notes">Tag notes with Wisp</string>
     <string name="settings_tag_notes_description">Include a tag identifying Wisp as the client. This is visible to others.</string>
+    <string name="settings_posting">Posting</string>
+    <string name="settings_undo_countdown">Undo countdown</string>
+    <string name="settings_undo_countdown_description">Holds new posts for a few seconds before publishing so you can cancel.</string>
+    <string name="settings_undo_duration">Duration</string>
+    <string name="settings_undo_include_replies">Include replies</string>
+    <string name="settings_undo_include_replies_description">Off by default — replies send immediately. Turn on to apply the same countdown to replies.</string>
     <string name="settings_public_key">Public Key</string>
     <string name="settings_private_key">Private Key</string>
     <string name="settings_public_key_copied">Public key copied</string>

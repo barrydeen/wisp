@@ -441,6 +441,7 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                 originalHash = uploadResult.originalSha256Hex,
                 size = originalSize,
                 dimensions = dimensions,
+                thumbhash = null,
                 blurhash = null
             )
             val dmMsg = DmMessage(
@@ -507,6 +508,7 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
                 originalHash = uploadResult.originalSha256Hex,
                 size = originalSize,
                 dimensions = dimensions,
+                thumbhash = null,
                 blurhash = null
             )
             val dmMsg = DmMessage(

@@ -83,19 +83,9 @@ class RelayScoreBoard(
             }
         }
 
-        val onionRelays = newRelayAuthors.keys.filter { RelayConfig.isOnionUrl(it) }
         Log.d(TAG, "recompute(): ${follows.size} follows, $knownCount have relay lists, " +
                 "${follows.size - knownCount} missing, ${newRelayAuthors.size} unique relays" +
                 if (excludeRelays.isNotEmpty()) ", ${excludeRelays.size} excluded" else "")
-        if (onionRelays.isNotEmpty()) {
-            Log.d("TorRelay", "[ScoreBoard] recompute: ${onionRelays.size} .onion relays found: $onionRelays")
-            for (url in onionRelays) {
-                val authors = newRelayAuthors[url]?.size ?: 0
-                Log.d("TorRelay", "[ScoreBoard]   $url — $authors author(s)")
-            }
-        } else {
-            Log.d("TorRelay", "[ScoreBoard] recompute: no .onion relays found among ${newRelayAuthors.size} unique relays")
-        }
 
         if (newRelayAuthors.isEmpty()) {
             scoredRelays = emptyList()

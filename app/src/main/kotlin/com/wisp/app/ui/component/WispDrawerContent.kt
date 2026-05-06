@@ -22,11 +22,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.Cloud
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.res.painterResource
 import com.wisp.app.R
-import com.wisp.app.relay.TorStatus
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Email
@@ -84,9 +81,6 @@ fun WispDrawerContent(
     pubkey: String?,
     isDarkTheme: Boolean = true,
     onToggleTheme: () -> Unit = {},
-    isTorEnabled: Boolean = false,
-    torStatus: TorStatus = TorStatus.DISABLED,
-    onToggleTor: (Boolean) -> Unit = {},
     accounts: List<AccountInfo> = emptyList(),
     onSwitchAccount: (String) -> Unit = {},
     onAddAccount: () -> Unit = {},
@@ -150,28 +144,6 @@ fun WispDrawerContent(
                     ProfilePicture(url = profile?.picture, size = 64)
                 }
                 Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = { onToggleTor(!isTorEnabled) }) {
-                    Box(contentAlignment = Alignment.Center) {
-                        if (torStatus == TorStatus.STARTING) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp,
-                                strokeCap = StrokeCap.Round
-                            )
-                        } else {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_tor_onion),
-                                contentDescription = stringResource(R.string.cd_toggle_tor),
-                                modifier = Modifier.size(24.dp),
-                                tint = when (torStatus) {
-                                    TorStatus.CONNECTED -> MaterialTheme.colorScheme.primary
-                                    TorStatus.ERROR -> MaterialTheme.colorScheme.error
-                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            )
-                        }
-                    }
-                }
                 IconButton(onClick = onToggleTheme) {
                     Icon(
                         if (isDarkTheme) Icons.Outlined.DarkMode else Icons.Outlined.LightMode,
@@ -400,33 +372,36 @@ fun WispDrawerContent(
             label = { Text(stringResource(R.string.drawer_my_profile)) },
             selected = false,
             onClick = onProfile,
-            modifier = Modifier.padding(horizontal = 12.dp)
+            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Home, contentDescription = null) },
             label = { Text(stringResource(R.string.drawer_feeds)) },
             selected = false,
             onClick = onFeed,
-            modifier = Modifier.padding(horizontal = 12.dp)
+            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Search, contentDescription = null) },
             label = { Text(stringResource(R.string.title_search)) },
             selected = false,
             onClick = onSearch,
-            modifier = Modifier.padding(horizontal = 12.dp)
+            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Email, contentDescription = null) },
             label = { Text(stringResource(R.string.nav_messages)) },
             selected = false,
             onClick = onMessages,
-            modifier = Modifier.padding(horizontal = 12.dp)
+            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         val useZapBolt = com.wisp.app.ui.util.useBoltIcon()
+        val fiatMode = com.wisp.app.ui.util.isFiatMode()
         NavigationDrawerItem(
             icon = {
-                if (useZapBolt) {
+                if (fiatMode) {
+                    Icon(Icons.Outlined.AccountBalanceWallet, contentDescription = null)
+                } else if (useZapBolt) {
                     Icon(
                         painter = painterResource(R.drawable.ic_bolt),
                         contentDescription = null,
@@ -439,21 +414,21 @@ fun WispDrawerContent(
             label = { Text(stringResource(R.string.nav_wallet)) },
             selected = false,
             onClick = onWallet,
-            modifier = Modifier.padding(horizontal = 12.dp)
+            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.FormatListBulleted, contentDescription = null) },
             label = { Text(stringResource(R.string.drawer_lists)) },
             selected = false,
             onClick = onLists,
-            modifier = Modifier.padding(horizontal = 12.dp)
+            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
             label = { Text(stringResource(R.string.drawer_drafts)) },
             selected = false,
             onClick = onDrafts,
-            modifier = Modifier.padding(horizontal = 12.dp)
+            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         var settingsExpanded by remember { mutableStateOf(false) }
         LaunchedEffect(settingsExpanded) {
@@ -474,7 +449,7 @@ fun WispDrawerContent(
             },
             selected = false,
             onClick = { settingsExpanded = !settingsExpanded },
-            modifier = Modifier.padding(horizontal = 12.dp)
+            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         AnimatedVisibility(visible = settingsExpanded) {
             Column {
@@ -483,70 +458,70 @@ fun WispDrawerContent(
                     label = { Text(stringResource(R.string.drawer_interface)) },
                     selected = false,
                     onClick = onInterfaceSettings,
-                    modifier = Modifier.padding(start = 36.dp, end = 12.dp)
+                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
                     label = { Text(stringResource(R.string.drawer_relays)) },
                     selected = false,
                     onClick = onRelaySettings,
-                    modifier = Modifier.padding(start = 36.dp, end = 12.dp)
+                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Cloud, contentDescription = null) },
                     label = { Text(stringResource(R.string.drawer_media_servers)) },
                     selected = false,
                     onClick = onMediaServers,
-                    modifier = Modifier.padding(start = 36.dp, end = 12.dp)
+                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
                     label = { Text(stringResource(R.string.drawer_keys)) },
                     selected = false,
                     onClick = onKeys,
-                    modifier = Modifier.padding(start = 36.dp, end = 12.dp)
+                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Block, contentDescription = null) },
                     label = { Text(stringResource(R.string.drawer_safety)) },
                     selected = false,
                     onClick = onSafety,
-                    modifier = Modifier.padding(start = 36.dp, end = 12.dp)
+                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Shield, contentDescription = null) },
                     label = { Text(stringResource(R.string.drawer_proof_of_work)) },
                     selected = false,
                     onClick = onPowSettings,
-                    modifier = Modifier.padding(start = 36.dp, end = 12.dp)
+                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Hub, contentDescription = null) },
                     label = { Text(stringResource(R.string.drawer_social_graph)) },
                     selected = false,
                     onClick = onSocialGraph,
-                    modifier = Modifier.padding(start = 36.dp, end = 12.dp)
+                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.EmojiEmotions, contentDescription = null) },
                     label = { Text(stringResource(R.string.drawer_custom_emojis)) },
                     selected = false,
                     onClick = onCustomEmojis,
-                    modifier = Modifier.padding(start = 36.dp, end = 12.dp)
+                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null) },
                     label = { Text(stringResource(R.string.drawer_relay_health)) },
                     selected = false,
                     onClick = onRelayHealth,
-                    modifier = Modifier.padding(start = 36.dp, end = 12.dp)
+                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.BugReport, contentDescription = null) },
                     label = { Text(stringResource(R.string.drawer_console)) },
                     selected = false,
                     onClick = onConsole,
-                    modifier = Modifier.padding(start = 36.dp, end = 12.dp)
+                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
             }
         }
@@ -568,7 +543,7 @@ fun WispDrawerContent(
             },
             selected = false,
             onClick = { showLogoutDialog = true },
-            modifier = Modifier.padding(horizontal = 12.dp)
+            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
 
         if (showLogoutDialog) {

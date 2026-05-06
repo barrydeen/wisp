@@ -41,7 +41,6 @@ Wisp implements a full NIP-65 outbox/inbox model with relay scoring:
 - **Persistent + ephemeral pool** — `RelayPool` maintains up to 30 persistent connections plus up to 50 short-lived ephemeral ones, with idle cleanup and per-relay cooldowns after failures
 - **NIP-42 authentication** — signs AUTH challenges only for relays the user has explicitly approved, with persisted approvals, and waits for AUTH before sending sensitive publishes (DMs, group events)
 - **NIP-11 relay info** — fetches and respects relay metadata, capabilities, and limitations
-- **Tor support** — route relay traffic through an embedded Tor client for enhanced privacy
 
 ### Privacy & Private Messaging
 
@@ -164,7 +163,7 @@ Wisp follows an MVVM architecture with clear layer separation:
 │                     Relay Layer                       │
 │   RelayPool, OutboxRouter, RelayScoreBoard,           │
 │   SubscriptionManager, RelayHealthTracker,            │
-│   TorManager, Relay (OkHttp WebSocket)                │
+│   Relay (OkHttp WebSocket)                            │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -182,7 +181,7 @@ Wisp follows an MVVM architecture with clear layer separation:
 ```
 app/src/main/kotlin/com/wisp/app/
 ├── nostr/          # Protocol implementations (NipXX.kt objects)
-├── relay/          # WebSocket relay, pool, outbox router, scoring, Tor
+├── relay/          # WebSocket relay, pool, outbox router, scoring
 ├── repo/           # Data repositories, caches, and persistence wrappers
 ├── db/             # ObjectBox entities (EventEntity, GroupMessageEntity...)
 ├── ml/             # On-device nspam LightGBM classifier
@@ -342,7 +341,6 @@ Contributions are welcome. Wisp is open source and community help makes it bette
 | Lightning | Breez SDK Spark + NWC (NIP-47) |
 | Media | Media3 / ExoPlayer |
 | QR Codes | ZXing |
-| Privacy Network | Embedded Tor (optional) |
 | Build | Gradle 8.x / AGP 8.x |
 | Min SDK | Android 8.0 (API 26) |
 | Target SDK | Android 15 (API 35) |

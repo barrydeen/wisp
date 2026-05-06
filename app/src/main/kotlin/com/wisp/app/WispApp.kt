@@ -10,11 +10,9 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import com.wisp.app.db.WispObjectBox
 import com.wisp.app.relay.HttpClientFactory
-import com.wisp.app.relay.TorManager
 import com.wisp.app.repo.DiagnosticLogger
 import com.wisp.app.repo.ExchangeRateRepository
 import com.wisp.app.repo.ZapSender
-import okhttp3.Call
 
 class WispApp : Application(), SingletonImageLoader.Factory {
 
@@ -23,20 +21,16 @@ class WispApp : Application(), SingletonImageLoader.Factory {
         CrashHandler.install(this)
         DiagnosticLogger.init(this)
         WispObjectBox.init(this)
-        TorManager.initialize(this)
         ZapSender.init(this)
         ExchangeRateRepository.init(this)
     }
 
     override fun newImageLoader(context: android.content.Context): ImageLoader {
-        val torAwareCallFactory = Call.Factory { request ->
-            HttpClientFactory.getImageClient().newCall(request)
-        }
         return ImageLoader.Builder(context)
             .components {
                 add(AnimatedImageDecoder.Factory())
                 add(VideoFrameDecoder.Factory())
-                add(OkHttpNetworkFetcherFactory(callFactory = { torAwareCallFactory }))
+                add(OkHttpNetworkFetcherFactory(callFactory = { HttpClientFactory.getImageClient() }))
             }
             .memoryCache {
                 MemoryCache.Builder()

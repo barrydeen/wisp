@@ -51,6 +51,7 @@ import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.relay.RelaySetType
 import com.wisp.app.R
+import com.wisp.app.ui.theme.wispSwitchColors
 import com.wisp.app.viewmodel.RelayViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -253,7 +254,8 @@ private fun LocalRelayTab(config: LocalRelayConfig?, viewModel: RelayViewModel) 
             }
             Switch(
                 checked = config.enabled,
-                onCheckedChange = { viewModel.toggleLocalRelayEnabled() }
+                onCheckedChange = { viewModel.toggleLocalRelayEnabled() },
+                colors = wispSwitchColors()
             )
         }
 

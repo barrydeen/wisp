@@ -128,7 +128,7 @@ import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.theme.WispThemeColors
 import com.wisp.app.viewmodel.NotificationFilter
 import com.wisp.app.viewmodel.NotificationsViewModel
-import androidx.compose.material3.SwitchDefaults
+import com.wisp.app.ui.theme.wispSwitchColors
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import com.wisp.app.R
@@ -516,7 +516,15 @@ private fun NotificationFilterSheet(
                                    else MaterialTheme.colorScheme.outline
                     if (filter == NotificationFilter.ZAPS) {
                         val useBolt = com.wisp.app.ui.util.useBoltIcon()
-                        if (useBolt) {
+                        val fiatMode = com.wisp.app.ui.util.isFiatMode()
+                        if (fiatMode) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_coin_stack),
+                                contentDescription = null,
+                                tint = iconTint,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        } else if (useBolt) {
                             Icon(
                                 painter = painterResource(R.drawable.ic_bolt),
                                 contentDescription = null,
@@ -540,11 +548,7 @@ private fun NotificationFilterSheet(
                     androidx.compose.material3.Switch(
                         checked = enabled,
                         onCheckedChange = { onToggleType(filter) },
-                        colors = SwitchDefaults.colors(
-                            uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                            uncheckedBorderColor = MaterialTheme.colorScheme.outline
-                        )
+                        colors = wispSwitchColors()
                     )
                 }
             }
@@ -580,11 +584,7 @@ private fun NotificationFilterSheet(
                 androidx.compose.material3.Switch(
                     checked = chatRoomsEnabled,
                     onCheckedChange = { onToggleChatRooms() },
-                    colors = SwitchDefaults.colors(
-                        uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                        uncheckedBorderColor = MaterialTheme.colorScheme.outline
-                    )
+                    colors = wispSwitchColors()
                 )
             }
 
@@ -1070,6 +1070,14 @@ private fun DmExpansion(
                 ) {
                     if (isDmZapInProgress) {
                         LightningAnimation(modifier = Modifier.size(18.dp))
+                    } else if (com.wisp.app.ui.util.isFiatMode()) {
+                        Icon(
+                            painter = androidx.compose.ui.res.painterResource(com.wisp.app.R.drawable.ic_coin_stack),
+                            contentDescription = "Zap",
+                            tint = if (dmZapSats > 0) WispThemeColors.zapColor
+                                   else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(15.dp)
+                        )
                     } else {
                         Icon(
                             painter = androidx.compose.ui.res.painterResource(com.wisp.app.R.drawable.ic_bolt),
@@ -1864,9 +1872,12 @@ private fun MentionCandidateRow(
 private fun NotificationTypeIcon(item: FlatNotificationItem, showSats: Boolean = false) {
     val iconSize = 28.dp
     if (item.type == NotificationType.ZAP || item.type == NotificationType.DM_ZAP || item.type == NotificationType.PROFILE_ZAP) {
+        val fiatMode = com.wisp.app.ui.util.isFiatMode()
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
-                painter = androidx.compose.ui.res.painterResource(com.wisp.app.R.drawable.ic_bolt),
+                painter = androidx.compose.ui.res.painterResource(
+                    if (fiatMode) com.wisp.app.R.drawable.ic_coin_stack else com.wisp.app.R.drawable.ic_bolt
+                ),
                 contentDescription = stringResource(R.string.cd_send_zap),
                 modifier = Modifier.size(iconSize - 4.dp),
                 tint = WispThemeColors.zapColor
@@ -2032,10 +2043,14 @@ private fun DailySummaryBar(
                 onClick = { onFilterSelect(NotificationFilter.REACTIONS) })
             run {
                 val useZapBolt = com.wisp.app.ui.util.useBoltIcon()
+                val fiatMode = com.wisp.app.ui.util.isFiatMode()
                 val zapActive = isFiltered && NotificationFilter.ZAPS in enabledTypes
                 val zapCtx = LocalContext.current
                 val zapLabel = com.wisp.app.ui.util.AmountFormatter.formatShort(summary.zapSats, zapCtx)
-                if (useZapBolt) {
+                if (fiatMode) {
+                    SummaryStatPainter(painterResource(R.drawable.ic_coin_stack), zapLabel,
+                        active = zapActive, onClick = { onFilterSelect(NotificationFilter.ZAPS) })
+                } else if (useZapBolt) {
                     SummaryStatPainter(painterResource(R.drawable.ic_bolt), zapLabel,
                         active = zapActive, onClick = { onFilterSelect(NotificationFilter.ZAPS) })
                 } else {

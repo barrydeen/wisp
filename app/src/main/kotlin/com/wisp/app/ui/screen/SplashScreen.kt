@@ -2,9 +2,6 @@ package com.wisp.app.ui.screen
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -20,7 +17,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -50,7 +46,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import coil3.compose.AsyncImage
 import com.wisp.app.R
-import com.wisp.app.relay.TorStatus
 import com.wisp.app.viewmodel.LiveMetrics
 import com.wisp.app.viewmodel.SplashViewModel
 
@@ -60,9 +55,6 @@ private val AVATAR_GAP = 4.dp
 @Composable
 fun SplashScreen(
     viewModel: SplashViewModel,
-    isTorEnabled: Boolean = false,
-    torStatus: TorStatus = TorStatus.DISABLED,
-    onToggleTor: (Boolean) -> Unit = {},
     onSignUp: () -> Unit,
     onLogIn: () -> Unit
 ) {
@@ -205,58 +197,6 @@ fun SplashScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.splash_log_in))
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            val pillBorderColor = when (torStatus) {
-                TorStatus.CONNECTED -> MaterialTheme.colorScheme.primary
-                TorStatus.ERROR -> MaterialTheme.colorScheme.error
-                else -> MaterialTheme.colorScheme.outlineVariant
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier
-                    .border(1.dp, pillBorderColor, RoundedCornerShape(24.dp))
-                    .clickable { onToggleTor(!isTorEnabled) }
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(20.dp)) {
-                    if (torStatus == TorStatus.STARTING) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    } else {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_tor_onion),
-                            contentDescription = stringResource(R.string.cd_toggle_tor),
-                            modifier = Modifier.size(18.dp),
-                            tint = when (torStatus) {
-                                TorStatus.CONNECTED -> MaterialTheme.colorScheme.primary
-                                TorStatus.ERROR -> MaterialTheme.colorScheme.error
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = when (torStatus) {
-                        TorStatus.STARTING -> stringResource(R.string.splash_connecting_tor)
-                        TorStatus.CONNECTED -> stringResource(R.string.splash_connected_tor)
-                        TorStatus.ERROR -> stringResource(R.string.splash_tor_error)
-                        else -> stringResource(R.string.splash_connect_tor)
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = when (torStatus) {
-                        TorStatus.CONNECTED -> MaterialTheme.colorScheme.primary
-                        TorStatus.ERROR -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
             }
         }
     }

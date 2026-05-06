@@ -3,7 +3,7 @@
     <!--
       Allow cleartext (ws://) globally. This is safe because:
       - All network relay validation (isValidUrl) requires wss://
-      - Only local relays (isLocalRelayUrl) and .onion relays accept ws://
+      - Only local relays (isLocalRelayUrl) accept ws://
       - Needed because Android's domain-config doesn't match IP addresses
         (127.0.0.1, 192.168.*, 10.*) which local relays commonly use.
     -->

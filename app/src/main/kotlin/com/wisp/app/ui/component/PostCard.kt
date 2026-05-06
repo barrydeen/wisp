@@ -35,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -149,6 +150,7 @@ fun PostCard(
     onZapPollVote: (Int) -> Unit = {},
     translationState: TranslationState = TranslationState(),
     onTranslate: () -> Unit = {},
+    quoteDepth: Int = 0,
     modifier: Modifier = Modifier,
     showDivider: Boolean = true,
     ancestorCompact: Boolean = false
@@ -562,7 +564,8 @@ fun PostCard(
                     onProfileClick = onNavigateToProfile,
                     onNoteClick = onQuotedNoteClick,
                     noteActions = noteActions,
-                    authorPubkey = event.pubkey
+                    authorPubkey = event.pubkey,
+                    quoteDepth = quoteDepth
                 )
             } else {
                 // Collapsible content with max height ≈ 66% screen height. Tall portrait
@@ -597,7 +600,8 @@ fun PostCard(
                             onProfileClick = onNavigateToProfile,
                             onNoteClick = onQuotedNoteClick,
                             noteActions = noteActions,
-                            authorPubkey = event.pubkey
+                            authorPubkey = event.pubkey,
+                            quoteDepth = quoteDepth
                         )
                     }
 
@@ -698,7 +702,8 @@ fun PostCard(
                                 eventRepo = eventRepo,
                                 onProfileClick = onNavigateToProfile,
                                 onNoteClick = onQuotedNoteClick,
-                                noteActions = noteActions
+                                noteActions = noteActions,
+                                quoteDepth = quoteDepth
                             )
                         }
                     }
@@ -1164,7 +1169,15 @@ internal fun TopZapperBanner(
 
             // Zap icon
             val useZapBolt = com.wisp.app.ui.util.useBoltIcon()
-            if (useZapBolt) {
+            val fiatMode = com.wisp.app.ui.util.isFiatMode()
+            if (fiatMode) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_coin_stack),
+                    contentDescription = null,
+                    tint = orange,
+                    modifier = Modifier.size(16.dp)
+                )
+            } else if (useZapBolt) {
                 Icon(
                     painter = painterResource(R.drawable.ic_bolt),
                     contentDescription = null,
@@ -1259,7 +1272,9 @@ internal fun Nip05Badge(
     modifier: Modifier = Modifier
 ) {
     if (nip05.isBlank()) return
-    nip05Repo?.checkOrFetch(pubkey, nip05)
+    LaunchedEffect(nip05Repo, pubkey, nip05) {
+        nip05Repo?.checkOrFetch(pubkey, nip05)
+    }
     val version = nip05Repo?.version?.collectAsState()
     // Read .value to ensure Compose tracks this state
     val v = version?.value ?: 0

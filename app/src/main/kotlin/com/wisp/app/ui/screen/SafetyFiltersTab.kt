@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.wisp.app.R
 import com.wisp.app.repo.ExtendedNetworkCache
 import com.wisp.app.repo.SafetyPreferences
+import com.wisp.app.ui.theme.wispSwitchColors
 import kotlinx.coroutines.flow.StateFlow
 
 @Composable
@@ -60,7 +61,8 @@ fun SafetyFiltersTab(
             }
             Switch(
                 checked = spamEnabled,
-                onCheckedChange = { safetyPrefs.setSpamFilterEnabled(it) }
+                onCheckedChange = { safetyPrefs.setSpamFilterEnabled(it) },
+                colors = wispSwitchColors()
             )
         }
         Text(
@@ -90,7 +92,8 @@ fun SafetyFiltersTab(
                 onCheckedChange = {
                     safetyPrefs.setWotFilterEnabled(it)
                     onWotToggled()
-                }
+                },
+                colors = wispSwitchColors()
             )
         }
         Text(

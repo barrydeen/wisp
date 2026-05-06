@@ -539,6 +539,7 @@ fun ComposeScreen(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    Spacer(Modifier.width(4.dp))
                                     Text(
                                         text = replyAuthorName,
                                         style = MaterialTheme.typography.bodySmall,

@@ -60,10 +60,6 @@
     <string name="auth_login_with_signer">Iniciar sesión con Firmador</string>
     <string name="auth_or_log_in_with_key">O inicia sesión con tu clave</string>
     <string name="auth_nsec_or_npub">nsec o npub…</string>
-    <string name="auth_connect_via_tor">Conectar vía Tor</string>
-    <string name="auth_connecting_to_tor">Conectando a Tor…</string>
-    <string name="auth_connected_via_tor">Conectado vía Tor</string>
-    <string name="auth_tor_error">Error de Tor</string>
     <string name="auth_wisp">wisp</string>
     <string name="auth_tagline">una pequeña interfaz para desplazarte por publicaciones</string>
     <string name="auth_hide_key">Ocultar clave</string>
@@ -161,7 +157,7 @@
     <string name="placeholder_banner_url">URL de Banner</string>
     <string name="placeholder_nip05">NIP-05 (ej. usuario@dominio.com)</string>
     <string name="placeholder_lightning_address">Dirección Lightning</string>
-    <string name="placeholder_relay_url">wss:// o ws://.onion</string>
+    <string name="placeholder_relay_url">wss://</string>
     <string name="placeholder_search_users_notes">Buscar usuarios y notas</string>
     <string name="placeholder_search_relay">Buscar relay</string>
     <string name="placeholder_add_relay">wss://relay.ejemplo.com</string>
@@ -234,7 +230,6 @@
 
     <!-- Content Descriptions -->
     <string name="cd_back">Atrás</string>
-    <string name="cd_toggle_tor">Alternar Tor</string>
     <string name="cd_toggle_theme">Alternar tema</string>
     <string name="cd_show_qr_code">Mostrar código QR</string>
     <string name="cd_lightning_address">Dirección Lightning</string>
@@ -638,10 +633,6 @@
     <!-- Splash Screen -->
     <string name="splash_create_account">Crear cuenta</string>
     <string name="splash_log_in">Iniciar sesión</string>
-    <string name="splash_connecting_tor">Conectando a Tor…</string>
-    <string name="splash_connected_tor">Conectado a través de Tor</string>
-    <string name="splash_tor_error">Error de Tor</string>
-    <string name="splash_connect_tor">Conectar a través de Tor</string>
     <string name="online_now">En línea ahora</string>
     <string name="online_in_network">%d en línea en tu red</string>
     <string name="online_all_nostr">%d en línea en todo Nostr</string>

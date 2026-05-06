@@ -60,10 +60,6 @@
     <string name="auth_login_with_signer">서명으로 로그인</string>
     <string name="auth_or_log_in_with_key">또는 키로 로그인</string>
     <string name="auth_nsec_or_npub">nsec 또는 npub…</string>
-    <string name="auth_connect_via_tor">Tor로 연결</string>
-    <string name="auth_connecting_to_tor">Tor 연결 중…</string>
-    <string name="auth_connected_via_tor">Tor로 연결됨</string>
-    <string name="auth_tor_error">Tor 오류</string>
     <string name="auth_wisp">wisp</string>
     <string name="auth_tagline">게시물을 스크롤하는 작은 인터페이스</string>
     <string name="auth_hide_key">키 숨기기</string>
@@ -161,7 +157,7 @@
     <string name="placeholder_banner_url">배너 URL</string>
     <string name="placeholder_nip05">NIP-05 (예: user@domain.com)</string>
     <string name="placeholder_lightning_address">라이트닝 주소</string>
-    <string name="placeholder_relay_url">wss:// 또는 ws://.onion</string>
+    <string name="placeholder_relay_url">wss://</string>
     <string name="placeholder_search_users_notes">사용자와 노트 검색</string>
     <string name="placeholder_search_relay">릴레이 검색</string>
     <string name="placeholder_add_relay">wss://relay.example.com</string>
@@ -234,7 +230,6 @@
 
     <!-- Content Descriptions -->
     <string name="cd_back">뒤로</string>
-    <string name="cd_toggle_tor">Tor 전환</string>
     <string name="cd_toggle_theme">테마 전환</string>
     <string name="cd_show_qr_code">QR 코드 표시</string>
     <string name="cd_lightning_address">라이트닝 주소</string>
@@ -638,10 +633,6 @@
     <!-- Splash Screen -->
     <string name="splash_create_account">계정 만들기</string>
     <string name="splash_log_in">로그인</string>
-    <string name="splash_connecting_tor">Tor 연결 중…</string>
-    <string name="splash_connected_tor">Tor로 연결됨</string>
-    <string name="splash_tor_error">Tor 오류</string>
-    <string name="splash_connect_tor">Tor로 연결</string>
     <string name="online_now">현재 온라인</string>
     <string name="online_in_network">네트워크에서 %d명 온라인</string>
     <string name="online_all_nostr">Nostr 전체에서 %d명 온라인</string>

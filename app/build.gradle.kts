@@ -9,15 +9,19 @@ plugins {
 }
 
 android {
+    val baseApplicationId = rootProject.extra["baseApplicationId"] as String
+    val debugApplicationIdSuffix = rootProject.extra["debugApplicationIdSuffix"] as String
+
     namespace = "com.wisp.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.wisp.app"
+        applicationId = baseApplicationId
         minSdk = 26
         targetSdk = 35
-        versionCode = 76
-        versionName = "1.0.2"
+        versionCode = 79
+        versionName = "1.0.5"
+        resValue("string", "app_name", "Wisp")
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -34,6 +38,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = debugApplicationIdSuffix
+            resValue("string", "app_name", "Wisp Debug")
+        }
+
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -93,8 +102,6 @@ dependencies {
     implementation(libs.splashscreen)
     implementation(libs.profileinstaller)
     implementation(libs.zxing.core)
-    implementation(libs.kmp.tor.runtime)
-    implementation(libs.kmp.tor.resource.exec)
     implementation(libs.mlkit.translate)
     implementation(libs.mlkit.language.id)
     implementation(libs.kotlinx.coroutines.play.services)
