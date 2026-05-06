@@ -55,6 +55,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
@@ -625,15 +626,26 @@ fun PostCard(
                 }
 
                 if (contentExceedsMax) {
-                    TextButton(
-                        onClick = { contentExpanded = !contentExpanded },
-                        modifier = Modifier.align(Alignment.Start)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = if (contentExpanded) stringResource(R.string.translate_show_less) else stringResource(R.string.translate_show_more),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                                .clickable { contentExpanded = !contentExpanded }
+                                .padding(horizontal = 14.dp, vertical = 7.dp)
+                        ) {
+                            Text(
+                                text = if (contentExpanded) stringResource(R.string.translate_show_less) else stringResource(R.string.translate_show_more),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
             }
