@@ -48,6 +48,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -90,21 +91,6 @@ import com.wisp.app.ui.theme.WispThemeColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-private val mediaExtensions = setOf("mp4", "mov", "webm", "mp3", "wav", "ogg", "m4a", "flac", "aac", "jpg", "jpeg", "png", "gif", "webp")
-private val mediaMimePrefixes = listOf("video/", "audio/", "image/")
-
-private fun contentHasMedia(content: String, imetaMap: Map<String, MediaMeta>): Boolean {
-    // Check imeta tags for video/audio
-    if (imetaMap.values.any { meta -> meta.mime?.let { m -> mediaMimePrefixes.any { m.startsWith(it) } } == true }) return true
-    // Check URLs in content for media extensions
-    val urlRegex = Regex("""https?://\S+""")
-    return urlRegex.findAll(content).any { match ->
-        val url = match.value.trimEnd('.', ',', ')', ']')
-        val ext = url.substringAfterLast('.').substringBefore('?').lowercase()
-        ext in mediaExtensions
-    }
-}
 
 @Composable
 fun PostCard(
@@ -164,7 +150,8 @@ fun PostCard(
     translationState: TranslationState = TranslationState(),
     onTranslate: () -> Unit = {},
     modifier: Modifier = Modifier,
-    showDivider: Boolean = true
+    showDivider: Boolean = true,
+    ancestorCompact: Boolean = false
 ) {
     val displayName = remember(event.pubkey, profile?.displayString) {
         profile?.displayString
@@ -217,7 +204,7 @@ fun PostCard(
             .clickable(onClick = onNoteClick)
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        if (repostPubkeys.isNotEmpty()) {
+        if (repostPubkeys.isNotEmpty() && !ancestorCompact) {
             val maxAvatars = 10
             val displayPubkeys = repostPubkeys.take(maxAvatars)
             val overflow = repostPubkeys.size - maxAvatars
@@ -281,21 +268,23 @@ fun PostCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             ProfilePicture(
                 url = profile?.picture,
-                showFollowBadge = isFollowingAuthor && !isOwnEvent,
-                onClick = onProfileClick,
-                onLongPress = if (!isOwnEvent) onFollowAuthor else null
+                size = if (ancestorCompact) 24 else 40,
+                showFollowBadge = if (ancestorCompact) false else (isFollowingAuthor && !isOwnEvent),
+                onClick = if (ancestorCompact) ({}) else onProfileClick,
+                onLongPress = if (ancestorCompact || isOwnEvent) null else onFollowAuthor
             )
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(if (ancestorCompact) 8.dp else 10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = displayName,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = if (ancestorCompact) MaterialTheme.typography.titleSmall
+                            else MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.clickable(onClick = onProfileClick)
+                    modifier = if (ancestorCompact) Modifier else Modifier.clickable(onClick = onProfileClick)
                 )
-                if (replyToName != null) {
+                if (replyToName != null && !ancestorCompact) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = "replying to ",
@@ -314,12 +303,12 @@ fun PostCard(
                         )
                     }
                 }
-                // NIP-38: user status (hide on replies to reduce clutter)
+                // NIP-38: user status (hide on replies and compact ancestors to reduce clutter)
                 val statusVersion by eventRepo?.statusVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
                 val userStatus = remember(statusVersion, event.pubkey) {
                     eventRepo?.getUserStatus(event.pubkey)
                 }
-                if (userStatus != null && !Nip10.isReply(event)) {
+                if (userStatus != null && !Nip10.isReply(event) && !ancestorCompact) {
                     Text(
                         text = userStatus,
                         style = MaterialTheme.typography.bodySmall,
@@ -329,13 +318,15 @@ fun PostCard(
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                     )
                 }
-                profile?.nip05?.let { nip05 ->
-                    Nip05Badge(
-                        nip05 = nip05,
-                        pubkey = event.pubkey,
-                        nip05Repo = nip05Repo,
-                        onClick = onProfileClick
-                    )
+                if (!ancestorCompact) {
+                    profile?.nip05?.let { nip05 ->
+                        Nip05Badge(
+                            nip05 = nip05,
+                            pubkey = event.pubkey,
+                            nip05Repo = nip05Repo,
+                            onClick = onProfileClick
+                        )
+                    }
                 }
             }
             Text(
@@ -343,6 +334,9 @@ fun PostCard(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
+            if (ancestorCompact) {
+                // Compact mode: no POW badge, no overflow menu
+            } else {
             val powBits = remember(event.id) { Nip13.verifyDifficulty(event) }
             if (powBits >= 16) {
                 Spacer(Modifier.width(4.dp))
@@ -512,8 +506,9 @@ fun PostCard(
                     )
                 }
             }
+            } // end !ancestorCompact
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(if (ancestorCompact) 4.dp else 6.dp))
 
         if (contentWarning != null && !contentRevealed) {
             // Content warning overlay
@@ -553,13 +548,10 @@ fun PostCard(
             // Normal content display
             val emojiMap = remember(event.id) { Nip30.parseEmojiTags(event) }
             val imetaMap = remember(event.id) { parseImetaTags(event.tags) }
-            // Skip collapsible behavior for posts with video/audio — height
-            // constraints distort media sizing. Only truncate text-heavy posts.
-            val hasMedia = remember(event.content, imetaMap) {
-                contentHasMedia(event.content, imetaMap)
-            }
 
-            if (hasMedia) {
+            if (ancestorCompact) {
+                // Ancestors render at natural size — capping forces aspect-fit images to
+                // shrink and lose their rounded corners. See THREAD_REDESIGN_PLAN.md.
                 RichContent(
                     content = event.content,
                     style = MaterialTheme.typography.bodyLarge,
@@ -573,8 +565,9 @@ fun PostCard(
                     authorPubkey = event.pubkey
                 )
             } else {
-                // Collapsible content with max height (~1 viewport)
-                val collapsedMaxHeight = 500.dp
+                // Collapsible content with max height ≈ 66% screen height. Tall portrait
+                // images and long text are clipped behind a gradient fade until tapped.
+                val collapsedMaxHeight = (LocalConfiguration.current.screenHeightDp * 0.66f).dp
                 var contentExpanded by remember { mutableStateOf(false) }
                 var contentExceedsMax by remember { mutableStateOf(false) }
                 val density = LocalDensity.current
@@ -603,7 +596,8 @@ fun PostCard(
                             eventRepo = eventRepo,
                             onProfileClick = onNavigateToProfile,
                             onNoteClick = onQuotedNoteClick,
-                            noteActions = noteActions
+                            noteActions = noteActions,
+                            authorPubkey = event.pubkey
                         )
                     }
 
@@ -629,7 +623,7 @@ fun PostCard(
                 if (contentExceedsMax) {
                     TextButton(
                         onClick = { contentExpanded = !contentExpanded },
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                        modifier = Modifier.align(Alignment.Start)
                     ) {
                         Text(
                             text = if (contentExpanded) stringResource(R.string.translate_show_less) else stringResource(R.string.translate_show_more),
@@ -740,7 +734,7 @@ fun PostCard(
             }
 
             // Top zapper banner
-            if (zapDetails.isNotEmpty()) {
+            if (zapDetails.isNotEmpty() && !ancestorCompact) {
                 val topZap = remember(zapDetails) {
                     zapDetails.maxByOrNull { it.sats }
                 }
@@ -762,6 +756,7 @@ fun PostCard(
             }
         }
 
+        if (!ancestorCompact) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ActionBar(
                 onReply = onReply,
@@ -825,6 +820,7 @@ fun PostCard(
                 }
             }
         }
+        } // end !ancestorCompact
         if (showDivider) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
         }

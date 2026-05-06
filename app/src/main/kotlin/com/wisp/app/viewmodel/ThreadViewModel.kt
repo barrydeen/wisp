@@ -6,6 +6,7 @@ import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.Nip09
 import com.wisp.app.nostr.Nip10
+import com.wisp.app.nostr.Nip18
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
@@ -29,27 +30,44 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class ThreadViewModel : ViewModel() {
-    private val _rootEvent = MutableStateFlow<NostrEvent?>(null)
-    val rootEvent: StateFlow<NostrEvent?> = _rootEvent
+    // The event this screen is focused on
+    private val _focal = MutableStateFlow<NostrEvent?>(null)
+    val focal: StateFlow<NostrEvent?> = _focal
 
-    private val _flatThread = MutableStateFlow<List<Pair<NostrEvent, Int>>>(emptyList())
-    val flatThread: StateFlow<List<Pair<NostrEvent, Int>>> = _flatThread
+    // Ancestor chain from root → focal-1 (in order, not including focal)
+    private val _ancestors = MutableStateFlow<List<NostrEvent>>(emptyList())
+    val ancestors: StateFlow<List<NostrEvent>> = _ancestors
+
+    // Direct children of focal, sorted oldest first (own posts first)
+    private val _replies = MutableStateFlow<List<NostrEvent>>(emptyList())
+    val replies: StateFlow<List<NostrEvent>> = _replies
+
+    // Direct child count per event id (for "View N replies" hints)
+    private val _childCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val childCounts: StateFlow<Map<String, Int>> = _childCounts
+
+    // IDs of direct replies whose author is blocked (shown as placeholders, not full cards)
+    private val _blockedReplyIds = MutableStateFlow<Set<String>>(emptySet())
+    val blockedReplyIds: StateFlow<Set<String>> = _blockedReplyIds
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading
 
-    private val _scrollToIndex = MutableStateFlow(-1)
-    val scrollToIndex: StateFlow<Int> = _scrollToIndex
-
-    private val _spamThread = MutableStateFlow<List<Pair<NostrEvent, Int>>>(emptyList())
-    val spamThread: StateFlow<List<Pair<NostrEvent, Int>>> = _spamThread
+    private val _spamThread = MutableStateFlow<List<NostrEvent>>(emptyList())
+    val spamThread: StateFlow<List<NostrEvent>> = _spamThread
 
     private val _spamExpanded = MutableStateFlow(false)
     val spamExpanded: StateFlow<Boolean> = _spamExpanded
 
+    // The root event of the entire thread (used for relay routing)
+    private val _rootEvent = MutableStateFlow<NostrEvent?>(null)
+
     private val threadEvents = mutableMapOf<String, NostrEvent>()
     private var rootId: String = ""
-    private var scrollTargetId: String? = null
+    private var seedEventId: String = ""
+    // Re-anchored to the inner kind-1 id when the seed turns out to be a kind-6 repost wrapper,
+    // so reply / ancestor / engagement queries hit the id real replies actually `e`-tag.
+    private var focalEventId: String = ""
     private var muteRepo: MuteRepository? = null
     private val activeMetadataSubs = mutableListOf<String>()
     private var relayPoolRef: RelayPool? = null
@@ -57,6 +75,7 @@ class ThreadViewModel : ViewModel() {
     private var relayListRepoRef: RelayListRepository? = null
     private var relayHintStoreRef: RelayHintStore? = null
     private var currentUserPubkey: String? = null
+    private var metadataFetcherRef: MetadataFetcher? = null
 
     // Spam filter
     private var spamClassifier: NSpamClassifier? = null
@@ -73,16 +92,12 @@ class ThreadViewModel : ViewModel() {
     private var metadataBatchJob: Job? = null
     private var muteObserverJob: Job? = null
     private var deletionObserverJob: Job? = null
+    private var ancestorFetchJob: Job? = null
 
     // Incremental metadata tracking
     private val metadataSubscribedIds = mutableSetOf<String>()
     private val pendingMetadataIds = mutableSetOf<String>()
     private var metadataBatchIndex = 0
-
-    fun clearScrollTarget() {
-        _scrollToIndex.value = -1
-        scrollTargetId = null
-    }
 
     fun toggleSpamExpanded() {
         _spamExpanded.value = !_spamExpanded.value
@@ -115,6 +130,10 @@ class ThreadViewModel : ViewModel() {
         this.safetyPrefs = safetyPrefs
         this.contactRepo = contactRepo
         this.eventRepoRef = eventRepo
+        this.metadataFetcherRef = metadataFetcher
+        this.seedEventId = eventId
+        this.focalEventId = eventId
+
         // Reactively rebuild thread when blocked users change (e.g. blocking mid-thread)
         muteObserverJob?.cancel()
         muteObserverJob = muteRepo?.let { repo ->
@@ -128,22 +147,29 @@ class ThreadViewModel : ViewModel() {
         this.relayHintStoreRef = relayHintStore
         this.currentUserPubkey = eventRepo.currentUserPubkey
 
-        // Resolve root from cached event (we clicked on it, so it's in cache)
+        // Resolve root from cached event (we clicked on it, so it's in cache).
+        // If the seed turns out to be a kind-6 repost, substitute the inner kind-1 in for
+        // the focal slot — otherwise the focal would render the wrapper and Nip10's
+        // ancestor walk would pull the inner in on top, duplicating the same content.
+        // Re-anchor focalEventId to the inner id so reply / engagement filters match the
+        // id real replies actually e-tag.
         val cached = eventRepo.getEvent(eventId)
         if (cached != null) {
-            val resolvedRoot = Nip10.getRootId(cached) ?: Nip10.getReplyTarget(cached) ?: eventId
+            val focalEvent = Nip18.unwrapRepostForFocal(cached)
+            focalEventId = focalEvent.id
+            val resolvedRoot = Nip10.getRootId(focalEvent) ?: Nip10.getReplyTarget(focalEvent) ?: focalEventId
             rootId = resolvedRoot
-            scrollTargetId = if (resolvedRoot != eventId) eventId else null
-            threadEvents[cached.id] = cached
+            threadEvents[focalEvent.id] = focalEvent
+            _focal.value = focalEvent
 
-            if (resolvedRoot != eventId) {
+            if (resolvedRoot != focalEventId) {
                 val cachedRoot = eventRepo.getEvent(resolvedRoot)
                 if (cachedRoot != null) {
                     _rootEvent.value = cachedRoot
                     threadEvents[cachedRoot.id] = cachedRoot
                 }
             } else {
-                _rootEvent.value = cached
+                _rootEvent.value = focalEvent
             }
         } else {
             rootId = eventId
@@ -160,8 +186,7 @@ class ThreadViewModel : ViewModel() {
             _isLoading.value = false
         }
 
-        // Prune thread state when any event is removed (e.g. NIP-09 deletion processed by EventRepository
-        // via the feed sub, thread-reactions sub, or anywhere else).
+        // Prune thread state when any event is removed (e.g. NIP-09 deletion)
         deletionObserverJob?.cancel()
         deletionObserverJob = viewModelScope.launch {
             eventRepo.removedEvents.collect { removedId ->
@@ -177,10 +202,10 @@ class ThreadViewModel : ViewModel() {
         // Direct RelayPool collection — no dependency on FeedViewModel
         collectorJob = viewModelScope.launch {
             relayPool.relayEvents.collect { (event, relayUrl, subscriptionId) ->
-                if (subscriptionId != "thread-root" && subscriptionId != "thread-replies") return@collect
+                if (subscriptionId != "thread-root" && subscriptionId != "thread-replies"
+                    && subscriptionId != "thread-ancestors") return@collect
 
-                // Route kind 5 deletions through EventRepository so they mark the target deleted
-                // and fire removedEvents; the observer above will prune threadEvents.
+                // Route kind 5 deletions through EventRepository
                 if (event.kind == 5) {
                     eventRepo.addEvent(event)
                     return@collect
@@ -188,7 +213,7 @@ class ThreadViewModel : ViewModel() {
 
                 if (event.kind != 1) return@collect
 
-                // Silently drop events the user has already deleted on some other client/session.
+                // Silently drop events the user has already deleted
                 if (eventRepo.deletedEventsRepo?.isDeleted(event.id) == true) return@collect
 
                 eventRepo.cacheEvent(event)
@@ -197,7 +222,9 @@ class ThreadViewModel : ViewModel() {
                 if (Nip10.isStandaloneQuote(event)) return@collect
 
                 // Validate: event must reference the thread root (some relays ignore eTags filter)
-                if (event.id != rootId &&
+                // Allow ancestor fetches through (they may not reference root directly)
+                if (subscriptionId != "thread-ancestors" &&
+                    event.id != rootId &&
                     event.tags.none { it.size >= 2 && it[0] == "e" && it[1] == rootId }) {
                     return@collect
                 }
@@ -271,12 +298,63 @@ class ThreadViewModel : ViewModel() {
             subManager.awaitEoseWithTimeout("thread-replies", 5_000)
             _isLoading.value = false
 
+            // Fetch ancestor chain for focal events opened deep in a thread
+            fetchAncestorChain(relayPool, subManager)
+
             // Baseline metadata subscription for all events known at this point
             subscribeThreadMetadata(relayPool, eventRepo, subManager)
 
             // Start incremental metadata batching for late arrivals
             startMetadataBatching(relayPool)
         }
+    }
+
+    /**
+     * Walk from focal upward via Nip10.getReplyTarget to build the ancestor chain.
+     * For each missing ancestor, fire a one-shot fetch from indexer relays + author relays.
+     * Bounded at 30 hops as a safety stop.
+     */
+    private suspend fun fetchAncestorChain(relayPool: RelayPool, subManager: SubscriptionManager) {
+        val focal = threadEvents[focalEventId] ?: return
+        var current = focal
+        var hops = 0
+
+        while (hops < 30) {
+            val parentInfo = Nip10.getReplyTargetWithHint(current) ?: break
+            val parentId = parentInfo.first
+            val relayHint = parentInfo.second
+
+            // Already have this parent
+            if (parentId in threadEvents) {
+                current = threadEvents[parentId]!!
+                hops++
+                continue
+            }
+
+            // Fetch the missing parent
+            val fetchIds = listOf(parentId)
+            val filter = Filter(ids = fetchIds)
+            val subId = "thread-ancestors"
+
+            // Try relay hint first, then top relays
+            if (relayHint != null) {
+                relayPool.sendToRelayOrEphemeral(relayHint, ClientMessage.req(subId, filter))
+            }
+            for (url in topRelayUrls) {
+                relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(subId, filter))
+            }
+            relayPool.sendToAll(ClientMessage.req(subId, filter))
+
+            subManager.awaitEoseWithTimeout(subId, 3_000)
+
+            // Check if we got it
+            val parent = threadEvents[parentId] ?: break
+            current = parent
+            hops++
+        }
+
+        // Rebuild after ancestor chain is complete
+        scheduleRebuild()
     }
 
     /**
@@ -345,7 +423,6 @@ class ThreadViewModel : ViewModel() {
         // Phase 1: Root note engagement (high priority) — await EOSE for reliable counts
         val rootSubId = "thread-reactions"
         activeMetadataSubs.add(rootSubId)
-        // Include kind 5 so reply deletions (which reference the reply id, not the root) also arrive here.
         val rootFilter = Filter(kinds = listOf(5, 7, 6, 1018, 9735), eTags = listOf(rootId))
         sendToEngagementRelays(relayPool, rootSubId, rootFilter, rootAuthorPubkey)
         subManager.awaitEoseWithTimeout(rootSubId, 3_500)
@@ -364,7 +441,6 @@ class ThreadViewModel : ViewModel() {
 
     /**
      * Batch pending metadata IDs every 500ms into new subscriptions.
-     * Late-arriving events get their engagement data fetched incrementally.
      */
     private fun startMetadataBatching(relayPool: RelayPool) {
         metadataBatchJob = viewModelScope.launch {
@@ -414,26 +490,40 @@ class ThreadViewModel : ViewModel() {
         metadataBatchJob?.cancel()
         muteObserverJob?.cancel()
         deletionObserverJob?.cancel()
+        ancestorFetchJob?.cancel()
         relayPoolRef?.let { pool ->
             pool.closeOnAllRelays("thread-root")
             pool.closeOnAllRelays("thread-replies")
+            pool.closeOnAllRelays("thread-ancestors")
             for (subId in activeMetadataSubs) pool.closeOnAllRelays(subId)
         }
         activeMetadataSubs.clear()
     }
 
     private fun rebuildTree() {
-        val parentToChildren = mutableMapOf<String, MutableList<NostrEvent>>()
+        val deletedRepo = eventRepoRef?.deletedEventsRepo
         val spamEnabled = safetyPrefs?.spamFilterEnabled?.value == true
         val spamEvents = mutableListOf<NostrEvent>()
         val pubkeysToScore = mutableSetOf<String>()
 
-        val deletedRepo = eventRepoRef?.deletedEventsRepo
+        // Build parent→children map for all thread events
+        val parentToChildren = mutableMapOf<String, MutableList<NostrEvent>>()
+        val hiddenSpamPubkeys = mutableSetOf<String>()
+
+        val blockedIds = mutableSetOf<String>()
+
         for (event in threadEvents.values) {
             if (event.id == rootId) continue
             if (deletedRepo?.isDeleted(event.id) == true) continue
-            if (muteRepo?.isBlocked(event.pubkey) == true) continue
             if (Nip10.isStandaloneQuote(event)) continue
+            if (muteRepo?.isBlocked(event.pubkey) == true) {
+                // Keep in tree as a placeholder stub; track id so UI can render accordingly
+                blockedIds.add(event.id)
+                var parentId = Nip10.getReplyTarget(event) ?: rootId
+                if (parentId != rootId && parentId !in threadEvents) parentId = rootId
+                parentToChildren.getOrPut(parentId) { mutableListOf() }.add(event)
+                continue
+            }
 
             if (spamEnabled && spamClassifier != null &&
                 event.pubkey != currentUserPubkey &&
@@ -444,6 +534,7 @@ class ThreadViewModel : ViewModel() {
                 val cached = spamAuthorCache?.get(event.pubkey, noteCount)
                 if (cached != null && cached >= 0.7f) {
                     spamEvents.add(event)
+                    hiddenSpamPubkeys.add(event.pubkey)
                     continue
                 }
                 if (cached == null && event.pubkey !in spamScoringPubkeys) {
@@ -458,14 +549,12 @@ class ThreadViewModel : ViewModel() {
             parentToChildren.getOrPut(parentId) { mutableListOf() }.add(event)
         }
 
-        spamEvents.sortBy { it.created_at }
-        _spamThread.value = spamEvents.map { it to 0 }
-
         if (pubkeysToScore.isNotEmpty()) {
             spamScoringPubkeys.addAll(pubkeysToScore)
             scoreAuthorsAsync(pubkeysToScore)
         }
 
+        // Sort children: own posts first, then by timestamp
         val myPubkey = currentUserPubkey
         for (children in parentToChildren.values) {
             children.sortWith(Comparator { a, b ->
@@ -479,48 +568,53 @@ class ThreadViewModel : ViewModel() {
             })
         }
 
-        val result = mutableListOf<Pair<NostrEvent, Int>>()
-        val visited = mutableSetOf<String>()
-        val root = threadEvents[rootId]
-        if (root != null) {
-            result.add(root to 0)
-            visited.add(root.id)
-            dfs(rootId, 1, parentToChildren, result, visited)
+        // --- Compute the three slices ---
+
+        // 1. Focal
+        val focalEvent = threadEvents[focalEventId]
+        _focal.value = focalEvent
+
+        // 2. Ancestors: walk from focal upward to root
+        val ancestorChain = mutableListOf<NostrEvent>()
+        if (focalEvent != null) {
+            var current: NostrEvent = focalEvent
+            val visited = mutableSetOf(focalEvent.id)
+            while (true) {
+                val parentId = Nip10.getReplyTarget(current) ?: break
+                val parent = threadEvents[parentId] ?: break
+                if (parent.id in visited) break
+                visited.add(parent.id)
+                ancestorChain.add(0, parent) // prepend to get root-first order
+                current = parent
+            }
+        }
+        _ancestors.value = ancestorChain
+
+        // 3. Replies: direct children of focal (includes blocked stubs)
+        val directReplies = if (focalEvent != null) {
+            parentToChildren[focalEvent.id] ?: emptyList()
         } else {
-            // Root not yet loaded — render replies we have
-            val rootChildren = parentToChildren[rootId] ?: emptyList()
-            for (child in rootChildren) {
-                if (child.id in visited) continue
-                visited.add(child.id)
-                result.add(child to 0)
-                dfs(child.id, 1, parentToChildren, result, visited)
-            }
+            emptyList()
         }
+        _replies.value = directReplies
+        _blockedReplyIds.value = directReplies.filter { it.id in blockedIds }.map { it.id }.toSet()
 
-        _flatThread.value = result
-
-        val targetId = scrollTargetId
-        if (targetId != null) {
-            val index = result.indexOfFirst { it.first.id == targetId }
-            if (index >= 0) {
-                _scrollToIndex.value = index
-            }
+        // 4. Child counts: count direct children for every event in the thread
+        val counts = mutableMapOf<String, Int>()
+        for ((parentId, children) in parentToChildren) {
+            counts[parentId] = children.size
         }
-    }
+        _childCounts.value = counts
 
-    private fun dfs(
-        parentId: String,
-        depth: Int,
-        parentToChildren: Map<String, List<NostrEvent>>,
-        result: MutableList<Pair<NostrEvent, Int>>,
-        visited: MutableSet<String>
-    ) {
-        val children = parentToChildren[parentId] ?: return
-        for (child in children) {
-            if (child.id in visited) continue
-            visited.add(child.id)
-            result.add(child to depth)
-            dfs(child.id, depth + 1, parentToChildren, result, visited)
+        // 5. Spam thread (flat, for the spam toggle section)
+        spamEvents.sortBy { it.created_at }
+        _spamThread.value = spamEvents
+
+        // Register reply counts with EventRepository for engagement display
+        for (event in threadEvents.values) {
+            if (event.id == rootId) continue
+            val parentId = Nip10.getReplyTarget(event) ?: rootId
+            eventRepoRef?.addReplyCount(parentId, event.id)
         }
     }
 }

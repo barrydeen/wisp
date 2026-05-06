@@ -666,6 +666,9 @@ fun WispNavHost(
     var pipFullScreenPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var pipFullScreenAspectRatio by remember { mutableStateOf(16f / 9f) }
 
+    // Smart-pop chain tracker: mirrors thread eventIds on the back stack
+    val threadChain = remember { mutableListOf<String>() }
+
     Box(modifier = Modifier.padding(innerPadding)) {
     NavHost(
         navController = navController,
@@ -1861,8 +1864,17 @@ fun WispNavHost(
                     contactRepo = feedViewModel.contactRepo
                 )
             }
-            androidx.compose.runtime.DisposableEffect(Unit) {
-                onDispose { feedViewModel.resumeEngagement() }
+            // Smart-pop chain tracker: track this eventId on the thread back stack
+            DisposableEffect(eventId) {
+                if (threadChain.lastOrNull() != eventId) {
+                    threadChain.add(eventId)
+                }
+                onDispose {
+                    feedViewModel.resumeEngagement()
+                    if (threadChain.lastOrNull() == eventId) {
+                        threadChain.removeAt(threadChain.lastIndex)
+                    }
+                }
             }
             var threadZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
             val threadZapInProgress by feedViewModel.zapInProgress.collectAsState()
@@ -1925,10 +1937,28 @@ fun WispNavHost(
                     navController.navigate("profile/$pubkey")
                 },
                 onNoteClick = { event ->
-                    navController.navigate("thread/${event.id}")
+                    // Smart-pop: if event is already on the thread back stack, pop to it
+                    val targetId = event.id
+                    if (targetId == eventId) {
+                        // Tapping focal is a no-op
+                    } else {
+                        val chainIdx = threadChain.indexOf(targetId)
+                        if (chainIdx >= 0 && chainIdx < threadChain.size - 1) {
+                            val popCount = threadChain.size - chainIdx - 1
+                            repeat(popCount) { navController.popBackStack() }
+                        } else {
+                            navController.navigate("thread/$targetId")
+                        }
+                    }
                 },
-                onQuotedNoteClick = { eventId ->
-                    navController.navigate("thread/$eventId")
+                onQuotedNoteClick = { quotedEventId ->
+                    val chainIdx = threadChain.indexOf(quotedEventId)
+                    if (chainIdx >= 0 && chainIdx < threadChain.size - 1) {
+                        val popCount = threadChain.size - chainIdx - 1
+                        repeat(popCount) { navController.popBackStack() }
+                    } else {
+                        navController.navigate("thread/$quotedEventId")
+                    }
                 },
                 onReact = { event, emoji ->
                     feedViewModel.toggleReaction(event, emoji)
