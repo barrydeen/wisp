@@ -1295,7 +1295,9 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         localRelayConfig = config
 
         if (oldUrl == config.url && oldRelay != null) {
-            // URL unchanged — just update config, reconnect if needed
+            // URL unchanged — just update config, reconnect if needed.
+            // Re-enable auto-reconnect in case the relay was paused via pauseLocalRelay().
+            oldRelay.reconnectEnabled = true
             if (!oldRelay.isConnected) oldRelay.connect()
             return
         }
@@ -1316,6 +1318,25 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
 
         relay.connect()
         Log.d("RLC", "[Pool] local relay connected: ${config.url}")
+    }
+
+    /** Disconnect local relay socket but preserve references for cheap resume. */
+    fun pauseLocalRelay() {
+        val relay = localRelay ?: return
+        relay.reconnectEnabled = false
+        relay.disconnect()
+        Log.d("RLC", "[Pool] local relay paused: ${relay.config.url}")
+    }
+
+    /** Reconnect local relay if still configured and enabled. Safe to call repeatedly. */
+    fun resumeLocalRelay() {
+        val relay = localRelay ?: return
+        val cfg = localRelayConfig ?: return
+        if (!cfg.enabled) return
+        relay.reconnectEnabled = true
+        relay.resetBackoff()
+        if (!relay.isConnected) relay.connect()
+        Log.d("RLC", "[Pool] local relay resumed: ${relay.config.url}")
     }
 
     fun getLocalRelayUrl(): String? = localRelayConfig?.url
