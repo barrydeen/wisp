@@ -424,6 +424,7 @@ fun WalletScreen(
                         relayBackupCheckLoading = viewModel.relayBackupCheckLoading.collectAsState().value,
                         deleteBackupStatus = viewModel.deleteBackupStatus.collectAsState().value,
                         isLoggedIn = viewModel.keyRepo.isLoggedIn(),
+                        relayBackupSupported = viewModel.isRelayBackupSupported(),
                         onCheckRelayBackups = { viewModel.checkRelayBackupStatuses() },
                         onDeleteRelayBackup = { viewModel.deleteRelayBackup() },
                         modifier = Modifier.padding(padding)
@@ -2647,6 +2648,7 @@ private fun WalletSettingsContent(
     relayBackupCheckLoading: Boolean = false,
     deleteBackupStatus: DeleteBackupStatus = DeleteBackupStatus.Idle,
     isLoggedIn: Boolean = false,
+    relayBackupSupported: Boolean = true,
     onCheckRelayBackups: () -> Unit = {},
     onDeleteRelayBackup: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -2853,19 +2855,21 @@ private fun WalletSettingsContent(
                 Text("Backup Recovery Phrase")
             }
 
-            Spacer(Modifier.height(8.dp))
+            if (relayBackupSupported) {
+                Spacer(Modifier.height(8.dp))
 
-            OutlinedButton(
-                onClick = onBackupToRelay,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Backup to Nostr Relays")
+                OutlinedButton(
+                    onClick = onBackupToRelay,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Backup to Nostr Relays")
+                }
             }
 
-            // Relay backup status section (when logged in)
-            if (isLoggedIn) {
+            // Relay backup status section (when logged in and supported)
+            if (isLoggedIn && relayBackupSupported) {
                 Spacer(Modifier.height(16.dp))
 
                 Row(

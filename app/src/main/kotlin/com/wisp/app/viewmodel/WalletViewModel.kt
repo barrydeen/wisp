@@ -1301,6 +1301,13 @@ class WalletViewModel(
 
     // --- Relay Backup / Restore ---
 
+    /// False for NIP-46 remote-signer accounts. Relay backup writes are gated
+    /// off as a precaution until cross-client backup decryption is verified for
+    /// every remote-signer path the app might be used with. Restore stays
+    /// enabled — legacy backups that already decrypt remain usable.
+    fun isRelayBackupSupported(): Boolean =
+        keyRepo.getSigningMode() != SigningMode.REMOTE
+
     private fun buildSigner(): NostrSigner? {
         return when (keyRepo.getSigningMode()) {
             SigningMode.LOCAL -> {
@@ -1318,6 +1325,13 @@ class WalletViewModel(
     }
 
     fun backupToRelay() {
+        if (!isRelayBackupSupported()) {
+            _backupStatus.value = BackupStatus.Error(
+                "Cloud backup is disabled for remote-signer accounts. " +
+                    "Write down your recovery phrase instead."
+            )
+            return
+        }
         val mnemonic = sparkRepo.getMnemonic() ?: return
         val signer = buildSigner() ?: run {
             _backupStatus.value = BackupStatus.Error("No signing key available")
@@ -1509,6 +1523,10 @@ class WalletViewModel(
     // --- Relay Backup Status & Delete ---
 
     fun checkRelayBackupStatuses() {
+        // No relay backup is ever written for remote-signer accounts, so the
+        // auto-check on connect would always come back "missing" and surface a
+        // bogus "needs backup" indicator. Skip entirely for those accounts.
+        if (!isRelayBackupSupported()) return
         val mnemonic = sparkRepo.getMnemonic() ?: return
         val pubkey = keyRepo.getPubkeyHex() ?: return
 
