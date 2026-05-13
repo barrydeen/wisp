@@ -131,7 +131,9 @@ private const val INLINE_CONTENT_TAG = "androidx.compose.foundation.text.inlineC
 
 data class MediaSettings(
     val autoLoadMedia: Boolean = true,
-    val videoAutoPlay: Boolean = true
+    val videoAutoPlay: Boolean = true,
+    val mediaLayoutStyle: com.wisp.app.repo.InterfacePreferences.MediaLayoutStyle =
+        com.wisp.app.repo.InterfacePreferences.MediaLayoutStyle.GALLERY
 )
 
 val LocalMediaSettings = compositionLocalOf { MediaSettings() }
@@ -619,36 +621,102 @@ fun RichContent(
 ) {
     val segments = remember(content, emojiMap, imetaMap, plainLinks) { parseContent(content.trimEnd('\n', '\r'), emojiMap, imetaMap, trimBlankLines = !plainLinks) }
     val profileVer = eventRepo?.profileVersion?.collectAsState()?.value ?: 0
-    var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
+    var fullScreenPager by remember { mutableStateOf<Pair<List<MediaPagerItem>, Int>?>(null) }
+    val mediaLayoutStyle = LocalMediaSettings.current.mediaLayoutStyle
+    val galleryMode = mediaLayoutStyle == com.wisp.app.repo.InterfacePreferences.MediaLayoutStyle.GALLERY
 
-    if (fullScreenImageUrl != null) {
-        FullScreenImageViewer(
-            imageUrl = fullScreenImageUrl!!,
-            onDismiss = { fullScreenImageUrl = null }
+    // Every image/video/unknown-media URL in the post, in order. Tapping
+    // any inline media (stack mode) or any tile (gallery mode) opens the
+    // swipeable pager at that item's position — image pages get pinch-zoom,
+    // video pages get a play overlay that hands off to FullScreenVideoState.
+    val allMediaItems = remember(segments) {
+        segments.mapNotNull { seg ->
+            when (seg) {
+                is ContentSegment.ImageSegment -> MediaPagerItem.Image(seg.meta.url)
+                is ContentSegment.UnknownMediaSegment -> MediaPagerItem.Image(seg.meta.url)
+                is ContentSegment.VideoSegment -> MediaPagerItem.Video(seg.meta.url, posterModel = seg.meta.url)
+                else -> null
+            }
+        }
+    }
+    val openPagerFor: (String) -> Unit = { url ->
+        val idx = allMediaItems.indexOfFirst { it.url == url }
+        if (idx >= 0) fullScreenPager = allMediaItems to idx
+    }
+
+    fullScreenPager?.let { (mediaItems, idx) ->
+        FullScreenMediaPager(
+            items = mediaItems,
+            initialPage = idx,
+            onDismiss = { fullScreenPager = null }
         )
     }
 
-    val groups = remember(segments, plainLinks) {
-        val built = mutableListOf<Any>() // Either List<ContentSegment> (inline run) or ContentSegment (block)
+    val groups = remember(segments, plainLinks, galleryMode) {
+        val built = mutableListOf<Any>() // List<ContentSegment> (inline run), List<CarouselItem> (carousel run), or ContentSegment
         fun isInline(s: ContentSegment) = s is ContentSegment.TextSegment ||
                 s is ContentSegment.HashtagSegment ||
                 s is ContentSegment.NostrProfileSegment ||
                 s is ContentSegment.CustomEmojiSegment ||
                 s is ContentSegment.InlineLinkSegment ||
                 (plainLinks && s is ContentSegment.LinkSegment)
+        fun toCarouselItem(s: ContentSegment): CarouselItem? = when (s) {
+            is ContentSegment.ImageSegment -> CarouselItem.Image(s.meta)
+            is ContentSegment.VideoSegment -> CarouselItem.Video(s.meta)
+            is ContentSegment.UnknownMediaSegment -> CarouselItem.Unknown(s.meta)
+            else -> null
+        }
+        // Whitespace-only text between media is treated as a joiner so two
+        // image URLs separated by `\n\n` still group into one carousel.
+        fun isWhitespaceText(s: ContentSegment): Boolean =
+            s is ContentSegment.TextSegment && s.text.all { it.isWhitespace() }
 
-        for (segment in segments) {
-            if (isInline(segment)) {
-                val last = built.lastOrNull()
-                if (last is MutableList<*>) {
-                    @Suppress("UNCHECKED_CAST")
-                    (last as MutableList<ContentSegment>).add(segment)
+        // Single pass over the original segments, mirroring iOS
+        // `RichContentView.groupSegments`. Media runs of 2+ collapse into a
+        // carousel; inline runs accumulate into one Text block; everything
+        // else lands as a standalone block segment.
+        var i = 0
+        while (i < segments.size) {
+            val seg = segments[i]
+            val asCarousel = toCarouselItem(seg)
+            if (galleryMode && asCarousel != null) {
+                val run = mutableListOf<CarouselItem>(asCarousel)
+                var j = i + 1
+                while (j < segments.size) {
+                    val next = segments[j]
+                    val nextCarousel = toCarouselItem(next)
+                    if (nextCarousel != null) {
+                        run.add(nextCarousel)
+                        j++
+                    } else if (isWhitespaceText(next) &&
+                        j + 1 < segments.size &&
+                        toCarouselItem(segments[j + 1]) != null
+                    ) {
+                        j++ // skip whitespace joiner between two media items
+                    } else {
+                        break
+                    }
+                }
+                if (run.size >= 2) {
+                    built.add(run)
                 } else {
-                    built.add(mutableListOf(segment))
+                    built.add(seg) // single item stays standalone
+                }
+                i = j
+                continue
+            }
+            if (isInline(seg)) {
+                val last = built.lastOrNull()
+                if (last is MutableList<*> && last.firstOrNull() is ContentSegment) {
+                    @Suppress("UNCHECKED_CAST")
+                    (last as MutableList<ContentSegment>).add(seg)
+                } else {
+                    built.add(mutableListOf<ContentSegment>(seg))
                 }
             } else {
-                built.add(segment)
+                built.add(seg)
             }
+            i++
         }
         built
     }
@@ -664,8 +732,24 @@ fun RichContent(
     androidx.compose.runtime.CompositionLocalProvider(
         LocalAudioPostContext provides AudioPostContext(authorPubkey = authorPubkey, eventRepo = eventRepo)
     ) {
-    Column(modifier = modifier) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         for (group in groups) {
+            if (group is List<*> && group.firstOrNull() is CarouselItem) {
+                @Suppress("UNCHECKED_CAST")
+                val carouselItems = group as List<CarouselItem>
+                MediaCarousel(
+                    items = carouselItems,
+                    onOpenPager = { localIdx ->
+                        // Translate the carousel-local index into the
+                        // post-wide media index so the pager opens on the
+                        // right page even if the post has other media
+                        // segments outside this carousel run.
+                        val tappedUrl = carouselItems[localIdx].meta.url
+                        openPagerFor(tappedUrl)
+                    }
+                )
+                continue
+            }
             if (group is List<*>) {
                 @Suppress("UNCHECKED_CAST")
                 val inlineSegments = group as List<ContentSegment>
@@ -811,7 +895,7 @@ fun RichContent(
                     is ContentSegment.ImageSegment -> {
                         ImageWithContextMenu(
                             meta = segment.meta,
-                            onFullScreen = { fullScreenImageUrl = segment.meta.url }
+                            onFullScreen = { openPagerFor(segment.meta.url) }
                         )
                     }
                     is ContentSegment.VideoSegment -> {
@@ -832,7 +916,7 @@ fun RichContent(
                     is ContentSegment.UnknownMediaSegment -> {
                         UnknownMediaContent(
                             meta = segment.meta,
-                            onFullScreenImage = { fullScreenImageUrl = segment.meta.url },
+                            onFullScreenImage = { openPagerFor(segment.meta.url) },
                             onFullScreenVideo = { positionMs ->
                                 FullScreenVideoState.enter(segment.meta.url, positionMs)
                             }

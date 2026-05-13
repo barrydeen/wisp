@@ -3,6 +3,16 @@ package com.wisp.app.repo
 import android.content.Context
 
 class InterfacePreferences(context: Context) {
+    enum class MediaLayoutStyle(val key: String) {
+        GALLERY("gallery"),
+        STACK("stack");
+
+        companion object {
+            fun fromKey(key: String?): MediaLayoutStyle =
+                values().firstOrNull { it.key == key } ?: GALLERY
+        }
+    }
+
     companion object {
         val postUndoTimerOptions = listOf(5, 10, 15, 20, 30)
     }
@@ -29,6 +39,11 @@ class InterfacePreferences(context: Context) {
 
     fun isVideoAutoPlay(): Boolean = prefs.getBoolean("video_auto_play", true)
     fun setVideoAutoPlay(enabled: Boolean) = prefs.edit().putBoolean("video_auto_play", enabled).apply()
+
+    fun getMediaLayoutStyle(): MediaLayoutStyle =
+        MediaLayoutStyle.fromKey(prefs.getString("media_layout_style", null))
+    fun setMediaLayoutStyle(style: MediaLayoutStyle) =
+        prefs.edit().putString("media_layout_style", style.key).apply()
 
     fun getLanguage(): String = prefs.getString("language", "system") ?: "system"
     fun setLanguage(language: String) = prefs.edit().putString("language", language).apply()
@@ -69,6 +84,7 @@ class InterfacePreferences(context: Context) {
             .remove("post_undo_timer_seconds")
             .remove("post_undo_timer_for_replies")
             .remove("auto_translate")
+            .remove("media_layout_style")
             .apply()
     }
 }

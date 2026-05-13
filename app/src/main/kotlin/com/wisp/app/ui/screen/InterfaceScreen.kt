@@ -99,6 +99,7 @@ fun InterfaceScreen(
     var clientTagEnabled by remember { mutableStateOf(interfacePrefs.isClientTagEnabled()) }
     var autoLoadMedia by remember { mutableStateOf(interfacePrefs.isAutoLoadMedia()) }
     var videoAutoPlay by remember { mutableStateOf(interfacePrefs.isVideoAutoPlay()) }
+    var mediaLayout by remember { mutableStateOf(interfacePrefs.getMediaLayoutStyle()) }
     var liveStreamsHidden by remember { mutableStateOf(interfacePrefs.isLiveStreamsHidden()) }
     var autoTranslate by remember { mutableStateOf(interfacePrefs.isAutoTranslate()) }
     var selectedTheme by remember { mutableStateOf(interfacePrefs.getTheme()) }
@@ -460,6 +461,38 @@ fun InterfaceScreen(
                     },
                     colors = wispSwitchColors()
                 )
+            }
+            Spacer(Modifier.height(12.dp))
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.settings_media_layout), style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    stringResource(R.string.settings_media_layout_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                val mediaLayoutOptions = listOf(
+                    InterfacePreferences.MediaLayoutStyle.GALLERY to R.string.settings_media_layout_gallery,
+                    InterfacePreferences.MediaLayoutStyle.STACK to R.string.settings_media_layout_stack
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    mediaLayoutOptions.forEachIndexed { index, (style, labelRes) ->
+                        SegmentedButton(
+                            selected = mediaLayout == style,
+                            onClick = {
+                                mediaLayout = style
+                                interfacePrefs.setMediaLayoutStyle(style)
+                                onChanged()
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(
+                                index = index,
+                                count = mediaLayoutOptions.size
+                            )
+                        ) {
+                            Text(stringResource(labelRes))
+                        }
+                    }
+                }
             }
             Spacer(Modifier.height(12.dp))
             Row(

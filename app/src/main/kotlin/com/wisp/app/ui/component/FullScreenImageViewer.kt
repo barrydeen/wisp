@@ -1,9 +1,6 @@
 package com.wisp.app.ui.component
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,17 +17,12 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -38,10 +30,10 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import coil3.compose.AsyncImage
 import com.wisp.app.R
 import com.wisp.app.util.MediaDownloader
 import kotlinx.coroutines.launch
+import kotlin.math.max
 
 @Composable
 fun FullScreenImageViewer(
@@ -52,44 +44,26 @@ fun FullScreenImageViewer(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        var scale by remember { mutableFloatStateOf(1f) }
-        var offset by remember { mutableStateOf(Offset.Zero) }
-
-
         val context = LocalContext.current
         val clipboardManager = LocalClipboardManager.current
         val scope = rememberCoroutineScope()
+        var dismissDragY by remember { mutableFloatStateOf(0f) }
+        // Background fades out as the user pulls the image downward, matching
+        // iOS `max(0.3, 1.0 - dismissY / 250.0)`. Stays fully opaque when not
+        // dragging.
+        val backgroundAlpha = max(0.3f, 1f - dismissDragY / 250f)
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = { if (scale <= 1f) onDismiss() }
-                ),
+                .background(Color.Black.copy(alpha = backgroundAlpha)),
             contentAlignment = Alignment.Center
         ) {
-            AsyncImage(
+            ZoomableAsyncImage(
                 model = imageUrl,
                 contentDescription = "Full screen image",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer(
-                        scaleX = scale,
-                        scaleY = scale,
-                        translationX = offset.x,
-                        translationY = offset.y
-                    )
-                    .pointerInput(Unit) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            val newScale = (scale * zoom).coerceIn(0.5f, 5f)
-                            offset = if (newScale > 1f) offset + pan * scale else Offset.Zero
-                            scale = newScale
-                        }
-                    }
+                onSwipeDownDismiss = onDismiss,
+                onDismissDrag = { dismissDragY = it }
             )
 
             Row(

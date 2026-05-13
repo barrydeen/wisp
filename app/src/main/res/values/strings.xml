@@ -494,6 +494,10 @@
     <string name="settings_auto_load_description">Automatically download images and videos in notes. When off, tap to load.</string>
     <string name="settings_video_autoplay">Video autoplay</string>
     <string name="settings_video_autoplay_description">Automatically play videos when they scroll into view</string>
+    <string name="settings_media_layout">Multi-image layout</string>
+    <string name="settings_media_layout_description">Gallery: horizontal swipe through every photo and video. Stack: each item full-width below the next.</string>
+    <string name="settings_media_layout_gallery">Gallery</string>
+    <string name="settings_media_layout_stack">Stack</string>
     <string name="settings_hide_live_streams">Hide live streams</string>
     <string name="settings_hide_live_streams_description">Hide the live streams row from the top of your feed</string>
     <string name="settings_client_tag">Client Tag</string>

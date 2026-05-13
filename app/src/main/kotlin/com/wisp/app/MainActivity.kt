@@ -49,7 +49,8 @@ class MainActivity : FragmentActivity() {
             var mediaSettings by remember {
                 mutableStateOf(MediaSettings(
                     autoLoadMedia = interfacePrefs.isAutoLoadMedia(),
-                    videoAutoPlay = interfacePrefs.isVideoAutoPlay()
+                    videoAutoPlay = interfacePrefs.isVideoAutoPlay(),
+                    mediaLayoutStyle = interfacePrefs.getMediaLayoutStyle()
                 ))
             }
 
@@ -93,7 +94,8 @@ class MainActivity : FragmentActivity() {
                             themeName = interfacePrefs.getTheme()
                             mediaSettings = MediaSettings(
                                 autoLoadMedia = interfacePrefs.isAutoLoadMedia(),
-                                videoAutoPlay = interfacePrefs.isVideoAutoPlay()
+                                videoAutoPlay = interfacePrefs.isVideoAutoPlay(),
+                                mediaLayoutStyle = interfacePrefs.getMediaLayoutStyle()
                             )
                         }
                     )
