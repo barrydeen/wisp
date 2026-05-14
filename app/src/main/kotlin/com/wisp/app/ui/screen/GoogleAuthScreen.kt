@@ -127,12 +127,12 @@ fun GoogleAuthScreen(
             when (val s = state) {
                 GoogleAuthViewModel.State.Idle,
                 GoogleAuthViewModel.State.SigningIn,
-                GoogleAuthViewModel.State.CheckingDrive,
+                GoogleAuthViewModel.State.CheckingRelays,
                 GoogleAuthViewModel.State.Working -> {
                     LoadingBlock(
                         label = when (s) {
                             GoogleAuthViewModel.State.SigningIn -> stringResource(R.string.google_auth_signing_in)
-                            GoogleAuthViewModel.State.CheckingDrive -> stringResource(R.string.google_auth_checking_drive)
+                            GoogleAuthViewModel.State.CheckingRelays -> stringResource(R.string.google_auth_checking_relays)
                             GoogleAuthViewModel.State.Working -> stringResource(R.string.google_auth_working)
                             else -> stringResource(R.string.google_auth_starting)
                         }
@@ -141,7 +141,7 @@ fun GoogleAuthScreen(
 
                 is GoogleAuthViewModel.State.Choose -> ChooseBlock(
                     backups = s.backups,
-                    onRestore = { viewModel.restoreAccount(it.fileId) },
+                    onRestore = { viewModel.restoreAccount(it.targetNpub) },
                     onCreate = { viewModel.createNewAccount() }
                 )
 
@@ -258,7 +258,7 @@ private fun ChooseBlock(
                 .fillMaxWidth()
                 .heightIn(max = 280.dp)
         ) {
-            items(backups, key = { it.npub }) { backup ->
+            items(backups, key = { it.targetNpub }) { backup ->
                 BackupRow(backup = backup, onClick = { onRestore(backup) })
                 Spacer(Modifier.height(8.dp))
             }
@@ -324,7 +324,7 @@ private fun BackupRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = backup.displayName?.takeIf { it.isNotBlank() }
-                        ?: formatShortNpub(backup.npub),
+                        ?: formatShortNpub(backup.targetNpub),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface
                 )

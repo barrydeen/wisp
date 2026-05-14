@@ -6,9 +6,9 @@ import androidx.activity.ComponentActivity
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wisp.app.auth.BackupCrypto
-import com.wisp.app.auth.DriveBackupService
 import com.wisp.app.auth.GoogleSignInException
 import com.wisp.app.auth.GoogleSignInManager
+import com.wisp.app.auth.RelayBackupService
 import com.wisp.app.nostr.Keys
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.toHex
@@ -34,27 +34,26 @@ import java.util.concurrent.TimeUnit
 private const val TAG = "GoogleAuth"
 
 /**
- * Orchestrates the "Continue with Google" flow:
- *   1. Sign in via GoogleSignInManager → derive backup key from sub claim.
- *   2. List every backup in the user's Drive appDataFolder. Each filename
- *      embeds the npub (`wisp_nsec_<npub>.bin`) so we can show the chooser
- *      without downloading every file.
- *   3. UI shows a list of restorable accounts (if any) plus a "Create new
- *      account" option that's always available — users can keep adding new
- *      Nostr identities to the same Google account's backup space.
+ * Continue-with-Google flow, backed by Nostr relays instead of Google Drive.
  *
- * The plaintext nsec only leaves Drive when the user actually picks Restore;
- * generation only happens when they pick Create.
+ *   1. Sign in via Credential Manager → get the user's Google `sub`.
+ *   2. Derive an encryption key + a secp256k1 signing key from `sub`.
+ *   3. Query a set of public relays for every kind-30078 backup event
+ *      authored by that signing key — each event holds one encrypted nsec.
+ *   4. Show a chooser of restorable accounts (avatar + display name, fetched
+ *      via a separate kind-0 relay query) plus "Create another account",
+ *      which is always available.
+ *
+ * Plaintext nsec never leaves the device — relays only ever see ciphertext.
  */
 class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
-    private val driveService = DriveBackupService()
+    private val relayService = RelayBackupService()
 
-    /** One restorable account entry surfaced in the chooser. */
     data class BackupSummary(
-        val fileId: String,
-        val npub: String,
+        val targetNpub: String,
         val pubkeyHex: String,
+        val payload: String,
         val displayName: String? = null,
         val picture: String? = null
     )
@@ -62,7 +61,7 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
     sealed class State {
         object Idle : State()
         object SigningIn : State()
-        object CheckingDrive : State()
+        object CheckingRelays : State()
         data class Choose(val backups: List<BackupSummary>) : State()
         object Working : State()
         data class Done(val isNewAccount: Boolean) : State()
@@ -72,8 +71,8 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state
 
-    private var pendingBackupKey: ByteArray? = null
-    private var pendingAccessToken: String? = null
+    private var pendingEncryptionKey: ByteArray? = null
+    private var pendingSigningPrivkey: ByteArray? = null
     private var profileFetchJob: Job? = null
 
     fun beginSignIn(activity: ComponentActivity, webClientId: String) {
@@ -88,38 +87,34 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 Log.d(TAG, "calling manager.signIn(activity)…")
-                val result = manager.signIn(activity)
-                Log.d(TAG, "signIn returned: sub-len=${result.sub.length}, hasToken=${result.accessToken.isNotEmpty()}")
-                val backupKey = BackupCrypto.deriveBackupKey(result.sub)
-                pendingBackupKey = backupKey
-                pendingAccessToken = result.accessToken
+                val sub = manager.signIn(activity)
+                Log.d(TAG, "signIn returned sub-len=${sub.length}")
 
-                _state.value = State.CheckingDrive
-                Log.d(TAG, "state -> CheckingDrive")
+                val keys = BackupCrypto.deriveKeys(sub)
+                pendingEncryptionKey = keys.encryptionKey
+                pendingSigningPrivkey = keys.signingPrivkey
+                val signingKeypair = Keys.fromPrivkey(keys.signingPrivkey)
+                val backupAuthorHex = signingKeypair.pubkey.toHex()
 
-                val files = driveService.listBackups(result.accessToken)
-                Log.d(TAG, "listBackups returned ${files.size} file(s)")
+                _state.value = State.CheckingRelays
+                Log.d(TAG, "state -> CheckingRelays, backupAuthor=$backupAuthorHex")
 
-                val summaries = files.mapNotNull { file ->
-                    val npub = file.npubFromName ?: try {
-                        // Legacy file with no npub in the filename — decrypt to learn it.
-                        val payload = driveService.downloadBackup(result.accessToken, file.fileId)
-                        val nsec = BackupCrypto.decryptNsec(payload, backupKey)
-                        Nip19.npubEncode(Keys.xOnlyPubkey(nsec))
+                val stored = relayService.listBackups(backupAuthorHex)
+                Log.d(TAG, "listBackups returned ${stored.size} event(s)")
+
+                val summaries = stored.mapNotNull { backup ->
+                    val pubkeyHex = try {
+                        Nip19.npubDecode(backup.targetNpub).toHex()
                     } catch (e: Exception) {
-                        Log.w(TAG, "couldn't resolve npub for ${file.name}; skipping", e)
-                        null
+                        Log.w(TAG, "couldn't decode npub ${backup.targetNpub}", e)
+                        return@mapNotNull null
                     }
-                    npub?.let {
-                        val pubkeyHex = try {
-                            Nip19.npubDecode(it).toHex()
-                        } catch (e: Exception) {
-                            Log.w(TAG, "couldn't decode npub $it", e)
-                            return@let null
-                        }
-                        BackupSummary(fileId = file.fileId, npub = it, pubkeyHex = pubkeyHex)
-                    }
-                }.distinctBy { it.npub }
+                    BackupSummary(
+                        targetNpub = backup.targetNpub,
+                        pubkeyHex = pubkeyHex,
+                        payload = backup.payload
+                    )
+                }
 
                 _state.value = State.Choose(summaries)
                 Log.d(TAG, "state -> Choose with ${summaries.size} restorable account(s)")
@@ -136,15 +131,15 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun restoreAccount(fileId: String) {
-        Log.d(TAG, "restoreAccount tapped, fileId=$fileId")
-        val key = pendingBackupKey ?: return
-        val accessToken = pendingAccessToken ?: return
+    fun restoreAccount(targetNpub: String) {
+        Log.d(TAG, "restoreAccount tapped, npub=$targetNpub")
+        val key = pendingEncryptionKey ?: return
+        val current = _state.value as? State.Choose ?: return
+        val backup = current.backups.firstOrNull { it.targetNpub == targetNpub } ?: return
         _state.value = State.Working
         viewModelScope.launch {
             try {
-                val payload = driveService.downloadBackup(accessToken, fileId)
-                val nsec = BackupCrypto.decryptNsec(payload, key)
+                val nsec = BackupCrypto.decryptNsec(backup.payload, key)
                 val keypair = Keys.fromPrivkey(nsec)
                 keyRepo.saveKeypair(keypair)
                 keyRepo.reloadPrefs(keypair.pubkey.toHex())
@@ -159,15 +154,19 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
 
     fun createNewAccount() {
         Log.d(TAG, "createNewAccount tapped")
-        val key = pendingBackupKey ?: return
-        val accessToken = pendingAccessToken ?: return
+        val encKey = pendingEncryptionKey ?: return
+        val sigKey = pendingSigningPrivkey ?: return
         _state.value = State.Working
         viewModelScope.launch {
             try {
                 val keypair = Keys.generate()
                 val npub = Nip19.npubEncode(keypair.pubkey)
-                val payload = BackupCrypto.encryptNsec(keypair.privkey, key)
-                driveService.uploadBackup(accessToken, npub, payload)
+                val payload = BackupCrypto.encryptNsec(keypair.privkey, encKey)
+                val published = relayService.publishBackup(sigKey, npub, payload)
+                if (!published) {
+                    _state.value = State.Error("Couldn't reach any backup relay. Please check your connection and try again.")
+                    return@launch
+                }
                 keyRepo.saveKeypair(keypair)
                 keyRepo.reloadPrefs(keypair.pubkey.toHex())
                 val fiatPrefs = FiatPreferences.get(getApplication())
@@ -185,16 +184,16 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
     fun reset() {
         profileFetchJob?.cancel()
         profileFetchJob = null
-        pendingBackupKey = null
-        pendingAccessToken = null
+        pendingEncryptionKey = null
+        pendingSigningPrivkey = null
         _state.value = State.Idle
     }
 
     /**
      * Opens ephemeral WebSocket connections to a couple of widely-used relays,
-     * requests kind-0 profile metadata for each backup's pubkey, and merges the
-     * parsed display name + picture into the Choose state as results arrive.
-     * Cancelled when the user moves past the chooser.
+     * requests kind-0 profile metadata for each backup's pubkey, and merges
+     * the parsed display name + picture into the Choose state as results
+     * arrive. Cancelled when the user moves past the chooser.
      */
     private fun fetchProfilesInBackground(pubkeyHexList: List<String>) {
         profileFetchJob?.cancel()
@@ -264,7 +263,6 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
 
         if (name == null && picture == null) return
 
-        // Merge into current Choose state if still active.
         val current = _state.value
         if (current !is State.Choose) return
         val updated = current.backups.map { backup ->
@@ -281,8 +279,8 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         super.onCleared()
         profileFetchJob?.cancel()
-        pendingBackupKey = null
-        pendingAccessToken = null
+        pendingEncryptionKey = null
+        pendingSigningPrivkey = null
     }
 
     companion object {
