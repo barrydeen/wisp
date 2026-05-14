@@ -7,37 +7,68 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Backup encryption for the Google Drive nsec backup blob.
+ * Derives backup keys from the Google ID token's stable `sub` claim and
+ * encrypts the nsec for publication to Nostr relays.
  *
- * The encryption key is derived from the Google ID token's `sub` claim, which is
- * stable per (Google account, OAuth client). This means the same Google account
- * always produces the same key, enabling passphrase-less restore. Tradeoff: anyone
- * with access to the Google account can decrypt the backup.
+ * Two distinct keys come out of one `sub`:
+ *   - `encryptionKey`  — symmetric key for the NIP-44 payload that carries the nsec.
+ *   - `signingPrivkey` — secp256k1 private key that signs the kind 30078 backup
+ *                        event published to relays. Its pubkey is also the
+ *                        author filter when looking up backups on restore.
  *
- * The encrypted payload is just NIP-44 v2 over the hex-encoded nsec, with the
- * derived key in place of the usual ECDH conversation key. Reuses Nip44 verbatim
- * so we don't introduce new crypto code.
+ * Tradeoff (deliberate): anyone with access to the user's Google account can
+ * recompute both keys and recover every backup. In exchange the user never
+ * has to remember a passphrase.
  */
 object BackupCrypto {
-    private const val SALT = "wisp-google-backup-v1"
+    private const val SALT = "wisp-nostr-backup-v1"
 
-    fun deriveBackupKey(sub: String): ByteArray {
+    data class DerivedKeys(
+        val encryptionKey: ByteArray,
+        val signingPrivkey: ByteArray
+    )
+
+    fun deriveKeys(sub: String): DerivedKeys {
         require(sub.isNotEmpty()) { "Google sub claim must not be empty" }
-        val mac = Mac.getInstance("HmacSHA256")
-        mac.init(SecretKeySpec(SALT.toByteArray(Charsets.UTF_8), "HmacSHA256"))
-        return mac.doFinal(sub.toByteArray(Charsets.UTF_8))
+        val prk = hmacSha256(SALT.toByteArray(Charsets.UTF_8), sub.toByteArray(Charsets.UTF_8))
+        return DerivedKeys(
+            encryptionKey = hkdfExpand(prk, "wisp-enc".toByteArray(Charsets.UTF_8), 32),
+            signingPrivkey = hkdfExpand(prk, "wisp-sig".toByteArray(Charsets.UTF_8), 32)
+        )
     }
 
     fun encryptNsec(nsec: ByteArray, key: ByteArray): String {
         require(nsec.size == 32) { "nsec must be 32 bytes" }
-        require(key.size == 32) { "backup key must be 32 bytes" }
+        require(key.size == 32) { "encryption key must be 32 bytes" }
         return Nip44.encrypt(nsec.toHex(), key)
     }
 
     fun decryptNsec(payload: String, key: ByteArray): ByteArray {
-        require(key.size == 32) { "backup key must be 32 bytes" }
+        require(key.size == 32) { "encryption key must be 32 bytes" }
         val hex = Nip44.decrypt(payload, key)
         require(hex.length == 64) { "decrypted backup is not a 32-byte hex string" }
         return hex.hexToByteArray()
+    }
+
+    private fun hmacSha256(key: ByteArray, data: ByteArray): ByteArray {
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(key, "HmacSHA256"))
+        return mac.doFinal(data)
+    }
+
+    private fun hkdfExpand(prk: ByteArray, info: ByteArray, length: Int): ByteArray {
+        require(length <= 255 * 32)
+        val n = (length + 31) / 32
+        var t = ByteArray(0)
+        val okm = ByteArray(length)
+        var offset = 0
+        for (i in 1..n) {
+            val input = t + info + byteArrayOf(i.toByte())
+            t = hmacSha256(prk, input)
+            val copyLen = minOf(32, length - offset)
+            System.arraycopy(t, 0, okm, offset, copyLen)
+            offset += copyLen
+        }
+        return okm
     }
 }
