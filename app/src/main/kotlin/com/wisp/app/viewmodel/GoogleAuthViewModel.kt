@@ -95,9 +95,14 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
                 Log.d(TAG, "state -> CheckingRelays")
 
                 val accounts = probeForActiveAccounts(sub)
-                val nextNew = accounts.maxOfOrNull { it.accountIndex + 1 } ?: 0
-                _state.value = State.Choose(accounts, nextNew)
-                Log.d(TAG, "state -> Choose with ${accounts.size} active account(s), nextNew=$nextNew")
+                if (accounts.isEmpty()) {
+                    Log.d(TAG, "no accounts found — auto-creating account at index 0")
+                    createAccountAt(sub, accountIndex = 0)
+                } else {
+                    val nextNew = accounts.maxOf { it.accountIndex } + 1
+                    _state.value = State.Choose(accounts, nextNew)
+                    Log.d(TAG, "state -> Choose with ${accounts.size} active account(s), nextNew=$nextNew")
+                }
             } catch (e: GoogleSignInException) {
                 Log.w(TAG, "GoogleSignInException", e)
                 _state.value = State.Error(e.message ?: "Google sign-in failed.")
@@ -131,21 +136,31 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
         val sub = pendingSub ?: return
         val current = _state.value as? State.Choose ?: return
         val newIndex = current.nextNewIndex
-        _state.value = State.Working
         viewModelScope.launch {
-            try {
-                val keypair = GoogleAccountDerivation.deriveAccountKeypair(sub, newIndex)
-                keyRepo.saveKeypair(keypair)
-                keyRepo.reloadPrefs(keypair.pubkey.toHex())
-                val fiatPrefs = FiatPreferences.get(getApplication())
-                fiatPrefs.setFiatMode(true)
-                fiatPrefs.setCurrency("USD")
-                _state.value = State.Done(isNewAccount = true)
-                Log.d(TAG, "state -> Done(isNewAccount=true), accountIndex=$newIndex")
-            } catch (e: Exception) {
-                Log.w(TAG, "createNewAccount failed", e)
-                _state.value = State.Error(e.message ?: "Failed to create account.")
-            }
+            createAccountAt(sub, newIndex)
+        }
+    }
+
+    /**
+     * Shared helper: derives the keypair at [accountIndex], saves it locally,
+     * and transitions to Done(isNewAccount = true). Called both from the user
+     * tapping "Create another account" and from the auto-create-at-zero path
+     * when no existing accounts are discovered on sign-in.
+     */
+    private suspend fun createAccountAt(sub: String, accountIndex: Int) {
+        _state.value = State.Working
+        try {
+            val keypair = GoogleAccountDerivation.deriveAccountKeypair(sub, accountIndex)
+            keyRepo.saveKeypair(keypair)
+            keyRepo.reloadPrefs(keypair.pubkey.toHex())
+            val fiatPrefs = FiatPreferences.get(getApplication())
+            fiatPrefs.setFiatMode(true)
+            fiatPrefs.setCurrency("USD")
+            _state.value = State.Done(isNewAccount = true)
+            Log.d(TAG, "state -> Done(isNewAccount=true), accountIndex=$accountIndex")
+        } catch (e: Exception) {
+            Log.w(TAG, "createAccountAt failed", e)
+            _state.value = State.Error(e.message ?: "Failed to create account.")
         }
     }
 
