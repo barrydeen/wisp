@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -56,7 +58,8 @@ private val AVATAR_GAP = 4.dp
 fun SplashScreen(
     viewModel: SplashViewModel,
     onSignUp: () -> Unit,
-    onLogIn: () -> Unit
+    onLogIn: () -> Unit,
+    onContinueWithGoogle: () -> Unit
 ) {
     val profilePictures by viewModel.profilePictures.collectAsState()
     val liveMetrics by viewModel.liveMetrics.collectAsState()
@@ -184,6 +187,37 @@ fun SplashScreen(
             Spacer(Modifier.height(32.dp))
 
             Button(
+                onClick = onContinueWithGoogle,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = Color(0xFF1F1F1F)
+                ),
+                border = BorderStroke(1.dp, Color(0xFFDADCE0))
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_google_g),
+                    contentDescription = null,
+                    tint = Color.Unspecified,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = stringResource(R.string.splash_continue_with_google),
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontFamily = FontFamily.SansSerif,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 15.sp
+                    )
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            OutlinedButton(
                 onClick = onSignUp,
                 modifier = Modifier.fillMaxWidth()
             ) {

@@ -45,6 +45,22 @@
     <!-- Splash Screen -->
     <string name="splash_create_account">Create Account</string>
     <string name="splash_log_in">Log In</string>
+    <string name="splash_continue_with_google">Continue with Google</string>
+
+    <!-- Google Sign-In / Drive Backup -->
+    <!-- Replace this empty string with your OAuth 2.0 Web Client ID from Google Cloud Console. -->
+    <string name="google_web_client_id" translatable="false">410412439051-mhcgeuvc2sjp75v8snucstfr5smrg03g.apps.googleusercontent.com</string>
+    <string name="google_auth_starting">Starting…</string>
+    <string name="google_auth_signing_in">Signing in with Google…</string>
+    <string name="google_auth_checking_drive">Checking your Google Drive backup…</string>
+    <string name="google_auth_working">Almost there…</string>
+    <string name="google_auth_choose_title_with_backups">Your backed-up accounts</string>
+    <string name="google_auth_choose_body_with_backups">Tap an account to restore it, or create a new one. New accounts are encrypted and added to your Google Drive backup.</string>
+    <string name="google_auth_choose_title_empty">Create your account</string>
+    <string name="google_auth_choose_body_empty">Wisp will generate a new Nostr key and save an encrypted backup to a hidden folder in your Google Drive. The encryption key is derived from your Google account, so anyone with access to it can recover your identity.</string>
+    <string name="google_auth_restore">Restore</string>
+    <string name="google_auth_create_first">Create account &amp; back up</string>
+    <string name="google_auth_create_another">Create another account</string>
     <string name="splash_people_online">%d people online now</string>
     <string name="online_now">Online Now</string>
     <string name="online_in_network">%d online in your network</string>

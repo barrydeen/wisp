@@ -134,6 +134,18 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         _error.value = null
     }
 
+    /**
+     * Re-sync npub/signing-mode flows after another component (e.g. GoogleAuthViewModel)
+     * has saved a keypair directly through KeyRepository. Without this, the
+     * AuthViewModel's flows still reflect the pre-login state.
+     */
+    fun refreshAfterExternalLogin() {
+        keyRepo.refreshAccounts()
+        _npub.value = keyRepo.getNpub()
+        _signingMode.value = if (keyRepo.isLoggedIn()) keyRepo.getSigningMode() else null
+        _error.value = null
+    }
+
     fun switchAccount(pubkeyHex: String) {
         keyRepo.switchToAccount(pubkeyHex)
         keyRepo.reloadPrefs(pubkeyHex)

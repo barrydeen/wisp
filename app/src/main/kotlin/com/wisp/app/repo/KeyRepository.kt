@@ -204,6 +204,15 @@ class KeyRepository(private val context: Context) {
         _accounts.value = accounts
     }
 
+    /**
+     * Re-read the account list from encrypted prefs. Useful when another
+     * KeyRepository instance has written to the same backing store and our
+     * cached _accounts flow is stale.
+     */
+    fun refreshAccounts() {
+        _accounts.value = loadAccountList()
+    }
+
     private fun loadAccountList(): List<AccountInfo> {
         val str = encPrefs.getString("accounts", null) ?: return emptyList()
         return try {

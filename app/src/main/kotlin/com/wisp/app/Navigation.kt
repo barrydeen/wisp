@@ -133,6 +133,7 @@ import kotlinx.coroutines.launch
 object Routes {
     const val SPLASH = "splash"
     const val AUTH = "auth"
+    const val GOOGLE_AUTH = "google_auth"
     const val FEED = "feed"
     const val COMPOSE = "compose"
     const val RELAYS = "relays"
@@ -403,7 +404,7 @@ fun WispNavHost(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    val nonAppRoutes = setOf(Routes.SPLASH, Routes.AUTH, Routes.LOADING, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS, Routes.ONBOARDING_TOPICS, Routes.ONBOARDING_FIRST_POST, Routes.EXISTING_USER_ONBOARDING)
+    val nonAppRoutes = setOf(Routes.SPLASH, Routes.AUTH, Routes.GOOGLE_AUTH, Routes.LOADING, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS, Routes.ONBOARDING_TOPICS, Routes.ONBOARDING_FIRST_POST, Routes.EXISTING_USER_ONBOARDING)
     val hideBottomBarRoutes = nonAppRoutes + Routes.DM_CONVERSATION + Routes.DM_CONVERSATION_GROUP + Routes.CONTACT_PICKER + Routes.GROUP_ROOM + Routes.GROUP_DETAIL + Routes.LIVE_STREAM
     val socialGraphDiscoveryState by feedViewModel.extendedNetworkRepo.discoveryState.collectAsState()
     val socialGraphComputing = currentRoute == Routes.SOCIAL_GRAPH && (
@@ -653,6 +654,52 @@ fun WispNavHost(
                 },
                 onLogIn = {
                     navController.navigate(Routes.AUTH)
+                },
+                onContinueWithGoogle = {
+                    navController.navigate(Routes.GOOGLE_AUTH)
+                }
+            )
+        }
+
+        composable(Routes.GOOGLE_AUTH) {
+            val googleAuthViewModel: com.wisp.app.viewmodel.GoogleAuthViewModel = viewModel()
+            com.wisp.app.ui.screen.GoogleAuthScreen(
+                viewModel = googleAuthViewModel,
+                onCancel = {
+                    googleAuthViewModel.reset()
+                    navController.popBackStack()
+                },
+                onDone = { isNewAccount ->
+                    val wasAddingAccount = authViewModel.isAddingAccount
+                    authViewModel.isAddingAccount = false
+                    authViewModel.refreshAfterExternalLogin()
+
+                    if (isNewAccount) {
+                        navController.navigate(Routes.ONBOARDING_PROFILE) {
+                            popUpTo(Routes.SPLASH) { inclusive = true }
+                        }
+                    } else if (wasAddingAccount && authViewModel.keyRepo.isOnboardingComplete()) {
+                        feedViewModel.reloadForNewAccount()
+                        relayViewModel.reload()
+                        blossomServersViewModel.reload()
+                        composeViewModel.reloadBlossomRepo()
+                        feedViewModel.initRelays()
+                        walletViewModel.refreshState()
+                        navController.navigate(Routes.LOADING) {
+                            popUpTo(Routes.GOOGLE_AUTH) { inclusive = true }
+                        }
+                    } else {
+                        feedViewModel.reloadForNewAccount()
+                        relayViewModel.reload()
+                        blossomServersViewModel.reload()
+                        composeViewModel.reloadBlossomRepo()
+                        feedViewModel.initRelays()
+                        walletViewModel.refreshState()
+                        authViewModel.keyRepo.markOnboardingComplete()
+                        navController.navigate(Routes.EXISTING_USER_ONBOARDING) {
+                            popUpTo(Routes.GOOGLE_AUTH) { inclusive = true }
+                        }
+                    }
                 }
             )
         }
