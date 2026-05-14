@@ -31,7 +31,6 @@ data class RelayConfig(
         val DEFAULTS = listOf(
             RelayConfig("wss://relay.damus.io", read = true, write = true),
             RelayConfig("wss://relay.primal.net", read = true, write = true),
-            RelayConfig("wss://relay.wisp.talk", read = true, write = true),
             RelayConfig("wss://indexer.coracle.social", read = true, write = false),
             RelayConfig("wss://relay.nos.social", read = true, write = false)
         )
