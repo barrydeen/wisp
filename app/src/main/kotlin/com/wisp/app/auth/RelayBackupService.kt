@@ -250,8 +250,9 @@ class RelayBackupService(
             "wss://relay.damus.io",
             "wss://relay.primal.net",
             "wss://nos.lol",
-            "wss://relay.nostr.band",
-            "wss://nostr.wine"
+            "wss://nostr.wine",
+            "wss://relay.wisp.talk",
+            "wss://relay.ditto.pub"
         )
 
         private val json = Json { ignoreUnknownKeys = true }
