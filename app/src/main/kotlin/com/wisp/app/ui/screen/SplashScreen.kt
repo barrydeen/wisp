@@ -193,10 +193,10 @@ fun SplashScreen(
                     .height(48.dp),
                 shape = RoundedCornerShape(24.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color(0xFF1F1F1F)
+                    containerColor = Color(0xFF131314),
+                    contentColor = Color(0xFFE3E3E3)
                 ),
-                border = BorderStroke(1.dp, Color(0xFFDADCE0))
+                border = BorderStroke(1.dp, Color(0xFF8E918F))
             ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_google_g),

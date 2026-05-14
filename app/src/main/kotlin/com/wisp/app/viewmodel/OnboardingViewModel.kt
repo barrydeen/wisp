@@ -95,6 +95,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val TAG = "OnboardingSuggestions"
+        private const val WISP_RELAY_URL = "wss://relay.wisp.talk"
         val CREATOR_PUBKEYS = listOf(
             "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d", // fiatjaf
             "e2ccf7cf20403f3f2a4a55b328f0de3be38558a7d5f33632fdaaefc726c1c8eb"  // utxo
@@ -211,7 +212,15 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
         signer: NostrSigner? = null
     ): Boolean {
         val s = signer ?: keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) } ?: return false
-        val relays = _discoveredRelays.value ?: RelayConfig.DEFAULTS
+        val discovered = _discoveredRelays.value ?: RelayConfig.DEFAULTS
+        // Always include Wisp's own relay in the new account's NIP-65 list,
+        // regardless of what relay probing discovered. Read+write so the new
+        // user both publishes to and reads from it from day one.
+        val relays = if (discovered.any { it.url.equals(WISP_RELAY_URL, ignoreCase = true) }) {
+            discovered
+        } else {
+            discovered + RelayConfig(WISP_RELAY_URL, read = true, write = true)
+        }
 
         return try {
             _publishing.value = true

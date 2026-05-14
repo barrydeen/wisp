@@ -127,12 +127,12 @@ fun GoogleAuthScreen(
             when (val s = state) {
                 GoogleAuthViewModel.State.Idle,
                 GoogleAuthViewModel.State.SigningIn,
-                GoogleAuthViewModel.State.CheckingDrive,
+                GoogleAuthViewModel.State.CheckingRelays,
                 GoogleAuthViewModel.State.Working -> {
                     LoadingBlock(
                         label = when (s) {
                             GoogleAuthViewModel.State.SigningIn -> stringResource(R.string.google_auth_signing_in)
-                            GoogleAuthViewModel.State.CheckingDrive -> stringResource(R.string.google_auth_checking_drive)
+                            GoogleAuthViewModel.State.CheckingRelays -> stringResource(R.string.google_auth_checking_relays)
                             GoogleAuthViewModel.State.Working -> stringResource(R.string.google_auth_working)
                             else -> stringResource(R.string.google_auth_starting)
                         }
@@ -140,8 +140,8 @@ fun GoogleAuthScreen(
                 }
 
                 is GoogleAuthViewModel.State.Choose -> ChooseBlock(
-                    backups = s.backups,
-                    onRestore = { viewModel.restoreAccount(it.fileId) },
+                    accounts = s.accounts,
+                    onSelect = { viewModel.selectAccount(it.accountIndex) },
                     onCreate = { viewModel.createNewAccount() }
                 )
 
@@ -226,14 +226,14 @@ private fun LoadingBlock(label: String) {
 
 @Composable
 private fun ChooseBlock(
-    backups: List<GoogleAuthViewModel.BackupSummary>,
-    onRestore: (GoogleAuthViewModel.BackupSummary) -> Unit,
+    accounts: List<GoogleAuthViewModel.AccountSummary>,
+    onSelect: (GoogleAuthViewModel.AccountSummary) -> Unit,
     onCreate: () -> Unit
 ) {
-    val titleRes = if (backups.isEmpty())
+    val titleRes = if (accounts.isEmpty())
         R.string.google_auth_choose_title_empty
     else
-        R.string.google_auth_choose_title_with_backups
+        R.string.google_auth_choose_title_with_accounts
 
     Text(
         text = stringResource(titleRes),
@@ -243,23 +243,23 @@ private fun ChooseBlock(
     Spacer(Modifier.height(8.dp))
     Text(
         text = stringResource(
-            if (backups.isEmpty()) R.string.google_auth_choose_body_empty
-            else R.string.google_auth_choose_body_with_backups
+            if (accounts.isEmpty()) R.string.google_auth_choose_body_empty
+            else R.string.google_auth_choose_body_with_accounts
         ),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center
     )
 
-    if (backups.isNotEmpty()) {
+    if (accounts.isNotEmpty()) {
         Spacer(Modifier.height(16.dp))
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = 280.dp)
         ) {
-            items(backups, key = { it.npub }) { backup ->
-                BackupRow(backup = backup, onClick = { onRestore(backup) })
+            items(accounts, key = { it.accountIndex }) { account ->
+                AccountRow(account = account, onClick = { onSelect(account) })
                 Spacer(Modifier.height(8.dp))
             }
         }
@@ -275,7 +275,7 @@ private fun ChooseBlock(
     ) {
         Text(
             stringResource(
-                if (backups.isEmpty()) R.string.google_auth_create_first
+                if (accounts.isEmpty()) R.string.google_auth_create_first
                 else R.string.google_auth_create_another
             )
         )
@@ -283,8 +283,8 @@ private fun ChooseBlock(
 }
 
 @Composable
-private fun BackupRow(
-    backup: GoogleAuthViewModel.BackupSummary,
+private fun AccountRow(
+    account: GoogleAuthViewModel.AccountSummary,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -308,10 +308,10 @@ private fun BackupRow(
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surface)
             ) {
-                if (!backup.picture.isNullOrBlank()) {
+                if (!account.picture.isNullOrBlank()) {
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(backup.picture)
+                            .data(account.picture)
                             .crossfade(true)
                             .build(),
                         contentDescription = null,
@@ -323,8 +323,8 @@ private fun BackupRow(
             Spacer(Modifier.size(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = backup.displayName?.takeIf { it.isNotBlank() }
-                        ?: formatShortNpub(backup.npub),
+                    text = account.displayName?.takeIf { it.isNotBlank() }
+                        ?: formatShortPubkey(account.pubkeyHex),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -333,7 +333,7 @@ private fun BackupRow(
     }
 }
 
-private fun formatShortNpub(npub: String): String {
-    if (npub.length <= 18) return npub
-    return npub.take(12) + "…" + npub.takeLast(6)
+private fun formatShortPubkey(hex: String): String {
+    if (hex.length <= 14) return hex
+    return hex.take(8) + "…" + hex.takeLast(6)
 }
