@@ -97,7 +97,6 @@ class RelayLifecycleManager(
         Log.d("RLC", "[Lifecycle] onAppPause — connectedCount=${relayPool.connectedCount.value}")
         relayPool.appIsActive = false
         relayPool.healthTracker?.closeAllSessions()
-        relayPool.pauseLocalRelay()
     }
 
     /**
@@ -112,7 +111,6 @@ class RelayLifecycleManager(
         // Set suppression window to prevent network-change reconnects from
         // firing shortly after this resume and causing a double reconnect.
         resumeReconnectUntilMs = System.currentTimeMillis() + RESUME_SUPPRESSION_MS
-        relayPool.resumeLocalRelay()
         reconnect(force = force)
     }
 

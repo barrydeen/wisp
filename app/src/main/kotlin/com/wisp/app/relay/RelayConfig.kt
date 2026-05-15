@@ -2,22 +2,11 @@ package com.wisp.app.relay
 
 import kotlinx.serialization.Serializable
 
-enum class LocalRelayWritePolicy { OWN_NOTES, TAGGED, ALL_NOTES }
-
-@Serializable
-data class LocalRelayConfig(
-    val url: String,
-    val enabled: Boolean = true,
-    val writePolicy: LocalRelayWritePolicy = LocalRelayWritePolicy.OWN_NOTES,
-    val kinds: Set<Int> = setOf(1, 1059, 9735)
-)
-
 enum class RelaySetType(val displayName: String, val eventKind: Int) {
     GENERAL("General", 10002),
     DM("DM", 10050),
     SEARCH("Search", 10007),
-    BLOCKED("Blocked", 10006),
-    LOCAL("Local", 0)
+    BLOCKED("Blocked", 10006)
 }
 
 @Serializable
@@ -67,18 +56,5 @@ data class RelayConfig(
             return true
         }
 
-        private val LOCAL_HOST_REGEX = Regex(
-            "^ws://(" +
-                "localhost|" +
-                "127\\.0\\.0\\.1|" +
-                "10\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|" +
-                "192\\.168\\.\\d{1,3}\\.\\d{1,3}|" +
-                "172\\.(1[6-9]|2\\d|3[01])\\.\\d{1,3}\\.\\d{1,3}|" +
-                "[\\w.-]+:\\d+" +    // any host with explicit port
-            ")(:\\d+)?(/.*)?$"
-        )
-
-        /** Returns true if the URL is a local/private relay (ws:// with localhost, loopback, or private IP). */
-        fun isLocalRelayUrl(url: String): Boolean = LOCAL_HOST_REGEX.matches(url)
     }
 }
