@@ -258,6 +258,18 @@ class WalletViewModel(
     private val _backupMissing = MutableStateFlow(false)
     val backupMissing: StateFlow<Boolean> = _backupMissing
 
+    /** True for the nsec-derived default wallet — drives copy/visibility tweaks. */
+    private val _isDefaultWallet = MutableStateFlow(sparkRepo.isDefaultWallet())
+    val isDefaultWallet: StateFlow<Boolean> = _isDefaultWallet
+
+    /**
+     * Set after [deleteWallet] so a subsequent [navigateHome] doesn't
+     * immediately re-derive the default wallet — the user explicitly
+     * disconnected to pick a different one. Persisted in
+     * [WalletModeRepository] so the choice survives app restarts.
+     */
+    private var skipAutoCreate: Boolean = walletModeRepo.isAutoCreateSkipped()
+
     private val _registeredAddress = MutableStateFlow<String?>(null)
 
     private var connectJob: Job? = null
@@ -332,8 +344,13 @@ class WalletViewModel(
     fun navigateTo(page: WalletPage) {
         pageStack.add(page)
         _currentPage.value = page
-        // Auto-check relay backup statuses when entering Settings
-        if (page is WalletPage.Settings && _walletMode.value == WalletMode.SPARK && keyRepo.isLoggedIn()) {
+        // Auto-check relay backup statuses when entering Settings.
+        // Default wallets re-derive from the nsec so they don't use relay backup.
+        if (page is WalletPage.Settings
+            && _walletMode.value == WalletMode.SPARK
+            && keyRepo.isLoggedIn()
+            && !sparkRepo.isDefaultWallet()
+        ) {
             checkRelayBackupStatuses()
         }
     }
@@ -359,6 +376,52 @@ class WalletViewModel(
         _deleteConfirmText.value = ""
         _lightningAddressError.value = null
         _addressAvailable.value = null
+
+        maybeAutoCreateDefaultWallet()
+    }
+
+    /**
+     * Auto-create the nsec-derived default wallet on first wallet-tab entry.
+     * No-ops unless the user is logged in with a local privkey and has no
+     * wallet configured. The user lands directly on the wallet Home screen
+     * once connection completes — they never see ModeSelection or the
+     * seed-phrase backup gate.
+     */
+    private fun maybeAutoCreateDefaultWallet() {
+        if (skipAutoCreate) return
+        if (_walletMode.value != WalletMode.NONE) return
+        if (sparkRepo.hasMnemonic()) return
+        if (!keyRepo.hasKeypair()) return
+        startDefaultWallet()
+    }
+
+    /**
+     * Public action for the SparkSetup screen's "Use my default wallet" CTA.
+     * Re-derives the nsec-tied wallet after the user previously disconnected.
+     */
+    fun useDefaultWallet() {
+        if (!keyRepo.hasKeypair()) return
+        // Replace any existing wallet (the user explicitly chose to switch)
+        if (sparkRepo.hasMnemonic()) {
+            sparkRepo.disconnect()
+            sparkRepo.clearMnemonic()
+        }
+        startDefaultWallet()
+    }
+
+    private fun startDefaultWallet() {
+        val keypair = keyRepo.getKeypair() ?: return
+        sparkRepo.generateDefaultFromPrivkey(keypair.privkey)
+        _isDefaultWallet.value = true
+        _seedBackupAcked.value = true
+        skipAutoCreate = false
+        walletModeRepo.setAutoCreateSkipped(false)
+        // Show SparkSetup's Connecting state instead of a brief ModeSelection flicker.
+        if (_currentPage.value !is WalletPage.SparkSetup) {
+            pageStack.add(WalletPage.SparkSetup)
+            _currentPage.value = WalletPage.SparkSetup
+        }
+        connectSparkWallet()
     }
 
     val isOnHome: Boolean get() = pageStack.size <= 1
@@ -532,6 +595,8 @@ class WalletViewModel(
 
         walletModeRepo.setMode(WalletMode.NWC)
         _walletMode.value = WalletMode.NWC
+        skipAutoCreate = false
+        walletModeRepo.setAutoCreateSkipped(false)
 
         _statusLines.value = emptyList()
         if (!silent) _walletState.value = WalletState.Connecting
@@ -553,6 +618,9 @@ class WalletViewModel(
     fun generateSparkWallet() {
         val mnemonic = sparkRepo.newMnemonic()
         sparkRepo.saveMnemonic(mnemonic)
+        _isDefaultWallet.value = false
+        skipAutoCreate = false
+        walletModeRepo.setAutoCreateSkipped(false)
         connectSparkWallet()
     }
 
@@ -571,6 +639,9 @@ class WalletViewModel(
         }
         Log.d("WalletBackup", "restoreSparkWallet: saving and connecting")
         sparkRepo.saveMnemonic(trimmed)
+        _isDefaultWallet.value = false
+        skipAutoCreate = false
+        walletModeRepo.setAutoCreateSkipped(false)
         connectSparkWallet()
     }
 
@@ -593,7 +664,7 @@ class WalletViewModel(
         viewModelScope.launch {
             sparkRepo.isConnected.first { it }
             fetchLightningAddress()
-            if (keyRepo.isLoggedIn()) {
+            if (keyRepo.isLoggedIn() && !sparkRepo.isDefaultWallet()) {
                 checkRelayBackupStatuses()
             }
         }
@@ -667,11 +738,19 @@ class WalletViewModel(
     }
 
     fun deleteWallet() {
-        if (_walletMode.value == WalletMode.SPARK && _deleteConfirmText.value != "DELETE") return
+        // Custom (non-default) Spark wallets are irreversible without their
+        // seed phrase, so we require the typed DELETE confirmation. Default
+        // wallets re-derive from the nsec on demand, so a tap is enough.
+        if (_walletMode.value == WalletMode.SPARK
+            && !sparkRepo.isDefaultWallet()
+            && _deleteConfirmText.value != "DELETE"
+        ) return
 
         connectJob?.cancel()
         statusCollectJob?.cancel()
         connectionMonitorJob?.cancel()
+
+        val wasSpark = _walletMode.value == WalletMode.SPARK
 
         when (_walletMode.value) {
             WalletMode.NWC -> {
@@ -692,7 +771,23 @@ class WalletViewModel(
         _statusLines.value = emptyList()
         _lightningAddress.value = null
         _deleteConfirmText.value = ""
-        navigateHome()
+        _isDefaultWallet.value = false
+
+        // Suppress the auto-create on the next navigateHome — the user
+        // explicitly disconnected to choose a different wallet. They'll land
+        // on the SparkSetup screen with the three options. Persist so the
+        // choice survives app restarts.
+        skipAutoCreate = true
+        walletModeRepo.setAutoCreateSkipped(true)
+
+        pageStack.clear()
+        pageStack.add(WalletPage.Home)
+        if (wasSpark && keyRepo.hasKeypair()) {
+            pageStack.add(WalletPage.SparkSetup)
+            _currentPage.value = WalletPage.SparkSetup
+        } else {
+            _currentPage.value = WalletPage.Home
+        }
     }
 
     fun disconnectWallet() {
@@ -750,6 +845,9 @@ class WalletViewModel(
 
     fun refreshState() {
         _walletMode.value = walletModeRepo.getMode()
+        _isDefaultWallet.value = sparkRepo.isDefaultWallet()
+        _seedBackupAcked.value = sparkRepo.isSeedBackupAcknowledged()
+        skipAutoCreate = walletModeRepo.isAutoCreateSkipped()
         val mode = _walletMode.value
         val provider = activeProvider
 

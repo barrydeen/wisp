@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.wisp.app.BuildConfig
+import com.wisp.app.nostr.Keys
 import java.io.File
 import java.security.SecureRandom
 
@@ -112,16 +113,38 @@ class SparkRepository(
     override fun hasConnection(): Boolean = hasMnemonic()
 
     fun newMnemonic(): String {
-        val wordlist = BIP39_WORDS
-        if (wordlist.size < 2048) {
-            // Fallback: generate 16 random bytes and hex-encode as a placeholder.
-            // The user should provide a proper BIP39 mnemonic via restore.
-            error("BIP39 wordlist not available. Bundle bip39-english.txt in resources.")
-        }
+        val wordlist = requireWordlist()
         val random = SecureRandom()
         val entropy = ByteArray(16) // 128 bits → 12 words
         random.nextBytes(entropy)
         return entropyToMnemonic(entropy, wordlist)
+    }
+
+    /**
+     * Generate a BIP39 mnemonic deterministically from a Nostr private key.
+     * The same privkey always produces the same mnemonic, so a user's default
+     * Spark wallet is recoverable on any device by signing in with their nsec.
+     *
+     * Saves the mnemonic and marks it as the default wallet (skips backup nags).
+     */
+    fun generateDefaultFromPrivkey(privkey: ByteArray): String {
+        val wordlist = requireWordlist()
+        val entropy = Keys.deriveSparkEntropy(privkey)
+        val mnemonic = entropyToMnemonic(entropy, wordlist)
+        encPrefs.edit()
+            .putString("spark_mnemonic", mnemonic)
+            .putBoolean("spark_is_default", true)
+            .putBoolean("seed_backup_acked", true)
+            .apply()
+        return mnemonic
+    }
+
+    private fun requireWordlist(): List<String> {
+        val wordlist = BIP39_WORDS
+        if (wordlist.size < 2048) {
+            error("BIP39 wordlist not available. Bundle bip39-english.txt in resources.")
+        }
+        return wordlist
     }
 
     private fun entropyToMnemonic(entropy: ByteArray, wordlist: List<String>): String {
@@ -191,10 +214,15 @@ class SparkRepository(
         encPrefs.edit()
             .remove("spark_mnemonic")
             .remove("seed_backup_acked")
+            .remove("spark_is_default")
             .apply()
         _balance.value = null
         _isConnected.value = false
     }
+
+    /** True when the current wallet was derived from the user's nsec. */
+    fun isDefaultWallet(): Boolean =
+        encPrefs.getBoolean("spark_is_default", false)
 
     fun isSeedBackupAcknowledged(): Boolean =
         encPrefs.getBoolean("seed_backup_acked", false)

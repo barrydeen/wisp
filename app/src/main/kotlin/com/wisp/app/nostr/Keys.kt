@@ -68,6 +68,22 @@ object Keys {
         val sharedPoint = secp256k1.pubKeyTweakMul(pubkeyCompressed, privkey)
         return sharedPoint.copyOfRange(1, 33)
     }
+
+    /**
+     * Derive 16 bytes of entropy from a Nostr private key, suitable for seeding
+     * a BIP39 12-word mnemonic. Used to produce a default Spark wallet that is
+     * deterministically tied to the user's nsec — the nsec is the only backup
+     * needed.
+     *
+     * HKDF-SHA256(salt="wisp-spark-wallet-v1", ikm=privkey, info="entropy", L=16).
+     * The versioned salt locks this derivation to v1; any future change must
+     * bump the salt so existing wallets remain reachable from the same nsec.
+     */
+    fun deriveSparkEntropy(privkey: ByteArray): ByteArray {
+        require(privkey.size == 32) { "Private key must be 32 bytes" }
+        val prk = Hkdf.extract("wisp-spark-wallet-v1".toByteArray(Charsets.UTF_8), privkey)
+        return Hkdf.expand(prk, "entropy".toByteArray(Charsets.UTF_8), 16)
+    }
 }
 
 /** Zero out sensitive byte arrays to minimize key exposure in memory. */

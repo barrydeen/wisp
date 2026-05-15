@@ -862,4 +862,9 @@
     <string name="wallet_fee_money">fee: %1$s</string>
     <string name="wallet_seed_spark_only">This recovery phrase is specific to Spark wallets. It will not work with other wallet apps.</string>
     <string name="wallet_generate_invoice">Generate invoice</string>
+    <string name="wallet_use_default">Use my default wallet</string>
+    <string name="wallet_default_subtitle">Derived from your Nostr key — no extra backup needed.</string>
+    <string name="wallet_switch_wallet">Switch Wallet</string>
+    <string name="wallet_switch_wallet_body">Disconnect this wallet so you can use your default wallet or restore a different one. Your funds stay safe — you can reconnect this wallet anytime by entering its recovery phrase.</string>
+    <string name="wallet_default_seed_info">This wallet is derived from your Nostr key, so the phrase below is just for export to other wallet apps. You don\'t need to back it up — your nsec is the backup.</string>
 </resources>

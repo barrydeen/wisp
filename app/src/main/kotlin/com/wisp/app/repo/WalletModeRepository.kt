@@ -35,6 +35,17 @@ class WalletModeRepository(private val context: Context, pubkeyHex: String? = nu
         prefs.edit().putString("balance_unit", unit.name).apply()
     }
 
+    /**
+     * True once the user has explicitly disconnected a wallet on this account.
+     * Disables the first-entry auto-creation of the default Spark wallet so the
+     * user isn't surprised by it reappearing after they deliberately removed it.
+     */
+    fun isAutoCreateSkipped(): Boolean = prefs.getBoolean("auto_create_skipped", false)
+
+    fun setAutoCreateSkipped(skipped: Boolean) {
+        prefs.edit().putBoolean("auto_create_skipped", skipped).apply()
+    }
+
     companion object {
         private fun prefsName(pubkeyHex: String?) =
             if (pubkeyHex != null) "wisp_wallet_mode_$pubkeyHex" else "wisp_wallet_mode"

@@ -5,13 +5,10 @@ import org.bouncycastle.crypto.engines.ChaCha7539Engine
 import org.bouncycastle.crypto.params.KeyParameter
 import org.bouncycastle.crypto.params.ParametersWithIV
 import java.security.SecureRandom
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 
 object Nip44 {
     private const val VERSION: Byte = 0x02
     private val random = SecureRandom()
-    private val hmacLocal = ThreadLocal.withInitial { Mac.getInstance("HmacSHA256") }
     private val chachaLocal = ThreadLocal.withInitial { ChaCha7539Engine() }
 
     /**
@@ -22,7 +19,7 @@ object Nip44 {
         val compressed = Keys.pubkeyToCompressed(pubkey)
         val sharedSecret = Keys.ecdh(privkey, compressed)
         // HKDF-Extract(salt="nip44-v2", ikm=sharedSecret) -> conversation key
-        return hkdfExtract("nip44-v2".toByteArray(Charsets.UTF_8), sharedSecret)
+        return Hkdf.extract("nip44-v2".toByteArray(Charsets.UTF_8), sharedSecret)
     }
 
     /**
@@ -51,7 +48,7 @@ object Nip44 {
 
         // HMAC-SHA256 over nonce || ciphertext
         val hmacInput = nonce + ciphertext
-        val mac = hmacSha256(hmacKey, hmacInput)
+        val mac = Hkdf.hmacSha256(hmacKey, hmacInput)
 
         // Assemble payload: version || nonce || ciphertext || hmac
         val payload = byteArrayOf(VERSION) + nonce + ciphertext + mac
@@ -80,7 +77,7 @@ object Nip44 {
         val hmacKey = messageKeys.copyOfRange(44, 76)
 
         // Verify HMAC before decryption (encrypt-then-MAC)
-        val expectedMac = hmacSha256(hmacKey, nonce + ciphertext)
+        val expectedMac = Hkdf.hmacSha256(hmacKey, nonce + ciphertext)
         require(constantTimeEquals(mac, expectedMac)) { "HMAC verification failed" }
 
         // Decrypt
@@ -122,40 +119,12 @@ object Nip44 {
         return ((unpaddedLen + chunk - 1) / chunk) * chunk
     }
 
-    // --- HKDF ---
-
-    private fun hkdfExtract(salt: ByteArray, ikm: ByteArray): ByteArray {
-        return hmacSha256(salt, ikm)
-    }
-
-    private fun hkdfExpand(prk: ByteArray, info: ByteArray, length: Int): ByteArray {
-        require(length <= 255 * 32)
-        val n = (length + 31) / 32
-        var t = ByteArray(0)
-        val okm = ByteArray(length)
-        var offset = 0
-        for (i in 1..n) {
-            val input = t + info + byteArrayOf(i.toByte())
-            t = hmacSha256(prk, input)
-            val copyLen = minOf(32, length - offset)
-            System.arraycopy(t, 0, okm, offset, copyLen)
-            offset += copyLen
-        }
-        return okm
-    }
-
     private fun deriveMessageKeys(conversationKey: ByteArray, nonce: ByteArray): ByteArray {
         // HKDF-Expand(prk=conversationKey, info=nonce, len=76)
-        return hkdfExpand(conversationKey, nonce, 76)
+        return Hkdf.expand(conversationKey, nonce, 76)
     }
 
     // --- Crypto Primitives ---
-
-    private fun hmacSha256(key: ByteArray, data: ByteArray): ByteArray {
-        val mac = hmacLocal.get()
-        mac.init(SecretKeySpec(key, "HmacSHA256"))
-        return mac.doFinal(data)
-    }
 
     private fun chacha20Encrypt(key: ByteArray, nonce: ByteArray, input: ByteArray): ByteArray {
         val engine = chachaLocal.get()
