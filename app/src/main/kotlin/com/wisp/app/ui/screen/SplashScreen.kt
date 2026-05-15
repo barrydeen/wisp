@@ -1,6 +1,6 @@
 package com.wisp.app.ui.screen
 
-import androidx.compose.foundation.Image
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -15,23 +15,38 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -40,16 +55,23 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import coil3.compose.AsyncImage
 import com.wisp.app.R
+import com.wisp.app.auth.NostrCredentialSaver
+import com.wisp.app.viewmodel.AuthViewModel
 import com.wisp.app.viewmodel.LiveMetrics
 import com.wisp.app.viewmodel.SplashViewModel
+import kotlinx.coroutines.launch
 
 private val AVATAR_SIZE = 44.dp
 private val AVATAR_GAP = 4.dp
@@ -57,8 +79,9 @@ private val AVATAR_GAP = 4.dp
 @Composable
 fun SplashScreen(
     viewModel: SplashViewModel,
-    onSignUp: () -> Unit,
-    onLogIn: () -> Unit,
+    authViewModel: AuthViewModel,
+    onAccountCreated: () -> Unit,
+    onLoggedIn: () -> Unit,
     onContinueWithGoogle: () -> Unit
 ) {
     val profilePictures by viewModel.profilePictures.collectAsState()
@@ -66,11 +89,12 @@ fun SplashScreen(
     val backgroundColor = MaterialTheme.colorScheme.background
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
+    var showNostrSheet by remember { mutableStateOf(false) }
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(backgroundColor)) {
         val cols = ((maxWidth + AVATAR_GAP) / (AVATAR_SIZE + AVATAR_GAP)).toInt().coerceAtLeast(1)
         val screenHeightPx = constraints.maxHeight.toFloat()
 
-        // Use real pictures, or placeholder circles while loading
         val pics = profilePictures.ifEmpty {
             val placeholderRows = ((maxHeight + AVATAR_GAP) / (AVATAR_SIZE + AVATAR_GAP)).toInt() + 1
             List(placeholderRows * cols) { "" }
@@ -78,7 +102,6 @@ fun SplashScreen(
 
         val rows = (pics.size + cols - 1) / cols
 
-        // Background collage — each picture shown at most once, no cycling
         Column(modifier = Modifier.align(Alignment.TopCenter)) {
             for (row in 0 until rows) {
                 Row {
@@ -86,8 +109,6 @@ fun SplashScreen(
                         val idx = row * cols + col
                         if (idx >= pics.size) break
                         val url = pics[idx]
-                        // Background circle always visible; image loads on top.
-                        // Slow or failed loads show the filled circle instead of a gap.
                         Box(
                             modifier = Modifier
                                 .size(AVATAR_SIZE)
@@ -110,7 +131,6 @@ fun SplashScreen(
             }
         }
 
-        // Gradient fades the collage into the background toward the bottom
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -123,7 +143,6 @@ fun SplashScreen(
                 )
         )
 
-        // Logo, tagline, and action buttons pinned to bottom
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
@@ -217,20 +236,195 @@ fun SplashScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            OutlinedButton(
-                onClick = onSignUp,
-                modifier = Modifier.fillMaxWidth()
+            Button(
+                onClick = { showNostrSheet = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF1A0E2E),
+                    contentColor = Color(0xFFE9DDFF)
+                ),
+                border = BorderStroke(1.dp, Color(0xFF8E30EB))
             ) {
-                Text(stringResource(R.string.splash_create_account))
+                Icon(
+                    painter = painterResource(R.drawable.ic_nostr_ostrich),
+                    contentDescription = null,
+                    tint = Color.Unspecified,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = stringResource(R.string.splash_continue_with_nostr),
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontFamily = FontFamily.SansSerif,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 15.sp
+                    )
+                )
+            }
+        }
+    }
+
+    if (showNostrSheet) {
+        NostrLoginSheet(
+            authViewModel = authViewModel,
+            onDismiss = { showNostrSheet = false },
+            onAccountCreated = {
+                showNostrSheet = false
+                onAccountCreated()
+            },
+            onLoggedIn = {
+                showNostrSheet = false
+                onLoggedIn()
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NostrLoginSheet(
+    authViewModel: AuthViewModel,
+    onDismiss: () -> Unit,
+    onAccountCreated: () -> Unit,
+    onLoggedIn: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val nsecInput by authViewModel.nsecInput.collectAsState()
+    val error by authViewModel.error.collectAsState()
+    var nsecVisible by remember { mutableStateOf(false) }
+    var isCreating by remember { mutableStateOf(false) }
+    var autofillRequested by remember { mutableStateOf(false) }
+
+    ModalBottomSheet(
+        onDismissRequest = { if (!isCreating) onDismiss() },
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_nostr_ostrich),
+                contentDescription = stringResource(R.string.cd_nostr_logo),
+                tint = Color.Unspecified,
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.nostr_sheet_title),
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.W600
+                ),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = stringResource(R.string.nostr_sheet_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            OutlinedTextField(
+                value = nsecInput,
+                onValueChange = { authViewModel.updateNsecInput(it) },
+                label = { Text(stringResource(R.string.auth_nsec_or_npub)) },
+                singleLine = true,
+                visualTransformation = if (nsecVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                trailingIcon = {
+                    IconButton(onClick = { nsecVisible = !nsecVisible }) {
+                        Icon(
+                            imageVector = if (nsecVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                            contentDescription = if (nsecVisible) stringResource(R.string.auth_hide_key) else stringResource(R.string.auth_show_key)
+                        )
+                    }
+                },
+                enabled = !isCreating,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { focusState ->
+                        if (focusState.isFocused && !autofillRequested && nsecInput.isBlank()) {
+                            autofillRequested = true
+                            val activity = context as? ComponentActivity
+                                ?: return@onFocusChanged
+                            scope.launch {
+                                val saved = NostrCredentialSaver.loadSavedNsec(activity)
+                                if (!saved.isNullOrBlank() && authViewModel.nsecInput.value.isBlank()) {
+                                    authViewModel.updateNsecInput(saved)
+                                }
+                            }
+                        }
+                    }
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            Button(
+                onClick = {
+                    if (authViewModel.logIn()) onLoggedIn()
+                },
+                enabled = nsecInput.isNotBlank() && !isCreating,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(24.dp)
+            ) {
+                Text(stringResource(R.string.auth_log_in))
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(20.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+            Spacer(Modifier.height(20.dp))
 
             OutlinedButton(
-                onClick = onLogIn,
-                modifier = Modifier.fillMaxWidth()
+                onClick = {
+                    if (isCreating) return@OutlinedButton
+                    scope.launch {
+                        isCreating = true
+                        try {
+                            if (authViewModel.signUp()) {
+                                val nsec = authViewModel.getCurrentNsec()
+                                val npub = authViewModel.npub.value
+                                val activity = context as? ComponentActivity
+                                if (activity != null && nsec != null && npub != null) {
+                                    NostrCredentialSaver.saveNsec(activity, npub, nsec)
+                                }
+                                onAccountCreated()
+                            }
+                        } finally {
+                            isCreating = false
+                        }
+                    }
+                },
+                enabled = !isCreating,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(24.dp)
             ) {
-                Text(stringResource(R.string.splash_log_in))
+                Text(
+                    if (isCreating) stringResource(R.string.nostr_sheet_creating)
+                    else stringResource(R.string.nostr_sheet_create)
+                )
+            }
+
+            error?.let {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
     }
@@ -258,10 +452,4 @@ private fun OnlineCard(metrics: LiveMetrics) {
             )
         }
     }
-}
-
-private fun formatCount(n: Int): String = when {
-    n >= 1_000_000 -> "${"%.1f".format(n / 1_000_000f)}M"
-    n >= 1_000 -> "${"%.1f".format(n / 1_000f)}k"
-    else -> n.toString()
 }

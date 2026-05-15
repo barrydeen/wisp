@@ -46,6 +46,14 @@
     <string name="splash_create_account">Create Account</string>
     <string name="splash_log_in">Log In</string>
     <string name="splash_continue_with_google">Continue with Google</string>
+    <string name="splash_continue_with_nostr">Continue with Nostr</string>
+    <string name="cd_nostr_logo">Nostr logo</string>
+
+    <!-- Continue-with-Nostr bottom sheet -->/
+    <string name="nostr_sheet_title">Continue with Nostr</string>
+    <string name="nostr_sheet_body">Enter your existing key, or create a new account. Your key never leaves the device.</string>
+    <string name="nostr_sheet_create">Create new account</string>
+    <string name="nostr_sheet_creating">Creating…</string>
 
     <!-- Google Sign-In / Drive Backup -->
     <!-- Replace this empty string with your OAuth 2.0 Web Client ID from Google Cloud Console. -->

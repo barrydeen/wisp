@@ -34,6 +34,11 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
 
     val isLoggedIn: Boolean get() = keyRepo.isLoggedIn()
 
+    fun getCurrentNsec(): String? {
+        val keypair = keyRepo.getKeypair() ?: return null
+        return Nip19.nsecEncode(keypair.privkey)
+    }
+
     fun updateNsecInput(value: String) {
         _nsecInput.value = value
         _error.value = null

@@ -613,15 +613,27 @@ fun WispNavHost(
         composable(Routes.SPLASH) {
             SplashScreen(
                 viewModel = splashViewModel,
-                onSignUp = {
-                    if (authViewModel.signUp()) {
-                        navController.navigate(Routes.ONBOARDING_PROFILE) {
-                            popUpTo(Routes.SPLASH) { inclusive = true }
-                        }
+                authViewModel = authViewModel,
+                onAccountCreated = {
+                    navController.navigate(Routes.ONBOARDING_PROFILE) {
+                        popUpTo(Routes.SPLASH) { inclusive = true }
                     }
                 },
-                onLogIn = {
-                    navController.navigate(Routes.AUTH)
+                onLoggedIn = {
+                    feedViewModel.reloadForNewAccount()
+                    relayViewModel.reload()
+                    blossomServersViewModel.reload()
+                    composeViewModel.reloadBlossomRepo()
+                    feedViewModel.initRelays()
+                    walletViewModel.refreshState()
+                    authViewModel.keyRepo.markOnboardingComplete()
+                    val target = if (authViewModel.keyRepo.isReadOnly())
+                        Routes.LOADING
+                    else
+                        Routes.EXISTING_USER_ONBOARDING
+                    navController.navigate(target) {
+                        popUpTo(Routes.SPLASH) { inclusive = true }
+                    }
                 },
                 onContinueWithGoogle = {
                     navController.navigate(Routes.GOOGLE_AUTH)
