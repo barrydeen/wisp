@@ -16,7 +16,6 @@ import com.wisp.app.nostr.NotificationGroup
 import com.wisp.app.nostr.NotificationSummary
 import com.wisp.app.nostr.NotificationType
 import com.wisp.app.nostr.ProfileData
-import com.wisp.app.nostr.SignerCancelledException
 import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.nostr.toHex
 import com.wisp.app.relay.RelayConfig
@@ -415,8 +414,6 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
                     if (pool.hasDmRelays()) pool.sendToDmRelays(ClientMessage.event(selfWrap))
                     else pool.sendToWriteRelays(ClientMessage.event(selfWrap))
                 }
-            } catch (e: SignerCancelledException) {
-                Log.w("NotifVM", "DM reaction signing cancelled", e)
             } catch (e: Exception) {
                 Log.w("NotifVM", "DM reaction failed", e)
             }
@@ -513,8 +510,6 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
                     repo.addMessage(dmMsg, convKey)
                     repo.markGiftWrapSeen(selfWrap.id, dmMsg.id)
                 }
-            } catch (e: SignerCancelledException) {
-                Log.w("NotifVM", "DM signing cancelled", e)
             } catch (e: Exception) {
                 Log.w("NotifVM", "DM send failed", e)
             } finally {

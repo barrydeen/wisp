@@ -32,7 +32,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
@@ -42,9 +41,6 @@ import com.wisp.app.nostr.NostrUriData
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.nostr.LocalSigner
-import com.wisp.app.nostr.RemoteSigner
-import com.wisp.app.nostr.SignerIntentBridge
-import com.wisp.app.nostr.SignResult
 import com.wisp.app.repo.SigningMode
 import android.content.Context
 import androidx.compose.runtime.rememberCoroutineScope
@@ -206,7 +202,6 @@ fun WispNavHost(
     val dmListViewModel: DmListViewModel = viewModel()
     val groupListViewModel: com.wisp.app.viewmodel.GroupListViewModel = viewModel()
     val blossomServersViewModel: BlossomServersViewModel = viewModel()
-    val appContext = LocalContext.current.applicationContext
     val walletViewModel: WalletViewModel = viewModel(
         factory = object : androidx.lifecycle.ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
@@ -218,7 +213,6 @@ fun WispNavHost(
                     feedViewModel.eventRepo,
                     feedViewModel.relayPool,
                     feedViewModel.keyRepo,
-                    appContext.contentResolver
                 ) as T
             }
         }
@@ -234,18 +228,13 @@ fun WispNavHost(
 
     relayViewModel.relayPool = feedViewModel.relayPool
 
-    // Unified signer — handles both LOCAL (nsec) and REMOTE (NIP-55) modes
-    // Reactive: recomposes on login, logout, and account switch
+    // Signer for the active account: LOCAL → LocalSigner; READ_ONLY (or signed out) → null.
+    // Reactive: recomposes on login, logout, and account switch.
     val context = LocalContext.current
     val signingMode by authViewModel.signingModeFlow.collectAsState()
     val npub by authViewModel.npub.collectAsState()
     val activeSigner = remember(signingMode, npub) {
         when (signingMode) {
-            SigningMode.REMOTE -> {
-                val pubkey = authViewModel.keyRepo.getPubkeyHex() ?: ""
-                val pkg = authViewModel.keyRepo.getSignerPackage() ?: ""
-                RemoteSigner(pubkey, context.contentResolver, pkg)
-            }
             SigningMode.LOCAL -> {
                 authViewModel.keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) }
             }
@@ -257,27 +246,6 @@ fun WispNavHost(
     // Push signer into FeedViewModel when it becomes available
     LaunchedEffect(activeSigner) {
         activeSigner?.let { feedViewModel.setSigner(it) }
-    }
-
-    // NIP-55 intent-based signing fallback — launches signer UI when ContentResolver fails
-    val signerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { activityResult ->
-        if (activityResult.resultCode == Activity.RESULT_OK) {
-            val data = activityResult.data
-            val signature = data?.getStringExtra("signature") ?: data?.getStringExtra("result") ?: ""
-            val event = data?.getStringExtra("event")
-            SignerIntentBridge.deliverResult(SignResult.Success(signature, event))
-        } else {
-            SignerIntentBridge.deliverResult(SignResult.Cancelled)
-        }
-    }
-
-    val pendingSignRequest by SignerIntentBridge.pendingRequest.collectAsState()
-    LaunchedEffect(pendingSignRequest) {
-        pendingSignRequest?.let { request ->
-            signerLauncher.launch(request.intent)
-        }
     }
 
     var replyTarget by remember { mutableStateOf<NostrEvent?>(null) }

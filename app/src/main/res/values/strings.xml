@@ -69,7 +69,6 @@
     <!-- Auth Screen -->
     <string name="auth_sign_up">Sign Up</string>
     <string name="auth_log_in">Log In</string>
-    <string name="auth_login_with_signer">Login with Signer</string>
     <string name="auth_or_log_in_with_key">Or log in with your key</string>
     <string name="auth_nsec_or_npub">nsec or npub…</string>
     <string name="auth_wisp">wisp</string>
@@ -529,14 +528,6 @@
     <string name="settings_private_key">Private Key</string>
     <string name="settings_public_key_copied">Public key copied</string>
     <string name="settings_private_key_copied">Private key copied</string>
-    <string name="settings_remote_signer">Remote Signer</string>
-    <string name="settings_remote_signer_description">Your private key lives in a separate signer app and never leaves it.</string>
-    <string name="settings_remote_signer_status_checking">Checking…</string>
-    <string name="settings_remote_signer_status_available">Available</string>
-    <string name="settings_remote_signer_status_unavailable">Signer app not installed</string>
-    <string name="settings_remote_signer_status_none">No signer package recorded for this account.</string>
-    <string name="settings_remote_signer_package">Signer App</string>
-    <string name="settings_remote_signer_refresh">Refresh</string>
     <string name="settings_authenticate_view_key">Authenticate to view your private key</string>
     <string name="settings_auth_failed">Authentication failed: %s</string>
     <string name="settings_never_share_key">Never share your private key. Anyone with your nsec has full control of your account.</string>

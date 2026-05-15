@@ -57,7 +57,6 @@
     <!-- Auth Screen -->
     <string name="auth_sign_up">Registrati</string>
     <string name="auth_log_in">Accedi</string>
-    <string name="auth_login_with_signer">Accedi con Signer</string>
     <string name="auth_or_log_in_with_key">O accedi con la tua chiave</string>
     <string name="auth_nsec_or_npub">nsec o npub…</string>
     <string name="auth_wisp">wisp</string>

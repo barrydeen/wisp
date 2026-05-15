@@ -57,7 +57,6 @@
     <!-- Auth Screen -->
     <string name="auth_sign_up">회원가입</string>
     <string name="auth_log_in">로그인</string>
-    <string name="auth_login_with_signer">서명으로 로그인</string>
     <string name="auth_or_log_in_with_key">또는 키로 로그인</string>
     <string name="auth_nsec_or_npub">nsec 또는 npub…</string>
     <string name="auth_wisp">wisp</string>
