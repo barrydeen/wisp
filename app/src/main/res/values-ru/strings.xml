@@ -50,7 +50,6 @@
     <string name="title_community">Сообщество</string>
     <string name="auth_sign_up">Регистрация</string>
     <string name="auth_log_in">Войти</string>
-    <string name="auth_login_with_signer">Войти через подписчик</string>
     <string name="auth_or_log_in_with_key">Или войдите по ключу</string>
     <string name="auth_nsec_or_npub">nsec или npub…</string>
     <string name="auth_wisp">wisp</string>

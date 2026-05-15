@@ -57,7 +57,6 @@
     <!-- Auth Screen -->
     <string name="auth_sign_up">注册</string>
     <string name="auth_log_in">登录</string>
-    <string name="auth_login_with_signer">使用签名器登录</string>
     <string name="auth_or_log_in_with_key">或使用密钥登录</string>
     <string name="auth_nsec_or_npub">nsec 或 npub…</string>
     <string name="auth_wisp">wisp</string>

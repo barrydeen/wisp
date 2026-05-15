@@ -593,12 +593,6 @@ class EventRouter(
 
     private fun processGiftWrap(event: NostrEvent, relayUrl: String) {
         dmRepo.updateLatestGiftWrapTimestamp(event.created_at)
-        // Remote signer mode: store raw gift wraps, decrypt later when user views DMs
-        if (keyRepo.getSigningMode() == SigningMode.REMOTE) {
-            dmRepo.addPendingGiftWrap(event, relayUrl)
-            return
-        }
-
         val keypair = keyRepo.getKeypair() ?: return
         val myPubkey = keypair.pubkey.toHex()
 
