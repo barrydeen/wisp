@@ -340,8 +340,9 @@ fun ComposeScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = {
+                            val nextState = !explicit
                             viewModel.toggleExplicit()
-                            android.widget.Toast.makeText(context, "NSFW: hides the post behind a sensitive-content warning", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "NSFW ${if (nextState) "ON" else "OFF"}", android.widget.Toast.LENGTH_SHORT).show()
                         }) {
                             Icon(
                                 Icons.Outlined.Warning,
@@ -352,8 +353,12 @@ fun ComposeScreen(
                         }
 
                         IconButton(onClick = {
-                            powPrefs?.let { viewModel.togglePow(it) }
-                            android.widget.Toast.makeText(context, "Proof of work: mines a hash before publishing to deter spam", android.widget.Toast.LENGTH_SHORT).show()
+                            val prefs = powPrefs
+                            if (prefs != null) {
+                                val nextState = !powEnabled
+                                viewModel.togglePow(prefs)
+                                android.widget.Toast.makeText(context, "Mining ${if (nextState) "ON" else "OFF"}", android.widget.Toast.LENGTH_SHORT).show()
+                            }
                         }) {
                             Icon(
                                 Icons.Outlined.Shield,
@@ -740,8 +745,9 @@ fun ComposeScreen(
                         }
 
                         IconButton(onClick = {
+                            val nextState = !explicit
                             viewModel.toggleExplicit()
-                            android.widget.Toast.makeText(context, "NSFW: hides the post behind a sensitive-content warning", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "NSFW ${if (nextState) "ON" else "OFF"}", android.widget.Toast.LENGTH_SHORT).show()
                         }) {
                             Icon(
                                 Icons.Outlined.Warning,
@@ -752,8 +758,12 @@ fun ComposeScreen(
                         }
 
                         IconButton(onClick = {
-                            powPrefs?.let { viewModel.togglePow(it) }
-                            android.widget.Toast.makeText(context, "Proof of work: mines a hash before publishing to deter spam", android.widget.Toast.LENGTH_SHORT).show()
+                            val prefs = powPrefs
+                            if (prefs != null) {
+                                val nextState = !powEnabled
+                                viewModel.togglePow(prefs)
+                                android.widget.Toast.makeText(context, "Mining ${if (nextState) "ON" else "OFF"}", android.widget.Toast.LENGTH_SHORT).show()
+                            }
                         }) {
                             Icon(
                                 Icons.Outlined.Shield,
@@ -776,8 +786,10 @@ fun ComposeScreen(
                         // (private replies don't carry gallery/poll/schedule/quote payloads in v1).
                         if (replyTo != null && quoteTo == null && !galleryMode && !pollEnabled && !scheduleEnabled) {
                             IconButton(onClick = {
+                                // Locked toggles short-circuit in the VM, so the state stays ON.
+                                val nextState = if (privateReplyLocked) true else !privateReply
                                 viewModel.togglePrivateReply()
-                                android.widget.Toast.makeText(context, "Private reply: encrypts the reply to the author only", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, "Private Reply ${if (nextState) "ON" else "OFF"}", android.widget.Toast.LENGTH_SHORT).show()
                             }) {
                                 Icon(
                                     imageVector = Icons.Outlined.VisibilityOff,
