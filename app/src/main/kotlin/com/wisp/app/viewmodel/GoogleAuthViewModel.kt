@@ -17,9 +17,12 @@ import com.wisp.app.repo.FiatPreferences
 import com.wisp.app.repo.KeyRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -30,22 +33,27 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import java.util.Collections
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 private const val TAG = "GoogleAuth"
 
 /**
  * Orchestrates the "Continue with Google" flow:
- *   1. Sign in via GoogleSignInManager → derive backup key from sub claim.
- *   2. List every backup in the user's Drive appDataFolder. Each filename
- *      embeds the npub (`wisp_nsec_<npub>.bin`) so we can show the chooser
- *      without downloading every file.
- *   3. UI shows a list of restorable accounts (if any) plus a "Create new
- *      account" option that's always available — users can keep adding new
- *      Nostr identities to the same Google account's backup space.
- *
- * The plaintext nsec only leaves Drive when the user actually picks Restore;
- * generation only happens when they pick Create.
+ *   1. Sign in via GoogleSignInManager → keep the JWT `sub` claim around.
+ *   2. List backups in the user's appData folder. Filenames are opaque
+ *      (`wisp_bk_<uuid>.bin`); the npub is recovered by decrypting.
+ *   3. Branch on what we find:
+ *        - Files exist → prompt for the user's PIN, try to decrypt each file,
+ *          and show the recovered accounts in the chooser. Files that fail to
+ *          decrypt are treated as belonging to a different (or wrong) PIN.
+ *        - No files → walk the user through setting a new PIN (enter, then
+ *          confirm) and create their first account.
+ *   4. From the chooser the user can restore one of the listed accounts or
+ *      add another account under the same Google login (PIN already known).
  */
 class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
@@ -60,10 +68,19 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
         val picture: String? = null
     )
 
+    enum class SetupStep { Enter, Confirm }
+
     sealed class State {
         object Idle : State()
         object SigningIn : State()
         object CheckingDrive : State()
+
+        /** Backups were found; the user must enter their existing PIN. */
+        data class EnterPinForRestore(val attemptFailed: Boolean = false) : State()
+
+        /** No backups found; walk the user through choosing a new PIN. */
+        data class SetupPin(val step: SetupStep, val mismatch: Boolean = false) : State()
+
         data class Choose(val backups: List<BackupSummary>) : State()
         object Working : State()
         data class Done(val isNewAccount: Boolean) : State()
@@ -73,8 +90,12 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state
 
-    private var pendingBackupKey: ByteArray? = null
+    private var pendingSub: String? = null
     private var pendingAccessToken: String? = null
+    private var pendingBackupKey: ByteArray? = null
+    private var pendingFiles: List<DriveBackupService.BackupFile> = emptyList()
+    private var pendingSetupFirstPin: String? = null
+    private var signInManager: GoogleSignInManager? = null
     private var profileFetchJob: Job? = null
 
     fun beginSignIn(activity: ComponentActivity, webClientId: String) {
@@ -84,49 +105,23 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val manager = GoogleSignInManager(activity.applicationContext, webClientId)
+        signInManager = manager
         _state.value = State.SigningIn
-        Log.d(TAG, "state -> SigningIn")
         viewModelScope.launch {
             try {
-                Log.d(TAG, "calling manager.signIn(activity)…")
                 val result = manager.signIn(activity)
-                Log.d(TAG, "signIn returned: sub-len=${result.sub.length}, hasToken=${result.accessToken.isNotEmpty()}")
-                val backupKey = BackupCrypto.deriveBackupKey(result.sub)
-                pendingBackupKey = backupKey
+                pendingSub = result.sub
                 pendingAccessToken = result.accessToken
 
                 _state.value = State.CheckingDrive
-                Log.d(TAG, "state -> CheckingDrive")
-
-                val files = listBackupsWithRefresh(manager, activity)
-                val activeToken = pendingAccessToken ?: result.accessToken
+                val files = listBackupsWithRefresh(activity)
+                pendingFiles = files
                 Log.d(TAG, "listBackups returned ${files.size} file(s)")
 
-                val summaries = files.mapNotNull { file ->
-                    val npub = file.npubFromName ?: try {
-                        // Legacy file with no npub in the filename — decrypt to learn it.
-                        val payload = driveService.downloadBackup(activeToken, file.fileId)
-                        val nsec = BackupCrypto.decryptNsec(payload, backupKey)
-                        Nip19.npubEncode(Keys.xOnlyPubkey(nsec))
-                    } catch (e: Exception) {
-                        Log.w(TAG, "couldn't resolve npub for ${file.name}; skipping", e)
-                        null
-                    }
-                    npub?.let {
-                        val pubkeyHex = try {
-                            Nip19.npubDecode(it).toHex()
-                        } catch (e: Exception) {
-                            Log.w(TAG, "couldn't decode npub $it", e)
-                            return@let null
-                        }
-                        BackupSummary(fileId = file.fileId, npub = it, pubkeyHex = pubkeyHex)
-                    }
-                }.distinctBy { it.npub }
-
-                _state.value = State.Choose(summaries)
-                Log.d(TAG, "state -> Choose with ${summaries.size} restorable account(s)")
-                if (summaries.isNotEmpty()) {
-                    fetchProfilesInBackground(summaries.map { it.pubkeyHex })
+                _state.value = if (files.isEmpty()) {
+                    State.SetupPin(step = SetupStep.Enter)
+                } else {
+                    State.EnterPinForRestore()
                 }
             } catch (e: GoogleSignInException) {
                 Log.w(TAG, "GoogleSignInException", e)
@@ -138,26 +133,82 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * Calls `listBackups` with the pending access token; if Drive returns 401,
-     * clears the stale token from Play Services' cache and re-runs the
-     * authorization flow (which surfaces a consent prompt when the user has
-     * revoked Wisp's authorization), then retries once.
-     */
-    private suspend fun listBackupsWithRefresh(
-        manager: GoogleSignInManager,
-        activity: ComponentActivity
-    ): List<DriveBackupService.BackupFile> {
-        val token = pendingAccessToken ?: error("no pending access token")
-        return try {
-            driveService.listBackups(token)
-        } catch (e: DriveAuthorizationExpiredException) {
-            Log.w(TAG, "Drive returned 401; clearing stale token and re-authorizing", e)
-            val fresh = manager.refreshDriveAccessToken(activity, e.staleToken)
-            pendingAccessToken = fresh
-            Log.d(TAG, "refresh complete; retrying listBackups")
-            driveService.listBackups(fresh)
+    fun submitRestorePin(pin: String, activity: ComponentActivity) {
+        if (!BackupCrypto.isValidPin(pin)) return
+        val sub = pendingSub ?: return
+        val files = pendingFiles
+        if (files.isEmpty()) return
+        _state.value = State.Working
+        viewModelScope.launch {
+            try {
+                val key = withContext(Dispatchers.Default) { BackupCrypto.deriveBackupKey(sub, pin) }
+
+                val summaries = files.mapNotNull { file ->
+                    try {
+                        val payload = downloadWithRefresh(activity, file.fileId)
+                        val nsec = withContext(Dispatchers.Default) {
+                            BackupCrypto.decryptNsec(payload, key)
+                        }
+                        val pubkey = Keys.xOnlyPubkey(nsec)
+                        val npub = Nip19.npubEncode(pubkey)
+                        BackupSummary(
+                            fileId = file.fileId,
+                            npub = npub,
+                            pubkeyHex = pubkey.toHex()
+                        )
+                    } catch (e: Exception) {
+                        Log.d(TAG, "decrypt failed for ${file.name} (likely wrong PIN or unrelated file)", e)
+                        null
+                    }
+                }.distinctBy { it.npub }
+
+                if (summaries.isEmpty()) {
+                    _state.value = State.EnterPinForRestore(attemptFailed = true)
+                    return@launch
+                }
+
+                pendingBackupKey = key
+                _state.value = State.Choose(summaries)
+                fetchProfilesInBackground(summaries.map { it.pubkeyHex })
+            } catch (e: Exception) {
+                Log.w(TAG, "submitRestorePin failed", e)
+                _state.value = State.Error(e.message ?: "Failed to check PIN.")
+            }
         }
+    }
+
+    fun submitSetupPinEntry(pin: String) {
+        if (!BackupCrypto.isValidPin(pin)) return
+        pendingSetupFirstPin = pin
+        _state.value = State.SetupPin(step = SetupStep.Confirm)
+    }
+
+    fun submitSetupPinConfirm(pin: String, activity: ComponentActivity) {
+        if (!BackupCrypto.isValidPin(pin)) return
+        val first = pendingSetupFirstPin
+        if (first == null || first != pin) {
+            pendingSetupFirstPin = null
+            _state.value = State.SetupPin(step = SetupStep.Enter, mismatch = true)
+            return
+        }
+        val sub = pendingSub ?: return
+        pendingSetupFirstPin = null
+        _state.value = State.Working
+        viewModelScope.launch {
+            try {
+                val key = withContext(Dispatchers.Default) { BackupCrypto.deriveBackupKey(sub, pin) }
+                pendingBackupKey = key
+                createAndStoreNewAccount(activity)
+            } catch (e: Exception) {
+                Log.w(TAG, "submitSetupPinConfirm failed", e)
+                _state.value = State.Error(e.message ?: "Failed to set up PIN.")
+            }
+        }
+    }
+
+    fun backToSetupEntry() {
+        pendingSetupFirstPin = null
+        _state.value = State.SetupPin(step = SetupStep.Enter)
     }
 
     fun restoreAccount(fileId: String) {
@@ -168,12 +219,11 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val payload = driveService.downloadBackup(accessToken, fileId)
-                val nsec = BackupCrypto.decryptNsec(payload, key)
+                val nsec = withContext(Dispatchers.Default) { BackupCrypto.decryptNsec(payload, key) }
                 val keypair = Keys.fromPrivkey(nsec)
                 keyRepo.saveKeypair(keypair)
                 keyRepo.reloadPrefs(keypair.pubkey.toHex())
                 _state.value = State.Done(isNewAccount = false)
-                Log.d(TAG, "state -> Done(isNewAccount=false)")
             } catch (e: Exception) {
                 Log.w(TAG, "restoreAccount failed", e)
                 _state.value = State.Error(e.message ?: "Failed to restore account.")
@@ -181,57 +231,117 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun createNewAccount() {
-        Log.d(TAG, "createNewAccount tapped")
-        val key = pendingBackupKey ?: return
-        val accessToken = pendingAccessToken ?: return
+    /** Called from the Choose screen when the user wants to add another account
+     *  to a Google login that already has backups. PIN is already known. */
+    fun createAnotherAccount(activity: ComponentActivity) {
+        if (pendingBackupKey == null) return
         _state.value = State.Working
         viewModelScope.launch {
             try {
-                val keypair = Keys.generate()
-                val npub = Nip19.npubEncode(keypair.pubkey)
-                val payload = BackupCrypto.encryptNsec(keypair.privkey, key)
-                driveService.uploadBackup(accessToken, npub, payload)
-                keyRepo.saveKeypair(keypair)
-                keyRepo.reloadPrefs(keypair.pubkey.toHex())
-                val fiatPrefs = FiatPreferences.get(getApplication())
-                fiatPrefs.setFiatMode(true)
-                fiatPrefs.setCurrency("USD")
-                _state.value = State.Done(isNewAccount = true)
-                Log.d(TAG, "state -> Done(isNewAccount=true)")
+                createAndStoreNewAccount(activity)
             } catch (e: Exception) {
-                Log.w(TAG, "createNewAccount failed", e)
+                Log.w(TAG, "createAnotherAccount failed", e)
                 _state.value = State.Error(e.message ?: "Failed to create account.")
             }
         }
     }
 
+    private suspend fun createAndStoreNewAccount(activity: ComponentActivity) {
+        val key = pendingBackupKey ?: error("backup key not derived")
+        val keypair = Keys.generate()
+        val payload = withContext(Dispatchers.Default) {
+            BackupCrypto.encryptNsec(keypair.privkey, key)
+        }
+        uploadWithRefresh(activity, payload)
+        keyRepo.saveKeypair(keypair)
+        keyRepo.reloadPrefs(keypair.pubkey.toHex())
+        val fiatPrefs = FiatPreferences.get(getApplication())
+        fiatPrefs.setFiatMode(true)
+        fiatPrefs.setCurrency("USD")
+        _state.value = State.Done(isNewAccount = true)
+    }
+
     fun reset() {
         profileFetchJob?.cancel()
         profileFetchJob = null
+        pendingSub = null
         pendingBackupKey = null
         pendingAccessToken = null
+        pendingFiles = emptyList()
+        pendingSetupFirstPin = null
+        signInManager = null
         _state.value = State.Idle
     }
 
+    private suspend fun listBackupsWithRefresh(
+        activity: ComponentActivity
+    ): List<DriveBackupService.BackupFile> {
+        val token = pendingAccessToken ?: error("no pending access token")
+        return try {
+            driveService.listBackups(token)
+        } catch (e: DriveAuthorizationExpiredException) {
+            Log.w(TAG, "Drive returned 401 on list; refreshing token", e)
+            val fresh = refreshToken(activity, e.staleToken)
+            driveService.listBackups(fresh)
+        }
+    }
+
+    private suspend fun downloadWithRefresh(activity: ComponentActivity, fileId: String): String {
+        val token = pendingAccessToken ?: error("no pending access token")
+        return try {
+            driveService.downloadBackup(token, fileId)
+        } catch (e: DriveAuthorizationExpiredException) {
+            Log.w(TAG, "Drive returned 401 on download; refreshing token", e)
+            val fresh = refreshToken(activity, e.staleToken)
+            driveService.downloadBackup(fresh, fileId)
+        }
+    }
+
+    private suspend fun uploadWithRefresh(activity: ComponentActivity, payload: String) {
+        val token = pendingAccessToken ?: error("no pending access token")
+        try {
+            driveService.uploadBackup(token, payload)
+        } catch (e: DriveAuthorizationExpiredException) {
+            Log.w(TAG, "Drive returned 401 on upload; refreshing token", e)
+            val fresh = refreshToken(activity, e.staleToken)
+            driveService.uploadBackup(fresh, payload)
+        }
+    }
+
+    private suspend fun refreshToken(activity: ComponentActivity, staleToken: String): String {
+        val manager = signInManager ?: error("no sign-in manager — was beginSignIn called?")
+        val fresh = manager.refreshDriveAccessToken(activity, staleToken)
+        pendingAccessToken = fresh
+        return fresh
+    }
+
     /**
-     * Opens ephemeral WebSocket connections to a couple of widely-used relays,
-     * requests kind-0 profile metadata for each backup's pubkey, and merges the
-     * parsed display name + picture into the Choose state as results arrive.
-     * Cancelled when the user moves past the chooser.
+     * Pulls decoy profiles from a popular relay first, then issues one combined
+     * REQ for (real + decoys) against the profile relays. From a relay
+     * operator's perspective the real backup pubkeys are mixed in with random
+     * recent profiles, blunting the "this Google account corresponds to these
+     * npubs" linkage. UI updates filter to only the real pubkeys.
      */
-    private fun fetchProfilesInBackground(pubkeyHexList: List<String>) {
+    private fun fetchProfilesInBackground(realPubkeys: List<String>) {
         profileFetchJob?.cancel()
         profileFetchJob = viewModelScope.launch(Dispatchers.IO) {
+            val real = realPubkeys.distinct()
+            if (real.isEmpty()) return@launch
+
             val client = OkHttpClient.Builder()
                 .connectTimeout(8, TimeUnit.SECONDS)
                 .readTimeout(0, TimeUnit.MILLISECONDS)
                 .build()
-            val pubkeys = pubkeyHexList.distinct()
-            if (pubkeys.isEmpty()) return@launch
 
-            val pubkeyJsonArray = pubkeys.joinToString(",") { "\"$it\"" }
-            val reqMessage = """["REQ","wisp-google-profiles",{"kinds":[0],"authors":[$pubkeyJsonArray]}]"""
+            val decoys = withTimeoutOrNull(DECOY_FETCH_TIMEOUT_MS) {
+                fetchDecoyPubkeys(client, DECOY_COUNT)
+            }.orEmpty().filter { it !in real }
+            Log.d(TAG, "decoys fetched: ${decoys.size}")
+
+            val combined = (real + decoys).shuffled()
+            val authorsJson = combined.joinToString(",") { "\"$it\"" }
+            val reqMessage = """["REQ","wisp-google-profiles",{"kinds":[0],"authors":[$authorsJson]}]"""
+            val realSet = real.toSet()
 
             val sockets = PROFILE_RELAYS.map { url ->
                 try {
@@ -243,7 +353,7 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
                             }
 
                             override fun onMessage(webSocket: WebSocket, text: String) {
-                                handleProfileMessage(text)
+                                handleProfileMessage(text, realSet)
                             }
 
                             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -258,7 +368,7 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             try {
-                kotlinx.coroutines.delay(PROFILE_FETCH_TIMEOUT_MS)
+                delay(PROFILE_FETCH_TIMEOUT_MS)
             } finally {
                 for (socket in sockets.filterNotNull()) {
                     try {
@@ -272,13 +382,65 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun handleProfileMessage(text: String) {
+    private suspend fun fetchDecoyPubkeys(client: OkHttpClient, count: Int): List<String> =
+        suspendCoroutine { cont ->
+            val resumed = AtomicBoolean(false)
+            val collected = Collections.synchronizedSet(mutableSetOf<String>())
+            val subId = "wisp-google-decoys"
+            val req = """["REQ","$subId",{"kinds":[0],"limit":$count}]"""
+
+            fun resumeOnce(result: List<String>, ws: WebSocket?) {
+                if (!resumed.compareAndSet(false, true)) return
+                try {
+                    ws?.send("""["CLOSE","$subId"]""")
+                    ws?.close(1000, null)
+                } catch (_: Exception) {}
+                cont.resume(result)
+            }
+
+            client.newWebSocket(
+                Request.Builder().url(DECOY_RELAY).build(),
+                object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: Response) {
+                        webSocket.send(req)
+                    }
+
+                    override fun onMessage(webSocket: WebSocket, text: String) {
+                        val arr = try {
+                            profileJson.parseToJsonElement(text) as? JsonArray
+                        } catch (_: Exception) { null } ?: return
+                        if (arr.size < 2) return
+                        val tag = try { arr[0].jsonPrimitive.content } catch (_: Exception) { return }
+                        when (tag) {
+                            "EVENT" -> {
+                                if (arr.size < 3) return
+                                val event = arr[2] as? JsonObject ?: return
+                                val pubkey = event["pubkey"]?.jsonPrimitive?.content ?: return
+                                collected.add(pubkey)
+                                if (collected.size >= count) {
+                                    resumeOnce(collected.toList(), webSocket)
+                                }
+                            }
+                            "EOSE" -> resumeOnce(collected.toList(), webSocket)
+                        }
+                    }
+
+                    override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                        Log.w(TAG, "decoy relay failed", t)
+                        resumeOnce(emptyList(), null)
+                    }
+                }
+            )
+        }
+
+    private fun handleProfileMessage(text: String, realPubkeys: Set<String>) {
         val arr = try { profileJson.parseToJsonElement(text) as? JsonArray } catch (_: Exception) { return } ?: return
         if (arr.size < 3) return
         if (arr[0].jsonPrimitive.content != "EVENT") return
         val event = arr[2] as? JsonObject ?: return
         if (event["kind"]?.jsonPrimitive?.content != "0") return
         val pubkey = event["pubkey"]?.jsonPrimitive?.content ?: return
+        if (pubkey !in realPubkeys) return
         val content = event["content"]?.jsonPrimitive?.content ?: return
         val profile = try { profileJson.parseToJsonElement(content).jsonObject } catch (_: Exception) { return }
 
@@ -288,7 +450,6 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
 
         if (name == null && picture == null) return
 
-        // Merge into current Choose state if still active.
         val current = _state.value
         if (current !is State.Choose) return
         val updated = current.backups.map { backup ->
@@ -305,8 +466,12 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         super.onCleared()
         profileFetchJob?.cancel()
+        pendingSub = null
         pendingBackupKey = null
         pendingAccessToken = null
+        pendingFiles = emptyList()
+        pendingSetupFirstPin = null
+        signInManager = null
     }
 
     companion object {
@@ -315,6 +480,9 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
             "wss://relay.damus.io",
             "wss://relay.primal.net"
         )
+        private const val DECOY_RELAY = "wss://relay.primal.net"
+        private const val DECOY_COUNT = 10
+        private const val DECOY_FETCH_TIMEOUT_MS = 4_000L
         private const val PROFILE_FETCH_TIMEOUT_MS = 8_000L
     }
 }

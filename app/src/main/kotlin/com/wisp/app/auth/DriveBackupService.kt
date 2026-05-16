@@ -30,10 +30,10 @@ class DriveAuthorizationExpiredException(
 /**
  * Minimal Drive REST v3 client targeted at the user's appDataFolder.
  *
- * One backup file per Nostr account. Filenames follow `wisp_nsec_<npub>.bin`
- * so we can list every account on the user's Drive and surface the npub
- * without downloading each file. Legacy single-file backups (`wisp_nsec.bin`,
- * from before multi-account support) are also surfaced in the list.
+ * Filenames are opaque (`wisp_bk_<uuid>.bin`) so Drive cannot see the user's
+ * npub — that link would otherwise let anyone with Google account access tie
+ * the Nostr identity to the Google identity. The npub is recovered by
+ * decrypting the file with the user's PIN-derived key.
  */
 class DriveBackupService(
     private val httpClient: OkHttpClient = OkHttpClient()
@@ -49,20 +49,10 @@ class DriveBackupService(
         }
     }
 
-    data class BackupFile(val fileId: String, val name: String) {
-        /** `npub1…` parsed from the filename, or null for the legacy unnamed backup. */
-        val npubFromName: String?
-            get() = when {
-                name.startsWith(BACKUP_PREFIX) && name.endsWith(BACKUP_SUFFIX) -> {
-                    name.removePrefix(BACKUP_PREFIX).removeSuffix(BACKUP_SUFFIX)
-                        .takeIf { it.isNotEmpty() && it.startsWith("npub1") }
-                }
-                else -> null
-            }
-    }
+    data class BackupFile(val fileId: String, val name: String)
 
     suspend fun listBackups(accessToken: String): List<BackupFile> = withContext(Dispatchers.IO) {
-        val nameQuery = "name = '$LEGACY_FILENAME' or name contains '$BACKUP_PREFIX'"
+        val nameQuery = "name contains '$BACKUP_PREFIX'"
         val url = "https://www.googleapis.com/drive/v3/files" +
             "?spaces=appDataFolder" +
             "&q=" + java.net.URLEncoder.encode(nameQuery, "UTF-8") +
@@ -87,6 +77,7 @@ class DriveBackupService(
                 val obj = element as? JsonObject ?: return@mapNotNull null
                 val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
                 val name = obj["name"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                if (!name.startsWith(BACKUP_PREFIX) || !name.endsWith(BACKUP_SUFFIX)) return@mapNotNull null
                 BackupFile(id, name)
             }
         }
@@ -110,19 +101,13 @@ class DriveBackupService(
         }
 
     /**
-     * Creates a new backup file in appDataFolder. If a backup for the same npub
-     * already exists, deletes it first so we keep one file per account rather
-     * than accumulating duplicate revisions.
+     * Creates a new backup file with a fresh random UUID filename. Each call
+     * creates a distinct file — there is no replace path, which sidesteps the
+     * delete-then-upload race that an in-place update would introduce.
      */
-    suspend fun uploadBackup(accessToken: String, npub: String, payload: String) =
+    suspend fun uploadBackup(accessToken: String, payload: String) =
         withContext(Dispatchers.IO) {
-            require(npub.startsWith("npub1")) { "npub must be bech32-encoded" }
-            val filename = "$BACKUP_PREFIX$npub$BACKUP_SUFFIX"
-
-            // Remove any existing file with the same name to avoid duplicates.
-            listBackups(accessToken).filter { it.name == filename }.forEach { existing ->
-                deleteBackup(accessToken, existing.fileId)
-            }
+            val filename = "$BACKUP_PREFIX${UUID.randomUUID()}$BACKUP_SUFFIX"
 
             val metadata = """{"name":"$filename","parents":["$APP_DATA_FOLDER"]}"""
             val boundary = "wisp-${UUID.randomUUID()}"
@@ -166,8 +151,7 @@ class DriveBackupService(
 
     companion object {
         private const val APP_DATA_FOLDER = "appDataFolder"
-        private const val BACKUP_PREFIX = "wisp_nsec_"
+        private const val BACKUP_PREFIX = "wisp_bk_"
         private const val BACKUP_SUFFIX = ".bin"
-        private const val LEGACY_FILENAME = "wisp_nsec.bin"
     }
 }

@@ -65,10 +65,24 @@
     <string name="google_auth_choose_title_with_backups">Your backed-up accounts</string>
     <string name="google_auth_choose_body_with_backups">Tap an account to restore it, or create a new one. New accounts are encrypted and added to your Google Drive backup.</string>
     <string name="google_auth_choose_title_empty">Create your account</string>
-    <string name="google_auth_choose_body_empty">Wisp will generate a new Nostr key and save an encrypted backup to a hidden folder in your Google Drive. The encryption key is derived from your Google account, so anyone with access to it can recover your identity.</string>
+    <string name="google_auth_choose_body_empty">Wisp will generate a new Nostr key and save an encrypted backup to a hidden folder in your Google Drive.</string>
     <string name="google_auth_restore">Restore</string>
     <string name="google_auth_create_first">Create account &amp; back up</string>
     <string name="google_auth_create_another">Create another account</string>
+
+    <!-- Recovery PIN -->
+    <string name="pin_setup_title">Set a recovery PIN</string>
+    <string name="pin_setup_body">Pick a 4–8 digit PIN. You\'ll need it to restore your account on a new device.</string>
+    <string name="pin_setup_warning">If you forget this PIN, your Nostr key is lost forever — there is no reset.</string>
+    <string name="pin_confirm_title">Confirm your PIN</string>
+    <string name="pin_confirm_body">Enter your PIN again to make sure you remember it.</string>
+    <string name="pin_mismatch">PINs didn\'t match. Try again.</string>
+    <string name="pin_restore_title">Enter your recovery PIN</string>
+    <string name="pin_restore_body">This is the PIN you set when you first signed in to Wisp with this Google account.</string>
+    <string name="pin_restore_incorrect">Incorrect PIN. Try again.</string>
+    <string name="pin_placeholder">PIN</string>
+    <string name="pin_too_short">Use 4–8 digits</string>
+    <string name="btn_unlock">Unlock</string>
     <string name="splash_people_online">%d people online now</string>
     <string name="online_now">Online Now</string>
     <string name="online_in_network">%d online in your network</string>

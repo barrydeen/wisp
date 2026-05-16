@@ -20,6 +20,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -29,8 +31,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -38,18 +42,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -139,10 +151,31 @@ fun GoogleAuthScreen(
                     )
                 }
 
+                is GoogleAuthViewModel.State.SetupPin -> SetupPinBlock(
+                    state = s,
+                    onSubmitEntry = { pin -> viewModel.submitSetupPinEntry(pin) },
+                    onSubmitConfirm = { pin ->
+                        val activity = context as? ComponentActivity ?: return@SetupPinBlock
+                        viewModel.submitSetupPinConfirm(pin, activity)
+                    },
+                    onBackToEntry = { viewModel.backToSetupEntry() }
+                )
+
+                is GoogleAuthViewModel.State.EnterPinForRestore -> RestorePinBlock(
+                    attemptFailed = s.attemptFailed,
+                    onSubmit = { pin ->
+                        val activity = context as? ComponentActivity ?: return@RestorePinBlock
+                        viewModel.submitRestorePin(pin, activity)
+                    }
+                )
+
                 is GoogleAuthViewModel.State.Choose -> ChooseBlock(
                     backups = s.backups,
                     onRestore = { viewModel.restoreAccount(it.fileId) },
-                    onCreate = { viewModel.createNewAccount() }
+                    onCreate = {
+                        val activity = context as? ComponentActivity ?: return@ChooseBlock
+                        viewModel.createAnotherAccount(activity)
+                    }
                 )
 
                 is GoogleAuthViewModel.State.Error -> {
@@ -225,43 +258,183 @@ private fun LoadingBlock(label: String) {
 }
 
 @Composable
-private fun ChooseBlock(
-    backups: List<GoogleAuthViewModel.BackupSummary>,
-    onRestore: (GoogleAuthViewModel.BackupSummary) -> Unit,
-    onCreate: () -> Unit
+private fun SetupPinBlock(
+    state: GoogleAuthViewModel.State.SetupPin,
+    onSubmitEntry: (String) -> Unit,
+    onSubmitConfirm: (String) -> Unit,
+    onBackToEntry: () -> Unit
 ) {
-    val titleRes = if (backups.isEmpty())
-        R.string.google_auth_choose_title_empty
-    else
-        R.string.google_auth_choose_title_with_backups
+    var pin by remember(state.step) { mutableStateOf("") }
+    val isEntry = state.step == GoogleAuthViewModel.SetupStep.Enter
 
     Text(
-        text = stringResource(titleRes),
+        text = stringResource(
+            if (isEntry) R.string.pin_setup_title else R.string.pin_confirm_title
+        ),
         style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurface
+        color = MaterialTheme.colorScheme.onSurface,
+        textAlign = TextAlign.Center
     )
     Spacer(Modifier.height(8.dp))
     Text(
         text = stringResource(
-            if (backups.isEmpty()) R.string.google_auth_choose_body_empty
-            else R.string.google_auth_choose_body_with_backups
+            if (isEntry) R.string.pin_setup_body else R.string.pin_confirm_body
         ),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center
     )
+    if (isEntry) {
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = stringResource(R.string.pin_setup_warning),
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center
+        )
+    }
 
-    if (backups.isNotEmpty()) {
-        Spacer(Modifier.height(16.dp))
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 280.dp)
+    val errorText: String? = when {
+        isEntry && state.mismatch -> stringResource(R.string.pin_mismatch)
+        else -> null
+    }
+
+    Spacer(Modifier.height(20.dp))
+    PinField(
+        value = pin,
+        onChange = { pin = it.filter { ch -> ch.isDigit() }.take(8) },
+        errorText = errorText,
+        onSubmit = {
+            if (isEntry) onSubmitEntry(pin) else onSubmitConfirm(pin)
+        }
+    )
+
+    Spacer(Modifier.height(20.dp))
+    Button(
+        onClick = { if (isEntry) onSubmitEntry(pin) else onSubmitConfirm(pin) },
+        enabled = pin.length in 4..8,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(stringResource(R.string.btn_continue))
+    }
+
+    if (!isEntry) {
+        Spacer(Modifier.height(4.dp))
+        TextButton(
+            onClick = onBackToEntry,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            items(backups, key = { it.npub }) { backup ->
-                BackupRow(backup = backup, onClick = { onRestore(backup) })
-                Spacer(Modifier.height(8.dp))
+            Text(stringResource(R.string.btn_back))
+        }
+    }
+}
+
+@Composable
+private fun RestorePinBlock(
+    attemptFailed: Boolean,
+    onSubmit: (String) -> Unit
+) {
+    var pin by remember { mutableStateOf("") }
+
+    Text(
+        text = stringResource(R.string.pin_restore_title),
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        textAlign = TextAlign.Center
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = stringResource(R.string.pin_restore_body),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center
+    )
+
+    Spacer(Modifier.height(20.dp))
+    PinField(
+        value = pin,
+        onChange = { pin = it.filter { ch -> ch.isDigit() }.take(8) },
+        errorText = if (attemptFailed) stringResource(R.string.pin_restore_incorrect) else null,
+        onSubmit = { onSubmit(pin) }
+    )
+
+    Spacer(Modifier.height(20.dp))
+    Button(
+        onClick = { onSubmit(pin) },
+        enabled = pin.length in 4..8,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(stringResource(R.string.btn_unlock))
+    }
+}
+
+@Composable
+private fun PinField(
+    value: String,
+    onChange: (String) -> Unit,
+    errorText: String?,
+    onSubmit: () -> Unit
+) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
+
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        singleLine = true,
+        isError = errorText != null,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+        keyboardActions = KeyboardActions(onDone = {
+            keyboard?.hide()
+            onSubmit()
+        }),
+        placeholder = { Text(stringResource(R.string.pin_placeholder)) },
+        supportingText = {
+            if (errorText != null) {
+                Text(text = errorText, color = MaterialTheme.colorScheme.error)
+            } else {
+                Text(text = stringResource(R.string.pin_too_short))
             }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester)
+    )
+}
+
+@Composable
+private fun ChooseBlock(
+    backups: List<GoogleAuthViewModel.BackupSummary>,
+    onRestore: (GoogleAuthViewModel.BackupSummary) -> Unit,
+    onCreate: () -> Unit
+) {
+    Text(
+        text = stringResource(R.string.google_auth_choose_title_with_backups),
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = stringResource(R.string.google_auth_choose_body_with_backups),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center
+    )
+
+    Spacer(Modifier.height(16.dp))
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 280.dp)
+    ) {
+        items(backups, key = { it.npub }) { backup ->
+            BackupRow(backup = backup, onClick = { onRestore(backup) })
+            Spacer(Modifier.height(8.dp))
         }
     }
 
@@ -273,12 +446,7 @@ private fun ChooseBlock(
         onClick = onCreate,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Text(
-            stringResource(
-                if (backups.isEmpty()) R.string.google_auth_create_first
-                else R.string.google_auth_create_another
-            )
-        )
+        Text(stringResource(R.string.google_auth_create_another))
     }
 }
 
