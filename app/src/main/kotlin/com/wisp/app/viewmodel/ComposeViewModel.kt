@@ -135,7 +135,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     /** Called by ComposeScreen when the screen mounts with [replyTo]; auto-enables
      *  + locks the private toggle if [replyTo] is itself a private reply we received. */
     fun configureForReply(replyTo: NostrEvent?) {
-        val isReplyingToPrivate = replyTo != null && eventRepo?.isPrivateReply(replyTo.id) == true
+        val isReplyingToPrivate = replyTo != null && eventRepo?.isPrivate(replyTo.id) == true
         _privateReplyLocked.value = isReplyingToPrivate
         if (isReplyingToPrivate) _privateReply.value = true
     }

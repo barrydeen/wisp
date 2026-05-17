@@ -124,6 +124,8 @@ fun PostCard(
     hasUserReposted: Boolean = false,
     repostCount: Int = 0,
     onZap: () -> Unit = {},
+    onZapDisabledTap: () -> Unit = {},
+    zapEnabled: Boolean = true,
     hasUserZapped: Boolean = false,
     likeCount: Int = 0,
     replyCount: Int = 0,
@@ -809,6 +811,8 @@ fun PostCard(
                 unicodeEmojis = unicodeEmojis,
                 onOpenEmojiLibrary = onOpenEmojiLibrary,
                 isPrivate = isPrivate,
+                zapEnabled = zapEnabled,
+                onZapDisabledTap = onZapDisabledTap,
                 modifier = Modifier.weight(1f)
             )
             Icon(

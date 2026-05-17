@@ -349,24 +349,30 @@ object Nip17 {
     }
 
     /**
-     * Create a single gift-wrapped private DM reaction for [recipientPubkey].
+     * Create a single gift-wrapped reaction (kind 7 rumor) for [recipientPubkey].
      * Call in a loop over all conversation participants to broadcast the reaction.
+     *
      * The inner rumor carries the emoji as content and an e-tag pointing to
-     * [targetRumorId] so recipients can associate the reaction with the right message.
+     * [targetRumorId] so recipients can associate it with the right message.
+     * [targetKind] (the kind of the message being reacted to — 14 for DMs, 1 for
+     * a NIP-17 private reply) becomes the "k" tag, letting receivers route the
+     * reaction to the right repository (DM conversation vs. note thread).
      */
-    suspend fun createDmReaction(
+    suspend fun createGiftWrappedReaction(
         senderPrivkey: ByteArray,
         senderPubkey: ByteArray,
         recipientPubkey: ByteArray,
         targetRumorId: String,
-        originalSenderPubkey: String,
+        targetAuthor: String,
+        targetKind: Int,
         emoji: String,
-        emojiUrl: String? = null
+        emojiUrl: String? = null,
+        createdAt: Long = System.currentTimeMillis() / 1000
     ): NostrEvent {
         val tags = mutableListOf(
             listOf("e", targetRumorId),
-            listOf("p", originalSenderPubkey),
-            listOf("k", "14")
+            listOf("p", targetAuthor),
+            listOf("k", targetKind.toString())
         )
         if (emojiUrl != null) {
             tags.add(listOf("emoji", emoji.removeSurrounding(":"), emojiUrl))
@@ -377,23 +383,26 @@ object Nip17 {
             recipientPubkey = recipientPubkey,
             message = emoji,
             rumorKind = 7,
-            replyTags = tags
+            replyTags = tags,
+            createdAt = createdAt
         )
     }
 
-    /** Remote-signer variant of [createDmReaction]. */
-    suspend fun createDmReactionRemote(
+    /** Remote-signer variant of [createGiftWrappedReaction]. */
+    suspend fun createGiftWrappedReactionRemote(
         signer: NostrSigner,
         recipientPubkeyHex: String,
         targetRumorId: String,
-        originalSenderPubkey: String,
+        targetAuthor: String,
+        targetKind: Int,
         emoji: String,
-        emojiUrl: String? = null
+        emojiUrl: String? = null,
+        createdAt: Long = System.currentTimeMillis() / 1000
     ): NostrEvent {
         val tags = mutableListOf(
             listOf("e", targetRumorId),
-            listOf("p", originalSenderPubkey),
-            listOf("k", "14")
+            listOf("p", targetAuthor),
+            listOf("k", targetKind.toString())
         )
         if (emojiUrl != null) {
             tags.add(listOf("emoji", emoji.removeSurrounding(":"), emojiUrl))
@@ -403,9 +412,48 @@ object Nip17 {
             recipientPubkeyHex = recipientPubkeyHex,
             message = emoji,
             rumorKind = 7,
-            replyTags = tags
+            replyTags = tags,
+            createdAt = createdAt
         )
     }
+
+    /** DM-targeted reaction. Thin wrapper around [createGiftWrappedReaction] with `k=14`. */
+    suspend fun createDmReaction(
+        senderPrivkey: ByteArray,
+        senderPubkey: ByteArray,
+        recipientPubkey: ByteArray,
+        targetRumorId: String,
+        originalSenderPubkey: String,
+        emoji: String,
+        emojiUrl: String? = null
+    ): NostrEvent = createGiftWrappedReaction(
+        senderPrivkey = senderPrivkey,
+        senderPubkey = senderPubkey,
+        recipientPubkey = recipientPubkey,
+        targetRumorId = targetRumorId,
+        targetAuthor = originalSenderPubkey,
+        targetKind = 14,
+        emoji = emoji,
+        emojiUrl = emojiUrl
+    )
+
+    /** Remote-signer variant of [createDmReaction]. */
+    suspend fun createDmReactionRemote(
+        signer: NostrSigner,
+        recipientPubkeyHex: String,
+        targetRumorId: String,
+        originalSenderPubkey: String,
+        emoji: String,
+        emojiUrl: String? = null
+    ): NostrEvent = createGiftWrappedReactionRemote(
+        signer = signer,
+        recipientPubkeyHex = recipientPubkeyHex,
+        targetRumorId = targetRumorId,
+        targetAuthor = originalSenderPubkey,
+        targetKind = 14,
+        emoji = emoji,
+        emojiUrl = emojiUrl
+    )
 
     private fun randomizeTimestamp(base: Long): Long {
         // 0 to 1 day in the past — NIP-17 spec allows up to 2 days, but keeping it to 1 day

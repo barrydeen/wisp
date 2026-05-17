@@ -21,6 +21,8 @@ import com.wisp.app.repo.DmRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.MuteRepository
 import com.wisp.app.repo.NotificationRepository
+import com.wisp.app.repo.PrivateReactionPublisher
+import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.repo.WalletProvider
 import com.wisp.app.repo.PinRepository
 import com.wisp.app.repo.CustomEmojiRepository
@@ -59,6 +61,7 @@ class SocialActionManager(
     private val zapSender: ZapSender,
     private val powPrefs: PowPreferences,
     private val interfacePrefs: InterfacePreferences,
+    private val relayListRepo: RelayListRepository,
     private val scope: CoroutineScope,
     private val getSigner: () -> NostrSigner?,
     private val getUserPubkey: () -> String?
@@ -238,6 +241,38 @@ class SocialActionManager(
     fun toggleReaction(event: NostrEvent, emoji: String) {
         val s = getSigner() ?: return
         val myPubkey = s.pubkeyHex
+
+        // NIP-17 private replies are reacted to with a gift-wrapped kind-7 rumor so
+        // the target rumor id never lands on a public relay. v1 is add-only: if the
+        // user has already reacted with this emoji we no-op rather than publishing a
+        // gift-wrapped NIP-09 deletion (gift-wrapped deletion is a future enhancement).
+        if (eventRepo.isPrivate(event.id)) {
+            val existingEmoji = eventRepo.getUserReactionEmoji(event.id, myPubkey)
+            if (existingEmoji != null) return
+            val shortcodeMatch = Nip30.shortcodeRegex.matchEntire(emoji)
+            val emojiUrl = if (shortcodeMatch != null) {
+                val shortcode = shortcodeMatch.groupValues[1]
+                customEmojiRepo.resolvedEmojis.value[shortcode]
+            } else null
+            scope.launch {
+                try {
+                    PrivateReactionPublisher.send(
+                        signer = s,
+                        relayPool = relayPool,
+                        dmRepo = dmRepo,
+                        relayListRepo = relayListRepo,
+                        eventRepo = eventRepo,
+                        targetEvent = event,
+                        emoji = emoji,
+                        emojiUrl = emojiUrl
+                    )
+                    _reactionSent.tryEmit(Unit)
+                    customEmojiRepo.recordEmojiUsage(emoji)
+                } catch (_: Exception) {}
+            }
+            return
+        }
+
         val existingEventId = eventRepo.getUserReactionEventId(event.id, myPubkey, emoji)
 
         scope.launch {
@@ -352,6 +387,12 @@ class SocialActionManager(
      *   "a" tag instead of "e" so the receipt is associated with the addressable event.
      */
     fun sendZap(event: NostrEvent, amountMsats: Long, message: String = "", isAnonymous: Boolean = false, isPrivate: Boolean = false, extraRelayHints: List<String> = emptyList(), recipientOverride: String? = null, eventATag: String? = null) {
+        // NIP-17 private reply targets must use DIP-03. The synthetic event's id is the
+        // rumor id and its created_at is the rumor timestamp — both feed the existing
+        // ephemeral derivation cleanly. Force the flag even if the caller forgot it so a
+        // public-zap fallback can never leak the rumor id on public relays.
+        @Suppress("NAME_SHADOWING")
+        val isPrivate = isPrivate || eventRepo.isPrivate(event.id)
         val recipientPubkey = recipientOverride ?: event.pubkey
         val profileData = eventRepo.getProfileData(recipientPubkey)
         val lud16 = profileData?.lud16

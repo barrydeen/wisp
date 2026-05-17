@@ -1896,7 +1896,8 @@ fun WispNavHost(
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
-                    canPrivateZap = feedViewModel.hasLocalKeypair && threadUserHasDmRelays && threadRecipientHasDmRelays
+                    canPrivateZap = feedViewModel.hasLocalKeypair && threadUserHasDmRelays && threadRecipientHasDmRelays,
+                    forcePrivate = threadZapTarget?.id?.let { feedViewModel.eventRepo.isPrivate(it) } == true
                 )
             }
             val threadSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
@@ -1989,6 +1990,11 @@ fun WispNavHost(
                 isEmojiSetAdded = { pubkey, dTag ->
                     val ref = com.wisp.app.nostr.Nip30.buildSetReference(pubkey, dTag)
                     feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
+                },
+                canPrivateZapFor = { event ->
+                    feedViewModel.hasLocalKeypair &&
+                        feedViewModel.relayPool.hasDmRelays() &&
+                        feedViewModel.relayListRepo.hasDmRelays(event.pubkey)
                 }
             )
 
@@ -3144,7 +3150,8 @@ fun WispNavHost(
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
-                    canPrivateZap = feedViewModel.hasLocalKeypair && notifUserHasDmRelays && notifRecipientHasDmRelays
+                    canPrivateZap = feedViewModel.hasLocalKeypair && notifUserHasDmRelays && notifRecipientHasDmRelays,
+                    forcePrivate = notifZapTarget?.id?.let { feedViewModel.eventRepo.isPrivate(it) } == true
                 )
             }
 
@@ -3196,7 +3203,7 @@ fun WispNavHost(
 
                         // If the parent is a private reply we received, keep the thread encrypted
                         // by gift-wrapping this reply too. Otherwise fall through to the public path.
-                        if (feedViewModel.eventRepo.isPrivateReply(replyToEvent.id)) {
+                        if (feedViewModel.eventRepo.isPrivate(replyToEvent.id)) {
                             val difficulty = if (feedViewModel.powPrefs.isNotePowEnabled()) feedViewModel.powPrefs.getNoteDifficulty() else 0
                             com.wisp.app.repo.PrivateReplyPublisher.send(
                                 signer = signer,

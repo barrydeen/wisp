@@ -582,6 +582,7 @@ class NotificationRepository(
                 timestamp = event.created_at,
                 emoji = emoji,
                 emojiUrl = flatEmojiUrl,
+                isPrivateReaction = eventRepo?.isPrivate(event.id) == true,
                 groupChatId = groupChatId
             ))
         }
@@ -735,7 +736,7 @@ class NotificationRepository(
                 referencedEventId = replyTarget,
                 timestamp = event.created_at,
                 replyEventId = event.id,
-                isPrivateReply = eventRepo?.isPrivateReply(event.id) == true,
+                isPrivateReply = eventRepo?.isPrivate(event.id) == true,
                 groupChatId = groupChatId
             ))
         }

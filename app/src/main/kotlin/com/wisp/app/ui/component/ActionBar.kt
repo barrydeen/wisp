@@ -85,6 +85,8 @@ fun ActionBar(
     unicodeEmojis: List<String> = emptyList(),
     onOpenEmojiLibrary: (() -> Unit)? = null,
     isPrivate: Boolean = false,
+    zapEnabled: Boolean = true,
+    onZapDisabledTap: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -108,9 +110,9 @@ fun ActionBar(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1
         )
-        // Private replies hide React / Repost / Quote / Zap to avoid leaking the rumor id
-        // on public relays. Reply (above) and Bookmark (below) remain available.
-        if (!isPrivate) {
+        // React + Zap are available on private replies as gift-wrapped/DIP-03 actions.
+        // Repost / Quote stay hidden on private replies because those events would
+        // publicly attach an e-tag pointing at the encrypted rumor id.
         Spacer(Modifier.width(8.dp))
         Box {
             Box(
@@ -164,60 +166,71 @@ fun ActionBar(
             color = if (userReactionEmojis.isNotEmpty()) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1
         )
-        Spacer(Modifier.width(8.dp))
-        Box {
-            IconButton(onClick = { showRepostMenu = true }) {
-                Icon(
-                    Icons.Outlined.Repeat,
-                    contentDescription = stringResource(R.string.cd_repost),
-                    tint = if (hasUserReposted) WispThemeColors.repostColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp)
-                )
+        if (!isPrivate) {
+            Spacer(Modifier.width(8.dp))
+            Box {
+                IconButton(onClick = { showRepostMenu = true }) {
+                    Icon(
+                        Icons.Outlined.Repeat,
+                        contentDescription = stringResource(R.string.cd_repost),
+                        tint = if (hasUserReposted) WispThemeColors.repostColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                if (showRepostMenu) {
+                    RepostPopup(
+                        onRepost = {
+                            onRepost()
+                            showRepostMenu = false
+                        },
+                        onQuote = {
+                            onQuote()
+                            showRepostMenu = false
+                        },
+                        onDismiss = { showRepostMenu = false }
+                    )
+                }
             }
-            if (showRepostMenu) {
-                RepostPopup(
-                    onRepost = {
-                        onRepost()
-                        showRepostMenu = false
-                    },
-                    onQuote = {
-                        onQuote()
-                        showRepostMenu = false
-                    },
-                    onDismiss = { showRepostMenu = false }
-                )
-            }
+            Text(
+                text = repostCount.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (hasUserReposted) WispThemeColors.repostColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
         }
-        Text(
-            text = repostCount.toString(),
-            style = MaterialTheme.typography.labelSmall,
-            color = if (hasUserReposted) WispThemeColors.repostColor else MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1
-        )
         Spacer(Modifier.width(8.dp))
         Box {
-            IconButton(onClick = onZap, enabled = !isZapInProgress) {
+            val zapClickable = !isZapInProgress
+            IconButton(
+                onClick = { if (zapEnabled) onZap() else onZapDisabledTap() },
+                enabled = zapClickable
+            ) {
+                val zapTint = when {
+                    !zapEnabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    hasUserZapped -> WispThemeColors.zapColor
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
                 if (isZapInProgress) {
                     LightningAnimation(modifier = Modifier.size(width = 14.dp, height = 22.dp))
                 } else if (fiatMode) {
                     Icon(
                         painter = painterResource(R.drawable.ic_coin_stack),
                         contentDescription = stringResource(R.string.cd_zaps),
-                        tint = if (hasUserZapped) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = zapTint,
                         modifier = Modifier.size(22.dp)
                     )
                 } else if (useZapBoltIcon) {
                     Icon(
                         painter = painterResource(R.drawable.ic_bolt),
                         contentDescription = stringResource(R.string.cd_zaps),
-                        tint = if (hasUserZapped) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = zapTint,
                         modifier = Modifier.size(18.dp)
                     )
                 } else {
                     Icon(
                         Icons.Outlined.CurrencyBitcoin,
                         contentDescription = stringResource(R.string.cd_zaps),
-                        tint = if (hasUserZapped) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = zapTint,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -247,7 +260,6 @@ fun ActionBar(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        } // end !isPrivate
         Spacer(Modifier.width(8.dp))
         IconButton(onClick = onAddToList) {
             Icon(

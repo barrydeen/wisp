@@ -37,6 +37,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.automirrored.outlined.Message
 
 import androidx.compose.material3.AlertDialog
@@ -113,6 +114,12 @@ fun ZapDialog(
     onZap: (amountMsats: Long, message: String, isAnonymous: Boolean, isPrivate: Boolean) -> Unit,
     onGoToWallet: () -> Unit,
     canPrivateZap: Boolean = false,
+    /**
+     * Lock the zap to DIP-03 private mode (private + anon toggles hidden, isPrivate held true).
+     * Used when zapping a NIP-17 private reply — falling back to a public zap would attach an
+     * e-tag pointing at the rumor id on public relays.
+     */
+    forcePrivate: Boolean = false,
     /** When opening from a quick preset (e.g. chat actions sheet), pre-select that amount in sats. */
     initialSatsHint: Int? = null
 ) {
@@ -146,7 +153,7 @@ fun ZapDialog(
     var customAmount by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var isAnonymous by remember { mutableStateOf(false) }
-    var isPrivate by remember { mutableStateOf(false) }
+    var isPrivate by remember(forcePrivate) { mutableStateOf(forcePrivate) }
     var editMode by remember { mutableStateOf(false) }
 
     LaunchedEffect(initialSatsHint) {
@@ -468,6 +475,28 @@ fun ZapDialog(
 
                     Spacer(Modifier.height(16.dp))
 
+                    if (forcePrivate) {
+                        // Parent is a private reply — zap is locked to DIP-03 mode and the
+                        // anon/private toggles are hidden. A small label keeps the user
+                        // oriented; the lock icon mirrors the orange lock used elsewhere.
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.VisibilityOff,
+                                contentDescription = null,
+                                tint = LightningOrange,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.zap_private_locked_for_private_reply),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                            )
+                        }
+                    } else {
                     // Anonymous toggle
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -532,6 +561,7 @@ fun ZapDialog(
                             )
                         )
                     }
+                    } // end !forcePrivate
 
                     Spacer(Modifier.height(16.dp))
 

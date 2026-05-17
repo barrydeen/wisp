@@ -483,6 +483,8 @@
     <string name="zap_wallet_not_connected">Wallet Not Connected</string>
     <string name="zap_connect_wallet">Connect a Lightning wallet to send zaps.</string>
     <string name="zap_both_parties_need_dm_relays">Both parties need DM relays</string>
+    <string name="zap_private_locked_for_private_reply">Private — replying to a private thread</string>
+    <string name="zap_private_requires_dm_relays">Private zap requires DM relays on both sides</string>
     <string name="zap_x_sats">Zap %d sats</string>
     <string name="zap_failed">Zap Failed</string>
     <string name="lightning_invoice_pay_now">Pay Now</string>
