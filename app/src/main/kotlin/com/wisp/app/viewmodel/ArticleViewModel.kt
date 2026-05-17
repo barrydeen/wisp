@@ -151,7 +151,7 @@ class ArticleViewModel : ViewModel() {
                     7, 6 -> eventRepo.addEvent(event)
                     9735 -> {
                         eventRepo.addEvent(event)
-                        val zapperPubkey = Nip57.getZapperPubkey(event)
+                        val zapperPubkey = eventRepo.resolveZapSender(event).first
                         if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
                             metadataFetcher.addToPendingProfiles(zapperPubkey)
                         }

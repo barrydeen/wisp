@@ -10,10 +10,18 @@ import kotlinx.serialization.json.long
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.URLEncoder
+import java.security.MessageDigest
 
 object Nip57 {
+    const val KIND_PRIVATE_ZAP_EVENT = 9733
+    private const val ANON_TAG = "anon"
+    private const val PZAP_HRP = "pzap"
+    private const val IV_HRP = "iv"
+
     private val bolt11AmountRegex = Regex("""lnbc(\d+)([munp]?)1""")
     private val json = Json { ignoreUnknownKeys = true }
+
+    data class DecryptedPrivateZap(val senderPubkey: String, val message: String)
 
     fun getZappedEventId(event: NostrEvent): String? {
         return event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
@@ -155,6 +163,142 @@ object Nip57 {
         tags.addAll(extraTags)
 
         return signer.signEvent(kind = 9734, content = message, tags = tags)
+    }
+
+    /**
+     * DIP-03 deterministic ephemeral private key:
+     * sha256(utf8(senderPrivkeyHex + targetEventIdHex + createdAtString)).
+     * Re-derivable from public note data so the sender can identify their own
+     * outgoing private zaps after the fact.
+     */
+    fun deriveEphemeralPrivkey(
+        senderPrivkey: ByteArray,
+        targetEventId: String,
+        targetCreatedAt: Long
+    ): ByteArray {
+        val input = senderPrivkey.toHex() + targetEventId + targetCreatedAt.toString()
+        return MessageDigest.getInstance("SHA-256")
+            .digest(input.toByteArray(Charsets.UTF_8))
+    }
+
+    /**
+     * DIP-03 private zap request. Inner kind 9733 (real sender, NIP-04 encrypted
+     * to recipient via ephemeral ECDH) is packed into the outer kind 9734's
+     * `anon` tag; the outer event is signed by the deterministic ephemeral key
+     * so the LNURL provider and relays only see an unlinkable pubkey.
+     */
+    fun buildPrivateZapRequest(
+        senderPrivkey: ByteArray,
+        senderPubkey: ByteArray,
+        recipientPubkey: String,
+        eventId: String,
+        eventCreatedAt: Long,
+        amountMsats: Long,
+        relayUrls: List<String>,
+        lnurl: String,
+        message: String,
+        extraTags: List<List<String>> = emptyList()
+    ): NostrEvent {
+        val ephPrivkey = deriveEphemeralPrivkey(senderPrivkey, eventId, eventCreatedAt)
+        val ephPubkey = Keys.xOnlyPubkey(ephPrivkey)
+
+        val inner = NostrEvent.create(
+            privkey = senderPrivkey,
+            pubkey = senderPubkey,
+            kind = KIND_PRIVATE_ZAP_EVENT,
+            content = message,
+            tags = listOf(listOf("p", recipientPubkey))
+        )
+
+        val shared = Nip04.computeSharedSecret(ephPrivkey, recipientPubkey.hexToByteArray())
+        val (ct, iv) = Nip04.encryptRaw(inner.toJson(), shared)
+        val anonValue = Nip19.bech32Encode(PZAP_HRP, ct) + "_" + Nip19.bech32Encode(IV_HRP, iv)
+
+        val outerTags = buildList {
+            add(listOf("p", recipientPubkey))
+            add(listOf("e", eventId))
+            add(listOf("relays") + relayUrls)
+            add(listOf("amount", amountMsats.toString()))
+            add(listOf("lnurl", lnurl))
+            add(listOf(ANON_TAG, anonValue))
+            addAll(extraTags)
+        }
+        return NostrEvent.create(
+            privkey = ephPrivkey,
+            pubkey = ephPubkey,
+            kind = 9734,
+            content = "",
+            tags = outerTags
+        )
+    }
+
+    /** True if the receipt's embedded zap request carries a DIP-03 `anon` tag. */
+    fun isPrivateZap(receipt: NostrEvent): Boolean {
+        val request = parseEmbeddedRequest(receipt) ?: return false
+        return request.tags.any { it.size >= 2 && it[0] == ANON_TAG }
+    }
+
+    /**
+     * Decrypt a DIP-03 private zap addressed to us (we are the recipient).
+     * Returns null unless the `anon` envelope decodes, AES-decrypts, and the
+     * inner kind 9733's Schnorr signature checks out — the anon tag is
+     * otherwise unauthenticated, so signature verification is mandatory.
+     */
+    fun decryptPrivateZap(receipt: NostrEvent, myPrivkey: ByteArray): DecryptedPrivateZap? {
+        val request = parseEmbeddedRequest(receipt) ?: return null
+        val anon = request.tags.firstOrNull { it.size >= 2 && it[0] == ANON_TAG }?.get(1)
+            ?: return null
+        val shared = runCatching {
+            Nip04.computeSharedSecret(myPrivkey, request.pubkey.hexToByteArray())
+        }.getOrNull() ?: return null
+        return decryptAnonTag(anon, shared)
+    }
+
+    /**
+     * Decrypt a DIP-03 private zap we sent ourselves. Re-derives the
+     * deterministic ephemeral key from [target], confirms the outer pubkey
+     * matches (i.e. this is ours), then runs ECDH(ephPriv, recipient) to
+     * recover the same shared secret used at encryption. Returns null for any
+     * receipt that isn't one of ours.
+     */
+    fun decryptOwnOutgoingPrivateZap(
+        receipt: NostrEvent,
+        myPrivkey: ByteArray,
+        target: NostrEvent
+    ): DecryptedPrivateZap? {
+        val request = parseEmbeddedRequest(receipt) ?: return null
+        val anon = request.tags.firstOrNull { it.size >= 2 && it[0] == ANON_TAG }?.get(1)
+            ?: return null
+        val ephPriv = deriveEphemeralPrivkey(myPrivkey, target.id, target.created_at)
+        val ephPubHex = runCatching { Keys.xOnlyPubkey(ephPriv).toHex() }.getOrNull()
+            ?: return null
+        if (ephPubHex != request.pubkey) return null
+        val recipientHex = request.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
+            ?: return null
+        val shared = runCatching {
+            Nip04.computeSharedSecret(ephPriv, recipientHex.hexToByteArray())
+        }.getOrNull() ?: return null
+        return decryptAnonTag(anon, shared)
+    }
+
+    private fun decryptAnonTag(anon: String, sharedSecret: ByteArray): DecryptedPrivateZap? {
+        val parts = anon.split("_", limit = 2)
+        if (parts.size != 2) return null
+        val (hrpCt, ct) = runCatching { Nip19.bech32Decode(parts[0]) }.getOrNull() ?: return null
+        val (hrpIv, iv) = runCatching { Nip19.bech32Decode(parts[1]) }.getOrNull() ?: return null
+        if (hrpCt != PZAP_HRP || hrpIv != IV_HRP) return null
+        val plaintext = runCatching { Nip04.decryptRaw(ct, iv, sharedSecret) }.getOrNull()
+            ?: return null
+        val inner = runCatching { NostrEvent.fromJson(plaintext) }.getOrNull() ?: return null
+        if (inner.kind != KIND_PRIVATE_ZAP_EVENT) return null
+        if (!inner.verifySignature()) return null
+        return DecryptedPrivateZap(inner.pubkey, inner.content)
+    }
+
+    private fun parseEmbeddedRequest(receipt: NostrEvent): NostrEvent? {
+        val description = receipt.tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
+            ?: return null
+        return runCatching { NostrEvent.fromJson(description) }.getOrNull()
     }
 
     suspend fun fetchSimpleInvoice(

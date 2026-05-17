@@ -135,6 +135,11 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val keyRepo = KeyRepository(app)
     private val pubkeyHex: String? = keyRepo.getPubkeyHex()
 
+    /** True when the account has a local private key (i.e. not a remote/NIP-07 signer).
+     *  DIP-03 private zaps require local signing for both ephemeral derivation and
+     *  ECDH decryption, so this gates the UI toggle. */
+    val hasLocalKeypair: Boolean = keyRepo.getKeypair() != null
+
     var signer: NostrSigner? = null
         private set
 
@@ -181,6 +186,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         it.currentUserPubkey = pubkeyHex
         it.deletedEventsRepo = deletedEventsRepo
         it.eventPersistence = eventPersistence
+        it.keyRepo = keyRepo
     }
     val contactRepo = ContactRepository(app, pubkeyHex).also {
         eventRepo.contactRepo = it

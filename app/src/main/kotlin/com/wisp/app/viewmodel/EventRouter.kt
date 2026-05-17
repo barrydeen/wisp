@@ -134,7 +134,7 @@ class EventRouter(
                             if (convKey != null && msgId != null) {
                                 val sats = Nip57.getZapAmountSats(event)
                                 if (sats > 0) {
-                                    val zapperPubkey = Nip57.getZapperPubkey(event) ?: event.pubkey
+                                    val zapperPubkey = eventRepo.resolveZapSender(event).first ?: event.pubkey
                                     dmRepo.addZap(convKey, msgId, DmZap(zapperPubkey, sats, event.created_at))
                                 }
                             }
@@ -154,7 +154,7 @@ class EventRouter(
                     metadataFetcher.addToPendingProfiles(event.pubkey)
                 }
                 if (event.kind == 9735) {
-                    val zapperPubkey = Nip57.getZapperPubkey(event)
+                    val zapperPubkey = eventRepo.resolveZapSender(event).first
                     if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
                         metadataFetcher.addToPendingProfiles(zapperPubkey)
                     }
@@ -220,7 +220,7 @@ class EventRouter(
             if (event.kind == 9735) {
                 eventRepo.addEvent(event)
                 eventRepo.addEventRelay(event.id, relayUrl)
-                val zapperPubkey = Nip57.getZapperPubkey(event)
+                val zapperPubkey = eventRepo.resolveZapSender(event).first
                 if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
                     metadataFetcher.addToPendingProfiles(zapperPubkey)
                 }
@@ -253,7 +253,7 @@ class EventRouter(
                 9735 -> {
                     eventRepo.addEvent(event)
                     eventRepo.addEventRelay(event.id, relayUrl)
-                    val zapperPubkey = Nip57.getZapperPubkey(event)
+                    val zapperPubkey = eventRepo.resolveZapSender(event).first
                     if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
                         metadataFetcher.addToPendingProfiles(zapperPubkey)
                     }
@@ -389,7 +389,6 @@ class EventRouter(
                     val urls = Nip51.parseRelaySet(event)
                     keyRepo.saveDmRelays(urls)
                     relayPool.updateDmRelays(urls)
-                    eventRepo.dmRelayUrls = urls.toSet()
                 }
             }
             if (event.kind == Nip51.KIND_SEARCH_RELAYS) {

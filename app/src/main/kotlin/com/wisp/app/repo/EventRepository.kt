@@ -41,8 +41,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     var contactRepo: ContactRepository? = null
     var safetyPrefs: SafetyPreferences? = null
     var extendedNetworkRepo: ExtendedNetworkRepository? = null
-    /** Set of current user's DM relay URLs — used to detect private zaps. */
-    var dmRelayUrls: Set<String> = emptySet()
+    /** Late-bound for DIP-03 private zap decryption (recipient + self-attribution). */
+    var keyRepo: KeyRepository? = null
     private val eventCache = ConcurrentHashMap<String, NostrEvent>()
     private val seenEventIds = ConcurrentHashMap.newKeySet<String>()  // thread-safe dedup that doesn't evict
 
@@ -456,7 +456,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             7 -> addReaction(event)
             30315 -> processUserStatus(event)
             9735 -> {
-                val zapperPk = Nip57.getZapperPubkey(event)
+                val (zapperPk, zapMessage) = resolveZapSender(event)
                 if (zapperPk != null && isWotFiltered(zapperPk, 9735)) return
                 val targetId = Nip57.getZappedEventId(event)
                     ?: resolveAddressableTarget(event)
@@ -470,31 +470,27 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 synchronized(dedupSet) { if (!dedupSet.add(event.id)) return }
                 val sats = Nip57.getZapAmountSats(event)
                 if (sats > 0) {
-                    val zapperPubkey = Nip57.getZapperPubkey(event)
                     // Skip if this is our own zap and we already added it optimistically
-                    val isOwnOptimistic = zapperPubkey == currentUserPubkey && optimisticZaps.remove(targetId)
+                    val isOwnOptimistic = zapperPk == currentUserPubkey && optimisticZaps.remove(targetId)
                     if (!isOwnOptimistic) {
                         addZapSats(targetId, sats)
-                        if (zapperPubkey != null) {
-                            val zapMessage = Nip57.getZapMessage(event)
-                            val isPrivateZap = dmRelayUrls.isNotEmpty() && Nip57.getZapRequestRelays(event).let { reqRelays ->
-                                reqRelays.isNotEmpty() && reqRelays.all { it in dmRelayUrls }
-                            }
+                        if (zapperPk != null) {
+                            val isPrivateZap = Nip57.isPrivateZap(event)
                             val zaps = zapDetails.get(targetId)
                                 ?: java.util.Collections.synchronizedList(mutableListOf<ZapDetail>()).also {
                                     zapDetails.put(targetId, it)
                                 }
-                            zaps.add(ZapDetail(zapperPubkey, sats, zapMessage, isPrivate = isPrivateZap, receiptEventId = event.id))
+                            zaps.add(ZapDetail(zapperPk, sats, zapMessage, isPrivate = isPrivateZap, receiptEventId = event.id))
                         }
                     }
                     // Always mark user zap flag from receipts
-                    if (zapperPubkey == currentUserPubkey) {
+                    if (zapperPk == currentUserPubkey) {
                         userZaps.put(targetId, true)
                     }
                     // Check if this zap is a zap poll vote (kind 6969)
                     val targetEvent = eventCache[targetId]
                     if (targetEvent?.kind == Nip69.KIND_ZAP_POLL && sats > 0) {
-                        addZapPollVote(event, targetId, sats, zapperPubkey)
+                        addZapPollVote(event, targetId, sats, zapperPk)
                     }
                 }
             }
@@ -809,6 +805,30 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     /**
+     * Resolve the real sender + message of a kind 9735 zap receipt:
+     * 1. DIP-03 recipient path — decrypt the anon tag with our privkey.
+     * 2. DIP-03 self-attribution — match the outer ephemeral against one
+     *    derived from our privkey + the target note's (id, created_at).
+     * 3. Public-zap fallback — read the embedded request's pubkey/content.
+     *
+     * Returns (senderPubkey, message). senderPubkey is null only if the
+     * embedded request is missing/malformed.
+     */
+    fun resolveZapSender(receipt: NostrEvent): Pair<String?, String> {
+        val priv = keyRepo?.getKeypair()?.privkey
+        if (priv != null) {
+            Nip57.decryptPrivateZap(receipt, priv)?.let { return it.senderPubkey to it.message }
+            val targetId = receipt.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+            val target = targetId?.let { getEvent(it) }
+            if (target != null) {
+                Nip57.decryptOwnOutgoingPrivateZap(receipt, priv, target)
+                    ?.let { return it.senderPubkey to it.message }
+            }
+        }
+        return Nip57.getZapperPubkey(receipt) to Nip57.getZapMessage(receipt)
+    }
+
+    /**
      * Bulk-load events from ObjectBox into eventCache and seenEventIds without running
      * the full addEvent pipeline (no engagement counts, no feed insertion). Profiles
      * (kind 0) are parsed so avatars/names are available immediately. Call rebuildFeedFromCache()
@@ -868,8 +888,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             val bolt11 = event.tags.firstOrNull { it.size >= 2 && it[0] == "bolt11" }?.get(1) ?: continue
             val decoded = Bolt11.decode(bolt11)
             val hash = decoded?.paymentHash ?: continue
-            // Sender from embedded kind 9734 zap request
-            val sender = Nip57.getZapperPubkey(event)
+            // Sender from embedded kind 9734 zap request — for DIP-03 private
+            // zaps, resolveZapSender decrypts so wallet history shows the real
+            // counterparty rather than the ephemeral pubkey.
+            val sender = resolveZapSender(event).first
             if (sender != null) senders[hash] = sender
             // Recipient from 'p' tag of the receipt
             val recipient = event.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)

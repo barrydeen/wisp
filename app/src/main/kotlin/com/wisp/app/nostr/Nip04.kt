@@ -24,11 +24,7 @@ object Nip04 {
      * Returns: base64(ciphertext) + "?iv=" + base64(iv)
      */
     fun encrypt(plaintext: String, sharedSecret: ByteArray): String {
-        val iv = ByteArray(16).also { random.nextBytes(it) }
-        val key = SecretKeySpec(sharedSecret, "AES")
-        val cipher = cipherLocal.get()
-        cipher.init(Cipher.ENCRYPT_MODE, key, IvParameterSpec(iv))
-        val ciphertext = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
+        val (ciphertext, iv) = encryptRaw(plaintext, sharedSecret)
         val ctB64 = Base64.encodeToString(ciphertext, Base64.NO_WRAP)
         val ivB64 = Base64.encodeToString(iv, Base64.NO_WRAP)
         return "$ctB64?iv=$ivB64"
@@ -42,8 +38,24 @@ object Nip04 {
         require(parts.size == 2) { "Invalid NIP-04 content format" }
         val ciphertext = Base64.decode(parts[0], Base64.DEFAULT)
         val iv = Base64.decode(parts[1], Base64.DEFAULT)
+        return decryptRaw(ciphertext, iv, sharedSecret)
+    }
+
+    /** Raw AES-256-CBC encrypt with random IV. Returns (ciphertext, iv) so callers
+     *  can package the bytes in a non-standard envelope (e.g. DIP-03 bech32). */
+    fun encryptRaw(plaintext: String, sharedSecret: ByteArray): Pair<ByteArray, ByteArray> {
+        val iv = ByteArray(16).also { random.nextBytes(it) }
         val key = SecretKeySpec(sharedSecret, "AES")
-        val cipher = cipherLocal.get()
+        val cipher = cipherLocal.get()!!
+        cipher.init(Cipher.ENCRYPT_MODE, key, IvParameterSpec(iv))
+        val ciphertext = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
+        return ciphertext to iv
+    }
+
+    /** Raw AES-256-CBC decrypt — counterpart to [encryptRaw]. */
+    fun decryptRaw(ciphertext: ByteArray, iv: ByteArray, sharedSecret: ByteArray): String {
+        val key = SecretKeySpec(sharedSecret, "AES")
+        val cipher = cipherLocal.get()!!
         cipher.init(Cipher.DECRYPT_MODE, key, IvParameterSpec(iv))
         return String(cipher.doFinal(ciphertext), Charsets.UTF_8)
     }

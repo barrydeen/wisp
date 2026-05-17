@@ -381,7 +381,10 @@ class SocialActionManager(
             } else {
                 subscribeZapReceipt(event.id)
             }
-            // For private zaps, also subscribe on DM relays for the receipt
+            // For private zaps, also subscribe on our DM relays — that's where
+            // the LNURL will publish the receipt (per ZapSender's `relays` tag).
+            // Subscriptions over DM relays go through NIP-42 AUTH automatically
+            // via the relay's existing auth handshake.
             if (isPrivate && relayPool.hasDmRelays()) {
                 val dmFilter = if (eventATag != null) {
                     Filter(kinds = listOf(9735), aTags = listOf(eventATag))
@@ -418,7 +421,8 @@ class SocialActionManager(
                 isAnonymous = isAnonymous,
                 isPrivate = isPrivate,
                 extraTags = zapExtraTags,
-                extraRelayHints = extraRelayHints
+                extraRelayHints = extraRelayHints,
+                eventCreatedAt = event.created_at
             )
             _zapInProgress.value = _zapInProgress.value - event.id
             result.fold(

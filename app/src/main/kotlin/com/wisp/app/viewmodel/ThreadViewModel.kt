@@ -229,7 +229,7 @@ class ThreadViewModel : ViewModel() {
                     5, 7, 6, 1018 -> eventRepo.addEvent(event)
                     9735 -> {
                         eventRepo.addEvent(event)
-                        val zapperPubkey = com.wisp.app.nostr.Nip57.getZapperPubkey(event)
+                        val zapperPubkey = eventRepo.resolveZapSender(event).first
                         if (zapperPubkey != null && eventRepo.getProfileData(zapperPubkey) == null) {
                             metadataFetcher.addToPendingProfiles(zapperPubkey)
                         }

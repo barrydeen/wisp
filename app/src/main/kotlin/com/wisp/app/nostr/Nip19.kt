@@ -186,7 +186,7 @@ object Nip19 {
         }
     }
 
-    private fun bech32Encode(hrp: String, data: ByteArray): String {
+    internal fun bech32Encode(hrp: String, data: ByteArray): String {
         val values = convertBits(data, 8, 5, true)
         val checksum = bech32Checksum(hrp, values)
         return buildString(hrp.length + 1 + values.size + 6) {
@@ -197,7 +197,7 @@ object Nip19 {
         }
     }
 
-    private fun bech32Decode(str: String): Pair<String, ByteArray> {
+    internal fun bech32Decode(str: String): Pair<String, ByteArray> {
         val lower = str.lowercase()
         val pos = lower.lastIndexOf('1')
         require(pos >= 1) { "Invalid bech32 string" }

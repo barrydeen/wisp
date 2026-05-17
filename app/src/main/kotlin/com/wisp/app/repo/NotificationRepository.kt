@@ -181,14 +181,14 @@ class NotificationRepository(
         // For zap receipts, event.pubkey is the lightning service — check the actual zapper too.
         if (muteRepo?.isBlocked(event.pubkey) == true) return
         if (event.kind == 9735) {
-            val zapperPubkey = Nip57.getZapperPubkey(event)
+            val zapperPubkey = eventRepo?.resolveZapSender(event)?.first
             if (zapperPubkey != null && muteRepo?.isBlocked(zapperPubkey) == true) return
         }
         if (safetyPrefs?.wotFilterEnabled?.value == true) {
             val netRepo = extendedNetworkRepo
             if (netRepo != null && netRepo.isNetworkReady()) {
                 val pubkeyToCheck = if (event.kind == 9735) {
-                    Nip57.getZapperPubkey(event) ?: event.pubkey
+                    eventRepo?.resolveZapSender(event)?.first ?: event.pubkey
                 } else event.pubkey
                 if (!netRepo.isInQualifiedNetwork(pubkeyToCheck)) return
             }
@@ -592,7 +592,8 @@ class NotificationRepository(
     private fun mergeZap(event: NostrEvent): Boolean {
         val amount = Nip57.getZapAmountSats(event)
         if (amount <= 0) return false
-        val zapperPubkey = Nip57.getZapperPubkey(event) ?: return false
+        val (zapperPubkey, message) = eventRepo?.resolveZapSender(event) ?: (null to "")
+        if (zapperPubkey == null) return false
         val zapETag = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }
             ?: return mergeProfileZap(event, zapperPubkey, amount)
         val referencedId = zapETag[1]
@@ -602,11 +603,7 @@ class NotificationRepository(
         // the same 9735 event to be re-processed on periodic refresh cycles.
         val zapEventIds = zapEventIdsByGroup.getOrPut(key) { mutableSetOf() }
         if (!zapEventIds.add(event.id)) return false
-        val message = Nip57.getZapMessage(event)
-        val dmRelays = eventRepo?.dmRelayUrls ?: emptySet()
-        val isPrivate = dmRelays.isNotEmpty() && Nip57.getZapRequestRelays(event).let { reqRelays ->
-            reqRelays.isNotEmpty() && reqRelays.all { it in dmRelays }
-        }
+        val isPrivate = Nip57.isPrivateZap(event)
         val entry = ZapEntry(pubkey = zapperPubkey, sats = amount, message = message, createdAt = event.created_at, receiptEventId = event.id, isPrivate = isPrivate)
         val emoji = NotificationGroup.ZAP_EMOJI
         val existing = groupMap[key] as? NotificationGroup.ReactionGroup
@@ -663,7 +660,7 @@ class NotificationRepository(
     }
 
     private fun mergeProfileZap(event: NostrEvent, zapperPubkey: String, amount: Long): Boolean {
-        val message = Nip57.getZapMessage(event)
+        val message = eventRepo?.resolveZapSender(event)?.second ?: Nip57.getZapMessage(event)
         val recipientPubkey = event.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: return false
         val flatZapId = "profilezap:${event.id}"
         if (flatItemIds.add(flatZapId)) {

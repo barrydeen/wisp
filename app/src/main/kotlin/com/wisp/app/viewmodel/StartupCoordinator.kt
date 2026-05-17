@@ -225,7 +225,6 @@ class StartupCoordinator(
         relayPool.updateRelays(initialRelays)
         val dmRelays = keyRepo.getDmRelays()
         relayPool.updateDmRelays(dmRelays)
-        eventRepo.dmRelayUrls = dmRelays.toSet()
 
         scope.launch {
             relayInfoRepo.prefetchAll(initialRelays.map { it.url })
@@ -977,7 +976,6 @@ class StartupCoordinator(
         relayPool.updateRelays(relays)
         val dmRelays = keyRepo.getDmRelays()
         relayPool.updateDmRelays(dmRelays)
-        eventRepo.dmRelayUrls = dmRelays.toSet()
         feedSub.subscribeFeed()
     }
 }
