@@ -570,7 +570,37 @@ class DmConversationViewModel(app: Application) : AndroidViewModel(app) {
      */
     private suspend fun fetchPeerRelayList(pubkeyHex: String, relayPool: RelayPool) {
         val repo = relayListRepo ?: return
-        com.wisp.app.repo.PeerRelayListLookup.fetch(pubkeyHex, relayPool, repo)
+
+        val subId = "rl_${pubkeyHex.take(8)}"
+        val filter = Filter(
+            kinds = listOf(10002),
+            authors = listOf(pubkeyHex),
+            limit = 1
+        )
+        val reqMsg = ClientMessage.req(subId, filter)
+        for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+            relayPool.sendToRelayOrEphemeral(url, reqMsg, skipBadCheck = true)
+        }
+        relayPool.sendToAll(reqMsg)
+
+        // Collect all responses within 4s; pick the freshest (highest created_at)
+        val results = mutableListOf<RelayEvent>()
+        withTimeoutOrNull(4000L) {
+            relayPool.relayEvents
+                .filter { it.subscriptionId == subId }
+                .collect { results.add(it) }
+        }
+
+        val closeMsg = ClientMessage.close(subId)
+        for (url in RelayConfig.DEFAULT_INDEXER_RELAYS) {
+            relayPool.sendToRelay(url, closeMsg)
+        }
+        relayPool.sendToAll(closeMsg)
+
+        val best = results.maxByOrNull { it.event.created_at }
+        if (best != null) {
+            repo.updateFromEvent(best.event)
+        }
     }
 
     /**

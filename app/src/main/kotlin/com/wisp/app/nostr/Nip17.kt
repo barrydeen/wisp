@@ -408,9 +408,10 @@ object Nip17 {
     }
 
     private fun randomizeTimestamp(base: Long): Long {
-        // 0 to 2 days in the past per NIP-59. Earlier 1-day cap was a workaround for clients
-        // whose kind-1059 subscriptions used a tight `since`; verified obsolete in 2026.
-        val twoDays = 2 * 24 * 60 * 60
-        return base - random.nextInt(twoDays)
+        // 0 to 1 day in the past — NIP-17 spec allows up to 2 days, but keeping it to 1 day
+        // ensures interop with clients (e.g. Amethyst) whose kind-1059 subscription may use
+        // a `since` filter tighter than 2 days, which would silently drop our gift wraps.
+        val oneDay = 24 * 60 * 60
+        return base - random.nextInt(oneDay)
     }
 }

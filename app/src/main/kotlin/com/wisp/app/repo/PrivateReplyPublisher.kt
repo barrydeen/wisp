@@ -75,11 +75,6 @@ object PrivateReplyPublisher {
         val recipientRelays: List<String> = run {
             val dmRelays = DmRelayLookup.fetch(replyTo.pubkey, relayPool, dmRepo)
             if (dmRelays.isNotEmpty()) return@run dmRelays
-            // Cached kind 10002 may be missing or stale — fetch fresh from indexers before
-            // falling back to our own write relays (which the recipient never queries).
-            if (relayListRepo != null) {
-                PeerRelayListLookup.fetch(replyTo.pubkey, relayPool, relayListRepo)
-            }
             relayListRepo?.getReadRelays(replyTo.pubkey)?.takeIf { it.isNotEmpty() }?.let { return@run it }
             relayListRepo?.getWriteRelays(replyTo.pubkey)?.takeIf { it.isNotEmpty() }?.let { return@run it }
             emptyList()
