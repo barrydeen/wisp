@@ -305,7 +305,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     val socialActions: SocialActionManager = SocialActionManager(
         relayPool, outboxRouter, eventRepo, contactRepo, muteRepo, notifRepo, dmRepo,
-        pinRepo, deletedEventsRepo, { activeWalletProvider }, customEmojiRepo, zapSender, powPrefs, interfacePrefs, viewModelScope,
+        pinRepo, deletedEventsRepo, { activeWalletProvider }, customEmojiRepo, zapSender, powPrefs, interfacePrefs,
+        relayListRepo, viewModelScope,
         getSigner = { signer },
         getUserPubkey = { getUserPubkey() }
     )

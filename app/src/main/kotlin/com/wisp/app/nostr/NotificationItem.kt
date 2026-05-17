@@ -14,6 +14,7 @@ data class FlatNotificationItem(
     val zapMessage: String = "",
     val isPrivateZap: Boolean = false,
     val isPrivateReply: Boolean = false,
+    val isPrivateReaction: Boolean = false,
     val replyEventId: String? = null,
     val quoteEventId: String? = null,
     val voteOptionIds: List<String> = emptyList(),

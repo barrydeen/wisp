@@ -687,11 +687,11 @@ private fun ZenNotificationRow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
                     )
-                    if (item.isPrivateReply) {
+                    if (item.isPrivateReply || item.isPrivateReaction || item.isPrivateZap) {
                         Spacer(Modifier.width(4.dp))
                         Icon(
                             imageVector = Icons.Outlined.VisibilityOff,
-                            contentDescription = "Private reply",
+                            contentDescription = "Private",
                             modifier = Modifier.size(14.dp),
                             tint = androidx.compose.ui.graphics.Color(0xFFFF8C00)
                         )

@@ -111,7 +111,7 @@ object PrivateReplyPublisher {
             content = content,
             sig = ""
         )
-        eventRepo?.markPrivateReply(rumorId)
+        eventRepo?.markPrivate(rumorId)
         eventRepo?.cacheEvent(synthetic)
         eventRepo?.addReplyCount(replyTo.id, rumorId)
         Nip10.getRootId(replyTo)?.takeIf { it != replyTo.id }?.let { rootId ->

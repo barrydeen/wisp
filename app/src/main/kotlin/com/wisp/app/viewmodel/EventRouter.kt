@@ -602,8 +602,17 @@ class EventRouter(
             null
         } ?: return
 
-        // Private DM reaction — associate with the target message, not a new conversation entry
+        // Private reaction (kind 7 rumor). The "k" tag carries the kind of the message
+        // being reacted to: k=1 → reaction on a NIP-17 private reply, route through the
+        // note repository so thread/notification rendering picks it up the same way as
+        // public reactions; k=14 (or absent for back-compat) → DM reaction, route into
+        // the DM conversation entry.
         if (Nip17.isReaction(rumor)) {
+            val kTag = rumor.tags.firstOrNull { it.size >= 2 && it[0] == "k" }?.get(1)
+            if (kTag == "1") {
+                handlePrivateReplyReaction(rumor, myPubkey)
+                return
+            }
             val targetId = rumor.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1) ?: return
             val participants = Nip17.getConversationParticipants(rumor, myPubkey)
             if (participants.any { muteRepo.isBlocked(it) }) return
@@ -651,6 +660,35 @@ class EventRouter(
         dmRepo.addMessage(msg, convKey)
     }
 
+    private fun handlePrivateReplyReaction(rumor: Nip17.Rumor, myPubkey: String) {
+        if (muteRepo.isBlocked(rumor.pubkey)) return
+        val targetId = rumor.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1) ?: return
+        if (eventRepo.getEvent(targetId) == null) {
+            // Without the target rumor cached we can't bind ownership in NotificationRepository,
+            // which would surface reactions on threads we never received. Drop quietly — the
+            // target arrives via the same kind-1059 subscription, so a refetch will heal.
+            Log.d("EventRouter", "Skipping private reaction on uncached target ${targetId.take(12)}")
+            return
+        }
+        val rumorId = Nip17.computeRumorId(rumor)
+        val synthetic = NostrEvent(
+            id = rumorId,
+            pubkey = rumor.pubkey,
+            created_at = rumor.createdAt,
+            kind = 7,
+            tags = rumor.tags,
+            content = rumor.content,
+            sig = ""
+        )
+        eventRepo.markPrivate(rumorId)
+        eventRepo.addEvent(synthetic)
+        if (rumor.pubkey == myPubkey) return
+        notifRepo.addEvent(synthetic, myPubkey, source = "gift-wrap-private-reaction")
+        if (eventRepo.getProfileData(rumor.pubkey) == null) {
+            metadataFetcher.addToPendingProfiles(rumor.pubkey)
+        }
+    }
+
     private fun handlePrivateReply(wrap: NostrEvent, rumor: Nip17.Rumor, myPubkey: String) {
         if (muteRepo.isBlocked(rumor.pubkey)) return
 
@@ -664,7 +702,7 @@ class EventRouter(
             content = rumor.content,
             sig = ""
         )
-        eventRepo.markPrivateReply(rumorId)
+        eventRepo.markPrivate(rumorId)
         eventRepo.cacheEvent(synthetic)
         if (!Nip10.isStandaloneQuote(synthetic)) {
             val parentId = Nip10.getReplyTarget(synthetic)
