@@ -206,6 +206,24 @@ fun WalletScreen(
                         },
                         modifier = Modifier.padding(padding)
                     )
+                } else if (currentPage !is WalletPage.NwcSetup &&
+                           currentPage !is WalletPage.SparkSetup &&
+                           currentPage !is WalletPage.SparkRestoreSeed &&
+                           currentPage !is WalletPage.SparkBackup) {
+                    // Mode picker — must NOT live inside a verticalScroll, otherwise
+                    // weighted spacers collapse and the two rows ride up to the top
+                    // of the page instead of anchoring near the bottom.
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding)
+                            .padding(horizontal = 16.dp)
+                    ) {
+                        WalletModeSelectionContent(
+                            onSelectNwc = { viewModel.selectNwcMode() },
+                            onSelectSpark = { viewModel.selectSparkMode() }
+                        )
+                    }
                 } else {
                     Column(
                         modifier = Modifier
@@ -253,10 +271,7 @@ fun WalletScreen(
                                     isDefaultWallet = viewModel.isDefaultWallet.collectAsState().value
                                 )
                             }
-                            else -> WalletModeSelectionContent(
-                                onSelectNwc = { viewModel.selectNwcMode() },
-                                onSelectSpark = { viewModel.selectSparkMode() }
-                            )
+                            else -> {} // handled above (mode picker branch)
                         }
                     }
                 }
