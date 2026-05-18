@@ -7,12 +7,10 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Notifications
@@ -40,11 +38,12 @@ import com.wisp.app.Routes
 enum class BottomTab(
     val route: String,
     val labelResId: Int,
-    val selectedIcon: ImageVector,
-    val unselectedIcon: ImageVector
+    val selectedIcon: ImageVector?,
+    val unselectedIcon: ImageVector?,
+    val iconResId: Int? = null
 ) {
     HOME(Routes.FEED, R.string.nav_home, Icons.Filled.Home, Icons.Outlined.Home),
-    WALLET(Routes.WALLET, R.string.nav_wallet, Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet),
+    WALLET(Routes.WALLET, R.string.nav_wallet, null, null, R.drawable.ic_wallet),
     SEARCH(Routes.SEARCH, R.string.nav_search, Icons.Filled.Search, Icons.Outlined.Search),
     MESSAGES(Routes.DM_LIST, R.string.nav_messages, Icons.Filled.Forum, Icons.Outlined.Forum),
     NOTIFICATIONS(Routes.NOTIFICATIONS, R.string.nav_notifications, Icons.Filled.Notifications, Icons.Outlined.Notifications)
@@ -102,11 +101,19 @@ fun WispBottomBar(
                                 contentDescription = stringResource(tab.labelResId),
                                 tint = zapTint
                             )
+                        } else if (tab.iconResId != null) {
+                            // Wallet (and any other tab using a drawable resource)
+                            // — fixed icon, doesn't switch on selected/zap-icon prefs.
+                            Icon(
+                                painter = painterResource(tab.iconResId),
+                                contentDescription = stringResource(tab.labelResId),
+                                tint = zapTint
+                            )
                         } else {
                             val icon = if (tab == BottomTab.NOTIFICATIONS && isZapAnimating)
                                 Icons.Outlined.CurrencyBitcoin
-                            else if (selected) tab.selectedIcon
-                            else tab.unselectedIcon
+                            else if (selected) tab.selectedIcon!!
+                            else tab.unselectedIcon!!
                             Icon(
                                 imageVector = icon,
                                 contentDescription = stringResource(tab.labelResId),
