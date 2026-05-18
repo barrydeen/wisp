@@ -74,6 +74,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         return when {
             input.startsWith("nsec1") -> loginWithNsec(input)
             input.startsWith("npub1") -> loginWithNpub(input)
+            input.startsWith("nprofile1") -> loginWithNprofile(input)
             input.length == 64 && input.all { it in '0'..'9' || it in 'a'..'f' } -> loginWithPubkeyHex(input)
             else -> {
                 _error.value = "Invalid key format — enter an nsec or npub"
@@ -112,6 +113,22 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             true
         } catch (e: Exception) {
             _error.value = "Invalid npub: ${e.message}"
+            false
+        }
+    }
+
+    private fun loginWithNprofile(nprofile: String): Boolean {
+        return try {
+            val profile = Nip19.nprofileDecode(nprofile)
+            keyRepo.savePubkeyReadOnly(profile.pubkey)
+            keyRepo.reloadPrefs(profile.pubkey)
+            _npub.value = Nip19.npubEncode(profile.pubkey.hexToByteArray())
+            _signingMode.value = SigningMode.READ_ONLY
+            _nsecInput.value = ""
+            _error.value = null
+            true
+        } catch (e: Exception) {
+            _error.value = "Invalid nprofile: ${e.message}"
             false
         }
     }

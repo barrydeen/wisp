@@ -149,7 +149,7 @@ fun FeedScreen(
     viewModel: FeedViewModel,
     isDarkTheme: Boolean = true,
     onToggleTheme: () -> Unit = {},
-    onCompose: () -> Unit,
+    onCompose: (() -> Unit)? = null,
     onReply: (NostrEvent) -> Unit,
     onRelays: () -> Unit,
     onProfileEdit: () -> Unit = {},
@@ -993,20 +993,22 @@ fun FeedScreen(
                 )
             },
             floatingActionButton = {
-                val isScrolling = listState.isScrollInProgress
-                val fabAlpha by animateFloatAsState(
-                    targetValue = if (isScrolling) 0.3f else 1f,
-                    animationSpec = tween(
-                        durationMillis = if (isScrolling) 150 else 400
-                    ),
-                    label = "fabAlpha"
-                )
-                FloatingActionButton(
-                    onClick = onCompose,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.graphicsLayer { alpha = fabAlpha }
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "New post")
+                if (onCompose != null) {
+                    val isScrolling = listState.isScrollInProgress
+                    val fabAlpha by animateFloatAsState(
+                        targetValue = if (isScrolling) 0.3f else 1f,
+                        animationSpec = tween(
+                            durationMillis = if (isScrolling) 150 else 400
+                        ),
+                        label = "fabAlpha"
+                    )
+                    FloatingActionButton(
+                        onClick = onCompose,
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.graphicsLayer { alpha = fabAlpha }
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "New post")
+                    }
                 }
             }
         ) { padding ->

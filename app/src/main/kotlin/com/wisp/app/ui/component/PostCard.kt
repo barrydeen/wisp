@@ -90,6 +90,7 @@ import com.wisp.app.repo.Nip05Status
 import com.wisp.app.repo.TranslationState
 import com.wisp.app.repo.TranslationStatus
 import com.wisp.app.ui.theme.WispThemeColors
+import com.wisp.app.ui.util.LocalCanSign
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -788,42 +789,45 @@ fun PostCard(
             }
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ActionBar(
-                onReply = onReply,
-                onReact = onReact,
-                userReactionEmojis = userReactionEmojis,
-                onRepost = onRepost,
-                onQuote = onQuote,
-                hasUserReposted = hasUserReposted,
-                repostCount = repostCount,
-                onZap = onZap,
-                hasUserZapped = hasUserZapped,
-                onAddToList = onAddToList,
-                isInList = isInList,
-                likeCount = likeCount,
-                replyCount = replyCount,
-                zapSats = zapSats,
-                isZapAnimating = isZapAnimating,
-                isZapInProgress = isZapInProgress,
-                reactionEmojiUrls = reactionEmojiUrls,
-                resolvedEmojis = resolvedEmojis,
-                unicodeEmojis = unicodeEmojis,
-                onOpenEmojiLibrary = onOpenEmojiLibrary,
-                isPrivate = isPrivate,
-                zapEnabled = zapEnabled,
-                onZapDisabledTap = onZapDisabledTap,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(
-                imageVector = if (expandedDetails) Icons.Filled.KeyboardArrowUp
-                    else Icons.Filled.KeyboardArrowDown,
-                contentDescription = if (expandedDetails) stringResource(R.string.cd_collapse) else stringResource(R.string.cd_expand),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .size(20.dp)
-                    .clickable { expandedDetails = !expandedDetails }
-            )
+        val canSign = LocalCanSign.current
+        if (canSign) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ActionBar(
+                    onReply = onReply,
+                    onReact = onReact,
+                    userReactionEmojis = userReactionEmojis,
+                    onRepost = onRepost,
+                    onQuote = onQuote,
+                    hasUserReposted = hasUserReposted,
+                    repostCount = repostCount,
+                    onZap = onZap,
+                    hasUserZapped = hasUserZapped,
+                    onAddToList = onAddToList,
+                    isInList = isInList,
+                    likeCount = likeCount,
+                    replyCount = replyCount,
+                    zapSats = zapSats,
+                    isZapAnimating = isZapAnimating,
+                    isZapInProgress = isZapInProgress,
+                    reactionEmojiUrls = reactionEmojiUrls,
+                    resolvedEmojis = resolvedEmojis,
+                    unicodeEmojis = unicodeEmojis,
+                    onOpenEmojiLibrary = onOpenEmojiLibrary,
+                    isPrivate = isPrivate,
+                    zapEnabled = zapEnabled,
+                    onZapDisabledTap = onZapDisabledTap,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = if (expandedDetails) Icons.Filled.KeyboardArrowUp
+                        else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = if (expandedDetails) stringResource(R.string.cd_collapse) else stringResource(R.string.cd_expand),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clickable { expandedDetails = !expandedDetails }
+                )
+            }
         }
         AnimatedVisibility(
             visible = expandedDetails,

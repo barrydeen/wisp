@@ -80,6 +80,7 @@ import com.wisp.app.ui.screen.KeysScreen
 import com.wisp.app.ui.screen.ListScreen
 import com.wisp.app.ui.screen.LiveStreamScreen
 import com.wisp.app.ui.screen.ExistingUserOnboardingScreen
+import com.wisp.app.ui.screen.WatchOnlyOnboardingScreen
 import com.wisp.app.ui.screen.LoadingScreen
 import com.wisp.app.ui.screen.ListsHubScreen
 import com.wisp.app.ui.screen.InterfaceScreen
@@ -125,6 +126,8 @@ import com.wisp.app.viewmodel.LiveStreamViewModel
 import com.wisp.app.viewmodel.WalletViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.CompositionLocalProvider
+import com.wisp.app.ui.util.LocalCanSign
 
 object Routes {
     const val SPLASH = "splash"
@@ -163,6 +166,7 @@ object Routes {
     const val HASHTAG_FEED = "hashtag/{tag}"
     const val HASHTAG_SET_FEED = "hashtag_set/{name}/{tags}"
     const val EXISTING_USER_ONBOARDING = "onboarding/existing"
+    const val WATCH_ONLY_ONBOARDING = "onboarding/watch-only"
     const val DRAFTS = "drafts"
     const val SOCIAL_GRAPH = "social_graph"
     const val POW_SETTINGS = "pow_settings"
@@ -380,7 +384,7 @@ fun WispNavHost(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    val nonAppRoutes = setOf(Routes.SPLASH, Routes.AUTH, Routes.GOOGLE_AUTH, Routes.LOADING, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS, Routes.ONBOARDING_TOPICS, Routes.ONBOARDING_FIRST_POST, Routes.EXISTING_USER_ONBOARDING)
+    val nonAppRoutes = setOf(Routes.SPLASH, Routes.AUTH, Routes.GOOGLE_AUTH, Routes.LOADING, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS, Routes.ONBOARDING_TOPICS, Routes.ONBOARDING_FIRST_POST, Routes.EXISTING_USER_ONBOARDING, Routes.WATCH_ONLY_ONBOARDING)
     val hideBottomBarRoutes = nonAppRoutes + Routes.DM_CONVERSATION + Routes.DM_CONVERSATION_GROUP + Routes.CONTACT_PICKER + Routes.GROUP_ROOM + Routes.GROUP_DETAIL + Routes.LIVE_STREAM
     val socialGraphDiscoveryState by feedViewModel.extendedNetworkRepo.discoveryState.collectAsState()
     val socialGraphComputing = currentRoute == Routes.SOCIAL_GRAPH && (
@@ -589,6 +593,7 @@ fun WispNavHost(
                         isZapAnimating = isZapAnimating,
                         isReplyAnimating = isReplyAnimating,
                         notifSoundEnabled = notifSoundEnabled,
+                        isReadOnly = signingMode == SigningMode.READ_ONLY,
                         onTabSelected = { tab ->
                             if (currentRoute == tab.route) {
                                 scrollToTopTrigger++
@@ -614,6 +619,7 @@ fun WispNavHost(
     var pipFullScreenAspectRatio by remember { mutableStateOf(16f / 9f) }
 
     Box(modifier = Modifier.padding(innerPadding)) {
+    CompositionLocalProvider(LocalCanSign provides (signingMode != SigningMode.READ_ONLY)) {
     NavHost(
         navController = navController,
         startDestination = startDestination
@@ -719,7 +725,7 @@ fun WispNavHost(
                         relayViewModel.reload()
                         feedViewModel.initRelays()
                         authViewModel.keyRepo.markOnboardingComplete()
-                        navController.navigate(Routes.LOADING) {
+                        navController.navigate(Routes.WATCH_ONLY_ONBOARDING) {
                             popUpTo(Routes.AUTH) { inclusive = true }
                         }
                     } else {
@@ -778,19 +784,32 @@ fun WispNavHost(
             )
         }
 
+        composable(Routes.WATCH_ONLY_ONBOARDING) {
+            WatchOnlyOnboardingScreen(
+                feedViewModel = feedViewModel,
+                onReady = {
+                    navController.navigate(Routes.FEED) {
+                        popUpTo(Routes.WATCH_ONLY_ONBOARDING) { inclusive = true }
+                    }
+                }
+            )
+        }
+
         composable(Routes.FEED) {
             FeedScreen(
                 viewModel = feedViewModel,
                 isDarkTheme = isDarkTheme,
                 onToggleTheme = onToggleTheme,
                 scrollToTopTrigger = scrollToTopTrigger,
-                onCompose = {
-                    replyTarget = null
-                    quoteTarget = null
-                    composeViewModel.clear()
-                    navController.navigate(Routes.COMPOSE)
+                onCompose = if (signingMode == SigningMode.READ_ONLY) null else {
+                    {
+                        replyTarget = null
+                        quoteTarget = null
+                        composeViewModel.clear()
+                        navController.navigate(Routes.COMPOSE)
+                    }
                 },
-                onReply = { event ->
+                onReply = if (signingMode == SigningMode.READ_ONLY) { _ -> } else { event ->
                     replyTarget = event
                     quoteTarget = null
                     composeViewModel.clear()
@@ -2790,9 +2809,12 @@ fun WispNavHost(
         }
 
         composable(Routes.KEYS) {
+            val pubkeyHex = authViewModel.keyRepo.getPubkeyHex()
+            val avatarUrl = pubkeyHex?.let { feedViewModel.eventRepo.getProfileData(it)?.picture }
             KeysScreen(
                 keyRepository = authViewModel.keyRepo,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                avatarUrl = avatarUrl
             )
         }
 
@@ -3405,6 +3427,7 @@ fun WispNavHost(
             .align(Alignment.BottomCenter)
             .padding(bottom = 16.dp)
     )
+    } // CompositionLocalProvider
     } // Box
 
     } // Scaffold

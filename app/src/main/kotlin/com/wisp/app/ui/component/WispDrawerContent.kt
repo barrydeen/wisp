@@ -45,6 +45,8 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.Visibility
+import com.wisp.app.repo.SigningMode
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -74,6 +76,7 @@ import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.Nip05
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.repo.AccountInfo
+import com.wisp.app.ui.util.LocalCanSign
 
 
 @Composable
@@ -114,6 +117,7 @@ fun WispDrawerContent(
     ) {
         val scrollState = rememberScrollState()
         val scope = rememberCoroutineScope()
+        val canSign = LocalCanSign.current
         Column(modifier = Modifier
             .fillMaxHeight()
             .statusBarsPadding()
@@ -310,6 +314,15 @@ fun WispDrawerContent(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
                             )
+                            if (account.signingMode == SigningMode.READ_ONLY) {
+                                Icon(
+                                    Icons.Outlined.Visibility,
+                                    contentDescription = "Watch-only",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                            }
                             if (isActive) {
                                 Icon(
                                     Icons.Filled.Check,
@@ -389,34 +402,38 @@ fun WispDrawerContent(
             onClick = onSearch,
             modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
-        NavigationDrawerItem(
-            icon = { Icon(Icons.Outlined.Email, contentDescription = null) },
-            label = { Text(stringResource(R.string.nav_messages)) },
-            selected = false,
-            onClick = onMessages,
-            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
-        )
+        if (canSign) {
+            NavigationDrawerItem(
+                icon = { Icon(Icons.Outlined.Email, contentDescription = null) },
+                label = { Text(stringResource(R.string.nav_messages)) },
+                selected = false,
+                onClick = onMessages,
+                modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
+            )
+        }
         val useZapBolt = com.wisp.app.ui.util.useBoltIcon()
         val fiatMode = com.wisp.app.ui.util.isFiatMode()
-        NavigationDrawerItem(
-            icon = {
-                if (fiatMode) {
-                    Icon(Icons.Outlined.AccountBalanceWallet, contentDescription = null)
-                } else if (useZapBolt) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_bolt),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp)
-                    )
-                } else {
-                    Icon(Icons.Outlined.CurrencyBitcoin, contentDescription = null)
-                }
-            },
-            label = { Text(stringResource(R.string.nav_wallet)) },
-            selected = false,
-            onClick = onWallet,
-            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
-        )
+        if (canSign) {
+            NavigationDrawerItem(
+                icon = {
+                    if (fiatMode) {
+                        Icon(Icons.Outlined.AccountBalanceWallet, contentDescription = null)
+                    } else if (useZapBolt) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_bolt),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    } else {
+                        Icon(Icons.Outlined.CurrencyBitcoin, contentDescription = null)
+                    }
+                },
+                label = { Text(stringResource(R.string.nav_wallet)) },
+                selected = false,
+                onClick = onWallet,
+                modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
+            )
+        }
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.FormatListBulleted, contentDescription = null) },
             label = { Text(stringResource(R.string.drawer_lists)) },
@@ -555,19 +572,23 @@ fun WispDrawerContent(
                     Column {
                         Row(verticalAlignment = Alignment.Top) {
                             Icon(
-                                Icons.Outlined.Key,
+                                if (canSign) Icons.Outlined.Key else Icons.Outlined.Visibility,
                                 contentDescription = null,
                                 modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.error
+                                tint = if (canSign) MaterialTheme.colorScheme.error
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(Modifier.width(10.dp))
                             Text(
-                                "Back up your private key before logging out. Without it, your Nostr account cannot be recovered.",
+                                if (canSign)
+                                    "Back up your private key before logging out. Without it, your Nostr account cannot be recovered."
+                                else
+                                    "Sign back in with your npub anytime.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }
-                        if (hasEmbeddedWallet) {
+                        if (canSign && hasEmbeddedWallet) {
                             Spacer(Modifier.height(14.dp))
                             Row(verticalAlignment = Alignment.Top) {
                                 Icon(

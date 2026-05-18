@@ -108,6 +108,7 @@ import com.wisp.app.ui.component.ProfileQrSheet
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
 import com.wisp.app.ui.component.ZapDialog
+import com.wisp.app.ui.util.LocalCanSign
 import com.wisp.app.viewmodel.ProfileSortMode
 import com.wisp.app.viewmodel.UserProfileViewModel
 import android.content.ClipData
@@ -1137,6 +1138,7 @@ private fun ProfileHeader(
     isBlocked: Boolean = false
 ) {
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
+    val canSign = LocalCanSign.current
 
     if (fullScreenImageUrl != null) {
         FullScreenImageViewer(
@@ -1181,11 +1183,11 @@ private fun ProfileHeader(
                 onClick = profile?.picture?.let { url -> { fullScreenImageUrl = url } }
             )
             Spacer(Modifier.weight(1f))
-            if (isOwnProfile) {
+            if (canSign && isOwnProfile) {
                 OutlinedButton(onClick = onEditProfile) {
                     Text(stringResource(R.string.profile_edit))
                 }
-            } else {
+            } else if (canSign) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (onSendDm != null) {
                         IconButton(onClick = onSendDm) {

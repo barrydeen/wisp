@@ -59,8 +59,14 @@ fun WispBottomBar(
     isZapAnimating: Boolean = false,
     isReplyAnimating: Boolean = false,
     notifSoundEnabled: Boolean = true,
+    isReadOnly: Boolean = false,
     onTabSelected: (BottomTab) -> Unit
 ) {
+    val visibleTabs = if (isReadOnly)
+        BottomTab.entries.filter { it != BottomTab.WALLET && it != BottomTab.MESSAGES }
+    else
+        BottomTab.entries
+
     Column {
         HorizontalDivider(
             thickness = 0.5.dp,
@@ -70,7 +76,7 @@ fun WispBottomBar(
             containerColor = MaterialTheme.colorScheme.surface,
             windowInsets = NavigationBarDefaults.windowInsets
         ) {
-        BottomTab.entries.forEach { tab ->
+        visibleTabs.forEach { tab ->
             val selected = currentRoute == tab.route
             val hasUnread = when (tab) {
                 BottomTab.HOME -> hasUnreadHome
