@@ -357,7 +357,7 @@ fun ComposeScreen(
                     OutlinedTextField(
                         value = content,
                         onValueChange = { viewModel.updateContent(it) },
-                        label = { Text(stringResource(R.string.compose_gallery_placeholder)) },
+                        placeholder = { Text(stringResource(R.string.compose_gallery_placeholder)) },
                         enabled = !publishing && countdownSeconds == null,
                         visualTransformation = galleryEmojiVisual,
                         modifier = Modifier
@@ -755,7 +755,7 @@ fun ComposeScreen(
                                 singleLine = false,
                                 visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
                                 interactionSource = interactionSource,
-                                label = { Text(stringResource(R.string.compose_placeholder)) }
+                                placeholder = { Text(stringResource(R.string.compose_placeholder)) }
                             )
                         }
                     )
