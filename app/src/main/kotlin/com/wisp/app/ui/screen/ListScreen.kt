@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.R
 import com.wisp.app.nostr.FollowSet
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.Nip51
 import com.wisp.app.nostr.toHex
@@ -240,7 +241,7 @@ fun ListScreen(
                     eventRepo.getProfileData(pubkey)
                 }
                 val displayName = profile?.displayString
-                    ?: pubkey.take(8) + "..." + pubkey.takeLast(4)
+                    ?: pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -340,7 +341,7 @@ private fun FollowPickerDialog(
                     items(filteredFollows, key = { it.pubkey }) { entry ->
                         val profile = eventRepo.getProfileData(entry.pubkey)
                         val displayName = profile?.displayString
-                            ?: entry.pubkey.take(8) + "..." + entry.pubkey.takeLast(4)
+                            ?: entry.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                         val isMember = entry.pubkey in existingMembers
 
                         Row(

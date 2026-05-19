@@ -85,6 +85,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
 import com.wisp.app.R
 import com.wisp.app.nostr.DmMessage
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.ui.screen.GroupChatHorizontalChipStrip
 import com.wisp.app.nostr.DmReaction
 import com.wisp.app.nostr.EncryptedMedia
@@ -131,7 +132,7 @@ fun DmBubble(
     val density = LocalDensity.current
     val swipeThresholdPx = with(density) { 72.dp.toPx() }
     val senderProfile = remember(message.senderPubkey) { eventRepo?.getProfileData(message.senderPubkey) }
-    val senderName = senderProfile?.displayString ?: (message.senderPubkey.take(8) + "…")
+    val senderName = senderProfile?.displayString ?: message.senderPubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
 
     val animatedSwipe by animateFloatAsState(
         targetValue = swipeOffsetPx,
@@ -539,7 +540,7 @@ private fun QuotedDmPreview(
 ) {
     val senderName = remember(message.senderPubkey) {
         eventRepo?.getProfileData(message.senderPubkey)?.displayString
-            ?: message.senderPubkey.take(8) + "…"
+            ?: message.senderPubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
     }
     val accentColor = if (parentIsSent) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f)
     else MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)

@@ -86,6 +86,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.wisp.app.R
 import com.wisp.app.nostr.Nip19
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.repo.EventRepository
@@ -284,7 +285,7 @@ fun LiveStreamScreen(
         AnimatedVisibility(visible = replyTarget != null) {
             replyTarget?.let { reply ->
                 val replyProfile = remember(reply.senderPubkey) { eventRepo.getProfileData(reply.senderPubkey) }
-                val replyName = replyProfile?.displayString ?: (reply.senderPubkey.take(8) + "…")
+                val replyName = replyProfile?.displayString ?: reply.senderPubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier.fillMaxWidth()
@@ -463,7 +464,7 @@ private fun StreamInfoBar(
     isZapAnimating: Boolean = false
 ) {
     val profile = remember(hostPubkey) { eventRepo.getProfileData(hostPubkey) }
-    val displayName = profile?.displayString ?: (hostPubkey.take(8) + "…")
+    val displayName = profile?.displayString ?: hostPubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
     val zapColor = com.wisp.app.ui.theme.WispThemeColors.zapColor
 
     Row(
@@ -593,7 +594,7 @@ private fun ZapAnnouncementBubble(
     onProfileClick: (String) -> Unit
 ) {
     val profile = remember(message.senderPubkey) { eventRepo.getProfileData(message.senderPubkey) }
-    val displayName = profile?.displayString ?: (message.senderPubkey.take(8) + "…")
+    val displayName = profile?.displayString ?: message.senderPubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
     val zapColor = com.wisp.app.ui.theme.WispThemeColors.zapColor
 
     Surface(
@@ -685,7 +686,7 @@ private fun LiveChatBubble(
     isZapInProgress: Boolean
 ) {
     val profile = remember(message.senderPubkey) { eventRepo.getProfileData(message.senderPubkey) }
-    val displayName = profile?.displayString ?: (message.senderPubkey.take(8) + "…")
+    val displayName = profile?.displayString ?: message.senderPubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
     val isOwnMessage = message.senderPubkey == myPubkey
     val nameColor = if (isOwnMessage) {
         MaterialTheme.colorScheme.primary
@@ -866,7 +867,7 @@ private fun LiveChatBubble(
                     val replyProfile = remember(replyToMessage.senderPubkey) {
                         eventRepo.getProfileData(replyToMessage.senderPubkey)
                     }
-                    val replyName = replyProfile?.displayString ?: (replyToMessage.senderPubkey.take(8) + "…")
+                    val replyName = replyProfile?.displayString ?: replyToMessage.senderPubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

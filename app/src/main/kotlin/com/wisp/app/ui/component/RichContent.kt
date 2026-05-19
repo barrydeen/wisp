@@ -106,6 +106,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.TextButton
 import com.wisp.app.R
 import com.wisp.app.nostr.Bolt11
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.toHex
@@ -763,7 +764,7 @@ fun RichContent(
                     for (pubkey in profilePubkeys) {
                         val profile = eventRepo?.getProfileData(pubkey)
                         names[pubkey] = profile?.displayString
-                            ?: "${pubkey.take(8)}...${pubkey.takeLast(4)}"
+                            ?: pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                     }
                     names
                 }
@@ -839,7 +840,7 @@ fun RichContent(
                             }
                             is ContentSegment.NostrProfileSegment -> {
                                 val pubkey = seg.pubkey
-                                val displayName = profileNames[seg.pubkey] ?: seg.pubkey.take(8)
+                                val displayName = profileNames[seg.pubkey] ?: seg.pubkey.toNpub().take(12)
                                 withLink(
                                     LinkAnnotation.Clickable("profile") {
                                         onProfileClick?.invoke(pubkey)
@@ -1259,7 +1260,7 @@ fun QuotedNote(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = profile?.displayString
-                                ?: event.pubkey.take(8) + "..." + event.pubkey.takeLast(4),
+                                ?: event.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" },
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
@@ -1507,7 +1508,7 @@ private fun ArticleCard(
                         ProfilePicture(url = profile?.picture, size = 20)
                         Spacer(Modifier.width(6.dp))
                         val displayName = profile?.displayString
-                            ?: "${author.take(8)}...${author.takeLast(4)}"
+                            ?: author.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                         Text(
                             text = displayName,
                             style = MaterialTheme.typography.labelMedium,
@@ -1686,7 +1687,7 @@ private fun LiveStreamCardContent(
                         ProfilePicture(url = profile?.picture, size = 20)
                         Spacer(Modifier.width(6.dp))
                         val displayName = profile?.displayString
-                            ?: "${author.take(8)}...${author.takeLast(4)}"
+                            ?: author.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                         Text(
                             text = displayName,
                             style = MaterialTheme.typography.labelMedium,

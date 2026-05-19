@@ -70,6 +70,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.res.stringResource
 import com.wisp.app.R
 import com.wisp.app.nostr.Nip19
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.repo.DiscoveryState
 import com.wisp.app.repo.ExtendedNetworkCache
@@ -608,7 +609,7 @@ private fun TopAccountRow(
             Text(
                 text = profile?.displayName
                     ?: profile?.name
-                    ?: "${account.pubkey.take(8)}...",
+                    ?: account.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
@@ -657,7 +658,7 @@ private fun NodeDetailSheet(
         Text(
             text = profile?.displayName
                 ?: profile?.name
-                ?: "${node.pubkey.take(8)}...",
+                ?: node.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" },
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface
         )

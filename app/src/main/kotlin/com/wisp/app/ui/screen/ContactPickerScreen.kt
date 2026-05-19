@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.R
 import com.wisp.app.nostr.Nip05
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.repo.ContactRepository
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.ui.component.ProfilePicture
@@ -149,7 +150,7 @@ fun ContactPickerScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = profile?.displayString
-                                ?: entry.pubkey.take(8) + "..." + entry.pubkey.takeLast(4),
+                                ?: entry.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,

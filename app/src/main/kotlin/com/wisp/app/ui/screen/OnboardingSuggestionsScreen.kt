@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.R
 import com.wisp.app.nostr.ProfileData
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.ui.component.FollowToggleButton
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.StackedAvatars
@@ -203,7 +204,7 @@ private fun CreatorCards(
                     ProfilePicture(url = profile?.picture, size = 56)
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = profile?.displayString ?: pubkey.take(8) + "...",
+                        text = profile?.displayString ?: pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" },
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,

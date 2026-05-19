@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.R
 import com.wisp.app.nostr.DmConversation
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.GroupRoom
@@ -640,11 +641,11 @@ private fun ConversationRow(
         Column(modifier = Modifier.weight(1f)) {
             val displayName = if (convo.isGroup) {
                 convo.participants.take(3).joinToString(", ") { pk ->
-                    eventRepo.getProfileData(pk)?.displayString ?: pk.take(8) + "…"
+                    eventRepo.getProfileData(pk)?.displayString ?: pk.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                 }.let { if (convo.participants.size > 3) "$it +${convo.participants.size - 3}" else it }
             } else {
                 eventRepo.getProfileData(convo.peerPubkey)?.displayString
-                    ?: convo.peerPubkey.take(8) + "..." + convo.peerPubkey.takeLast(4)
+                    ?: convo.peerPubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
             }
 
             Text(

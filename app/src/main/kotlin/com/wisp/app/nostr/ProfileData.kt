@@ -22,7 +22,7 @@ data class ProfileData(
     val displayString: String
         get() = displayName.takeUnlessBlank()
             ?: name.takeUnlessBlank()
-            ?: "${pubkey.take(8)}...${pubkey.takeLast(4)}"
+            ?: pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
 
     companion object {
         private val json = Json { ignoreUnknownKeys = true }

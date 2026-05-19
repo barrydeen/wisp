@@ -46,6 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.Nip05
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip37
 import com.wisp.app.nostr.NostrEvent
@@ -283,7 +284,7 @@ private fun ScheduledPostItem(
     onDelete: () -> Unit
 ) {
     val displayName = remember(post.pubkey, userProfile?.displayString) {
-        userProfile?.displayString ?: (post.pubkey.take(8) + "…" + post.pubkey.takeLast(4))
+        userProfile?.displayString ?: post.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
     }
     val publishTime = post.created_at
     val isFuture = publishTime > System.currentTimeMillis() / 1000
