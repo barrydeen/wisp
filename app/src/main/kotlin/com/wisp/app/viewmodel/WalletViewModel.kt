@@ -93,6 +93,7 @@ sealed class WalletPage {
     object ModeSelection : WalletPage()
     object NwcSetup : WalletPage()
     object SparkSetup : WalletPage()
+    object SparkRestoreSeed : WalletPage()
     data class SparkBackup(val mnemonic: String) : WalletPage()
     object SendInput : WalletPage()
     object ScanQR : WalletPage()
@@ -386,23 +387,6 @@ class WalletViewModel(
         _deleteConfirmText.value = ""
         _lightningAddressError.value = null
         _addressAvailable.value = null
-
-        maybeAutoCreateDefaultWallet()
-    }
-
-    /**
-     * Auto-create the nsec-derived default wallet on first wallet-tab entry.
-     * No-ops unless the user is logged in with a local privkey and has no
-     * wallet configured. The user lands directly on the wallet Home screen
-     * once connection completes — they never see ModeSelection or the
-     * seed-phrase backup gate.
-     */
-    private fun maybeAutoCreateDefaultWallet() {
-        if (skipAutoCreate) return
-        if (_walletMode.value != WalletMode.NONE) return
-        if (sparkRepo.hasMnemonic()) return
-        if (!keyRepo.hasKeypair()) return
-        startDefaultWallet()
     }
 
     /**
@@ -444,10 +428,6 @@ class WalletViewModel(
 
     fun selectSparkMode() {
         navigateTo(WalletPage.SparkSetup)
-        // Auto-check relays for existing backup if logged in
-        if (keyRepo.isLoggedIn()) {
-            autoCheckRelayBackup()
-        }
     }
 
     private fun autoCheckRelayBackup() {

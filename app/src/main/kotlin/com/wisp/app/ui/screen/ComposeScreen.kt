@@ -23,7 +23,9 @@ import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.content.hasMediaType
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -96,6 +98,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -103,9 +107,12 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -166,6 +173,8 @@ fun ComposeScreen(
     val uploadedUrls by viewModel.uploadedUrls.collectAsState()
     val uploadProgress by viewModel.uploadProgress.collectAsState()
     val countdownSeconds by viewModel.countdownSeconds.collectAsState()
+    val countdownTotalSeconds by viewModel.countdownTotalSeconds.collectAsState()
+    val countdownStartedAt by viewModel.countdownStartedAt.collectAsState()
     val mentionCandidates by viewModel.mentionCandidates.collectAsState()
     val mentionQuery by viewModel.mentionQuery.collectAsState()
     val explicit by viewModel.explicit.collectAsState()
@@ -196,6 +205,30 @@ fun ComposeScreen(
     var pendingDateMillis by remember { mutableStateOf<Long?>(null) }
 
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+
+    // Countdown progress (smooth, ~60fps)
+    var countdownProgress by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(countdownStartedAt) {
+        if (countdownStartedAt == null) { countdownProgress = 0f; return@LaunchedEffect }
+        val totalMs = countdownTotalSeconds * 1000L
+        val startTime = countdownStartedAt!!
+        while (true) {
+            val elapsed = System.currentTimeMillis() - startTime
+            countdownProgress = (elapsed.toFloat() / totalMs).coerceIn(0f, 1f)
+            if (countdownProgress >= 1f) break
+            delay(16)
+        }
+    }
+
+    // Scroll preview to top of viewport when countdown active and keyboard gone
+    val scrollState = rememberScrollState()
+    var previewTopOffsetPx by remember { mutableIntStateOf(0) }
+    LaunchedEffect(imeVisible, countdownSeconds) {
+        if (!imeVisible && countdownSeconds != null) {
+            val showPreview = content.text.isNotBlank() || (pollEnabled && pollOptions.any { it.isNotBlank() })
+            if (showPreview) scrollState.animateScrollTo(previewTopOffsetPx)
+        }
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
@@ -324,7 +357,7 @@ fun ComposeScreen(
                     OutlinedTextField(
                         value = content,
                         onValueChange = { viewModel.updateContent(it) },
-                        label = { Text(stringResource(R.string.compose_gallery_placeholder)) },
+                        placeholder = { Text(stringResource(R.string.compose_gallery_placeholder)) },
                         enabled = !publishing && countdownSeconds == null,
                         visualTransformation = galleryEmojiVisual,
                         modifier = Modifier
@@ -525,7 +558,7 @@ fun ComposeScreen(
                         .weight(1f)
                         .padding(horizontal = 16.dp)
                         .padding(top = 16.dp)
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(scrollState)
                 ) {
                     // Reply context (expandable)
                     replyTo?.let {
@@ -722,7 +755,7 @@ fun ComposeScreen(
                                 singleLine = false,
                                 visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
                                 interactionSource = interactionSource,
-                                label = { Text(stringResource(R.string.compose_placeholder)) }
+                                placeholder = { Text(stringResource(R.string.compose_placeholder)) }
                             )
                         }
                     )
@@ -1082,6 +1115,11 @@ fun ComposeScreen(
                         }
                     }
 
+                    // Anchor for scroll-to-preview (always in layout so position is always valid)
+                    Spacer(modifier = Modifier.onGloballyPositioned { coords ->
+                        previewTopOffsetPx = coords.positionInParent().y.toInt()
+                    })
+
                     // Live preview
                     AnimatedVisibility(
                         visible = !imeVisible && (content.text.isNotBlank() || (pollEnabled && pollOptions.any { it.isNotBlank() })) && eventRepo != null
@@ -1181,26 +1219,45 @@ fun ComposeScreen(
             }
 
             // Bottom bar — always visible above keyboard (shared by both modes)
-            Column(modifier = Modifier.padding(horizontal = 16.dp).padding(top = 4.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp).padding(vertical = 12.dp)) {
                     if (countdownSeconds != null) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        OutlinedButton(
-                            onClick = { viewModel.cancelPublish() },
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
+                        // Cancel — red circle with X
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(Color(0xFFE53935), CircleShape)
+                                .clickable { viewModel.cancelPublish() }
+                        ) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = stringResource(R.string.btn_undo),
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
                             )
-                        ) {
-                            Text(stringResource(R.string.btn_undo))
                         }
-                        Spacer(Modifier.width(8.dp))
-                        Button(
-                            onClick = { viewModel.publishNow() },
-                            modifier = Modifier.weight(1f)
+                        // Progress bar pill — fills left-to-right over the undo window
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .clip(CircleShape)
+                                .clickable { viewModel.publishNow() }
                         ) {
-                            Text(stringResource(R.string.compose_post_now, countdownSeconds!!))
+                            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)))
+                            Box(modifier = Modifier.fillMaxHeight().fillMaxWidth(countdownProgress).background(MaterialTheme.colorScheme.primary))
+                            Text(
+                                text = stringResource(R.string.compose_post_now, countdownSeconds!!),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
                         }
                     }
                 } else {
@@ -1220,7 +1277,8 @@ fun ComposeScreen(
                             )
                         },
                         enabled = !publishing && !isMiningBusy,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        contentPadding = PaddingValues(0.dp)
                     ) {
                         Text(
                             when {

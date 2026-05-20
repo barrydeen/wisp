@@ -494,7 +494,6 @@
     <string name="lightning_invoice_btn_pay">Pay</string>
     <string name="lightning_invoice_paid">Paid</string>
     <string name="lightning_payment_failed">Payment Failed</string>
-    <string name="wallet_nwc">Nostr Wallet Connect</string>
     <string name="wallet_connect_lightning">Connect a Lightning wallet to send and receive sats. Paste a NWC connection string from your wallet provider.</string>
     <string name="wallet_recommended">Recommended wallets</string>
     <string name="wallet_connecting">Connecting…</string>
@@ -725,14 +724,22 @@
     <string name="logout_warning">Make sure you\'ve backed up your private key before logging out. You can find it in Keys settings. Without it, you won\'t be able to recover your account.</string>
 
     <!-- Wallet -->
-    <string name="wallet_connect_wallet">Connect a Wallet</string>
-    <string name="wallet_choose_how">Choose how to connect a Lightning wallet for sending and receiving sats.</string>
-    <string name="wallet_create_new">Create a New Wallet</string>
-    <string name="wallet_create_description">Create a new wallet directly in Wisp, funds are secured by Spark providers</string>
-    <string name="wallet_nwc_description">Connect an external Lightning wallet using a NWC connection string.</string>
+    <string name="wallet_connect_title">Connect a wallet</string>
+    <string name="wallet_connect_subtitle">Send and receive Lightning payments, and zap anyone on Nostr.</string>
+    <string name="wallet_spark_title">Spark wallet</string>
+    <string name="wallet_spark_subtitle">Self-custody, embedded. Use your default wallet or restore from seed/relays.</string>
+    <string name="wallet_nwc_title">Nostr Wallet Connect</string>
+    <string name="wallet_nwc_subtitle">Paste a connection string from Alby, Zeus, Rizful, Minibits, etc.</string>
+    <string name="spark_setup_subtitle">Self-custodial Lightning, powered by Spark and Breez.</string>
+    <string name="wallet_create_title">Create new wallet</string>
+    <string name="wallet_create_subtitle">Generate a fresh 12-word seed phrase</string>
+    <string name="wallet_restore_seed_title">Restore from seed phrase</string>
+    <string name="wallet_restore_seed_subtitle">12 words from a Spark-based wallet</string>
+    <string name="wallet_restore_relays_title">Restore from relays</string>
+    <string name="wallet_restore_relays_subtitle">Encrypted backup from another device</string>
+    <string name="wallet_close">Close</string>
     <string name="wallet_nwc_connection_string">NWC Connection String</string>
     <string name="wallet_connect">Connect</string>
-    <string name="wallet_spark">Spark Wallet</string>
     <string name="wallet_set_up_lightning">Set up your Lightning Address</string>
     <string name="wallet_send">Send</string>
     <string name="wallet_receive">Receive</string>
@@ -763,8 +770,6 @@
     <string name="wallet_spark_sdk">SDK v%s</string>
     <string name="wallet_not_supported">Not supported by your wallet</string>
     <string name="wallet_creating_invoice">Creating invoice…</string>
-    <string name="wallet_restore_existing">Restore Existing Wallet</string>
-    <string name="wallet_restore_existing_description">Restore a Spark wallet from a recovery phrase or relay backup.</string>
     <string name="wallet_backup_missing_title">Wallet backup not found</string>
     <string name="wallet_backup_missing_body">Your wallet recovery phrase is not backed up to any relay. If you lose this device, you could lose your funds.</string>
     <string name="wallet_backup_now">Backup Now</string>

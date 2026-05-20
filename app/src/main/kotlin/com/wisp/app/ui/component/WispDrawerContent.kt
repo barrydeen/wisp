@@ -35,7 +35,6 @@ import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -396,21 +395,13 @@ fun WispDrawerContent(
             onClick = onMessages,
             modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
-        val useZapBolt = com.wisp.app.ui.util.useBoltIcon()
-        val fiatMode = com.wisp.app.ui.util.isFiatMode()
         NavigationDrawerItem(
             icon = {
-                if (fiatMode) {
-                    Icon(Icons.Outlined.AccountBalanceWallet, contentDescription = null)
-                } else if (useZapBolt) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_bolt),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp)
-                    )
-                } else {
-                    Icon(Icons.Outlined.CurrencyBitcoin, contentDescription = null)
-                }
+                Icon(
+                    painter = painterResource(R.drawable.ic_wallet_outlined),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp)
+                )
             },
             label = { Text(stringResource(R.string.nav_wallet)) },
             selected = false,
@@ -571,7 +562,7 @@ fun WispDrawerContent(
                             Spacer(Modifier.height(14.dp))
                             Row(verticalAlignment = Alignment.Top) {
                                 Icon(
-                                    Icons.Outlined.AccountBalanceWallet,
+                                    painter = painterResource(R.drawable.ic_wallet_outlined),
                                     contentDescription = null,
                                     modifier = Modifier.size(20.dp),
                                     tint = MaterialTheme.colorScheme.error

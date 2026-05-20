@@ -57,9 +57,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Surface
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -213,6 +219,24 @@ fun WalletScreen(
                         },
                         modifier = Modifier.padding(padding)
                     )
+                } else if (currentPage !is WalletPage.NwcSetup &&
+                           currentPage !is WalletPage.SparkSetup &&
+                           currentPage !is WalletPage.SparkRestoreSeed &&
+                           currentPage !is WalletPage.SparkBackup) {
+                    // Mode picker — must NOT live inside a verticalScroll, otherwise
+                    // weighted spacers collapse and the two rows ride up to the top
+                    // of the page instead of anchoring near the bottom.
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding)
+                            .padding(horizontal = 16.dp)
+                    ) {
+                        WalletModeSelectionContent(
+                            onSelectNwc = { viewModel.selectNwcMode() },
+                            onSelectSpark = { viewModel.selectSparkMode() }
+                        )
+                    }
                 } else {
                     Column(
                         modifier = Modifier
@@ -233,23 +257,24 @@ fun WalletScreen(
                             is WalletPage.SparkSetup -> SparkSetupContent(
                                 walletState = walletState,
                                 statusLines = viewModel.statusLines.collectAsState().value,
-                                restoreMnemonic = viewModel.restoreMnemonic.collectAsState().value,
-                                error = viewModel.sendError.collectAsState().value,
-                                autoCheckState = viewModel.autoCheckState.collectAsState().value,
-                                onCreateWallet = { viewModel.generateSparkWallet() },
-                                onUseDefaultWallet = { viewModel.useDefaultWallet() },
                                 canUseDefaultWallet = viewModel.keyRepo.hasKeypair(),
-                                onRestoreMnemonicChange = { viewModel.updateRestoreMnemonic(it) },
-                                onRestoreWallet = { viewModel.restoreSparkWallet() },
+                                onClose = { viewModel.navigateHome() },
+                                onUseDefaultWallet = { viewModel.useDefaultWallet() },
+                                onCreateWallet = { viewModel.generateSparkWallet() },
+                                onRestoreFromSeed = { viewModel.navigateTo(WalletPage.SparkRestoreSeed) },
                                 onRestoreFromRelay = {
                                     viewModel.resetRestoreFromRelayStatus()
                                     viewModel.navigateTo(WalletPage.RestoreFromRelay)
-                                },
-                                onRestoreFromAutoCheck = { viewModel.restoreFromAutoCheck() },
-                                onSelectAutoCheckBackup = { viewModel.selectAutoCheckBackup(it) },
-                                onDismissAutoCheck = { viewModel.dismissAutoCheck() },
-                                isLoggedIn = viewModel.keyRepo.isLoggedIn(),
-                                onDisconnect = { viewModel.disconnectWallet() }
+                                }
+                            )
+                            is WalletPage.SparkRestoreSeed -> SparkRestoreSeedContent(
+                                restoreMnemonic = viewModel.restoreMnemonic.collectAsState().value,
+                                error = viewModel.sendError.collectAsState().value,
+                                walletState = walletState,
+                                statusLines = viewModel.statusLines.collectAsState().value,
+                                onRestoreMnemonicChange = { viewModel.updateRestoreMnemonic(it) },
+                                onRestoreWallet = { viewModel.restoreSparkWallet() },
+                                onBack = { viewModel.navigateBack() }
                             )
                             is WalletPage.SparkBackup -> {
                                 val page = currentPage as WalletPage.SparkBackup
@@ -259,11 +284,7 @@ fun WalletScreen(
                                     isDefaultWallet = viewModel.isDefaultWallet.collectAsState().value
                                 )
                             }
-                            else -> WalletModeSelectionContent(
-                                onSelectNwc = { viewModel.selectNwcMode() },
-                                onSelectSpark = { viewModel.selectSparkMode() },
-                                onRestoreSpark = { viewModel.selectSparkMode() }
-                            )
+                            else -> {} // handled above (mode picker branch)
                         }
                     }
                 }
@@ -570,7 +591,7 @@ private fun WalletConnectionContent(
     Spacer(Modifier.height(16.dp))
 
     Text(
-        stringResource(R.string.wallet_nwc),
+        stringResource(R.string.wallet_nwc_title),
         style = MaterialTheme.typography.headlineSmall,
         color = MaterialTheme.colorScheme.onSurface
     )
@@ -1040,6 +1061,28 @@ private fun WalletHomeContent(
                         color = accent
                     )
                 }
+            }
+        } else if (walletMode == WalletMode.NWC) {
+            Spacer(Modifier.height(16.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_nwc_logo),
+                    contentDescription = "NWC",
+                    modifier = Modifier.height(16.dp),
+                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    stringResource(R.string.wallet_nwc_title),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
@@ -2205,100 +2248,180 @@ private fun TransactionRow(
 @Composable
 private fun WalletModeSelectionContent(
     onSelectNwc: () -> Unit,
-    onSelectSpark: () -> Unit,
-    onRestoreSpark: () -> Unit = {}
+    onSelectSpark: () -> Unit
 ) {
-    Spacer(Modifier.height(16.dp))
+    val accent = WispThemeColors.zapColor
 
-    Text(
-        stringResource(R.string.wallet_connect_wallet),
-        style = MaterialTheme.typography.headlineSmall,
-        color = MaterialTheme.colorScheme.onSurface
-    )
-    Spacer(Modifier.height(8.dp))
-    Text(
-        stringResource(R.string.wallet_choose_how),
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
+    // Use a Column with weighted spacers so logo+copy sit upper-middle
+    // and the two mode rows are bottom-anchored — mirrors the iOS layout.
+    Column(modifier = Modifier.fillMaxSize()) {
+        Spacer(Modifier.weight(1f))
 
-    Spacer(Modifier.height(24.dp))
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onSelectSpark() },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        border = BorderStroke(1.dp, Color(0xFFE6A040))
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        // Logo + title + subtitle
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(52.dp)
+                    .background(accent, CircleShape)
+            ) {
+                Icon(
+                    Icons.Outlined.Bolt,
+                    contentDescription = null,
+                    tint = Color.Black,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+            Spacer(Modifier.height(16.dp))
             Text(
-                stringResource(R.string.wallet_create_new),
-                style = MaterialTheme.typography.titleMedium,
+                stringResource(R.string.wallet_connect_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
-                stringResource(R.string.wallet_create_description),
+                stringResource(R.string.wallet_connect_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp)
             )
         }
-    }
 
-    Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.weight(2f))
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onRestoreSpark() },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        // Mode rows
+        WalletModeRow(
+            leadingIcon = {
+                Image(
+                    painter = painterResource(R.drawable.ic_spark_logo),
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp),
+                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(accent)
+                )
+            },
+            title = stringResource(R.string.wallet_spark_title),
+            subtitle = stringResource(R.string.wallet_spark_subtitle),
+            onClick = onSelectSpark
         )
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                stringResource(R.string.wallet_restore_existing),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                stringResource(R.string.wallet_restore_existing_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        Spacer(Modifier.height(12.dp))
+        WalletModeRow(
+            leadingIcon = {
+                Image(
+                    painter = painterResource(R.drawable.ic_nwc_logo),
+                    contentDescription = null,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = stringResource(R.string.wallet_nwc_title),
+            subtitle = stringResource(R.string.wallet_nwc_subtitle),
+            onClick = onSelectNwc
+        )
+        Spacer(Modifier.height(24.dp))
     }
+}
 
-    Spacer(Modifier.height(12.dp))
-
-    Card(
+@Composable
+private fun WalletModeRow(
+    leadingIcon: @Composable () -> Unit,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onSelectNwc() },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+            .clickable(onClick = onClick),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(14.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                stringResource(R.string.wallet_nwc),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                stringResource(R.string.wallet_nwc_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(36.dp)
+            ) { leadingIcon() }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
             )
         }
     }
+}
 
-    Spacer(Modifier.height(32.dp))
+@Composable
+private fun SparkOptionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    val accent = WispThemeColors.zapColor
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(28.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
 }
 
 // --- Spark Setup ---
@@ -2307,207 +2430,185 @@ private fun WalletModeSelectionContent(
 private fun SparkSetupContent(
     walletState: WalletState,
     statusLines: List<String>,
-    restoreMnemonic: String,
-    error: String?,
-    autoCheckState: AutoCheckState = AutoCheckState.Idle,
+    canUseDefaultWallet: Boolean,
+    onClose: () -> Unit,
+    onUseDefaultWallet: () -> Unit,
     onCreateWallet: () -> Unit,
-    onUseDefaultWallet: () -> Unit = {},
-    canUseDefaultWallet: Boolean = false,
-    onRestoreMnemonicChange: (String) -> Unit,
-    onRestoreWallet: () -> Unit,
-    onRestoreFromRelay: () -> Unit = {},
-    onRestoreFromAutoCheck: () -> Unit = {},
-    onSelectAutoCheckBackup: (BackupEntry) -> Unit = {},
-    onDismissAutoCheck: () -> Unit = {},
-    isLoggedIn: Boolean = false,
-    onDisconnect: () -> Unit
+    onRestoreFromSeed: () -> Unit,
+    onRestoreFromRelay: () -> Unit
 ) {
     val isConnecting = walletState is WalletState.Connecting
 
-    Spacer(Modifier.height(16.dp))
-
-    Text(
-        stringResource(R.string.wallet_spark),
-        style = MaterialTheme.typography.headlineSmall,
-        color = MaterialTheme.colorScheme.onSurface
-    )
-    Spacer(Modifier.height(8.dp))
-    Text(
-        "Create a new non-custodial Lightning wallet or restore from a recovery phrase.",
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-
-    Spacer(Modifier.height(24.dp))
-
-    // Auto-check states
-    when (autoCheckState) {
-        is AutoCheckState.Checking -> {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Top-right Close button — full dismiss back to mode picker.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            Surface(
+                modifier = Modifier.clickable(onClick = onClose),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = CircleShape
+            ) {
+                Text(
+                    stringResource(R.string.wallet_close),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        "Checking for existing backup...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-        }
-        is AutoCheckState.Found -> {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF68D391).copy(alpha = 0.12f)
-                ),
-                border = BorderStroke(1.dp, Color(0xFF68D391).copy(alpha = 0.4f))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "Existing wallet found",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color(0xFF68D391)
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    val words = autoCheckState.mnemonic.split(" ")
-                    Text(
-                        "${words.size}-word recovery phrase",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
-                    )
-                    if (autoCheckState.walletId != null) {
-                        Text(
-                            "Wallet ID: ${autoCheckState.walletId}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    val dateFormat = java.text.SimpleDateFormat("MMM d, yyyy 'at' h:mm a", java.util.Locale.getDefault())
-                    Text(
-                        "Saved: ${dateFormat.format(java.util.Date(autoCheckState.createdAt * 1000))}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = onRestoreFromAutoCheck,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE6A040))
-                    ) {
-                        Text("Restore This Wallet")
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = onDismissAutoCheck,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Create New Wallet")
-                    }
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-        }
-        is AutoCheckState.MultipleFound -> {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "Multiple wallets found",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Choose a backup to restore:",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    val dateFormat = java.text.SimpleDateFormat("MMM d, yyyy 'at' h:mm a", java.util.Locale.getDefault())
-                    autoCheckState.backups.forEach { entry ->
-                        Card(
-                            onClick = { onSelectAutoCheckBackup(entry) },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, Color(0xFFE6A040))
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text(
-                                    if (entry.walletId != null) "Wallet ${entry.walletId}" else "Spark wallet",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    dateFormat.format(java.util.Date(entry.createdAt * 1000)),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(8.dp))
-                    }
-                    OutlinedButton(
-                        onClick = onDismissAutoCheck,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Create New Wallet")
-                    }
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-        }
-        else -> {} // Idle or NotFound — show normal UI below
-    }
-
-    if (!isConnecting && autoCheckState !is AutoCheckState.Found && autoCheckState !is AutoCheckState.MultipleFound) {
-        if (canUseDefaultWallet) {
-            Button(
-                onClick = onUseDefaultWallet,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.wallet_use_default))
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                stringResource(R.string.wallet_default_subtitle),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
-            Button(
-                onClick = onCreateWallet,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Create New Wallet")
             }
         }
 
         Spacer(Modifier.height(24.dp))
 
+        // Spark + Breez combined logo, centered.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_spark_wordmark),
+                contentDescription = "Spark",
+                modifier = Modifier.height(22.dp),
+                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
+                    MaterialTheme.colorScheme.onSurface
+                )
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("+", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.width(8.dp))
+            Image(
+                painter = painterResource(R.drawable.ic_breez_logo),
+                contentDescription = "Breez",
+                modifier = Modifier.height(20.dp),
+                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
+                    MaterialTheme.colorScheme.onSurface
+                )
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
         Text(
-            "Or restore an existing wallet",
-            style = MaterialTheme.typography.titleSmall,
+            stringResource(R.string.spark_setup_subtitle),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+        )
+
+        Spacer(Modifier.height(28.dp))
+
+        // Option rows
+        if (canUseDefaultWallet) {
+            SparkOptionRow(
+                icon = Icons.Outlined.VpnKey,
+                title = stringResource(R.string.wallet_use_default),
+                subtitle = stringResource(R.string.wallet_default_subtitle),
+                onClick = onUseDefaultWallet
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+        SparkOptionRow(
+            icon = Icons.Outlined.Add,
+            title = stringResource(R.string.wallet_create_title),
+            subtitle = stringResource(R.string.wallet_create_subtitle),
+            onClick = onCreateWallet
+        )
+        Spacer(Modifier.height(12.dp))
+        SparkOptionRow(
+            icon = Icons.Outlined.History,
+            title = stringResource(R.string.wallet_restore_seed_title),
+            subtitle = stringResource(R.string.wallet_restore_seed_subtitle),
+            onClick = onRestoreFromSeed
+        )
+        Spacer(Modifier.height(12.dp))
+        SparkOptionRow(
+            icon = Icons.Outlined.CloudDownload,
+            title = stringResource(R.string.wallet_restore_relays_title),
+            subtitle = stringResource(R.string.wallet_restore_relays_subtitle),
+            onClick = onRestoreFromRelay
+        )
+
+        if (walletState is WalletState.Error) {
+            Spacer(Modifier.height(16.dp))
+            Text(
+                walletState.message,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+
+        if (isConnecting) {
+            Spacer(Modifier.height(20.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(12.dp))
+                Text("Connecting...", style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+
+        if (statusLines.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Column(modifier = Modifier.fillMaxWidth()) {
+                statusLines.forEach { line ->
+                    Text(
+                        line,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+// --- Spark Restore Seed ---
+
+@Composable
+private fun SparkRestoreSeedContent(
+    restoreMnemonic: String,
+    error: String?,
+    walletState: WalletState,
+    statusLines: List<String>,
+    onRestoreMnemonicChange: (String) -> Unit,
+    onRestoreWallet: () -> Unit,
+    onBack: () -> Unit
+) {
+    val isConnecting = walletState is WalletState.Connecting
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Text(
+                stringResource(R.string.wallet_restore_seed_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Text(
+            "Enter the 12-word recovery phrase from a Spark-based wallet.",
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
 
         OutlinedTextField(
             value = restoreMnemonic,
@@ -2528,72 +2629,42 @@ private fun SparkSetupContent(
             )
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
 
-        OutlinedButton(
+        Button(
             onClick = onRestoreWallet,
             modifier = Modifier.fillMaxWidth(),
-            enabled = restoreMnemonic.isNotBlank()
+            enabled = restoreMnemonic.isNotBlank() && !isConnecting
         ) {
             Text("Restore Wallet")
         }
 
-        if (isLoggedIn) {
-            Spacer(Modifier.height(16.dp))
-
-            HorizontalDivider()
-
-            Spacer(Modifier.height(16.dp))
-
-            OutlinedButton(
-                onClick = onRestoreFromRelay,
-                modifier = Modifier.fillMaxWidth()
+        if (isConnecting) {
+            Spacer(Modifier.height(20.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Restore From Relays")
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(12.dp))
+                Text("Connecting...", style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+
+        if (statusLines.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Column(modifier = Modifier.fillMaxWidth()) {
+                statusLines.forEach { line ->
+                    Text(
+                        line,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
-
-    if (walletState is WalletState.Error) {
-        Spacer(Modifier.height(8.dp))
-        Text(
-            walletState.message,
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodySmall
-        )
-    }
-
-    if (isConnecting) {
-        Spacer(Modifier.height(16.dp))
-        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-        Spacer(Modifier.height(8.dp))
-        Text("Connecting...", style = MaterialTheme.typography.bodyMedium)
-    }
-
-    if (statusLines.isNotEmpty()) {
-        Spacer(Modifier.height(12.dp))
-        Column(modifier = Modifier.fillMaxWidth()) {
-            statusLines.forEach { line ->
-                Text(
-                    line,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-
-    if (isConnecting) {
-        Spacer(Modifier.height(12.dp))
-        OutlinedButton(
-            onClick = onDisconnect,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Cancel")
-        }
-    }
-
-    Spacer(Modifier.height(32.dp))
 }
 
 // --- Spark Backup ---
@@ -3223,7 +3294,7 @@ private fun WalletSettingsContent(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    stringResource(R.string.wallet_nwc),
+                    stringResource(R.string.wallet_nwc_title),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
