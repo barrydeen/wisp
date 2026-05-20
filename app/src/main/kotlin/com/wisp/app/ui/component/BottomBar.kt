@@ -7,12 +7,10 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Notifications
@@ -40,11 +38,13 @@ import com.wisp.app.Routes
 enum class BottomTab(
     val route: String,
     val labelResId: Int,
-    val selectedIcon: ImageVector,
-    val unselectedIcon: ImageVector
+    val selectedIcon: ImageVector?,
+    val unselectedIcon: ImageVector?,
+    val selectedIconRes: Int? = null,
+    val unselectedIconRes: Int? = null
 ) {
     HOME(Routes.FEED, R.string.nav_home, Icons.Filled.Home, Icons.Outlined.Home),
-    WALLET(Routes.WALLET, R.string.nav_wallet, Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet),
+    WALLET(Routes.WALLET, R.string.nav_wallet, null, null, R.drawable.ic_wallet, R.drawable.ic_wallet_outlined),
     SEARCH(Routes.SEARCH, R.string.nav_search, Icons.Filled.Search, Icons.Outlined.Search),
     MESSAGES(Routes.DM_LIST, R.string.nav_messages, Icons.Filled.Forum, Icons.Outlined.Forum),
     NOTIFICATIONS(Routes.NOTIFICATIONS, R.string.nav_notifications, Icons.Filled.Notifications, Icons.Outlined.Notifications)
@@ -59,8 +59,14 @@ fun WispBottomBar(
     isZapAnimating: Boolean = false,
     isReplyAnimating: Boolean = false,
     notifSoundEnabled: Boolean = true,
+    isReadOnly: Boolean = false,
     onTabSelected: (BottomTab) -> Unit
 ) {
+    val visibleTabs = if (isReadOnly)
+        BottomTab.entries.filter { it != BottomTab.WALLET && it != BottomTab.MESSAGES }
+    else
+        BottomTab.entries
+
     Column {
         HorizontalDivider(
             thickness = 0.5.dp,
@@ -70,7 +76,7 @@ fun WispBottomBar(
             containerColor = MaterialTheme.colorScheme.surface,
             windowInsets = NavigationBarDefaults.windowInsets
         ) {
-        BottomTab.entries.forEach { tab ->
+        visibleTabs.forEach { tab ->
             val selected = currentRoute == tab.route
             val hasUnread = when (tab) {
                 BottomTab.HOME -> hasUnreadHome
@@ -102,11 +108,20 @@ fun WispBottomBar(
                                 contentDescription = stringResource(tab.labelResId),
                                 tint = zapTint
                             )
+                        } else if (tab.selectedIconRes != null && tab.unselectedIconRes != null) {
+                            // Drawable-backed tabs (wallet) — solid when selected,
+                            // outlined when not.
+                            val iconRes = if (selected) tab.selectedIconRes else tab.unselectedIconRes
+                            Icon(
+                                painter = painterResource(iconRes),
+                                contentDescription = stringResource(tab.labelResId),
+                                tint = zapTint
+                            )
                         } else {
                             val icon = if (tab == BottomTab.NOTIFICATIONS && isZapAnimating)
                                 Icons.Outlined.CurrencyBitcoin
-                            else if (selected) tab.selectedIcon
-                            else tab.unselectedIcon
+                            else if (selected) tab.selectedIcon!!
+                            else tab.unselectedIcon!!
                             Icon(
                                 imageVector = icon,
                                 contentDescription = stringResource(tab.labelResId),

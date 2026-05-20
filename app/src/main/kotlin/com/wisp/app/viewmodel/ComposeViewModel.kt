@@ -27,6 +27,7 @@ import com.wisp.app.nostr.Nip88
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.nostr.toHex
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.BlossomRepository
@@ -99,6 +100,12 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
     private val _countdownSeconds = MutableStateFlow<Int?>(null)
     val countdownSeconds: StateFlow<Int?> = _countdownSeconds
+
+    private val _countdownTotalSeconds = MutableStateFlow<Int>(10)
+    val countdownTotalSeconds: StateFlow<Int> = _countdownTotalSeconds
+
+    private val _countdownStartedAt = MutableStateFlow<Long?>(null)
+    val countdownStartedAt: StateFlow<Long?> = _countdownStartedAt
 
     private val _mentionQuery = MutableStateFlow<String?>(null)
     val mentionQuery: StateFlow<String?> = _mentionQuery
@@ -508,7 +515,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     private fun sanitizeMentionDisplay(candidate: MentionCandidate): String {
         val raw = candidate.profile.displayName?.takeIf { it.isNotBlank() }
             ?: candidate.profile.name?.takeIf { it.isNotBlank() }
-            ?: return candidate.profile.pubkey.take(8) + "…" + candidate.profile.pubkey.takeLast(4)
+            ?: return candidate.profile.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
         // Strip whitespace and leading @ so the mention remains a single token and mention detection
         // can't re-trigger on a name that itself contains spaces.
         return raw.trim().removePrefix("@").replace(Regex("\\s+"), "_")
@@ -611,6 +618,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             }
         }
         _countdownSeconds.value = seconds
+        _countdownTotalSeconds.value = seconds
+        _countdownStartedAt.value = System.currentTimeMillis()
         countdownJob = viewModelScope.launch {
             for (i in (seconds - 1) downTo 1) {
                 delay(1000)
@@ -618,6 +627,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             }
             delay(1000)
             _countdownSeconds.value = null
+            _countdownStartedAt.value = null
             pendingPublish?.invoke()
             pendingPublish = null
         }
@@ -628,6 +638,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         countdownJob = null
         pendingPublish = null
         _countdownSeconds.value = null
+        _countdownStartedAt.value = null
         _publishing.value = false
     }
 
@@ -635,6 +646,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         countdownJob?.cancel()
         countdownJob = null
         _countdownSeconds.value = null
+        _countdownStartedAt.value = null
         pendingPublish?.invoke()
         pendingPublish = null
     }

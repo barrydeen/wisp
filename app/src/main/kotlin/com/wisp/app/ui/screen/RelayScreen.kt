@@ -41,6 +41,7 @@ import com.wisp.app.relay.RelayConfig
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.relay.RelaySetType
 import com.wisp.app.R
+import com.wisp.app.ui.component.NsecPasteGuard
 import com.wisp.app.viewmodel.RelayViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -102,7 +103,7 @@ fun RelayScreen(
                 ) {
                     OutlinedTextField(
                         value = newRelayUrl,
-                        onValueChange = { viewModel.updateNewRelayUrl(it) },
+                        onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(newRelayUrl, new)) viewModel.updateNewRelayUrl(new) },
                         label = { Text(stringResource(R.string.placeholder_relay_url)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f)

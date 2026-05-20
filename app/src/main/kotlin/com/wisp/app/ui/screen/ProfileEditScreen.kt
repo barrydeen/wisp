@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.wisp.app.R
 import com.wisp.app.relay.RelayPool
+import com.wisp.app.ui.component.NsecPasteGuard
 import com.wisp.app.viewmodel.ProfileViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -114,7 +115,7 @@ fun ProfileEditScreen(
         ) {
             OutlinedTextField(
                 value = name,
-                onValueChange = { viewModel.updateName(it) },
+                onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(name, new)) viewModel.updateName(new) },
                 label = { Text(stringResource(R.string.placeholder_name)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().scrollOnFocus()
@@ -122,7 +123,7 @@ fun ProfileEditScreen(
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = about,
-                onValueChange = { viewModel.updateAbout(it) },
+                onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(about, new)) viewModel.updateAbout(new) },
                 label = { Text(stringResource(R.string.placeholder_about)) },
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth().scrollOnFocus()
@@ -134,7 +135,7 @@ fun ProfileEditScreen(
             ) {
                 OutlinedTextField(
                     value = picture,
-                    onValueChange = { viewModel.updatePicture(it) },
+                    onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(picture, new)) viewModel.updatePicture(new) },
                     label = { Text(stringResource(R.string.placeholder_profile_picture_url)) },
                     singleLine = true,
                     modifier = Modifier.weight(1f).scrollOnFocus()
@@ -161,7 +162,7 @@ fun ProfileEditScreen(
             ) {
                 OutlinedTextField(
                     value = banner,
-                    onValueChange = { viewModel.updateBanner(it) },
+                    onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(banner, new)) viewModel.updateBanner(new) },
                     label = { Text(stringResource(R.string.placeholder_banner_url)) },
                     singleLine = true,
                     modifier = Modifier.weight(1f).scrollOnFocus()
@@ -184,7 +185,7 @@ fun ProfileEditScreen(
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = nip05,
-                onValueChange = { viewModel.updateNip05(it) },
+                onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(nip05, new)) viewModel.updateNip05(new) },
                 label = { Text(stringResource(R.string.placeholder_nip05)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().scrollOnFocus()
@@ -192,7 +193,7 @@ fun ProfileEditScreen(
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = lud16,
-                onValueChange = { viewModel.updateLud16(it) },
+                onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(lud16, new)) viewModel.updateLud16(new) },
                 label = { Text(stringResource(R.string.placeholder_lightning_address)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().scrollOnFocus()

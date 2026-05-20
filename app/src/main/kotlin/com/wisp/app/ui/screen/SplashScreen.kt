@@ -18,8 +18,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
+import com.wisp.app.ui.component.QrScanner
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -90,6 +92,7 @@ fun SplashScreen(
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
     var showNostrSheet by remember { mutableStateOf(false) }
+    var showQrScanner by remember { mutableStateOf(false) }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(backgroundColor)) {
         val cols = ((maxWidth + AVATAR_GAP) / (AVATAR_SIZE + AVATAR_GAP)).toInt().coerceAtLeast(1)
@@ -278,8 +281,39 @@ fun SplashScreen(
             onLoggedIn = {
                 showNostrSheet = false
                 onLoggedIn()
+            },
+            onScanQr = {
+                showNostrSheet = false
+                showQrScanner = true
             }
         )
+    }
+
+    if (showQrScanner) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showQrScanner = false },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnBackPress = true,
+                dismissOnClickOutside = false
+            )
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(androidx.compose.ui.graphics.Color.Black)
+            ) {
+                QrScanner(
+                    onResult = { raw ->
+                        showQrScanner = false
+                        authViewModel.updateNsecInput(raw.trim())
+                        if (authViewModel.logIn()) onLoggedIn()
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    promptText = "Scan nsec, npub, or nprofile QR"
+                )
+            }
+        }
     }
 }
 
@@ -289,7 +323,8 @@ private fun NostrLoginSheet(
     authViewModel: AuthViewModel,
     onDismiss: () -> Unit,
     onAccountCreated: () -> Unit,
-    onLoggedIn: () -> Unit
+    onLoggedIn: () -> Unit,
+    onScanQr: () -> Unit = {}
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
@@ -342,11 +377,19 @@ private fun NostrLoginSheet(
                 visualTransformation = if (nsecVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 trailingIcon = {
-                    IconButton(onClick = { nsecVisible = !nsecVisible }) {
-                        Icon(
-                            imageVector = if (nsecVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                            contentDescription = if (nsecVisible) stringResource(R.string.auth_hide_key) else stringResource(R.string.auth_show_key)
-                        )
+                    Row {
+                        IconButton(onClick = { nsecVisible = !nsecVisible }) {
+                            Icon(
+                                imageVector = if (nsecVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                contentDescription = if (nsecVisible) stringResource(R.string.auth_hide_key) else stringResource(R.string.auth_show_key)
+                            )
+                        }
+                        IconButton(onClick = onScanQr) {
+                            Icon(
+                                imageVector = Icons.Outlined.QrCodeScanner,
+                                contentDescription = "Scan QR code"
+                            )
+                        }
                     }
                 },
                 enabled = !isCreating,

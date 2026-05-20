@@ -194,3 +194,6 @@ fun String.hexToByteArray(): ByteArray {
         ((Character.digit(this[i * 2], 16) shl 4) + Character.digit(this[i * 2 + 1], 16)).toByte()
     }
 }
+
+/** Encodes a 32-byte hex pubkey as a bech32 npub string. */
+fun String.toNpub(): String = Nip19.npubEncode(hexToByteArray())

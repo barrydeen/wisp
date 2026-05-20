@@ -101,6 +101,12 @@ class SparkRepository(
     private val _paymentReceived = MutableSharedFlow<Long>(extraBufferCapacity = 8)
     override val paymentReceived: SharedFlow<Long> = _paymentReceived
 
+    // Identity pubkey from the SDK's GetInfoResponse — exposed for the
+    // Wallet Info expandable in settings. Populated on first balance fetch
+    // after connect.
+    private val _identityPubkey = MutableStateFlow<String?>(null)
+    val identityPubkey: StateFlow<String?> = _identityPubkey
+
     private fun emitStatus(msg: String) {
         Log.d(TAG, msg)
         _statusLog.tryEmit(msg)
@@ -334,6 +340,7 @@ class SparkRepository(
             val instance = sdk ?: return
             val info = instance.getInfo(GetInfoRequest(ensureSynced = false))
             _balance.value = info.balanceSats.toLong() * 1000 // convert sats to msats
+            _identityPubkey.value = info.identityPubkey
         } catch (e: Exception) {
             Log.e(TAG, "Failed to refresh balance", e)
         }
@@ -345,6 +352,7 @@ class SparkRepository(
             val info = instance.getInfo(GetInfoRequest(ensureSynced = false))
             val balanceMsats = info.balanceSats.toLong() * 1000
             _balance.value = balanceMsats
+            _identityPubkey.value = info.identityPubkey
             Result.success(balanceMsats)
         } catch (e: Exception) {
             Result.failure(e)

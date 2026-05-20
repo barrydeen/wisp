@@ -45,6 +45,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.res.stringResource
 import com.wisp.app.R
 import com.wisp.app.relay.RelayPool
+import com.wisp.app.ui.component.NsecPasteGuard
 import com.wisp.app.viewmodel.BlossomServersViewModel
 import kotlin.math.roundToInt
 
@@ -95,7 +96,7 @@ fun BlossomServersScreen(
             ) {
                 OutlinedTextField(
                     value = newServerUrl,
-                    onValueChange = { viewModel.updateNewServerUrl(it) },
+                    onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(newServerUrl, new)) viewModel.updateNewServerUrl(new) },
                     label = { Text("https://...") },
                     singleLine = true,
                     modifier = Modifier.weight(1f)

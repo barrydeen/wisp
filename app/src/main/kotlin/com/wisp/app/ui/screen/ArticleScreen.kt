@@ -57,6 +57,7 @@ import coil3.compose.AsyncImage
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.nostr.Nip30
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.ui.component.ActionBar
 import com.wisp.app.ui.component.NoteActions
@@ -200,7 +201,7 @@ fun ArticleScreen(
                                     Spacer(Modifier.width(8.dp))
                                     Column {
                                         val displayName = profile?.displayString
-                                            ?: "${authorPubkey.take(8)}...${authorPubkey.takeLast(4)}"
+                                            ?: authorPubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                                         Text(
                                             text = displayName,
                                             style = MaterialTheme.typography.titleSmall,

@@ -72,6 +72,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.wisp.app.nostr.DmMessage
+import com.wisp.app.nostr.toNpub
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -201,7 +202,7 @@ fun DmConversationScreen(
                                 Column {
                                     val names = participants.take(3).joinToString(", ") { pk ->
                                         eventRepo?.getProfileData(pk)?.displayString
-                                            ?: pk.take(8) + "…"
+                                            ?: pk.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                                     }
                                     val suffix = if (participants.size > 3) " +${participants.size - 3}" else ""
                                     Text(
@@ -302,7 +303,7 @@ fun DmConversationScreen(
                                     ProfilePicture(url = participantProfile?.picture, size = 20)
                                     Spacer(Modifier.width(8.dp))
                                     Text(
-                                        text = participantProfile?.displayString ?: pubkey.take(8) + "…",
+                                        text = participantProfile?.displayString ?: pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" },
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
                                         maxLines = 1,
@@ -489,7 +490,7 @@ fun DmConversationScreen(
                             val senderName = remember(replyMsg.senderPubkey) {
                                 if (replyMsg.senderPubkey == userPubkey) "You"
                                 else eventRepo?.getProfileData(replyMsg.senderPubkey)?.displayString
-                                    ?: replyMsg.senderPubkey.take(8) + "…"
+                                    ?: replyMsg.senderPubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                             }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -557,7 +558,12 @@ fun DmConversationScreen(
                             }
                             androidx.compose.foundation.text.BasicTextField(
                                 value = dmTfv,
-                                onValueChange = { dmTfv = it; viewModel.updateMessageText(it.text) },
+                                onValueChange = { new ->
+                                    if (!com.wisp.app.ui.component.NsecPasteGuard.blockIfNsec(dmTfv.text, new.text)) {
+                                        dmTfv = new
+                                        viewModel.updateMessageText(new.text)
+                                    }
+                                },
                                 modifier = Modifier.weight(1f).heightIn(min = 28.dp).padding(top = 4.dp),
                                 enabled = uploadProgress == null,
                                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),

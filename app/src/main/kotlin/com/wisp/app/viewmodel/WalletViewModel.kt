@@ -93,6 +93,7 @@ sealed class WalletPage {
     object ModeSelection : WalletPage()
     object NwcSetup : WalletPage()
     object SparkSetup : WalletPage()
+    object SparkRestoreSeed : WalletPage()
     data class SparkBackup(val mnemonic: String) : WalletPage()
     object SendInput : WalletPage()
     object ScanQR : WalletPage()
@@ -212,6 +213,16 @@ class WalletViewModel(
 
     private val _lightningAddressError = MutableStateFlow<String?>(null)
     val lightningAddressError: StateFlow<String?> = _lightningAddressError
+
+    // NWC node info (alias + supported methods) — fetched once post-connect.
+    val nwcNodeAlias: StateFlow<String?> = nwcRepo.nodeAlias
+    val nwcSupportedMethods: StateFlow<List<String>> = nwcRepo.supportedMethods
+
+    // Spark identity pubkey — populated from the SDK's GetInfoResponse.
+    val sparkIdentityPubkey: StateFlow<String?> = sparkRepo.identityPubkey
+
+    // NWC connection metadata for the Wallet Info expandable in settings.
+    val nwcConnectionInfo: StateFlow<NwcRepository.ConnectionInfo?> = nwcRepo.connectionInfo
 
     // Delete wallet confirmation
     private val _deleteConfirmText = MutableStateFlow("")
@@ -376,23 +387,6 @@ class WalletViewModel(
         _deleteConfirmText.value = ""
         _lightningAddressError.value = null
         _addressAvailable.value = null
-
-        maybeAutoCreateDefaultWallet()
-    }
-
-    /**
-     * Auto-create the nsec-derived default wallet on first wallet-tab entry.
-     * No-ops unless the user is logged in with a local privkey and has no
-     * wallet configured. The user lands directly on the wallet Home screen
-     * once connection completes — they never see ModeSelection or the
-     * seed-phrase backup gate.
-     */
-    private fun maybeAutoCreateDefaultWallet() {
-        if (skipAutoCreate) return
-        if (_walletMode.value != WalletMode.NONE) return
-        if (sparkRepo.hasMnemonic()) return
-        if (!keyRepo.hasKeypair()) return
-        startDefaultWallet()
     }
 
     /**
@@ -434,10 +428,6 @@ class WalletViewModel(
 
     fun selectSparkMode() {
         navigateTo(WalletPage.SparkSetup)
-        // Auto-check relays for existing backup if logged in
-        if (keyRepo.isLoggedIn()) {
-            autoCheckRelayBackup()
-        }
     }
 
     private fun autoCheckRelayBackup() {
@@ -718,6 +708,13 @@ class WalletViewModel(
                             _walletState.value = WalletState.Error(e.message ?: "Failed to fetch balance")
                         }
                     )
+                    // Fetch NWC node info (alias / methods) so the dashboard top
+                    // bar and Wallet Info expandable can render it. Spark exposes
+                    // its identity via getInfo() on the SDK side; no extra fetch
+                    // needed there.
+                    if (provider === nwcRepo) {
+                        launch { nwcRepo.fetchNodeInfo() }
+                    }
                 }
             }
         }

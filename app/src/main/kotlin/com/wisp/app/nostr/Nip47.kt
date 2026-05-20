@@ -47,6 +47,7 @@ object Nip47 {
 
     sealed class NwcRequest {
         object GetBalance : NwcRequest()
+        object GetInfo : NwcRequest()
         data class PayInvoice(val invoice: String) : NwcRequest()
         data class MakeInvoice(val amountMsats: Long, val description: String) : NwcRequest()
         data class ListTransactions(val limit: Int = 50, val offset: Int = 0) : NwcRequest()
@@ -64,6 +65,14 @@ object Nip47 {
 
     sealed class NwcResponse {
         data class Balance(val balanceMsats: Long) : NwcResponse()
+        data class NodeInfo(
+            val alias: String?,
+            val color: String?,
+            val pubkey: String?,
+            val network: String?,
+            val blockHeight: Long?,
+            val methods: List<String>
+        ) : NwcResponse()
         data class PayInvoiceResult(val preimage: String) : NwcResponse()
         data class MakeInvoiceResult(val invoice: String, val paymentHash: String) : NwcResponse()
         data class ListTransactionsResult(val transactions: List<Transaction>) : NwcResponse()
@@ -148,6 +157,10 @@ object Nip47 {
                 put("method", "get_balance")
                 put("params", buildJsonObject {})
             }
+            is NwcRequest.GetInfo -> buildJsonObject {
+                put("method", "get_info")
+                put("params", buildJsonObject {})
+            }
             is NwcRequest.PayInvoice -> buildJsonObject {
                 put("method", "pay_invoice")
                 put("params", buildJsonObject {
@@ -221,6 +234,16 @@ object Nip47 {
         return when (resultType) {
             "get_balance" -> NwcResponse.Balance(
                 balanceMsats = result["balance"]?.jsonPrimitive?.long ?: 0
+            )
+            "get_info" -> NwcResponse.NodeInfo(
+                alias = result["alias"]?.jsonPrimitive?.content,
+                color = result["color"]?.jsonPrimitive?.content,
+                pubkey = result["pubkey"]?.jsonPrimitive?.content,
+                network = result["network"]?.jsonPrimitive?.content,
+                blockHeight = result["block_height"]?.jsonPrimitive?.longOrNull,
+                methods = result["methods"]?.jsonArray?.mapNotNull {
+                    it.jsonPrimitive.content
+                } ?: emptyList()
             )
             "pay_invoice" -> NwcResponse.PayInvoiceResult(
                 preimage = result["preimage"]?.jsonPrimitive?.content ?: ""

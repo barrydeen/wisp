@@ -1,7 +1,9 @@
 package com.wisp.app.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,10 +11,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,17 +22,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -40,15 +42,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -59,6 +61,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -76,6 +79,7 @@ import com.wisp.app.repo.TranslationRepository
 import com.wisp.app.repo.TranslationState
 import com.wisp.app.ui.component.FollowButton
 import com.wisp.app.ui.component.NoteActions
+import com.wisp.app.ui.component.NsecPasteGuard
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.viewmodel.RelayOption
@@ -150,7 +154,6 @@ fun SearchScreen(
         )
     }
 
-    var filterMenuExpanded by remember { mutableStateOf(false) }
     var advancedExpanded by remember { mutableStateOf(authorFilter != null) }
     val focusRequester = remember { FocusRequester() }
 
@@ -163,59 +166,53 @@ fun SearchScreen(
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    // Filter type dropdown
-                    Box {
-                        TextButton(onClick = { filterMenuExpanded = true }) {
-                            Text(
-                                if (filter == SearchFilter.PEOPLE) stringResource(R.string.tab_people) else stringResource(R.string.tab_notes),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Icon(
-                                Icons.Default.ArrowDropDown,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = filterMenuExpanded,
-                            onDismissRequest = { filterMenuExpanded = false }
-                        ) {
-                            if (filter != SearchFilter.PEOPLE) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.tab_people)) },
-                                    onClick = {
-                                        viewModel.selectFilter(SearchFilter.PEOPLE)
-                                        filterMenuExpanded = false
-                                    }
-                                )
-                            }
-                            if (filter != SearchFilter.NOTES) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.tab_notes)) },
-                                    onClick = {
-                                        viewModel.selectFilter(SearchFilter.NOTES)
-                                        filterMenuExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                },
-                title = {
-                    Box(
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Segmented tab: People | Notes
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .defaultMinSize(minHeight = 64.dp)
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(50))
+                            .padding(4.dp)
+                    ) {
+                        SearchTab(
+                            label = stringResource(R.string.tab_people),
+                            icon = Icons.Default.AccountCircle,
+                            selected = filter == SearchFilter.PEOPLE,
+                            onClick = { viewModel.selectFilter(SearchFilter.PEOPLE) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        SearchTab(
+                            label = stringResource(R.string.tab_notes),
+                            icon = Icons.Default.Forum,
+                            selected = filter == SearchFilter.NOTES,
+                            onClick = { viewModel.selectFilter(SearchFilter.NOTES) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    // Search bar + filter toggle
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         TextField(
                             value = query,
-                            onValueChange = { viewModel.updateQuery(it) },
+                            onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(query, new)) viewModel.updateQuery(new) },
                             singleLine = true,
-                            textStyle = MaterialTheme.typography.bodyLarge,
+                            placeholder = { Text(stringResource(R.string.title_search)) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp))
+                            },
                             trailingIcon = {
                                 if (query.isNotEmpty()) {
                                     IconButton(onClick = { viewModel.clear() }) {
@@ -235,28 +232,20 @@ fun SearchScreen(
                                 onSearch = { viewModel.search(query, relayPool, eventRepo, muteRepo) }
                             ),
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .weight(1f)
                                 .focusRequester(focusRequester)
                         )
+                        IconButton(onClick = { advancedExpanded = !advancedExpanded }) {
+                            Icon(
+                                Icons.Default.Tune,
+                                contentDescription = null,
+                                tint = if (advancedExpanded) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                },
-                actions = {
-                    IconButton(onClick = { viewModel.search(query, relayPool, eventRepo, muteRepo) }) {
-                        Icon(Icons.Default.Search, contentDescription = stringResource(R.string.title_search))
-                    }
-                    IconButton(onClick = { advancedExpanded = !advancedExpanded }) {
-                        Icon(
-                            Icons.Default.Tune,
-                            contentDescription = stringResource(R.string.title_search),
-                            tint = if (advancedExpanded) MaterialTheme.colorScheme.primary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
+                }
+            }
         }
     ) { padding ->
         Column(
@@ -409,6 +398,45 @@ fun SearchScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SearchTab(
+    label: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .background(
+                if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                RoundedCornerShape(50)
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = if (selected) Color.White else MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+            )
         }
     }
 }
@@ -640,7 +668,7 @@ private fun AddRelayDialog(
         text = {
             OutlinedTextField(
                 value = url,
-                onValueChange = { url = it },
+                onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(url, new)) url = new },
                 placeholder = { Text(stringResource(R.string.placeholder_add_relay)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -714,7 +742,7 @@ private fun AuthorFilter(
             ) {
                 OutlinedTextField(
                     value = authorQuery,
-                    onValueChange = { authorQuery = it },
+                    onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(authorQuery, new)) authorQuery = new },
                     placeholder = { Text("Search for author") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),

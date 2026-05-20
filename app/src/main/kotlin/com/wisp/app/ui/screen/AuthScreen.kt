@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
@@ -26,11 +27,14 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.wisp.app.ui.component.NsecPasteGuard
+import com.wisp.app.ui.component.QrScanner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -68,6 +72,25 @@ fun AuthScreen(
     val nsecInput by viewModel.nsecInput.collectAsState()
     val error by viewModel.error.collectAsState()
     var nsecVisible by remember { mutableStateOf(false) }
+    var showQrScanner by remember { mutableStateOf(false) }
+
+    if (showQrScanner) {
+        QrScanner(
+            onResult = { raw ->
+                showQrScanner = false
+                viewModel.updateNsecInput(raw.trim())
+                if (viewModel.logIn()) onAuthenticated(false)
+            },
+            modifier = androidx.compose.ui.Modifier.fillMaxSize(),
+            promptText = "Scan nsec, npub, or nprofile QR"
+        )
+        return
+    }
+
+    DisposableEffect(Unit) {
+        NsecPasteGuard.nsecPasteAllowed = true
+        onDispose { NsecPasteGuard.nsecPasteAllowed = false }
+    }
 
     Column(
         modifier = Modifier
@@ -147,11 +170,19 @@ fun AuthScreen(
             visualTransformation = if (nsecVisible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             trailingIcon = {
-                IconButton(onClick = { nsecVisible = !nsecVisible }) {
-                    Icon(
-                        imageVector = if (nsecVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                        contentDescription = if (nsecVisible) stringResource(R.string.auth_hide_key) else stringResource(R.string.auth_show_key)
-                    )
+                Row {
+                    IconButton(onClick = { nsecVisible = !nsecVisible }) {
+                        Icon(
+                            imageVector = if (nsecVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                            contentDescription = if (nsecVisible) stringResource(R.string.auth_hide_key) else stringResource(R.string.auth_show_key)
+                        )
+                    }
+                    IconButton(onClick = { showQrScanner = true }) {
+                        Icon(
+                            imageVector = Icons.Outlined.QrCodeScanner,
+                            contentDescription = "Scan QR code"
+                        )
+                    }
                 }
             },
             modifier = Modifier.fillMaxWidth()

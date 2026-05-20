@@ -63,6 +63,7 @@ import com.wisp.app.nostr.CustomEmoji
 import com.wisp.app.nostr.EmojiSet
 import com.wisp.app.repo.CustomEmojiRepository
 import com.wisp.app.ui.component.EmojiLibrarySheet
+import com.wisp.app.ui.component.NsecPasteGuard
 import com.wisp.app.ui.component.pendingEmojiReactCallback
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -403,7 +404,7 @@ fun CustomEmojiScreen(
                     ) {
                         OutlinedTextField(
                             value = url,
-                            onValueChange = { url = it },
+                            onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(url, new)) url = new },
                             placeholder = { Text("Image URL") },
                             singleLine = true,
                             modifier = Modifier.weight(1f)
@@ -562,7 +563,7 @@ private fun CreateEmojiSetDialog(
         text = {
             OutlinedTextField(
                 value = name,
-                onValueChange = { name = it },
+                onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(name, new)) name = new },
                 placeholder = { Text("Set name") },
                 singleLine = true
             )
@@ -611,7 +612,7 @@ private fun EditEmojiSetDialog(
             Column {
                 OutlinedTextField(
                     value = title,
-                    onValueChange = { title = it },
+                    onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(title, new)) title = new },
                     label = { Text("Set name") },
                     singleLine = true
                 )
@@ -628,7 +629,7 @@ private fun EditEmojiSetDialog(
                     Spacer(Modifier.width(4.dp))
                     OutlinedTextField(
                         value = url,
-                        onValueChange = { url = it },
+                        onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(url, new)) url = new },
                         placeholder = { Text("URL") },
                         singleLine = true,
                         modifier = Modifier.weight(1f)

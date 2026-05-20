@@ -72,6 +72,7 @@ import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Surface
 import com.wisp.app.nostr.Nip05
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip13
 import com.wisp.app.nostr.Nip19
@@ -93,6 +94,7 @@ import com.wisp.app.repo.Nip05Status
 import com.wisp.app.repo.TranslationState
 import com.wisp.app.repo.TranslationStatus
 import com.wisp.app.ui.theme.WispThemeColors
+import com.wisp.app.ui.util.LocalCanSign
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -179,7 +181,7 @@ fun PostCard(
 ) {
     val displayName = remember(event.pubkey, profile?.displayString) {
         profile?.displayString
-            ?: event.pubkey.take(8) + "..." + event.pubkey.takeLast(4)
+            ?: event.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
     }
 
     val timestamp = remember(event.created_at) {
@@ -214,7 +216,7 @@ fun PostCard(
     val profileVersion by eventRepo?.profileVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val replyToName = remember(replyToPubkey, profileVersion) {
         replyToPubkey?.let { pk ->
-            eventRepo?.getProfileData(pk)?.displayString ?: (pk.take(8) + "...")
+            eventRepo?.getProfileData(pk)?.displayString ?: pk.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
         }
     }
 
@@ -284,7 +286,7 @@ fun PostCard(
                 // Label text
                 val labelText = if (repostPubkeys.size == 1) {
                     val name = eventRepo?.getProfileData(repostPubkeys.first())?.displayString
-                        ?: (repostPubkeys.first().take(8) + "...")
+                        ?: repostPubkeys.first().toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                     "$name reposted"
                 } else if (overflow > 0) {
                     "and $overflow others reposted"
@@ -789,7 +791,7 @@ fun PostCard(
                 if (topZap != null) {
                     val zapperProfile = eventRepo?.getProfileData(topZap.pubkey)
                     val zapperName = zapperProfile?.displayString
-                        ?: (topZap.pubkey.take(8) + "...")
+                        ?: topZap.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                     TopZapperBanner(
                         avatarUrl = zapperProfile?.picture,
                         name = zapperName,
@@ -804,42 +806,45 @@ fun PostCard(
             }
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ActionBar(
-                onReply = onReply,
-                onReact = onReact,
-                userReactionEmojis = userReactionEmojis,
-                onRepost = onRepost,
-                onQuote = onQuote,
-                hasUserReposted = hasUserReposted,
-                repostCount = repostCount,
-                onZap = onZap,
-                hasUserZapped = hasUserZapped,
-                onAddToList = onAddToList,
-                isInList = isInList,
-                likeCount = likeCount,
-                replyCount = replyCount,
-                zapSats = zapSats,
-                isZapAnimating = isZapAnimating,
-                isZapInProgress = isZapInProgress,
-                reactionEmojiUrls = reactionEmojiUrls,
-                resolvedEmojis = resolvedEmojis,
-                unicodeEmojis = unicodeEmojis,
-                onOpenEmojiLibrary = onOpenEmojiLibrary,
-                isPrivate = isPrivate,
-                zapEnabled = zapEnabled,
-                onZapDisabledTap = onZapDisabledTap,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(
-                imageVector = if (expandedDetails) Icons.Filled.KeyboardArrowUp
-                    else Icons.Filled.KeyboardArrowDown,
-                contentDescription = if (expandedDetails) stringResource(R.string.cd_collapse) else stringResource(R.string.cd_expand),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .size(20.dp)
-                    .clickable { expandedDetails = !expandedDetails }
-            )
+        val canSign = LocalCanSign.current
+        if (canSign) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ActionBar(
+                    onReply = onReply,
+                    onReact = onReact,
+                    userReactionEmojis = userReactionEmojis,
+                    onRepost = onRepost,
+                    onQuote = onQuote,
+                    hasUserReposted = hasUserReposted,
+                    repostCount = repostCount,
+                    onZap = onZap,
+                    hasUserZapped = hasUserZapped,
+                    onAddToList = onAddToList,
+                    isInList = isInList,
+                    likeCount = likeCount,
+                    replyCount = replyCount,
+                    zapSats = zapSats,
+                    isZapAnimating = isZapAnimating,
+                    isZapInProgress = isZapInProgress,
+                    reactionEmojiUrls = reactionEmojiUrls,
+                    resolvedEmojis = resolvedEmojis,
+                    unicodeEmojis = unicodeEmojis,
+                    onOpenEmojiLibrary = onOpenEmojiLibrary,
+                    isPrivate = isPrivate,
+                    zapEnabled = zapEnabled,
+                    onZapDisabledTap = onZapDisabledTap,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = if (expandedDetails) Icons.Filled.KeyboardArrowUp
+                        else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = if (expandedDetails) stringResource(R.string.cd_collapse) else stringResource(R.string.cd_expand),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clickable { expandedDetails = !expandedDetails }
+                )
+            }
         }
         AnimatedVisibility(
             visible = expandedDetails,

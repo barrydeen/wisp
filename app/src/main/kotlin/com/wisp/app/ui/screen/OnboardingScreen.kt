@@ -166,7 +166,7 @@ fun OnboardingScreen(
             Text(
                 when {
                     !relaysReady -> stringResource(R.string.onboarding_please_wait)
-                    publishing -> stringResource(R.string.onboarding_publishing)
+                    publishing -> stringResource(R.string.onboarding_creating_account)
                     else -> stringResource(R.string.btn_continue)
                 }
             )

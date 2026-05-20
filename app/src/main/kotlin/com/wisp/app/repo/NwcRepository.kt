@@ -90,6 +90,7 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
             return
         }
         connection = conn
+        updateConnectionInfo(conn)
 
         // Reset state so ViewModel sees fresh false→true transitions and
         // sendRequest() properly waits for negotiation/subscription setup
@@ -198,7 +199,9 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         }
 
         val enc = encryption ?: Nip47.NwcEncryption.NIP04
-        connection = conn.withEncryption(enc)
+        val updated = conn.withEncryption(enc)
+        connection = updated
+        updateConnectionInfo(updated)
         emitStatus("Encryption: ${if (enc == Nip47.NwcEncryption.NIP44) "NIP-44" else "NIP-04"}")
     }
 
@@ -288,6 +291,52 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
             _balance.value = balance
             balance
         }
+    }
+
+    /**
+     * Fetch the wallet service's identity via NIP-47 `get_info`. Returns the
+     * full NodeInfo response so callers can surface alias, methods, etc. The
+     * alias is cached in `_nodeAlias` so the dashboard top bar can render it
+     * without refetching.
+     */
+    suspend fun fetchNodeInfo(): Result<Nip47.NwcResponse.NodeInfo> {
+        val result = sendRequest(Nip47.NwcRequest.GetInfo)
+        return result.map { response ->
+            val info = response as Nip47.NwcResponse.NodeInfo
+            _nodeAlias.value = info.alias
+            _supportedMethods.value = info.methods
+            info
+        }
+    }
+
+    private val _nodeAlias = MutableStateFlow<String?>(null)
+    val nodeAlias: StateFlow<String?> = _nodeAlias
+
+    private val _supportedMethods = MutableStateFlow<List<String>>(emptyList())
+    val supportedMethods: StateFlow<List<String>> = _supportedMethods
+
+    /**
+     * Connection metadata exposed to the settings UI for the
+     * Wallet Info / Wallet Connection expandable. Refreshed whenever a
+     * new connection string is parsed or encryption is renegotiated.
+     */
+    data class ConnectionInfo(
+        val servicePubkeyHex: String,
+        val clientPubkeyHex: String,
+        val relayUrl: String,
+        val encryption: String
+    )
+
+    private val _connectionInfo = MutableStateFlow<ConnectionInfo?>(null)
+    val connectionInfo: StateFlow<ConnectionInfo?> = _connectionInfo
+
+    private fun updateConnectionInfo(conn: Nip47.NwcConnection) {
+        _connectionInfo.value = ConnectionInfo(
+            servicePubkeyHex = conn.walletServicePubkey.toHex(),
+            clientPubkeyHex = conn.clientPubkey.toHex(),
+            relayUrl = conn.relayUrl,
+            encryption = if (conn.encryption == Nip47.NwcEncryption.NIP44) "NIP-44" else "NIP-04"
+        )
     }
 
     override suspend fun payInvoice(bolt11: String): Result<String> {

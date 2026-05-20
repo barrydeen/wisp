@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import com.wisp.app.nostr.Nip30
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.ui.component.Nip05Badge
 import com.wisp.app.ui.component.RichContent
 import com.wisp.app.ui.component.parseImetaTags
@@ -120,6 +121,7 @@ import com.wisp.app.ui.component.ProfileQrSheet
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
 import com.wisp.app.ui.component.ZapDialog
+import com.wisp.app.ui.util.LocalCanSign
 import com.wisp.app.viewmodel.ProfileSortMode
 import com.wisp.app.viewmodel.UserProfileViewModel
 import android.content.ClipData
@@ -1278,6 +1280,7 @@ private fun ProfileHeader(
     sortContent: (@Composable RowScope.() -> Unit)? = null
 ) {
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
+    val canSign = LocalCanSign.current
 
     if (fullScreenImageUrl != null) {
         FullScreenImageViewer(
@@ -1322,7 +1325,7 @@ private fun ProfileHeader(
                 onClick = profile?.picture?.let { url -> { fullScreenImageUrl = url } }
             )
             Spacer(Modifier.weight(1f))
-            if (isOwnProfile) {
+            if (canSign && isOwnProfile) {
                 androidx.compose.material3.Button(
                     onClick = onEditProfile,
                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(
@@ -1333,7 +1336,7 @@ private fun ProfileHeader(
                 ) {
                     Text(stringResource(R.string.profile_edit), style = MaterialTheme.typography.labelMedium)
                 }
-            } else {
+            } else if (canSign) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -1621,7 +1624,7 @@ private fun FollowEntryRow(
 ) {
     val profile = eventRepo?.getProfileData(entry.pubkey)
     val displayName = profile?.displayString
-        ?: entry.pubkey.take(8) + "..." + entry.pubkey.takeLast(4)
+        ?: entry.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,

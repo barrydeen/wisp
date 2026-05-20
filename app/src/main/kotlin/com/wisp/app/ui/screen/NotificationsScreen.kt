@@ -88,6 +88,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import coil3.compose.AsyncImage
 import com.wisp.app.nostr.FlatNotificationItem
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip69
@@ -648,7 +649,7 @@ private fun ZenNotificationRow(
 ) {
     val profile = remember(profileVersion, item.actorPubkey) { resolveProfile(item.actorPubkey) }
     val displayName = profile?.displayString
-        ?: item.actorPubkey.take(8) + "..." + item.actorPubkey.takeLast(4)
+        ?: item.actorPubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         // Compact row — always visible
