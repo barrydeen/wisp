@@ -123,6 +123,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.wisp.app.nostr.Nip19
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.Nip88
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.relay.RelayPool
@@ -356,7 +357,11 @@ fun ComposeScreen(
                     }
                     OutlinedTextField(
                         value = content,
-                        onValueChange = { viewModel.updateContent(it) },
+                        onValueChange = { new ->
+                            if (!com.wisp.app.ui.component.NsecPasteGuard.blockIfNsec(content.text, new.text)) {
+                                viewModel.updateContent(new)
+                            }
+                        },
                         placeholder = { Text(stringResource(R.string.compose_gallery_placeholder)) },
                         enabled = !publishing && countdownSeconds == null,
                         visualTransformation = galleryEmojiVisual,
@@ -564,7 +569,7 @@ fun ComposeScreen(
                     replyTo?.let {
                         val replyProfile = profileRepo?.get(it.pubkey)
                         val replyAuthorName = replyProfile?.displayString
-                            ?: "${it.pubkey.take(8)}..."
+                            ?: it.pubkey.toNpub().let { npub -> "${npub.take(12)}...${npub.takeLast(4)}" }
                         var replyExpanded by remember { mutableStateOf(false) }
                         Surface(
                             shape = RoundedCornerShape(8.dp),
@@ -623,7 +628,7 @@ fun ComposeScreen(
                     // Quote context with resolved display names
                     quoteTo?.let {
                         val quoteAuthorName = profileRepo?.get(it.pubkey)?.displayString
-                            ?: "${it.pubkey.take(8)}..."
+                            ?: it.pubkey.toNpub().let { npub -> "${npub.take(12)}...${npub.takeLast(4)}" }
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant,
@@ -742,6 +747,7 @@ fun ComposeScreen(
                             }),
                         enabled = enabled,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        inputTransformation = com.wisp.app.ui.component.NsecPasteGuard.inputTransformation,
                         lineLimits = TextFieldLineLimits.MultiLine(),
                         outputTransformation = outputTransformation,
                         textStyle = MaterialTheme.typography.bodyLarge.copy(

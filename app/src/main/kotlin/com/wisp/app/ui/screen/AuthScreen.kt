@@ -27,11 +27,13 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.wisp.app.ui.component.NsecPasteGuard
 import com.wisp.app.ui.component.QrScanner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,6 +85,11 @@ fun AuthScreen(
             promptText = "Scan nsec, npub, or nprofile QR"
         )
         return
+    }
+
+    DisposableEffect(Unit) {
+        NsecPasteGuard.nsecPasteAllowed = true
+        onDispose { NsecPasteGuard.nsecPasteAllowed = false }
     }
 
     Column(

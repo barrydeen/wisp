@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import com.wisp.app.nostr.Nip30
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.ui.component.Nip05Badge
 import com.wisp.app.ui.component.RichContent
 import com.wisp.app.ui.component.parseImetaTags
@@ -1393,7 +1394,7 @@ private fun FollowEntryRow(
 ) {
     val profile = eventRepo?.getProfileData(entry.pubkey)
     val displayName = profile?.displayString
-        ?: entry.pubkey.take(8) + "..." + entry.pubkey.takeLast(4)
+        ?: entry.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,

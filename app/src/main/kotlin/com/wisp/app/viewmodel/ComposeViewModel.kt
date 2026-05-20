@@ -27,6 +27,7 @@ import com.wisp.app.nostr.Nip88
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.nostr.toHex
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.relay.OutboxRouter
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.BlossomRepository
@@ -514,7 +515,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     private fun sanitizeMentionDisplay(candidate: MentionCandidate): String {
         val raw = candidate.profile.displayName?.takeIf { it.isNotBlank() }
             ?: candidate.profile.name?.takeIf { it.isNotBlank() }
-            ?: return candidate.profile.pubkey.take(8) + "…" + candidate.profile.pubkey.takeLast(4)
+            ?: return candidate.profile.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
         // Strip whitespace and leading @ so the mention remains a single token and mention detection
         // can't re-trigger on a name that itself contains spaces.
         return raw.trim().removePrefix("@").replace(Regex("\\s+"), "_")

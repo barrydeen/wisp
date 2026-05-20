@@ -83,6 +83,7 @@ import coil3.compose.AsyncImage
 import androidx.compose.material3.CircularProgressIndicator
 import com.wisp.app.R
 import com.wisp.app.nostr.Nip13
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.Nip68
@@ -229,7 +230,7 @@ fun GalleryCard(
 
     val displayName = remember(event.pubkey, profile?.displayString) {
         profile?.displayString
-            ?: event.pubkey.take(8) + "..." + event.pubkey.takeLast(4)
+            ?: event.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
     }
     val timestamp = remember(event.created_at) { formatGalleryTimestamp(event.created_at) }
 
@@ -288,7 +289,7 @@ fun GalleryCard(
                 // Label text
                 val labelText = if (repostPubkeys.size == 1) {
                     val name = eventRepo?.getProfileData(repostPubkeys.first())?.displayString
-                        ?: (repostPubkeys.first().take(8) + "...")
+                        ?: repostPubkeys.first().toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                     "$name reposted"
                 } else if (overflow > 0) {
                     "and $overflow others reposted"
@@ -605,7 +606,7 @@ fun GalleryCard(
             if (topZap != null) {
                 val zapperProfile = eventRepo?.getProfileData(topZap.pubkey)
                 val zapperName = zapperProfile?.displayString
-                    ?: (topZap.pubkey.take(8) + "...")
+                    ?: topZap.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                 TopZapperBanner(
                     avatarUrl = zapperProfile?.picture,
                     name = zapperName,

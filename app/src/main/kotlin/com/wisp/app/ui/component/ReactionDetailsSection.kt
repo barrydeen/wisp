@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.wisp.app.R
 import com.wisp.app.ui.util.AmountFormatter
 import com.wisp.app.nostr.NostrEvent
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.ZapDetail
@@ -156,7 +157,7 @@ fun ZapRow(
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            text = message.ifBlank { profile?.displayString ?: (pubkey.take(8) + "...") },
+            text = message.ifBlank { profile?.displayString ?: pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" } },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,

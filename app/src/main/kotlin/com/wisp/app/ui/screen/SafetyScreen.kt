@@ -40,9 +40,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.wisp.app.R
 import com.wisp.app.repo.ExtendedNetworkCache
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.repo.MuteRepository
 import com.wisp.app.repo.ProfileRepository
 import com.wisp.app.repo.SafetyPreferences
+import com.wisp.app.ui.component.NsecPasteGuard
 import com.wisp.app.ui.component.ProfilePicture
 import kotlinx.coroutines.flow.StateFlow
 
@@ -145,7 +147,7 @@ private fun MutedWordsTab(
         ) {
             OutlinedTextField(
                 value = newWord,
-                onValueChange = { newWord = it },
+                onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(newWord, new)) newWord = new },
                 placeholder = { Text(stringResource(R.string.placeholder_add_word_phrase)) },
                 singleLine = true,
                 modifier = Modifier.weight(1f)
@@ -249,7 +251,7 @@ private fun MutedUsersTab(
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = profile?.displayString ?: (pubkey.take(16) + "..."),
+                            text = profile?.displayString ?: (pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
@@ -257,7 +259,7 @@ private fun MutedUsersTab(
                         )
                         if (profile != null) {
                             Text(
-                                text = pubkey.take(16) + "...",
+                                text = pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,

@@ -64,6 +64,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.R
 import com.wisp.app.nostr.Nip29
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.repo.EventRepository
@@ -721,7 +722,7 @@ private fun MemberRow(
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = profile?.displayString ?: (pubkey.take(8) + "…"),
+                text = profile?.displayString ?: pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,

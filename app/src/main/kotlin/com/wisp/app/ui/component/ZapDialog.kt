@@ -458,7 +458,7 @@ fun ZapDialog(
                     // Message input
                     OutlinedTextField(
                         value = message,
-                        onValueChange = { message = it },
+                        onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(message, new)) message = new },
                         label = { Text(stringResource(R.string.placeholder_message_optional)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -974,7 +974,7 @@ private fun SaveZapPresetDialog(
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = presetMessage,
-                    onValueChange = { presetMessage = it },
+                    onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(presetMessage, new)) presetMessage = new },
                     label = { Text(stringResource(R.string.placeholder_message_optional)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,

@@ -18,6 +18,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import com.wisp.app.repo.InterfacePreferences
+import com.wisp.app.ui.component.NsecPasteGuard
 import com.wisp.app.repo.LocaleRepository
 import com.wisp.app.ui.component.LocalMediaSettings
 import com.wisp.app.ui.component.MediaSettings
@@ -37,6 +38,7 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        NsecPasteGuard.setActivity(this)
         enableEdgeToEdge()
         deepLinkUri.value = intent?.data?.toString()
         setContent {

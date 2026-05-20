@@ -76,6 +76,7 @@ import com.wisp.app.repo.TranslationRepository
 import com.wisp.app.repo.TranslationState
 import com.wisp.app.ui.component.FollowButton
 import com.wisp.app.ui.component.NoteActions
+import com.wisp.app.ui.component.NsecPasteGuard
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.viewmodel.RelayOption
@@ -213,7 +214,7 @@ fun SearchScreen(
                     ) {
                         TextField(
                             value = query,
-                            onValueChange = { viewModel.updateQuery(it) },
+                            onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(query, new)) viewModel.updateQuery(new) },
                             singleLine = true,
                             textStyle = MaterialTheme.typography.bodyLarge,
                             trailingIcon = {
@@ -640,7 +641,7 @@ private fun AddRelayDialog(
         text = {
             OutlinedTextField(
                 value = url,
-                onValueChange = { url = it },
+                onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(url, new)) url = new },
                 placeholder = { Text(stringResource(R.string.placeholder_add_relay)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -714,7 +715,7 @@ private fun AuthorFilter(
             ) {
                 OutlinedTextField(
                     value = authorQuery,
-                    onValueChange = { authorQuery = it },
+                    onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(authorQuery, new)) authorQuery = new },
                     placeholder = { Text("Search for author") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),

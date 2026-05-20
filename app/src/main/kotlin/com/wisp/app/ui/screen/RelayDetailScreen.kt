@@ -50,6 +50,7 @@ import com.wisp.app.relay.RelayHealthTracker
 import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.nostr.ProfileData
 import com.wisp.app.nostr.RelaySet
+import com.wisp.app.ui.component.NsecPasteGuard
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RelayIcon
 import com.wisp.app.ui.theme.WispThemeColors
@@ -377,7 +378,7 @@ private fun RelayHeader(
                                     // Create new set
                                     androidx.compose.material3.OutlinedTextField(
                                         value = newSetName,
-                                        onValueChange = { newSetName = it },
+                                        onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(newSetName, new)) newSetName = new },
                                         placeholder = { Text(stringResource(R.string.placeholder_new_set_name)) },
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth(),

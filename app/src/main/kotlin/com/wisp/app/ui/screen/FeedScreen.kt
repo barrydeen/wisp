@@ -76,6 +76,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.wisp.app.nostr.FollowSet
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.Nip05
 import com.wisp.app.nostr.Nip10
 import com.wisp.app.nostr.Nip69
@@ -1549,7 +1550,7 @@ private fun FeedArticleItem(
     }
 
     val displayName = profileData?.displayString
-        ?: "${event.pubkey.take(8)}...${event.pubkey.takeLast(4)}"
+        ?: event.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
 
     Surface(
         shape = RoundedCornerShape(12.dp),

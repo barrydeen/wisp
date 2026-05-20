@@ -103,7 +103,7 @@ fun AddNoteToListDialog(
                 ) {
                     OutlinedTextField(
                         value = newListName,
-                        onValueChange = { newListName = it },
+                        onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(newListName, new)) newListName = new },
                         placeholder = { Text("New list name") },
                         singleLine = true,
                         modifier = Modifier.weight(1f)

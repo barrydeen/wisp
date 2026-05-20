@@ -135,6 +135,7 @@ import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import com.wisp.app.R
 import com.wisp.app.nostr.Nip19
+import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.nostr.hexToByteArray
 import com.wisp.app.nostr.ProfileData
@@ -578,6 +579,7 @@ fun GroupRoomScreen(
                             .then(pasteImagesModifier),
                         enabled = uploadProgress == null,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        inputTransformation = com.wisp.app.ui.component.NsecPasteGuard.inputTransformation,
                         outputTransformation = groupEmojiTransformation,
                         lineLimits = lineLimits,
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -776,7 +778,7 @@ fun GroupRoomScreen(
                                             eventRepo.getProfileData(rt.senderPubkey)
                                         }
                                         val replyName =
-                                            replyProfile?.displayString ?: rt.senderPubkey.take(8) + "…"
+                                            replyProfile?.displayString ?: rt.senderPubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                                         GroupChatQuotedMessage(
                                             authorPubkey = rt.senderPubkey,
                                             authorName = replyName,
@@ -1218,7 +1220,7 @@ private fun GroupMessageBubble(
     noteActions: com.wisp.app.ui.component.NoteActions? = null
 ) {
     val profile = remember(message.senderPubkey) { eventRepo.getProfileData(message.senderPubkey) }
-    val displayName = profile?.displayString ?: (message.senderPubkey.take(8) + "…")
+    val displayName = profile?.displayString ?: message.senderPubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
     val background = MaterialTheme.colorScheme.background
     val isDarkTheme = (background.red * 0.299f + background.green * 0.587f + background.blue * 0.114f) < 0.5f
     val nameColor = remember(message.senderPubkey, isDarkTheme) { groupMemberColor(message.senderPubkey, isDarkTheme) }
@@ -1397,7 +1399,7 @@ private fun GroupMessageBubble(
                             val replyProfile = remember(replyToMessage.senderPubkey) {
                                 eventRepo.getProfileData(replyToMessage.senderPubkey)
                             }
-                            val replyName = replyProfile?.displayString ?: replyToMessage.senderPubkey.take(8) + "…"
+                            val replyName = replyProfile?.displayString ?: replyToMessage.senderPubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
                             GroupChatQuotedMessage(
                                 authorPubkey = replyToMessage.senderPubkey,
                                 authorName = replyName,

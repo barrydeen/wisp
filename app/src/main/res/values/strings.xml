@@ -473,6 +473,7 @@
     <string name="onboarding_almost_there">Almost there…</string>
     <string name="onboarding_please_wait">Please wait…</string>
     <string name="onboarding_publishing">Publishing…</string>
+    <string name="onboarding_creating_account">Creating account…</string>
     <string name="onboarding_wisp_logo">Wisp logo</string>
     <string name="onboarding_follow_all_x">Follow All (%d)</string>
 
