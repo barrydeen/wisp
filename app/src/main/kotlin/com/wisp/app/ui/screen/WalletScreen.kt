@@ -1146,7 +1146,9 @@ private fun WalletHomeContent(
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                 )
-                recentTransactions.take(1).forEach { tx ->
+                // Match iOS — show the most-recent ~5 transactions inline,
+                // tap any row (or "View all") to expand to the full screen.
+                recentTransactions.take(5).forEach { tx ->
                     TransactionRow(tx, profileLookup)
                 }
             }
