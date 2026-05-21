@@ -547,7 +547,9 @@ fun FeedScreen(
                 viewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
             },
             onGoToWallet = onWallet,
-            canPrivateZap = userHasDmRelays && recipientHasDmRelays
+            canPrivateZap = userHasDmRelays && recipientHasDmRelays,
+            recipientPubkey = zapTargetEvent?.pubkey,
+            profileLookup = { viewModel.profileRepo.get(it) }
         )
     }
 

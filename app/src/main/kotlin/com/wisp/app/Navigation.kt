@@ -1641,7 +1641,9 @@ fun WispNavHost(
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
                     canPrivateZap = feedViewModel.hasLocalKeypair && feedViewModel.relayPool.hasDmRelays() && recipientHasDmRelays,
-                    initialSatsHint = groupRoomZapInitialSats
+                    initialSatsHint = groupRoomZapInitialSats,
+                    recipientPubkey = groupRoomZapTarget?.pubkey,
+                    profileLookup = { feedViewModel.profileRepo.get(it) }
                 )
             }
             val groupRoomMediaLauncher = rememberLauncherForActivityResult(
@@ -1918,7 +1920,9 @@ fun WispNavHost(
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
                     canPrivateZap = feedViewModel.hasLocalKeypair && threadUserHasDmRelays && threadRecipientHasDmRelays,
-                    forcePrivate = threadZapTarget?.id?.let { feedViewModel.eventRepo.isPrivate(it) } == true
+                    forcePrivate = threadZapTarget?.id?.let { feedViewModel.eventRepo.isPrivate(it) } == true,
+                    recipientPubkey = threadZapTarget?.pubkey,
+                    profileLookup = { feedViewModel.profileRepo.get(it) }
                 )
             }
             val threadSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
