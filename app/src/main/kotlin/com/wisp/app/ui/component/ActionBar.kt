@@ -71,6 +71,7 @@ fun ActionBar(
     onQuote: () -> Unit = {},
     hasUserReposted: Boolean = false,
     onZap: () -> Unit = {},
+    onZapLongPress: (() -> Unit)? = null,
     hasUserZapped: Boolean = false,
     onAddToList: () -> Unit = {},
     isInList: Boolean = false,
@@ -201,12 +202,39 @@ fun ActionBar(
         Spacer(Modifier.width(8.dp))
         Box {
             val zapClickable = !isZapInProgress
-            IconButton(
-                onClick = { if (zapEnabled) onZap() else onZapDisabledTap() },
-                enabled = zapClickable
+            // combinedClickable lets the zap glyph distinguish tap
+            // (open composer) from long-press (fire instant zap when
+            // enabled). Pin a fired-flag so the tap handler doesn't
+            // also fire when the long-press completes — Compose, like
+            // SwiftUI, fires both onClick AND onLongClick on release.
+            val longPressFired = remember { androidx.compose.runtime.mutableStateOf(false) }
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(48.dp)
+                    .combinedClickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = androidx.compose.material3.ripple(bounded = false, radius = 24.dp),
+                        enabled = zapClickable,
+                        onClick = {
+                            if (longPressFired.value) {
+                                longPressFired.value = false
+                            } else if (zapEnabled) {
+                                onZap()
+                            } else {
+                                onZapDisabledTap()
+                            }
+                        },
+                        onLongClick = if (zapEnabled && onZapLongPress != null) {
+                            {
+                                longPressFired.value = true
+                                onZapLongPress()
+                            }
+                        } else null
+                    )
             ) {
                 val zapTint = when {
-                    !zapEnabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    !zapEnabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
                     hasUserZapped -> WispThemeColors.zapColor
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
