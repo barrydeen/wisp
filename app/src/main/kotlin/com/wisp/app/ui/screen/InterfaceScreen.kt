@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Application
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.background
@@ -96,7 +97,8 @@ fun InterfaceScreen(
     interfacePrefs: InterfacePreferences,
     onBack: () -> Unit,
     onChanged: () -> Unit,
-    onSyncRequested: (() -> Unit)? = null
+    onSyncRequested: (() -> Unit)? = null,
+    onOpenDeveloperTools: (() -> Unit)? = null
 ) {
     var isLargeText by remember { mutableStateOf(interfacePrefs.isLargeText()) }
     var newNotesHidden by remember { mutableStateOf(interfacePrefs.isNewNotesButtonHidden()) }
@@ -932,6 +934,37 @@ fun InterfaceScreen(
             }
 
             Spacer(Modifier.height(32.dp))
+
+            // Developer row — hidden in release. Empty placeholder so
+            // future throwaway experiments have a home instead of new
+            // one-off entry points.
+            if (com.wisp.app.BuildConfig.DEBUG && onOpenDeveloperTools != null) {
+                Text(
+                    "Developer",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenDeveloperTools() }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Developer tools",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(24.dp))
+            }
 
             // Version — long-press 5 times to reveal diagnostic mode
             val context = LocalContext.current

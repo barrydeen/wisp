@@ -56,6 +56,7 @@ import com.wisp.app.ui.screen.BlossomServersScreen
 import com.wisp.app.ui.screen.AuthScreen
 import com.wisp.app.ui.screen.SplashScreen
 import com.wisp.app.ui.screen.ComposeScreen
+import com.wisp.app.ui.screen.DeveloperToolsScreen
 import com.wisp.app.ui.screen.ContactPickerScreen
 import com.wisp.app.ui.screen.DmConversationScreen
 import com.wisp.app.ui.screen.DmListScreen
@@ -172,6 +173,7 @@ object Routes {
     const val SOCIAL_GRAPH = "social_graph"
     const val POW_SETTINGS = "pow_settings"
     const val INTERFACE_SETTINGS = "interface_settings"
+    const val DEVELOPER_TOOLS = "developer_tools"
     const val RELAY_HEALTH = "relay_health"
     const val ARTICLE = "article/{kind}/{author}/{dTag}"
     const val LIVE_STREAM = "live_stream/{hostPubkey}/{dTag}?relayHint={relayHint}"
@@ -2699,8 +2701,14 @@ fun WispNavHost(
                 interfacePrefs = interfacePrefs,
                 onBack = { navController.popBackStack() },
                 onChanged = onInterfaceChanged,
-                onSyncRequested = { feedViewModel.appSettingsRepo.scheduleSettingsSync() }
+                onSyncRequested = { feedViewModel.appSettingsRepo.scheduleSettingsSync() },
+                onOpenDeveloperTools = { navController.navigate(Routes.DEVELOPER_TOOLS) }
             )
+        }
+
+        // Developer tools — debug-only entry point, hidden in release builds.
+        composable(Routes.DEVELOPER_TOOLS) {
+            DeveloperToolsScreen(onBack = { navController.popBackStack() })
         }
 
         composable(Routes.CUSTOM_EMOJIS) {
