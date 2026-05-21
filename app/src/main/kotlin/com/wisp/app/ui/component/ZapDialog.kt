@@ -147,6 +147,7 @@ fun ZapDialog(
     val fiatPrefs = remember { FiatPreferences.get(context) }
     val fiatMode by fiatPrefs.fiatMode.collectAsState()
     val fiatCurrency by fiatPrefs.currency.collectAsState()
+    val interfacePrefs = remember { com.wisp.app.repo.InterfacePreferences(context) }
     var presets by remember { mutableStateOf(ZapPreferences(context).getPresets().sortedBy { it.amountSats }) }
     var selectedPreset by remember { mutableStateOf<ZapPreset?>(presets.firstOrNull()) }
     var isCustom by remember { mutableStateOf(false) }
@@ -155,6 +156,8 @@ fun ZapDialog(
     var isAnonymous by remember { mutableStateOf(false) }
     var isPrivate by remember(forcePrivate) { mutableStateOf(forcePrivate) }
     var editMode by remember { mutableStateOf(false) }
+    var instantZapsEnabled by remember { mutableStateOf(interfacePrefs.isQuickZapEnabled()) }
+    var showLargeAmountConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(initialSatsHint) {
         val hint = initialSatsHint ?: return@LaunchedEffect
@@ -169,6 +172,27 @@ fun ZapDialog(
             isCustom = true
             customAmount = h.toString()
             message = ""
+        }
+    }
+
+    // Seed amount from the configured instant-zap amount on first open,
+    // so the user's "preferred opening amount" surfaces even when the
+    // long-press shortcut is disabled. iOS does the same — the instant
+    // amount is the implicit default, distinct from the preset list.
+    LaunchedEffect(Unit) {
+        if (initialSatsHint != null) return@LaunchedEffect
+        val seedSats = if (fiatMode) {
+            // Fiat-mode customAmount is cents (last two digits). Seed the
+            // saved fiat amount in major units → cents.
+            val major = interfacePrefs.getQuickZapAmountFiat()
+            (major * 100.0).toLong().coerceAtLeast(0L)
+        } else {
+            interfacePrefs.getQuickZapAmountSats()
+        }
+        if (seedSats > 0) {
+            isCustom = true
+            customAmount = seedSats.toString()
+            message = interfacePrefs.getQuickZapMessage()
         }
     }
 
@@ -563,6 +587,48 @@ fun ZapDialog(
                     }
                     } // end !forcePrivate
 
+                    Spacer(Modifier.height(12.dp))
+
+                    // Instant zaps toggle — bound to the same setting as the
+                    // Interface screen, so the user can flip it from the
+                    // sheet without navigating away. Matches iOS.
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (fiatMode) "Instant payments" else "Instant zaps",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Switch(
+                            checked = instantZapsEnabled,
+                            onCheckedChange = {
+                                instantZapsEnabled = it
+                                interfacePrefs.setQuickZapEnabled(it)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = LightningOrange,
+                                checkedTrackColor = LightningOrange.copy(alpha = 0.5f),
+                                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                uncheckedBorderColor = MaterialTheme.colorScheme.outline
+                            )
+                        )
+                    }
+
+                    // 1,000,000-sat hard cap warning.
+                    val overCap = effectiveAmount > ZAP_HARD_CAP_SATS
+                    if (overCap) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Max ${"%,d".format(ZAP_HARD_CAP_SATS)} sats per zap",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
                     Spacer(Modifier.height(16.dp))
 
                     // Action buttons
@@ -579,9 +645,16 @@ fun ZapDialog(
 
                         Button(
                             onClick = {
-                                onZap(effectiveAmount * 1000, effectiveMessage.ifEmpty { message }, isAnonymous, isPrivate)
+                                // 10K-sat soft confirmation — large amount
+                                // intercepts the tap and routes through a
+                                // confirm dialog. Below 10K fires immediately.
+                                if (effectiveAmount > ZAP_SOFT_CONFIRM_SATS) {
+                                    showLargeAmountConfirm = true
+                                } else {
+                                    onZap(effectiveAmount * 1000, effectiveMessage.ifEmpty { message }, isAnonymous, isPrivate)
+                                }
                             },
-                            enabled = effectiveAmount > 0,
+                            enabled = effectiveAmount > 0 && !overCap,
                             modifier = Modifier.weight(2f),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = LightningOrange,
@@ -615,6 +688,72 @@ fun ZapDialog(
         }
     }
 
+    // 10K-sat soft-confirmation dialog. Large zaps surface a "double-check
+    // before sending" prompt so a stray preset tap doesn't drain a wallet.
+    if (showLargeAmountConfirm) {
+        AlertDialog(
+            onDismissRequest = { showLargeAmountConfirm = false },
+            title = { Text("Zap %,d sats?".format(effectiveAmount)) },
+            text = { Text("This is a large amount, double-check before sending.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLargeAmountConfirm = false
+                        onZap(effectiveAmount * 1000, effectiveMessage.ifEmpty { message }, isAnonymous, isPrivate)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = LightningOrange)
+                ) {
+                    Text("Send", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLargeAmountConfirm = false }) {
+                    Text(stringResource(R.string.btn_cancel))
+                }
+            }
+        )
+    }
+}
+
+// Hard ceilings shared with the iOS port. Soft = confirmation dialog,
+// hard = disables the Zap button entirely.
+private const val ZAP_SOFT_CONFIRM_SATS = 10_000L
+private const val ZAP_HARD_CAP_SATS = 1_000_000L
+
+/**
+ * Translate raw Lightning/SDK error strings into plain user-facing
+ * copy. Mirrors iOS `ZapAnimationStore.friendlyMessage(for:)`.
+ * Fallback: extract the substring between the first `("` and `")`
+ * (Swift enum description wrapper) if present; otherwise pass through
+ * the raw error.
+ */
+internal fun friendlyZapErrorMessage(raw: String?): String {
+    val msg = raw?.trim().orEmpty()
+    if (msg.isEmpty()) return "Zap failed."
+    val lower = msg.lowercase()
+    return when {
+        "insufficient funds" in lower || "insufficient balance" in lower ->
+            "Not enough sats in your wallet."
+        "no route" in lower || "route not found" in lower || "unreachable" in lower ->
+            "Couldn't find a payment route to the recipient. Try again later."
+        "expired" in lower || "invoice has expired" in lower ->
+            "The lightning invoice expired before it could be paid. Try again."
+        "timeout" in lower || "timed out" in lower ->
+            "The payment timed out. Check your connection and try again."
+        "no lud16" in lower || "no lightning address" in lower ->
+            "This account doesn't have a lightning address."
+        "lnurl" in lower && "400" in lower ->
+            "The recipient's lightning provider rejected this zap. Try a different amount."
+        "amount too small" in lower || "below minimum" in lower ->
+            "Amount is below the recipient's minimum. Try a larger zap."
+        "amount too large" in lower || "above maximum" in lower ->
+            "Amount is above the recipient's maximum. Try a smaller zap."
+        else -> {
+            val start = msg.indexOf("(\"")
+            val end = msg.indexOf("\")", startIndex = (start + 2).coerceAtLeast(0))
+            if (start >= 0 && end > start + 2) msg.substring(start + 2, end) else msg
+        }
+    }
 }
 
 /**
