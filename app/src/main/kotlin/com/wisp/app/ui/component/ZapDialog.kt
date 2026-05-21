@@ -12,9 +12,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -58,9 +61,14 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -151,7 +159,11 @@ fun ZapDialog(
     var presets by remember { mutableStateOf(zapPrefsRepo.getPresets().sortedBy { it.amountSats }) }
     var selectedPreset by remember { mutableStateOf<ZapPreset?>(presets.firstOrNull()) }
     var isCustom by remember { mutableStateOf(false) }
-    var customAmount by remember { mutableStateOf("") }
+    // TextFieldValue so we can pre-select the seeded amount on focus —
+    // the first keystroke then replaces the whole seed, matching the
+    // iOS "first-keystroke-replaces-seed" UX.
+    var customAmountTfv by remember { mutableStateOf(TextFieldValue("")) }
+    val customAmount = customAmountTfv.text
     var message by remember { mutableStateOf("") }
     var isAnonymous by remember { mutableStateOf(false) }
     var isPrivate by remember(forcePrivate) { mutableStateOf(forcePrivate) }
@@ -159,6 +171,7 @@ fun ZapDialog(
     var showLargeAmountConfirm by remember { mutableStateOf(false) }
     var showSavePresetDialog by remember { mutableStateOf(false) }
     var privacyMenuExpanded by remember { mutableStateOf(false) }
+    val amountFocusRequester = remember { FocusRequester() }
 
     val recipientProfile = recipientPubkey?.let { profileLookup(it) }
 
@@ -177,25 +190,31 @@ fun ZapDialog(
             message = match.message
         } else {
             isCustom = true
-            customAmount = h.toString()
+            seedCustomAmount(h.toString()) { customAmountTfv = it }
             message = ""
         }
     }
 
     // Seed amount from the configured instant-zap amount on first open.
+    // Auto-focus the field after the sheet's mount + transition has
+    // settled (~450ms) — matches the iOS deferral. The seed is selected
+    // so the first keystroke replaces it entirely.
     LaunchedEffect(Unit) {
-        if (initialSatsHint != null) return@LaunchedEffect
-        val seedSats = if (fiatMode) {
-            val major = interfacePrefs.getQuickZapAmountFiat()
-            (major * 100.0).toLong().coerceAtLeast(0L)
-        } else {
-            interfacePrefs.getQuickZapAmountSats()
+        if (initialSatsHint == null) {
+            val seedSats = if (fiatMode) {
+                val major = interfacePrefs.getQuickZapAmountFiat()
+                (major * 100.0).toLong().coerceAtLeast(0L)
+            } else {
+                interfacePrefs.getQuickZapAmountSats()
+            }
+            if (seedSats > 0) {
+                isCustom = true
+                seedCustomAmount(seedSats.toString()) { customAmountTfv = it }
+                message = interfacePrefs.getQuickZapMessage()
+            }
         }
-        if (seedSats > 0) {
-            isCustom = true
-            customAmount = seedSats.toString()
-            message = interfacePrefs.getQuickZapMessage()
-        }
+        delay(450)
+        runCatching { amountFocusRequester.requestFocus() }
     }
 
     val effectiveAmount: Long = if (isCustom) {
@@ -220,13 +239,24 @@ fun ZapDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         // Drag handle replaces the iOS "swipe down" affordance.
     ) {
+        // Two-row stack: scrollable content on top, pinned Zap button
+        // at the bottom. `imePadding()` lifts the whole stack above the
+        // keyboard so the Zap button stays visible even when the
+        // amount field is focused. `navigationBarsPadding()` keeps it
+        // above the gesture-nav handle on devices without IME up.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .imePadding()
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
             // ── 1. Toolbar ──────────────────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -346,7 +376,13 @@ fun ZapDialog(
                     showPlus = canSavePreset,
                     onClick = {
                         isCustom = true
-                        if (effectiveAmount == 0L) customAmount = ""
+                        if (effectiveAmount == 0L) {
+                            customAmountTfv = TextFieldValue("")
+                        } else {
+                            // Re-seed and select-all so first keystroke replaces.
+                            seedCustomAmount(customAmount) { customAmountTfv = it }
+                        }
+                        runCatching { amountFocusRequester.requestFocus() }
                     },
                     onPlusClick = {
                         // Save the current custom amount as a new preset
@@ -359,21 +395,29 @@ fun ZapDialog(
                 )
             }
 
-            // ── 5. Inline custom amount field (only when isCustom) ──
-            if (isCustom) {
-                OutlinedTextField(
-                    value = customAmount,
-                    onValueChange = { raw ->
-                        customAmount = raw.filter { it.isDigit() }.trimStart('0')
-                    },
-                    label = {
-                        Text(if (fiatMode) "Custom (cents)" else "Custom (sats)")
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
+            // ── 5. Inline custom amount field ───────────────────────
+            // Always rendered (the keyboard is up on mount per iOS),
+            // but only contributes to the amount when isCustom = true.
+            // The seed is pre-selected so the first keystroke replaces
+            // it; preset taps switch isCustom off and the typed value
+            // is preserved if the user comes back.
+            OutlinedTextField(
+                value = customAmountTfv,
+                onValueChange = { newTfv ->
+                    val filtered = newTfv.text.filter { it.isDigit() }
+                    // Preserve cursor / selection across the digit filter.
+                    customAmountTfv = newTfv.copy(text = filtered)
+                    if (filtered.isNotEmpty()) isCustom = true
+                },
+                label = {
+                    Text(if (fiatMode) "Custom (cents)" else "Custom (sats)")
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(amountFocusRequester)
+            )
 
             // ── 6. Message ──────────────────────────────────────────
             OutlinedTextField(
@@ -507,50 +551,62 @@ fun ZapDialog(
                 }
             }
 
-            if (overHardCap) {
-                Text(
-                    "Max ${"%,d".format(ZAP_HARD_CAP_SATS)} sats per zap",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center
-                )
-            }
+            } // end scrollable content Column
 
-            // ── 9. Zap button ───────────────────────────────────────
-            Button(
-                onClick = {
-                    if (effectiveAmount > ZAP_SOFT_CONFIRM_SATS) {
-                        showLargeAmountConfirm = true
-                    } else {
-                        onZap(effectiveAmount * 1000, effectiveMessage.ifEmpty { message }, isAnonymous, isPrivate)
-                    }
-                },
-                enabled = effectiveAmount > 0 && !overHardCap,
+            // ── 9. Zap button — pinned to the bottom of the sheet ──
+            // Lives outside the scrollable region above so it stays on
+            // screen even when the keyboard is up. The outer Column's
+            // imePadding() ensures it floats above the IME.
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = accent,
-                    contentColor = Color.White,
-                    disabledContainerColor = accent.copy(alpha = 0.35f)
-                )
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 12.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    painter = painterResource(
-                        if (fiatMode) R.drawable.ic_coin_stack else R.drawable.ic_bolt
-                    ),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    if (fiatMode) "Zap ${AmountFormatter.formatShort(effectiveAmount, context)}"
-                    else "Zap ${"%,d".format(effectiveAmount)} sats",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp
-                )
+                if (overHardCap) {
+                    Text(
+                        "Max ${"%,d".format(ZAP_HARD_CAP_SATS)} sats per zap",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center
+                    )
+                }
+                Button(
+                    onClick = {
+                        if (effectiveAmount > ZAP_SOFT_CONFIRM_SATS) {
+                            showLargeAmountConfirm = true
+                        } else {
+                            onZap(effectiveAmount * 1000, effectiveMessage.ifEmpty { message }, isAnonymous, isPrivate)
+                        }
+                    },
+                    enabled = effectiveAmount > 0 && !overHardCap,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = accent,
+                        contentColor = Color.White,
+                        disabledContainerColor = accent.copy(alpha = 0.35f)
+                    )
+                ) {
+                    Icon(
+                        painter = painterResource(
+                            if (fiatMode) R.drawable.ic_coin_stack else R.drawable.ic_bolt
+                        ),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (fiatMode) "Zap ${AmountFormatter.formatShort(effectiveAmount, context)}"
+                        else "Zap ${"%,d".format(effectiveAmount)} sats",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp
+                    )
+                }
             }
         }
     }
@@ -597,6 +653,16 @@ fun ZapDialog(
 
 private const val ZAP_SOFT_CONFIRM_SATS = 10_000L
 private const val ZAP_HARD_CAP_SATS = 1_000_000L
+
+/**
+ * Seed the custom-amount field with the given text AND select the
+ * whole range — so the next keystroke replaces the seed entirely.
+ * Lets the user open the sheet, see the configured instant-zap
+ * amount, then type a new value over it without backspacing first.
+ */
+private fun seedCustomAmount(text: String, set: (TextFieldValue) -> Unit) {
+    set(TextFieldValue(text = text, selection = TextRange(0, text.length)))
+}
 
 /**
  * Pill-shaped text button — used for the toolbar's Close + Presets

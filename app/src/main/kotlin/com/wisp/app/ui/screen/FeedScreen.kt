@@ -577,7 +577,9 @@ fun FeedScreen(
                 zapPollTarget = null
                 viewModel.sendZapPollVote(pollEvent, optionIndex, amountMsats, message, isAnonymous)
             },
-            onGoToWallet = onWallet
+            onGoToWallet = onWallet,
+            recipientPubkey = pollEvent.pubkey,
+            profileLookup = { viewModel.profileRepo.get(it) }
         )
     }
 
