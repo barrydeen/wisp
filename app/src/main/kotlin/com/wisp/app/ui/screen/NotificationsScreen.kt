@@ -688,6 +688,24 @@ private fun ZenNotificationRow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
                     )
+                    // +N more pill when same-actor zap spam has been folded
+                    // into this row. Visual signal only — the breakdown of
+                    // individual zaps shows up in the expanded section.
+                    if (item.type == NotificationType.ZAP && item.mergedZaps.isNotEmpty()) {
+                        Spacer(Modifier.width(6.dp))
+                        val extra = item.mergedZaps.size
+                        Text(
+                            text = "+$extra more",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = WispThemeColors.zapColor,
+                            modifier = Modifier
+                                .background(
+                                    color = WispThemeColors.zapColor.copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(50)
+                                )
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
                     if (item.isPrivateReply || item.isPrivateReaction || item.isPrivateZap) {
                         Spacer(Modifier.width(4.dp))
                         Icon(
@@ -835,10 +853,76 @@ private fun ZenNotificationRow(
             } else if (item.type == NotificationType.DM_ZAP || item.type == NotificationType.PROFILE_ZAP) {
                 ZapMessageExpansion(item = item)
             } else if (postCardParams != null && item.type != NotificationType.DM_REACTION) {
-                NoteExpansion(
-                    item = item,
-                    params = postCardParams
+                // Wrap in a Column — `AnimatedVisibility` lays its content
+                // out in a Box, so sibling composables would draw on top
+                // of each other.
+                //
+                // Embedded note first, then the merged-zaps breakdown
+                // below — mirrors iOS NotificationRowView, where the
+                // referenced-note card precedes the per-zap breakdown
+                // in the caption flow.
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    NoteExpansion(
+                        item = item,
+                        params = postCardParams
+                    )
+                    if (item.type == NotificationType.ZAP && item.mergedZaps.isNotEmpty()) {
+                        MergedZapsBreakdown(item = item)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Merged-zaps breakdown (NotificationType.ZAP folded by view model) ───
+
+/**
+ * Inline list of every individual zap that was folded into this row by
+ * `NotificationsViewModel.collapseSameActorZapSpam`. Primary first, then
+ * merged duplicates in timestamp-desc order (the source list is already
+ * sorted that way by the view model). Each line shows the per-zap sat
+ * amount + optional comment so a genuine multi-zap conversation isn't
+ * lost inside the rollup.
+ */
+@Composable
+private fun MergedZapsBreakdown(item: FlatNotificationItem) {
+    val all = listOf(item) + item.mergedZaps
+    val context = LocalContext.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 56.dp, end = 16.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = "${all.size} zaps · ${com.wisp.app.ui.util.AmountFormatter.formatShort(item.totalZapSats, context)} sats total",
+            style = MaterialTheme.typography.labelMedium,
+            color = WispThemeColors.zapColor
+        )
+        all.forEach { entry ->
+            Row(verticalAlignment = Alignment.Top) {
+                Text(
+                    text = "${com.wisp.app.ui.util.AmountFormatter.formatShort(entry.zapSats, context)} sats",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = WispThemeColors.zapColor,
+                    modifier = Modifier.widthIn(min = 56.dp)
                 )
+                Spacer(Modifier.width(8.dp))
+                val msg = entry.zapMessage.trim()
+                if (msg.isNotEmpty()) {
+                    Text(
+                        text = "“$msg”",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                } else {
+                    Text(
+                        text = "",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }
@@ -1897,9 +1981,13 @@ private fun NotificationTypeIcon(item: FlatNotificationItem, showSats: Boolean =
                 modifier = Modifier.size(iconSize - 4.dp),
                 tint = WispThemeColors.zapColor
             )
-            if (showSats && item.zapSats > 0) {
+            // Use totalZapSats so the bolt-icon label reflects the combined
+            // amount across every merged duplicate from the same actor on
+            // the same note, not just the primary zap.
+            val displaySats = item.totalZapSats
+            if (showSats && displaySats > 0) {
                 Text(
-                    text = com.wisp.app.ui.util.AmountFormatter.formatShort(item.zapSats, LocalContext.current),
+                    text = com.wisp.app.ui.util.AmountFormatter.formatShort(displaySats, LocalContext.current),
                     style = MaterialTheme.typography.labelSmall,
                     color = WispThemeColors.zapColor,
                     maxLines = 1
