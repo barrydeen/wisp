@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive-icon foreground — the orange "wisp" glyph from the iOS source.
+  Pure vector, 1024-unit viewport so all coordinates come straight from
+  the SVG export with no rescaling. The path uses evenodd so the two eye
+  subpaths render as cutouts; the black launcher background shows
+  through them, matching the iOS rendering.
+
+  The radial gradient is approximated as a circular one — the original
+  SVG used an elliptical / rotated gradient (gradientTransform matrix)
+  which AAPT vector drawables don't support, but the visual difference
+  at launcher-icon sizes is negligible.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <!--
+      Group transform shrinks the wisp inside the 108dp foreground
+      canvas so the launcher's mask (circle / squircle / rounded square)
+      doesn't crop the glyph's curl + outline. ~65% scale = ~17%
+      padding on each side, which keeps the art well inside Android's
+      66dp safe zone while leaving the black launcher background visible
+      as a square border behind the glyph.
+    -->
+    <group
+        android:scaleX="0.65"
+        android:scaleY="0.65"
+        android:pivotX="512"
+        android:pivotY="512">
+        <path
+            android:fillType="evenOdd"
+            android:pathData="M474.182 894.976C306.138 894.973 169.984 759.115 169.984 591.616C169.984 480.678 229.706 383.637 318.841 330.738C332.893 322.204 347.185 315.271 361.595 309.708C396.422 295.862 434.417 288.256 474.182 288.256C482.994 288.256 491.72 288.645 500.334 289.377C521.387 290.054 538.419 294.473 555.746 298.953C573.097 303.439 590.853 308.02 613.915 309.427C656.612 312.03 687.999 289.643 700.943 258.341C713.904 226.998 708.551 186.208 676.338 151.891C671.359 146.587 671.288 139.127 673.756 133.986C675.012 131.369 677.136 128.905 680.147 127.701C683.338 126.428 686.855 126.845 690.09 128.847C799.69 196.715 859.159 343.667 851.272 491.673C843.371 639.872 767.911 790.209 606.303 864.906C566.342 884.153 521.526 894.976 474.182 894.976ZM505.982 634.692C531.153 633.811 550.275 597.246 548.686 553.025C547.096 508.807 525.403 473.68 500.234 474.559C475.064 475.441 455.942 511.999 457.53 556.218C459.119 600.435 480.814 635.569 505.982 634.692ZM308.414 632.425C332.869 634.402 355.586 601.178 359.156 558.213C362.724 515.248 345.795 478.816 321.34 476.835C296.884 474.857 274.159 508.081 270.589 551.046C267.021 594.011 283.958 630.444 308.414 632.425Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="radial"
+                    android:centerX="456.594"
+                    android:centerY="372.422"
+                    android:gradientRadius="530">
+                    <item android:offset="0" android:color="#FFBA60"/>
+                    <item android:offset="1" android:color="#E97941"/>
+                </gradient>
+            </aapt:attr>
+        </path>
+    </group>
+</vector>

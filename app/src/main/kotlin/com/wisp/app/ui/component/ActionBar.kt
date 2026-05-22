@@ -296,7 +296,7 @@ internal fun LightningAnimation(modifier: Modifier = Modifier) {
         label = "scale"
     )
 
-    val zapColor = WispThemeColors.zapColor
+    val zapColor = WispThemeColors.zapAnimationColor
 
     Canvas(modifier = modifier) {
         val w = size.width

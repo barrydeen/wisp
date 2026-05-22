@@ -37,6 +37,7 @@ data class WispColors(
 object WispThemeColors {
     val backgroundColor: Color @Composable get() = LocalWispColors.current.backgroundColor
     val zapColor: Color @Composable get() = LocalWispColors.current.zapColor
+    val zapAnimationColor: Color @Composable get() = vividZapColor(LocalWispColors.current.zapColor)
     val repostColor: Color @Composable get() = LocalWispColors.current.repostColor
     val bookmarkColor: Color @Composable get() = LocalWispColors.current.bookmarkColor
     val paidColor: Color @Composable get() = LocalWispColors.current.paidColor
@@ -82,6 +83,19 @@ private fun darkenColor(color: Color, fraction: Float = 0.6f): Color {
     return Color(ColorUtils.HSLToColor(hsl))
 }
 
+/**
+ * Vivid variant of a zap color for the celebratory bolt animations. Floors
+ * lightness so the burst never reads muddy or dark on light backgrounds,
+ * while leaving already-bright dark-mode colors untouched.
+ */
+private fun vividZapColor(color: Color): Color {
+    val hsl = FloatArray(3)
+    ColorUtils.colorToHSL(color.toArgb(), hsl)
+    hsl[1] = (hsl[1] * 1.15f).coerceIn(0f, 1f)
+    hsl[2] = hsl[2].coerceAtLeast(0.5f)
+    return Color(ColorUtils.HSLToColor(hsl))
+}
+
 @Composable
 fun WispTheme(
     isDarkTheme: Boolean = true,
@@ -97,6 +111,14 @@ fun WispTheme(
     val secondary = remember(primary) { lightenColor(primary) }
     val primaryContainerDark = remember(primary) { darkenColor(primary, 0.6f) }
     val primaryContainerLight = remember(primary) { lightenColor(primary, 0.7f) }
+
+    // Light mode needs a deeper primary than the bright dark-mode accent so
+    // buttons keep enough contrast against the near-white surfaces. The default
+    // accent maps to a curated value shared with iOS; custom accents are darkened.
+    val customLightPrimary = remember(accentColor, themePreset) {
+        if (accentColor == Color(0xFFFF9800)) themePreset.light.primary
+        else darkenColor(accentColor, 0.18f)
+    }
 
     val colorScheme = if (isDarkTheme) {
         if (isCustomTheme) {
@@ -135,7 +157,7 @@ fun WispTheme(
     } else {
         if (isCustomTheme) {
             lightColorScheme(
-                primary = accentColor,
+                primary = customLightPrimary,
                 onPrimary = Color.White,
                 primaryContainer = primaryContainerLight,
                 onPrimaryContainer = darkenColor(accentColor, 0.4f),
@@ -189,11 +211,17 @@ fun WispTheme(
         }
     } else {
         if (isCustomTheme) {
+            // zap + bookmark colors track `customLightPrimary` so the
+            // zap icon, post-success count, and bookmark glyph all
+            // render the same orange the rest of the light-mode theme
+            // uses for buttons + accents. Previously these were pinned
+            // to a darker `#B85C00`, which read as a noticeably
+            // different shade against `#D9730D` buttons.
             WispColors(
                 backgroundColor = Color(0xFFECECEC),
-                zapColor = Color(0xFFB85C00),
+                zapColor = customLightPrimary,
                 repostColor = Color(0xFF2E7D32),
-                bookmarkColor = Color(0xFFB85C00),
+                bookmarkColor = customLightPrimary,
                 paidColor = Color(0xFFC9A000)
             )
         } else {

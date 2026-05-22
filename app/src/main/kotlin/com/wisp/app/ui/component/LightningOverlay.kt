@@ -51,7 +51,7 @@ fun ZapBurstEffect(
     var sparks by remember { mutableStateOf<List<SparkParticle>>(emptyList()) }
     val progress = remember { Animatable(0f) }
 
-    val zapColor = WispThemeColors.zapColor
+    val zapColor = WispThemeColors.zapAnimationColor
 
     if (!isActive && progress.value <= 0f) return
 

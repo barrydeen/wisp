@@ -23,7 +23,7 @@ object Themes {
                 paidColor = Color(0xFFFFD54F)
             ),
             light = ThemeColors(
-                primary = Color(0xFFCC7000),
+                primary = Color(0xFFD9730D),
                 secondary = Color(0xFFFFB74D),
                 background = Color(0xFFD8D8D8),
                 surface = Color(0xFFE8E8E8),
@@ -32,9 +32,13 @@ object Themes {
                 onSurface = Color(0xFF1C1B1F),
                 onSurfaceVariant = Color(0xFF333333),
                 outline = Color(0xFF999999),
-                zapColor = Color(0xFFB85C00),
+                // zap + bookmark match `primary` so the throughout-the-
+                // theme orange is consistent — final zap icon, post
+                // count text, and the top zap indicator all land on
+                // the same shade as buttons.
+                zapColor = Color(0xFFD9730D),
                 repostColor = Color(0xFF2E7D32),
-                bookmarkColor = Color(0xFFB85C00),
+                bookmarkColor = Color(0xFFD9730D),
                 paidColor = Color(0xFFC9A000)
             )
         ),
