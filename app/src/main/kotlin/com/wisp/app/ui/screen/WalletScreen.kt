@@ -181,13 +181,19 @@ fun WalletScreen(
 
     // Hide the wallet app bar on the Home dashboard — the bottom-nav wallet
     // tab is the entry point, and the dashboard's own top row (brand logo +
-    // refresh + settings) plays the role of the toolbar. Sub-pages keep the
-    // app bar so back-nav stays reachable.
-    val isHome = currentPage is WalletPage.Home || currentPage is WalletPage.ModeSelection
+    // refresh + settings) plays the role of the toolbar. The mode picker
+    // and the wallet-setup sub-screens (NWC, Spark, Spark restore-seed)
+    // render their own top-right Close pill instead of an app bar to match
+    // iOS — leaves more headroom for the centered logo + title layout.
+    val hideAppBar = currentPage is WalletPage.Home ||
+        currentPage is WalletPage.ModeSelection ||
+        currentPage is WalletPage.NwcSetup ||
+        currentPage is WalletPage.SparkSetup ||
+        currentPage is WalletPage.SparkRestoreSeed
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            if (!isHome) {
+            if (!hideAppBar) {
                 TopAppBar(
                     title = { Text(stringResource(R.string.title_wallet)) },
                     navigationIcon = {
@@ -242,10 +248,18 @@ fun WalletScreen(
                         )
                     }
                 } else {
+                    // Setup screens (NwcSetup / SparkSetup / SparkRestoreSeed)
+                    // render with no TopAppBar, so the Column itself owns the
+                    // status-bar inset to keep the top-right Close pill clear
+                    // of the device chrome.
+                    val needsStatusInset = currentPage is WalletPage.NwcSetup ||
+                        currentPage is WalletPage.SparkSetup ||
+                        currentPage is WalletPage.SparkRestoreSeed
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(padding)
+                            .then(if (needsStatusInset) Modifier.statusBarsPadding() else Modifier)
                             .padding(horizontal = 16.dp)
                             .verticalScroll(rememberScrollState())
                     ) {
@@ -256,7 +270,8 @@ fun WalletScreen(
                                 statusLines = viewModel.statusLines.collectAsState().value,
                                 onConnectionStringChange = { viewModel.updateConnectionString(it) },
                                 onConnect = { viewModel.connectNwcWallet() },
-                                onDisconnect = { viewModel.disconnectWallet() }
+                                onDisconnect = { viewModel.disconnectWallet() },
+                                onClose = { viewModel.navigateHome() }
                             )
                             is WalletPage.SparkSetup -> SparkSetupContent(
                                 walletState = walletState,
@@ -587,20 +602,41 @@ private fun WalletConnectionContent(
     statusLines: List<String>,
     onConnectionStringChange: (String) -> Unit,
     onConnect: () -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onClose: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val isConnecting = walletState is WalletState.Connecting
     var showScanner by remember { mutableStateOf(false) }
 
-    // iOS 1:1 layout — centered NWC logo + title + subtitle, paste/scan
-    // card, helper text, full-width Connect button. The Recommended
-    // wallets stack is removed: NWC ecosystem links live on a separate
-    // discovery surface; this screen is purely "paste your string and
-    // connect."
+    // iOS 1:1 layout — top-right Close pill (no app bar), centered NWC
+    // logo + title + subtitle, paste/scan card, helper text, full-width
+    // Connect button. The Recommended wallets stack is removed: NWC
+    // ecosystem links live on a separate discovery surface; this screen
+    // is purely "paste your string and connect."
     val accent = WispThemeColors.zapColor
-    Spacer(Modifier.height(24.dp))
+
+    Spacer(Modifier.height(12.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End
+    ) {
+        Surface(
+            modifier = Modifier.clickable(onClick = onClose),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = CircleShape
+        ) {
+            Text(
+                stringResource(R.string.wallet_close),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+        }
+    }
+
+    Spacer(Modifier.height(8.dp))
 
     Box(
         modifier = Modifier.fillMaxWidth(),
@@ -2565,6 +2601,7 @@ private fun SparkSetupContent(
     val isConnecting = walletState is WalletState.Connecting
 
     Column(modifier = Modifier.fillMaxWidth()) {
+        Spacer(Modifier.height(12.dp))
         // Top-right Close button — full dismiss back to mode picker.
         Row(
             modifier = Modifier.fillMaxWidth(),
