@@ -84,7 +84,7 @@ sealed class AutoCheckState {
 sealed class NwcRestoreState {
     object Idle : NwcRestoreState()
     object Searching : NwcRestoreState()
-    data class Found(val uri: String) : NwcRestoreState()
+    data class Found(val uri: String, val createdAt: Long) : NwcRestoreState()
     object NotFound : NwcRestoreState()
 }
 
@@ -650,7 +650,7 @@ class WalletViewModel(
                     if (active != null && active.trim() == uri.trim()) {
                         _nwcRestoreState.value = NwcRestoreState.NotFound
                     } else {
-                        _nwcRestoreState.value = NwcRestoreState.Found(uri)
+                        _nwcRestoreState.value = NwcRestoreState.Found(uri, newest.created_at)
                     }
                 }
             } catch (_: Exception) {
@@ -844,6 +844,18 @@ class WalletViewModel(
                             launch { publishNwcBackup(uri) }
                         }
                     }
+                    // Once the wallet finishes connecting, leave the setup
+                    // screen and land on Home — otherwise currentPage stays
+                    // at NwcSetup/SparkSetup and the Scaffold's "Wallet"
+                    // TopAppBar keeps showing over the dashboard. Guarded
+                    // to the setup pages so a connect-during-navigation
+                    // doesn't pop the user out of an unrelated sub-page.
+                    val page = _currentPage.value
+                    if (page is WalletPage.NwcSetup || page is WalletPage.SparkSetup) {
+                        pageStack.clear()
+                        pageStack.add(WalletPage.Home)
+                        _currentPage.value = WalletPage.Home
+                    }
                 }
             }
         }
@@ -901,16 +913,18 @@ class WalletViewModel(
 
         // Suppress the auto-create on the next navigateHome — the user
         // explicitly disconnected to choose a different wallet. They'll land
-        // on the SparkSetup screen with the three options. Persist so the
-        // choice survives app restarts.
+        // on the wallet-mode picker (Spark vs NWC), matching iOS. Persist
+        // so the choice survives app restarts.
         skipAutoCreate = true
         walletModeRepo.setAutoCreateSkipped(true)
 
         pageStack.clear()
         pageStack.add(WalletPage.Home)
         if (wasSpark && keyRepo.hasKeypair()) {
-            pageStack.add(WalletPage.SparkSetup)
-            _currentPage.value = WalletPage.SparkSetup
+            // Drop the user at the top-level wallet picker so they can
+            // re-enter via Spark or NWC, not just Spark. iOS does the
+            // same — Switch is a true "start over" affordance.
+            _currentPage.value = WalletPage.Home
         } else {
             _currentPage.value = WalletPage.Home
         }

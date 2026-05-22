@@ -732,12 +732,17 @@
     <string name="wallet_connect_subtitle">Send and receive Lightning payments, and zap anyone on Nostr.</string>
     <string name="wallet_spark_title">Spark wallet</string>
     <string name="wallet_spark_subtitle">Self-custody, embedded. Use your default wallet or restore from seed/relays.</string>
+    <string name="wallet_spark_subtitle_recommended">Self-custody, embedded. Recommended.</string>
     <string name="wallet_nwc_title">Nostr Wallet Connect</string>
     <string name="wallet_nwc_subtitle">Paste a connection string from Alby, Zeus, Rizful, Minibits, etc.</string>
     <string name="wallet_nwc_paste_prompt">Paste the connection string from your NWC-compatible wallet.</string>
     <string name="wallet_nwc_connection_hint">Connection string starts with nostr+walletconnect://</string>
-    <string name="wallet_nwc_restore_title">Restore previous wallet</string>
+    <string name="wallet_nwc_restore_title">Backup found</string>
+    <string name="wallet_nwc_restore_searching">Searching for backup…</string>
     <string name="wallet_nwc_restore_subtitle">Encrypted NWC backup from another device</string>
+    <string name="wallet_nwc_restore_body">A connection backed up on %1$s is available. Restore it to reconnect without pasting a string.</string>
+    <string name="wallet_nwc_restore_action">Restore connection</string>
+    <string name="wallet_nwc_backup_footer">Connecting saves an encrypted backup to your Nostr relays so you can restore this connection on other devices.</string>
     <string name="spark_setup_subtitle">Self-custodial Lightning, powered by Spark and Breez.</string>
     <string name="wallet_create_title">Create new wallet</string>
     <string name="wallet_create_subtitle">Generate a fresh 12-word seed phrase</string>
@@ -891,7 +896,10 @@
     <string name="wallet_generate_invoice">Generate invoice</string>
     <string name="wallet_use_default">Use my default wallet</string>
     <string name="wallet_default_subtitle">Derived from your Nostr key — no extra backup needed.</string>
-    <string name="wallet_switch_wallet">Switch Wallet</string>
+    <string name="wallet_more_options">More options</string>
+    <string name="wallet_switch_wallet">Switch to a different wallet</string>
     <string name="wallet_switch_wallet_body">Disconnect this wallet so you can use your default wallet or restore a different one. Your funds stay safe — you can reconnect this wallet anytime by entering its recovery phrase.</string>
+    <string name="wallet_disconnect_section">Disconnect Wallet</string>
+    <string name="wallet_switch_wallet_caption">Your default wallet is linked to your key and can always be restored. Switching connects a different wallet instead.</string>
     <string name="wallet_default_seed_info">This wallet is derived from your Nostr key, so the phrase below is just for export to other wallet apps. You don\'t need to back it up — your nsec is the backup.</string>
 </resources>
