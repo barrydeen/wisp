@@ -211,11 +211,17 @@ fun WispTheme(
         }
     } else {
         if (isCustomTheme) {
+            // zap + bookmark colors track `customLightPrimary` so the
+            // zap icon, post-success count, and bookmark glyph all
+            // render the same orange the rest of the light-mode theme
+            // uses for buttons + accents. Previously these were pinned
+            // to a darker `#B85C00`, which read as a noticeably
+            // different shade against `#D9730D` buttons.
             WispColors(
                 backgroundColor = Color(0xFFECECEC),
-                zapColor = Color(0xFFB85C00),
+                zapColor = customLightPrimary,
                 repostColor = Color(0xFF2E7D32),
-                bookmarkColor = Color(0xFFB85C00),
+                bookmarkColor = customLightPrimary,
                 paidColor = Color(0xFFC9A000)
             )
         } else {
