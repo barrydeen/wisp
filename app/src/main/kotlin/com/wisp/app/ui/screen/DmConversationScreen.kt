@@ -124,6 +124,7 @@ fun DmConversationScreen(
     socialActionManager: SocialActionManager? = null,
     isWalletConnected: Boolean = false,
     onGoToWallet: () -> Unit = {},
+    zapPrefs: com.wisp.app.repo.ZapPreferences,
     noteActions: com.wisp.app.ui.component.NoteActions? = null,
     resolvedEmojis: Map<String, String> = emptyMap(),
     unicodeEmojis: List<String> = emptyList(),
@@ -640,6 +641,7 @@ fun DmConversationScreen(
                 zapTargetMessage = null
                 onGoToWallet()
             },
+            zapPrefsRepo = zapPrefs,
             recipientPubkey = zapTargetMessage?.senderPubkey,
             profileLookup = { pk -> peerProfile?.takeIf { it.pubkey == pk } }
         )

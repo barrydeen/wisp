@@ -40,7 +40,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -210,6 +212,7 @@ fun ActionBar(
             // also fire when the long-press completes — Compose, like
             // SwiftUI, fires both onClick AND onLongClick on release.
             val longPressFired = remember { androidx.compose.runtime.mutableStateOf(false) }
+            val haptics = LocalHapticFeedback.current
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -230,6 +233,11 @@ fun ActionBar(
                         onLongClick = if (zapEnabled && onZapLongPress != null) {
                             {
                                 longPressFired.value = true
+                                // Confirms the long-press registered before
+                                // the zap network round-trip kicks off, so
+                                // the user can lift their finger knowing
+                                // the instant zap is on the way.
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onZapLongPress()
                             }
                         } else null
@@ -333,9 +341,13 @@ internal fun LightningAnimation(modifier: Modifier = Modifier) {
     val iconScale = 1.0f + 0.10f * s
 
     val verticalOffsetPx = with(density) { (-0.5f * s).dp.toPx() }
-    val innerStrokePx = with(density) { 1.5.dp.toPx() }
-    val medStrokePx = with(density) { (4f + 3f * phase).dp.toPx() }
-    val outerStrokePx = with(density) { (8f + 6f * phase).dp.toPx() }
+    // Scaled-down from the iOS reference radii — the action-bar bolt
+    // sits in a 22dp box, so iOS's 8/4/1.5pt shadows read as a big
+    // amber smear. Quartered (vs iOS) so the white core stays the
+    // focal element at small icon sizes.
+    val innerStrokePx = with(density) { 0.75.dp.toPx() }
+    val medStrokePx = with(density) { (1f + 1f * phase).dp.toPx() }
+    val outerStrokePx = with(density) { (2f + 2f * phase).dp.toPx() }
 
     Canvas(modifier = modifier) {
         translate(top = verticalOffsetPx) {

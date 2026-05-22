@@ -325,6 +325,15 @@ fun FeedScreen(
             onRepost = onRepost,
             onQuote = onQuote,
             onZap = { event -> zapTargetEvent = event },
+            onZapInstant = { event ->
+                if (viewModel.interfacePrefs.isQuickZapEnabled()) {
+                    val sats = viewModel.interfacePrefs.getQuickZapAmountSats()
+                    val msg = viewModel.interfacePrefs.getQuickZapMessage()
+                    viewModel.sendZap(event, sats * 1000L, msg, false, false)
+                } else {
+                    zapTargetEvent = event
+                }
+            },
             onProfileClick = onProfileClick,
             onNoteClick = { eventId -> onQuotedNoteClick?.invoke(eventId) },
             onAddToList = onAddToList,
@@ -544,6 +553,7 @@ fun FeedScreen(
                 viewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
             },
             onGoToWallet = onWallet,
+            zapPrefsRepo = viewModel.zapPrefs,
             canPrivateZap = userHasDmRelays && recipientHasDmRelays,
             recipientPubkey = zapTargetEvent?.pubkey,
             profileLookup = { viewModel.profileRepo.get(it) }
@@ -575,6 +585,7 @@ fun FeedScreen(
                 viewModel.sendZapPollVote(pollEvent, optionIndex, amountMsats, message, isAnonymous)
             },
             onGoToWallet = onWallet,
+            zapPrefsRepo = viewModel.zapPrefs,
             recipientPubkey = pollEvent.pubkey,
             profileLookup = { viewModel.profileRepo.get(it) }
         )
@@ -1213,6 +1224,7 @@ fun FeedScreen(
                                     onRepost = { onRepost(event) },
                                     onQuote = { onQuote(event) },
                                     onZap = { zapTargetEvent = event },
+                                    onZapLongPress = { noteActions.onZapInstant(event) },
                                     onAddToList = { onAddToList(event.id) },
                                     onPin = { viewModel.togglePin(event.id) },
                                     onDelete = { viewModel.deleteEvent(event.id, event.kind) },
@@ -1314,6 +1326,7 @@ private fun FeedItem(
     onRepost: () -> Unit,
     onQuote: () -> Unit,
     onZap: () -> Unit,
+    onZapLongPress: (() -> Unit)? = null,
     onAddToList: () -> Unit = {},
     onPin: () -> Unit = {},
     onDelete: () -> Unit = {},
@@ -1457,6 +1470,7 @@ private fun FeedItem(
             hasUserReposted = hasUserReposted,
             repostCount = repostCount,
             onZap = onZap,
+            onZapLongPress = onZapLongPress,
             hasUserZapped = hasUserZapped,
             likeCount = likeCount,
             replyCount = replyCount,
