@@ -141,33 +141,48 @@ object Nip78 {
      */
     @kotlinx.serialization.Serializable
     data class AppSettingsPayload(
-        // Interface prefs
+        // Reactions (iOS-only UI today; Android round-trips defaultReaction
+        // + defaultReactionEnabled as opaque values so iOS settings survive
+        // an Android publish.)
+        val defaultReaction: String? = null,
+        val defaultReactionEnabled: Boolean? = null,
+        // Quick zaps
+        val quickZapEnabled: Boolean? = null,
+        val quickZapAmountSats: Long? = null,
+        val quickZapAmountFiat: Double? = null,
+        val quickZapMessage: String? = null,
         val zapIconStyle: String? = null,
+        // Fiat prefs
+        val fiatModeEnabled: Boolean? = null,
+        val fiatCurrency: String? = null,
+        // Zap presets
+        val zapPresetsCSV: String? = null,
+        // Reaction popup state (Android: unicodeEmojis + frequency map in
+        // CustomEmojiRepository; iOS: EmojiRepository).
+        val quickReactions: List<String>? = null,
+        val frequency: Map<String, Int>? = null,
+        // Appearance
         val largeText: Boolean? = null,
         val themeName: String? = null,
+        // iOS-only light/dark override today; Android round-trips it.
+        val colorScheme: String? = null,
         // iOS encodes ARGB as Swift `Int` (64-bit), so values like
         // 0xFFFF9800 (4_294_940_672) overflow Kotlin's signed 32-bit
         // Int. Use Long here and convert at the setter — the lower 32
         // bits round-trip correctly even when Int reads them negative.
         val accentColorARGB: Long? = null,
+        // Media
         val autoLoadMedia: Boolean? = null,
         val videoAutoplay: Boolean? = null,
+        // iOS-only toggle for animated avatars; Android always animates,
+        // so this is round-tripped opaquely.
+        val animateAvatars: Boolean? = null,
         val mediaLayoutStyle: String? = null,
+        // Posting
         val clientTagEnabled: Boolean? = null,
         val postUndoTimerEnabled: Boolean? = null,
         val postUndoTimerSeconds: Int? = null,
         val postUndoTimerForReplies: Boolean? = null,
-        // Fiat prefs
-        val fiatModeEnabled: Boolean? = null,
-        val fiatCurrency: String? = null,
-        // Zap prefs
-        val zapPresetsCSV: String? = null,
-        // Quick-zap prefs (task #2 — fields included now so the schema is
-        // forward-compatible with iOS backups that already carry them).
-        val quickZapEnabled: Boolean? = null,
-        val quickZapAmountSats: Long? = null,
-        val quickZapAmountFiat: Double? = null,
-        val quickZapMessage: String? = null,
         val version: Int? = 1
     )
 

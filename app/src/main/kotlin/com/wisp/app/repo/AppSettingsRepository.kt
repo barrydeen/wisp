@@ -33,7 +33,8 @@ import kotlinx.coroutines.yield
 class AppSettingsRepository(
     private val interfacePrefs: InterfacePreferences,
     private val fiatPrefs: FiatPreferences,
-    private val zapPrefs: ZapPreferences
+    private val zapPrefs: ZapPreferences,
+    private val customEmojiRepo: CustomEmojiRepository
 ) {
     private val TAG = "AppSettingsSync"
 
@@ -55,6 +56,7 @@ class AppSettingsRepository(
         interfacePrefs.onSyncedFieldChanged = { scheduleSettingsSync() }
         fiatPrefs.onSyncedFieldChanged = { scheduleSettingsSync() }
         zapPrefs.onSyncedFieldChanged = { scheduleSettingsSync() }
+        customEmojiRepo.onSyncedFieldChanged = { scheduleSettingsSync() }
     }
 
     /**
@@ -81,27 +83,37 @@ class AppSettingsRepository(
     /** Build the current payload from all synced prefs sources. */
     private fun buildPayload(): Nip78.AppSettingsPayload {
         val mediaLayout = interfacePrefs.getMediaLayoutStyle().key
+        val unicodeEmojis = customEmojiRepo.getUnicodeEmojis()
+        val emojiFrequency = customEmojiRepo.getEmojiFrequency()
         return Nip78.AppSettingsPayload(
+            // Reactions (iOS-only UI today; round-tripped via interfacePrefs).
+            defaultReaction = interfacePrefs.getDefaultReaction(),
+            defaultReactionEnabled = interfacePrefs.getDefaultReactionEnabled(),
+            // Quick zaps
+            quickZapEnabled = interfacePrefs.isQuickZapEnabled(),
+            quickZapAmountSats = interfacePrefs.getQuickZapAmountSats(),
+            quickZapAmountFiat = interfacePrefs.getQuickZapAmountFiat(),
+            quickZapMessage = interfacePrefs.getQuickZapMessage(),
             zapIconStyle = if (interfacePrefs.isZapBoltIcon()) "bolt" else "default",
+            fiatModeEnabled = fiatPrefs.isFiatMode(),
+            fiatCurrency = fiatPrefs.getCurrency(),
+            zapPresetsCSV = zapPrefs.toCSV(),
+            quickReactions = unicodeEmojis.takeIf { it.isNotEmpty() },
+            frequency = emojiFrequency.takeIf { it.isNotEmpty() },
             largeText = interfacePrefs.isLargeText(),
             themeName = interfacePrefs.getTheme(),
+            colorScheme = interfacePrefs.getColorScheme(),
             // Local stores ARGB as signed 32-bit Int; convert to unsigned
             // Long so iOS reads it as a non-negative value.
             accentColorARGB = interfacePrefs.getAccentColor().toLong() and 0xFFFFFFFFL,
             autoLoadMedia = interfacePrefs.isAutoLoadMedia(),
             videoAutoplay = interfacePrefs.isVideoAutoPlay(),
+            animateAvatars = interfacePrefs.getAnimateAvatars(),
             mediaLayoutStyle = mediaLayout,
             clientTagEnabled = interfacePrefs.isClientTagEnabled(),
             postUndoTimerEnabled = interfacePrefs.isPostUndoTimerEnabled(),
             postUndoTimerSeconds = interfacePrefs.getPostUndoTimerSeconds(),
             postUndoTimerForReplies = interfacePrefs.isPostUndoTimerForReplies(),
-            fiatModeEnabled = fiatPrefs.isFiatMode(),
-            fiatCurrency = fiatPrefs.getCurrency(),
-            zapPresetsCSV = zapPrefs.toCSV(),
-            quickZapEnabled = interfacePrefs.isQuickZapEnabled(),
-            quickZapAmountSats = interfacePrefs.getQuickZapAmountSats(),
-            quickZapAmountFiat = interfacePrefs.getQuickZapAmountFiat(),
-            quickZapMessage = interfacePrefs.getQuickZapMessage(),
             version = 1
         )
     }
@@ -207,34 +219,50 @@ class AppSettingsRepository(
         val iface = interfacePrefs.onSyncedFieldChanged
         val fiat = fiatPrefs.onSyncedFieldChanged
         val zap = zapPrefs.onSyncedFieldChanged
+        val emoji = customEmojiRepo.onSyncedFieldChanged
         interfacePrefs.onSyncedFieldChanged = null
         fiatPrefs.onSyncedFieldChanged = null
         zapPrefs.onSyncedFieldChanged = null
+        customEmojiRepo.onSyncedFieldChanged = null
         try {
-            p.zapIconStyle?.let { interfacePrefs.setZapBoltIcon(it == "bolt") }
-            p.largeText?.let { interfacePrefs.setLargeText(it) }
-            p.themeName?.let { interfacePrefs.setTheme(it) }
-            p.accentColorARGB?.let { interfacePrefs.setAccentColor(it.toInt()) }
-            p.autoLoadMedia?.let { interfacePrefs.setAutoLoadMedia(it) }
-            p.videoAutoplay?.let { interfacePrefs.setVideoAutoPlay(it) }
-            p.mediaLayoutStyle?.let {
-                interfacePrefs.setMediaLayoutStyle(InterfacePreferences.MediaLayoutStyle.fromKey(it))
-            }
-            p.clientTagEnabled?.let { interfacePrefs.setClientTagEnabled(it) }
-            p.postUndoTimerEnabled?.let { interfacePrefs.setPostUndoTimerEnabled(it) }
-            p.postUndoTimerSeconds?.let { interfacePrefs.setPostUndoTimerSeconds(it) }
-            p.postUndoTimerForReplies?.let { interfacePrefs.setPostUndoTimerForReplies(it) }
-            p.fiatModeEnabled?.let { fiatPrefs.setFiatMode(it) }
-            p.fiatCurrency?.let { fiatPrefs.setCurrency(it) }
-            p.zapPresetsCSV?.let { zapPrefs.applyCSV(it) }
+            // Reactions — round-trip only on Android.
+            interfacePrefs.setDefaultReaction(p.defaultReaction)
+            interfacePrefs.setDefaultReactionEnabled(p.defaultReactionEnabled)
+            // Quick zaps
             p.quickZapEnabled?.let { interfacePrefs.setQuickZapEnabled(it) }
             p.quickZapAmountSats?.let { interfacePrefs.setQuickZapAmountSats(it) }
             p.quickZapAmountFiat?.let { interfacePrefs.setQuickZapAmountFiat(it) }
             p.quickZapMessage?.let { interfacePrefs.setQuickZapMessage(it) }
+            p.zapIconStyle?.let { interfacePrefs.setZapBoltIcon(it == "bolt") }
+            p.fiatModeEnabled?.let { fiatPrefs.setFiatMode(it) }
+            p.fiatCurrency?.let { fiatPrefs.setCurrency(it) }
+            p.zapPresetsCSV?.let { zapPrefs.applyCSV(it) }
+            // Quick reactions / frequency
+            if (p.quickReactions != null || p.frequency != null) {
+                customEmojiRepo.applyQuickReactions(p.quickReactions, p.frequency)
+            }
+            // Appearance
+            p.largeText?.let { interfacePrefs.setLargeText(it) }
+            p.themeName?.let { interfacePrefs.setTheme(it) }
+            interfacePrefs.setColorScheme(p.colorScheme)
+            p.accentColorARGB?.let { interfacePrefs.setAccentColor(it.toInt()) }
+            // Media
+            p.autoLoadMedia?.let { interfacePrefs.setAutoLoadMedia(it) }
+            p.videoAutoplay?.let { interfacePrefs.setVideoAutoPlay(it) }
+            interfacePrefs.setAnimateAvatars(p.animateAvatars)
+            p.mediaLayoutStyle?.let {
+                interfacePrefs.setMediaLayoutStyle(InterfacePreferences.MediaLayoutStyle.fromKey(it))
+            }
+            // Posting
+            p.clientTagEnabled?.let { interfacePrefs.setClientTagEnabled(it) }
+            p.postUndoTimerEnabled?.let { interfacePrefs.setPostUndoTimerEnabled(it) }
+            p.postUndoTimerSeconds?.let { interfacePrefs.setPostUndoTimerSeconds(it) }
+            p.postUndoTimerForReplies?.let { interfacePrefs.setPostUndoTimerForReplies(it) }
         } finally {
             interfacePrefs.onSyncedFieldChanged = iface
             fiatPrefs.onSyncedFieldChanged = fiat
             zapPrefs.onSyncedFieldChanged = zap
+            customEmojiRepo.onSyncedFieldChanged = emoji
         }
     }
 

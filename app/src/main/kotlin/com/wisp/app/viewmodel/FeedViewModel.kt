@@ -276,7 +276,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val appSettingsRepo = AppSettingsRepository(
         interfacePrefs = interfacePrefs,
         fiatPrefs = com.wisp.app.repo.FiatPreferences.get(app),
-        zapPrefs = zapPrefs
+        zapPrefs = zapPrefs,
+        customEmojiRepo = customEmojiRepo
     ).also { it.relayPool = relayPool }
     val nwcRepo = NwcRepository(app, relayPool, pubkeyHex)
     val sparkRepo = SparkRepository(app, pubkeyHex)

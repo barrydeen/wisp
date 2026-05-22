@@ -148,6 +148,40 @@ class InterfacePreferences(context: Context) {
         fireSync()
     }
 
+    // ── iOS round-trip-only fields ──────────────────────────────────────────
+    // Stored verbatim so an Android publish doesn't strip iOS-only settings
+    // out of the cross-device backup. No Android UI consumes these yet.
+
+    fun getDefaultReaction(): String? = prefs.getString("default_reaction", null)
+    fun setDefaultReaction(value: String?) {
+        prefs.edit().apply {
+            if (value == null) remove("default_reaction") else putString("default_reaction", value)
+        }.apply()
+    }
+
+    fun getDefaultReactionEnabled(): Boolean? =
+        if (prefs.contains("default_reaction_enabled")) prefs.getBoolean("default_reaction_enabled", false) else null
+    fun setDefaultReactionEnabled(value: Boolean?) {
+        prefs.edit().apply {
+            if (value == null) remove("default_reaction_enabled") else putBoolean("default_reaction_enabled", value)
+        }.apply()
+    }
+
+    fun getColorScheme(): String? = prefs.getString("color_scheme", null)
+    fun setColorScheme(value: String?) {
+        prefs.edit().apply {
+            if (value == null) remove("color_scheme") else putString("color_scheme", value)
+        }.apply()
+    }
+
+    fun getAnimateAvatars(): Boolean? =
+        if (prefs.contains("animate_avatars")) prefs.getBoolean("animate_avatars", true) else null
+    fun setAnimateAvatars(value: Boolean?) {
+        prefs.edit().apply {
+            if (value == null) remove("animate_avatars") else putBoolean("animate_avatars", value)
+        }.apply()
+    }
+
     companion object {
         val postUndoTimerOptions = listOf(5, 10, 15, 20, 30)
         const val QUICK_ZAP_MAX_SATS = 10_000L

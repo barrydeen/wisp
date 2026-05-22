@@ -41,6 +41,41 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
 
     private var ownerPubkey: String? = pubkeyHex
 
+    /**
+     * NIP-78 sync hook fired after quick-reaction set or frequency map
+     * mutates. AppSettingsRepository registers itself here so an emoji
+     * change kicks off a debounced cross-device publish.
+     */
+    @Volatile
+    var onSyncedFieldChanged: (() -> Unit)? = null
+    private fun fireSync() { onSyncedFieldChanged?.invoke() }
+
+    /** Expose the current frequency map for NIP-78 publish. */
+    fun getEmojiFrequency(): Map<String, Int> = _emojiFrequency.value
+
+    /**
+     * Apply the unicode reaction set + frequency map from a NIP-78
+     * restore. Suppresses the sync hook so we don't immediately republish
+     * a payload we just received.
+     */
+    fun applyQuickReactions(emojis: List<String>?, frequency: Map<String, Int>?) {
+        val prior = onSyncedFieldChanged
+        onSyncedFieldChanged = null
+        try {
+            if (emojis != null) {
+                _unicodeEmojis.value = emojis
+                saveUnicodeToPrefs()
+            }
+            if (frequency != null) {
+                _emojiFrequency.value = frequency
+                saveFrequencyToPrefs()
+            }
+            recomputeSortedEmojis()
+        } finally {
+            onSyncedFieldChanged = prior
+        }
+    }
+
     companion object {
         private val DEFAULT_UNICODE_EMOJIS = listOf("\uD83E\uDDE1", "\uD83D\uDC4D", "\uD83D\uDC4E", "\uD83E\uDD19", "\uD83D\uDE80", "\uD83E\uDD17", "\uD83D\uDE02", "\uD83D\uDE22", "\uD83D\uDC68\u200D\uD83D\uDCBB", "\uD83D\uDC40", "\u2705", "\uD83E\uDD21", "\uD83D\uDC38", "\uD83D\uDC80", "\u26A1", "\uD83D\uDE4F", "\uD83C\uDF46")
         private val OLD_DEFAULT_UNICODE_EMOJIS = listOf("\u2764\uFE0F", "\uD83D\uDC4D", "\uD83D\uDC4E", "\uD83E\uDD19", "\uD83D\uDE80")
@@ -120,6 +155,7 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
         _unicodeEmojis.value = updated
         saveUnicodeToPrefs()
         recomputeSortedEmojis()
+        fireSync()
         return updated
     }
 
@@ -128,6 +164,7 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
         _unicodeEmojis.value = updated
         saveUnicodeToPrefs()
         recomputeSortedEmojis()
+        fireSync()
         return updated
     }
 
@@ -135,6 +172,7 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
         _unicodeEmojis.value = emojis
         saveUnicodeToPrefs()
         recomputeSortedEmojis()
+        fireSync()
     }
 
     fun recordEmojiUsage(emoji: String) {
@@ -143,6 +181,7 @@ class CustomEmojiRepository(private val context: Context, pubkeyHex: String? = n
         _emojiFrequency.value = freq
         recomputeSortedEmojis()
         saveFrequencyToPrefs()
+        fireSync()
     }
 
     private fun recomputeSortedEmojis() {
