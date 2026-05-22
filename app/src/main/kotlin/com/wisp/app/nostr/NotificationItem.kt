@@ -25,7 +25,22 @@ data class FlatNotificationItem(
     val groupChatId: String? = null,
     /** Zap poll option index — when set, this zap was a vote on a kind 6969 zap poll. */
     val zapPollOptionIndex: Int? = null,
-)
+    /**
+     * Additional zaps from the same actor against the same referenced event,
+     * folded into this row by NotificationsViewModel so a spammer can't push
+     * everything else off-screen. Always empty on freshly ingested items
+     * inside the repository — populated only at the view-model filter step.
+     */
+    val mergedZaps: List<FlatNotificationItem> = emptyList(),
+) {
+    /**
+     * Total sats across the primary zap and every merged duplicate. Used by
+     * the row + bolt-icon label so the displayed amount reflects the full
+     * contribution from this actor on this note.
+     */
+    val totalZapSats: Long
+        get() = zapSats + mergedZaps.sumOf { it.zapSats }
+}
 
 data class NotificationSummary(
     val replyCount: Int = 0,
