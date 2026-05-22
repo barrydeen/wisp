@@ -51,6 +51,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -124,6 +125,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
@@ -787,6 +789,50 @@ private fun WalletConnectionContent(
         )
     }
 
+    if (showScanner) {
+        // Dialog overlay matches the iOS "Scan QR" button on the NWC
+        // entry sheet — opens the camera in-place, on success closes
+        // the dialog and seeds the connection-string field. Stripping
+        // `nostr+walletconnect://` is intentionally left to the scan
+        // value: many wallet apps QR-encode the full URI, and that's
+        // what the connect step expects.
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showScanner = false }
+        ) {
+            androidx.compose.material3.Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        stringResource(R.string.wallet_scan_qr_code),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    com.wisp.app.ui.component.QrScanner(
+                        onResult = { value ->
+                            showScanner = false
+                            onConnectionStringChange(value.trim())
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(320.dp),
+                        promptText = stringResource(R.string.wallet_point_camera)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(onClick = { showScanner = false }) {
+                        Text(stringResource(R.string.btn_cancel))
+                    }
+                }
+            }
+        }
+    }
+
     if (walletState is WalletState.Error) {
         Spacer(Modifier.height(8.dp))
         Text(
@@ -1221,7 +1267,13 @@ private fun WalletHomeContent(
         }
 
         // ── Lightning address pill ─────────────────────────────────
-        if (walletMode == WalletMode.SPARK && lightningAddress != null) {
+        // Shown for any wallet mode that carries a lud16 — Spark wallets
+        // expose one via the Breez SDK; NWC URIs may include `lud16=...`
+        // which connectNwcWallet copies into `lightningAddress`. The old
+        // NWC-only logo + "Nostr Wallet Connect" footer below the balance
+        // was redundant (the dashboard header already brands the mode),
+        // so it's removed.
+        if (!lightningAddress.isNullOrBlank()) {
             Spacer(Modifier.height(16.dp))
             Surface(
                 modifier = Modifier.clickable {
@@ -1248,7 +1300,9 @@ private fun WalletHomeContent(
                     )
                 }
             }
-        } else if (walletMode == WalletMode.SPARK && lightningAddress == null) {
+        } else if (walletMode == WalletMode.SPARK) {
+            // Spark-only setup CTA. NWC users can't register an address
+            // from inside Wisp — it comes from the NWC URI or not at all.
             Spacer(Modifier.height(16.dp))
             Surface(
                 modifier = Modifier.clickable(onClick = onSetupAddress),
@@ -1273,28 +1327,6 @@ private fun WalletHomeContent(
                         color = accent
                     )
                 }
-            }
-        } else if (walletMode == WalletMode.NWC) {
-            Spacer(Modifier.height(16.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_nwc_logo),
-                    contentDescription = "NWC",
-                    modifier = Modifier.height(16.dp),
-                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    stringResource(R.string.wallet_nwc_title),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
 
@@ -1354,9 +1386,20 @@ private fun WalletHomeContent(
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                 )
-                // Match iOS — show the most-recent ~5 transactions inline,
-                // tap any row (or "View all") to expand to the full screen.
-                recentTransactions.take(5).forEach { tx ->
+                // Match iOS — show recent transactions inline, "View all"
+                // expands to the full screen. Row count scales with the
+                // device's available height so a compact phone (e.g.
+                // ~640dp tall) doesn't crowd out the balance + Send/
+                // Receive controls, while bigger displays still get up
+                // to 5 rows like iOS.
+                val screenHeightDp = LocalConfiguration.current.screenHeightDp
+                val txCount = when {
+                    screenHeightDp >= 800 -> 5
+                    screenHeightDp >= 720 -> 4
+                    screenHeightDp >= 640 -> 3
+                    else -> 2
+                }
+                recentTransactions.take(txCount).forEach { tx ->
                     TransactionRow(tx, profileLookup, balanceDisplay)
                 }
             }
@@ -3326,17 +3369,19 @@ private fun WalletSettingsContent(
                 Text(if (isDefaultWallet) "View Recovery Phrase" else "Backup Recovery Phrase")
             }
 
-            if (!isDefaultWallet) {
-                Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(8.dp))
 
-                OutlinedButton(
-                    onClick = onBackupToRelay,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Backup to Nostr Relays")
-                }
+            // Relay backup is offered for both default and non-default
+            // Spark wallets — matches iOS. For default wallets the nsec
+            // is already the canonical backup; offering relay backup
+            // here is belt-and-braces for users who want it.
+            OutlinedButton(
+                onClick = onBackupToRelay,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Backup to Nostr Relays")
             }
 
             // Relay backup status section (when logged in). Skipped for default
@@ -3491,22 +3536,68 @@ private fun WalletSettingsContent(
 
         Spacer(Modifier.height(32.dp))
 
-        Button(
-            onClick = onDeleteWallet,
-            modifier = Modifier.fillMaxWidth(),
-            colors = if (isDefaultWallet) ButtonDefaults.buttonColors()
-                else ButtonDefaults.buttonColors(
+        // iOS treats both the default-Spark "Switch" and the NWC
+        // "Disconnect" cases as quiet, recoverable affordances — a
+        // card row with red text + swap icon plus a caption. Only the
+        // truly destructive Delete (non-default Spark whose seed can't
+        // be re-derived from nsec) keeps the filled-red CTA so the user
+        // notices the irreversibility.
+        val isRecoverable = walletMode == WalletMode.NWC || isDefaultWallet
+        if (isRecoverable) {
+            Text(
+                stringResource(R.string.wallet_disconnect_section),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, bottom = 6.dp)
+            )
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onDeleteWallet),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.SwapHoriz,
+                        contentDescription = null,
+                        tint = Color(0xFFFF3B30),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        stringResource(R.string.wallet_switch_wallet),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color(0xFFFF3B30)
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.wallet_switch_wallet_caption),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        } else {
+            Button(
+                onClick = onDeleteWallet,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFFD32F2F),
                     contentColor = Color.White
                 )
-        ) {
-            Text(
-                when {
-                    walletMode == WalletMode.NWC -> "Disconnect"
-                    isDefaultWallet -> stringResource(R.string.wallet_switch_wallet)
-                    else -> "Delete Wallet"
-                }
-            )
+            ) {
+                Text("Delete Wallet")
+            }
         }
 
         // Footer
@@ -3853,18 +3944,20 @@ private fun DeleteWalletConfirmContent(
     ) {
         Spacer(Modifier.height(32.dp))
 
+        // Confirmation page uses the same iOS-red `#FF3B30` for all
+        // three flows (default-switch, NWC-disconnect, non-default
+        // delete) so the user doesn't see one orange and one red CTA
+        // for what's the same conceptual action — "stop using this
+        // wallet." Matches the iOS-red used on the entry-point card.
+        val accent = Color(0xFFFF3B30)
         Icon(
             if (isDefault) Icons.Default.SwapHoriz else Icons.Default.Close,
             contentDescription = null,
             modifier = Modifier
                 .size(64.dp)
-                .background(
-                    (if (isDefault) MaterialTheme.colorScheme.primary else Color(0xFFD32F2F))
-                        .copy(alpha = 0.1f),
-                    CircleShape
-                )
+                .background(accent.copy(alpha = 0.1f), CircleShape)
                 .padding(16.dp),
-            tint = if (isDefault) MaterialTheme.colorScheme.primary else Color(0xFFD32F2F)
+            tint = accent
         )
 
         Spacer(Modifier.height(24.dp))
@@ -3876,7 +3969,7 @@ private fun DeleteWalletConfirmContent(
                 else -> "Delete Wallet"
             },
             style = MaterialTheme.typography.headlineMedium,
-            color = if (isDefault) MaterialTheme.colorScheme.onSurface else Color(0xFFD32F2F)
+            color = if (isDefault) MaterialTheme.colorScheme.onSurface else accent
         )
 
         Spacer(Modifier.height(16.dp))
@@ -3898,7 +3991,7 @@ private fun DeleteWalletConfirmContent(
             Text(
                 "Make sure you have backed up your recovery phrase before proceeding.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFFD32F2F),
+                color = accent,
                 textAlign = TextAlign.Center
             )
 
@@ -3919,11 +4012,10 @@ private fun DeleteWalletConfirmContent(
             onClick = onDelete,
             modifier = Modifier.fillMaxWidth(),
             enabled = isNwc || isDefault || confirmText == "DELETE",
-            colors = if (isDefault) ButtonDefaults.buttonColors()
-                else ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFD32F2F),
-                    contentColor = Color.White
-                )
+            colors = ButtonDefaults.buttonColors(
+                containerColor = accent,
+                contentColor = Color.White
+            )
         ) {
             Text(
                 when {
@@ -4457,11 +4549,21 @@ private fun WalletInfoRow(
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Fixed-width label column so values across rows align to the
+        // same x-coordinate regardless of label length, and the value
+        // text always has a stable container to ellipsize within.
+        // Without this, "Lightning address" pushes its value column 30dp
+        // to the right of "Relay" — the iOS settings panel uses the
+        // same column-aligned layout.
         Text(
             label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f)
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .widthIn(min = 110.dp)
+                .padding(end = 12.dp)
         )
         Text(
             value,
@@ -4469,7 +4571,8 @@ private fun WalletInfoRow(
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(2f)
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f)
         )
         if (onCopy != null) {
             Spacer(Modifier.width(8.dp))
