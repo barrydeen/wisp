@@ -202,8 +202,55 @@ fun ReactionDetailsSection(
     modifier: Modifier = Modifier,
     eventRepo: EventRepository? = null
 ) {
-    val sortedZaps = zapDetails.sortedByDescending { it.sats }
-    val hasZaps = sortedZaps.isNotEmpty()
+    // Group multiple zaps from the same pubkey into one row showing the
+    // combined sat total, matching the notifications-side same-actor
+    // collapse. Without this, a spammer hitting one note N times pushes
+    // legitimate zappers off the screen. See iOS PR
+    // barrydeen/wisp-ios#161 (NoteDetailsPanel.zapsSection) for the
+    // mirror change.
+    data class ZapGroup(
+        val pubkey: String,
+        val totalSats: Long,
+        val count: Int,
+        /** First non-empty zap message in the group; empty if no zap had one. */
+        val primaryMessage: String,
+        /** Receipt id of the first zap in the group; only used to enable long-press inspect. */
+        val firstReceiptEventId: String?,
+        val anyPrivate: Boolean,
+    )
+
+    val zapGroups: List<ZapGroup> = run {
+        val order = mutableListOf<String>()
+        val totals = mutableMapOf<String, Long>()
+        val counts = mutableMapOf<String, Int>()
+        val messages = mutableMapOf<String, String>()
+        val firstReceipts = mutableMapOf<String, String?>()
+        val anyPrivate = mutableMapOf<String, Boolean>()
+        for (zap in zapDetails) {
+            if (zap.pubkey !in totals) {
+                order.add(zap.pubkey)
+                firstReceipts[zap.pubkey] = zap.receiptEventId
+            }
+            totals[zap.pubkey] = (totals[zap.pubkey] ?: 0L) + zap.sats
+            counts[zap.pubkey] = (counts[zap.pubkey] ?: 0) + 1
+            if (messages[zap.pubkey].isNullOrEmpty() && zap.message.isNotEmpty()) {
+                messages[zap.pubkey] = zap.message
+            }
+            anyPrivate[zap.pubkey] = (anyPrivate[zap.pubkey] ?: false) || zap.isPrivate
+        }
+        order.map { pk ->
+            ZapGroup(
+                pubkey = pk,
+                totalSats = totals[pk] ?: 0L,
+                count = counts[pk] ?: 0,
+                primaryMessage = messages[pk].orEmpty(),
+                firstReceiptEventId = firstReceipts[pk],
+                anyPrivate = anyPrivate[pk] ?: false,
+            )
+        }.sortedByDescending { it.totalSats }
+    }
+
+    val hasZaps = zapGroups.isNotEmpty()
     val hasReactions = reactionDetails.isNotEmpty()
     val hasReposts = repostDetails.isNotEmpty()
 
@@ -216,16 +263,39 @@ fun ReactionDetailsSection(
             .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         if (hasZaps) {
-            sortedZaps.forEach { zap ->
+            zapGroups.forEach { group ->
                 ZapRow(
-                    pubkey = zap.pubkey,
-                    sats = zap.sats,
-                    message = zap.message,
-                    profile = resolveProfile(zap.pubkey),
+                    pubkey = group.pubkey,
+                    sats = group.totalSats,
+                    // When N > 1 the row label shows "<msg-or-name> (×N)"
+                    // so the rollup is obvious; for N == 1 it falls back
+                    // to the original per-zap rendering. `ZapRow`'s own
+                    // empty-message handling resolves to the actor name,
+                    // so we mirror that fallback here before appending
+                    // the suffix.
+                    message = run {
+                        val base = if (group.primaryMessage.isNotEmpty()) {
+                            group.primaryMessage
+                        } else {
+                            resolveProfile(group.pubkey)?.displayString
+                                ?: group.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
+                        }
+                        if (group.count > 1) "$base (×${group.count})" else base
+                    },
+                    profile = resolveProfile(group.pubkey),
                     onProfileClick = onProfileClick,
-                    isPrivate = zap.isPrivate,
-                    onLongPress = if (zap.receiptEventId != null) {
-                        { inspectedZap = zap }
+                    isPrivate = group.anyPrivate,
+                    onLongPress = if (group.firstReceiptEventId != null) {
+                        {
+                            // Long-press inspects the first individual zap in
+                            // the group — preserves the existing "inspect a
+                            // single receipt" affordance without surfacing
+                            // every duplicate behind its own modal.
+                            inspectedZap = zapDetails.firstOrNull {
+                                it.pubkey == group.pubkey
+                                    && it.receiptEventId == group.firstReceiptEventId
+                            }
+                        }
                     } else null
                 )
             }
