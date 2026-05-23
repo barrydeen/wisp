@@ -49,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
@@ -281,7 +282,7 @@ fun ThreadScreen(
                         val userZapPollVote = remember(pollVoteVersion, event.id) {
                             if (event.kind == 6969) eventRepo.getUserZapPollVote(event.id) else null
                         }
-                        val indentDp = 12
+                        val indentDp = 8
                         val clampedDepth = min(depth, 8)
                         val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
                         Box(
@@ -289,13 +290,15 @@ fun ThreadScreen(
                                 .fillMaxWidth()
                                 .drawBehind {
                                     val indentPx = indentDp.dp.toPx()
+                                    val strokePx = 1.dp.toPx()
                                     for (level in 0 until clampedDepth) {
                                         val x = level * indentPx + indentPx / 2f
                                         drawLine(
                                             color = lineColor,
                                             start = Offset(x, 0f),
                                             end = Offset(x, size.height),
-                                            strokeWidth = 1.5.dp.toPx()
+                                            strokeWidth = strokePx,
+                                            cap = StrokeCap.Round
                                         )
                                     }
                                 }
