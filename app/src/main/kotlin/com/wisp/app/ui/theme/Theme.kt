@@ -98,6 +98,13 @@ fun WispTheme(
     val primaryContainerDark = remember(primary) { darkenColor(primary, 0.6f) }
     val primaryContainerLight = remember(primary) { lightenColor(primary, 0.7f) }
 
+    // iOS systemRed (#FF3B30) for destructive / error UI. Material 3's
+    // default `error` renders pinkish in dark mode (`#F2B8B5`) and a
+    // muted brick red in light mode (`#B3261E`); both read "off" next
+    // to the iOS counterpart. Setting `error` explicitly propagates to
+    // every `MaterialTheme.colorScheme.error` consumer (logout, alerts,
+    // destructive labels).
+    val iosRed = Color(0xFFFF3B30)
     val colorScheme = if (isDarkTheme) {
         if (isCustomTheme) {
             darkColorScheme(
@@ -112,7 +119,9 @@ fun WispTheme(
                 onBackground = Color(0xFFE0E0E0),
                 onSurface = Color(0xFFE0E0E0),
                 onSurfaceVariant = Color(0xFF9998A0),
-                outline = Color(0xFF38383A)
+                outline = Color(0xFF38383A),
+                error = iosRed,
+                onError = Color.White
             )
         } else {
             val colors = themePreset.dark
@@ -129,7 +138,9 @@ fun WispTheme(
                 onBackground = colors.onBackground,
                 onSurface = colors.onSurface,
                 onSurfaceVariant = colors.onSurfaceVariant,
-                outline = colors.outline
+                outline = colors.outline,
+                error = iosRed,
+                onError = Color.White
             )
         }
     } else {
@@ -146,7 +157,9 @@ fun WispTheme(
                 onBackground = Color(0xFF1C1B1F),
                 onSurface = Color(0xFF1C1B1F),
                 onSurfaceVariant = Color(0xFF6B6B6B),
-                outline = Color(0xFFCCCCCC)
+                outline = Color(0xFFCCCCCC),
+                error = iosRed,
+                onError = Color.White
             )
         } else {
             val colors = themePreset.light
@@ -163,7 +176,9 @@ fun WispTheme(
                 onBackground = colors.onBackground,
                 onSurface = colors.onSurface,
                 onSurfaceVariant = colors.onSurfaceVariant,
-                outline = colors.outline
+                outline = colors.outline,
+                error = iosRed,
+                onError = Color.White
             )
         }
     }
