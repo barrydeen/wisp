@@ -643,7 +643,10 @@ fun UserProfileScreen(
             }
 
             stickyHeader {
-                val surfaceColor = MaterialTheme.colorScheme.surface
+                // Tab strip uses `background` (true near-black) instead of
+                // `surface` so the chrome reads as part of the body and
+                // doesn't stack two distinct grey tiers — matches iOS.
+                val surfaceColor = MaterialTheme.colorScheme.background
                 Column {
                     Box(
                         modifier = Modifier.background(surfaceColor).drawWithContent {
@@ -689,7 +692,9 @@ fun UserProfileScreen(
                                 Box(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
-                                        .height(34.dp)
+                                        // 28dp (was 34) — matches iOS tighter
+                                        // tab row over the profile header.
+                                        .height(28.dp)
                                         .clickable { selectedTab = index }
                                         .padding(horizontal = 10.dp)
                                 ) {
@@ -703,7 +708,7 @@ fun UserProfileScreen(
                             }
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(6.dp))
                 }
             }
 
