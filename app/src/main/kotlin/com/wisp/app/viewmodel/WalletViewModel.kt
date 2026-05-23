@@ -284,6 +284,26 @@ class WalletViewModel(
     }
 
     /**
+     * Wipe per-wallet display state so swapping wallets (Spark mnemonic
+     * restored from backup, default-wallet generation, paste a new
+     * mnemonic, disconnect, delete) doesn't carry the previous wallet's
+     * transactions / pagination / lightning address into the new
+     * wallet's UI. Mirrors iOS `WalletStore.clearDisplayState`.
+     *
+     * The repo-side `_balance` flow is cleared inside `clearMnemonic` /
+     * by the new wallet's first balance fetch — only ViewModel-side
+     * display state needs explicit clearing here.
+     */
+    private fun clearWalletDisplayState() {
+        _transactions.value = emptyList()
+        _transactionsError.value = null
+        _hasMoreTransactions.value = true
+        _lightningAddress.value = null
+        _lightningAddressError.value = null
+        _lightningAddressLoading.value = false
+    }
+
+    /**
      * Set after [deleteWallet] so a subsequent [navigateHome] doesn't
      * immediately re-derive the default wallet — the user explicitly
      * disconnected to pick a different one. Persisted in
@@ -410,6 +430,7 @@ class WalletViewModel(
             sparkRepo.disconnect()
             sparkRepo.clearMnemonic()
         }
+        clearWalletDisplayState()
         startDefaultWallet()
     }
 
@@ -616,6 +637,7 @@ class WalletViewModel(
     // --- Spark Connection ---
 
     fun generateSparkWallet() {
+        clearWalletDisplayState()
         val mnemonic = sparkRepo.newMnemonic()
         sparkRepo.saveMnemonic(mnemonic)
         _isDefaultWallet.value = false
@@ -638,6 +660,7 @@ class WalletViewModel(
             return
         }
         Log.d("WalletBackup", "restoreSparkWallet: saving and connecting")
+        clearWalletDisplayState()
         sparkRepo.saveMnemonic(trimmed)
         _isDefaultWallet.value = false
         skipAutoCreate = false
@@ -776,7 +799,7 @@ class WalletViewModel(
         _walletState.value = WalletState.NotConnected
         _connectionString.value = ""
         _statusLines.value = emptyList()
-        _lightningAddress.value = null
+        clearWalletDisplayState()
         _deleteConfirmText.value = ""
         _isDefaultWallet.value = false
 
@@ -819,7 +842,7 @@ class WalletViewModel(
         _walletState.value = WalletState.NotConnected
         _connectionString.value = ""
         _statusLines.value = emptyList()
-        _lightningAddress.value = null
+        clearWalletDisplayState()
         navigateHome()
     }
 
@@ -843,7 +866,7 @@ class WalletViewModel(
         _walletState.value = WalletState.NotConnected
         _connectionString.value = ""
         _statusLines.value = emptyList()
-        _lightningAddress.value = null
+        clearWalletDisplayState()
     }
 
     fun updateDeleteConfirmText(value: String) {
