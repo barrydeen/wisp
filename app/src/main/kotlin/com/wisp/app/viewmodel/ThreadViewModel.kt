@@ -466,16 +466,14 @@ class ThreadViewModel : ViewModel() {
             scoreAuthorsAsync(pubkeysToScore)
         }
 
-        val myPubkey = currentUserPubkey
+        // Sort children by createdAt (oldest first), matching iOS
+        // `ThreadViewModel.buildNestedReplies`. Previously the user's own
+        // replies were bubbled to the top within each level — that's
+        // useful in some clients but diverges from iOS, so threads showed
+        // different orderings across platforms.
         for (children in parentToChildren.values) {
             children.sortWith(Comparator { a, b ->
-                val aIsOwn = myPubkey != null && a.pubkey == myPubkey
-                val bIsOwn = myPubkey != null && b.pubkey == myPubkey
-                if (aIsOwn != bIsOwn) {
-                    if (aIsOwn) -1 else 1
-                } else {
-                    a.created_at.compareTo(b.created_at)
-                }
+                a.created_at.compareTo(b.created_at)
             })
         }
 
