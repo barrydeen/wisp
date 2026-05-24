@@ -2,10 +2,16 @@ package com.wisp.app.ui.component
 
 import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.foundation.text.input.TextFieldBuffer
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.withStyle
+import com.wisp.app.viewmodel.Mention
 
 // Mentions are now stored in the compose text as plain `@Name`, tracked out-of-band by
 // ComposeViewModel and spliced to nostr:nprofile URIs at publish time. The OutputTransformation
@@ -125,5 +131,44 @@ class EmojiVisualTransformation(
         }
 
         return TransformedText(AnnotatedString(sb.toString()), offsetMapping)
+    }
+}
+
+/**
+ * Builds an [AnnotatedString] from [text] with [SpanStyle] pill backgrounds applied to
+ * each tracked [Mention] range. Non-mention text is rendered with [defaultColor].
+ */
+fun buildMentionAnnotatedString(
+    text: String,
+    mentions: List<Mention>,
+    pillBackground: Color,
+    pillForeground: Color,
+    defaultColor: Color
+): AnnotatedString = buildAnnotatedString {
+    var lastEnd = 0
+    val sorted = mentions
+        .filter { it.start >= 0 && it.end <= text.length && it.start < it.end }
+        .sortedBy { it.start }
+    for (m in sorted) {
+        if (m.start >= lastEnd) {
+            withStyle(SpanStyle(color = defaultColor)) {
+                append(text, lastEnd, m.start)
+            }
+            withStyle(
+                SpanStyle(
+                    background = pillBackground,
+                    color = pillForeground,
+                    fontWeight = FontWeight.Medium
+                )
+            ) {
+                append(text, m.start, m.end)
+            }
+            lastEnd = m.end
+        }
+    }
+    if (lastEnd < text.length) {
+        withStyle(SpanStyle(color = defaultColor)) {
+            append(text, lastEnd, text.length)
+        }
     }
 }

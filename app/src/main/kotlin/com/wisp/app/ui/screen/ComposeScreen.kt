@@ -54,8 +54,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.input.TextFieldLineLimits
-import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.ui.text.TextRange
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -103,7 +102,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -134,7 +132,7 @@ import com.wisp.app.repo.PowPreferences
 import com.wisp.app.R
 import com.wisp.app.ui.component.EmojiShortcodePopup
 import com.wisp.app.ui.component.EmojiVisualTransformation
-import com.wisp.app.ui.component.MentionOutputTransformation
+import com.wisp.app.ui.component.buildMentionAnnotatedString
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
 import com.wisp.app.ui.component.detectEmojiAutocomplete
@@ -178,6 +176,7 @@ fun ComposeScreen(
     val countdownStartedAt by viewModel.countdownStartedAt.collectAsState()
     val mentionCandidates by viewModel.mentionCandidates.collectAsState()
     val mentionQuery by viewModel.mentionQuery.collectAsState()
+    val mentions by viewModel.mentions.collectAsState()
     val explicit by viewModel.explicit.collectAsState()
     val hashtags by viewModel.hashtags.collectAsState()
     val powEnabled by viewModel.powEnabled.collectAsState()
@@ -235,21 +234,6 @@ fun ComposeScreen(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
         if (uris.isNotEmpty()) viewModel.uploadMedia(uris, context.contentResolver, signer)
-    }
-
-    val outputTransformation = remember(profileRepo, resolvedEmojis) {
-        MentionOutputTransformation(
-            resolveDisplayName = { bech32 ->
-                if (profileRepo == null) return@MentionOutputTransformation null
-                try {
-                    val data = Nip19.decodeNostrUri("nostr:$bech32")
-                    if (data is com.wisp.app.nostr.NostrUriData.ProfileRef) {
-                        profileRepo.get(data.pubkey)?.displayString
-                    } else null
-                } catch (_: Exception) { null }
-            },
-            resolvedEmojis = resolvedEmojis
-        )
     }
 
     Scaffold(
@@ -697,34 +681,44 @@ fun ComposeScreen(
                         )
                     }
 
-                    // Text field with GIF keyboard support via BasicTextField(TextFieldState)
-                    val textFieldState = remember { TextFieldState(content.text) }
+                    // Text field with value-based API for pill rendering via AnnotatedString
                     val interactionSource = remember { MutableInteractionSource() }
                     val enabled = !publishing && countdownSeconds == null
 
-                    // Sync ViewModel -> TextFieldState (for programmatic updates: upload URL, mention select, etc.)
-                    LaunchedEffect(content) {
-                        if (textFieldState.text.toString() != content.text) {
-                            textFieldState.edit {
-                                replace(0, length, content.text)
-                                selection = content.selection
-                            }
+                    val pillBackground = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                    val pillForeground = MaterialTheme.colorScheme.primary
+                    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+
+                    // Build AnnotatedString with pill spans for tracked mentions
+                    val contentWithSpans = remember(content, mentions) {
+                        if (mentions.isEmpty()) {
+                            content
+                        } else {
+                            val annotated = buildMentionAnnotatedString(
+                                text = content.text,
+                                mentions = mentions,
+                                pillBackground = pillBackground,
+                                pillForeground = pillForeground,
+                                defaultColor = onSurfaceColor
+                            )
+                            content.copy(annotatedString = annotated)
                         }
                     }
 
-                    // Sync TextFieldState -> ViewModel (for user typing)
-                    LaunchedEffect(textFieldState) {
-                        snapshotFlow {
-                            textFieldState.text.toString() to textFieldState.selection
-                        }.collect { (text, selection) ->
-                            if (text != content.text) {
-                                viewModel.updateContent(TextFieldValue(text, selection))
-                            }
-                        }
+                    val emojiVisualTransformation = remember(resolvedEmojis) {
+                        EmojiVisualTransformation(resolvedEmojis)
                     }
 
                     BasicTextField(
-                        state = textFieldState,
+                        value = contentWithSpans,
+                        onValueChange = { new ->
+                            // Block nsec pastes
+                            if (!com.wisp.app.ui.component.NsecPasteGuard.blockIfNsec(content.text, new.text)) {
+                                // Atomic mention editing: if edit overlaps a pill, handle atomically
+                                val handled = handleAtomicMentionEdit(content, new, viewModel.mentions.value)
+                                viewModel.updateContent(handled)
+                            }
+                        },
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -747,15 +741,13 @@ fun ComposeScreen(
                             }),
                         enabled = enabled,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                        inputTransformation = com.wisp.app.ui.component.NsecPasteGuard.inputTransformation,
-                        lineLimits = TextFieldLineLimits.MultiLine(),
-                        outputTransformation = outputTransformation,
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                             color = MaterialTheme.colorScheme.onSurface
                         ),
-                        decorator = { innerTextField ->
+                        visualTransformation = emojiVisualTransformation,
+                        decorationBox = { innerTextField ->
                             OutlinedTextFieldDefaults.DecorationBox(
-                                value = textFieldState.text.toString(),
+                                value = content.text,
                                 innerTextField = innerTextField,
                                 enabled = enabled,
                                 singleLine = false,
@@ -1421,6 +1413,70 @@ private fun MentionCandidateRow(
             )
         }
     }
+}
+
+/**
+ * Handles atomic editing of @mention pills. If the edit overlaps a tracked mention:
+ * - Deletion inside pill → delete entire pill, cursor at pill start
+ * - Typing inside pill → reject edit, snap cursor to pill end
+ * - Cursor move into pill → snap to pill end (or start if moving left)
+ * Otherwise returns [new] unchanged.
+ */
+private fun handleAtomicMentionEdit(
+    old: TextFieldValue,
+    new: TextFieldValue,
+    mentions: List<com.wisp.app.viewmodel.Mention>
+): TextFieldValue {
+    if (mentions.isEmpty()) return new
+
+    // Pure cursor/selection move (no text change)
+    if (old.text == new.text) {
+        val newCursor = if (new.selection.collapsed) new.selection.start else return new
+        val oldCursor = if (old.selection.collapsed) old.selection.start else newCursor
+        for (m in mentions) {
+            if (newCursor > m.start && newCursor < m.end) {
+                // Snap: moving right snaps to end, moving left snaps to start
+                val snapTo = if (newCursor >= oldCursor) m.end else m.start
+                return old.copy(selection = TextRange(snapTo))
+            }
+        }
+        return new
+    }
+
+    // Text changed: find edit range
+    val oldText = old.text
+    val newText = new.text
+    if (oldText == newText) return new
+
+    val maxPrefix = minOf(oldText.length, newText.length)
+    var prefix = 0
+    while (prefix < maxPrefix && oldText[prefix] == newText[prefix]) prefix++
+    var suffix = 0
+    val maxSuffix = minOf(oldText.length - prefix, newText.length - prefix)
+    while (suffix < maxSuffix &&
+        oldText[oldText.length - 1 - suffix] == newText[newText.length - 1 - suffix]) suffix++
+    val editStart = prefix
+    val oldEditEnd = oldText.length - suffix  // exclusive end in old text
+    val newEditEnd = newText.length - suffix  // exclusive end in new text
+
+    for (m in mentions) {
+        // Check if this edit overlaps the mention range in old text
+        if (editStart >= m.end || oldEditEnd <= m.start) continue
+
+        val isDeletion = newEditEnd == editStart // pure deletion (no insertion)
+        val isInsideOnly = editStart >= m.start && oldEditEnd <= m.end
+
+        if (isDeletion && isInsideOnly) {
+            // Backspace/delete inside pill → remove entire pill
+            val newT = oldText.removeRange(m.start, m.end)
+            return TextFieldValue(newT, TextRange(m.start))
+        }
+
+        // Any other overlap (typing inside, selection spanning boundary) → reject edit
+        return old.copy(selection = TextRange(m.end))
+    }
+
+    return new
 }
 
 @OptIn(ExperimentalFoundationApi::class)
