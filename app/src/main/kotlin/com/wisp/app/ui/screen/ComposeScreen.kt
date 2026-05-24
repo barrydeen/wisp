@@ -21,7 +21,6 @@ import androidx.compose.foundation.content.TransferableContent
 import androidx.compose.foundation.content.consume
 import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.content.hasMediaType
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
@@ -87,7 +86,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -650,7 +648,6 @@ fun ComposeScreen(
                     }
 
                     // Text field with value-based API for pill rendering via AnnotatedString
-                    val interactionSource = remember { MutableInteractionSource() }
                     val enabled = !publishing && countdownSeconds == null
 
                     val pillBackground = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
@@ -682,9 +679,16 @@ fun ComposeScreen(
                         onValueChange = { new ->
                             // Block nsec pastes
                             if (!com.wisp.app.ui.component.NsecPasteGuard.blockIfNsec(content.text, new.text)) {
-                                // Atomic mention editing: if edit overlaps a pill, handle atomically
-                                val handled = handleAtomicMentionEdit(content, new, viewModel.mentions.value)
-                                viewModel.updateContent(handled)
+                                val mentions = viewModel.mentions.value
+                                // 1. Reject deletion of the lone space between two adjacent pills,
+                                //    which would otherwise leave the pills colliding.
+                                var step = preventPillCollision(content, new, mentions)
+                                // 2. Atomic mention editing: if edit overlaps a pill, handle atomically.
+                                step = handleAtomicMentionEdit(content, step, mentions)
+                                // 3. Auto-insert a separator space when the user types a word char
+                                //    immediately after a pill, so the pill and following text don't collide.
+                                step = enforceMentionTrailingSpace(content, step, mentions)
+                                viewModel.updateContent(step)
                             }
                         },
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -714,15 +718,19 @@ fun ComposeScreen(
                         ),
                         visualTransformation = emojiVisualTransformation,
                         decorationBox = { innerTextField ->
-                            OutlinedTextFieldDefaults.DecorationBox(
-                                value = content.text,
-                                innerTextField = innerTextField,
-                                enabled = enabled,
-                                singleLine = false,
-                                visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
-                                interactionSource = interactionSource,
-                                placeholder = { Text(stringResource(R.string.compose_placeholder)) }
-                            )
+                            // Borderless composer (matches iOS): just the inner field with a
+                            // placeholder overlay when empty. No outline, no surface tint.
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                if (content.text.isEmpty()) {
+                                    Text(
+                                        text = stringResource(R.string.compose_placeholder),
+                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    )
+                                }
+                                innerTextField()
+                            }
                         }
                     )
 
@@ -1421,6 +1429,87 @@ private fun MentionCandidateRow(
             )
         }
     }
+}
+
+/** Punctuation characters allowed to abut a pill without forcing a space in between. */
+private val MENTION_TRAILING_PUNCTUATION = setOf(
+    '.', ',', '!', '?', ';', ':', ')', ']', '}', '"', '\'', '’', '…', '/', '-', '\n'
+)
+
+/**
+ * Rejects the deletion of the single space character sitting between two adjacent pills.
+ * Removing that space would leave the pills visually collided and risks downstream parsers
+ * mis-tokenising the published URIs. The deletion is silently dropped; the cursor lands at
+ * the start of the space so the user understands their backspace was absorbed.
+ */
+private fun preventPillCollision(
+    old: TextFieldValue,
+    new: TextFieldValue,
+    mentions: List<com.wisp.app.viewmodel.Mention>
+): TextFieldValue {
+    if (mentions.size < 2) return new
+    if (old.text == new.text) return new
+    if (new.text.length != old.text.length - 1) return new // not a single-char deletion
+
+    val oldText = old.text
+    val newText = new.text
+    val maxPrefix = minOf(oldText.length, newText.length)
+    var prefix = 0
+    while (prefix < maxPrefix && oldText[prefix] == newText[prefix]) prefix++
+    if (prefix >= oldText.length) return new
+
+    val deletedChar = oldText[prefix]
+    if (deletedChar != ' ') return new
+
+    val pillBefore = mentions.any { it.end == prefix }
+    val pillAfter = mentions.any { it.start == prefix + 1 }
+    if (!pillBefore || !pillAfter) return new
+
+    // Reject — keep old text, drop cursor at the space so the user sees no movement happened.
+    return old.copy(selection = TextRange(prefix))
+}
+
+/**
+ * When the user inserts a non-punctuation character (or pastes a string starting with one)
+ * immediately after a pill's end, slip a space in between so the pill and the new text stay
+ * visually distinct and downstream parsers see the URI as a complete token. Punctuation
+ * (commas, periods, etc.) is allowed to abut so users can still write "@Alice, hi".
+ */
+private fun enforceMentionTrailingSpace(
+    old: TextFieldValue,
+    new: TextFieldValue,
+    mentions: List<com.wisp.app.viewmodel.Mention>
+): TextFieldValue {
+    if (mentions.isEmpty()) return new
+    if (new.text.length <= old.text.length) return new
+
+    val oldText = old.text
+    val newText = new.text
+    val maxPrefix = minOf(oldText.length, newText.length)
+    var prefix = 0
+    while (prefix < maxPrefix && oldText[prefix] == newText[prefix]) prefix++
+    var suffix = 0
+    val maxSuffix = minOf(oldText.length - prefix, newText.length - prefix)
+    while (suffix < maxSuffix &&
+        oldText[oldText.length - 1 - suffix] == newText[newText.length - 1 - suffix]) suffix++
+
+    val editStart = prefix
+    val oldEditEnd = oldText.length - suffix
+    val newEditEnd = newText.length - suffix
+    // Only handle pure insertions; replacements / deletions are out of scope here.
+    if (oldEditEnd != editStart) return new
+    if (newEditEnd <= editStart) return new
+
+    val firstInsertedChar = newText[editStart]
+    if (firstInsertedChar.isWhitespace()) return new
+    if (firstInsertedChar in MENTION_TRAILING_PUNCTUATION) return new
+
+    val abuts = mentions.any { it.end == editStart }
+    if (!abuts) return new
+
+    val spaced = newText.substring(0, editStart) + " " + newText.substring(editStart)
+    val newCursor = (new.selection.start + 1).coerceAtMost(spaced.length)
+    return TextFieldValue(spaced, TextRange(newCursor))
 }
 
 /**
