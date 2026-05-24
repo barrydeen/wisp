@@ -104,12 +104,16 @@ fun ActionBar(
                 modifier = Modifier.size(22.dp)
             )
         }
-        Text(
-            text = replyCount.toString(),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1
-        )
+        // Hide the count when zero — matches iOS minimalistic action bar
+        // where empty metrics drop entirely instead of showing "0".
+        if (replyCount > 0) {
+            Text(
+                text = replyCount.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
         // React + Zap are available on private replies as gift-wrapped/DIP-03 actions.
         // Repost / Quote stay hidden on private replies because those events would
         // publicly attach an e-tag pointing at the encrypted rumor id.
@@ -160,12 +164,14 @@ fun ActionBar(
                 )
             }
         }
-        Text(
-            text = likeCount.toString(),
-            style = MaterialTheme.typography.labelSmall,
-            color = if (userReactionEmojis.isNotEmpty()) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1
-        )
+        if (likeCount > 0) {
+            Text(
+                text = likeCount.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (userReactionEmojis.isNotEmpty()) WispThemeColors.zapColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
         if (!isPrivate) {
             Spacer(Modifier.width(8.dp))
             Box {
@@ -191,12 +197,14 @@ fun ActionBar(
                     )
                 }
             }
-            Text(
-                text = repostCount.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                color = if (hasUserReposted) WispThemeColors.repostColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
+            if (repostCount > 0) {
+                Text(
+                    text = repostCount.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (hasUserReposted) WispThemeColors.repostColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
         }
         Spacer(Modifier.width(8.dp))
         Box {
@@ -247,7 +255,7 @@ fun ActionBar(
                 )
             }
         }
-        if (!isZapInProgress) {
+        if (!isZapInProgress && zapSats > 0) {
             val context = LocalContext.current
             val fiatPrefs = remember { FiatPreferences.get(context) }
             fiatPrefs.fiatMode.collectAsState().value

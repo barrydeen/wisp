@@ -20,8 +20,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +31,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.res.stringResource
 import com.wisp.app.R
 import androidx.compose.material3.TopAppBar
@@ -49,6 +54,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
@@ -211,6 +219,10 @@ fun ThreadScreen(
         Toast.makeText(zapDisabledContext, zapDisabledMessage, Toast.LENGTH_SHORT).show()
     }
 
+    // iOS-parity sticky composer at the bottom of the thread — tap opens
+    // compose with the thread's focal as the reply parent. Disabled until
+    // the focal has loaded (flatThread populated).
+    val focalEvent = flatThread.firstOrNull()?.first
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -222,8 +234,14 @@ fun ThreadScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.background
                 )
+            )
+        },
+        bottomBar = {
+            ThreadReplyBar(
+                enabled = focalEvent != null,
+                onClick = { focalEvent?.let { onReply(it) } }
             )
         }
     ) { padding ->
@@ -281,23 +299,59 @@ fun ThreadScreen(
                         val userZapPollVote = remember(pollVoteVersion, event.id) {
                             if (event.kind == 6969) eventRepo.getUserZapPollVote(event.id) else null
                         }
-                        val indentDp = 12
-                        val clampedDepth = min(depth, 8)
-                        val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                        // iOS-parity depth connector (matches
+                        // ThreadView.swift's ReplyConnectorShape +
+                        // indentationWidth). Each non-root reply:
+                        //   • indents by `depth * 12dp` (capped at 5)
+                        //   • draws a single L on its left: vertical from
+                        //     top → (bottom − r), 8dp rounded fillet,
+                        //     horizontal from arc end → right edge
+                        //   • the connector itself sits 8dp LEFT of the
+                        //     post's content column so the curve hooks
+                        //     cleanly into the row.
+                        val indentStepDp = 12.dp
+                        val clampedDepth = min(depth, 5)
+                        val cornerRadiusDp = 8.dp
+                        val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        val showConnector = depth > 0
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .drawBehind {
-                                    val indentPx = indentDp.dp.toPx()
-                                    for (level in 0 until clampedDepth) {
-                                        val x = level * indentPx + indentPx / 2f
-                                        drawLine(
-                                            color = lineColor,
-                                            start = Offset(x, 0f),
-                                            end = Offset(x, size.height),
-                                            strokeWidth = 1.5.dp.toPx()
-                                        )
-                                    }
+                                    if (!showConnector) return@drawBehind
+                                    // Vertical sits at the connector's left
+                                    // edge — `clampedDepth*12 − 8 + 1` from
+                                    // screen, matching the iOS
+                                    // `.padding(.leading, depth*12 − 8)`
+                                    // and `x = 1` inside the shape.
+                                    val lineX = (clampedDepth * indentStepDp.toPx()) - 8.dp.toPx() + 1.dp.toPx()
+                                    val r = cornerRadiusDp.toPx()
+                                    val strokePx = 1.dp.toPx()
+                                    drawLine(
+                                        color = lineColor,
+                                        start = Offset(lineX, 0f),
+                                        end = Offset(lineX, size.height - r),
+                                        strokeWidth = strokePx
+                                    )
+                                    drawArc(
+                                        color = lineColor,
+                                        startAngle = 90f,
+                                        sweepAngle = 90f,
+                                        useCenter = false,
+                                        topLeft = Offset(lineX, size.height - 2f * r),
+                                        size = Size(2f * r, 2f * r),
+                                        style = Stroke(width = strokePx, cap = StrokeCap.Round)
+                                    )
+                                    // Horizontal divider from arc end → right
+                                    // edge. PostCard's full-width divider is
+                                    // suppressed (`showDivider = false`) so
+                                    // no line renders LEFT of the curve.
+                                    drawLine(
+                                        color = lineColor,
+                                        start = Offset(lineX + r, size.height),
+                                        end = Offset(size.width, size.height),
+                                        strokeWidth = strokePx
+                                    )
                                 }
                         ) {
                             if (isGalleryEvent(event)) {
@@ -343,7 +397,8 @@ fun ThreadScreen(
                                     nip05Repo = nip05Repo,
                                     onQuotedNoteClick = onQuotedNoteClick,
                                     noteActions = noteActions,
-                                    modifier = Modifier.padding(start = (clampedDepth * indentDp).dp)
+                                    showDivider = !showConnector,
+                                    modifier = Modifier.padding(start = (clampedDepth * indentStepDp.value).dp)
                                 )
                             } else {
                                 PostCard(
@@ -402,7 +457,8 @@ fun ThreadScreen(
                                     zapPollTotalSats = zapPollTotalSats,
                                     userZapPollVote = userZapPollVote,
                                     onZapPollVote = { idx -> onZapPollVote(event.id, idx) },
-                                    modifier = Modifier.padding(start = (clampedDepth * indentDp).dp)
+                                    showDivider = !showConnector,
+                                    modifier = Modifier.padding(start = (clampedDepth * indentStepDp.value).dp)
                                 )
                             }
                         }
@@ -605,6 +661,64 @@ private fun SpamToggle(count: Int, expanded: Boolean, onToggle: () -> Unit) {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
             )
+        }
+    }
+}
+
+/**
+ * Sticky reply composer at the bottom of the thread view — iOS parity
+ * (see `wisp-ios/wisp/ThreadView.swift::composer`).
+ *
+ * A thin divider runs the full width above a tap-to-compose pill: a
+ * surfaceVariant-tinted rounded rect with "Reply…" placeholder text on
+ * the left and an orange edit icon on the right. The whole pill is the
+ * tap target; iOS uses `square.and.pencil` here so we use
+ * `Icons.Outlined.Edit` (the closest Material equivalent).
+ */
+@Composable
+private fun ThreadReplyBar(
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+            thickness = 0.5.dp
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = enabled, onClick = onClick)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = "Reply…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    Icon(
+                        imageVector = Icons.Outlined.Edit,
+                        contentDescription = "Reply",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
         }
     }
 }

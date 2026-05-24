@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -125,6 +127,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Dashboard
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.HowToVote
 import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -749,6 +752,14 @@ fun FeedScreen(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
                 CenterAlignedTopAppBar(
+                    // Material's default 64dp content + status-bar inset
+                    // pads a chunky gap below the icon row. Clamp to 48dp
+                    // + status-bar inset so the chrome lands closer to
+                    // the iOS navigation bar (~44dp content + safe-area).
+                    modifier = Modifier.height(
+                        48.dp + WindowInsets.statusBars
+                            .asPaddingValues().calculateTopPadding()
+                    ),
                     title = {
                                 Box {
                                     Surface(
@@ -867,7 +878,7 @@ fun FeedScreen(
                                 }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
+                        containerColor = MaterialTheme.colorScheme.background
                     ),
                     navigationIcon = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -888,7 +899,9 @@ fun FeedScreen(
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 val (icon, tint) = when (contentFilter) {
-                                    FeedContentFilter.ALL -> Icons.Outlined.Dashboard to MaterialTheme.colorScheme.onSurfaceVariant
+                                    // GridView = 2x2 of equal squares (matches iOS).
+                                    // Dashboard was 1 large + 3 small panels.
+                                    FeedContentFilter.ALL -> Icons.Outlined.GridView to MaterialTheme.colorScheme.onSurfaceVariant
                                     FeedContentFilter.TEXT_ONLY -> Icons.AutoMirrored.Outlined.Article to MaterialTheme.colorScheme.primary
                                     FeedContentFilter.GALLERY_ONLY -> Icons.Outlined.Photo to MaterialTheme.colorScheme.primary
                                     FeedContentFilter.POLLS_ONLY -> Icons.Outlined.HowToVote to MaterialTheme.colorScheme.primary

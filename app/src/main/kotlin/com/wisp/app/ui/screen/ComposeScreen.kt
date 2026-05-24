@@ -303,7 +303,7 @@ fun ComposeScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.background
                 )
             )
         }
@@ -1267,6 +1267,11 @@ fun ComposeScreen(
                         }
                     }
                 } else {
+                    // Publish is disabled until the post has at least one
+                    // character of text OR at least one uploaded attachment.
+                    // Prevents accidental empty posts and matches the iOS
+                    // composer's send-button gating.
+                    val hasContent = content.text.isNotBlank() || uploadedUrls.isNotEmpty()
                     Button(
                         onClick = {
                             viewModel.publish(
@@ -1282,7 +1287,7 @@ fun ComposeScreen(
                                 resolvedEmojis = resolvedEmojis
                             )
                         },
-                        enabled = !publishing && !isMiningBusy,
+                        enabled = !publishing && !isMiningBusy && hasContent,
                         modifier = Modifier.fillMaxWidth().height(44.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) {

@@ -19,6 +19,8 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -28,6 +30,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
@@ -73,7 +76,18 @@ fun WispBottomBar(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
         )
         NavigationBar(
-            containerColor = MaterialTheme.colorScheme.surface,
+            // Match the body color (background) instead of Material's
+            // default surface tone — iOS uses one near-black across body
+            // + chrome and reserves the lighter "surface" for elevated
+            // controls (pills, cards).
+            containerColor = MaterialTheme.colorScheme.background,
+            // Material's default 80dp NavigationBar reserves a tall slot
+            // for labels we never render — clamp to 56dp + the gesture
+            // inset for a chrome height closer to the iOS tab bar.
+            modifier = Modifier.height(
+                56.dp + NavigationBarDefaults.windowInsets
+                    .asPaddingValues().calculateBottomPadding()
+            ),
             windowInsets = NavigationBarDefaults.windowInsets
         ) {
         visibleTabs.forEach { tab ->
@@ -92,7 +106,9 @@ fun WispBottomBar(
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.primary,
                     unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    indicatorColor = MaterialTheme.colorScheme.surfaceVariant
+                    // Drop the active-pill indicator — the orange tint on
+                    // the selected icon is enough signal (matches iOS).
+                    indicatorColor = Color.Transparent
                 ),
                 icon = {
                     val useBolt = com.wisp.app.ui.util.useBoltIcon()
@@ -129,13 +145,16 @@ fun WispBottomBar(
                             )
                         }
                         if (hasUnread) {
+                            // Notification dot uses iOS-standard badge red
+                            // (#FF3B30) instead of the primary accent so it
+                            // reads as "alert" rather than "branded highlight."
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .align(Alignment.TopEnd)
                                     .offset(x = 2.dp, y = (-2).dp)
                                     .background(
-                                        color = MaterialTheme.colorScheme.primary,
+                                        color = Color(0xFFFF3B30),
                                         shape = CircleShape
                                     )
                             )

@@ -230,8 +230,12 @@ fun PostCard(
         }
     }
 
+    // Wrap content + divider so the divider can run full-width while the
+    // content keeps its 16dp horizontal padding. Tap-to-open lives on the
+    // content Column so the (tiny) divider area isn't tappable.
+    Column(modifier = modifier.fillMaxWidth()) {
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .then(if (onNoteClick != null) Modifier.pointerInput(onNoteClick) {
                 awaitEachGesture {
@@ -875,9 +879,13 @@ fun PostCard(
                 }
             }
         }
-        if (showDivider) {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
-        }
+    }
+    if (showDivider) {
+        // Full-bleed inter-post separator — sits outside the content
+        // Column's 16dp horizontal padding so it spans edge to edge,
+        // matching the iOS feed.
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
+    }
     }
 }
 
