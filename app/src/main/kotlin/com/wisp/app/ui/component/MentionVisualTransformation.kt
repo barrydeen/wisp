@@ -82,24 +82,28 @@ class EmojiVisualTransformation(
             .toList()
         if (matches.isEmpty()) return TransformedText(text, OffsetMapping.Identity)
 
-        val sb = StringBuilder()
-        // Maps: original index -> transformed index offset
-        // Each replacement changes `:shortcode:` (len = shortcode.length + 2) to `⬡shortcode` (len = shortcode.length + 1)
-        // So each replacement removes 1 character
+        // Build a new AnnotatedString via Builder so any incoming SpanStyles (e.g. mention pills)
+        // are preserved across the transformation. Appending AnnotatedString sub-sequences carries
+        // their spans; appending raw replacement strings (like "⬡name") leaves them unstyled.
+        val builder = androidx.compose.ui.text.AnnotatedString.Builder()
         var lastEnd = 0
         data class Range(val origStart: Int, val origEnd: Int, val transStart: Int, val transEnd: Int)
         val ranges = mutableListOf<Range>()
 
         for (match in matches) {
             val shortcode = match.groupValues[1]
-            sb.append(original, lastEnd, match.range.first)
-            val transStart = sb.length
+            if (match.range.first > lastEnd) {
+                builder.append(text.subSequence(lastEnd, match.range.first))
+            }
+            val transStart = builder.length
             val display = "⬡$shortcode"
-            sb.append(display)
-            ranges.add(Range(match.range.first, match.range.last + 1, transStart, sb.length))
+            builder.append(display)
+            ranges.add(Range(match.range.first, match.range.last + 1, transStart, builder.length))
             lastEnd = match.range.last + 1
         }
-        sb.append(original, lastEnd, original.length)
+        if (lastEnd < original.length) {
+            builder.append(text.subSequence(lastEnd, original.length))
+        }
 
         val offsetMapping = object : OffsetMapping {
             override fun originalToTransformed(offset: Int): Int {
@@ -130,7 +134,7 @@ class EmojiVisualTransformation(
             }
         }
 
-        return TransformedText(AnnotatedString(sb.toString()), offsetMapping)
+        return TransformedText(builder.toAnnotatedString(), offsetMapping)
     }
 }
 

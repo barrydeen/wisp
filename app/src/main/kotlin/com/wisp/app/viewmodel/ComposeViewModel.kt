@@ -980,7 +980,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
         deleteDraftOnPublish(relayPool, signer)
         _content.value = TextFieldValue()
+        _mentions.value = emptyList()
         savedStateHandle.remove<String>("draft_content")
+        savedStateHandle.remove<Array<String>>("draft_mentions")
         _uploadedUrls.value = emptyList()
         _uploadedMediaMeta.clear()
         _error.value = null

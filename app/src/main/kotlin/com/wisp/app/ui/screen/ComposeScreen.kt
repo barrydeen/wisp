@@ -33,7 +33,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -295,8 +299,11 @@ fun ComposeScreen(
         Column(
             modifier = Modifier
                 .padding(padding)
-                .consumeWindowInsets(WindowInsets.navigationBars)
-                .imePadding()
+                .windowInsetsPadding(
+                    WindowInsets.ime
+                        .union(WindowInsets.navigationBars)
+                        .only(WindowInsetsSides.Bottom)
+                )
         ) {
             if (galleryMode) {
                 // ---- Gallery mode: completely separate layout ----
@@ -642,45 +649,6 @@ fun ComposeScreen(
                         }
                     }
 
-                    // Mention autocomplete dropdown
-                    AnimatedVisibility(
-                        visible = mentionQuery != null && mentionCandidates.isNotEmpty(),
-                        enter = fadeIn() + slideInVertically(),
-                        exit = fadeOut() + slideOutVertically()
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            tonalElevation = 3.dp,
-                            shadowElevation = 2.dp,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 200.dp)
-                                .padding(bottom = 4.dp)
-                        ) {
-                            LazyColumn {
-                                items(mentionCandidates, key = { it.profile.pubkey }) { candidate ->
-                                    MentionCandidateRow(
-                                        candidate = candidate,
-                                        onClick = { viewModel.selectMention(candidate) }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Emoji shortcode autocomplete
-                    val emojiState = remember(content) { detectEmojiAutocomplete(content) }
-                    if (emojiState != null && mentionQuery == null) {
-                        EmojiShortcodePopup(
-                            query = emojiState.query,
-                            resolvedEmojis = resolvedEmojis,
-                            onSelect = { shortcode ->
-                                val newTfv = insertEmojiShortcode(content, emojiState.triggerIndex, shortcode)
-                                viewModel.updateContent(newTfv)
-                            }
-                        )
-                    }
-
                     // Text field with value-based API for pill rendering via AnnotatedString
                     val interactionSource = remember { MutableInteractionSource() }
                     val enabled = !publishing && countdownSeconds == null
@@ -722,7 +690,7 @@ fun ComposeScreen(
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(160.dp)
+                            .heightIn(min = 100.dp)
                             .contentReceiver(object : ReceiveContentListener {
                                 override fun onReceive(
                                     transferableContent: TransferableContent
@@ -871,6 +839,46 @@ fun ComposeScreen(
                                 Text(stringResource(R.string.btn_save_draft))
                             }
                         }
+                    }
+
+                    // Mention autocomplete dropdown — appears below the toolbar so the
+                    // composer + toolbar stay visible while the user is searching.
+                    AnimatedVisibility(
+                        visible = mentionQuery != null && mentionCandidates.isNotEmpty(),
+                        enter = fadeIn() + slideInVertically(),
+                        exit = fadeOut() + slideOutVertically()
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            tonalElevation = 3.dp,
+                            shadowElevation = 2.dp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 200.dp)
+                                .padding(top = 4.dp)
+                        ) {
+                            LazyColumn {
+                                items(mentionCandidates, key = { it.profile.pubkey }) { candidate ->
+                                    MentionCandidateRow(
+                                        candidate = candidate,
+                                        onClick = { viewModel.selectMention(candidate) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Emoji shortcode autocomplete — same placement as mentions.
+                    val emojiState = remember(content) { detectEmojiAutocomplete(content) }
+                    if (emojiState != null && mentionQuery == null) {
+                        EmojiShortcodePopup(
+                            query = emojiState.query,
+                            resolvedEmojis = resolvedEmojis,
+                            onSelect = { shortcode ->
+                                val newTfv = insertEmojiShortcode(content, emojiState.triggerIndex, shortcode)
+                                viewModel.updateContent(newTfv)
+                            }
+                        )
                     }
 
                     // Hashtag chips
@@ -1217,7 +1225,7 @@ fun ComposeScreen(
             }
 
             // Bottom bar — always visible above keyboard (shared by both modes)
-            Column(modifier = Modifier.padding(horizontal = 16.dp).padding(vertical = 12.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 8.dp)) {
                     if (countdownSeconds != null) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
