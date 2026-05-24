@@ -106,13 +106,13 @@ fun WispTheme(
                 primaryContainer = primaryContainerDark,
                 onPrimaryContainer = lightenColor(accentColor, 0.5f),
                 secondary = secondary,
-                background = Color(0xFF131215),
-                surface = Color(0xFF1F1E21),
-                surfaceVariant = Color(0xFF2B2A2E),
+                background = Color(0xFF0A0A0B),
+                surface = Color(0xFF1C1C1E),
+                surfaceVariant = Color(0xFF2C2C2E),
                 onBackground = Color(0xFFE0E0E0),
                 onSurface = Color(0xFFE0E0E0),
                 onSurfaceVariant = Color(0xFF9998A0),
-                outline = Color(0xFF343338)
+                outline = Color(0xFF38383A)
             )
         } else {
             val colors = themePreset.dark
@@ -171,7 +171,7 @@ fun WispTheme(
     val wispColors = if (isDarkTheme) {
         if (isCustomTheme) {
             WispColors(
-                backgroundColor = Color(0xFF131215),
+                backgroundColor = Color(0xFF0A0A0B),
                 zapColor = accentColor,
                 repostColor = Color(0xFF4CAF50),
                 bookmarkColor = accentColor,
