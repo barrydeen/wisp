@@ -1260,11 +1260,14 @@ internal fun TopZapperBanner(
                 color = orange
             )
 
-            // Message (if present)
+            // Message (if present) — image URLs collapse to "[image]"
+            // since the banner only has room for a single line and a
+            // dumped URL crowds out the sats amount. Full image renders
+            // inline in the engagement drawer below.
             if (message.isNotBlank()) {
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = message,
+                    text = com.wisp.app.ui.util.ZapMessageImage.previewText(message),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     maxLines = 1,
