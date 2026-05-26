@@ -3538,19 +3538,20 @@ private fun WalletSettingsContent(
                 Text(if (isDefaultWallet) "View Recovery Phrase" else "Backup Recovery Phrase")
             }
 
-            Spacer(Modifier.height(8.dp))
+            // Relay backup is only offered for non-default Spark wallets.
+            // For default wallets the nsec is already the canonical backup
+            // and relay-backup adds no value while cluttering the screen.
+            if (!isDefaultWallet) {
+                Spacer(Modifier.height(8.dp))
 
-            // Relay backup is offered for both default and non-default
-            // Spark wallets — matches iOS. For default wallets the nsec
-            // is already the canonical backup; offering relay backup
-            // here is belt-and-braces for users who want it.
-            OutlinedButton(
-                onClick = onBackupToRelay,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Backup to Nostr Relays")
+                OutlinedButton(
+                    onClick = onBackupToRelay,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Backup to Nostr Relays")
+                }
             }
 
             // Relay backup status section (when logged in). Skipped for default
