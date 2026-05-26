@@ -57,8 +57,10 @@ import com.wisp.app.ui.util.AmountFormatter
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.graphics.drawscope.translate
 import coil3.compose.AsyncImage
 import com.wisp.app.nostr.Nip30
+import androidx.compose.ui.platform.LocalDensity
 import kotlin.math.sin
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -282,50 +284,65 @@ fun ActionBar(
 
 @Composable
 internal fun LightningAnimation(modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "lightning")
-
-    val pulse by transition.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(600, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse"
-    )
-
-    val scale by transition.animateFloat(
-        initialValue = 0.92f,
-        targetValue = 1.08f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(600, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "scale"
-    )
-
+    // White-core glow pulse — matches iOS commit #6 of feat/one-tap-zap.
+    // Single sin-eased oscillator on a 0.9s period drives:
+    //   sine  ∈ [-1, 1]
+    //   phase ∈ [ 0, 1] = (sine + 1) / 2
+    //   iconScale = 1.0 + 0.10 * sine        (0.90 → 1.10)
+    //   verticalOffset = -0.5 * sine          (±0.5dp, centered on baseline)
+    // The silhouette stays solid white — the three stacked stroked
+    // shadows behind it do the warm-glow work (inner constant, medium
+    // and outer breathing on the phase). Vertical motion is held to
+    // ±0.5dp so the icon doesn't lift off the action-bar baseline and
+    // misalign with neighbouring glyphs.
     val zapColor = WispThemeColors.zapColor
+    val density = LocalDensity.current
+    val transition = rememberInfiniteTransition(label = "bolt-pulse")
+
+    val sineAngle by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2.0 * Math.PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = LinearEasing)
+        ),
+        label = "bolt-sine"
+    )
+
+    val s = sin(sineAngle.toDouble()).toFloat()
+    val phase = (s + 1f) / 2f
+    val iconScale = 1.0f + 0.10f * s
+
+    val verticalOffsetPx = with(density) { (-0.5f * s).dp.toPx() }
+    val innerStrokePx = with(density) { 1.5.dp.toPx() }
+    val medStrokePx = with(density) { (4f + 3f * phase).dp.toPx() }
+    val outerStrokePx = with(density) { (8f + 6f * phase).dp.toPx() }
 
     Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        val boltPath = icBoltPath(w, h, scale)
+        translate(top = verticalOffsetPx) {
+            val boltPath = icBoltPath(size.width, size.height, iconScale)
 
-        // Soft outer glow
-        drawPath(
-            path = boltPath,
-            color = zapColor.copy(alpha = pulse * 0.3f),
-            style = Stroke(width = w * 0.14f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-        )
-
-        // Bolt fill
-        drawPath(path = boltPath, color = zapColor)
-
-        // White-hot core
-        drawPath(
-            path = boltPath,
-            color = Color.White.copy(alpha = pulse * 0.4f)
-        )
+            // Outer halo — widest, lowest opacity, breathing with phase.
+            drawPath(
+                path = boltPath,
+                color = zapColor.copy(alpha = 0.3f + 0.5f * phase),
+                style = Stroke(width = outerStrokePx, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            )
+            // Medium glow.
+            drawPath(
+                path = boltPath,
+                color = zapColor.copy(alpha = 0.55f + 0.45f * phase),
+                style = Stroke(width = medStrokePx, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            )
+            // Inner — tight, constant 95%.
+            drawPath(
+                path = boltPath,
+                color = zapColor.copy(alpha = 0.95f),
+                style = Stroke(width = innerStrokePx, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            )
+            // White-core silhouette on top. Don't tint — the white IS
+            // the luminous core; the warm halos do the heat work.
+            drawPath(path = boltPath, color = Color.White)
+        }
     }
 }
 
