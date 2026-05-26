@@ -790,8 +790,8 @@
     <string name="wallet_seed_not_viewed_body">You haven\'t viewed your recovery phrase yet. Write it down to protect your funds.</string>
     <string name="wallet_view_seed">View Recovery Phrase</string>
     <string name="wallet_powered_by">Powered by</string>
-    <string name="wallet_welcome_title">Your default wallet is secured by your key</string>
-    <string name="wallet_welcome_body">Derived from your Nostr key — restores on any device when you sign in. Tap to also save your seed phrase as a backup.</string>
+    <string name="wallet_welcome_title">Secured by your Nostr key</string>
+    <string name="wallet_welcome_body">Restores on any device when you sign in. Tap to also save your seed phrase as a backup.</string>
     <string name="wallet_recent">Recent</string>
     <string name="wallet_view_all">View all</string>
 

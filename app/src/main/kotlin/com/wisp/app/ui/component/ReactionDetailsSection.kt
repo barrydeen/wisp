@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -35,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -133,8 +135,24 @@ fun ZapRow(
     onProfileClick: (String) -> Unit,
     modifier: Modifier = Modifier,
     isPrivate: Boolean = false,
-    onLongPress: (() -> Unit)? = null
+    onLongPress: (() -> Unit)? = null,
+    // Passed to `RichContent` so inline links, hashtags, note/profile
+    // references inside a zap message stay interactive. All optional —
+    // when null, RichContent renders them as plain text.
+    eventRepo: EventRepository? = null,
+    onHashtagClick: ((String) -> Unit)? = null,
+    onNoteClick: ((String) -> Unit)? = null
 ) {
+    // Renders the zap row as a mini-post so "zapvertising" payloads —
+    // body text + links + inline images — surface intact in the
+    // engagement drawer. Single-line truncation was too lossy: a long
+    // promotional message + image got chopped, and only the image
+    // attachment was readable. Using `RichContent` here gives the
+    // message text + media the same treatment as a regular post body.
+    val displayName = remember(profile, pubkey) {
+        profile?.displayString
+            ?: pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
+    }
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -148,46 +166,64 @@ fun ZapRow(
                     Modifier.clickable { onProfileClick(pubkey) }
                 }
             )
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.Top
     ) {
         ProfilePicture(
             url = profile?.picture,
             size = 30
         )
         Spacer(Modifier.width(8.dp))
-        Text(
-            text = message.ifBlank { profile?.displayString ?: pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" } },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-        Spacer(Modifier.width(8.dp))
-        if (isPrivate) {
-            Icon(
-                painter = androidx.compose.ui.res.painterResource(com.wisp.app.R.drawable.ic_private_zap),
-                contentDescription = "Private zap",
-                modifier = Modifier.size(16.dp),
-                tint = Color(0xFFFF8C00)
-            )
-            Spacer(Modifier.width(2.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                if (isPrivate) {
+                    Icon(
+                        painter = androidx.compose.ui.res.painterResource(com.wisp.app.R.drawable.ic_private_zap),
+                        contentDescription = "Private zap",
+                        modifier = Modifier.size(16.dp),
+                        tint = Color(0xFFFF8C00)
+                    )
+                    Spacer(Modifier.width(2.dp))
+                }
+                Icon(
+                    painter = androidx.compose.ui.res.painterResource(
+                        if (com.wisp.app.ui.util.isFiatMode()) R.drawable.ic_coin_stack else R.drawable.ic_bolt
+                    ),
+                    contentDescription = null,
+                    tint = Color(0xFFFF8C00),
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(2.dp))
+                Text(
+                    text = AmountFormatter.formatFull(sats, LocalContext.current),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color(0xFFFF8C00),
+                    maxLines = 1
+                )
+            }
+            if (message.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                RichContent(
+                    content = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    eventRepo = eventRepo,
+                    onProfileClick = onProfileClick,
+                    onNoteClick = onNoteClick,
+                    onHashtagClick = onHashtagClick
+                )
+            }
         }
-        Icon(
-            painter = androidx.compose.ui.res.painterResource(
-                if (com.wisp.app.ui.util.isFiatMode()) R.drawable.ic_coin_stack else R.drawable.ic_bolt
-            ),
-            contentDescription = null,
-            tint = Color(0xFFFF8C00),
-            modifier = Modifier.size(14.dp)
-        )
-        Spacer(Modifier.width(2.dp))
-        Text(
-            text = AmountFormatter.formatFull(sats, LocalContext.current),
-            style = MaterialTheme.typography.labelLarge,
-            color = Color(0xFFFF8C00)
-        )
     }
 }
 
@@ -226,7 +262,8 @@ fun ReactionDetailsSection(
                     isPrivate = zap.isPrivate,
                     onLongPress = if (zap.receiptEventId != null) {
                         { inspectedZap = zap }
-                    } else null
+                    } else null,
+                    eventRepo = eventRepo
                 )
             }
         }
