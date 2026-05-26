@@ -428,7 +428,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun markLoadingComplete() = feedSub.markLoadingComplete()
 
     // -- Startup delegates --
-    fun initRelays() = startup.initRelays()
+    fun initRelays() {
+        interfacePrefs.reload(getUserPubkey())
+        startup.initRelays()
+    }
     fun resetForAccountSwitch() {
         startup.resetForAccountSwitch()
         groupRepo.clear()
@@ -436,6 +439,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun reloadForNewAccount() {
         safetyPrefs.reload(getUserPubkey())
+        interfacePrefs.reload(getUserPubkey())
         startup.reloadForNewAccount()
         groupRepo.reload(getUserPubkey())
     }
