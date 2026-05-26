@@ -119,7 +119,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -2559,14 +2562,14 @@ private fun WalletModeSelectionContent(
 
         Spacer(Modifier.weight(2f))
 
-        // Mode rows
-        WalletModeRow(
+        // Spark — primary, full-bleed orange with glowing shadow stack.
+        WalletPrimaryRow(
             leadingIcon = {
                 Image(
                     painter = painterResource(R.drawable.ic_spark_logo),
                     contentDescription = null,
                     modifier = Modifier.size(28.dp),
-                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(accent)
+                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.White)
                 )
             },
             title = stringResource(R.string.wallet_spark_title),
@@ -2574,6 +2577,7 @@ private fun WalletModeSelectionContent(
             onClick = onSelectSpark
         )
         Spacer(Modifier.height(12.dp))
+        // NWC — peer-level dark surface row; not buried under "More options".
         WalletModeRow(
             leadingIcon = {
                 Image(
@@ -2587,6 +2591,74 @@ private fun WalletModeSelectionContent(
             onClick = onSelectNwc
         )
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+/**
+ * Primary mode-picker row — full-bleed accent fill, white text, layered
+ * shadow glow underneath. Used for the Spark wallet row on the mode
+ * picker AND the "Use my default wallet" row on the Spark sub-screen.
+ *
+ * Glow is two stacked shadows (tight 55% / wide 35%) both in
+ * `wispZapColor`, mirroring the iOS rendering.
+ */
+@Composable
+private fun WalletPrimaryRow(
+    leadingIcon: @Composable () -> Unit,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    val accent = WispThemeColors.zapColor
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            // Wide outer halo, then tighter inner glow. Compose colored
+            // shadows clip at the path bounds, so the wider elevation
+            // bleeds farther than the tight one.
+            .shadow(elevation = 24.dp, shape = shape, spotColor = accent, ambientColor = accent)
+            .shadow(elevation = 10.dp, shape = shape, spotColor = accent, ambientColor = accent)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick),
+            color = accent,
+            shape = shape
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(36.dp)
+                ) { leadingIcon() }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.85f)
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.9f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
     }
 }
 
@@ -2768,36 +2840,86 @@ private fun SparkSetupContent(
 
         Spacer(Modifier.height(28.dp))
 
-        // Option rows
+        // Primary "Use my default wallet" gets the same orange + glow
+        // treatment as the Spark row on the mode picker. Other options
+        // collapse under a "More options" disclosure so the obvious
+        // next step (re-derive the user's existing wallet) reads as
+        // the obvious choice.
         if (canUseDefaultWallet) {
-            SparkOptionRow(
-                icon = Icons.Outlined.VpnKey,
+            WalletPrimaryRow(
+                leadingIcon = {
+                    Icon(
+                        Icons.Outlined.VpnKey,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                },
                 title = stringResource(R.string.wallet_use_default),
                 subtitle = stringResource(R.string.wallet_default_subtitle),
                 onClick = onUseDefaultWallet
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(20.dp))
         }
-        SparkOptionRow(
-            icon = Icons.Outlined.Add,
-            title = stringResource(R.string.wallet_create_title),
-            subtitle = stringResource(R.string.wallet_create_subtitle),
-            onClick = onCreateWallet
+
+        // More-options accordion.
+        var moreOptionsExpanded by remember { mutableStateOf(!canUseDefaultWallet) }
+        val chevronRotation by animateFloatAsState(
+            targetValue = if (moreOptionsExpanded) 180f else 0f,
+            label = "more-options-chevron"
         )
-        Spacer(Modifier.height(12.dp))
-        SparkOptionRow(
-            icon = Icons.Outlined.History,
-            title = stringResource(R.string.wallet_restore_seed_title),
-            subtitle = stringResource(R.string.wallet_restore_seed_subtitle),
-            onClick = onRestoreFromSeed
-        )
-        Spacer(Modifier.height(12.dp))
-        SparkOptionRow(
-            icon = Icons.Outlined.CloudDownload,
-            title = stringResource(R.string.wallet_restore_relays_title),
-            subtitle = stringResource(R.string.wallet_restore_relays_subtitle),
-            onClick = onRestoreFromRelay
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { moreOptionsExpanded = !moreOptionsExpanded }
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "More options",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                Icons.Filled.KeyboardArrowDown,
+                contentDescription = if (moreOptionsExpanded) "Collapse" else "Expand",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .size(20.dp)
+                    .graphicsLayer { rotationZ = chevronRotation }
+            )
+        }
+        AnimatedVisibility(
+            visible = moreOptionsExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column {
+                Spacer(Modifier.height(4.dp))
+                SparkOptionRow(
+                    icon = Icons.Outlined.Add,
+                    title = stringResource(R.string.wallet_create_title),
+                    subtitle = stringResource(R.string.wallet_create_subtitle),
+                    onClick = onCreateWallet
+                )
+                Spacer(Modifier.height(12.dp))
+                SparkOptionRow(
+                    icon = Icons.Outlined.History,
+                    title = stringResource(R.string.wallet_restore_seed_title),
+                    subtitle = stringResource(R.string.wallet_restore_seed_subtitle),
+                    onClick = onRestoreFromSeed
+                )
+                Spacer(Modifier.height(12.dp))
+                SparkOptionRow(
+                    icon = Icons.Outlined.CloudDownload,
+                    title = stringResource(R.string.wallet_restore_relays_title),
+                    subtitle = stringResource(R.string.wallet_restore_relays_subtitle),
+                    onClick = onRestoreFromRelay
+                )
+            }
+        }
 
         if (walletState is WalletState.Error) {
             Spacer(Modifier.height(16.dp))
