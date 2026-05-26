@@ -57,6 +57,10 @@ private val NOSTR_URI_REGEX = Regex("nostr:(npub1[a-z0-9]{58}|nprofile1[a-z0-9]+
 // Matches bare bech32 IDs not already preceded by "nostr:" or embedded in a URL
 private val BARE_BECH32_REGEX = Regex("(?<!nostr:)(?<![a-z0-9/.:#])((note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]{10,})")
 private val HASHTAG_REGEX = Regex("(?:^|(?<=\\s))#([a-zA-Z0-9_]+)")
+// For paste/draft rehydration: match profile URIs to convert back to @displayName
+private val NOSTR_PROFILE_URI_REGEX = Regex("nostr:(nprofile1[a-z0-9]+|npub1[a-z0-9]{58})")
+// Adjacent nostr: URIs with no separator — insert a space so parsers see them as distinct tokens
+private val ADJACENT_NOSTR_URI_REGEX = Regex("(nostr:(?:npub1|nprofile1|note1|nevent1|naddr1)[a-z0-9]+)(?=nostr:)")
 
 /** Tracks an inserted @mention as a range in the compose text, mapped to its pubkey. */
 data class Mention(val start: Int, val end: Int, val pubkey: String)
@@ -266,6 +270,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     private var countdownJob: Job? = null
     private var pendingPublish: (() -> Unit)? = null
     private var mentionSearchRepo: MentionSearchRepository? = null
+    private var profileRepoRef: ProfileRepository? = null
     private var eventRepo: EventRepository? = null
     private var dmRepo: DmRepository? = null
     private var relayListRepo: RelayListRepository? = null
@@ -288,12 +293,22 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         this.eventRepo = eventRepo
         this.dmRepo = dmRepo
         this.relayListRepo = relayListRepo
+        this.profileRepoRef = profileRepo
         mentionSearchRepo = MentionSearchRepository(profileRepo, contactRepo, relayPool, keyRepo).also {
             it.eventPersistence = eventPersistence
         }
         // Forward candidates from search repo
         viewModelScope.launch {
             mentionSearchRepo!!.candidates.collect { _mentionCandidates.value = it }
+        }
+        // Rehydrate draft that survived process death: convert nostr:nprofile URIs → @displayName
+        val initial = _content.value
+        if (initial.text.contains("nostr:")) {
+            val hydrated = rehydrateMentionsFromContent(initial)
+            if (hydrated.text != initial.text) {
+                _content.value = hydrated
+                savedStateHandle["draft_content"] = hydrated.text
+            }
         }
     }
 
@@ -394,10 +409,67 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
         // Auto-prefix bare bech32 IDs with nostr:
         val prefixed = prefixBareBech32(value)
-        _content.value = prefixed
-        savedStateHandle["draft_content"] = prefixed.text
-        detectMentionQuery(prefixed)
-        detectHashtags(prefixed.text)
+        // Rehydrate pasted nostr:nprofile/npub URIs → @displayName + tracked mention.
+        // Guard on "nostr:" so we don't pay the regex cost on every keystroke.
+        val rehydrated = if (prefixed.text.contains("nostr:")) {
+            rehydrateMentionsFromContent(prefixed)
+        } else prefixed
+        _content.value = rehydrated
+        savedStateHandle["draft_content"] = rehydrated.text
+        detectMentionQuery(rehydrated)
+        detectHashtags(rehydrated.text)
+    }
+
+    /** Converts any `nostr:nprofile1…` / `nostr:npub1…` tokens in [value]'s text to
+     *  `@displayName` and seeds tracked [Mention]s for them, so pasted or loaded profile
+     *  URIs get pill-rendered and materialize correctly at publish time. Profiles not in
+     *  cache are left as-is so the URI still publishes via [extractNostrRefs]. */
+    private fun rehydrateMentionsFromContent(value: TextFieldValue): TextFieldValue {
+        val pr = profileRepoRef ?: return value
+        val text = value.text
+        data class Hit(val start: Int, val end: Int, val pubkey: String, val display: String)
+        val hits = mutableListOf<Hit>()
+        for (match in NOSTR_PROFILE_URI_REGEX.findAll(text)) {
+            val bech32 = match.groupValues[1]
+            val data = try { Nip19.decodeNostrUri("nostr:$bech32") } catch (_: Exception) { null }
+            if (data !is com.wisp.app.nostr.NostrUriData.ProfileRef) continue
+            val profile = pr.get(data.pubkey) ?: continue
+            val raw = profile.displayName?.takeIf { it.isNotBlank() }
+                ?: profile.name?.takeIf { it.isNotBlank() }
+                ?: continue
+            val display = "@" + raw.trim().replace(Regex("[\n\r]+"), " ").removePrefix("@").replace(Regex("\\s+"), "_")
+            hits.add(Hit(match.range.first, match.range.last + 1, data.pubkey, display))
+        }
+        if (hits.isEmpty()) return value
+
+        val sb = StringBuilder()
+        var lastEnd = 0
+        val newMentions = mutableListOf<Mention>()
+        val origCursor = value.selection.start
+        var cursorDelta = 0
+        for (h in hits) {
+            sb.append(text, lastEnd, h.start)
+            val mStart = sb.length
+            sb.append(h.display)
+            val mEnd = sb.length
+            newMentions.add(Mention(mStart, mEnd, h.pubkey))
+            if (origCursor >= h.end) cursorDelta += h.display.length - (h.end - h.start)
+            lastEnd = h.end
+        }
+        sb.append(text, lastEnd, text.length)
+        val newText = sb.toString()
+        val newCursor = (origCursor + cursorDelta).coerceIn(0, newText.length)
+
+        // Carry forward existing mentions outside rehydrated URI ranges (shifted for earlier hits)
+        val kept = _mentions.value.filter { m -> hits.none { h -> m.start < h.end && m.end > h.start } }
+        val shifted = kept.map { m ->
+            var delta = 0
+            for (h in hits) if (h.end <= m.start) delta += h.display.length - (h.end - h.start)
+            m.copy(start = m.start + delta, end = m.end + delta)
+        }
+        _mentions.value = (shifted + newMentions).sortedBy { it.start }
+        saveMentionsToState()
+        return TextFieldValue(newText, TextRange(newCursor))
     }
 
     /** Returns (editStart, oldEnd, newEnd) for the minimal edit between [old] and [new].
@@ -518,7 +590,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             ?: return candidate.profile.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
         // Strip whitespace and leading @ so the mention remains a single token and mention detection
         // can't re-trigger on a name that itself contains spaces.
-        return raw.trim().removePrefix("@").replace(Regex("\\s+"), "_")
+        return raw.trim().replace(Regex("[\n\r]+"), " ").removePrefix("@").replace(Regex("\\s+"), "_")
     }
 
 
@@ -908,7 +980,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
         deleteDraftOnPublish(relayPool, signer)
         _content.value = TextFieldValue()
+        _mentions.value = emptyList()
         savedStateHandle.remove<String>("draft_content")
+        savedStateHandle.remove<Array<String>>("draft_mentions")
         _uploadedUrls.value = emptyList()
         _uploadedMediaMeta.clear()
         _error.value = null
@@ -975,6 +1049,12 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         savedStateHandle["draft_mentions"] = _mentions.value.map { "${it.start},${it.end},${it.pubkey}" }.toTypedArray()
     }
 
+    /** Renders the current draft as the string that would actually be published — `@DisplayName`
+     *  tracked ranges are spliced into `nostr:nprofile1…` URIs. Used by the live preview so
+     *  RichContent can parse mentions out of plain text the same way it does for published notes. */
+    fun previewMaterializedContent(): String =
+        materializeMentions(_content.value.text, _mentions.value).first
+
     /** Builds the publish-ready content by splicing tracked mention ranges into nostr:nprofile URIs.
      *  Stale ranges (beyond text length) are skipped defensively. */
     private fun materializeMentions(text: String, mentions: List<Mention>): Pair<String, Set<String>> {
@@ -988,6 +1068,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             out = out.substring(0, m.start) + uri + out.substring(m.end)
             pubkeys.add(m.pubkey)
         }
+        // Adjacent pills produce back-to-back URIs (`nostr:Xnostr:Y`); parsers' greedy
+        // bech32 regex would over-consume. Insert a space so each is parsed as a distinct token.
+        out = ADJACENT_NOSTR_URI_REGEX.replace(out, "$1 ")
         return out to pubkeys
     }
 
@@ -1107,8 +1190,13 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     fun loadDraft(draft: Nip37.Draft) {
         currentDraftId = draft.dTag
         val text = draft.content
-        _content.value = TextFieldValue(text, TextRange(text.length))
-        savedStateHandle["draft_content"] = text
+        // Reset mention tracking before rehydration so we don't carry stale ranges from a prior session.
+        _mentions.value = emptyList()
+        saveMentionsToState()
+        val initial = TextFieldValue(text, TextRange(text.length))
+        val hydrated = if (text.contains("nostr:")) rehydrateMentionsFromContent(initial) else initial
+        _content.value = hydrated
+        savedStateHandle["draft_content"] = hydrated.text
     }
 
     fun saveDraft(

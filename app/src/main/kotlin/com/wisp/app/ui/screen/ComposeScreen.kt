@@ -21,7 +21,6 @@ import androidx.compose.foundation.content.TransferableContent
 import androidx.compose.foundation.content.consume
 import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.content.hasMediaType
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
@@ -33,7 +32,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -54,8 +57,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.input.TextFieldLineLimits
-import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.ui.text.TextRange
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -84,7 +86,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -103,7 +104,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -134,7 +134,7 @@ import com.wisp.app.repo.PowPreferences
 import com.wisp.app.R
 import com.wisp.app.ui.component.EmojiShortcodePopup
 import com.wisp.app.ui.component.EmojiVisualTransformation
-import com.wisp.app.ui.component.MentionOutputTransformation
+import com.wisp.app.ui.component.buildMentionAnnotatedString
 import com.wisp.app.ui.component.ProfilePicture
 import com.wisp.app.ui.component.RichContent
 import com.wisp.app.ui.component.detectEmojiAutocomplete
@@ -178,6 +178,7 @@ fun ComposeScreen(
     val countdownStartedAt by viewModel.countdownStartedAt.collectAsState()
     val mentionCandidates by viewModel.mentionCandidates.collectAsState()
     val mentionQuery by viewModel.mentionQuery.collectAsState()
+    val mentions by viewModel.mentions.collectAsState()
     val explicit by viewModel.explicit.collectAsState()
     val hashtags by viewModel.hashtags.collectAsState()
     val powEnabled by viewModel.powEnabled.collectAsState()
@@ -235,21 +236,6 @@ fun ComposeScreen(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
         if (uris.isNotEmpty()) viewModel.uploadMedia(uris, context.contentResolver, signer)
-    }
-
-    val outputTransformation = remember(profileRepo, resolvedEmojis) {
-        MentionOutputTransformation(
-            resolveDisplayName = { bech32 ->
-                if (profileRepo == null) return@MentionOutputTransformation null
-                try {
-                    val data = Nip19.decodeNostrUri("nostr:$bech32")
-                    if (data is com.wisp.app.nostr.NostrUriData.ProfileRef) {
-                        profileRepo.get(data.pubkey)?.displayString
-                    } else null
-                } catch (_: Exception) { null }
-            },
-            resolvedEmojis = resolvedEmojis
-        )
     }
 
     Scaffold(
@@ -311,8 +297,11 @@ fun ComposeScreen(
         Column(
             modifier = Modifier
                 .padding(padding)
-                .consumeWindowInsets(WindowInsets.navigationBars)
-                .imePadding()
+                .windowInsetsPadding(
+                    WindowInsets.ime
+                        .union(WindowInsets.navigationBars)
+                        .only(WindowInsetsSides.Bottom)
+                )
         ) {
             if (galleryMode) {
                 // ---- Gallery mode: completely separate layout ----
@@ -658,77 +647,53 @@ fun ComposeScreen(
                         }
                     }
 
-                    // Mention autocomplete dropdown
-                    AnimatedVisibility(
-                        visible = mentionQuery != null && mentionCandidates.isNotEmpty(),
-                        enter = fadeIn() + slideInVertically(),
-                        exit = fadeOut() + slideOutVertically()
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            tonalElevation = 3.dp,
-                            shadowElevation = 2.dp,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 200.dp)
-                                .padding(bottom = 4.dp)
-                        ) {
-                            LazyColumn {
-                                items(mentionCandidates, key = { it.profile.pubkey }) { candidate ->
-                                    MentionCandidateRow(
-                                        candidate = candidate,
-                                        onClick = { viewModel.selectMention(candidate) }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Emoji shortcode autocomplete
-                    val emojiState = remember(content) { detectEmojiAutocomplete(content) }
-                    if (emojiState != null && mentionQuery == null) {
-                        EmojiShortcodePopup(
-                            query = emojiState.query,
-                            resolvedEmojis = resolvedEmojis,
-                            onSelect = { shortcode ->
-                                val newTfv = insertEmojiShortcode(content, emojiState.triggerIndex, shortcode)
-                                viewModel.updateContent(newTfv)
-                            }
-                        )
-                    }
-
-                    // Text field with GIF keyboard support via BasicTextField(TextFieldState)
-                    val textFieldState = remember { TextFieldState(content.text) }
-                    val interactionSource = remember { MutableInteractionSource() }
+                    // Text field with value-based API for pill rendering via AnnotatedString
                     val enabled = !publishing && countdownSeconds == null
 
-                    // Sync ViewModel -> TextFieldState (for programmatic updates: upload URL, mention select, etc.)
-                    LaunchedEffect(content) {
-                        if (textFieldState.text.toString() != content.text) {
-                            textFieldState.edit {
-                                replace(0, length, content.text)
-                                selection = content.selection
-                            }
-                        }
+                    val pillBackground = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                    val pillForeground = MaterialTheme.colorScheme.primary
+                    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+
+                    // Build AnnotatedString with pill spans for mentions plus inline highlights
+                    // for #hashtags and http(s) URLs. The helper handles the no-mentions case
+                    // (still need to colour hashtags / URLs even when no pills are tracked).
+                    val contentWithSpans = remember(content, mentions) {
+                        val annotated = buildMentionAnnotatedString(
+                            text = content.text,
+                            mentions = mentions,
+                            pillBackground = pillBackground,
+                            pillForeground = pillForeground,
+                            defaultColor = onSurfaceColor,
+                            linkColor = pillForeground
+                        )
+                        content.copy(annotatedString = annotated)
                     }
 
-                    // Sync TextFieldState -> ViewModel (for user typing)
-                    LaunchedEffect(textFieldState) {
-                        snapshotFlow {
-                            textFieldState.text.toString() to textFieldState.selection
-                        }.collect { (text, selection) ->
-                            if (text != content.text) {
-                                viewModel.updateContent(TextFieldValue(text, selection))
-                            }
-                        }
+                    val emojiVisualTransformation = remember(resolvedEmojis) {
+                        EmojiVisualTransformation(resolvedEmojis)
                     }
 
                     BasicTextField(
-                        state = textFieldState,
+                        value = contentWithSpans,
+                        onValueChange = { new ->
+                            // Block nsec pastes
+                            if (!com.wisp.app.ui.component.NsecPasteGuard.blockIfNsec(content.text, new.text)) {
+                                val mentions = viewModel.mentions.value
+                                // 1. Reject deletion of the lone space between two adjacent pills,
+                                //    which would otherwise leave the pills colliding.
+                                var step = preventPillCollision(content, new, mentions)
+                                // 2. Atomic mention editing: if edit overlaps a pill, handle atomically.
+                                step = handleAtomicMentionEdit(content, step, mentions)
+                                // 3. Auto-insert a separator space when the user types a word char
+                                //    immediately after a pill, so the pill and following text don't collide.
+                                step = enforceMentionTrailingSpace(content, step, mentions)
+                                viewModel.updateContent(step)
+                            }
+                        },
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(160.dp)
+                            .heightIn(min = 100.dp)
                             .contentReceiver(object : ReceiveContentListener {
                                 override fun onReceive(
                                     transferableContent: TransferableContent
@@ -747,22 +712,24 @@ fun ComposeScreen(
                             }),
                         enabled = enabled,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                        inputTransformation = com.wisp.app.ui.component.NsecPasteGuard.inputTransformation,
-                        lineLimits = TextFieldLineLimits.MultiLine(),
-                        outputTransformation = outputTransformation,
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                             color = MaterialTheme.colorScheme.onSurface
                         ),
-                        decorator = { innerTextField ->
-                            OutlinedTextFieldDefaults.DecorationBox(
-                                value = textFieldState.text.toString(),
-                                innerTextField = innerTextField,
-                                enabled = enabled,
-                                singleLine = false,
-                                visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
-                                interactionSource = interactionSource,
-                                placeholder = { Text(stringResource(R.string.compose_placeholder)) }
-                            )
+                        visualTransformation = emojiVisualTransformation,
+                        decorationBox = { innerTextField ->
+                            // Borderless composer (matches iOS): just the inner field with a
+                            // placeholder overlay when empty. No outline, no surface tint.
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                if (content.text.isEmpty()) {
+                                    Text(
+                                        text = stringResource(R.string.compose_placeholder),
+                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    )
+                                }
+                                innerTextField()
+                            }
                         }
                     )
 
@@ -879,6 +846,45 @@ fun ComposeScreen(
                                 Text(stringResource(R.string.btn_save_draft))
                             }
                         }
+                    }
+
+                    // Mention autocomplete dropdown — appears below the toolbar so the
+                    // composer + toolbar stay visible while the user is searching.
+                    AnimatedVisibility(
+                        visible = mentionQuery != null && mentionCandidates.isNotEmpty(),
+                        enter = fadeIn() + slideInVertically(),
+                        exit = fadeOut() + slideOutVertically()
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 200.dp)
+                                .padding(top = 4.dp)
+                        ) {
+                            LazyColumn {
+                                items(mentionCandidates, key = { it.profile.pubkey }) { candidate ->
+                                    MentionCandidateRow(
+                                        candidate = candidate,
+                                        onClick = { viewModel.selectMention(candidate) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Emoji shortcode autocomplete — same placement as mentions.
+                    val emojiState = remember(content) { detectEmojiAutocomplete(content) }
+                    if (emojiState != null && mentionQuery == null) {
+                        EmojiShortcodePopup(
+                            query = emojiState.query,
+                            resolvedEmojis = resolvedEmojis,
+                            onSelect = { shortcode ->
+                                val newTfv = insertEmojiShortcode(content, emojiState.triggerIndex, shortcode)
+                                viewModel.updateContent(newTfv)
+                            }
+                        )
                     }
 
                     // Hashtag chips
@@ -1126,9 +1132,9 @@ fun ComposeScreen(
                         previewTopOffsetPx = coords.positionInParent().y.toInt()
                     })
 
-                    // Live preview
+                    // Live preview — always visible while composing (matches iOS).
                     AnimatedVisibility(
-                        visible = !imeVisible && (content.text.isNotBlank() || (pollEnabled && pollOptions.any { it.isNotBlank() })) && eventRepo != null
+                        visible = (content.text.isNotBlank() || (pollEnabled && pollOptions.any { it.isNotBlank() })) && eventRepo != null
                     ) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
@@ -1146,26 +1152,38 @@ fun ComposeScreen(
                                 val userProfile = userPubkey?.let { profileRepo?.get(it) }
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(bottom = 8.dp)
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                                 ) {
                                     ProfilePicture(url = userProfile?.picture, size = 32)
                                     Spacer(Modifier.width(8.dp))
-                                    Column {
-                                        Text(
-                                            text = userProfile?.displayString ?: "You",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Medium,
-                                            maxLines = 1
-                                        )
+                                    Text(
+                                        text = userProfile?.displayString ?: "You",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    // "Preview" badge on the right, matching iOS layout.
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = MaterialTheme.colorScheme.surfaceContainerHigh
+                                    ) {
                                         Text(
                                             text = "Preview",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                         )
                                     }
                                 }
+                                // Materialise @mentions to nostr:nprofile URIs so RichContent can
+                                // colour them as profile links (otherwise the @DisplayName is just
+                                // plain text and renders in the default color).
+                                val previewContent = remember(content, mentions) {
+                                    viewModel.previewMaterializedContent()
+                                }
                                 RichContent(
-                                    content = content.text,
+                                    content = previewContent,
                                     emojiMap = resolvedEmojis,
                                     eventRepo = eventRepo
                                 )
@@ -1225,7 +1243,7 @@ fun ComposeScreen(
             }
 
             // Bottom bar — always visible above keyboard (shared by both modes)
-            Column(modifier = Modifier.padding(horizontal = 16.dp).padding(vertical = 12.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 8.dp)) {
                     if (countdownSeconds != null) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1267,6 +1285,10 @@ fun ComposeScreen(
                         }
                     }
                 } else {
+                    // Publish is disabled until the post has at least one character of text
+                    // OR at least one uploaded attachment. Prevents accidental empty posts and
+                    // matches the iOS composer's send-button gating.
+                    val hasContent = content.text.isNotBlank() || uploadedUrls.isNotEmpty()
                     Button(
                         onClick = {
                             viewModel.publish(
@@ -1282,7 +1304,7 @@ fun ComposeScreen(
                                 resolvedEmojis = resolvedEmojis
                             )
                         },
-                        enabled = !publishing && !isMiningBusy,
+                        enabled = !publishing && !isMiningBusy && hasContent,
                         modifier = Modifier.fillMaxWidth().height(44.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) {
@@ -1414,13 +1436,165 @@ private fun MentionCandidateRow(
             }
         }
         if (candidate.isContact) {
-            Text(
-                text = "Following",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary
-            )
+            // Muted "Following" pill — matches iOS (grey, not primary tint).
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest
+            ) {
+                Text(
+                    text = "Following",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                )
+            }
         }
     }
+}
+
+/** Punctuation characters allowed to abut a pill without forcing a space in between. */
+private val MENTION_TRAILING_PUNCTUATION = setOf(
+    '.', ',', '!', '?', ';', ':', ')', ']', '}', '"', '\'', '’', '…', '/', '-', '\n'
+)
+
+/**
+ * Rejects the deletion of the single space character sitting between two adjacent pills.
+ * Removing that space would leave the pills visually collided and risks downstream parsers
+ * mis-tokenising the published URIs. The deletion is silently dropped; the cursor lands at
+ * the start of the space so the user understands their backspace was absorbed.
+ */
+private fun preventPillCollision(
+    old: TextFieldValue,
+    new: TextFieldValue,
+    mentions: List<com.wisp.app.viewmodel.Mention>
+): TextFieldValue {
+    if (mentions.size < 2) return new
+    if (old.text == new.text) return new
+    if (new.text.length != old.text.length - 1) return new // not a single-char deletion
+
+    val oldText = old.text
+    val newText = new.text
+    val maxPrefix = minOf(oldText.length, newText.length)
+    var prefix = 0
+    while (prefix < maxPrefix && oldText[prefix] == newText[prefix]) prefix++
+    if (prefix >= oldText.length) return new
+
+    val deletedChar = oldText[prefix]
+    if (deletedChar != ' ') return new
+
+    val pillBefore = mentions.any { it.end == prefix }
+    val pillAfter = mentions.any { it.start == prefix + 1 }
+    if (!pillBefore || !pillAfter) return new
+
+    // Reject — keep old text, drop cursor at the space so the user sees no movement happened.
+    return old.copy(selection = TextRange(prefix))
+}
+
+/**
+ * When the user inserts a non-punctuation character (or pastes a string starting with one)
+ * immediately after a pill's end, slip a space in between so the pill and the new text stay
+ * visually distinct and downstream parsers see the URI as a complete token. Punctuation
+ * (commas, periods, etc.) is allowed to abut so users can still write "@Alice, hi".
+ */
+private fun enforceMentionTrailingSpace(
+    old: TextFieldValue,
+    new: TextFieldValue,
+    mentions: List<com.wisp.app.viewmodel.Mention>
+): TextFieldValue {
+    if (mentions.isEmpty()) return new
+    if (new.text.length <= old.text.length) return new
+
+    val oldText = old.text
+    val newText = new.text
+    val maxPrefix = minOf(oldText.length, newText.length)
+    var prefix = 0
+    while (prefix < maxPrefix && oldText[prefix] == newText[prefix]) prefix++
+    var suffix = 0
+    val maxSuffix = minOf(oldText.length - prefix, newText.length - prefix)
+    while (suffix < maxSuffix &&
+        oldText[oldText.length - 1 - suffix] == newText[newText.length - 1 - suffix]) suffix++
+
+    val editStart = prefix
+    val oldEditEnd = oldText.length - suffix
+    val newEditEnd = newText.length - suffix
+    // Only handle pure insertions; replacements / deletions are out of scope here.
+    if (oldEditEnd != editStart) return new
+    if (newEditEnd <= editStart) return new
+
+    val firstInsertedChar = newText[editStart]
+    if (firstInsertedChar.isWhitespace()) return new
+    if (firstInsertedChar in MENTION_TRAILING_PUNCTUATION) return new
+
+    val abuts = mentions.any { it.end == editStart }
+    if (!abuts) return new
+
+    val spaced = newText.substring(0, editStart) + " " + newText.substring(editStart)
+    val newCursor = (new.selection.start + 1).coerceAtMost(spaced.length)
+    return TextFieldValue(spaced, TextRange(newCursor))
+}
+
+/**
+ * Handles atomic editing of @mention pills. If the edit overlaps a tracked mention:
+ * - Deletion inside pill → delete entire pill, cursor at pill start
+ * - Typing inside pill → reject edit, snap cursor to pill end
+ * - Cursor move into pill → snap to pill end (or start if moving left)
+ * Otherwise returns [new] unchanged.
+ */
+private fun handleAtomicMentionEdit(
+    old: TextFieldValue,
+    new: TextFieldValue,
+    mentions: List<com.wisp.app.viewmodel.Mention>
+): TextFieldValue {
+    if (mentions.isEmpty()) return new
+
+    // Pure cursor/selection move (no text change)
+    if (old.text == new.text) {
+        val newCursor = if (new.selection.collapsed) new.selection.start else return new
+        val oldCursor = if (old.selection.collapsed) old.selection.start else newCursor
+        for (m in mentions) {
+            if (newCursor > m.start && newCursor < m.end) {
+                // Snap: moving right snaps to end, moving left snaps to start
+                val snapTo = if (newCursor >= oldCursor) m.end else m.start
+                return old.copy(selection = TextRange(snapTo))
+            }
+        }
+        return new
+    }
+
+    // Text changed: find edit range
+    val oldText = old.text
+    val newText = new.text
+    if (oldText == newText) return new
+
+    val maxPrefix = minOf(oldText.length, newText.length)
+    var prefix = 0
+    while (prefix < maxPrefix && oldText[prefix] == newText[prefix]) prefix++
+    var suffix = 0
+    val maxSuffix = minOf(oldText.length - prefix, newText.length - prefix)
+    while (suffix < maxSuffix &&
+        oldText[oldText.length - 1 - suffix] == newText[newText.length - 1 - suffix]) suffix++
+    val editStart = prefix
+    val oldEditEnd = oldText.length - suffix  // exclusive end in old text
+    val newEditEnd = newText.length - suffix  // exclusive end in new text
+
+    for (m in mentions) {
+        // Check if this edit overlaps the mention range in old text
+        if (editStart >= m.end || oldEditEnd <= m.start) continue
+
+        val isDeletion = newEditEnd == editStart // pure deletion (no insertion)
+        val isInsideOnly = editStart >= m.start && oldEditEnd <= m.end
+
+        if (isDeletion && isInsideOnly) {
+            // Backspace/delete inside pill → remove entire pill
+            val newT = oldText.removeRange(m.start, m.end)
+            return TextFieldValue(newT, TextRange(m.start))
+        }
+
+        // Any other overlap (typing inside, selection spanning boundary) → reject edit
+        return old.copy(selection = TextRange(m.end))
+    }
+
+    return new
 }
 
 @OptIn(ExperimentalFoundationApi::class)

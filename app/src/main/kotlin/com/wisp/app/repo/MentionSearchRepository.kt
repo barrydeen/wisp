@@ -60,7 +60,7 @@ class MentionSearchRepository(
             return
         }
 
-        val seenPubkeys = contactResults.map { it.profile.pubkey }.toMutableSet()
+        val seenPubkeys = contactResults.map { it.profile.pubkey.lowercase() }.toMutableSet()
         var localResults = contactResults
 
         val persistence = eventPersistence
@@ -68,7 +68,7 @@ class MentionSearchRepository(
             val remaining = 5 - contactResults.size
             val events = persistence.searchProfiles(query, limit = 500)
             val dbResults = events.mapNotNull { event ->
-                if (!seenPubkeys.add(event.pubkey)) return@mapNotNull null
+                if (!seenPubkeys.add(event.pubkey.lowercase())) return@mapNotNull null
                 val profile = ProfileData.fromEvent(event) ?: return@mapNotNull null
                 val nameMatch = profile.name?.lowercase()?.contains(lowerQuery) == true
                 val displayMatch = profile.displayName?.lowercase()?.contains(lowerQuery) == true
@@ -76,7 +76,7 @@ class MentionSearchRepository(
                 MentionCandidate(profile, isContact = false)
             }.take(remaining)
             localResults = contactResults + dbResults
-            seenPubkeys.addAll(dbResults.map { it.profile.pubkey })
+            seenPubkeys.addAll(dbResults.map { it.profile.pubkey.lowercase() })
         }
 
         _candidates.value = localResults
@@ -93,7 +93,7 @@ class MentionSearchRepository(
                 relayPool.relayEvents.collect { ev ->
                     if (ev.subscriptionId != subId) return@collect
                     val profile = ProfileData.fromEvent(ev.event) ?: return@collect
-                    if (seenPubkeys.add(profile.pubkey)) {
+                    if (seenPubkeys.add(profile.pubkey.lowercase())) {
                         relayResults += MentionCandidate(profile, isContact = false)
                         _candidates.value = capturedLocal + relayResults
                     }

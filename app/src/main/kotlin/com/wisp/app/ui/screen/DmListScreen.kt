@@ -127,11 +127,16 @@ fun DmListScreen(
         },
         floatingActionButton = {
             Box {
+                // Match the FeedScreen new-post FAB exactly: same CircleShape and primary
+                // container, so both FABs land at the same XY (Scaffold's bottom-end slot)
+                // with identical visual geometry. The DM-tab action is "new group DM" —
+                // GroupAdd communicates that better than a send glyph.
                 FloatingActionButton(
                     onClick = {
                         if (selectedTab == 0) onNewGroupDm()
                         else showFabMenu = true
                     },
+                    shape = CircleShape,
                     containerColor = MaterialTheme.colorScheme.primary
                 ) {
                     if (selectedTab == 0) {
