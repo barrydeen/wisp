@@ -776,6 +776,12 @@
     <string name="wallet_spark_sdk">SDK v%s</string>
     <string name="wallet_not_supported">Not supported by your wallet</string>
     <string name="wallet_creating_invoice">Creating invoice…</string>
+    <string name="wallet_receive_invoice_tab">Invoice</string>
+    <string name="wallet_receive_address_tab">Lightning Address</string>
+    <string name="wallet_receive_amount_label">AMOUNT</string>
+    <string name="wallet_receive_note_label">NOTE (OPTIONAL)</string>
+    <string name="wallet_receive_note_placeholder">For coffee, etc.</string>
+    <string name="wallet_receive_create_invoice">Create invoice</string>
     <string name="wallet_backup_missing_title">Wallet backup not found</string>
     <string name="wallet_backup_missing_body">Your wallet recovery phrase is not backed up to any relay. If you lose this device, you could lose your funds.</string>
     <string name="wallet_backup_now">Backup Now</string>
