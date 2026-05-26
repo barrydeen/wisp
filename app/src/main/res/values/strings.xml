@@ -734,6 +734,8 @@
     <string name="wallet_spark_subtitle">Self-custody, embedded. Use your default wallet or restore from seed/relays.</string>
     <string name="wallet_nwc_title">Nostr Wallet Connect</string>
     <string name="wallet_nwc_subtitle">Paste a connection string from Alby, Zeus, Rizful, Minibits, etc.</string>
+    <string name="wallet_nwc_paste_prompt">Paste the connection string from your NWC-compatible wallet.</string>
+    <string name="wallet_nwc_connection_hint">Connection string starts with nostr+walletconnect://</string>
     <string name="spark_setup_subtitle">Self-custodial Lightning, powered by Spark and Breez.</string>
     <string name="wallet_create_title">Create new wallet</string>
     <string name="wallet_create_subtitle">Generate a fresh 12-word seed phrase</string>
@@ -781,8 +783,8 @@
     <string name="wallet_seed_not_viewed_body">You haven\'t viewed your recovery phrase yet. Write it down to protect your funds.</string>
     <string name="wallet_view_seed">View Recovery Phrase</string>
     <string name="wallet_powered_by">Powered by</string>
-    <string name="wallet_welcome_title">Your default wallet is secured by your key</string>
-    <string name="wallet_welcome_body">Derived from your Nostr key — restores on any device when you sign in. Tap to also save your seed phrase as a backup.</string>
+    <string name="wallet_welcome_title">Secured by your Nostr key</string>
+    <string name="wallet_welcome_body">Restores on any device when you sign in. Tap to also save your seed phrase as a backup.</string>
     <string name="wallet_recent">Recent</string>
     <string name="wallet_view_all">View all</string>
 

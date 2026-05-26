@@ -231,8 +231,12 @@ fun PostCard(
         }
     }
 
+    // Wrap content + divider so the divider can run full-width while the
+    // content keeps its 16dp horizontal padding. Tap-to-open lives on the
+    // content Column so the (tiny) divider area isn't tappable.
+    Column(modifier = modifier.fillMaxWidth()) {
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .then(if (onNoteClick != null) Modifier.pointerInput(onNoteClick) {
                 awaitEachGesture {
@@ -882,9 +886,13 @@ fun PostCard(
                 }
             }
         }
-        if (showDivider) {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
-        }
+    }
+    if (showDivider) {
+        // Full-bleed inter-post separator — sits outside the content
+        // Column's 16dp horizontal padding so it spans edge to edge,
+        // matching the iOS feed.
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
+    }
     }
 }
 
@@ -1259,11 +1267,14 @@ internal fun TopZapperBanner(
                 color = orange
             )
 
-            // Message (if present)
+            // Message (if present) — image URLs collapse to "[image]"
+            // since the banner only has room for a single line and a
+            // dumped URL crowds out the sats amount. Full image renders
+            // inline in the engagement drawer below.
             if (message.isNotBlank()) {
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = message,
+                    text = com.wisp.app.ui.util.ZapMessageImage.previewText(message),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     maxLines = 1,

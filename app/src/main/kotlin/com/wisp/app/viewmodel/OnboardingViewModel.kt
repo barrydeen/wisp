@@ -288,7 +288,8 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
             // default wallet's mnemonic is derived from the nsec, and Breez
             // remembers its lightning address registration server-side, so
             // there's nothing extra to persist on relays.
-            if (sparkRepo != null && !sparkRepo.isDefaultWallet()) {
+            val privkey = keyRepo.getKeypair()?.privkey
+            if (sparkRepo != null && privkey != null && !sparkRepo.isDefaultWallet(privkey)) {
                 val mnemonic = sparkRepo.getMnemonic()
                 if (mnemonic != null) {
                     viewModelScope.launch {

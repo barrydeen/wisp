@@ -270,8 +270,43 @@ class WalletViewModel(
     val backupMissing: StateFlow<Boolean> = _backupMissing
 
     /** True for the nsec-derived default wallet — drives copy/visibility tweaks. */
-    private val _isDefaultWallet = MutableStateFlow(sparkRepo.isDefaultWallet())
+    private val _isDefaultWallet = MutableStateFlow(computeIsDefaultWallet())
     val isDefaultWallet: StateFlow<Boolean> = _isDefaultWallet
+
+    /**
+     * Resolve the active keypair and ask [sparkRepo] whether the stored
+     * mnemonic matches the deterministic nsec derivation. False for
+     * watch-only / signed-out accounts.
+     */
+    private fun computeIsDefaultWallet(): Boolean {
+        val privkey = keyRepo.getKeypair()?.privkey ?: return false
+        return sparkRepo.isDefaultWallet(privkey)
+    }
+
+    /**
+     * Wipe per-wallet display state so swapping wallets (Spark mnemonic
+     * restored from backup, default-wallet generation, paste a new
+     * mnemonic, disconnect, delete) doesn't carry the previous wallet's
+     * transactions / pagination / lightning address into the new
+     * wallet's UI. Mirrors iOS `WalletStore.clearDisplayState`.
+     *
+     * The repo-side `_balance` flow is cleared inside `clearMnemonic` /
+     * by the new wallet's first balance fetch — only ViewModel-side
+     * display state needs explicit clearing here.
+     */
+    private fun clearWalletDisplayState() {
+        _transactions.value = emptyList()
+        _transactionsError.value = null
+        _hasMoreTransactions.value = true
+        _lightningAddress.value = null
+        _lightningAddressError.value = null
+        _lightningAddressLoading.value = false
+        // Reset the seed-backup ack flag — sparkRepo.saveMnemonic clears
+        // the underlying prefs key, but the ViewModel-side StateFlow
+        // would otherwise stay at the prior wallet's acknowledged value
+        // until the next refreshState() call.
+        _seedBackupAcked.value = false
+    }
 
     /**
      * Set after [deleteWallet] so a subsequent [navigateHome] doesn't
@@ -360,7 +395,7 @@ class WalletViewModel(
         if (page is WalletPage.Settings
             && _walletMode.value == WalletMode.SPARK
             && keyRepo.isLoggedIn()
-            && !sparkRepo.isDefaultWallet()
+            && !computeIsDefaultWallet()
         ) {
             checkRelayBackupStatuses()
         }
@@ -400,6 +435,7 @@ class WalletViewModel(
             sparkRepo.disconnect()
             sparkRepo.clearMnemonic()
         }
+        clearWalletDisplayState()
         startDefaultWallet()
     }
 
@@ -407,7 +443,11 @@ class WalletViewModel(
         val keypair = keyRepo.getKeypair() ?: return
         sparkRepo.generateDefaultFromPrivkey(keypair.privkey)
         _isDefaultWallet.value = true
-        _seedBackupAcked.value = true
+        // Don't auto-ack the seed backup here — iOS leaves it false so
+        // the "default wallet is secured by your key" welcome banner can
+        // render, and Android should match. The user dismisses it by
+        // tapping through to the seed view.
+        _seedBackupAcked.value = false
         skipAutoCreate = false
         walletModeRepo.setAutoCreateSkipped(false)
         // Show SparkSetup's Connecting state instead of a brief ModeSelection flicker.
@@ -606,6 +646,7 @@ class WalletViewModel(
     // --- Spark Connection ---
 
     fun generateSparkWallet() {
+        clearWalletDisplayState()
         val mnemonic = sparkRepo.newMnemonic()
         sparkRepo.saveMnemonic(mnemonic)
         _isDefaultWallet.value = false
@@ -628,8 +669,13 @@ class WalletViewModel(
             return
         }
         Log.d("WalletBackup", "restoreSparkWallet: saving and connecting")
+        clearWalletDisplayState()
         sparkRepo.saveMnemonic(trimmed)
-        _isDefaultWallet.value = false
+        // Compute isDefaultWallet from the restored mnemonic rather than
+        // hard-coding false — a user restoring their nsec-derived default
+        // via NIP-78 should still light up the "default wallet" surface
+        // (and skip the non-default backup nag).
+        _isDefaultWallet.value = computeIsDefaultWallet()
         skipAutoCreate = false
         walletModeRepo.setAutoCreateSkipped(false)
         connectSparkWallet()
@@ -654,7 +700,7 @@ class WalletViewModel(
         viewModelScope.launch {
             sparkRepo.isConnected.first { it }
             fetchLightningAddress()
-            if (keyRepo.isLoggedIn() && !sparkRepo.isDefaultWallet()) {
+            if (keyRepo.isLoggedIn() && !computeIsDefaultWallet()) {
                 checkRelayBackupStatuses()
             }
         }
@@ -751,7 +797,7 @@ class WalletViewModel(
         // seed phrase, so we require the typed DELETE confirmation. Default
         // wallets re-derive from the nsec on demand, so a tap is enough.
         if (_walletMode.value == WalletMode.SPARK
-            && !sparkRepo.isDefaultWallet()
+            && !computeIsDefaultWallet()
             && _deleteConfirmText.value != "DELETE"
         ) return
 
@@ -778,7 +824,7 @@ class WalletViewModel(
         _walletState.value = WalletState.NotConnected
         _connectionString.value = ""
         _statusLines.value = emptyList()
-        _lightningAddress.value = null
+        clearWalletDisplayState()
         _deleteConfirmText.value = ""
         _isDefaultWallet.value = false
 
@@ -823,7 +869,7 @@ class WalletViewModel(
         _walletState.value = WalletState.NotConnected
         _connectionString.value = ""
         _statusLines.value = emptyList()
-        _lightningAddress.value = null
+        clearWalletDisplayState()
         navigateHome()
     }
 
@@ -847,7 +893,7 @@ class WalletViewModel(
         _walletState.value = WalletState.NotConnected
         _connectionString.value = ""
         _statusLines.value = emptyList()
-        _lightningAddress.value = null
+        clearWalletDisplayState()
     }
 
     fun updateDeleteConfirmText(value: String) {
@@ -856,7 +902,7 @@ class WalletViewModel(
 
     fun refreshState() {
         _walletMode.value = walletModeRepo.getMode()
-        _isDefaultWallet.value = sparkRepo.isDefaultWallet()
+        _isDefaultWallet.value = computeIsDefaultWallet()
         _seedBackupAcked.value = sparkRepo.isSeedBackupAcknowledged()
         skipAutoCreate = walletModeRepo.isAutoCreateSkipped()
         val mode = _walletMode.value
