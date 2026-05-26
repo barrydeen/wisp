@@ -772,25 +772,25 @@ existing wallet have no obvious entry point.
 
 **Restructure per §2.6**:
 
-- [ ] Replace the top-level layout with the two-row picker (Spark /
+- [x] Replace the top-level layout with the two-row picker (Spark /
       NWC) described in §2.6 Screen 1.
-- [ ] Add a Spark sub-screen matching §2.6 Screen 2 with four option
+- [x] Add a Spark sub-screen matching §2.6 Screen 2 with four option
       rows (or three when `hasKeypair() == false`).
-- [ ] Move the `maybeAutoCreateDefaultWallet()` entry point to the new
+- [x] Move the `maybeAutoCreateDefaultWallet()` entry point to the new
       "Use my default wallet" row at the top of the Spark sub-screen.
       Ignore `skipAutoCreate` on explicit tap.
-- [ ] Add the string resources from §2.6 to `strings.xml`.
-- [ ] Verify the existing flows still wire through:
+- [x] Add the string resources from §2.6 to `strings.xml`.
+- [x] Verify the existing flows still wire through:
       - Create new wallet → existing BIP39-generate + confirm-backup flow
       - Restore from seed phrase → existing 12-word entry flow
       - Restore from relays → existing NIP-78 backup search flow
       - Nostr Wallet Connect → existing NWC paste-string flow
-- [ ] Disconnect flow on a default wallet says **"Switch Wallet"** and
+- [x] Disconnect flow on a default wallet says **"Switch Wallet"** and
       the body copy refers to the wallet as your *default wallet* —
       never "Wisp wallet" or "wisp wallet".
-- [ ] Settings section header renamed from "Danger Zone" to
+- [x] Settings section header renamed from "Danger Zone" to
       **"Disconnect Wallet"** (per §4.8).
-- [ ] Dashboard welcome banner for default wallets per §3.5 (blue/accent
+- [x] Dashboard welcome banner for default wallets per §3.5 (blue/accent
       tint, key icon, "secured by your key" copy) — separate from the
       existing amber warning banner for custom wallets.
 
