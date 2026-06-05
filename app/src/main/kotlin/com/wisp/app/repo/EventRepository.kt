@@ -313,7 +313,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     private val WOT_EXEMPT_KINDS = intArrayOf(0, 3, 4, 10002, 10050, 1059, 13, 14)
 
-    private fun isWotFiltered(pubkey: String, kind: Int): Boolean {
+    fun isWotFiltered(pubkey: String, kind: Int): Boolean {
         if (safetyPrefs?.wotFilterEnabled?.value != true) return false
         val netRepo = extendedNetworkRepo ?: return false
         if (!netRepo.isNetworkReady()) return false
