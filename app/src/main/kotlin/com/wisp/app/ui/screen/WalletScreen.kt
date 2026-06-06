@@ -2319,7 +2319,11 @@ private fun TransactionHistoryContent(
             }
             else -> {
                 LazyColumn {
-                    items(transactions) { tx ->
+                    // Key by paymentHash + direction so a self-send's two legs
+                    // (same hash, opposite type) keep distinct identities and
+                    // both render. The list is deduped by (paymentHash, type)
+                    // upstream, so these keys are unique.
+                    items(transactions, key = { "${it.paymentHash}|${it.type}" }) { tx ->
                         TransactionRow(tx, profileLookup, displayMode)
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp),

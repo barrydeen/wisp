@@ -1249,7 +1249,7 @@ class WalletViewModel(
             }
             mapped.fold(
                 onSuccess = { txs ->
-                    _transactions.value = txs
+                    _transactions.value = dedupTransactions(txs)
                     _hasMoreTransactions.value = txs.size >= 50
                     requestMissingProfiles(txs)
                 },
@@ -1266,12 +1266,28 @@ class WalletViewModel(
                     enrichTransactions(current, zapMaps)
                 }
                 if (reEnriched != current) {
-                    _transactions.value = reEnriched
+                    _transactions.value = dedupTransactions(reEnriched)
                     requestMissingProfiles(reEnriched)
                 }
             }
         }
     }
+
+    /**
+     * Collapse exact backend duplicates and order transactions deterministically.
+     *
+     * A self-send surfaces as two records sharing one payment hash — one
+     * outgoing, one incoming. Both legs must survive (we only drop repeats of
+     * the same (paymentHash, type)), and on a timestamp tie the incoming
+     * "received" leg sorts above its outgoing "sent" leg so the conclusion of
+     * the payment reads on top. Mirrors iOS WalletStore.dedupTransactions.
+     */
+    private fun dedupTransactions(txs: List<WalletTransaction>): List<WalletTransaction> =
+        txs.distinctBy { it.paymentHash to it.type }
+            .sortedWith(
+                compareByDescending<WalletTransaction> { it.settledAt ?: it.createdAt }
+                    .thenBy { if (it.type == "incoming") 0 else 1 }
+            )
 
     private fun enrichTransactions(
         txs: List<WalletTransaction>,
@@ -1325,7 +1341,7 @@ class WalletViewModel(
             }
             mapped.fold(
                 onSuccess = { txs ->
-                    _transactions.value = _transactions.value + txs
+                    _transactions.value = dedupTransactions(_transactions.value + txs)
                     _hasMoreTransactions.value = txs.size >= 50
                     val missing = txs.mapNotNull { it.counterpartyPubkey }
                         .distinct()
