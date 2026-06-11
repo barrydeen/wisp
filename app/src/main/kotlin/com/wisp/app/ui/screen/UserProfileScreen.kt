@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import androidx.compose.material.icons.outlined.Sell
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.toNpub
 import com.wisp.app.ui.component.Nip05Badge
@@ -131,8 +132,6 @@ import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 private sealed class ProfileZapStatus {
     object Idle : ProfileZapStatus()
@@ -357,11 +356,27 @@ fun UserProfileScreen(
     var showQrDialog by remember { mutableStateOf(false) }
     var showAddToListDialog by remember { mutableStateOf(false) }
 
+    // Decoded CLINK offer advertised on the profile, when present and valid.
+    val profileClinkOffer = remember(profile?.clinkOffer) {
+        profile?.clinkOffer?.let { com.wisp.app.nostr.Noffer.decodeOrNull(it) }
+    }
+    var showOfferPaySheet by remember { mutableStateOf(false) }
+
+    if (showOfferPaySheet && profileClinkOffer != null) {
+        com.wisp.app.ui.component.NofferPaySheet(
+            noffer = profileClinkOffer,
+            recipientProfile = profile,
+            onPayInvoice = onPayInvoice,
+            onDismiss = { showOfferPaySheet = false }
+        )
+    }
+
     if (showQrDialog) {
         ProfileQrSheet(
             pubkeyHex = profilePubkey,
             avatarUrl = profile?.picture,
             lud16 = profile?.lud16,
+            clinkOffer = profile?.clinkOffer,
             onDismiss = { showQrDialog = false }
         )
     }
@@ -471,23 +486,29 @@ fun UserProfileScreen(
                         onDismissRequest = { menuExpanded = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.profile_copy_json)) },
+                            text = { Text("Share Profile") },
                             onClick = {
                                 menuExpanded = false
-                                profile?.let { p ->
-                                    val json = buildJsonObject {
-                                        p.name?.let { put("name", it) }
-                                        p.displayName?.let { put("display_name", it) }
-                                        p.about?.let { put("about", it) }
-                                        p.picture?.let { put("picture", it) }
-                                        p.banner?.let { put("banner", it) }
-                                        p.nip05?.let { put("nip05", it) }
-                                        p.lud16?.let { put("lud16", it) }
-                                    }.toString()
+                                try {
+                                    val npub = profilePubkey.toNpub()
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(android.content.Intent.EXTRA_TEXT, "https://njump.me/$npub")
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(intent, null))
+                                } catch (_: Exception) {}
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Copy npub") },
+                            onClick = {
+                                menuExpanded = false
+                                try {
+                                    val npub = profilePubkey.toNpub()
                                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("Profile JSON", json))
-                                    Toast.makeText(context, context.getString(R.string.profile_json_copied), Toast.LENGTH_SHORT).show()
-                                }
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("npub", npub))
+                                    Toast.makeText(context, "npub copied", Toast.LENGTH_SHORT).show()
+                                } catch (_: Exception) {}
                             }
                         )
                         if (!isOwnProfile) {
@@ -631,6 +652,7 @@ fun UserProfileScreen(
                     onNavigateToProfile = onNavigateToProfile,
                     onSendDm = onSendDm,
                     onZapClick = if (onZapProfile != null) { { showProfileZapDialog = true } } else null,
+                    onPayOffer = if (profileClinkOffer != null) { { showOfferPaySheet = true } } else null,
                     followingCount = followList.size,
                     followerCount = followers.size.takeIf { followers.isNotEmpty() },
                     followedBy = followedBy,
@@ -1275,6 +1297,7 @@ private fun ProfileHeader(
     onNavigateToProfile: ((String) -> Unit)? = null,
     onSendDm: (() -> Unit)? = null,
     onZapClick: (() -> Unit)? = null,
+    onPayOffer: (() -> Unit)? = null,
     followingCount: Int = 0,
     followerCount: Int? = null,
     followedBy: List<String> = emptyList(),
@@ -1384,6 +1407,21 @@ private fun ProfileHeader(
                                     modifier = Modifier.padding(10.dp)
                                 )
                             }
+                        }
+                    }
+                    if (onPayOffer != null) {
+                        Surface(
+                            onClick = onPayOffer,
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Sell,
+                                contentDescription = "Pay offer",
+                                tint = Color(0xFFFFC107),
+                                modifier = Modifier.padding(10.dp)
+                            )
                         }
                     }
                     // Follow circle button

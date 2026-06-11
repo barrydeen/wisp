@@ -749,7 +749,7 @@
     <string name="wallet_set_up_lightning">Set up your Lightning Address</string>
     <string name="wallet_send">Send</string>
     <string name="wallet_receive">Receive</string>
-    <string name="wallet_lightning_address_invoice">Lightning address or invoice</string>
+    <string name="wallet_lightning_address_invoice">Lightning address, invoice, or CLINK offer</string>
     <string name="wallet_paste">Paste</string>
     <string name="wallet_scan_qr">Scan QR</string>
     <string name="wallet_gallery">Gallery</string>
