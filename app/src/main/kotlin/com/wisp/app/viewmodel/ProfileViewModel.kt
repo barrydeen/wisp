@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.wisp.app.nostr.ClientMessage
 import com.wisp.app.nostr.Filter
 import com.wisp.app.nostr.LocalSigner
+import com.wisp.app.nostr.Noffer
 import com.wisp.app.nostr.NostrEvent
 import com.wisp.app.nostr.NostrSigner
 import com.wisp.app.relay.RelayPool
@@ -47,6 +48,9 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
     private val _lud16 = MutableStateFlow("")
     val lud16: StateFlow<String> = _lud16
 
+    private val _clinkOffer = MutableStateFlow("")
+    val clinkOffer: StateFlow<String> = _clinkOffer
+
     private val _publishing = MutableStateFlow(false)
     val publishing: StateFlow<Boolean> = _publishing
 
@@ -59,6 +63,7 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
     fun updateNip05(value: String) { _nip05.value = value }
     fun updateBanner(value: String) { _banner.value = value }
     fun updateLud16(value: String) { _lud16.value = value }
+    fun updateClinkOffer(value: String) { _clinkOffer.value = value }
 
     private val _uploading = MutableStateFlow<String?>(null)
     val uploading: StateFlow<String?> = _uploading
@@ -107,6 +112,7 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
             _nip05.value = profile.nip05 ?: ""
             _banner.value = profile.banner ?: ""
             _lud16.value = profile.lud16 ?: ""
+            _clinkOffer.value = profile.clinkOffer ?: ""
         }
 
         // Request fresh profile from relays
@@ -129,6 +135,7 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
                     _nip05.value = updated.nip05 ?: ""
                     _banner.value = updated.banner ?: ""
                     _lud16.value = updated.lud16 ?: ""
+                    _clinkOffer.value = updated.clinkOffer ?: ""
                 }
             }
         }
@@ -153,6 +160,9 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
                 if (_nip05.value.isNotBlank()) put("nip05", JsonPrimitive(_nip05.value))
                 if (_banner.value.isNotBlank()) put("banner", JsonPrimitive(_banner.value))
                 if (_lud16.value.isNotBlank()) put("lud16", JsonPrimitive(_lud16.value))
+                if (_clinkOffer.value.isNotBlank()) {
+                    put("clink_offer", JsonPrimitive(Noffer.stripNostrPrefix(_clinkOffer.value)))
+                }
             }.toString()
 
             viewModelScope.launch {

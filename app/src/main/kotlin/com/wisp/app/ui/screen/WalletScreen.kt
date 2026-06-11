@@ -1595,8 +1595,14 @@ private fun SendAmountContent(
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        // A noffer bech32 is far too long to show whole — ellipsize the middle.
+        val displayAddress = if (com.wisp.app.nostr.Noffer.isNofferString(address)) {
+            "${address.take(16)}…${address.takeLast(8)}"
+        } else {
+            address
+        }
         Text(
-            address,
+            displayAddress,
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface
         )
