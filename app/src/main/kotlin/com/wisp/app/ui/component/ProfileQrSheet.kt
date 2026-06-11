@@ -2,14 +2,19 @@ package com.wisp.app.ui.component
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -102,58 +107,68 @@ fun ProfileQrSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState
+        sheetState = sheetState,
+        // Full-height sheet matching NofferPaySheet, inset below the status
+        // bar so the drag handle clears the camera cutout.
+        modifier = Modifier
+            .fillMaxHeight()
+            .statusBarsPadding()
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(bottom = 32.dp)
         ) {
-            TabRow(
-                selectedTabIndex = pagerState.currentPage,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary,
-                divider = {}
+            // iOS-style segmented control: rounded container with a pill
+            // highlight on the selected segment.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                    .padding(4.dp)
             ) {
-                Tab(
+                SegmentedTab(
+                    label = "Nostr",
                     selected = pagerState.currentPage == 0,
-                    onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
-                    text = { Text("Nostr") },
-                    icon = { Icon(Icons.Outlined.Person, null, modifier = Modifier.size(18.dp)) }
+                    modifier = Modifier.weight(1f),
+                    onClick = { scope.launch { pagerState.animateScrollToPage(0) } }
                 )
                 if (hasPayment) {
-                    Tab(
+                    SegmentedTab(
+                        label = "Lightning",
                         selected = pagerState.currentPage == lightningPage,
-                        onClick = { scope.launch { pagerState.animateScrollToPage(lightningPage) } },
-                        text = { Text("Lightning") },
-                        icon = {
-                            if (useZapBolt) {
-                                Icon(painterResource(R.drawable.ic_bolt), null, modifier = Modifier.size(18.dp))
-                            } else {
-                                Icon(Icons.Outlined.CurrencyBitcoin, null, modifier = Modifier.size(18.dp))
-                            }
-                        }
+                        modifier = Modifier.weight(1f),
+                        onClick = { scope.launch { pagerState.animateScrollToPage(lightningPage) } }
                     )
                 }
-                Tab(
+                SegmentedTab(
+                    label = "Scan",
+                    icon = { Icon(Icons.Outlined.QrCodeScanner, null, modifier = Modifier.size(16.dp)) },
                     selected = pagerState.currentPage == scanPage,
-                    onClick = { scope.launch { pagerState.animateScrollToPage(scanPage) } },
-                    text = { Text("Scan") },
-                    icon = { Icon(Icons.Outlined.QrCodeScanner, null, modifier = Modifier.size(18.dp)) }
+                    modifier = Modifier.weight(1f),
+                    onClick = { scope.launch { pagerState.animateScrollToPage(scanPage) } }
                 )
             }
 
             Spacer(Modifier.height(16.dp))
 
+            // Fill the remaining sheet height and top-align every page so the
+            // pager doesn't resize/re-center when pages of different heights
+            // compose in — that's what made the content shift on tab change.
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxWidth()
+                verticalAlignment = Alignment.Top,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
             ) { page ->
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .fillMaxSize()
                         .padding(horizontal = 24.dp)
                 ) {
                     when (page) {
@@ -226,27 +241,35 @@ fun ProfileQrSheet(
                                         contentDescription = if (showOffer) "CLINK offer QR Code" else "Lightning QR Code",
                                         modifier = Modifier.matchParentSize()
                                     )
+                                    // Avatar in the QR center, matching iOS's
+                                    // qrWithCenterAvatar and the Nostr pane.
                                     Box(
-                                        contentAlignment = Alignment.Center,
                                         modifier = Modifier
                                             .size(44.dp)
                                             .clip(CircleShape)
                                             .background(androidx.compose.ui.graphics.Color.White)
-                                            .padding(4.dp)
+                                            .padding(3.dp)
                                     ) {
-                                        if (useZapBolt) {
+                                        if (avatarUrl != null) {
+                                            AsyncImage(
+                                                model = avatarUrl,
+                                                contentDescription = "Avatar",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.matchParentSize().clip(CircleShape)
+                                            )
+                                        } else if (useZapBolt) {
                                             Icon(
                                                 painter = painterResource(R.drawable.ic_bolt),
                                                 contentDescription = "Lightning",
                                                 tint = WispThemeColors.zapColor,
-                                                modifier = Modifier.size(28.dp)
+                                                modifier = Modifier.matchParentSize().padding(4.dp)
                                             )
                                         } else {
                                             Icon(
                                                 Icons.Outlined.CurrencyBitcoin,
                                                 contentDescription = "Bitcoin",
                                                 tint = WispThemeColors.zapColor,
-                                                modifier = Modifier.size(28.dp)
+                                                modifier = Modifier.matchParentSize().padding(4.dp)
                                             )
                                         }
                                     }
@@ -307,6 +330,39 @@ fun ProfileQrSheet(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SegmentedTab(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    icon: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit
+) {
+    Row(
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .clip(RoundedCornerShape(22.dp))
+            .background(
+                if (selected) MaterialTheme.colorScheme.surfaceVariant
+                else androidx.compose.ui.graphics.Color.Transparent
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp)
+    ) {
+        if (icon != null) {
+            icon()
+            Spacer(Modifier.width(6.dp))
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

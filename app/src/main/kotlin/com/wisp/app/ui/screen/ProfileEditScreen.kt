@@ -3,8 +3,14 @@ package com.wisp.app.ui.screen
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,7 +25,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,14 +44,20 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
+import coil3.compose.AsyncImage
 import com.wisp.app.R
 import com.wisp.app.relay.RelayPool
 import com.wisp.app.ui.component.NsecPasteGuard
@@ -69,6 +85,7 @@ fun ProfileEditScreen(
     val error by viewModel.error.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var advancedExpanded by remember { mutableStateOf(false) }
 
     @Composable
     fun Modifier.scrollOnFocus(): Modifier {
@@ -110,10 +127,90 @@ fun ProfileEditScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
                 .verticalScroll(rememberScrollState())
                 .imePadding()
         ) {
+            // Tappable banner + avatar preview, matching iOS — tap either to
+            // pick a new image from the gallery.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(140.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable(enabled = uploading == null) {
+                        bannerPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+            ) {
+                if (banner.isNotBlank()) {
+                    AsyncImage(
+                        model = banner,
+                        contentDescription = stringResource(R.string.cd_upload_banner),
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                if (uploading != null && uploading!!.contains("banner")) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(28.dp).align(Alignment.Center),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        Icons.Outlined.PhotoCamera,
+                        contentDescription = stringResource(R.string.cd_upload_banner),
+                        tint = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(32.dp)
+                            .background(Color.Black.copy(alpha = 0.35f), CircleShape)
+                            .padding(6.dp)
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .padding(start = 16.dp)
+                    .offset(y = (-32).dp)
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .border(2.dp, MaterialTheme.colorScheme.background, CircleShape)
+                    .clickable(enabled = uploading == null) {
+                        avatarPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+            ) {
+                if (picture.isNotBlank()) {
+                    AsyncImage(
+                        model = picture,
+                        contentDescription = stringResource(R.string.cd_upload_avatar),
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.matchParentSize().clip(CircleShape)
+                    )
+                }
+                if (uploading != null && uploading!!.contains("avatar")) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp).align(Alignment.Center),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        Icons.Outlined.PhotoCamera,
+                        contentDescription = stringResource(R.string.cd_upload_avatar),
+                        tint = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(26.dp)
+                            .background(Color.Black.copy(alpha = 0.35f), CircleShape)
+                            .padding(5.dp)
+                    )
+                }
+            }
+
+            Column(modifier = Modifier.padding(horizontal = 16.dp).offset(y = (-16).dp)) {
             OutlinedTextField(
                 value = name,
                 onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(name, new)) viewModel.updateName(new) },
@@ -130,60 +227,6 @@ fun ProfileEditScreen(
                 modifier = Modifier.fillMaxWidth().scrollOnFocus()
             )
             Spacer(Modifier.height(12.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = picture,
-                    onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(picture, new)) viewModel.updatePicture(new) },
-                    label = { Text(stringResource(R.string.placeholder_profile_picture_url)) },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f).scrollOnFocus()
-                )
-                IconButton(
-                    onClick = {
-                        avatarPickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    },
-                    enabled = uploading == null
-                ) {
-                    if (uploading != null && uploading!!.contains("avatar")) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Outlined.FileUpload, contentDescription = stringResource(R.string.cd_upload_avatar))
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = banner,
-                    onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(banner, new)) viewModel.updateBanner(new) },
-                    label = { Text(stringResource(R.string.placeholder_banner_url)) },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f).scrollOnFocus()
-                )
-                IconButton(
-                    onClick = {
-                        bannerPickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    },
-                    enabled = uploading == null
-                ) {
-                    if (uploading != null && uploading!!.contains("banner")) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Outlined.FileUpload, contentDescription = stringResource(R.string.cd_upload_banner))
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = nip05,
                 onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(nip05, new)) viewModel.updateNip05(new) },
@@ -199,18 +242,98 @@ fun ProfileEditScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().scrollOnFocus()
             )
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = clinkOffer,
-                onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(clinkOffer, new)) viewModel.updateClinkOffer(new) },
-                label = { Text("CLINK offer") },
-                placeholder = { Text("noffer1…") },
-                singleLine = true,
-                supportingText = {
-                    Text("Self-custodial Lightning payments. Generate one with Zeus, ShockWallet or Lightning.Pub.")
-                },
-                modifier = Modifier.fillMaxWidth().scrollOnFocus()
-            )
+            Spacer(Modifier.height(16.dp))
+
+            // Advanced section — raw image URLs and the CLINK offer, matching iOS.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { advancedExpanded = !advancedExpanded }
+                    .padding(vertical = 4.dp)
+            ) {
+                Text(
+                    "Advanced",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.weight(1f))
+                Icon(
+                    if (advancedExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (advancedExpanded) "Collapse" else "Expand",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            AnimatedVisibility(visible = advancedExpanded) {
+                Column {
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedTextField(
+                            value = picture,
+                            onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(picture, new)) viewModel.updatePicture(new) },
+                            label = { Text(stringResource(R.string.placeholder_profile_picture_url)) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).scrollOnFocus()
+                        )
+                        IconButton(
+                            onClick = {
+                                avatarPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            enabled = uploading == null
+                        ) {
+                            if (uploading != null && uploading!!.contains("avatar")) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Outlined.FileUpload, contentDescription = stringResource(R.string.cd_upload_avatar))
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedTextField(
+                            value = banner,
+                            onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(banner, new)) viewModel.updateBanner(new) },
+                            label = { Text(stringResource(R.string.placeholder_banner_url)) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f).scrollOnFocus()
+                        )
+                        IconButton(
+                            onClick = {
+                                bannerPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            enabled = uploading == null
+                        ) {
+                            if (uploading != null && uploading!!.contains("banner")) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Outlined.FileUpload, contentDescription = stringResource(R.string.cd_upload_banner))
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = clinkOffer,
+                        onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(clinkOffer, new)) viewModel.updateClinkOffer(new) },
+                        label = { Text("CLINK offer") },
+                        placeholder = { Text("noffer1…") },
+                        singleLine = true,
+                        supportingText = {
+                            Text("Self-custodial Lightning payments. Generate one with Zeus, ShockWallet or Lightning.Pub.")
+                        },
+                        modifier = Modifier.fillMaxWidth().scrollOnFocus()
+                    )
+                }
+            }
             Spacer(Modifier.height(16.dp))
 
             error?.let {
@@ -226,6 +349,7 @@ fun ProfileEditScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (publishing) stringResource(R.string.onboarding_publishing) else stringResource(R.string.btn_save_profile))
+            }
             }
         }
     }
