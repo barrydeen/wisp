@@ -388,8 +388,14 @@ fun WalletScreen(
                     )
                     is WalletPage.SendAmount -> {
                         val page = currentPage as WalletPage.SendAmount
+                        // For a CLINK offer, show the service's profile name
+                        // instead of the raw noffer string.
+                        val nofferPayee = remember(page.address) {
+                            com.wisp.app.nostr.Noffer.decodeOrNull(page.address)
+                                ?.let { viewModel.getProfileData(it.pubkey)?.displayString }
+                        }
                         SendAmountContent(
-                            address = page.address,
+                            address = nofferPayee ?: page.address,
                             amount = viewModel.sendAmount.collectAsState().value,
                             error = viewModel.sendError.collectAsState().value,
                             isLoading = viewModel.isLoading.collectAsState().value,

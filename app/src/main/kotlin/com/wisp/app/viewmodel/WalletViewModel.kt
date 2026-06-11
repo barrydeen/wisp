@@ -1081,6 +1081,9 @@ class WalletViewModel(
                     _sendError.value = "Invalid CLINK offer"
                     return
                 }
+                // Resolve the offer service's profile so the send pages and
+                // transaction history can show the payee by name.
+                eventRepo.requestProfileIfMissing(noffer.pubkey)
                 if (noffer.pricing == NofferPricing.FIXED) {
                     // Amount is baked into the offer — go straight to the invoice.
                     resolveNofferInvoice(noffer, null)
@@ -1183,11 +1186,17 @@ class WalletViewModel(
                 }
                 val invoice = NofferClient.requestInvoice(noffer, keypair, amountSats)
                 val decoded = Bolt11.decode(invoice)
+                // Map the payment hash to the offer's service pubkey so the
+                // transaction history resolves the payee's profile, same as zaps.
+                decoded?.paymentHash?.let { ZapSender.persistRecipient(it, noffer.pubkey) }
+                val payeeName = eventRepo.getProfileData(noffer.pubkey)?.displayString
                 navigateTo(WalletPage.SendConfirm(
                     invoice = invoice,
                     amountSats = decoded?.amountSats ?: amountSats,
                     paymentHash = decoded?.paymentHash,
-                    description = decoded?.description ?: "CLINK offer"
+                    description = decoded?.description?.takeIf { it.isNotBlank() }
+                        ?: payeeName?.let { "CLINK offer to $it" }
+                        ?: "CLINK offer"
                 ))
             } catch (e: NofferException) {
                 _sendError.value = if (e.code == 5 && e.rangeMin != null && e.rangeMax != null) {

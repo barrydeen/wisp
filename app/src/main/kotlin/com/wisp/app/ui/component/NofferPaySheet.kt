@@ -10,10 +10,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -62,6 +65,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wisp.app.R
+import com.wisp.app.nostr.Bolt11
 import com.wisp.app.nostr.NofferData
 import com.wisp.app.nostr.NofferException
 import com.wisp.app.nostr.NofferPricing
@@ -70,6 +74,7 @@ import com.wisp.app.nostr.toNpub
 import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.KeyRepository
 import com.wisp.app.repo.NofferClient
+import com.wisp.app.repo.ZapSender
 import com.wisp.app.ui.theme.WispThemeColors
 import com.wisp.app.ui.util.AmountFormatter
 import kotlinx.coroutines.Dispatchers
@@ -248,6 +253,11 @@ fun NofferPaySheet(
                     keypair = keypair,
                     amountSats = if (needsAmountField) amountSats else null
                 )
+                // Map the payment hash to the offer's service pubkey so the
+                // wallet transaction history resolves the payee, same as zaps.
+                Bolt11.decode(bolt11)?.paymentHash?.let {
+                    ZapSender.persistRecipient(it, noffer.pubkey)
+                }
                 if (payInvoice(bolt11)) {
                     didPay = true
                 } else {
@@ -269,12 +279,17 @@ fun NofferPaySheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState
+        sheetState = sheetState,
+        // Full-height sheet to match the iOS pay modal — inset below the
+        // status bar so the drag handle clears the camera cutout.
+        modifier = Modifier
+            .fillMaxHeight()
+            .statusBarsPadding()
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp)
