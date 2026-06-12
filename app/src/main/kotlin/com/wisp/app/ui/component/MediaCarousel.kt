@@ -125,7 +125,17 @@ private fun CarouselTile(
                 )
             }
             is CarouselItem.Video -> {
-                if (placeholder != null) {
+                if (meta.image != null) {
+                    // Uploader-provided preview frame (NIP-92 imeta "image")
+                    AsyncImage(
+                        model = meta.image,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        placeholder = placeholder,
+                        error = placeholder,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else if (placeholder != null) {
                     Image(
                         painter = placeholder,
                         contentDescription = null,
