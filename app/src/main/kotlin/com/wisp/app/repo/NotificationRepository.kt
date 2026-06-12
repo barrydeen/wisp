@@ -238,6 +238,12 @@ class NotificationRepository(
             }
         }
 
+        // Score reply authors for spam *before* taking the lock. Feature
+        // extraction runs several regex passes over up to ten notes per
+        // author; doing it under the lock stalls every caller — including
+        // the main thread — long enough to trip the input-dispatch ANR.
+        if (event.kind == 1) warmSpamScore(event)
+
         synchronized(lock) {
             // Atomic check-then-put inside lock to prevent race when the same
             // event arrives from multiple relays concurrently (e.g. user-engage
@@ -688,32 +694,43 @@ class NotificationRepository(
         return mergeMention(event)
     }
 
+    /**
+     * Run the spam classifier for a reply author and cache the score.
+     * Called from addEvent before synchronized(lock) — classifier feature
+     * extraction is regex-heavy and must never run while holding the lock,
+     * or main-thread callers (markRead, getAllPostCardEventIds) block past
+     * the 5s input-dispatch deadline. SpamAuthorCache wraps LruCache, which
+     * is thread-safe; a concurrent duplicate scoring is harmless.
+     */
+    private fun warmSpamScore(event: NostrEvent) {
+        if (safetyPrefs?.spamFilterEnabled?.value != true) return
+        if (contactRepo?.isFollowing(event.pubkey) == true) return
+        if (safetyPrefs?.isSpamSafelisted(event.pubkey) == true) return
+        // Only replies are spam-scored (see mergeReply); skip quotes/mentions
+        if (event.tags.any { it.size >= 2 && it[0] == "q" }) return
+        if (Nip10.getReplyTargetWithHint(event) == null) return
+        val classifier = spamClassifier ?: return
+        val cache = spamAuthorCache ?: return
+        val repo = eventRepo ?: return
+        val notes = repo.getCachedEventsByAuthor(event.pubkey, 1, 10)
+        if (notes.isEmpty()) return
+        if (cache.get(event.pubkey, notes.size) != null) return
+        val inputs = notes.map { e ->
+            com.wisp.app.ml.NoteInput(e.content, e.tags, e.created_at)
+        }
+        val score = classifier.score(inputs)
+        if (score != null) cache.put(event.pubkey, score, inputs.size)
+    }
+
     private fun mergeReply(event: NostrEvent, replyTarget: String, replyTargetHint: String?): Boolean {
         if (safetyPrefs?.spamFilterEnabled?.value == true &&
             contactRepo?.isFollowing(event.pubkey) != true &&
             safetyPrefs?.isSpamSafelisted(event.pubkey) != true
         ) {
-            val repo = eventRepo
-            val noteCount = repo?.getCachedEventsByAuthor(event.pubkey, 1, 10)?.size ?: 0
+            // Score was computed off-lock in warmSpamScore; only consult the cache here
+            val noteCount = eventRepo?.getCachedEventsByAuthor(event.pubkey, 1, 10)?.size ?: 0
             val cached = spamAuthorCache?.get(event.pubkey, noteCount)
             if (cached != null && cached >= 0.7f) return false
-            if (cached == null) {
-                val classifier = spamClassifier
-                val cache = spamAuthorCache
-                if (classifier != null && cache != null && repo != null) {
-                    val notes = repo.getCachedEventsByAuthor(event.pubkey, 1, 10)
-                    if (notes.isNotEmpty()) {
-                        val inputs = notes.map { e ->
-                            com.wisp.app.ml.NoteInput(e.content, e.tags, e.created_at)
-                        }
-                        val score = classifier.score(inputs)
-                        if (score != null) {
-                            cache.put(event.pubkey, score, inputs.size)
-                            if (score >= 0.7f) return false
-                        }
-                    }
-                }
-            }
         }
         val key = "reply:${event.id}"
         val hints = listOfNotNull(replyTargetHint)
