@@ -40,6 +40,11 @@ class InterfacePreferences(context: Context) {
     fun isVideoAutoPlay(): Boolean = prefs.getBoolean("video_auto_play", true)
     fun setVideoAutoPlay(enabled: Boolean) = prefs.edit().putBoolean("video_auto_play", enabled).apply()
 
+    // Loop videos in the timeline and full-screen gallery. Not yet
+    // round-tripped over NIP-78 to match iOS, which carries the same TODO.
+    fun isVideoLoop(): Boolean = prefs.getBoolean("video_loop", true)
+    fun setVideoLoop(enabled: Boolean) = prefs.edit().putBoolean("video_loop", enabled).apply()
+
     fun getMediaLayoutStyle(): MediaLayoutStyle =
         MediaLayoutStyle.fromKey(prefs.getString("media_layout_style", null))
     fun setMediaLayoutStyle(style: MediaLayoutStyle) =

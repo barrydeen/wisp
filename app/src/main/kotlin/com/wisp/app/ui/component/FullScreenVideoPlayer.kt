@@ -22,11 +22,13 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.wisp.app.R
 import com.wisp.app.relay.HttpClientFactory
+import com.wisp.app.repo.InterfacePreferences
 import com.wisp.app.util.MediaDownloader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -64,12 +66,15 @@ fun FullScreenVideoPlayer(
     DisposableEffect(videoUrl) {
         val activity = context.findActivity() ?: return@DisposableEffect onDispose {}
 
+        val loopEnabled = InterfacePreferences(context).isVideoLoop()
         val ownsPlayer = existingPlayer == null
-        val exoPlayer = existingPlayer ?: HttpClientFactory.createExoPlayer(context).apply {
+        val exoPlayer = (existingPlayer ?: HttpClientFactory.createExoPlayer(context).apply {
             setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl)))
             prepare()
             seekTo(startPositionMs)
             playWhenReady = true
+        }).apply {
+            repeatMode = if (loopEnabled) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         }
 
         var minimizedToPip = false

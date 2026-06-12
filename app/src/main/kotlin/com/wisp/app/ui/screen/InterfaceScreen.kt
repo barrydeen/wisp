@@ -99,6 +99,7 @@ fun InterfaceScreen(
     var clientTagEnabled by remember { mutableStateOf(interfacePrefs.isClientTagEnabled()) }
     var autoLoadMedia by remember { mutableStateOf(interfacePrefs.isAutoLoadMedia()) }
     var videoAutoPlay by remember { mutableStateOf(interfacePrefs.isVideoAutoPlay()) }
+    var videoLoop by remember { mutableStateOf(interfacePrefs.isVideoLoop()) }
     var mediaLayout by remember { mutableStateOf(interfacePrefs.getMediaLayoutStyle()) }
     var liveStreamsHidden by remember { mutableStateOf(interfacePrefs.isLiveStreamsHidden()) }
     var autoTranslate by remember { mutableStateOf(interfacePrefs.isAutoTranslate()) }
@@ -457,6 +458,29 @@ fun InterfaceScreen(
                     onCheckedChange = {
                         videoAutoPlay = it
                         interfacePrefs.setVideoAutoPlay(it)
+                        onChanged()
+                    },
+                    colors = wispSwitchColors()
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.settings_video_loop), style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        stringResource(R.string.settings_video_loop_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = videoLoop,
+                    onCheckedChange = {
+                        videoLoop = it
+                        interfacePrefs.setVideoLoop(it)
                         onChanged()
                     },
                     colors = wispSwitchColors()

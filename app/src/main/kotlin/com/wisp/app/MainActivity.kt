@@ -52,6 +52,7 @@ class MainActivity : FragmentActivity() {
                 mutableStateOf(MediaSettings(
                     autoLoadMedia = interfacePrefs.isAutoLoadMedia(),
                     videoAutoPlay = interfacePrefs.isVideoAutoPlay(),
+                    videoLoop = interfacePrefs.isVideoLoop(),
                     mediaLayoutStyle = interfacePrefs.getMediaLayoutStyle()
                 ))
             }
@@ -97,6 +98,7 @@ class MainActivity : FragmentActivity() {
                             mediaSettings = MediaSettings(
                                 autoLoadMedia = interfacePrefs.isAutoLoadMedia(),
                                 videoAutoPlay = interfacePrefs.isVideoAutoPlay(),
+                                videoLoop = interfacePrefs.isVideoLoop(),
                                 mediaLayoutStyle = interfacePrefs.getMediaLayoutStyle()
                             )
                         }
