@@ -163,6 +163,8 @@ fun UserProfileScreen(
     onQuotedNoteClick: ((String) -> Unit)? = null,
     onReact: (NostrEvent, String) -> Unit = { _, _ -> },
     onZap: (NostrEvent, Long, String, Boolean, Boolean) -> Unit = { _, _, _, _, _ -> },
+    onZapInstant: ((NostrEvent) -> Unit)? = null,
+    zapPrefs: com.wisp.app.repo.ZapPreferences,
     userPubkey: String? = null,
     isWalletConnected: Boolean = false,
     onWallet: () -> Unit = {},
@@ -293,7 +295,10 @@ fun UserProfileScreen(
                 onZap(event, amountMsats, message, isAnonymous, isPrivate)
             },
             onGoToWallet = onWallet,
-            canPrivateZap = resolvedCanPrivateZap
+            zapPrefsRepo = zapPrefs,
+            canPrivateZap = resolvedCanPrivateZap,
+            recipientPubkey = zapTargetEvent?.pubkey,
+            profileLookup = { eventRepo?.getProfileData(it) }
         )
     }
 
@@ -307,7 +312,11 @@ fun UserProfileScreen(
                 onZapProfile?.invoke(amountMsats, message, isAnonymous)
             },
             onGoToWallet = onWallet,
-            canPrivateZap = false
+            zapPrefsRepo = zapPrefs,
+            canPrivateZap = false,
+            // Profile zap — recipient is the profile being viewed.
+            recipientPubkey = profile?.pubkey,
+            profileLookup = { pk -> profile?.takeIf { it.pubkey == pk } }
         )
     }
 
@@ -868,6 +877,7 @@ fun UserProfileScreen(
                                 userReactionEmojis = userEmojis,
                                 hasUserReposted = hasUserReposted,
                                 onZap = { zapTargetEvent = event },
+                                onZapLongPress = { onZapInstant?.invoke(event) ?: run { zapTargetEvent = event } },
                                 hasUserZapped = hasUserZapped,
                                 likeCount = likeCount,
                                 replyCount = replyCount,
@@ -1053,6 +1063,7 @@ fun UserProfileScreen(
                                 userReactionEmojis = userEmojis,
                                 hasUserReposted = hasUserReposted2,
                                 onZap = { zapTargetEvent = event },
+                                onZapLongPress = { onZapInstant?.invoke(event) ?: run { zapTargetEvent = event } },
                                 hasUserZapped = hasUserZapped2,
                                 likeCount = likeCount,
                                 replyCount = replyCount,
@@ -1128,6 +1139,7 @@ fun UserProfileScreen(
                                 userReactionEmojis = userEmojis,
                                 hasUserReposted = hasUserReposted,
                                 onZap = { zapTargetEvent = event },
+                                onZapLongPress = { onZapInstant?.invoke(event) ?: run { zapTargetEvent = event } },
                                 hasUserZapped = hasUserZapped,
                                 likeCount = likeCount,
                                 replyCount = replyCount,

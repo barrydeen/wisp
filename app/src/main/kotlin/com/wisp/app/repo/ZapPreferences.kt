@@ -13,9 +13,41 @@ data class ZapPreset(
 class ZapPreferences(private val context: Context, pubkeyHex: String? = null) {
     private var prefs: SharedPreferences =
         context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
+        .also { migrateFromGlobalIfNeeded(context, it, pubkeyHex) }
+
+    fun reload(pubkeyHex: String?) {
+        prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
+            .also { migrateFromGlobalIfNeeded(context, it, pubkeyHex) }
+    }
 
     companion object {
         private const val KEY_ZAP_PRESETS = "zap_presets"
+        private const val KEY_MIGRATED_FROM_GLOBAL = "migrated_from_global_v1"
+
+        /**
+         * Before the per-account fix, the in-sheet "+" button wrote
+         * presets to the un-scoped `zap_prefs` file. Copy them into the
+         * per-account file on first read so users who saved presets
+         * pre-fix don't see them disappear.
+         */
+        private fun migrateFromGlobalIfNeeded(
+            context: Context,
+            perAccount: SharedPreferences,
+            pubkeyHex: String?
+        ) {
+            if (pubkeyHex == null) return
+            if (perAccount.getBoolean(KEY_MIGRATED_FROM_GLOBAL, false)) return
+            if (perAccount.contains(KEY_ZAP_PRESETS)) {
+                perAccount.edit().putBoolean(KEY_MIGRATED_FROM_GLOBAL, true).apply()
+                return
+            }
+            val global = context.getSharedPreferences("zap_prefs", Context.MODE_PRIVATE)
+            val globalJson = global.getString(KEY_ZAP_PRESETS, null)
+            val edit = perAccount.edit().putBoolean(KEY_MIGRATED_FROM_GLOBAL, true)
+            if (globalJson != null) edit.putString(KEY_ZAP_PRESETS, globalJson)
+            edit.apply()
+        }
+
         val DEFAULT_PRESETS = listOf(
             ZapPreset(21),
             ZapPreset(100),
@@ -70,7 +102,4 @@ class ZapPreferences(private val context: Context, pubkeyHex: String? = null) {
         return updated
     }
 
-    fun reload(pubkeyHex: String?) {
-        prefs = context.getSharedPreferences(prefsName(pubkeyHex), Context.MODE_PRIVATE)
-    }
 }
