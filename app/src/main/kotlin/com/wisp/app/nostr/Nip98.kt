@@ -48,6 +48,9 @@ object Nip98 {
      */
     fun normalizeUrl(url: String): String {
         val u = URI(url)
+        // On an explicit default port (:443/:80) this keeps the port, diverging
+        // from JS URL.origin which drops it. Latent only — real zap.cooking
+        // endpoints carry no port, so no fix needed.
         val portPart = if (u.port != -1) ":${u.port}" else ""
         val origin = "${u.scheme}://${u.host}$portPart"
         var pathname = u.rawPath ?: ""
