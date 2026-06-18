@@ -200,6 +200,7 @@ fun DmBubble(
                 modifier = Modifier.weight(1f, fill = isSent),
                 contentAlignment = if (isSent) Alignment.BottomEnd else Alignment.BottomStart
             ) {
+                val bubbleMaxWidth = maxWidth
                 @OptIn(ExperimentalFoundationApi::class)
                 Box(
                     modifier = Modifier
@@ -221,13 +222,11 @@ fun DmBubble(
                 ) {
                     Column(
                         modifier = Modifier
-                            .width(IntrinsicSize.Max)
                             .padding(horizontal = 12.dp, vertical = 8.dp)
                     ) {
                         // Header row: sender name + timestamp (received messages only)
                         if (!isSent) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
@@ -238,7 +237,7 @@ fun DmBubble(
                                     color = MaterialTheme.colorScheme.primary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.widthIn(max = bubbleMaxWidth - 96.dp)
                                 )
                                 Text(
                                     text = formatTime(message.createdAt),
