@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import androidx.compose.material.icons.outlined.Sell
 import com.wisp.app.nostr.Nip30
 import com.wisp.app.nostr.toNpub
 import com.wisp.app.ui.component.Nip05Badge
@@ -357,11 +358,27 @@ fun UserProfileScreen(
     var showQrDialog by remember { mutableStateOf(false) }
     var showAddToListDialog by remember { mutableStateOf(false) }
 
+    // Decoded CLINK offer advertised on the profile, when present and valid.
+    val profileClinkOffer = remember(profile?.clinkOffer) {
+        profile?.clinkOffer?.let { com.wisp.app.nostr.Noffer.decodeOrNull(it) }
+    }
+    var showOfferPaySheet by remember { mutableStateOf(false) }
+
+    if (showOfferPaySheet && profileClinkOffer != null) {
+        com.wisp.app.ui.component.NofferPaySheet(
+            noffer = profileClinkOffer,
+            recipientProfile = profile,
+            onPayInvoice = onPayInvoice,
+            onDismiss = { showOfferPaySheet = false }
+        )
+    }
+
     if (showQrDialog) {
         ProfileQrSheet(
             pubkeyHex = profilePubkey,
             avatarUrl = profile?.picture,
             lud16 = profile?.lud16,
+            clinkOffer = profile?.clinkOffer,
             onDismiss = { showQrDialog = false }
         )
     }
@@ -631,6 +648,7 @@ fun UserProfileScreen(
                     onNavigateToProfile = onNavigateToProfile,
                     onSendDm = onSendDm,
                     onZapClick = if (onZapProfile != null) { { showProfileZapDialog = true } } else null,
+                    onPayOffer = if (profileClinkOffer != null) { { showOfferPaySheet = true } } else null,
                     followingCount = followList.size,
                     followerCount = followers.size.takeIf { followers.isNotEmpty() },
                     followedBy = followedBy,
@@ -1275,6 +1293,7 @@ private fun ProfileHeader(
     onNavigateToProfile: ((String) -> Unit)? = null,
     onSendDm: (() -> Unit)? = null,
     onZapClick: (() -> Unit)? = null,
+    onPayOffer: (() -> Unit)? = null,
     followingCount: Int = 0,
     followerCount: Int? = null,
     followedBy: List<String> = emptyList(),
@@ -1384,6 +1403,21 @@ private fun ProfileHeader(
                                     modifier = Modifier.padding(10.dp)
                                 )
                             }
+                        }
+                    }
+                    if (onPayOffer != null) {
+                        Surface(
+                            onClick = onPayOffer,
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Sell,
+                                contentDescription = "Pay offer",
+                                tint = Color(0xFFFFC107),
+                                modifier = Modifier.padding(10.dp)
+                            )
                         }
                     }
                     // Follow circle button
