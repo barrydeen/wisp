@@ -45,11 +45,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -80,6 +83,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -95,6 +99,16 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.sp
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -116,11 +130,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
@@ -145,6 +163,7 @@ import com.google.zxing.qrcode.QRCodeWriter
 import com.wisp.app.BuildConfig
 import com.wisp.app.R
 import com.wisp.app.repo.BalanceUnit
+import com.wisp.app.repo.WalletBalanceDisplayMode
 import com.wisp.app.repo.FiatPreferences
 import com.wisp.app.repo.WalletMode
 import com.wisp.app.repo.WalletTransaction
@@ -152,6 +171,7 @@ import com.wisp.app.ui.component.NsecPasteGuard
 import com.wisp.app.ui.component.SatsNumpad
 import com.wisp.app.ui.util.AmountFormatter
 import com.wisp.app.viewmodel.AutoCheckState
+import com.wisp.app.viewmodel.NwcRestoreState
 import com.wisp.app.viewmodel.FeeState
 import com.wisp.app.viewmodel.BackupStatus
 import com.wisp.app.viewmodel.DeleteBackupStatus
@@ -178,13 +198,20 @@ fun WalletScreen(
 
     // Hide the wallet app bar on the Home dashboard — the bottom-nav wallet
     // tab is the entry point, and the dashboard's own top row (brand logo +
-    // refresh + settings) plays the role of the toolbar. Sub-pages keep the
-    // app bar so back-nav stays reachable.
-    val isHome = currentPage is WalletPage.Home || currentPage is WalletPage.ModeSelection
+    // refresh + settings) plays the role of the toolbar. The mode picker
+    // and the wallet-setup sub-screens (NWC, Spark, Spark restore-seed,
+    // Spark backup) render their own top-right Close pill instead of an
+    // app bar to match iOS — leaves more headroom for the centered logo
+    // + title layout.
+    val hideAppBar = currentPage is WalletPage.Home ||
+        currentPage is WalletPage.ModeSelection ||
+        currentPage is WalletPage.NwcSetup ||
+        currentPage is WalletPage.SparkSetup ||
+        currentPage is WalletPage.SparkRestoreSeed
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            if (!isHome) {
+            if (!hideAppBar) {
                 TopAppBar(
                     title = { Text(stringResource(R.string.title_wallet)) },
                     navigationIcon = {
@@ -197,7 +224,7 @@ fun WalletScreen(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
+                        containerColor = MaterialTheme.colorScheme.background
                     )
                 )
             }
@@ -239,10 +266,18 @@ fun WalletScreen(
                         )
                     }
                 } else {
+                    // Setup screens (NwcSetup / SparkSetup / SparkRestoreSeed)
+                    // render with no TopAppBar, so the Column itself owns the
+                    // status-bar inset to keep the top-right Close pill clear
+                    // of the device chrome.
+                    val needsStatusInset = currentPage is WalletPage.NwcSetup ||
+                        currentPage is WalletPage.SparkSetup ||
+                        currentPage is WalletPage.SparkRestoreSeed
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(padding)
+                            .then(if (needsStatusInset) Modifier.statusBarsPadding() else Modifier)
                             .padding(horizontal = 16.dp)
                             .verticalScroll(rememberScrollState())
                     ) {
@@ -251,9 +286,13 @@ fun WalletScreen(
                                 walletState = walletState,
                                 connectionString = viewModel.connectionString.collectAsState().value,
                                 statusLines = viewModel.statusLines.collectAsState().value,
+                                nwcRestoreState = viewModel.nwcRestoreState.collectAsState().value,
                                 onConnectionStringChange = { viewModel.updateConnectionString(it) },
                                 onConnect = { viewModel.connectNwcWallet() },
-                                onDisconnect = { viewModel.disconnectWallet() }
+                                onDisconnect = { viewModel.disconnectWallet() },
+                                onRestoreFromBackup = { viewModel.restoreFromNwcBackup() },
+                                onDismissRestore = { viewModel.dismissNwcRestore() },
+                                onClose = { viewModel.navigateHome() }
                             )
                             is WalletPage.SparkSetup -> SparkSetupContent(
                                 walletState = walletState,
@@ -348,6 +387,7 @@ fun WalletScreen(
                             recentTransactions = viewModel.transactions.collectAsState().value,
                             profileLookup = remember(profileKey) { { viewModel.getProfileData(it) } },
                             nwcNodeAlias = viewModel.nwcNodeAlias.collectAsState().value,
+                            pubkey = viewModel.keyRepo.getPubkeyHex(),
                             modifier = Modifier.padding(padding)
                         )
                     }
@@ -419,9 +459,9 @@ fun WalletScreen(
                     is WalletPage.ReceiveAmount -> ReceiveAmountContent(
                         amount = viewModel.receiveAmount.collectAsState().value,
                         isLoading = viewModel.isLoading.collectAsState().value,
-                        onDigit = { viewModel.updateReceiveAmount(it) },
-                        onBackspace = { viewModel.receiveAmountBackspace() },
-                        onGenerate = { sats -> viewModel.generateInvoice(sats) },
+                        lightningAddress = viewModel.lightningAddress.collectAsState().value,
+                        onAmountChange = { viewModel.setReceiveAmount(it) },
+                        onGenerate = { sats, note -> viewModel.generateInvoice(sats, note) },
                         modifier = Modifier.padding(padding)
                     )
                     is WalletPage.ReceiveInvoice -> {
@@ -453,6 +493,7 @@ fun WalletScreen(
                             onLoadMore = { viewModel.loadMoreTransactions() },
                             profileLookup = { viewModel.getProfileData(it) },
                             profileRefreshKey = profileKey,
+                            pubkey = viewModel.keyRepo.getPubkeyHex(),
                             modifier = Modifier.padding(padding)
                         )
                     }
@@ -566,6 +607,7 @@ fun WalletScreen(
                             recentTransactions = viewModel.transactions.collectAsState().value,
                             profileLookup = remember(profileKey) { { viewModel.getProfileData(it) } },
                             nwcNodeAlias = viewModel.nwcNodeAlias.collectAsState().value,
+                            pubkey = viewModel.keyRepo.getPubkeyHex(),
                             modifier = Modifier.padding(padding)
                         )
                     }
@@ -582,90 +624,284 @@ private fun WalletConnectionContent(
     walletState: WalletState,
     connectionString: String,
     statusLines: List<String>,
+    nwcRestoreState: NwcRestoreState = NwcRestoreState.Idle,
     onConnectionStringChange: (String) -> Unit,
     onConnect: () -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onRestoreFromBackup: () -> Unit = {},
+    onDismissRestore: () -> Unit = {},
+    onClose: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val isConnecting = walletState is WalletState.Connecting
+    var showScanner by remember { mutableStateOf(false) }
 
+    // iOS 1:1 layout — top-right Close pill (no app bar), centered NWC
+    // logo + title + subtitle, paste/scan card, helper text, full-width
+    // Connect button. The Recommended wallets stack is removed: NWC
+    // ecosystem links live on a separate discovery surface; this screen
+    // is purely "paste your string and connect."
+    val accent = WispThemeColors.zapColor
+
+    Spacer(Modifier.height(12.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End
+    ) {
+        Surface(
+            modifier = Modifier.clickable(onClick = onClose),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = CircleShape
+        ) {
+            Text(
+                stringResource(R.string.wallet_close),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+        }
+    }
+
+    Spacer(Modifier.height(8.dp))
+
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_nwc_logo),
+            contentDescription = null,
+            modifier = Modifier.height(56.dp)
+        )
+    }
     Spacer(Modifier.height(16.dp))
-
     Text(
         stringResource(R.string.wallet_nwc_title),
-        style = MaterialTheme.typography.headlineSmall,
-        color = MaterialTheme.colorScheme.onSurface
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth()
     )
     Spacer(Modifier.height(8.dp))
     Text(
-        stringResource(R.string.wallet_connect_lightning),
+        stringResource(R.string.wallet_nwc_paste_prompt),
         style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
     )
 
-    Spacer(Modifier.height(24.dp))
-
-    Text(
-        stringResource(R.string.wallet_recommended),
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurface
-    )
-    Spacer(Modifier.height(12.dp))
-
-    val wallets = listOf(
-        "rizful.com" to "Rizful",
-        "coinos.io" to "Coinos",
-        "getalby.com" to "Alby",
-        "cashu.me" to "Cashu.me",
-        "minibits.cash" to "Minibits"
-    )
-
-    wallets.forEach { (domain, name) ->
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp)
-                .clickable {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://$domain"))
-                    context.startActivity(intent)
-                },
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+    if (nwcRestoreState is NwcRestoreState.Searching) {
+        Spacer(Modifier.height(16.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AsyncImage(
-                    model = "https://$domain/favicon.ico",
-                    contentDescription = name,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(Modifier.width(12.dp))
+            CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                stringResource(R.string.wallet_nwc_restore_searching),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    if (nwcRestoreState is NwcRestoreState.Found) {
+        Spacer(Modifier.height(16.dp))
+        val dateStr = remember(nwcRestoreState.createdAt) {
+            val fmt = java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM)
+            fmt.format(java.util.Date(nwcRestoreState.createdAt * 1000L))
+        }
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = accent.copy(alpha = 0.16f),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Outlined.CloudDownload,
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        stringResource(R.string.wallet_nwc_restore_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
                 Text(
-                    name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                    stringResource(R.string.wallet_nwc_restore_body, dateStr),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = onRestoreFromBackup,
+                    enabled = !isConnecting,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = accent,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text(
+                        stringResource(R.string.wallet_nwc_restore_action),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
     }
 
     Spacer(Modifier.height(24.dp))
 
-    OutlinedTextField(
-        value = connectionString,
-        onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(connectionString, new)) onConnectionStringChange(new) },
-        label = { Text(stringResource(R.string.wallet_nwc_connection_string)) },
-        placeholder = { Text("nostr+walletconnect://...") },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = false,
-        maxLines = 3,
-        enabled = !isConnecting
-    )
+    // Paste / Scan card — top half displays the pasted string (or
+    // stays empty while the user hasn't pasted anything); bottom row
+    // splits a Paste button and a Scan QR button with a vertical
+    // divider. Matches iOS 1:1 — no separate text field, no trailing
+    // icon, no Recommended-wallets stack.
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(140.dp)
+                    .padding(14.dp)
+            ) {
+                if (connectionString.isBlank()) {
+                    Text(
+                        "nostr+walletconnect://…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                    )
+                } else {
+                    Text(
+                        connectionString,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 6,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(enabled = !isConnecting) {
+                            val pasted = clipboardManager.getText()?.text.orEmpty()
+                            if (pasted.isNotBlank()
+                                && !NsecPasteGuard.blockIfNsec(connectionString, pasted)
+                            ) {
+                                onConnectionStringChange(pasted.trim())
+                            }
+                        }
+                        .padding(vertical = 14.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.ContentPaste,
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        stringResource(R.string.wallet_paste),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = accent
+                    )
+                }
+                VerticalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(enabled = !isConnecting) { showScanner = true }
+                        .padding(vertical = 14.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.QrCode,
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        stringResource(R.string.wallet_scan_qr),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = accent
+                    )
+                }
+            }
+        }
+    }
+
+    Spacer(Modifier.height(12.dp))
+    Row(
+        verticalAlignment = Alignment.Top,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(
+            Icons.Outlined.Info,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(14.dp).padding(top = 2.dp)
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            stringResource(R.string.wallet_nwc_connection_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+
+    Spacer(Modifier.height(8.dp))
+    Row(
+        verticalAlignment = Alignment.Top,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(
+            Icons.Outlined.CloudDownload,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(14.dp).padding(top = 2.dp)
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            stringResource(R.string.wallet_nwc_backup_footer),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 
     if (walletState is WalletState.Error) {
         Spacer(Modifier.height(8.dp))
@@ -676,11 +912,14 @@ private fun WalletConnectionContent(
         )
     }
 
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(20.dp))
 
     Button(
         onClick = onConnect,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp),
+        shape = RoundedCornerShape(14.dp),
         enabled = connectionString.isNotBlank() && !isConnecting
     ) {
         if (isConnecting) {
@@ -696,18 +935,12 @@ private fun WalletConnectionContent(
         }
     }
 
-    if (statusLines.isNotEmpty()) {
-        Spacer(Modifier.height(12.dp))
-        Column(modifier = Modifier.fillMaxWidth()) {
-            statusLines.forEach { line ->
-                Text(
-                    line,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
+    // Status-line stream (per-relay connect/relay-status output) is
+    // intentionally suppressed on the NWC setup screen — the Connect
+    // button's own spinner + "Connecting…" label covers the happy path,
+    // and any failure surfaces via WalletState.Error above. Showing
+    // verbose connect logs here just looked like noise (especially
+    // after a one-tap backup restore).
 
     if (isConnecting) {
         Spacer(Modifier.height(12.dp))
@@ -720,6 +953,47 @@ private fun WalletConnectionContent(
     }
 
     Spacer(Modifier.height(32.dp))
+
+    if (showScanner) {
+        // Reuses the existing QrScanner dialog pattern from the send-
+        // payment flow. Successful scan populates the connection
+        // string field directly; user can then tap Connect.
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showScanner = false }
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        stringResource(R.string.wallet_scan_qr_code),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    com.wisp.app.ui.component.QrScanner(
+                        onResult = { value ->
+                            showScanner = false
+                            onConnectionStringChange(value.trim())
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(320.dp),
+                        promptText = stringResource(R.string.wallet_point_camera)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(onClick = { showScanner = false }) {
+                        Text(stringResource(R.string.btn_cancel))
+                    }
+                }
+            }
+        }
+    }
 }
 
 // --- Home screen ---
@@ -745,15 +1019,23 @@ private fun WalletHomeContent(
     recentTransactions: List<WalletTransaction> = emptyList(),
     profileLookup: (String) -> com.wisp.app.nostr.ProfileData? = { null },
     nwcNodeAlias: String? = null,
+    pubkey: String? = null,
     modifier: Modifier = Modifier
 ) {
     val balanceSats = balanceMsats / 1000
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE) }
-    var balanceHidden by remember { mutableStateOf(prefs.getBoolean("balance_hidden", false)) }
+    // Tri-state balance display (sats / fiat / hidden) — tap the
+    // dashboard balance to cycle. Per-pubkey storage; migrates the
+    // legacy global `balance_hidden` Bool on first read for a given
+    // pubkey. iOS port of feat/wallet-balance-toggle (wisp-ios #166).
+    var balanceDisplay by remember(pubkey) {
+        mutableStateOf(WalletBalanceDisplayMode.read(prefs, pubkey))
+    }
+    val balanceHidden = balanceDisplay == WalletBalanceDisplayMode.HIDDEN
     val fiatPrefs = remember { FiatPreferences.get(context) }
     val fiatMode by fiatPrefs.fiatMode.collectAsState()
-    @Suppress("unused_variable") val fiatCurrency by fiatPrefs.currency.collectAsState()
+    val fiatCurrency by fiatPrefs.currency.collectAsState()
     val clipboard = remember { context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
     val accent = WispThemeColors.zapColor
 
@@ -965,52 +1247,151 @@ private fun WalletHomeContent(
         Spacer(Modifier.weight(1f))
 
         // ── Balance ─────────────────────────────────────────────────
+        // Tap to cycle sats → fiat → hidden. `fiat` is wallet-screen-
+        // scoped: it renders the balance in the user's currently-set
+        // fiat currency but does NOT flip the app-wide
+        // [FiatPreferences.isFiatMode] flag (still respected by feed
+        // counts / timestamps elsewhere).
+        // Fixed-height container so the balance occupies the same vertical
+        // space regardless of which mode is showing — keeps the lightning-
+        // address pill + Send/Receive row anchored at a stable Y across the
+        // sats/BTC/⚡/fiat/hidden cycle. One-line variants center vertically
+        // within the reserved height; two-line variants (sats + subtitle,
+        // hidden + "tap to reveal") fill it naturally.
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.clickable {
-                balanceHidden = !balanceHidden
-                prefs.edit().putBoolean("balance_hidden", balanceHidden).apply()
-            }
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .heightIn(min = 96.dp)
+                .clickable {
+                    balanceDisplay = balanceDisplay.next()
+                    WalletBalanceDisplayMode.write(prefs, pubkey, balanceDisplay)
+                }
         ) {
-            if (balanceHidden) {
-                Text(
-                    "* * * * *",
-                    style = MaterialTheme.typography.displayLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    stringResource(R.string.wallet_tap_to_reveal),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                if (fiatMode) {
+            when (balanceDisplay) {
+                WalletBalanceDisplayMode.HIDDEN -> {
                     Text(
-                        AmountFormatter.formatShort(balanceSats, context),
+                        "* * * * *",
                         style = MaterialTheme.typography.displayLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                } else {
-                    Text(
-                        "%,d".format(balanceSats),
-                        style = MaterialTheme.typography.displayLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        stringResource(R.string.wallet_sats),
-                        style = MaterialTheme.typography.bodyMedium,
+                        stringResource(R.string.wallet_tap_to_reveal),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+                WalletBalanceDisplayMode.FIAT -> {
+                    val fiat = AmountFormatter.formatFiat(balanceSats, fiatCurrency)
+                    if (fiat != null) {
+                        Text(
+                            fiat,
+                            style = MaterialTheme.typography.displayLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    } else {
+                        // Exchange-rate cache hasn't loaded yet — fall
+                        // back to the sats display so the dashboard
+                        // doesn't show a blank or a placeholder.
+                        Text(
+                            "%,d".format(balanceSats),
+                            style = MaterialTheme.typography.displayLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            stringResource(R.string.wallet_sats),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                WalletBalanceDisplayMode.SATS -> {
+                    // App-wide fiat mode still wins when the user has
+                    // it on AND the wallet display is in its default
+                    // (sats) state — same behaviour as before this
+                    // tri-state landed.
+                    if (fiatMode) {
+                        Text(
+                            AmountFormatter.formatShort(balanceSats, context),
+                            style = MaterialTheme.typography.displayLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    } else {
+                        // BalanceUnit selects between three sat denominations
+                        // — SATS ("1,234" + "sats" subtitle), BITCOIN ("₿ 0.00001234"
+                        // BTC-denominated), LIGHTNING (⚡ + sats inline).
+                        // The setting lives in Wallet Settings → Display Unit.
+                        when (balanceUnit) {
+                            BalanceUnit.SATS -> {
+                                Text(
+                                    "%,d".format(balanceSats),
+                                    style = MaterialTheme.typography.displayLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    stringResource(R.string.wallet_sats),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            BalanceUnit.BITCOIN -> {
+                                // Symbol rendered in onSurfaceVariant so the
+                                // number stays the prominent reading — matches
+                                // the muted "sats" subtitle in the SATS branch.
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "₿",
+                                        style = MaterialTheme.typography.displayLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        "%,d".format(balanceSats),
+                                        style = MaterialTheme.typography.displayLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                            BalanceUnit.LIGHTNING -> {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_bolt),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.height(40.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "%,d".format(balanceSats),
+                                        style = MaterialTheme.typography.displayLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
 
         // ── Lightning address pill ─────────────────────────────────
-        if (walletMode == WalletMode.SPARK && lightningAddress != null) {
+        // Shown for any wallet mode that carries a lud16 — Spark wallets
+        // expose one via the Breez SDK; NWC URIs may include `lud16=...`
+        // which connectNwcWallet copies into `lightningAddress`. The old
+        // NWC-only logo + "Nostr Wallet Connect" footer below the balance
+        // was redundant (the dashboard header already brands the mode),
+        // so it's removed.
+        if (!lightningAddress.isNullOrBlank()) {
             Spacer(Modifier.height(16.dp))
             Surface(
                 modifier = Modifier.clickable {
@@ -1037,7 +1418,9 @@ private fun WalletHomeContent(
                     )
                 }
             }
-        } else if (walletMode == WalletMode.SPARK && lightningAddress == null) {
+        } else if (walletMode == WalletMode.SPARK) {
+            // Spark-only setup CTA. NWC users can't register an address
+            // from inside Wisp — it comes from the NWC URI or not at all.
             Spacer(Modifier.height(16.dp))
             Surface(
                 modifier = Modifier.clickable(onClick = onSetupAddress),
@@ -1062,28 +1445,6 @@ private fun WalletHomeContent(
                         color = accent
                     )
                 }
-            }
-        } else if (walletMode == WalletMode.NWC) {
-            Spacer(Modifier.height(16.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_nwc_logo),
-                    contentDescription = "NWC",
-                    modifier = Modifier.height(16.dp),
-                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    stringResource(R.string.wallet_nwc_title),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
 
@@ -1143,8 +1504,21 @@ private fun WalletHomeContent(
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                 )
-                recentTransactions.take(1).forEach { tx ->
-                    TransactionRow(tx, profileLookup)
+                // Match iOS — show recent transactions inline, "View all"
+                // expands to the full screen. Row count scales with the
+                // device's available height so a compact phone (e.g.
+                // ~640dp tall) doesn't crowd out the balance + Send/
+                // Receive controls, while bigger displays still get up
+                // to 5 rows like iOS.
+                val screenHeightDp = LocalConfiguration.current.screenHeightDp
+                val txCount = when {
+                    screenHeightDp >= 800 -> 5
+                    screenHeightDp >= 720 -> 4
+                    screenHeightDp >= 640 -> 3
+                    else -> 2
+                }
+                recentTransactions.take(txCount).forEach { tx ->
+                    TransactionRow(tx, profileLookup, balanceDisplay)
                 }
             }
         } else {
@@ -1686,13 +2060,16 @@ private fun SendResultContent(
 
 // --- Receive amount ---
 
+private enum class ReceiveTab { INVOICE, ADDRESS }
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReceiveAmountContent(
     amount: String,
     isLoading: Boolean,
-    onDigit: (Char) -> Unit,
-    onBackspace: () -> Unit,
-    onGenerate: (Long) -> Unit,
+    lightningAddress: String?,
+    onAmountChange: (String) -> Unit,
+    onGenerate: (Long, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val receiveCtx = LocalContext.current
@@ -1700,90 +2077,309 @@ private fun ReceiveAmountContent(
     val fiatMode by fiatPrefs.fiatMode.collectAsState()
     val fiatCurrency by fiatPrefs.currency.collectAsState()
     val currency = remember(fiatCurrency) { com.wisp.app.repo.ExchangeRateRepository.currencyFor(fiatCurrency) }
+    val btcPrice = com.wisp.app.repo.ExchangeRateRepository.rates.collectAsState().value[fiatCurrency.uppercase()]
 
     val fiatValue = if (fiatMode) amount.toDoubleOrNull() ?: 0.0 else 0.0
-    val fiatSats = if (fiatMode && fiatValue > 0.0) {
-        val btcPrice = com.wisp.app.repo.ExchangeRateRepository.rates.collectAsState().value[fiatCurrency.uppercase()]
-        if (btcPrice != null && btcPrice > 0.0) {
-            ((fiatValue / btcPrice) * 100_000_000.0).toLong()
-        } else null
+    val fiatSats: Long? = if (fiatMode && fiatValue > 0.0 && btcPrice != null && btcPrice > 0.0) {
+        ((fiatValue / btcPrice) * 100_000_000.0).toLong()
     } else null
+    val satAmount: Long? = if (fiatMode) fiatSats else amount.toLongOrNull()
+    val canCreate = (satAmount ?: 0L) > 0L && !isLoading
+
+    var description by remember { mutableStateOf("") }
+    var selectedTab by remember { mutableStateOf(ReceiveTab.INVOICE) }
+    val hasLightningAddress = !lightningAddress.isNullOrBlank()
+
+    val fieldShape = RoundedCornerShape(14.dp)
+    val fieldBg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(horizontal = 20.dp)
+            .verticalScroll(rememberScrollState())
     ) {
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(8.dp))
 
         Text(
             stringResource(R.string.wallet_receive),
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onSurface
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
 
-        if (isLoading) {
-            CircularProgressIndicator()
-            Spacer(Modifier.height(8.dp))
-            Text(stringResource(R.string.wallet_creating_invoice), style = MaterialTheme.typography.bodyMedium)
-        } else if (fiatMode) {
-            val displayAmount = if (amount.isEmpty()) "0" else amount
+        if (hasLightningAddress) {
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                SegmentedButton(
+                    selected = selectedTab == ReceiveTab.INVOICE,
+                    onClick = { selectedTab = ReceiveTab.INVOICE },
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                ) { Text(stringResource(R.string.wallet_receive_invoice_tab)) }
+                SegmentedButton(
+                    selected = selectedTab == ReceiveTab.ADDRESS,
+                    onClick = { selectedTab = ReceiveTab.ADDRESS },
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                ) { Text(stringResource(R.string.wallet_receive_address_tab)) }
+            }
+            Spacer(Modifier.height(20.dp))
+        }
+
+        if (selectedTab == ReceiveTab.ADDRESS && hasLightningAddress) {
+            ReceiveAddressBlock(address = lightningAddress!!)
+        } else {
+            // AMOUNT field
             Text(
-                text = "${currency.symbol}$displayAmount",
-                style = MaterialTheme.typography.displayMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = currency.code,
-                style = MaterialTheme.typography.titleMedium,
+                stringResource(R.string.wallet_receive_amount_label),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.5.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            if (fiatSats != null && fiatSats > 0L) {
+            Spacer(Modifier.height(8.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(fieldBg, fieldShape)
+                    .padding(horizontal = 16.dp, vertical = 16.dp)
+            ) {
+                val amountTextStyle = TextStyle(
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                BasicTextField(
+                    value = amount,
+                    onValueChange = { input ->
+                        val filtered = if (fiatMode) {
+                            // Allow digits + a single decimal point
+                            val sb = StringBuilder()
+                            var seenDot = false
+                            for (c in input) {
+                                if (c.isDigit()) sb.append(c)
+                                else if (c == '.' && !seenDot) { sb.append(c); seenDot = true }
+                            }
+                            sb.toString()
+                        } else {
+                            input.filter { it.isDigit() }
+                        }
+                        onAmountChange(filtered)
+                    },
+                    textStyle = amountTextStyle,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = if (fiatMode) KeyboardType.Decimal else KeyboardType.NumberPassword
+                    ),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.weight(1f),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (amount.isEmpty()) {
+                                Text(
+                                    "0",
+                                    style = amountTextStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                )
+                            }
+                            inner()
+                        }
+                    }
+                )
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "≈ %,d sats".format(fiatSats),
-                    style = MaterialTheme.typography.bodyMedium,
+                    if (fiatMode) currency.code else stringResource(R.string.wallet_sats),
+                    style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (fiatMode && fiatSats != null && fiatSats > 0L) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "≈ %,d sats".format(fiatSats),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            // NOTE field
+            Text(
+                stringResource(R.string.wallet_receive_note_label),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.5.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(fieldBg, fieldShape)
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
+            ) {
+                val noteStyle = MaterialTheme.typography.bodyMedium.copy(
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                BasicTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    textStyle = noteStyle,
+                    singleLine = true,
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth(),
+                    decorationBox = { inner ->
+                        if (description.isEmpty()) {
+                            Text(
+                                stringResource(R.string.wallet_receive_note_placeholder),
+                                style = noteStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            )
+                        }
+                        inner()
+                    }
                 )
             }
 
             Spacer(Modifier.height(24.dp))
 
-            SatsNumpad(
-                amount = amount,
-                onDigit = onDigit,
-                onBackspace = onBackspace,
-                onConfirm = {},
-                confirmEnabled = false,
-                allowDecimal = true,
-                showHeader = false
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            Button(
-                onClick = { fiatSats?.let { onGenerate(it) } },
-                enabled = fiatSats != null && fiatSats > 0L,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 32.dp),
-                shape = RoundedCornerShape(50)
-            ) {
-                Text(stringResource(R.string.wallet_generate_invoice))
+            if (isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(fieldBg, fieldShape)
+                        .padding(vertical = 14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            stringResource(R.string.wallet_creating_invoice),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                Button(
+                    onClick = {
+                        val sats = satAmount ?: return@Button
+                        onGenerate(sats, description)
+                    },
+                    enabled = canCreate,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = fieldShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = Color.White,
+                        disabledContainerColor = fieldBg,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Text(
+                        stringResource(R.string.wallet_receive_create_invoice),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
-        } else {
-            SatsNumpad(
-                amount = amount,
-                onDigit = onDigit,
-                onBackspace = onBackspace,
-                onConfirm = {
-                    val sats = amount.toLongOrNull() ?: return@SatsNumpad
-                    onGenerate(sats)
-                },
-                confirmEnabled = amount.isNotEmpty() && (amount.toLongOrNull() ?: 0) > 0
+        }
+
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun ReceiveAddressBlock(address: String) {
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+
+    val qrBitmap = remember(address) {
+        val writer = QRCodeWriter()
+        val matrix = writer.encode(address, BarcodeFormat.QR_CODE, 512, 512)
+        val bitmap = Bitmap.createBitmap(matrix.width, matrix.height, Bitmap.Config.RGB_565)
+        for (x in 0 until matrix.width) {
+            for (y in 0 until matrix.height) {
+                bitmap.setPixel(x, y, if (matrix.get(x, y)) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+            }
+        }
+        bitmap
+    }
+
+    val cardShape = RoundedCornerShape(16.dp)
+    val cardBg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+    val actionShape = RoundedCornerShape(14.dp)
+    val actionBg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(cardBg, cardShape)
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Image(
+                bitmap = qrBitmap.asImageBitmap(),
+                contentDescription = stringResource(R.string.cd_invoice_qr_code),
+                modifier = Modifier
+                    .size(260.dp)
+                    .background(Color.White, RoundedCornerShape(12.dp))
+                    .padding(8.dp)
             )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                address,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(actionBg, actionShape)
+        ) {
+            TextButton(
+                onClick = { clipboardManager.setText(AnnotatedString(address)) },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.textButtonColors(contentColor = WispThemeColors.zapColor)
+            ) {
+                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Copy address", fontWeight = FontWeight.Medium)
+            }
+            VerticalDivider(modifier = Modifier.height(24.dp))
+            TextButton(
+                onClick = {
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, address)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "Share Lightning Address"))
+                },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.textButtonColors(contentColor = WispThemeColors.zapColor)
+            ) {
+                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Share", fontWeight = FontWeight.Medium)
+            }
         }
     }
 }
@@ -2045,8 +2641,16 @@ private fun TransactionHistoryContent(
     onLoadMore: () -> Unit = {},
     profileLookup: (String) -> com.wisp.app.nostr.ProfileData?,
     profileRefreshKey: Int = 0,
+    pubkey: String? = null,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE) }
+    // Mirror the dashboard's tri-state display mode on tx rows so a
+    // HIDDEN state masks both the dashboard balance AND every per-row
+    // amount + fee. iOS port keeps these in lockstep via the same
+    // per-pubkey storage key (`walletBalanceDisplay_<pubkey>`).
+    val displayMode = remember(pubkey) { WalletBalanceDisplayMode.read(prefs, pubkey) }
     Column(
         modifier = modifier.fillMaxSize()
     ) {
@@ -2100,8 +2704,12 @@ private fun TransactionHistoryContent(
             }
             else -> {
                 LazyColumn {
-                    items(transactions) { tx ->
-                        TransactionRow(tx, profileLookup)
+                    // Key by paymentHash + direction so a self-send's two legs
+                    // (same hash, opposite type) keep distinct identities and
+                    // both render. The list is deduped by (paymentHash, type)
+                    // upstream, so these keys are unique.
+                    items(transactions, key = { "${it.paymentHash}|${it.type}" }) { tx ->
+                        TransactionRow(tx, profileLookup, displayMode)
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp),
                             color = MaterialTheme.colorScheme.outlineVariant
@@ -2137,13 +2745,17 @@ private fun TransactionHistoryContent(
 @Composable
 private fun TransactionRow(
     tx: WalletTransaction,
-    profileLookup: (String) -> com.wisp.app.nostr.ProfileData?
+    profileLookup: (String) -> com.wisp.app.nostr.ProfileData?,
+    displayMode: WalletBalanceDisplayMode = WalletBalanceDisplayMode.SATS
 ) {
     val isIncoming = tx.type == "incoming"
     val amountSats = tx.amountMsats / 1000
     val profile = tx.counterpartyPubkey?.let { profileLookup(it) }
     val ctx = LocalContext.current
     val fiatMode by FiatPreferences.get(ctx).fiatMode.collectAsState()
+    val fiatCurrency by FiatPreferences.get(ctx).currency.collectAsState()
+    val isHidden = displayMode == WalletBalanceDisplayMode.HIDDEN
+    val isWalletFiat = displayMode == WalletBalanceDisplayMode.FIAT
 
     Row(
         modifier = Modifier
@@ -2207,35 +2819,76 @@ private fun TransactionRow(
             )
         }
 
-        // Amount + fee
+        // Amount + fee. In HIDDEN mode every number is masked so a
+        // "show my wallet without showing the numbers" screenshot
+        // works. Wallet-screen FIAT mode renders amounts in the user's
+        // selected fiat currency without flipping the app-wide flag.
         Column(horizontalAlignment = Alignment.End) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val sign = if (isIncoming) "+" else "-"
-                if (fiatMode) {
-                    Text(
+                val signColor = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                when {
+                    isHidden -> Text(
+                        "$sign* * *",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = signColor
+                    )
+                    isWalletFiat -> {
+                        val fiat = AmountFormatter.formatFiat(amountSats, fiatCurrency)
+                        if (fiat != null) {
+                            Text(
+                                "$sign$fiat",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = signColor
+                            )
+                        } else {
+                            Text(
+                                "$sign%,d".format(amountSats),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = signColor
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                stringResource(R.string.wallet_sats),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    fiatMode -> Text(
                         "$sign${AmountFormatter.formatFull(amountSats, ctx)}",
                         style = MaterialTheme.typography.titleMedium,
-                        color = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                        color = signColor
                     )
-                } else {
-                    Text(
-                        "$sign%,d".format(amountSats),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        stringResource(R.string.wallet_sats),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    else -> {
+                        Text(
+                            "$sign%,d".format(amountSats),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = signColor
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            stringResource(R.string.wallet_sats),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
             if (!isIncoming && tx.feeMsats > 0) {
                 val feeSats = tx.feeMsats / 1000
+                val feeText = when {
+                    isHidden -> stringResource(R.string.wallet_fee, 0).replace("0", "***")
+                    isWalletFiat -> {
+                        val fiat = AmountFormatter.formatFiat(feeSats, fiatCurrency)
+                        if (fiat != null) stringResource(R.string.wallet_fee_money, fiat)
+                        else stringResource(R.string.wallet_fee, feeSats)
+                    }
+                    fiatMode -> stringResource(R.string.wallet_fee_money, AmountFormatter.formatFull(feeSats, ctx))
+                    else -> stringResource(R.string.wallet_fee, feeSats)
+                }
                 Text(
-                    if (fiatMode) stringResource(R.string.wallet_fee_money, AmountFormatter.formatFull(feeSats, ctx))
-                    else stringResource(R.string.wallet_fee, feeSats),
+                    feeText,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -2302,11 +2955,12 @@ private fun WalletModeSelectionContent(
                     painter = painterResource(R.drawable.ic_spark_logo),
                     contentDescription = null,
                     modifier = Modifier.size(28.dp),
-                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(accent)
+                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.White)
                 )
             },
             title = stringResource(R.string.wallet_spark_title),
-            subtitle = stringResource(R.string.wallet_spark_subtitle),
+            subtitle = stringResource(R.string.wallet_spark_subtitle_recommended),
+            highlighted = true,
             onClick = onSelectSpark
         )
         Spacer(Modifier.height(12.dp))
@@ -2331,14 +2985,31 @@ private fun WalletModeRow(
     leadingIcon: @Composable () -> Unit,
     title: String,
     subtitle: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    highlighted: Boolean = false
 ) {
+    val accent = WispThemeColors.zapColor
+    val shape = RoundedCornerShape(14.dp)
+    val containerColor = if (highlighted) accent else MaterialTheme.colorScheme.surfaceVariant
+    val titleColor = if (highlighted) Color.White else MaterialTheme.colorScheme.onSurface
+    val subtitleColor = if (highlighted) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val arrowColor = if (highlighted) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
+    // Layered shadows produce the iOS soft-glow halo: wide outer bleed +
+    // tighter inner glow, both tinted with the accent. Colored shadows
+    // only honor `ambientColor`/`spotColor` on API 28+; below that the
+    // device falls back to the system grey shadow.
+    val highlightModifier = if (highlighted) {
+        Modifier
+            .shadow(elevation = 24.dp, shape = shape, ambientColor = accent, spotColor = accent)
+            .shadow(elevation = 10.dp, shape = shape, ambientColor = accent, spotColor = accent)
+    } else Modifier
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .then(highlightModifier)
             .clickable(onClick = onClick),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(14.dp)
+        color = containerColor,
+        shape = shape
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -2354,20 +3025,20 @@ private fun WalletModeRow(
                     title,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = titleColor
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = subtitleColor
                 )
             }
             Spacer(Modifier.width(8.dp))
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = arrowColor,
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -2441,6 +3112,7 @@ private fun SparkSetupContent(
     val isConnecting = walletState is WalletState.Connecting
 
     Column(modifier = Modifier.fillMaxWidth()) {
+        Spacer(Modifier.height(12.dp))
         // Top-right Close button — full dismiss back to mode picker.
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -2503,36 +3175,84 @@ private fun SparkSetupContent(
 
         Spacer(Modifier.height(28.dp))
 
-        // Option rows
+        // Primary "Use my default wallet" gets the orange+glow treatment
+        // so the obvious next step (re-derive the user's existing wallet)
+        // reads as the default. Other paths collapse under "More options"
+        // — but if there's no default option visible, expand by default
+        // so users still see every path immediately.
         if (canUseDefaultWallet) {
-            SparkOptionRow(
-                icon = Icons.Outlined.VpnKey,
+            WalletModeRow(
+                leadingIcon = {
+                    Icon(
+                        Icons.Outlined.VpnKey,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                },
                 title = stringResource(R.string.wallet_use_default),
                 subtitle = stringResource(R.string.wallet_default_subtitle),
+                highlighted = true,
                 onClick = onUseDefaultWallet
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(20.dp))
         }
-        SparkOptionRow(
-            icon = Icons.Outlined.Add,
-            title = stringResource(R.string.wallet_create_title),
-            subtitle = stringResource(R.string.wallet_create_subtitle),
-            onClick = onCreateWallet
+
+        var moreOptionsExpanded by remember { mutableStateOf(!canUseDefaultWallet) }
+        val chevronRotation by animateFloatAsState(
+            targetValue = if (moreOptionsExpanded) 180f else 0f,
+            label = "more-options-chevron"
         )
-        Spacer(Modifier.height(12.dp))
-        SparkOptionRow(
-            icon = Icons.Outlined.History,
-            title = stringResource(R.string.wallet_restore_seed_title),
-            subtitle = stringResource(R.string.wallet_restore_seed_subtitle),
-            onClick = onRestoreFromSeed
-        )
-        Spacer(Modifier.height(12.dp))
-        SparkOptionRow(
-            icon = Icons.Outlined.CloudDownload,
-            title = stringResource(R.string.wallet_restore_relays_title),
-            subtitle = stringResource(R.string.wallet_restore_relays_subtitle),
-            onClick = onRestoreFromRelay
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { moreOptionsExpanded = !moreOptionsExpanded }
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                stringResource(R.string.wallet_more_options),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.weight(1f))
+            Icon(
+                Icons.Filled.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .size(20.dp)
+                    .graphicsLayer { rotationZ = chevronRotation }
+            )
+        }
+        AnimatedVisibility(
+            visible = moreOptionsExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column {
+                SparkOptionRow(
+                    icon = Icons.Outlined.Add,
+                    title = stringResource(R.string.wallet_create_title),
+                    subtitle = stringResource(R.string.wallet_create_subtitle),
+                    onClick = onCreateWallet
+                )
+                Spacer(Modifier.height(12.dp))
+                SparkOptionRow(
+                    icon = Icons.Outlined.History,
+                    title = stringResource(R.string.wallet_restore_seed_title),
+                    subtitle = stringResource(R.string.wallet_restore_seed_subtitle),
+                    onClick = onRestoreFromSeed
+                )
+                Spacer(Modifier.height(12.dp))
+                SparkOptionRow(
+                    icon = Icons.Outlined.CloudDownload,
+                    title = stringResource(R.string.wallet_restore_relays_title),
+                    subtitle = stringResource(R.string.wallet_restore_relays_subtitle),
+                    onClick = onRestoreFromRelay
+                )
+            }
+        }
 
         if (walletState is WalletState.Error) {
             Spacer(Modifier.height(16.dp))
@@ -3059,6 +3779,9 @@ private fun WalletSettingsContent(
                 Text(if (isDefaultWallet) "View Recovery Phrase" else "Backup Recovery Phrase")
             }
 
+            // Relay backup is only offered for non-default Spark wallets.
+            // For default wallets the nsec is already the canonical backup
+            // and relay-backup adds no value while cluttering the screen.
             if (!isDefaultWallet) {
                 Spacer(Modifier.height(8.dp))
 
@@ -3072,137 +3795,13 @@ private fun WalletSettingsContent(
                 }
             }
 
-            // Relay backup status section (when logged in). Skipped for default
-            // wallets — the nsec already serves as their backup.
-            if (isLoggedIn && !isDefaultWallet) {
-                Spacer(Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Relay Backup Status",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    IconButton(
-                        onClick = onCheckRelayBackups,
-                        enabled = !relayBackupCheckLoading
-                    ) {
-                        if (relayBackupCheckLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Check relay backups",
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
-
-                if (relayBackupStatuses.isNotEmpty()) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            relayBackupStatuses.forEach { info ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(8.dp)
-                                            .background(
-                                                if (info.hasBackup) Color(0xFF4CAF50) else Color(0xFF9E9E9E),
-                                                CircleShape
-                                            )
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        info.relayUrl.removePrefix("wss://").removePrefix("ws://"),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    var showDeleteDialog by remember { mutableStateOf(false) }
-
-                    TextButton(
-                        onClick = { showDeleteDialog = true },
-                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFD32F2F)),
-                        enabled = deleteBackupStatus !is DeleteBackupStatus.InProgress
-                    ) {
-                        if (deleteBackupStatus is DeleteBackupStatus.InProgress) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = Color(0xFFD32F2F)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        Text("Delete Relay Backup")
-                    }
-
-                    if (deleteBackupStatus is DeleteBackupStatus.Success) {
-                        Text(
-                            "Backup deleted",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    } else if (deleteBackupStatus is DeleteBackupStatus.Error) {
-                        Text(
-                            deleteBackupStatus.message,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-
-                    if (showDeleteDialog) {
-                        AlertDialog(
-                            onDismissRequest = { showDeleteDialog = false },
-                            title = { Text("Delete Relay Backup?") },
-                            text = {
-                                Text("This will delete your wallet backup from your relays. Make sure you have your recovery phrase saved elsewhere.")
-                            },
-                            confirmButton = {
-                                TextButton(
-                                    onClick = {
-                                        showDeleteDialog = false
-                                        onDeleteRelayBackup()
-                                    },
-                                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFD32F2F))
-                                ) {
-                                    Text("Delete")
-                                }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = { showDeleteDialog = false }) {
-                                    Text("Cancel")
-                                }
-                            }
-                        )
-                    }
-                }
-            }
+            // Relay backup status list intentionally omitted — iOS doesn't
+            // surface a per-relay backup display, and the majority of users
+            // will use the default Spark wallet (which doesn't need relay
+            // backup since the nsec is the canonical backup). Non-default
+            // wallets can still tap "Backup to Nostr Relays" above; the
+            // status / delete plumbing in WalletViewModel stays alive in
+            // case we want to surface it again later.
         }
 
         // Disclaimer
@@ -3224,22 +3823,68 @@ private fun WalletSettingsContent(
 
         Spacer(Modifier.height(32.dp))
 
-        Button(
-            onClick = onDeleteWallet,
-            modifier = Modifier.fillMaxWidth(),
-            colors = if (isDefaultWallet) ButtonDefaults.buttonColors()
-                else ButtonDefaults.buttonColors(
+        // iOS treats both the default-Spark "Switch" and the NWC
+        // "Disconnect" cases as quiet, recoverable affordances — a
+        // card row with red text + swap icon plus a caption. Only the
+        // truly destructive Delete (non-default Spark whose seed can't
+        // be re-derived from nsec) keeps the filled-red CTA so the user
+        // notices the irreversibility.
+        val isRecoverable = walletMode == WalletMode.NWC || isDefaultWallet
+        if (isRecoverable) {
+            Text(
+                stringResource(R.string.wallet_disconnect_section),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, bottom = 6.dp)
+            )
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onDeleteWallet),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.SwapHoriz,
+                        contentDescription = null,
+                        tint = Color(0xFFFF3B30),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        stringResource(R.string.wallet_switch_wallet),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color(0xFFFF3B30)
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.wallet_switch_wallet_caption),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        } else {
+            Button(
+                onClick = onDeleteWallet,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFFD32F2F),
                     contentColor = Color.White
                 )
-        ) {
-            Text(
-                when {
-                    walletMode == WalletMode.NWC -> "Disconnect"
-                    isDefaultWallet -> stringResource(R.string.wallet_switch_wallet)
-                    else -> "Delete Wallet"
-                }
-            )
+            ) {
+                Text("Delete Wallet")
+            }
         }
 
         // Footer
@@ -3586,18 +4231,20 @@ private fun DeleteWalletConfirmContent(
     ) {
         Spacer(Modifier.height(32.dp))
 
+        // Confirmation page uses the same iOS-red `#FF3B30` for all
+        // three flows (default-switch, NWC-disconnect, non-default
+        // delete) so the user doesn't see one orange and one red CTA
+        // for what's the same conceptual action — "stop using this
+        // wallet." Matches the iOS-red used on the entry-point card.
+        val confirmAccent = Color(0xFFFF3B30)
         Icon(
             if (isDefault) Icons.Default.SwapHoriz else Icons.Default.Close,
             contentDescription = null,
             modifier = Modifier
                 .size(64.dp)
-                .background(
-                    (if (isDefault) MaterialTheme.colorScheme.primary else Color(0xFFD32F2F))
-                        .copy(alpha = 0.1f),
-                    CircleShape
-                )
+                .background(confirmAccent.copy(alpha = 0.1f), CircleShape)
                 .padding(16.dp),
-            tint = if (isDefault) MaterialTheme.colorScheme.primary else Color(0xFFD32F2F)
+            tint = confirmAccent
         )
 
         Spacer(Modifier.height(24.dp))
@@ -3609,7 +4256,7 @@ private fun DeleteWalletConfirmContent(
                 else -> "Delete Wallet"
             },
             style = MaterialTheme.typography.headlineMedium,
-            color = if (isDefault) MaterialTheme.colorScheme.onSurface else Color(0xFFD32F2F)
+            color = if (isDefault) MaterialTheme.colorScheme.onSurface else confirmAccent
         )
 
         Spacer(Modifier.height(16.dp))
@@ -3631,7 +4278,7 @@ private fun DeleteWalletConfirmContent(
             Text(
                 "Make sure you have backed up your recovery phrase before proceeding.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFFD32F2F),
+                color = confirmAccent,
                 textAlign = TextAlign.Center
             )
 
@@ -3652,11 +4299,10 @@ private fun DeleteWalletConfirmContent(
             onClick = onDelete,
             modifier = Modifier.fillMaxWidth(),
             enabled = isNwc || isDefault || confirmText == "DELETE",
-            colors = if (isDefault) ButtonDefaults.buttonColors()
-                else ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFD32F2F),
-                    contentColor = Color.White
-                )
+            colors = ButtonDefaults.buttonColors(
+                containerColor = confirmAccent,
+                contentColor = Color.White
+            )
         ) {
             Text(
                 when {
@@ -4190,11 +4836,21 @@ private fun WalletInfoRow(
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Fixed-width label column so values across rows align to the
+        // same x-coordinate regardless of label length, and the value
+        // text always has a stable container to ellipsize within.
+        // Without this, "Lightning address" pushes its value column 30dp
+        // to the right of "Relay" — the iOS settings panel uses the
+        // same column-aligned layout.
         Text(
             label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f)
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .widthIn(min = 110.dp)
+                .padding(end = 12.dp)
         )
         Text(
             value,
@@ -4202,7 +4858,8 @@ private fun WalletInfoRow(
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(2f)
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f)
         )
         if (onCopy != null) {
             Spacer(Modifier.width(8.dp))

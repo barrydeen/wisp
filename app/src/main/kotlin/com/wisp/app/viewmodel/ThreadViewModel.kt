@@ -434,6 +434,7 @@ class ThreadViewModel : ViewModel() {
             if (deletedRepo?.isDeleted(event.id) == true) continue
             if (muteRepo?.isBlocked(event.pubkey) == true) continue
             if (Nip10.isStandaloneQuote(event)) continue
+            if (eventRepoRef?.isWotFiltered(event.pubkey, event.kind) == true) continue
 
             if (spamEnabled && spamClassifier != null &&
                 event.pubkey != currentUserPubkey &&

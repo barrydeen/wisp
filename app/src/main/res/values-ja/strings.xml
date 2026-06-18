@@ -583,14 +583,8 @@
     <string name="profile_crawling_no_results">まだランキング結果がありません。後でもう一度確認してください。</string>
 
     <!-- Wallet -->
-    <string name="wallet_connect_wallet">ウォレットを接続</string>
-    <string name="wallet_choose_how">サットを送受信するためのLightningウォレットの接続方法を選択してください。</string>
-    <string name="wallet_create_new">新規ウォレットを作成</string>
-    <string name="wallet_create_description">Wispで直接新しいウォレットを作成、資金はSparkプロバイダーが保護</string>
-    <string name="wallet_nwc_description">NWC接続文字列を使用して外部Lightningウォレットを接続。</string>
     <string name="wallet_nwc_connection_string">NWC接続文字列</string>
     <string name="wallet_connect">接続</string>
-    <string name="wallet_spark">Sparkウォレット</string>
     <string name="wallet_set_up_lightning">Lightningアドレスを設定</string>
     <string name="wallet_send">送る</string>
     <string name="wallet_receive">受け取る</string>

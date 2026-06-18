@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -188,7 +189,8 @@ data class MediaMeta(
     val mime: String? = null,
     val dimension: String? = null,
     val thumbhash: String? = null,
-    val blurhash: String? = null
+    val blurhash: String? = null,
+    val image: String? = null
 )
 
 internal sealed interface ContentSegment {
@@ -224,7 +226,7 @@ private val blossomPathRegex = Regex("""^/[0-9a-f]{64}$""", RegexOption.IGNORE_C
 
 /**
  * Parse NIP-92 imeta tags from a list of tags to build a URL→metadata map.
- * Tag format: ["imeta", "url https://...", "m image/png", "dim 1024x768", "thumbhash ...", "blurhash ...", ...]
+ * Tag format: ["imeta", "url https://...", "m image/png", "dim 1024x768", "thumbhash ...", "blurhash ...", "image https://...", ...]
  */
 fun parseImetaTags(tags: List<List<String>>): Map<String, MediaMeta> {
     val map = mutableMapOf<String, MediaMeta>()
@@ -235,6 +237,7 @@ fun parseImetaTags(tags: List<List<String>>): Map<String, MediaMeta> {
         var dim: String? = null
         var thumb: String? = null
         var blur: String? = null
+        var image: String? = null
         for (i in 1 until tag.size) {
             val entry = tag[i]
             when {
@@ -243,10 +246,11 @@ fun parseImetaTags(tags: List<List<String>>): Map<String, MediaMeta> {
                 entry.startsWith("dim ") -> dim = entry.removePrefix("dim ")
                 entry.startsWith("thumbhash ") -> thumb = entry.removePrefix("thumbhash ")
                 entry.startsWith("blurhash ") -> blur = entry.removePrefix("blurhash ")
+                entry.startsWith("image ") -> image = entry.removePrefix("image ")
             }
         }
         if (url != null) {
-            map[url] = MediaMeta(url = url, mime = mime, dimension = dim, thumbhash = thumb, blurhash = blur)
+            map[url] = MediaMeta(url = url, mime = mime, dimension = dim, thumbhash = thumb, blurhash = blur, image = image)
         }
     }
     return map
@@ -1014,6 +1018,19 @@ fun RichContent(
                                     UnsupportedKindBadge(kind = kind, style = style)
                                 }
                             }
+                            kind == 36787 -> {
+                                if (eventRepo != null && segment.author != null) {
+                                    MusicTrackCard(
+                                        dTag = segment.dTag,
+                                        author = segment.author,
+                                        relayHints = segment.relays,
+                                        eventRepo = eventRepo,
+                                        onProfileClick = onProfileClick
+                                    )
+                                } else {
+                                    UnsupportedKindBadge(kind = kind, style = style)
+                                }
+                            }
                             else -> UnsupportedKindBadge(kind = kind, style = style)
                         }
                     }
@@ -1530,6 +1547,222 @@ private fun ArticleCard(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MusicTrackCard(
+    dTag: String,
+    author: String,
+    relayHints: List<String>,
+    eventRepo: EventRepository,
+    onProfileClick: ((String) -> Unit)?
+) {
+    val context = LocalContext.current
+    val version by eventRepo.quotedEventVersion.collectAsState()
+    val event = remember(author, dTag, version) {
+        eventRepo.findAddressableEvent(36787, author, dTag)
+    }
+    val profile = remember(author, version) { eventRepo.getProfileData(author) }
+
+    LaunchedEffect(author, dTag) {
+        if (eventRepo.findAddressableEvent(36787, author, dTag) == null) {
+            eventRepo.requestAddressableEvent(36787, author, dTag, relayHints)
+        }
+    }
+
+    val title = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) }
+    val artist = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "artist" }?.get(1) }
+    val audioUrl = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "url" }?.get(1) }
+    val image = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1) }
+    val durationSecs = remember(event) {
+        event?.tags?.firstOrNull { it.size >= 2 && it[0] == "duration" }?.get(1)?.toLongOrNull()
+    }
+
+    val globalState by AudioPlayerController.state.collectAsState()
+    val isCurrent = audioUrl != null && globalState?.track?.url == audioUrl
+    val isPlaying = isCurrent && globalState?.isPlaying == true
+
+    fun buildTrack() = AudioTrack(
+        url = audioUrl!!,
+        title = title,
+        artist = artist,
+        artworkUrl = image,
+        authorPubkey = author
+    )
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        if (event == null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(14.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.width(14.dp).height(14.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Loading track...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Artwork
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (image != null) {
+                            LoadingAsyncImage(
+                                model = image,
+                                contentDescription = title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Filled.MusicNote,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = "MUSIC",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                        Text(
+                            text = title ?: "Untitled Track",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 3.dp)
+                        )
+                        if (!artist.isNullOrBlank()) {
+                            Text(
+                                text = artist,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            ProfilePicture(url = profile?.picture, size = 18)
+                            Spacer(Modifier.width(6.dp))
+                            val displayName = profile?.displayString
+                                ?: author.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
+                            Text(
+                                text = displayName,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = if (onProfileClick != null) {
+                                    Modifier.clickable { onProfileClick(author) }
+                                } else Modifier
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.width(8.dp))
+
+                    IconButton(
+                        enabled = audioUrl != null,
+                        onClick = {
+                            if (isCurrent) {
+                                AudioPlayerController.togglePlayPause()
+                            } else if (audioUrl != null) {
+                                AudioPlayerController.play(context, buildTrack())
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = if (isPlaying) "Pause" else "Play",
+                            tint = if (audioUrl != null) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
+
+                // Active scrubber while this track owns the global player; otherwise
+                // the static duration tag (if present) on the trailing edge.
+                if (isCurrent) {
+                    val position = globalState?.positionMs ?: 0L
+                    val duration = globalState?.durationMs ?: 0L
+                    val progress = if (duration > 0) position.toFloat() / duration.toFloat() else 0f
+                    Column(modifier = Modifier.padding(top = 8.dp)) {
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp)),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = formatAudioTime(position),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = formatAudioTime(duration),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else if (durationSecs != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Text(
+                            text = formatAudioTime(durationSecs * 1000),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -2302,8 +2535,25 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
     var isPlaying by remember { mutableStateOf(false) }
     var isBuffering by remember { mutableStateOf(false) }
 
-    val exoPlayer = remember(url) {
-        (PipController.reclaimPlayer(url)
+    // A note can carry an arbitrary number of video URLs, and a prepared
+    // player per composed URL exhausts hardware codec instances (~16-32
+    // device-wide), threads (~3 per player), and memory all at once. The
+    // player therefore only exists while its video is near the viewport
+    // (or after an explicit tap); scrolling fully off-screen releases it
+    // and remembers the position.
+    var playerWanted by remember(url) { mutableStateOf(false) }
+    var playOnCreate by remember(url) { mutableStateOf(false) }
+    var resumePositionMs by remember(url) { mutableLongStateOf(0L) }
+    var exoPlayer by remember(url) { mutableStateOf<ExoPlayer?>(null) }
+
+    // Sync volume with global mute state
+    LaunchedEffect(isMuted) {
+        exoPlayer?.volume = if (isMuted) 0f else 1f
+    }
+
+    DisposableEffect(url, playerWanted) {
+        if (!playerWanted) return@DisposableEffect onDispose {}
+        val player = (PipController.reclaimPlayer(url)
             ?: HttpClientFactory.createExoPlayer(context).apply {
                 setMediaItem(MediaItem.fromUri(Uri.parse(url)))
                 prepare()
@@ -2312,14 +2562,7 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
             }).apply {
                 repeatMode = Player.REPEAT_MODE_ONE
             }
-    }
-
-    // Sync volume with global mute state
-    LaunchedEffect(isMuted) {
-        exoPlayer.volume = if (isMuted) 0f else 1f
-    }
-
-    DisposableEffect(url) {
+        if (resumePositionMs > 0) player.seekTo(resumePositionMs)
         val listener = object : Player.Listener {
             override fun onVideoSizeChanged(videoSize: VideoSize) {
                 if (videoSize.width > 0 && videoSize.height > 0) {
@@ -2328,7 +2571,7 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
-                if (!playing && exoPlayer.playbackState == Player.STATE_READY) {
+                if (!playing && player.playbackState == Player.STATE_READY) {
                     userPaused = true
                 }
             }
@@ -2336,13 +2579,23 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
                 isBuffering = state == Player.STATE_BUFFERING
             }
         }
-        exoPlayer.addListener(listener)
+        player.addListener(listener)
+        if (playOnCreate) {
+            playOnCreate = false
+            activeVideoUrl.value = url
+            player.play()
+        }
+        exoPlayer = player
         onDispose {
-            exoPlayer.removeListener(listener)
+            player.removeListener(listener)
             activeVideoUrl.compareAndSet(url, null)
+            resumePositionMs = player.currentPosition
+            isPlaying = false
+            isBuffering = false
+            exoPlayer = null
             // Only release if not handed off to PiP
             if (PipController.pipState.value?.url != url) {
-                exoPlayer.release()
+                player.release()
             }
         }
     }
@@ -2364,25 +2617,80 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
                 val visibleHeight = (visibleBottom - visibleTop).coerceAtLeast(0f)
                 val totalHeight = bounds.height
                 val visibleFraction = if (totalHeight > 0) visibleHeight / totalHeight else 0f
+                val player = exoPlayer
                 if (visibleFraction > 0.5f) {
-                    if (mediaSettings.videoAutoPlay && !exoPlayer.isPlaying && !userPaused) {
+                    if (mediaSettings.videoAutoPlay && !userPaused) {
                         val current = activeVideoUrl.value
                         if (current == null || current == url) {
-                            activeVideoUrl.value = url
-                            exoPlayer.play()
+                            if (player == null) {
+                                playerWanted = true
+                            } else if (!player.isPlaying) {
+                                activeVideoUrl.value = url
+                                player.play()
+                            }
                         }
                     }
+                } else if (visibleFraction <= 0f) {
+                    // Fully off-screen: release the player, keep the position
+                    if (playerWanted) playerWanted = false
+                    userPaused = false
                 } else {
-                    if (exoPlayer.isPlaying) exoPlayer.pause()
+                    if (player?.isPlaying == true) player.pause()
                     activeVideoUrl.compareAndSet(url, null)
                     userPaused = false
                 }
             }
     ) {
+        val player = exoPlayer
+        if (player == null) {
+            // Stand-in until the player is needed; tap plays immediately
+            val blurPainter = rememberMediaPlaceholderPainter(meta.thumbhash, meta.blurhash, meta.dimension)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable {
+                        userPaused = false
+                        playOnCreate = true
+                        playerWanted = true
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                if (meta.image != null) {
+                    // Uploader-provided preview frame (NIP-92 imeta "image")
+                    AsyncImage(
+                        model = meta.image,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        placeholder = blurPainter,
+                        error = blurPainter,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else if (blurPainter != null) {
+                    Image(
+                        painter = blurPainter,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = "Play video",
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(
+                            color = Color.Black.copy(alpha = 0.5f),
+                            shape = CircleShape
+                        )
+                        .padding(8.dp),
+                    tint = Color.White
+                )
+            }
+        } else {
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
-                    player = exoPlayer
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     useController = true
                     controllerAutoShow = false
@@ -2395,6 +2703,7 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
                     hideController()
                 }
             },
+            update = { it.player = player },
             modifier = Modifier.fillMaxSize()
         )
 
@@ -2444,8 +2753,8 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
                 Spacer(Modifier.width(4.dp))
                 IconButton(
                     onClick = {
-                        val position = exoPlayer.currentPosition
-                        exoPlayer.pause()
+                        val position = player.currentPosition
+                        player.pause()
                         onFullScreen(position)
                     },
                     colors = buttonColors,
@@ -2459,7 +2768,7 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
                 Spacer(Modifier.width(4.dp))
                 IconButton(
                     onClick = {
-                        PipController.enterPip(url, exoPlayer, videoAspectRatio)
+                        PipController.enterPip(url, player, videoAspectRatio)
                     },
                     colors = buttonColors,
                     modifier = Modifier.size(36.dp)
@@ -2479,10 +2788,10 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
                     .clickable {
                         activeVideoUrl.value = url
                         userPaused = false
-                        if (exoPlayer.playbackState == Player.STATE_ENDED) {
-                            exoPlayer.seekTo(0)
+                        if (player.playbackState == Player.STATE_ENDED) {
+                            player.seekTo(0)
                         }
-                        exoPlayer.play()
+                        player.play()
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -2500,6 +2809,7 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
                 )
             }
         }
+        } // player != null
     }
     } // centering wrapper
 }
@@ -2581,8 +2891,22 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
     var userPaused by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
     var isBuffering by remember { mutableStateOf(false) }
-    val exoPlayer = remember(url) {
-        (PipController.reclaimPlayer(url)
+
+    // Same lazy lifecycle as InlineVideoPlayerWithFullscreen: the player
+    // only exists while near the viewport (or after a tap), so a note
+    // full of video URLs can't exhaust codecs/threads/memory.
+    var playerWanted by remember(url) { mutableStateOf(false) }
+    var playOnCreate by remember(url) { mutableStateOf(false) }
+    var resumePositionMs by remember(url) { mutableLongStateOf(0L) }
+    var exoPlayer by remember(url) { mutableStateOf<ExoPlayer?>(null) }
+
+    LaunchedEffect(isMuted) {
+        exoPlayer?.volume = if (isMuted) 0f else 1f
+    }
+
+    DisposableEffect(url, playerWanted) {
+        if (!playerWanted) return@DisposableEffect onDispose {}
+        val player = (PipController.reclaimPlayer(url)
             ?: HttpClientFactory.createExoPlayer(context).apply {
                 setMediaItem(MediaItem.fromUri(Uri.parse(url)))
                 prepare()
@@ -2591,13 +2915,7 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
             }).apply {
                 repeatMode = Player.REPEAT_MODE_ONE
             }
-    }
-
-    LaunchedEffect(isMuted) {
-        exoPlayer.volume = if (isMuted) 0f else 1f
-    }
-
-    DisposableEffect(url) {
+        if (resumePositionMs > 0) player.seekTo(resumePositionMs)
         val listener = object : Player.Listener {
             override fun onVideoSizeChanged(videoSize: VideoSize) {
                 if (videoSize.width > 0 && videoSize.height > 0) {
@@ -2606,7 +2924,7 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
-                if (!playing && exoPlayer.playbackState == Player.STATE_READY) {
+                if (!playing && player.playbackState == Player.STATE_READY) {
                     userPaused = true
                 }
             }
@@ -2614,12 +2932,22 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
                 isBuffering = state == Player.STATE_BUFFERING
             }
         }
-        exoPlayer.addListener(listener)
+        player.addListener(listener)
+        if (playOnCreate) {
+            playOnCreate = false
+            activeVideoUrl.value = url
+            player.play()
+        }
+        exoPlayer = player
         onDispose {
-            exoPlayer.removeListener(listener)
+            player.removeListener(listener)
             activeVideoUrl.compareAndSet(url, null)
+            resumePositionMs = player.currentPosition
+            isPlaying = false
+            isBuffering = false
+            exoPlayer = null
             if (PipController.pipState.value?.url != url) {
-                exoPlayer.release()
+                player.release()
             }
         }
     }
@@ -2636,25 +2964,61 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
                 val visibleHeight = (visibleBottom - visibleTop).coerceAtLeast(0f)
                 val totalHeight = bounds.height
                 val visibleFraction = if (totalHeight > 0) visibleHeight / totalHeight else 0f
+                val player = exoPlayer
                 if (visibleFraction > 0.5f) {
-                    if (mediaSettings.videoAutoPlay && !exoPlayer.isPlaying && !userPaused) {
+                    if (mediaSettings.videoAutoPlay && !userPaused) {
                         val current = activeVideoUrl.value
                         if (current == null || current == url) {
-                            activeVideoUrl.value = url
-                            exoPlayer.play()
+                            if (player == null) {
+                                playerWanted = true
+                            } else if (!player.isPlaying) {
+                                activeVideoUrl.value = url
+                                player.play()
+                            }
                         }
                     }
+                } else if (visibleFraction <= 0f) {
+                    // Fully off-screen: release the player, keep the position
+                    if (playerWanted) playerWanted = false
+                    userPaused = false
                 } else {
-                    if (exoPlayer.isPlaying) exoPlayer.pause()
+                    if (player?.isPlaying == true) player.pause()
                     activeVideoUrl.compareAndSet(url, null)
                     userPaused = false
                 }
             }
     ) {
+        val player = exoPlayer
+        if (player == null) {
+            // Stand-in until the player is needed; tap plays immediately
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable {
+                        userPaused = false
+                        playOnCreate = true
+                        playerWanted = true
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = "Play video",
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(
+                            color = Color.Black.copy(alpha = 0.5f),
+                            shape = CircleShape
+                        )
+                        .padding(8.dp),
+                    tint = Color.White
+                )
+            }
+        } else {
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
-                    player = exoPlayer
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     useController = true
                     controllerAutoShow = false
@@ -2667,6 +3031,7 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
                     hideController()
                 }
             },
+            update = { it.player = player },
             modifier = Modifier.fillMaxSize()
         )
 
@@ -2707,10 +3072,10 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
                     .clickable {
                         activeVideoUrl.value = url
                         userPaused = false
-                        if (exoPlayer.playbackState == Player.STATE_ENDED) {
-                            exoPlayer.seekTo(0)
+                        if (player.playbackState == Player.STATE_ENDED) {
+                            player.seekTo(0)
                         }
-                        exoPlayer.play()
+                        player.play()
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -2728,6 +3093,7 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
                 )
             }
         }
+        } // player != null
     }
 }
 

@@ -544,14 +544,8 @@
     <string name="profile_crawling_no_results">Результатов ранжирования пока нет. Проверьте позже.</string>
 
     <!-- Wallet -->
-    <string name="wallet_connect_wallet">Подключить Кошелёк</string>
-    <string name="wallet_choose_how">Выберите способ подключения кошелька Lightning для отправки и получения сат.</string>
-    <string name="wallet_create_new">Создать Новый Кошелёк</string>
-    <string name="wallet_create_description">Создайте новый кошелёк прямо в Wisp, средства защищены провайдерами Spark</string>
-    <string name="wallet_nwc_description">Подключите внешний кошелёк Lightning с помощью строки подключения NWC.</string>
     <string name="wallet_nwc_connection_string">Строка Подключения NWC</string>
     <string name="wallet_connect">Подключить</string>
-    <string name="wallet_spark">Кошелёк Spark</string>
     <string name="wallet_set_up_lightning">Настроить Адрес Lightning</string>
     <string name="wallet_send">Отправить</string>
     <string name="wallet_receive">Получить</string>

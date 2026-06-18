@@ -19,8 +19,8 @@ android {
         applicationId = baseApplicationId
         minSdk = 26
         targetSdk = 35
-        versionCode = 80
-        versionName = "1.1.0"
+        versionCode = 81
+        versionName = "1.1.1"
         resValue("string", "app_name", "Wisp")
 
         ndk {
@@ -47,6 +47,19 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+
+        create("staging") {
+            // Release-performance build for on-device testing. debuggable=true (the
+            // debug type) makes ART ignore the baseline profile and run JIT-only with
+            // deoptimization support, which cripples the per-event hot path (JSON parse,
+            // hex decode, SHA-256, JNI Schnorr verify per relay event). This variant is
+            // non-debuggable + R8 like release, but debug-signed so anyone can install
+            // it without the release keystore. Installs alongside debug/release.
+            initWith(getByName("release"))
+            applicationIdSuffix = ".staging"
+            resValue("string", "app_name", "Wisp Staging")
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

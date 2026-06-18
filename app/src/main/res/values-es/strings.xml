@@ -583,14 +583,8 @@
     <string name="profile_crawling_no_results">Sin resultados clasificados aún. Vuelve más tarde.</string>
 
     <!-- Wallet -->
-    <string name="wallet_connect_wallet">Conectar Billetera</string>
-    <string name="wallet_choose_how">Elige cómo conectar una billetera Lightning para enviar y recibir sats.</string>
-    <string name="wallet_create_new">Crear Nueva Billetera</string>
-    <string name="wallet_create_description">Crea una nueva billetera directamente en Wisp, fondos asegurados por proveedores Spark</string>
-    <string name="wallet_nwc_description">Conecta una billetera Lightning externa usando una cadena de conexión NWC.</string>
     <string name="wallet_nwc_connection_string">Cadena de Conexión NWC</string>
     <string name="wallet_connect">Conectar</string>
-    <string name="wallet_spark">Billetera Spark</string>
     <string name="wallet_set_up_lightning">Configurar tu Dirección Lightning</string>
     <string name="wallet_send">Enviar</string>
     <string name="wallet_receive">Recibir</string>

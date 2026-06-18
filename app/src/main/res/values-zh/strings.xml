@@ -583,14 +583,8 @@
     <string name="profile_crawling_no_results">暂无排名结果。请稍后再试。</string>
 
     <!-- Wallet -->
-    <string name="wallet_connect_wallet">连接钱包</string>
-    <string name="wallet_choose_how">选择如何连接Lightning钱包以发送和接收聪。</string>
-    <string name="wallet_create_new">创建新钱包</string>
-    <string name="wallet_create_description">直接在Wisp中创建新钱包，资金由Spark提供商保障</string>
-    <string name="wallet_nwc_description">使用NWC连接字符串连接外部Lightning钱包。</string>
     <string name="wallet_nwc_connection_string">NWC连接字符串</string>
     <string name="wallet_connect">连接</string>
-    <string name="wallet_spark">Spark钱包</string>
     <string name="wallet_set_up_lightning">设置Lightning地址</string>
     <string name="wallet_send">发送</string>
     <string name="wallet_receive">接收</string>

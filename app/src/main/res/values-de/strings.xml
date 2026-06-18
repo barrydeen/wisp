@@ -583,14 +583,8 @@
     <string name="profile_crawling_no_results">Noch keine gerankten Ergebnisse. Schauen Sie später vorbei.</string>
 
     <!-- Wallet -->
-    <string name="wallet_connect_wallet">Brieftasche Verbinden</string>
-    <string name="wallet_choose_how">Wählen Sie, wie Sie eine Lightning-Brieftasche zum Senden und Empfangen von Sats verbinden.</string>
-    <string name="wallet_create_new">Neue Brieftasche Erstellen</string>
-    <string name="wallet_create_description">Erstellen Sie eine neue Brieftasche direkt in Wisp, Gelder werden von Spark-Anbietern gesichert</string>
-    <string name="wallet_nwc_description">Verbinden Sie eine externe Lightning-Brieftasche mit einer NWC-Verbindungszeichenfolge.</string>
     <string name="wallet_nwc_connection_string">NWC-Verbindungszeichenfolge</string>
     <string name="wallet_connect">Verbinden</string>
-    <string name="wallet_spark">Spark Brieftasche</string>
     <string name="wallet_set_up_lightning">Lightning-Adresse Einrichten</string>
     <string name="wallet_send">Senden</string>
     <string name="wallet_receive">Empfangen</string>
