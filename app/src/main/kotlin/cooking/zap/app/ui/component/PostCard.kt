@@ -1,0 +1,1426 @@
+package cooking.zap.app.ui.component
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import android.content.Intent
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.zIndex
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.material3.Surface
+import cooking.zap.app.nostr.Nip05
+import cooking.zap.app.nostr.toNpub
+import cooking.zap.app.nostr.Nip10
+import cooking.zap.app.nostr.Nip13
+import cooking.zap.app.nostr.Nip19
+import cooking.zap.app.nostr.NostrEvent
+import cooking.zap.app.nostr.ProfileData
+import cooking.zap.app.nostr.hexToByteArray
+import cooking.zap.app.R
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import cooking.zap.app.nostr.Nip30
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material3.CircularProgressIndicator
+import cooking.zap.app.nostr.Nip69
+import cooking.zap.app.nostr.Nip88
+import cooking.zap.app.repo.EventRepository
+import cooking.zap.app.repo.Nip05Repository
+import cooking.zap.app.repo.ZapDetail
+import cooking.zap.app.repo.Nip05Status
+import cooking.zap.app.repo.TranslationState
+import cooking.zap.app.repo.TranslationStatus
+import cooking.zap.app.ui.theme.WispThemeColors
+import cooking.zap.app.ui.util.LocalCanSign
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+private val mediaExtensions = setOf("mp4", "mov", "webm", "mp3", "wav", "ogg", "m4a", "flac", "aac", "jpg", "jpeg", "png", "gif", "webp")
+private val mediaMimePrefixes = listOf("video/", "audio/", "image/")
+private val contentUrlRegex = Regex("""https?://\S+""")
+
+private fun contentHasMedia(content: String, imetaMap: Map<String, MediaMeta>): Boolean {
+    // Check imeta tags for video/audio
+    if (imetaMap.values.any { meta -> meta.mime?.let { m -> mediaMimePrefixes.any { m.startsWith(it) } } == true }) return true
+    // Check URLs in content for media extensions
+    return contentUrlRegex.findAll(content).any { match ->
+        val url = match.value.trimEnd('.', ',', ')', ']')
+        val ext = url.substringAfterLast('.').substringBefore('?').lowercase()
+        ext in mediaExtensions
+    }
+}
+
+@Composable
+fun PostCard(
+    event: NostrEvent,
+    profile: ProfileData?,
+    onReply: () -> Unit,
+    onProfileClick: () -> Unit = {},
+    onNavigateToProfile: ((String) -> Unit)? = null,
+    onNoteClick: (() -> Unit)? = null,
+    onReact: (String) -> Unit = {},
+    userReactionEmojis: Set<String> = emptySet(),
+    onRepost: () -> Unit = {},
+    onQuote: () -> Unit = {},
+    hasUserReposted: Boolean = false,
+    repostCount: Int = 0,
+    onZap: () -> Unit = {},
+    onZapDisabledTap: () -> Unit = {},
+    zapEnabled: Boolean = true,
+    hasUserZapped: Boolean = false,
+    likeCount: Int = 0,
+    replyCount: Int = 0,
+    zapSats: Long = 0,
+    isZapAnimating: Boolean = false,
+    isZapInProgress: Boolean = false,
+    eventRepo: EventRepository? = null,
+    relayIcons: List<Pair<String, String?>> = emptyList(),
+    onRelayClick: (String) -> Unit = {},
+    repostPubkeys: List<String> = emptyList(),
+    repostTime: Long? = null,
+    reactionDetails: Map<String, List<String>> = emptyMap(),
+    zapDetails: List<ZapDetail> = emptyList(),
+    onNavigateToProfileFromDetails: ((String) -> Unit)? = null,
+    onFollowAuthor: () -> Unit = {},
+    onBlockAuthor: () -> Unit = {},
+    isFollowingAuthor: Boolean = false,
+    isOwnEvent: Boolean = false,
+    isPrivate: Boolean = false,
+    nip05Repo: Nip05Repository? = null,
+    onAddToList: () -> Unit = {},
+    isInList: Boolean = false,
+    onPin: () -> Unit = {},
+    isPinned: Boolean = false,
+    onDelete: () -> Unit = {},
+    onQuotedNoteClick: ((String) -> Unit)? = null,
+    noteActions: NoteActions? = null,
+    repostDetails: List<String> = emptyList(),
+    reactionEmojiUrls: Map<String, String> = emptyMap(),
+    resolvedEmojis: Map<String, String> = emptyMap(),
+    unicodeEmojis: List<String> = emptyList(),
+    onOpenEmojiLibrary: (() -> Unit)? = null,
+    onMuteThread: (() -> Unit)? = null,
+    pollVoteCounts: Map<String, Int> = emptyMap(),
+    pollTotalVotes: Int = 0,
+    userPollVotes: List<String> = emptyList(),
+    onPollVote: (List<String>) -> Unit = {},
+    zapPollSatsCounts: Map<Int, Long> = emptyMap(),
+    zapPollTotalSats: Long = 0L,
+    userZapPollVote: Int? = null,
+    onZapPollVote: (Int) -> Unit = {},
+    translationState: TranslationState = TranslationState(),
+    onTranslate: () -> Unit = {},
+    autoTranslate: Boolean = false,
+    quoteDepth: Int = 0,
+    modifier: Modifier = Modifier,
+    showDivider: Boolean = true
+) {
+    val displayName = remember(event.pubkey, profile?.displayString) {
+        profile?.displayString
+            ?: event.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
+    }
+
+    val timestamp = remember(event.created_at) {
+        formatTimestamp(event.created_at)
+    }
+
+    // Avoid allocating a new list on every recomposition when we already have <= 5 icons
+    val displayIcons = remember(relayIcons) {
+        if (relayIcons.size <= 5) relayIcons else relayIcons.take(5)
+    }
+
+    val contentWarning = remember(event.id) {
+        event.tags.firstOrNull { it.size >= 1 && it[0] == "content-warning" }
+    }
+    var contentRevealed by remember { mutableStateOf(false) }
+
+    val clientName = remember(event.id) {
+        event.tags.firstOrNull { it.size >= 2 && it[0] == "client" }?.get(1)
+    }
+
+    // Reply-to attribution: resolve the author of the event being replied to
+    val replyToPubkey = remember(event.id) {
+        if (!Nip10.isReply(event)) null
+        else {
+            // Use the pubkey of the actual reply target event, not the first p-tag
+            val replyTargetId = Nip10.getReplyTarget(event)
+            replyTargetId?.let { eventRepo?.getEvent(it)?.pubkey }
+                ?: event.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
+        }
+    }
+    // Re-derive when profiles load so we don't get stuck showing hex
+    val profileVersion by eventRepo?.profileVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
+    val replyToName = remember(replyToPubkey, profileVersion) {
+        replyToPubkey?.let { pk ->
+            eventRepo?.getProfileData(pk)?.displayString ?: pk.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
+        }
+    }
+
+    val hasReactionDetails = reactionDetails.isNotEmpty() || zapDetails.isNotEmpty() || repostDetails.isNotEmpty()
+    var expandedDetails by remember { mutableStateOf(false) }
+    var showTranslation by remember { mutableStateOf(true) }
+
+    LaunchedEffect(event.id, autoTranslate, translationState.status) {
+        if (autoTranslate && translationState.status == TranslationStatus.IDLE) {
+            onTranslate()
+        }
+    }
+
+    // Wrap content + divider so the divider can run full-width while the
+    // content keeps its 16dp horizontal padding. Tap-to-open lives on the
+    // content Column so the (tiny) divider area isn't tappable.
+    Column(modifier = modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onNoteClick != null) Modifier.pointerInput(onNoteClick) {
+                awaitEachGesture {
+                    // Observe DOWN without consuming so children can still process it
+                    val downEvent = awaitPointerEvent(PointerEventPass.Initial)
+                    if (downEvent.changes.none { it.pressed && !it.previousPressed }) return@awaitEachGesture
+                    // Wait for UP in Final pass — after all children have had a chance to consume
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Final)
+                        val change = event.changes.firstOrNull() ?: return@awaitEachGesture
+                        if (change.isConsumed) return@awaitEachGesture // child handled it
+                        if (!change.pressed) { onNoteClick(); return@awaitEachGesture }
+                    }
+                }
+            } else Modifier)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        if (repostPubkeys.isNotEmpty()) {
+            val maxAvatars = 10
+            val displayPubkeys = repostPubkeys.take(maxAvatars)
+            val overflow = repostPubkeys.size - maxAvatars
+            val formattedRepostTime = repostTime?.let { formatTimestamp(it) }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+            ) {
+                Icon(
+                    Icons.Outlined.Repeat,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+
+                // Overlapping avatars
+                Box(modifier = Modifier.height(20.dp).width((displayPubkeys.size * 14 + 6 + 4).dp)) {
+                    displayPubkeys.forEachIndexed { index, pubkey ->
+                        val avatarUrl = eventRepo?.getProfileData(pubkey)?.picture
+                        Box(modifier = Modifier.offset(x = (index * 14).dp)) {
+                            ProfilePicture(
+                                url = avatarUrl,
+                                size = 20,
+                                showFollowBadge = false,
+                                onClick = { onNavigateToProfileFromDetails?.invoke(pubkey) }
+                            )
+                        }
+                    }
+                }
+
+                // Label text
+                val labelText = if (repostPubkeys.size == 1) {
+                    val name = eventRepo?.getProfileData(repostPubkeys.first())?.displayString
+                        ?: repostPubkeys.first().toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
+                    "$name reposted"
+                } else if (overflow > 0) {
+                    "and $overflow others reposted"
+                } else {
+                    "reposted"
+                }
+                Text(
+                    text = labelText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                if (formattedRepostTime != null) {
+                    Text(
+                        text = " \u00B7 $formattedRepostTime",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ProfilePicture(
+                url = profile?.picture,
+                showFollowBadge = isFollowingAuthor && !isOwnEvent,
+                onClick = onProfileClick,
+                onLongPress = if (!isOwnEvent) onFollowAuthor else null
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clickable(onClick = onProfileClick)
+                )
+                if (replyToName != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "replying to ",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = replyToName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.clickable {
+                                replyToPubkey?.let { onNavigateToProfile?.invoke(it) }
+                            }
+                        )
+                    }
+                }
+                // NIP-38: user status (hide on replies to reduce clutter)
+                val statusVersion by eventRepo?.statusVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
+                val userStatus = remember(statusVersion, event.pubkey) {
+                    eventRepo?.getUserStatus(event.pubkey)
+                }
+                if (userStatus != null && !Nip10.isReply(event)) {
+                    Text(
+                        text = userStatus,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                    )
+                }
+                profile?.nip05?.let { nip05 ->
+                    Nip05Badge(
+                        nip05 = nip05,
+                        pubkey = event.pubkey,
+                        nip05Repo = nip05Repo,
+                        onClick = onProfileClick
+                    )
+                }
+            }
+            if (isPrivate) {
+                Icon(
+                    imageVector = Icons.Outlined.VisibilityOff,
+                    contentDescription = "Private reply",
+                    modifier = Modifier.size(14.dp),
+                    tint = Color(0xFFFF8C00)
+                )
+                Spacer(Modifier.width(4.dp))
+            }
+            Text(
+                text = timestamp,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+            val powBits = remember(event.id) { Nip13.verifyDifficulty(event) }
+            if (powBits >= 16) {
+                Spacer(Modifier.width(4.dp))
+                    Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                ) {
+                    Text(
+                        text = stringResource(R.string.post_pow_x, powBits),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+            }
+            Box {
+                var menuExpanded by remember { mutableStateOf(false) }
+                var showDeleteConfirm by remember { mutableStateOf(false) }
+                val context = LocalContext.current
+                val clipboardManager = LocalClipboardManager.current
+                IconButton(
+                    onClick = { menuExpanded = true },
+                    modifier = Modifier.size(18.dp)
+                ) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = stringResource(R.string.cd_more_options),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    if (!isOwnEvent) {
+                        DropdownMenuItem(
+                            text = { Text(if (isFollowingAuthor) stringResource(R.string.btn_unfollow) else stringResource(R.string.btn_follow)) },
+                            onClick = {
+                                menuExpanded = false
+                                onFollowAuthor()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_block)) },
+                            onClick = {
+                                menuExpanded = false
+                                onBlockAuthor()
+                            }
+                        )
+                    }
+                    if (onMuteThread != null) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_mute_thread)) },
+                            onClick = {
+                                menuExpanded = false
+                                onMuteThread()
+                            }
+                        )
+                    }
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_add_to_list)) },
+                        onClick = {
+                            menuExpanded = false
+                            onAddToList()
+                        }
+                    )
+                    if (isOwnEvent) {
+                        DropdownMenuItem(
+                            text = { Text(if (isPinned) stringResource(R.string.btn_unpin_from_profile) else stringResource(R.string.btn_pin_to_profile)) },
+                            onClick = {
+                                menuExpanded = false
+                                onPin()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_delete)) },
+                            onClick = {
+                                menuExpanded = false
+                                showDeleteConfirm = true
+                            }
+                        )
+                    }
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_share)) },
+                        onClick = {
+                            menuExpanded = false
+                            try {
+                                val nevent = Nip19.neventEncode(event.id.hexToByteArray())
+                                val url = "https://njump.me/$nevent"
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, url)
+                                }
+                                context.startActivity(Intent.createChooser(intent, null))
+                            } catch (_: Exception) {}
+                        }
+                    )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_copy_note_id)) },
+                        onClick = {
+                            menuExpanded = false
+                            try {
+                                val relays = eventRepo?.getEventRelays(event.id)?.take(3)?.toList() ?: emptyList()
+                                val neventId = Nip19.neventEncode(
+                                    eventId = event.id.hexToByteArray(),
+                                    relays = relays,
+                                    author = event.pubkey.hexToByteArray()
+                                )
+                                clipboardManager.setText(AnnotatedString(neventId))
+                            } catch (_: Exception) {}
+                        }
+                    )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_copy_note_json)) },
+                        onClick = {
+                            menuExpanded = false
+                            clipboardManager.setText(AnnotatedString(event.toJson()))
+                        }
+                    )
+                    val translating = translationState.status == TranslationStatus.IDENTIFYING_LANGUAGE ||
+                        translationState.status == TranslationStatus.DOWNLOADING_MODEL ||
+                        translationState.status == TranslationStatus.TRANSLATING
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                when {
+                                    translationState.status == TranslationStatus.DONE && showTranslation -> stringResource(R.string.translate_show_original)
+                                    translationState.status == TranslationStatus.DONE && !showTranslation -> stringResource(R.string.translate_show_translation)
+                                    translationState.status == TranslationStatus.SAME_LANGUAGE -> stringResource(R.string.translate_same_language)
+                                    else -> stringResource(R.string.translate_translate)
+                                }
+                            )
+                        },
+                        enabled = !translating && translationState.status != TranslationStatus.SAME_LANGUAGE,
+                        onClick = {
+                            menuExpanded = false
+                            if (translationState.status == TranslationStatus.DONE) {
+                                showTranslation = !showTranslation
+                            } else {
+                                onTranslate()
+                            }
+                        }
+                    )
+                }
+                if (showDeleteConfirm) {
+                    AlertDialog(
+                        onDismissRequest = { showDeleteConfirm = false },
+                        title = { Text(stringResource(R.string.title_delete_note)) },
+                        text = { Text(stringResource(R.string.msg_delete_note_confirm)) },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showDeleteConfirm = false
+                                onDelete()
+                            }) {
+                                Text(
+                                    stringResource(R.string.btn_delete),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showDeleteConfirm = false }) {
+                                Text(stringResource(R.string.btn_cancel))
+                            }
+                        }
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+
+        if (contentWarning != null && !contentRevealed) {
+            // Content warning overlay
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { contentRevealed = true }
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(vertical = 24.dp, horizontal = 16.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.Warning,
+                        contentDescription = stringResource(R.string.cd_content_warning),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    val reason = contentWarning.getOrNull(1)?.takeIf { it.isNotBlank() }
+                    Text(
+                        text = reason ?: stringResource(R.string.translate_sensitive_content),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.translate_tap_to_reveal),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            }
+        } else {
+            // Normal content display
+            val emojiMap = remember(event.id) { Nip30.parseEmojiTags(event) }
+            val imetaMap = remember(event.id) { parseImetaTags(event.tags) }
+            // Skip collapsible behavior for posts with video/audio — height
+            // constraints distort media sizing. Only truncate text-heavy posts.
+            val hasMedia = remember(event.content, imetaMap) {
+                contentHasMedia(event.content, imetaMap)
+            }
+
+            if (hasMedia) {
+                RichContent(
+                    content = event.content,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    emojiMap = emojiMap,
+                    imetaMap = imetaMap,
+                    eventRepo = eventRepo,
+                    onProfileClick = onNavigateToProfile,
+                    onNoteClick = onQuotedNoteClick,
+                    noteActions = noteActions,
+                    authorPubkey = event.pubkey,
+                    quoteDepth = quoteDepth
+                )
+            } else {
+                // Collapsible content with max height (~1 viewport)
+                val collapsedMaxHeight = 500.dp
+                var contentExpanded by remember { mutableStateOf(false) }
+                var contentExceedsMax by remember { mutableStateOf(false) }
+                val density = LocalDensity.current
+
+                Box {
+                    Box(
+                        modifier = Modifier
+                            .then(
+                                if (!contentExpanded) Modifier.heightIn(max = collapsedMaxHeight) else Modifier
+                            )
+                            .clipToBounds()
+                            .onGloballyPositioned { coordinates ->
+                                if (!contentExpanded) {
+                                    val maxPx = with(density) { collapsedMaxHeight.toPx() }
+                                    contentExceedsMax = coordinates.size.height >= maxPx.toInt()
+                                }
+                            },
+                        contentAlignment = Alignment.TopStart
+                    ) {
+                        RichContent(
+                            content = event.content,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            emojiMap = emojiMap,
+                            imetaMap = imetaMap,
+                            eventRepo = eventRepo,
+                            onProfileClick = onNavigateToProfile,
+                            onNoteClick = onQuotedNoteClick,
+                            noteActions = noteActions,
+                            quoteDepth = quoteDepth
+                        )
+                    }
+
+                    // Gradient fade overlay when collapsed and content overflows
+                    if (contentExceedsMax && !contentExpanded) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .height(80.dp)
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            MaterialTheme.colorScheme.surface
+                                        )
+                                    )
+                                )
+                        )
+                    }
+                }
+
+                if (contentExceedsMax) {
+                    TextButton(
+                        onClick = { contentExpanded = !contentExpanded },
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    ) {
+                        Text(
+                            text = if (contentExpanded) stringResource(R.string.translate_show_less) else stringResource(R.string.translate_show_more),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
+            // Hide button to re-collapse CW content
+            if (contentWarning != null) {
+                TextButton(
+                    onClick = { contentRevealed = false },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text(
+                        text = stringResource(R.string.btn_hide),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Inline translation display
+            when (translationState.status) {
+                TranslationStatus.IDENTIFYING_LANGUAGE,
+                TranslationStatus.DOWNLOADING_MODEL,
+                TranslationStatus.TRANSLATING -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 1.5.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = when (translationState.status) {
+                                TranslationStatus.IDENTIFYING_LANGUAGE -> stringResource(R.string.translate_detecting_language)
+                                TranslationStatus.DOWNLOADING_MODEL -> stringResource(R.string.translate_downloading_model)
+                                else -> stringResource(R.string.translate_translating)
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                TranslationStatus.DONE -> {
+                    if (showTranslation) {
+                        Column(modifier = Modifier.padding(top = 4.dp)) {
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                thickness = 0.5.dp
+                            )
+                            Text(
+                                text = stringResource(R.string.translate_translated_from, translationState.sourceLanguage),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                            )
+                            val emojiMap = remember(event.id) { Nip30.parseEmojiTags(event) }
+                            val imetaMap = remember(event.id) { parseImetaTags(event.tags) }
+                            RichContent(
+                                content = translationState.translatedText,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                emojiMap = emojiMap,
+                                imetaMap = imetaMap,
+                                eventRepo = eventRepo,
+                                onProfileClick = onNavigateToProfile,
+                                onNoteClick = onQuotedNoteClick,
+                                noteActions = noteActions,
+                                quoteDepth = quoteDepth
+                            )
+                        }
+                    }
+                }
+                TranslationStatus.ERROR -> {
+                    Text(
+                        text = translationState.errorMessage,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
+                else -> {}
+            }
+
+            // Poll section
+            if (event.kind == Nip88.KIND_POLL) {
+                PollSection(
+                    event = event,
+                    voteCounts = pollVoteCounts,
+                    totalVotes = pollTotalVotes,
+                    userVotes = userPollVotes,
+                    onVote = onPollVote
+                )
+            } else if (event.kind == Nip69.KIND_ZAP_POLL) {
+                ZapPollSection(
+                    event = event,
+                    satsCounts = zapPollSatsCounts,
+                    totalSats = zapPollTotalSats,
+                    userVote = userZapPollVote,
+                    onVote = onZapPollVote
+                )
+            }
+
+            // Top zapper banner
+            if (zapDetails.isNotEmpty()) {
+                val topZap = remember(zapDetails) {
+                    zapDetails.maxByOrNull { it.sats }
+                }
+                if (topZap != null) {
+                    val zapperProfile = eventRepo?.getProfileData(topZap.pubkey)
+                    val zapperName = zapperProfile?.displayString
+                        ?: topZap.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
+                    TopZapperBanner(
+                        avatarUrl = zapperProfile?.picture,
+                        name = zapperName,
+                        sats = topZap.sats,
+                        message = topZap.message,
+                        onClick = {
+                            val nav = onNavigateToProfileFromDetails ?: onNavigateToProfile
+                            nav?.invoke(topZap.pubkey)
+                        }
+                    )
+                }
+            }
+        }
+
+        val canSign = LocalCanSign.current
+        if (canSign) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ActionBar(
+                    onReply = onReply,
+                    onReact = onReact,
+                    userReactionEmojis = userReactionEmojis,
+                    onRepost = onRepost,
+                    onQuote = onQuote,
+                    hasUserReposted = hasUserReposted,
+                    repostCount = repostCount,
+                    onZap = onZap,
+                    hasUserZapped = hasUserZapped,
+                    onAddToList = onAddToList,
+                    isInList = isInList,
+                    likeCount = likeCount,
+                    replyCount = replyCount,
+                    zapSats = zapSats,
+                    isZapAnimating = isZapAnimating,
+                    isZapInProgress = isZapInProgress,
+                    reactionEmojiUrls = reactionEmojiUrls,
+                    resolvedEmojis = resolvedEmojis,
+                    unicodeEmojis = unicodeEmojis,
+                    onOpenEmojiLibrary = onOpenEmojiLibrary,
+                    isPrivate = isPrivate,
+                    zapEnabled = zapEnabled,
+                    onZapDisabledTap = onZapDisabledTap,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = if (expandedDetails) Icons.Filled.KeyboardArrowUp
+                        else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = if (expandedDetails) stringResource(R.string.cd_collapse) else stringResource(R.string.cd_expand),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clickable { expandedDetails = !expandedDetails }
+                )
+            }
+        }
+        AnimatedVisibility(
+            visible = expandedDetails,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            val profileResolver: (String) -> ProfileData? = { pubkey ->
+                eventRepo?.getProfileData(pubkey)
+            }
+            val navToProfile = onNavigateToProfileFromDetails ?: onNavigateToProfile ?: {}
+            Column {
+                if (hasReactionDetails) {
+                    ReactionDetailsSection(
+                        reactionDetails = reactionDetails,
+                        zapDetails = zapDetails,
+                        repostDetails = repostDetails,
+                        resolveProfile = profileResolver,
+                        onProfileClick = navToProfile,
+                        reactionEmojiUrls = reactionEmojiUrls,
+                        eventRepo = eventRepo
+                    )
+                }
+                if (displayIcons.isNotEmpty()) {
+                    SeenOnSection(relayIcons = displayIcons, onRelayClick = onRelayClick)
+                }
+                if (clientName != null) {
+                    ClientTagSection(clientName = clientName)
+                }
+            }
+        }
+    }
+    if (showDivider) {
+        // Full-bleed inter-post separator — sits outside the content
+        // Column's 16dp horizontal padding so it spans edge to edge,
+        // matching the iOS feed.
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
+    }
+    }
+}
+
+@Composable
+private fun PollSection(
+    event: NostrEvent,
+    voteCounts: Map<String, Int>,
+    totalVotes: Int,
+    userVotes: List<String>,
+    onVote: (List<String>) -> Unit
+) {
+    val options = remember(event.id) { Nip88.parsePollOptions(event) }
+    val pollType = remember(event.id) { Nip88.parsePollType(event) }
+    val isEnded = remember(event.id) { Nip88.isPollEnded(event) }
+    val hasVoted = userVotes.isNotEmpty()
+    val showResults = hasVoted || isEnded
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        if (showResults) {
+            // Results mode
+            options.forEach { option ->
+                val count = voteCounts[option.id] ?: 0
+                val percentage = if (totalVotes > 0) count.toFloat() / totalVotes else 0f
+                val isUserChoice = option.id in userVotes
+                PollResultRow(
+                    label = option.label,
+                    percentage = percentage,
+                    count = count,
+                    isUserChoice = isUserChoice
+                )
+            }
+            Text(
+                text = "$totalVotes vote${if (totalVotes != 1) "s" else ""}${if (isEnded) " · Poll ended" else ""}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        } else {
+            // Voting mode
+            if (pollType == Nip88.PollType.SINGLECHOICE) {
+                options.forEach { option ->
+                    PollOptionRow(
+                        label = option.label,
+                        selected = false,
+                        isRadio = true,
+                        onClick = { onVote(listOf(option.id)) }
+                    )
+                }
+            } else {
+                // Multiplechoice — track local selection and submit
+                var selected by remember { mutableStateOf(setOf<String>()) }
+                options.forEach { option ->
+                    PollOptionRow(
+                        label = option.label,
+                        selected = option.id in selected,
+                        isRadio = false,
+                        onClick = {
+                            selected = if (option.id in selected) selected - option.id
+                            else selected + option.id
+                        }
+                    )
+                }
+                if (selected.isNotEmpty()) {
+                    TextButton(
+                        onClick = { onVote(selected.toList()) }
+                    ) {
+                        Text(stringResource(R.string.btn_vote))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PollOptionRow(
+    label: String,
+    selected: Boolean,
+    isRadio: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer
+               else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Text(
+                text = if (isRadio) {
+                    if (selected) "◉" else "○"
+                } else {
+                    if (selected) "☑" else "☐"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (selected) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+@Composable
+private fun PollResultRow(
+    label: String,
+    percentage: Float,
+    count: Int,
+    isUserChoice: Boolean
+) {
+    val animatedFraction by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = percentage.coerceIn(0f, 1f),
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 600),
+        label = "pollBar"
+    )
+    val barColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+
+    val fillHeight = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val density = LocalDensity.current
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            .onGloballyPositioned { fillHeight.intValue = it.size.height }
+    ) {
+        // Filled bar — primary color for all options
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(fraction = if (animatedFraction > 0f) animatedFraction else 0.001f)
+                .height(with(density) { fillHeight.intValue.toDp() })
+                .background(color = barColor)
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            if (isUserChoice) {
+                Text(
+                    text = "✓ ",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = "${(percentage * 100).toInt()}% ($count)",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ZapPollSection(
+    event: NostrEvent,
+    satsCounts: Map<Int, Long>,
+    totalSats: Long,
+    userVote: Int?,
+    onVote: (Int) -> Unit
+) {
+    val options = remember(event.id) { Nip69.parseZapPollOptions(event) }
+    val isClosed = remember(event.id) { Nip69.isZapPollClosed(event) }
+    val hasVoted = userVote != null
+    val showResults = hasVoted || isClosed || totalSats > 0
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        if (showResults) {
+            options.forEach { option ->
+                val sats = satsCounts[option.index] ?: 0L
+                val percentage = if (totalSats > 0) sats.toFloat() / totalSats else 0f
+                val isUserChoice = option.index == userVote
+                ZapPollResultRow(
+                    label = option.label,
+                    percentage = percentage,
+                    sats = sats,
+                    isUserChoice = isUserChoice
+                )
+            }
+            val formattedSats = java.text.NumberFormat.getNumberInstance().format(totalSats)
+            Text(
+                text = "$formattedSats sats total${if (isClosed) " \u00b7 Poll ended" else ""}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            val minSats = remember(event.id) { Nip69.parseValueMinimum(event) }
+            val maxSats = remember(event.id) { Nip69.parseValueMaximum(event) }
+            if (minSats != null || maxSats != null) {
+                val constraint = buildString {
+                    if (minSats != null) append("Min: $minSats sats")
+                    if (minSats != null && maxSats != null) append(" \u00b7 ")
+                    if (maxSats != null) append("Max: $maxSats sats")
+                }
+                Text(
+                    text = constraint,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+        } else {
+            // Voting mode — click an option to zap-vote
+            options.forEach { option ->
+                PollOptionRow(
+                    label = option.label,
+                    selected = false,
+                    isRadio = true,
+                    onClick = { onVote(option.index) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ZapPollResultRow(
+    label: String,
+    percentage: Float,
+    sats: Long,
+    isUserChoice: Boolean
+) {
+    val animatedFraction by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = percentage.coerceIn(0f, 1f),
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 600),
+        label = "zapPollBar"
+    )
+    val barColor = WispThemeColors.zapColor.copy(alpha = 0.25f)
+
+    val fillHeight = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val density = LocalDensity.current
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            .onGloballyPositioned { fillHeight.intValue = it.size.height }
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(fraction = if (animatedFraction > 0f) animatedFraction else 0.001f)
+                .height(with(density) { fillHeight.intValue.toDp() })
+                .background(color = barColor)
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            if (isUserChoice) {
+                Text(
+                    text = "\u26A1 ",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = WispThemeColors.zapColor
+                )
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            val formattedSats = java.text.NumberFormat.getNumberInstance().format(sats)
+            Text(
+                text = "${(percentage * 100).toInt()}% ($formattedSats sats)",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+internal fun TopZapperBanner(
+    avatarUrl: String?,
+    name: String,
+    sats: Long,
+    message: String,
+    onClick: () -> Unit
+) {
+    val orange = WispThemeColors.zapColor
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .border(
+                    width = 1.dp,
+                    color = orange.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(50)
+                )
+                .clickable(onClick = onClick)
+                .padding(start = 8.dp, end = 10.dp, top = 4.dp, bottom = 4.dp)
+        ) {
+            // Zapper avatar
+            ProfilePicture(
+                url = avatarUrl,
+                size = 18,
+                onClick = onClick
+            )
+            Spacer(Modifier.width(5.dp))
+
+            // Zap icon
+            val useZapBolt = cooking.zap.app.ui.util.useBoltIcon()
+            val fiatMode = cooking.zap.app.ui.util.isFiatMode()
+            if (fiatMode) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_coin_stack),
+                    contentDescription = null,
+                    tint = orange,
+                    modifier = Modifier.size(16.dp)
+                )
+            } else if (useZapBolt) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_bolt),
+                    contentDescription = null,
+                    tint = orange,
+                    modifier = Modifier.size(13.dp)
+                )
+            } else {
+                Icon(
+                    Icons.Outlined.CurrencyBitcoin,
+                    contentDescription = null,
+                    tint = orange,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            // Amount
+            Text(
+                text = cooking.zap.app.ui.util.AmountFormatter.formatShort(
+                    sats,
+                    androidx.compose.ui.platform.LocalContext.current
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = orange
+            )
+
+            // Message (if present) — image URLs collapse to "[image]"
+            // since the banner only has room for a single line and a
+            // dumped URL crowds out the sats amount. Full image renders
+            // inline in the engagement drawer below.
+            if (message.isNotBlank()) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = cooking.zap.app.ui.util.ZapMessageImage.previewText(message),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+private val dateTimeFormat = SimpleDateFormat("MMM d, HH:mm", Locale.US)
+private val dateTimeYearFormat = SimpleDateFormat("MMM d, yyyy", Locale.US)
+
+/**
+ * Format an epoch timestamp into a relative or absolute time string.
+ * Avoids Calendar allocations — uses simple arithmetic for "yesterday" check.
+ */
+private fun formatTimestamp(epoch: Long): String {
+    val now = System.currentTimeMillis()
+    val millis = epoch * 1000
+    val diff = now - millis
+
+    if (diff < 0) return dateTimeFormat.format(Date(millis))
+
+    val seconds = diff / 1000
+    val minutes = seconds / 60
+    val hours = minutes / 60
+
+    if (seconds < 60) return "${seconds}s"
+    if (minutes < 60) return "${minutes}m"
+    if (hours < 24) return "${hours}h"
+
+    val days = diff / (24 * 60 * 60 * 1000L)
+    if (days == 1L) return "yesterday"
+
+    val date = Date(millis)
+    val cal = java.util.Calendar.getInstance()
+    val currentYear = cal.get(java.util.Calendar.YEAR)
+    cal.time = date
+    val dateYear = cal.get(java.util.Calendar.YEAR)
+
+    return if (dateYear != currentYear) {
+        dateTimeYearFormat.format(date)
+    } else {
+        dateTimeFormat.format(date)
+    }
+}
+
+/**
+ * Self-contained NIP-05 badge that observes verification state.
+ * Handles its own subscription to nip05Repo.version so it works correctly
+ * in any context (feed, profile, quoted notes, etc.).
+ */
+@Composable
+internal fun Nip05Badge(
+    nip05: String,
+    pubkey: String,
+    nip05Repo: Nip05Repository?,
+    onClick: (() -> Unit)? = null,
+    maxLines: Int = 1,
+    verifiedTint: Color = MaterialTheme.colorScheme.primary,
+    iconLeading: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    if (nip05.isBlank()) return
+    LaunchedEffect(nip05Repo, pubkey, nip05) {
+        nip05Repo?.checkOrFetch(pubkey, nip05)
+    }
+    val version = nip05Repo?.version?.collectAsState()
+    // Read .value to ensure Compose tracks this state
+    val v = version?.value ?: 0
+    val status = if (v >= 0) nip05Repo?.getStatus(pubkey) else null
+    val isImpersonator = status == Nip05Status.IMPERSONATOR
+    val isError = status == Nip05Status.ERROR
+    val textColor = when {
+        isImpersonator -> MaterialTheme.colorScheme.onSurfaceVariant
+        isError -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        else -> MaterialTheme.colorScheme.primary
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.then(
+            when {
+                isError -> Modifier.clickable { nip05Repo?.retry(pubkey) }
+                onClick != null -> Modifier.clickable(onClick = onClick)
+                else -> Modifier
+            }
+        )
+    ) {
+        if (iconLeading) {
+            if (status == Nip05Status.VERIFIED) {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = "Verified",
+                    tint = verifiedTint,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+            } else if (isImpersonator) {
+                Icon(
+                    Icons.Default.Cancel,
+                    contentDescription = "Impersonator",
+                    tint = Color.Red,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+            } else if (isError) {
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = "Retry verification",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+            }
+        }
+        Text(
+            text = Nip05.formatForDisplay(nip05),
+            style = MaterialTheme.typography.bodySmall,
+            color = textColor,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false)
+        )
+        if (!iconLeading) {
+            if (status == Nip05Status.VERIFIED) {
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = "Verified",
+                    tint = verifiedTint,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+            if (isImpersonator) {
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    Icons.Default.Cancel,
+                    contentDescription = "Impersonator",
+                    tint = Color.Red,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+            if (isError) {
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = "Retry verification",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        }
+    }
+}

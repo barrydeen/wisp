@@ -1,0 +1,850 @@
+package cooking.zap.app.ui.screen
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import cooking.zap.app.nostr.Nip02
+import cooking.zap.app.nostr.Nip05
+import cooking.zap.app.nostr.Nip69
+import cooking.zap.app.nostr.NostrEvent
+import cooking.zap.app.nostr.ProfileData
+import cooking.zap.app.R
+import cooking.zap.app.relay.RelayPool
+import cooking.zap.app.repo.ContactRepository
+import cooking.zap.app.repo.EventRepository
+import cooking.zap.app.repo.MuteRepository
+import cooking.zap.app.repo.TranslationRepository
+import cooking.zap.app.repo.TranslationState
+import cooking.zap.app.ui.component.FollowButton
+import cooking.zap.app.ui.component.NoteActions
+import cooking.zap.app.ui.component.NsecPasteGuard
+import cooking.zap.app.ui.component.PostCard
+import cooking.zap.app.ui.component.ProfilePicture
+import cooking.zap.app.viewmodel.RelayOption
+import cooking.zap.app.viewmodel.SearchFilter
+import cooking.zap.app.viewmodel.SearchViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchScreen(
+    viewModel: SearchViewModel,
+    relayPool: RelayPool,
+    eventRepo: EventRepository,
+    muteRepo: MuteRepository? = null,
+    contactRepo: ContactRepository? = null,
+    onProfileClick: (String) -> Unit,
+    onNoteClick: (NostrEvent) -> Unit,
+    onQuotedNoteClick: ((String) -> Unit)? = null,
+    onReply: (NostrEvent) -> Unit = {},
+    onReact: (NostrEvent, String) -> Unit = { _, _ -> },
+    onRepost: (NostrEvent) -> Unit = {},
+    onQuote: (NostrEvent) -> Unit = {},
+    onZap: (NostrEvent) -> Unit = {},
+    zapInProgress: Set<String> = emptySet(),
+    zapAnimatingIds: Set<String> = emptySet(),
+    onToggleFollow: (String) -> Unit = {},
+    onHashtagClick: ((String) -> Unit)? = null,
+    onBlockUser: (String) -> Unit = {},
+    userPubkey: String? = null,
+    listedIds: Set<String> = emptySet(),
+    onAddToList: (String) -> Unit = {},
+    onDeleteEvent: (String, Int) -> Unit = { _, _ -> },
+    translationRepo: TranslationRepository? = null,
+    autoTranslate: Boolean = false,
+    onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    onZapPollVote: (String, Int) -> Unit = { _, _ -> },
+    onAddEmojiSet: ((String, String) -> Unit)? = null,
+    onRemoveEmojiSet: ((String, String) -> Unit)? = null,
+    isEmojiSetAdded: ((String, String) -> Boolean)? = null,
+    nip05Repo: cooking.zap.app.repo.Nip05Repository? = null
+) {
+    val query by viewModel.query.collectAsState()
+    val filter by viewModel.filter.collectAsState()
+    val users by viewModel.users.collectAsState()
+    val notes by viewModel.notes.collectAsState()
+    val isSearching by viewModel.isSearching.collectAsState()
+    val selectedRelayOption by viewModel.selectedRelayOption.collectAsState()
+    val selectedRelayUrl by viewModel.selectedRelayUrl.collectAsState()
+    val searchRelays by viewModel.searchRelays.collectAsState()
+    val authorFilter by viewModel.authorFilter.collectAsState()
+    val authorSearchResults by viewModel.authorSearchResults.collectAsState()
+    val isAuthorSearching by viewModel.isAuthorSearching.collectAsState()
+
+    val reactionVersion by eventRepo.reactionVersion.collectAsState()
+    val repostVersion by eventRepo.repostVersion.collectAsState()
+    val zapVersion by eventRepo.zapVersion.collectAsState()
+    val followList by remember(contactRepo) {
+        contactRepo?.followList ?: MutableStateFlow<List<Nip02.FollowEntry>>(emptyList())
+    }.collectAsState()
+
+    val noteActions = remember(userPubkey, onHashtagClick) {
+        NoteActions(
+            onHashtagClick = onHashtagClick,
+            onProfileClick = onProfileClick,
+            onNoteClick = { eventId -> onQuotedNoteClick?.invoke(eventId) },
+            userPubkey = userPubkey,
+            onAddEmojiSet = onAddEmojiSet,
+            onRemoveEmojiSet = onRemoveEmojiSet,
+            isEmojiSetAdded = isEmojiSetAdded,
+            onPollVote = onPollVote,
+            nip05Repo = nip05Repo,
+        )
+    }
+
+    var advancedExpanded by remember { mutableStateOf(authorFilter != null) }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        try { focusRequester.requestFocus() } catch (_: IllegalStateException) {}
+        // Seed search refs so debounced auto-search works before first manual search
+        viewModel.initSearchRefs(relayPool, eventRepo, muteRepo)
+    }
+
+    Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Segmented tab: People | Notes
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(50))
+                            .padding(4.dp)
+                    ) {
+                        SearchTab(
+                            label = stringResource(R.string.tab_people),
+                            icon = Icons.Default.AccountCircle,
+                            selected = filter == SearchFilter.PEOPLE,
+                            onClick = { viewModel.selectFilter(SearchFilter.PEOPLE) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        SearchTab(
+                            label = stringResource(R.string.tab_notes),
+                            icon = Icons.Default.Forum,
+                            selected = filter == SearchFilter.NOTES,
+                            onClick = { viewModel.selectFilter(SearchFilter.NOTES) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    // Search bar + filter toggle
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        TextField(
+                            value = query,
+                            onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(query, new)) viewModel.updateQuery(new) },
+                            singleLine = true,
+                            placeholder = { Text(stringResource(R.string.title_search)) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp))
+                            },
+                            trailingIcon = {
+                                if (query.isNotEmpty()) {
+                                    IconButton(onClick = { viewModel.clear() }) {
+                                        Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.btn_clear), modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                            ),
+                            shape = RoundedCornerShape(50),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(
+                                onSearch = { viewModel.search(query, relayPool, eventRepo, muteRepo) }
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .focusRequester(focusRequester)
+                        )
+                        IconButton(onClick = { advancedExpanded = !advancedExpanded }) {
+                            Icon(
+                                Icons.Default.Tune,
+                                contentDescription = null,
+                                tint = if (advancedExpanded) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            AnimatedVisibility(visible = advancedExpanded) {
+                Column {
+                    RelaySelector(
+                        searchRelays = searchRelays,
+                        selectedOption = selectedRelayOption,
+                        selectedRelayUrl = selectedRelayUrl,
+                        onSelectDefault = { viewModel.selectDefaultRelay() },
+                        onSelectAllRelays = { viewModel.selectAllRelays() },
+                        onSelectRelay = { viewModel.selectRelay(it) },
+                        onAddRelay = { viewModel.addSearchRelay(it) },
+                        onRemoveRelay = { viewModel.removeSearchRelay(it) }
+                    )
+                    if (filter == SearchFilter.NOTES) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        AuthorFilter(
+                            authorFilter = authorFilter,
+                            authorSearchResults = authorSearchResults,
+                            isAuthorSearching = isAuthorSearching,
+                            onSearchAuthors = { viewModel.searchAuthors(it, relayPool, eventRepo) },
+                            onSelectAuthor = { viewModel.setAuthorFilter(it) },
+                            onClearAuthor = { viewModel.clearAuthorFilter() }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            // Results
+            when {
+                isSearching -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+
+                users.isEmpty() && notes.isEmpty() && query.isNotEmpty() && !isSearching -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            stringResource(R.string.error_no_results_found),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                users.isEmpty() && notes.isEmpty() -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            stringResource(R.string.error_search_hint),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                else -> {
+                    val translationVersion by translationRepo?.version?.collectAsState()
+                        ?: remember { androidx.compose.runtime.mutableIntStateOf(0) }
+                    val pollVoteVersion by eventRepo.pollVoteVersion.collectAsState()
+                    val sortedUsers = remember(users) {
+                        users.sortedByDescending { contactRepo?.isFollowing(it.pubkey) == true }
+                    }
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        if (filter == SearchFilter.PEOPLE) {
+                            items(sortedUsers, key = { it.pubkey }, contentType = { "user" }) { profile ->
+                                UserResultItem(
+                                    profile = profile,
+                                    isFollowing = followList.any { it.pubkey == profile.pubkey },
+                                    onClick = { onProfileClick(profile.pubkey) },
+                                    onToggleFollow = { onToggleFollow(profile.pubkey) }
+                                )
+                            }
+                        } else {
+                            items(notes, key = { it.id }, contentType = { "post" }) { event ->
+                                val translationState = remember(translationVersion, event.id) {
+                                    translationRepo?.getState(event.id) ?: TranslationState()
+                                }
+                                val pollVoteCounts = remember(pollVoteVersion, event.id) {
+                                    if (event.kind == 1068) eventRepo.getPollVoteCounts(event.id) else emptyMap()
+                                }
+                                val pollTotalVotes = remember(pollVoteVersion, event.id) {
+                                    if (event.kind == 1068) eventRepo.getPollTotalVotes(event.id) else 0
+                                }
+                                val userPollVotes = remember(pollVoteVersion, event.id) {
+                                    if (event.kind == 1068) eventRepo.getUserPollVotes(event.id) else emptyList()
+                                }
+                                val zapPollSatsCounts = remember(pollVoteVersion, event.id) {
+                                    if (event.kind == 6969) eventRepo.getZapPollSatsCounts(event.id) else emptyMap()
+                                }
+                                val zapPollTotalSats = remember(pollVoteVersion, event.id) {
+                                    if (event.kind == 6969) eventRepo.getZapPollTotalSats(event.id) else 0L
+                                }
+                                val userZapPollVote = remember(pollVoteVersion, event.id) {
+                                    if (event.kind == 6969) eventRepo.getUserZapPollVote(event.id) else null
+                                }
+                                SearchNoteItem(
+                                    event = event,
+                                    eventRepo = eventRepo,
+                                    reactionVersion = reactionVersion,
+                                    repostVersion = repostVersion,
+                                    zapVersion = zapVersion,
+                                    isZapAnimating = event.id in zapAnimatingIds,
+                                    isZapInProgress = event.id in zapInProgress,
+                                    followList = followList,
+                                    contactRepo = contactRepo,
+                                    userPubkey = userPubkey,
+                                    isOwnEvent = event.pubkey == userPubkey,
+                                    noteActions = noteActions,
+                                    onReply = { onReply(event) },
+                                    onProfileClick = { onProfileClick(event.pubkey) },
+                                    onNoteClick = { onNoteClick(event) },
+                                    onQuotedNoteClick = onQuotedNoteClick,
+                                    onReact = { emoji -> onReact(event, emoji) },
+                                    onRepost = { onRepost(event) },
+                                    onQuote = { onQuote(event) },
+                                    onZap = { onZap(event) },
+                                    onFollowAuthor = { onToggleFollow(event.pubkey) },
+                                    onBlockAuthor = { onBlockUser(event.pubkey) },
+                                    onAddToList = { onAddToList(event.id) },
+                                    isInList = event.id in listedIds,
+                                    onDelete = { onDeleteEvent(event.id, event.kind) },
+                                    translationState = translationState,
+                                    onTranslate = { translationRepo?.translate(event.id, event.content) },
+                                    autoTranslate = autoTranslate,
+                                    pollVoteCounts = pollVoteCounts,
+                                    pollTotalVotes = pollTotalVotes,
+                                    userPollVotes = userPollVotes,
+                                    onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                                    zapPollSatsCounts = zapPollSatsCounts,
+                                    zapPollTotalSats = zapPollTotalSats,
+                                    userZapPollVote = userZapPollVote,
+                                    onZapPollVote = { idx -> onZapPollVote(event.id, idx) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchTab(
+    label: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .background(
+                if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                RoundedCornerShape(50)
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = if (selected) Color.White else MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+            )
+        }
+    }
+}
+
+@Composable
+private fun SearchNoteItem(
+    event: NostrEvent,
+    eventRepo: EventRepository,
+    reactionVersion: Int,
+    repostVersion: Int,
+    zapVersion: Int,
+    isZapAnimating: Boolean,
+    isZapInProgress: Boolean,
+    followList: List<Nip02.FollowEntry>,
+    contactRepo: ContactRepository?,
+    userPubkey: String?,
+    isOwnEvent: Boolean,
+    noteActions: NoteActions?,
+    onReply: () -> Unit,
+    onProfileClick: () -> Unit,
+    onNoteClick: () -> Unit,
+    onQuotedNoteClick: ((String) -> Unit)?,
+    onReact: (String) -> Unit,
+    onRepost: () -> Unit,
+    onQuote: () -> Unit = {},
+    onZap: () -> Unit,
+    onFollowAuthor: () -> Unit,
+    onBlockAuthor: () -> Unit,
+    onAddToList: () -> Unit,
+    isInList: Boolean,
+    onDelete: () -> Unit,
+    translationState: TranslationState,
+    onTranslate: () -> Unit,
+    autoTranslate: Boolean = false,
+    pollVoteCounts: Map<String, Int>,
+    pollTotalVotes: Int,
+    userPollVotes: List<String>,
+    onPollVote: (List<String>) -> Unit,
+    zapPollSatsCounts: Map<Int, Long> = emptyMap(),
+    zapPollTotalSats: Long = 0L,
+    userZapPollVote: Int? = null,
+    onZapPollVote: (Int) -> Unit = {},
+) {
+    val profile = eventRepo.getProfileData(event.pubkey)
+    val likeCount = remember(reactionVersion, event.id) { eventRepo.getReactionCount(event.id) }
+    val userEmojis = remember(reactionVersion, event.id, userPubkey) {
+        userPubkey?.let { eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet()
+    }
+    val repostCount = remember(repostVersion, event.id) { eventRepo.getRepostCount(event.id) }
+    val hasUserReposted = remember(repostVersion, event.id) { eventRepo.hasUserReposted(event.id) }
+    val zapSats = remember(zapVersion, event.id) { eventRepo.getZapSats(event.id) }
+    val hasUserZapped = remember(zapVersion, event.id) { eventRepo.hasUserZapped(event.id) }
+    val isFollowingAuthor = remember(followList, event.pubkey) {
+        contactRepo?.isFollowing(event.pubkey) == true
+    }
+    PostCard(
+        event = event,
+        profile = profile,
+        likeCount = likeCount,
+        userReactionEmojis = userEmojis,
+        repostCount = repostCount,
+        hasUserReposted = hasUserReposted,
+        isFollowingAuthor = isFollowingAuthor,
+        onReply = onReply,
+        onProfileClick = onProfileClick,
+        onNavigateToProfile = noteActions?.onProfileClick,
+        onNoteClick = onNoteClick,
+        onQuotedNoteClick = onQuotedNoteClick,
+        onReact = onReact,
+        onRepost = onRepost,
+        onQuote = onQuote,
+        onZap = onZap,
+        hasUserZapped = hasUserZapped,
+        zapSats = zapSats,
+        isZapAnimating = isZapAnimating,
+        isZapInProgress = isZapInProgress,
+        eventRepo = eventRepo,
+        isOwnEvent = isOwnEvent,
+        onFollowAuthor = onFollowAuthor,
+        onBlockAuthor = onBlockAuthor,
+        onAddToList = onAddToList,
+        isInList = isInList,
+        onDelete = onDelete,
+        translationState = translationState,
+        onTranslate = onTranslate,
+        autoTranslate = autoTranslate,
+        pollVoteCounts = pollVoteCounts,
+        pollTotalVotes = pollTotalVotes,
+        userPollVotes = userPollVotes,
+        onPollVote = onPollVote,
+        zapPollSatsCounts = zapPollSatsCounts,
+        zapPollTotalSats = zapPollTotalSats,
+        userZapPollVote = userZapPollVote,
+        onZapPollVote = onZapPollVote,
+        noteActions = noteActions,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RelaySelector(
+    searchRelays: List<String>,
+    selectedOption: RelayOption,
+    selectedRelayUrl: String?,
+    onSelectDefault: () -> Unit,
+    onSelectAllRelays: () -> Unit,
+    onSelectRelay: (String) -> Unit,
+    onAddRelay: (String) -> Boolean,
+    onRemoveRelay: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var showAddDialog by remember { mutableStateOf(false) }
+
+    val displayText = when (selectedOption) {
+        RelayOption.DEFAULT -> SearchViewModel.DEFAULT_SEARCH_RELAY.removePrefix("wss://")
+        RelayOption.ALL_RELAYS -> stringResource(R.string.tab_all_relays)
+        RelayOption.INDIVIDUAL -> selectedRelayUrl?.removePrefix("wss://") ?: ""
+    }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = Modifier.padding(horizontal = 16.dp)
+    ) {
+        OutlinedTextField(
+            value = displayText,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(stringResource(R.string.placeholder_search_relay)) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                .fillMaxWidth()
+        )
+
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            // Default search relay
+            DropdownMenuItem(
+                text = { Text(SearchViewModel.DEFAULT_SEARCH_RELAY.removePrefix("wss://")) },
+                onClick = {
+                    onSelectDefault()
+                    expanded = false
+                }
+            )
+
+            if (searchRelays.isNotEmpty()) {
+                HorizontalDivider()
+            }
+
+            // User's search relays
+            searchRelays.forEach { url ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            url.removePrefix("wss://"),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    trailingIcon = {
+                        IconButton(
+                            onClick = { onRemoveRelay(url) },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = stringResource(R.string.cd_remove_relay),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    },
+                    onClick = {
+                        onSelectRelay(url)
+                        expanded = false
+                    }
+                )
+            }
+
+            HorizontalDivider()
+
+            // All relays option
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.tab_all_relays)) },
+                onClick = {
+                    onSelectAllRelays()
+                    expanded = false
+                }
+            )
+
+            HorizontalDivider()
+
+            // Add new relay
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.cd_add_new)) },
+                leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
+                onClick = {
+                    expanded = false
+                    showAddDialog = true
+                }
+            )
+        }
+    }
+
+    if (showAddDialog) {
+        AddRelayDialog(
+            onDismiss = { showAddDialog = false },
+            onAdd = { url ->
+                if (onAddRelay(url)) {
+                    showAddDialog = false
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun AddRelayDialog(
+    onDismiss: () -> Unit,
+    onAdd: (String) -> Unit
+) {
+    var url by remember { mutableStateOf("wss://") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.menu_add_search_relay)) },
+        text = {
+            OutlinedTextField(
+                value = url,
+                onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(url, new)) url = new },
+                placeholder = { Text(stringResource(R.string.placeholder_add_relay)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onAdd(url) })
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onAdd(url) }) {
+                Text(stringResource(R.string.btn_add))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.btn_cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun AuthorFilter(
+    authorFilter: ProfileData?,
+    authorSearchResults: List<ProfileData>,
+    isAuthorSearching: Boolean,
+    onSearchAuthors: (String) -> Unit,
+    onSelectAuthor: (ProfileData) -> Unit,
+    onClearAuthor: () -> Unit
+) {
+    var authorQuery by remember { mutableStateOf("") }
+
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        Text(
+            "Author",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+
+        if (authorFilter != null) {
+            // Show selected author
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ProfilePicture(url = authorFilter.picture, size = 32)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = authorFilter.displayString,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                IconButton(
+                    onClick = onClearAuthor,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Clear author",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        } else {
+            // Author search input
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = authorQuery,
+                    onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(authorQuery, new)) authorQuery = new },
+                    placeholder = { Text("Search for author") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(
+                        onSearch = { onSearchAuthors(authorQuery) }
+                    )
+                )
+                IconButton(onClick = { onSearchAuthors(authorQuery) }) {
+                    Icon(Icons.Default.Search, contentDescription = "Search authors")
+                }
+            }
+
+            // Author search results
+            if (isAuthorSearching) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            authorSearchResults.forEach { profile ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onSelectAuthor(profile)
+                            authorQuery = ""
+                        }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ProfilePicture(url = profile.picture, size = 32)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = profile.displayString,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (!profile.nip05.isNullOrBlank()) {
+                            Text(
+                                text = Nip05.formatForDisplay(profile.nip05),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UserResultItem(
+    profile: ProfileData,
+    isFollowing: Boolean = false,
+    onClick: () -> Unit,
+    onToggleFollow: () -> Unit = {}
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ProfilePicture(url = profile.picture, size = 48)
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = profile.displayString,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!profile.nip05.isNullOrBlank()) {
+                Text(
+                    text = Nip05.formatForDisplay(profile.nip05),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        FollowButton(
+            isFollowing = isFollowing,
+            onClick = onToggleFollow
+        )
+    }
+}

@@ -1,4 +1,4 @@
-extra["baseApplicationId"] = "com.wisp.app"
+extra["baseApplicationId"] = "cooking.zap.app"
 extra["debugApplicationIdSuffix"] = ".debug"
 
 plugins {

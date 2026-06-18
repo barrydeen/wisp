@@ -12,7 +12,7 @@ android {
     val baseApplicationId = rootProject.extra["baseApplicationId"] as String
     val debugApplicationIdSuffix = rootProject.extra["debugApplicationIdSuffix"] as String
 
-    namespace = "com.wisp.app"
+    namespace = "cooking.zap.app"
     compileSdk = 35
 
     defaultConfig {
@@ -48,6 +48,21 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    // Distribution targets (ZAPCOOKING_ANDROID_BUILD.md §2). Zapstore is
+    // primary, Play secondary. Skeleton only — kept config-free on purpose;
+    // the flavor-gated membership link-out flag rides on these in Phase 3.
+    // applicationId (cooking.zap.app) and the debug suffix are shared.
+    flavorDimensions += "store"
+    productFlavors {
+        create("zapstore") {
+            dimension = "store"
+            isDefault = true
+        }
+        create("play") {
+            dimension = "store"
         }
     }
 

@@ -122,9 +122,15 @@ Concern 2: ✅ (code) `Nip98.kt` + `ZapCookingApi` added, reusing
 against frontend goldens. **Remaining:** on-device NIP-98 round-trip
 against `POST /api/membership/check-status` (assert `owner: true`) — the
 JVM env here has no device/emulator.
-Concern 3: package rename `com.wisp.app -> cooking.zap.app` (mechanical;
-keep `wisp_*` storage strings, ObjectBox UIDs, and class names untouched
-— see §5). Fold in a minimal `zapstore`/`play` flavor skeleton here.
+Concern 3: ✅ package rename `com.wisp.app -> cooking.zap.app` (mechanical
+git-mv + package/import token rewrite across 259 .kt; namespace +
+baseApplicationId + rootProject.name; `wisp_*` storage strings, ObjectBox
+UIDs/model, and class names left untouched — see §5). Folded in the
+config-free `zapstore`(default)/`play` flavor skeleton. Verified: clean
+`assembleZapstoreDebug` builds (applicationId `cooking.zap.app(.debug)`,
+fileprovider authorities auto-resolved), unit suite 8/0/0/0, zero
+`com.wisp.app` in source. NOTE: flavors make `testDebugUnitTest` ambiguous
+— use `testZapstoreDebugUnitTest`.
 Concern 4: branding (app name, icon, splash, M3 tokens, user-visible
 strings, client tag, User-Agent; class-name rebrand optional).
 Concern 5: relays — add Pantry as members, align `default` to the web

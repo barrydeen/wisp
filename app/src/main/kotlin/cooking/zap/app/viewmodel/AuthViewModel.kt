@@ -1,0 +1,193 @@
+package cooking.zap.app.viewmodel
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import cooking.zap.app.nostr.Keys
+import cooking.zap.app.nostr.Nip19
+import cooking.zap.app.nostr.hexToByteArray
+import cooking.zap.app.nostr.toHex
+import cooking.zap.app.repo.AccountInfo
+import cooking.zap.app.repo.FiatPreferences
+import cooking.zap.app.repo.KeyRepository
+import cooking.zap.app.repo.SigningMode
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+
+class AuthViewModel(app: Application) : AndroidViewModel(app) {
+    val keyRepo = KeyRepository(app)
+
+    private val _nsecInput = MutableStateFlow("")
+    val nsecInput: StateFlow<String> = _nsecInput
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+
+    private val _npub = MutableStateFlow<String?>(keyRepo.getNpub())
+    val npub: StateFlow<String?> = _npub
+
+    private val _signingMode = MutableStateFlow(if (keyRepo.isLoggedIn()) keyRepo.getSigningMode() else null)
+    val signingModeFlow: StateFlow<SigningMode?> = _signingMode
+
+    val accountsFlow: StateFlow<List<AccountInfo>> = keyRepo.accountsFlow
+
+    var isAddingAccount: Boolean = false
+
+    val isLoggedIn: Boolean get() = keyRepo.isLoggedIn()
+
+    fun getCurrentNsec(): String? {
+        val keypair = keyRepo.getKeypair() ?: return null
+        return Nip19.nsecEncode(keypair.privkey)
+    }
+
+    fun updateNsecInput(value: String) {
+        _nsecInput.value = value
+        _error.value = null
+    }
+
+    fun signUp(): Boolean {
+        return try {
+            val keypair = Keys.generate()
+            keyRepo.saveKeypair(keypair)
+            keyRepo.reloadPrefs(keypair.pubkey.toHex())
+            _npub.value = Nip19.npubEncode(keypair.pubkey)
+            _signingMode.value = SigningMode.LOCAL
+            _error.value = null
+            // Brand-new accounts default to Fiat Mode (USD). Existing-account
+            // logins do not touch these prefs, so a returning user's choice is
+            // preserved and unknown-preference logins stay in Bitcoin mode.
+            val fiatPrefs = FiatPreferences.get(getApplication())
+            fiatPrefs.setFiatMode(true)
+            fiatPrefs.setCurrency("USD")
+            true
+        } catch (e: Exception) {
+            _error.value = "Failed to generate keys: ${e.message}"
+            false
+        }
+    }
+
+    fun logIn(): Boolean {
+        val input = _nsecInput.value.trim()
+        if (input.isBlank()) {
+            _error.value = "Please enter your key"
+            return false
+        }
+        return when {
+            input.startsWith("nsec1") -> loginWithNsec(input)
+            input.startsWith("npub1") -> loginWithNpub(input)
+            input.startsWith("nprofile1") -> loginWithNprofile(input)
+            input.length == 64 && input.all { it in '0'..'9' || it in 'a'..'f' } -> loginWithPubkeyHex(input)
+            else -> {
+                _error.value = "Invalid key format — enter an nsec or npub"
+                false
+            }
+        }
+    }
+
+    private fun loginWithNsec(nsec: String): Boolean {
+        return try {
+            val privkey = Nip19.nsecDecode(nsec)
+            val keypair = Keys.fromPrivkey(privkey)
+            keyRepo.saveKeypair(keypair)
+            keyRepo.reloadPrefs(keypair.pubkey.toHex())
+            _npub.value = Nip19.npubEncode(keypair.pubkey)
+            _signingMode.value = SigningMode.LOCAL
+            _nsecInput.value = ""
+            _error.value = null
+            true
+        } catch (e: Exception) {
+            _error.value = "Invalid nsec key: ${e.message}"
+            false
+        }
+    }
+
+    private fun loginWithNpub(npub: String): Boolean {
+        return try {
+            val pubkey = Nip19.npubDecode(npub)
+            val pubkeyHex = pubkey.toHex()
+            keyRepo.savePubkeyReadOnly(pubkeyHex)
+            keyRepo.reloadPrefs(pubkeyHex)
+            _npub.value = Nip19.npubEncode(pubkey)
+            _signingMode.value = SigningMode.READ_ONLY
+            _nsecInput.value = ""
+            _error.value = null
+            true
+        } catch (e: Exception) {
+            _error.value = "Invalid npub: ${e.message}"
+            false
+        }
+    }
+
+    private fun loginWithNprofile(nprofile: String): Boolean {
+        return try {
+            val profile = Nip19.nprofileDecode(nprofile)
+            keyRepo.savePubkeyReadOnly(profile.pubkey)
+            keyRepo.reloadPrefs(profile.pubkey)
+            _npub.value = Nip19.npubEncode(profile.pubkey.hexToByteArray())
+            _signingMode.value = SigningMode.READ_ONLY
+            _nsecInput.value = ""
+            _error.value = null
+            true
+        } catch (e: Exception) {
+            _error.value = "Invalid nprofile: ${e.message}"
+            false
+        }
+    }
+
+    private fun loginWithPubkeyHex(hex: String): Boolean {
+        return try {
+            keyRepo.savePubkeyReadOnly(hex)
+            keyRepo.reloadPrefs(hex)
+            _npub.value = Nip19.npubEncode(hex.hexToByteArray())
+            _signingMode.value = SigningMode.READ_ONLY
+            _nsecInput.value = ""
+            _error.value = null
+            true
+        } catch (e: Exception) {
+            _error.value = "Invalid pubkey: ${e.message}"
+            false
+        }
+    }
+
+    /**
+     * Re-sync npub/signing-mode flows after another component (e.g. GoogleAuthViewModel)
+     * has saved a keypair directly through KeyRepository. Without this, the
+     * AuthViewModel's flows still reflect the pre-login state.
+     */
+    fun refreshAfterExternalLogin() {
+        keyRepo.refreshAccounts()
+        _npub.value = keyRepo.getNpub()
+        _signingMode.value = if (keyRepo.isLoggedIn()) keyRepo.getSigningMode() else null
+        _error.value = null
+    }
+
+    fun switchAccount(pubkeyHex: String) {
+        keyRepo.switchToAccount(pubkeyHex)
+        keyRepo.reloadPrefs(pubkeyHex)
+        _npub.value = Nip19.npubEncode(pubkeyHex.hexToByteArray())
+        _signingMode.value = keyRepo.getSigningMode()
+    }
+
+    /**
+     * Logs out the current account. Returns true if other accounts remain
+     * (caller should switch to the next one), false if no accounts left
+     * (caller should navigate to AUTH).
+     */
+    fun logOut(): Boolean {
+        val currentPubkey = keyRepo.getPubkeyHex()
+        if (currentPubkey != null) {
+            keyRepo.removeAccount(currentPubkey)
+        } else {
+            keyRepo.clearKeypair()
+        }
+        _npub.value = null
+        _signingMode.value = null
+
+        // If other accounts remain, switch to the first one
+        val remaining = keyRepo.getAccountList()
+        if (remaining.isNotEmpty()) {
+            switchAccount(remaining.first().pubkeyHex)
+            return true
+        }
+        return false
+    }
+}
