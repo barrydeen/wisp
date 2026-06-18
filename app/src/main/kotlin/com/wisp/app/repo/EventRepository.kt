@@ -101,6 +101,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val feedList = mutableListOf<NostrEvent>()
     private val feedIds = HashSet<String>()  // O(1) dedup that doesn't evict like LruCache
 
+    // Filtered view of feedList with the active author/kind filter applied, maintained
+    // incrementally so publishing the feed never re-filters the whole master list per insert.
+    // Always guarded by the feedList monitor (synchronized(feedList)) — never observed out of sync.
+    private val filteredFeed = mutableListOf<NostrEvent>()
+    private val filteredFeedIds = HashSet<String>()
+
     private val _feed = MutableStateFlow<List<NostrEvent>>(emptyList())
     val feed: StateFlow<List<NostrEvent>> = _feed
 
@@ -218,14 +224,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         scope.launch {
             for (signal in feedInserted) {
                 delay(50)  // settle window: coalesce concurrent inserts
-                val authorFilter = _authorFilter.value
-                val kindFilter = _kindFilter
-                val raw = synchronized(feedList) { feedList.toList() }
-                _feed.value = raw.filter { event ->
-                    val authorOk = authorFilter == null || event.pubkey in authorFilter || isRepostedByAny(event.id, authorFilter)
-                    val kindOk = kindFilter == null || event.kind in kindFilter
-                    authorOk && kindOk
-                }
+                publishFeed()
             }
         }
         // Relay feed emission — same 50ms settle pattern but for isolated relay feed
@@ -238,14 +237,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         // Immediate emission channel — used for explicit flushes (purge, filter change, etc.)
         scope.launch {
             for (signal in feedDirty) {
-                val authorFilter = _authorFilter.value
-                val kindFilter = _kindFilter
-                val raw = synchronized(feedList) { feedList.toList() }
-                _feed.value = raw.filter { event ->
-                    val authorOk = authorFilter == null || event.pubkey in authorFilter || isRepostedByAny(event.id, authorFilter)
-                    val kindOk = kindFilter == null || event.kind in kindFilter
-                    authorOk && kindOk
-                }
+                publishFeed()
             }
         }
         // Debounce version counter emissions — coalesce into one bump per 50ms window
@@ -423,6 +415,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                                     if (idx >= 0) {
                                         feedList.removeAt(idx)
                                         feedIds.remove(inner.id)
+                                        if (filteredFeedIds.remove(inner.id)) {
+                                            filteredFeed.removeAll { it.id == inner.id }
+                                        }
                                     }
                                 }
                                 binaryInsert(inner, sortTime = event.created_at, fromFeed = true)
@@ -677,7 +672,38 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private fun effectiveSortTime(event: NostrEvent): Long =
         feedSortTime.get(event.id) ?: event.created_at
 
+    /** True if [event] belongs in the filtered feed under the current author/kind filter. */
+    private fun passesFilter(event: NostrEvent): Boolean {
+        val authorFilter = _authorFilter.value
+        val kindFilter = _kindFilter
+        val authorOk = authorFilter == null || event.pubkey in authorFilter || isRepostedByAny(event.id, authorFilter)
+        val kindOk = kindFilter == null || event.kind in kindFilter
+        return authorOk && kindOk
+    }
+
+    /**
+     * Binary-insert [event] into [filteredFeed] keeping the same sort order as feedList.
+     * Caller must hold the feedList monitor. Returns true if the event was inserted.
+     */
+    private fun filteredInsert(event: NostrEvent, sortTime: Long): Boolean {
+        if (!filteredFeedIds.add(event.id)) return false
+        var low = 0
+        var high = filteredFeed.size
+        while (low < high) {
+            val mid = (low + high) / 2
+            if (effectiveSortTime(filteredFeed[mid]) > sortTime) low = mid + 1 else high = mid
+        }
+        filteredFeed.add(low, event)
+        return true
+    }
+
+    /** Publish the current filtered feed snapshot to observers. */
+    private fun publishFeed() {
+        _feed.value = synchronized(feedList) { ArrayList(filteredFeed) }
+    }
+
     private fun binaryInsert(event: NostrEvent, sortTime: Long = event.created_at, fromFeed: Boolean = false) {
+        var filteredChanged = false
         synchronized(feedList) {
             if (!feedIds.add(event.id)) {
                 if (event.kind in intArrayOf(20, 21, 22)) {
@@ -692,11 +718,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 if (effectiveSortTime(feedList[mid]) > sortTime) low = mid + 1 else high = mid
             }
             feedList.add(low, event)
+            if (passesFilter(event)) filteredChanged = filteredInsert(event, sortTime)
             if (event.kind in intArrayOf(20, 21, 22)) {
                 Log.d("GALLERY", "[EventRepo] binaryInsert SUCCESS kind=${event.kind} id=${event.id.take(12)} at pos=$low feedSize=${feedList.size}")
             }
         }
-        feedInserted.trySend(Unit)  // coalesced emission via 50ms settle window
+        if (filteredChanged) feedInserted.trySend(Unit)  // coalesced emission via 50ms settle window
         if (fromFeed && countNewNotes && sortTime > newNotesCutoff) {
             val filter = _authorFilter.value
             if (filter == null || event.pubkey in filter || isRepostedByAny(event.id, filter)) _newNoteCount.value++
@@ -756,6 +783,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         synchronized(feedList) {
             if (feedIds.remove(eventId)) {
                 feedList.removeAll { it.id == eventId }
+            }
+            if (filteredFeedIds.remove(eventId)) {
+                filteredFeed.removeAll { it.id == eventId }
             }
         }
         synchronized(relayFeedList) {
@@ -1131,19 +1161,25 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         rebuildFilteredFeed()
     }
 
+    /**
+     * Full rebuild of the filtered feed from the master feedList. Used when the author/kind
+     * filter changes (rare, user-initiated) or after a bulk feedList repopulation. feedList is
+     * already sorted, so the rebuilt filteredFeed is a correctly-ordered subsequence.
+     */
     private fun rebuildFilteredFeed() {
-        val authorFilter = _authorFilter.value
-        val kindFilter = _kindFilter
-        val raw = synchronized(feedList) { feedList.toList() }
-        val galleryInRaw = raw.count { it.kind in intArrayOf(20, 21, 22) }
-        val result = raw.filter { event ->
-            val authorOk = authorFilter == null || event.pubkey in authorFilter || isRepostedByAny(event.id, authorFilter)
-            val kindOk = kindFilter == null || event.kind in kindFilter
-            authorOk && kindOk
+        val rebuilt = synchronized(feedList) {
+            filteredFeed.clear()
+            filteredFeedIds.clear()
+            for (event in feedList) {
+                if (passesFilter(event)) {
+                    filteredFeed.add(event)
+                    filteredFeedIds.add(event.id)
+                }
+            }
+            ArrayList(filteredFeed)
         }
-        val galleryInResult = result.count { it.kind in intArrayOf(20, 21, 22) }
-        Log.d("GALLERY", "[EventRepo] rebuildFilteredFeed: feedList=${raw.size} galleryInFeedList=$galleryInRaw → filtered=${result.size} galleryInFiltered=$galleryInResult kindFilter=$kindFilter authorFilter=${authorFilter?.size}")
-        _feed.value = result
+        Log.d("GALLERY", "[EventRepo] rebuildFilteredFeed: filtered=${rebuilt.size} kindFilter=${_kindFilter} authorFilter=${_authorFilter.value?.size}")
+        _feed.value = rebuilt
     }
 
     fun getNewestFeedEventTimestamp(): Long? {
@@ -1154,14 +1190,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     fun getOldestTimestamp(): Long? {
         // Return oldest from the filtered feed so loadMore pages correctly
-        val authorFilter = _authorFilter.value
-        val kindFilter = _kindFilter
         return synchronized(feedList) {
-            feedList.lastOrNull { event ->
-                val authorOk = authorFilter == null || event.pubkey in authorFilter || isRepostedByAny(event.id, authorFilter)
-                val kindOk = kindFilter == null || event.kind in kindFilter
-                authorOk && kindOk
-            }?.let { effectiveSortTime(it) }
+            filteredFeed.lastOrNull()?.let { effectiveSortTime(it) }
         }
     }
 
@@ -1181,6 +1211,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             val removed = feedList.filter { it.pubkey == pubkey }
             feedList.removeAll { it.pubkey == pubkey }
             removed.forEach { feedIds.remove(it.id) }
+            filteredFeed.removeAll { it.pubkey == pubkey }
+            removed.forEach { filteredFeedIds.remove(it.id) }
         }
         synchronized(relayFeedList) {
             val removed = relayFeedList.filter { it.pubkey == pubkey }
@@ -1234,6 +1266,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         synchronized(feedList) {
             feedList.clear()
             feedIds.clear()
+            filteredFeed.clear()
+            filteredFeedIds.clear()
         }
         feedSortTime.evictAll()
         _feed.value = emptyList()
@@ -1287,7 +1321,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                     iter.remove()
                 }
             }
-            if (removed.isNotEmpty()) feedIds.removeAll(removed.toSet())
+            if (removed.isNotEmpty()) {
+                val removedSet = removed.toSet()
+                feedIds.removeAll(removedSet)
+                filteredFeedIds.removeAll(removedSet)
+                filteredFeed.removeAll { it.id in removedSet }
+            }
         }
         if (removed.isNotEmpty()) feedInserted.trySend(Unit)
     }
