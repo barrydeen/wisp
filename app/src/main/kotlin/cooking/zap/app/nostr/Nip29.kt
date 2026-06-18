@@ -230,5 +230,5 @@ object Nip29 {
     fun inviteLink(relayUrl: String, groupId: String, code: String): String =
         "${inviteLink(relayUrl, groupId)}?code=$code"
 
-    val DEFAULT_GROUP_RELAYS = listOf("wss://chat.wisp.talk")
+    val DEFAULT_GROUP_RELAYS = listOf("wss://pantry.zap.cooking")
 }

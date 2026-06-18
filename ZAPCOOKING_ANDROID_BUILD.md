@@ -145,9 +145,17 @@ set (nos.lol, relay.damus.io, relay.primal.net); added
 `RelayConfig.MEMBERS_RELAY = wss://pantry.zap.cooking` (not auto-added to
 non-members; consumed in Phase 3). `DEFAULT_INDEXER_RELAYS`,
 `RelayProber.BOOTSTRAP`, and DM relays left intact.
+Concern 6: ✅ relay sovereignty (off Wisp infra; before Phase 1) —
+`Nip29.DEFAULT_GROUP_RELAYS` → `wss://pantry.zap.cooking`; onboarding
+no longer injects `relay.wisp.talk` into new accounts' NIP-65 (new users
+get `DEFAULTS` + Pantry as write set); `relay.wisp.talk` dropped from
+onboarding `ACTIVE_RELAYS`; DM invite placeholder → `pantry.zap.cooking`.
+Zero `*.wisp.talk` remain in code. OPEN: `CREATOR_PUBKEYS` is fiatjaf +
+the Zap Cooking account (de-Wisped, but not a curated food-creator set) —
+pending a product decision on the seed follows.
 **Gate:** builds/installs; a real NIP-98 round-trip the backend accepts;
 no "Wisp" in UI/CLAUDE.md/README; package renamed; flavors build;
-relays correct.
+relays correct; off Wisp relay infrastructure.
 
 ### Phase 1 — Recipes + foodstr feed
 RecipeRepository (30023 + `#t` filter, naddr fetch, 35000 gating);
