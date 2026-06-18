@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -1017,6 +1018,19 @@ fun RichContent(
                                     UnsupportedKindBadge(kind = kind, style = style)
                                 }
                             }
+                            kind == 36787 -> {
+                                if (eventRepo != null && segment.author != null) {
+                                    MusicTrackCard(
+                                        dTag = segment.dTag,
+                                        author = segment.author,
+                                        relayHints = segment.relays,
+                                        eventRepo = eventRepo,
+                                        onProfileClick = onProfileClick
+                                    )
+                                } else {
+                                    UnsupportedKindBadge(kind = kind, style = style)
+                                }
+                            }
                             else -> UnsupportedKindBadge(kind = kind, style = style)
                         }
                     }
@@ -1533,6 +1547,222 @@ private fun ArticleCard(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MusicTrackCard(
+    dTag: String,
+    author: String,
+    relayHints: List<String>,
+    eventRepo: EventRepository,
+    onProfileClick: ((String) -> Unit)?
+) {
+    val context = LocalContext.current
+    val version by eventRepo.quotedEventVersion.collectAsState()
+    val event = remember(author, dTag, version) {
+        eventRepo.findAddressableEvent(36787, author, dTag)
+    }
+    val profile = remember(author, version) { eventRepo.getProfileData(author) }
+
+    LaunchedEffect(author, dTag) {
+        if (eventRepo.findAddressableEvent(36787, author, dTag) == null) {
+            eventRepo.requestAddressableEvent(36787, author, dTag, relayHints)
+        }
+    }
+
+    val title = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) }
+    val artist = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "artist" }?.get(1) }
+    val audioUrl = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "url" }?.get(1) }
+    val image = remember(event) { event?.tags?.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1) }
+    val durationSecs = remember(event) {
+        event?.tags?.firstOrNull { it.size >= 2 && it[0] == "duration" }?.get(1)?.toLongOrNull()
+    }
+
+    val globalState by AudioPlayerController.state.collectAsState()
+    val isCurrent = audioUrl != null && globalState?.track?.url == audioUrl
+    val isPlaying = isCurrent && globalState?.isPlaying == true
+
+    fun buildTrack() = AudioTrack(
+        url = audioUrl!!,
+        title = title,
+        artist = artist,
+        artworkUrl = image,
+        authorPubkey = author
+    )
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        if (event == null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(14.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.width(14.dp).height(14.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Loading track...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Artwork
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (image != null) {
+                            LoadingAsyncImage(
+                                model = image,
+                                contentDescription = title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Filled.MusicNote,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = "MUSIC",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                        Text(
+                            text = title ?: "Untitled Track",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 3.dp)
+                        )
+                        if (!artist.isNullOrBlank()) {
+                            Text(
+                                text = artist,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            ProfilePicture(url = profile?.picture, size = 18)
+                            Spacer(Modifier.width(6.dp))
+                            val displayName = profile?.displayString
+                                ?: author.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
+                            Text(
+                                text = displayName,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = if (onProfileClick != null) {
+                                    Modifier.clickable { onProfileClick(author) }
+                                } else Modifier
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.width(8.dp))
+
+                    IconButton(
+                        enabled = audioUrl != null,
+                        onClick = {
+                            if (isCurrent) {
+                                AudioPlayerController.togglePlayPause()
+                            } else if (audioUrl != null) {
+                                AudioPlayerController.play(context, buildTrack())
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = if (isPlaying) "Pause" else "Play",
+                            tint = if (audioUrl != null) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
+
+                // Active scrubber while this track owns the global player; otherwise
+                // the static duration tag (if present) on the trailing edge.
+                if (isCurrent) {
+                    val position = globalState?.positionMs ?: 0L
+                    val duration = globalState?.durationMs ?: 0L
+                    val progress = if (duration > 0) position.toFloat() / duration.toFloat() else 0f
+                    Column(modifier = Modifier.padding(top = 8.dp)) {
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp)),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = formatAudioTime(position),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = formatAudioTime(duration),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else if (durationSecs != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Text(
+                            text = formatAudioTime(durationSecs * 1000),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
