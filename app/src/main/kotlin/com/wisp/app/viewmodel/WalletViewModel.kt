@@ -1354,10 +1354,14 @@ class WalletViewModel(
         }
     }
 
-    fun generateInvoice(amountSats: Long) {
+    fun setReceiveAmount(value: String) {
+        _receiveAmount.value = value
+    }
+
+    fun generateInvoice(amountSats: Long, description: String = "") {
         _isLoading.value = true
         viewModelScope.launch {
-            val result = activeProvider.makeInvoice(amountSats * 1000, "")
+            val result = activeProvider.makeInvoice(amountSats * 1000, description)
             result.fold(
                 onSuccess = { invoice ->
                     navigateTo(WalletPage.ReceiveInvoice(invoice, amountSats))
