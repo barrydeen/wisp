@@ -78,7 +78,7 @@ ObjectBox-backed on-device store for fast cold-start. Entities: `EventEntity`, `
 - Kotlin with Jetpack Compose — no XML layouts
 - `Dispatchers.Default` for CPU-bound work, `Dispatchers.IO` for network
 - `StateFlow` for UI state, `SharedFlow` for relay events
-- Default relays: `wss://relay.damus.io`, `wss://relay.primal.net`
+- Default relays (fresh installs, `RelayConfig.DEFAULTS`): `wss://nos.lol`, `wss://relay.damus.io`, `wss://relay.primal.net`. Members relay: `wss://pantry.zap.cooking` (`RelayConfig.MEMBERS_RELAY`). Discovery/article aggregators stay in `DEFAULT_INDEXER_RELAYS` / `RelayProber.BOOTSTRAP`.
 - Navigation routes defined in `Navigation.kt`
 
 ## Crypto Stack

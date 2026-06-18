@@ -17,12 +17,23 @@ data class RelayConfig(
     val auth: Boolean = true
 ) {
     companion object {
+        // General relay set — mirrors the zap.cooking web `default` set
+        // (ZAPCOOKING_ANDROID_BUILD.md §1). Applied only to fresh installs
+        // with no saved NIP-65 list. Discovery/indexer and recipe-article
+        // aggregators live in DEFAULT_INDEXER_RELAYS / RelayProber.BOOTSTRAP
+        // and are intentionally left in place.
         val DEFAULTS = listOf(
+            RelayConfig("wss://nos.lol", read = true, write = true),
             RelayConfig("wss://relay.damus.io", read = true, write = true),
-            RelayConfig("wss://relay.primal.net", read = true, write = true),
-            RelayConfig("wss://indexer.coracle.social", read = true, write = false),
-            RelayConfig("wss://relay.nos.social", read = true, write = false)
+            RelayConfig("wss://relay.primal.net", read = true, write = true)
         )
+
+        /**
+         * The Pantry — zap.cooking's members-only relay. Used to read/write
+         * member-gated content; NOT added to a non-member's general relay set
+         * (membership gating happens in Phase 3). See §1 "Relays".
+         */
+        const val MEMBERS_RELAY = "wss://pantry.zap.cooking"
 
         /** Default DM relays applied when a user has no DM relay set (kind 10050). */
         val DEFAULT_DM_RELAYS = listOf(

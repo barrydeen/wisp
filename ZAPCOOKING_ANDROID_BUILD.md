@@ -140,8 +140,11 @@ onboarding card + seed + crash recipient -> Zap Cooking account
 from frontend assets; README rebranded with MIT/Barry-Deen attribution
 preserved. Left (optional): WispApp/Theme.Wisp identifiers, dead
 WispLogo.kt, unused <API26 legacy mipmaps. Verified assembleZapstoreDebug.
-Concern 5: relays — add Pantry as members, align `default` to the web
-set, leave bootstrap/discovery aggregators in place.
+Concern 5: ✅ relays — `RelayConfig.DEFAULTS` aligned to the web `default`
+set (nos.lol, relay.damus.io, relay.primal.net); added
+`RelayConfig.MEMBERS_RELAY = wss://pantry.zap.cooking` (not auto-added to
+non-members; consumed in Phase 3). `DEFAULT_INDEXER_RELAYS`,
+`RelayProber.BOOTSTRAP`, and DM relays left intact.
 **Gate:** builds/installs; a real NIP-98 round-trip the backend accepts;
 no "Wisp" in UI/CLAUDE.md/README; package renamed; flavors build;
 relays correct.
