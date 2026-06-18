@@ -1047,7 +1047,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun addEventRelay(eventId: String, relayUrl: String) {
-        val relays = eventRelays.get(eventId) ?: mutableSetOf<String>().also {
+        // Thread-safe set: relay IO threads mutate this via addEventRelay while UI coroutines
+        // iterate the live set returned by getEventRelays. A plain LinkedHashSet (mutableSetOf)
+        // throws ConcurrentModificationException here; newKeySet has a weakly-consistent iterator.
+        val relays = eventRelays.get(eventId) ?: ConcurrentHashMap.newKeySet<String>().also {
             eventRelays.put(eventId, it)
         }
         if (relays.add(relayUrl)) {
