@@ -23,5 +23,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "wisp"
+rootProject.name = "zap_cooking_android"
 include(":app")

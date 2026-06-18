@@ -12,7 +12,7 @@ android {
     val baseApplicationId = rootProject.extra["baseApplicationId"] as String
     val debugApplicationIdSuffix = rootProject.extra["debugApplicationIdSuffix"] as String
 
-    namespace = "com.wisp.app"
+    namespace = "cooking.zap.app"
     compileSdk = 35
 
     defaultConfig {
@@ -21,7 +21,8 @@ android {
         targetSdk = 35
         versionCode = 81
         versionName = "1.1.1"
-        resValue("string", "app_name", "Wisp")
+        resValue("string", "app_name", "Zap Cooking")
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -40,13 +41,28 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = debugApplicationIdSuffix
-            resValue("string", "app_name", "Wisp Debug")
+            resValue("string", "app_name", "Zap Cooking Debug")
         }
 
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    // Distribution targets (ZAPCOOKING_ANDROID_BUILD.md §2). Zapstore is
+    // primary, Play secondary. Skeleton only — kept config-free on purpose;
+    // the flavor-gated membership link-out flag rides on these in Phase 3.
+    // applicationId (cooking.zap.app) and the debug suffix are shared.
+    flavorDimensions += "store"
+    productFlavors {
+        create("zapstore") {
+            dimension = "store"
+            isDefault = true
+        }
+        create("play") {
+            dimension = "store"
         }
     }
 
@@ -72,6 +88,11 @@ android {
 dependencies {
     testImplementation(libs.kotlinx.serialization.json)
     testImplementation("junit:junit:4.13.2")
+
+    // Instrumented (connected) tests only — e.g. the live NIP-98 round-trip.
+    // Not on the hermetic :app:testDebugUnitTest classpath.
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

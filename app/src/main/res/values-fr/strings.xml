@@ -59,7 +59,7 @@
     <string name="auth_log_in">Se Connecter</string>
     <string name="auth_or_log_in_with_key">Ou connectez-vous avec votre clé</string>
     <string name="auth_nsec_or_npub">nsec ou npub…</string>
-    <string name="auth_wisp">wisp</string>
+    <string name="auth_wisp">Zap Cooking</string>
     <string name="auth_tagline">une petite interface pour faire défiler les posts</string>
     <string name="auth_hide_key">Masquer la clé</string>
     <string name="auth_show_key">Afficher la clé</string>
@@ -392,12 +392,12 @@
     <string name="onboarding_welcome_back">Bon retour</string>
     <string name="onboarding_lets_get_set_up">Paramons votre compte</string>
     <string name="onboarding_your_network_relays">Votre réseau, vos relais</string>
-    <string name="onboarding_network_description">Wisp découvre quels relais vos amis utilisent réellement, puis se connecte directement à ces relais. Cela signifie une livraison plus rapide et moins de posts manqués — aucun serveur central nécessaire.</string>
+    <string name="onboarding_network_description">Zap Cooking découvre quels relais vos amis utilisent réellement, puis se connecte directement à ces relais. Cela signifie une livraison plus rapide et moins de posts manqués — aucun serveur central nécessaire.</string>
     <string name="onboarding_quick_follow">Suivi rapide</string>
     <string name="onboarding_long_press_hint">Appuyez longuement sur n\'importe quelle photo de profil pour suivre ou ne plus suivre</string>
     <string name="onboarding_utxo">utxo</string>
     <string name="onboarding_try_it">Essayez — appuyez longuement sur l\'image ci-dessus</string>
-    <string name="onboarding_lightning_wallet_info">Wisp prend en charge les zaps avec un portefeuille Lightning intégré ou Nostr Wallet Connect. Vous pouvez le configurer à tout moment depuis l\'écran Portefeuille.</string>
+    <string name="onboarding_lightning_wallet_info">Zap Cooking prend en charge les zaps avec un portefeuille Lightning intégré ou Nostr Wallet Connect. Vous pouvez le configurer à tout moment depuis l\'écran Portefeuille.</string>
     <string name="onboarding_setting_things_up">Configuration en cours</string>
     <string name="onboarding_youre_all_set">Vous êtes prêt !</string>
     <string name="onboarding_mapping_graph">Cartographie de votre graphe social…</string>
@@ -410,7 +410,7 @@
     <string name="onboarding_almost_there">Presque là…</string>
     <string name="onboarding_please_wait">Veuillez patienter…</string>
     <string name="onboarding_publishing">Publication…</string>
-    <string name="onboarding_wisp_logo">Logo Wisp</string>
+    <string name="onboarding_wisp_logo">Logo Zap Cooking</string>
     <string name="onboarding_follow_all_x">Suivre Tout (%d)</string>
 
     <!-- Zap / Wallet -->
@@ -464,8 +464,8 @@
     <string name="settings_hide_live_streams">Masquer les lives</string>
     <string name="settings_hide_live_streams_description">Masquer la barre de lives en haut de votre fil</string>
     <string name="settings_client_tag">Tag Client</string>
-    <string name="settings_tag_notes">Taguer les notes avec Wisp</string>
-    <string name="settings_tag_notes_description">Inclure un tag identifiant Wisp comme le client. Ceci est visible par les autres.</string>
+    <string name="settings_tag_notes">Taguer les notes avec Zap Cooking</string>
+    <string name="settings_tag_notes_description">Inclure un tag identifiant Zap Cooking comme le client. Ceci est visible par les autres.</string>
     <string name="settings_public_key">Clé Publique</string>
     <string name="settings_private_key">Clé Privée</string>
     <string name="settings_public_key_copied">Clé publique copiée</string>
@@ -630,7 +630,7 @@
     <string name="online_in_network">%d en ligne dans votre réseau</string>
     <string name="online_all_nostr">%d en ligne sur tout Nostr</string>
     <string name="splash_people_online">%d personnes en ligne</string>
-    <string name="cd_wisp_logo">Logo Wisp</string>
+    <string name="cd_wisp_logo">Logo Zap Cooking</string>
 
     <!-- NIP-29 Chat Rooms -->
     <string name="tab_direct_messages">Messages directs</string>

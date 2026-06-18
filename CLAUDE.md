@@ -9,13 +9,23 @@ This repository is a fork of the **Wisp** Nostr client being adapted into **Zap 
 ## Build Commands
 
 ```bash
-./gradlew assembleDebug       # Build debug APK
-./gradlew assembleRelease     # Build release APK (minified with R8)
-./gradlew installDebug        # Build and install on connected device/emulator
-./gradlew clean               # Clean build artifacts
+./gradlew assembleZapstoreDebug              # Build the zapstore debug APK
+./gradlew assembleRelease                    # Build release APKs (minified with R8)
+./gradlew installZapstoreDebug               # Build + install the zapstore debug variant
+./gradlew testZapstoreDebugUnitTest          # Run the hermetic JVM unit suite
+./gradlew connectedZapstoreDebugAndroidTest  # Run integration tests (device required)
+./gradlew clean                              # Clean build artifacts
 ```
 
-No test suite exists yet. JDK 17 and Android SDK 35 are required.
+Product flavors `zapstore` (primary, default) and `play` exist, so build
+variants are `<flavor><BuildType>` (e.g. `zapstoreDebug`). Most tasks must
+be flavor-qualified: `assembleDebug` is a valid aggregate, but
+`testDebugUnitTest` / `connectedDebugAndroidTest` are ambiguous — use the
+`zapstore`/`play`-qualified task names above (or `test` for all variants).
+
+JDK 17 and Android SDK 35 are required. Tests: a hermetic JVM unit suite
+under `app/src/test/` plus integration tests under `app/src/androidTest/`
+(network/device required, excluded from the unit run).
 
 ## Architecture
 
@@ -25,7 +35,7 @@ Zap Cooking is a food-first Android Nostr client, forked from Wisp, using Kotlin
 
 Plus a **persistence layer** (`db/`) backed by ObjectBox — see Key Design Decisions.
 
-All source lives under `app/src/main/kotlin/com/wisp/app/`.
+All source lives under `app/src/main/kotlin/cooking/zap/app/`.
 
 ### Key Design Decisions
 
@@ -68,7 +78,7 @@ ObjectBox-backed on-device store for fast cold-start. Entities: `EventEntity`, `
 - Kotlin with Jetpack Compose — no XML layouts
 - `Dispatchers.Default` for CPU-bound work, `Dispatchers.IO` for network
 - `StateFlow` for UI state, `SharedFlow` for relay events
-- Default relays: `wss://relay.damus.io`, `wss://relay.primal.net`
+- Default relays (fresh installs, `RelayConfig.DEFAULTS`): `wss://nos.lol`, `wss://relay.damus.io`, `wss://relay.primal.net`. Members relay: `wss://pantry.zap.cooking` (`RelayConfig.MEMBERS_RELAY`). Discovery/article aggregators stay in `DEFAULT_INDEXER_RELAYS` / `RelayProber.BOOTSTRAP`.
 - Navigation routes defined in `Navigation.kt`
 
 ## Crypto Stack

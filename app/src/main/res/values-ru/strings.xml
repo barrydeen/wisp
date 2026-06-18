@@ -52,7 +52,7 @@
     <string name="auth_log_in">Войти</string>
     <string name="auth_or_log_in_with_key">Или войдите по ключу</string>
     <string name="auth_nsec_or_npub">nsec или npub…</string>
-    <string name="auth_wisp">wisp</string>
+    <string name="auth_wisp">Zap Cooking</string>
     <string name="auth_tagline">небольшой интерфейс для прокрутки постов</string>
     <string name="auth_hide_key">Скрыть ключ</string>
     <string name="auth_show_key">Показать ключ</string>
@@ -373,12 +373,12 @@
     <string name="onboarding_welcome_back">С возвращением</string>
     <string name="onboarding_lets_get_set_up">Настроим ваш аккаунт</string>
     <string name="onboarding_your_network_relays">Ваша сеть, ваши рилэи</string>
-    <string name="onboarding_network_description">Wisp обнаруживает, какие рилэи используют ваши друзья, и подключается напрямую к ним. Это означает более быструю доставку и меньше пропущенных постов — без центрального сервера.</string>
+    <string name="onboarding_network_description">Zap Cooking обнаруживает, какие рилэи используют ваши друзья, и подключается напрямую к ним. Это означает более быструю доставку и меньше пропущенных постов — без центрального сервера.</string>
     <string name="onboarding_quick_follow">Быстрая подписка</string>
     <string name="onboarding_long_press_hint">Удерживайте аватар, чтобы подписаться или отписаться</string>
     <string name="onboarding_utxo">utxo</string>
     <string name="onboarding_try_it">Попробуйте — удерживайте картинку выше</string>
-    <string name="onboarding_lightning_wallet_info">Wisp поддерживает запы со встроенным Lightning-кошельком или Nostr Wallet Connect. Настроить можно в любой момент через экран кошелька.</string>
+    <string name="onboarding_lightning_wallet_info">Zap Cooking поддерживает запы со встроенным Lightning-кошельком или Nostr Wallet Connect. Настроить можно в любой момент через экран кошелька.</string>
     <string name="onboarding_setting_things_up">Настройка</string>
     <string name="onboarding_youre_all_set">Готово!</string>
     <string name="onboarding_mapping_graph">Составление социального графа…</string>
@@ -391,7 +391,7 @@
     <string name="onboarding_almost_there">Почти готово…</string>
     <string name="onboarding_please_wait">Подождите…</string>
     <string name="onboarding_publishing">Публикация…</string>
-    <string name="onboarding_wisp_logo">Логотип Wisp</string>
+    <string name="onboarding_wisp_logo">Логотип Zap Cooking</string>
     <string name="onboarding_follow_all_x">Подписаться на всех (%d)</string>
     <string name="zap_send">Отправить zap</string>
     <string name="zap_sats">сатоши</string>
@@ -441,8 +441,8 @@
     <string name="settings_hide_live_streams">Скрыть прямые трансляции</string>
     <string name="settings_hide_live_streams_description">Скрыть строку прямых трансляций в верхней части ленты</string>
     <string name="settings_client_tag">Метка клиента</string>
-    <string name="settings_tag_notes">Помечать заметки как Wisp</string>
-    <string name="settings_tag_notes_description">Добавлять метку, идентифицирующую Wisp как клиент. Видимо другим.</string>
+    <string name="settings_tag_notes">Помечать заметки как Zap Cooking</string>
+    <string name="settings_tag_notes_description">Добавлять метку, идентифицирующую Zap Cooking как клиент. Видимо другим.</string>
     <string name="settings_public_key">Публичный ключ</string>
     <string name="settings_private_key">Приватный ключ</string>
     <string name="settings_public_key_copied">Публичный ключ скопирован</string>
@@ -591,7 +591,7 @@
     <string name="online_in_network">%d онлайн в вашей сети</string>
     <string name="online_all_nostr">%d онлайн во всём Nostr</string>
     <string name="splash_people_online">%d человек онлайн</string>
-    <string name="cd_wisp_logo">Логотип Wisp</string>
+    <string name="cd_wisp_logo">Логотип Zap Cooking</string>
 
     <!-- NIP-29 Chat Rooms -->
     <string name="tab_direct_messages">Личные сообщения</string>

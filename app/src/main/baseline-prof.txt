@@ -1,13 +1,13 @@
-HSPLcom/wisp/app/MainActivity;->**(**)**
-HSPLcom/wisp/app/MainActivityKt;->**(**)**
+HSPLcooking/zap/app/MainActivity;->**(**)**
+HSPLcooking/zap/app/MainActivityKt;->**(**)**
 
-HSPLcom/wisp/app/viewmodel/**;->**(**)**
-HSPLcom/wisp/app/repo/**;->**(**)**
-HSPLcom/wisp/app/relay/**;->**(**)**
-HSPLcom/wisp/app/nostr/**;->**(**)**
+HSPLcooking/zap/app/viewmodel/**;->**(**)**
+HSPLcooking/zap/app/repo/**;->**(**)**
+HSPLcooking/zap/app/relay/**;->**(**)**
+HSPLcooking/zap/app/nostr/**;->**(**)**
 
-HSPLcom/wisp/app/ui/screen/FeedScreenKt;->**(**)**
-HSPLcom/wisp/app/ui/screen/AuthScreenKt;->**(**)**
-HSPLcom/wisp/app/ui/screen/LoadingScreenKt;->**(**)**
-HSPLcom/wisp/app/ui/component/**;->**(**)**
-HSPLcom/wisp/app/ui/navigation/**;->**(**)**
+HSPLcooking/zap/app/ui/screen/FeedScreenKt;->**(**)**
+HSPLcooking/zap/app/ui/screen/AuthScreenKt;->**(**)**
+HSPLcooking/zap/app/ui/screen/LoadingScreenKt;->**(**)**
+HSPLcooking/zap/app/ui/component/**;->**(**)**
+HSPLcooking/zap/app/ui/navigation/**;->**(**)**

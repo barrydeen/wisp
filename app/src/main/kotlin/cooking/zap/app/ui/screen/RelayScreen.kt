@@ -1,0 +1,225 @@
+package cooking.zap.app.ui.screen
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import android.widget.Toast
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import cooking.zap.app.relay.RelayConfig
+import cooking.zap.app.relay.RelayPool
+import cooking.zap.app.relay.RelaySetType
+import cooking.zap.app.R
+import cooking.zap.app.ui.component.NsecPasteGuard
+import cooking.zap.app.viewmodel.RelayViewModel
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RelayScreen(
+    viewModel: RelayViewModel,
+    relayPool: RelayPool? = null,
+    onBack: () -> Unit,
+    signer: cooking.zap.app.nostr.NostrSigner? = null
+) {
+    val context = LocalContext.current
+    val selectedTab by viewModel.selectedTab.collectAsState()
+    val relays by viewModel.relays.collectAsState()
+    val dmRelays by viewModel.dmRelays.collectAsState()
+    val searchRelays by viewModel.searchRelays.collectAsState()
+    val blockedRelays by viewModel.blockedRelays.collectAsState()
+    val newRelayUrl by viewModel.newRelayUrl.collectAsState()
+
+    val tabs = RelaySetType.entries
+
+    Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.title_relays)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            ScrollableTabRow(
+                selectedTabIndex = tabs.indexOf(selectedTab),
+                edgePadding = 0.dp
+            ) {
+                tabs.forEach { tab ->
+                    Tab(
+                        selected = selectedTab == tab,
+                        onClick = { viewModel.selectTab(tab) },
+                        text = { Text(tab.displayName) }
+                    )
+                }
+            }
+
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = newRelayUrl,
+                        onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(newRelayUrl, new)) viewModel.updateNewRelayUrl(new) },
+                        label = { Text(stringResource(R.string.placeholder_relay_url)) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(onClick = { viewModel.addRelay() }) {
+                        Icon(Icons.Default.Add, stringResource(R.string.cd_add_relay))
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                if (relayPool != null) {
+                    val buttonLabel = when (selectedTab) {
+                        RelaySetType.GENERAL -> stringResource(R.string.broadcast_nip65)
+                        RelaySetType.DM -> stringResource(R.string.broadcast_dm_relays)
+                        RelaySetType.SEARCH -> stringResource(R.string.broadcast_search_relays)
+                        RelaySetType.BLOCKED -> stringResource(R.string.broadcast_blocked_relays)
+                    }
+                    val successMsg = stringResource(R.string.error_relay_broadcast)
+                    val failureMsg = stringResource(R.string.error_broadcast_failed)
+                    Button(
+                        onClick = {
+                            val ok = viewModel.publishRelayList(relayPool, signer = signer)
+                            val msg = if (ok) successMsg else failureMsg
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(buttonLabel)
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                when (selectedTab) {
+                    RelaySetType.GENERAL -> GeneralRelayList(relays, viewModel)
+                    RelaySetType.DM -> SimpleRelayList(dmRelays, viewModel)
+                    RelaySetType.SEARCH -> SimpleRelayList(searchRelays, viewModel)
+                    RelaySetType.BLOCKED -> SimpleRelayList(blockedRelays, viewModel)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GeneralRelayList(relays: List<RelayConfig>, viewModel: RelayViewModel) {
+    LazyColumn {
+        items(items = relays.distinctBy { it.url }, key = { it.url }) { relay ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = relay.url,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = relay.read,
+                            onClick = { viewModel.toggleRead(relay.url) },
+                            label = { Text(stringResource(R.string.relay_read)) }
+                        )
+                        FilterChip(
+                            selected = relay.write,
+                            onClick = { viewModel.toggleWrite(relay.url) },
+                            label = { Text(stringResource(R.string.relay_write)) }
+                        )
+                        FilterChip(
+                            selected = relay.auth,
+                            onClick = { viewModel.toggleAuth(relay.url) },
+                            label = { Text(stringResource(R.string.relay_auth)) }
+                        )
+                    }
+                }
+                IconButton(onClick = { viewModel.removeRelay(relay.url) }) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = stringResource(R.string.cd_remove_relay),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SimpleRelayList(urls: List<String>, viewModel: RelayViewModel) {
+    LazyColumn {
+        items(items = urls.distinct(), key = { it }) { url ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                Text(
+                    text = url,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = { viewModel.removeRelay(url) }) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = stringResource(R.string.cd_remove_relay),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}

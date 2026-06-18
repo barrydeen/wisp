@@ -1,0 +1,2152 @@
+package cooking.zap.app.ui.screen
+
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PersonRemove
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Surface
+
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import cooking.zap.app.nostr.Nip30
+import cooking.zap.app.nostr.toNpub
+import cooking.zap.app.ui.component.Nip05Badge
+import cooking.zap.app.ui.component.RichContent
+import cooking.zap.app.ui.component.parseImetaTags
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import cooking.zap.app.R
+import cooking.zap.app.nostr.FollowSet
+import cooking.zap.app.nostr.Nip02
+import cooking.zap.app.nostr.Nip69
+import cooking.zap.app.nostr.NostrEvent
+import cooking.zap.app.nostr.ProfileData
+import cooking.zap.app.relay.RelayConfig
+import cooking.zap.app.relay.RelayPool
+import cooking.zap.app.repo.ContactRepository
+import cooking.zap.app.repo.EventRepository
+import cooking.zap.app.repo.Nip05Repository
+import cooking.zap.app.repo.Nip05Status
+import cooking.zap.app.repo.RelayInfoRepository
+import cooking.zap.app.repo.TranslationRepository
+import cooking.zap.app.ui.component.FollowButton
+import cooking.zap.app.ui.component.ContentSegment
+import cooking.zap.app.ui.component.FullScreenImageViewer
+import cooking.zap.app.ui.component.GalleryCard
+import cooking.zap.app.ui.component.isGalleryEvent
+import cooking.zap.app.ui.component.PostCard
+import cooking.zap.app.ui.component.parseContent
+import cooking.zap.app.ui.component.parseImetaTags
+import cooking.zap.app.ui.component.ProfileQrSheet
+import cooking.zap.app.ui.component.ProfilePicture
+import cooking.zap.app.ui.component.RichContent
+import cooking.zap.app.ui.component.ZapDialog
+import cooking.zap.app.ui.util.LocalCanSign
+import cooking.zap.app.viewmodel.ProfileSortMode
+import cooking.zap.app.viewmodel.UserProfileViewModel
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+
+private sealed class ProfileZapStatus {
+    object Idle : ProfileZapStatus()
+    data class InProgress(val msats: Long) : ProfileZapStatus()
+    data class Success(val sats: Long) : ProfileZapStatus()
+    data class Failure(val message: String) : ProfileZapStatus()
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun UserProfileScreen(
+    viewModel: UserProfileViewModel,
+    contactRepo: ContactRepository,
+    relayPool: RelayPool,
+    onBack: () -> Unit,
+    onReply: (NostrEvent) -> Unit = {},
+    onRepost: (NostrEvent) -> Unit = {},
+    onQuote: (NostrEvent) -> Unit = {},
+    eventRepo: EventRepository? = null,
+    onNavigateToProfile: ((String) -> Unit)? = null,
+    onToggleFollow: ((String) -> Unit)? = null,
+    isOwnProfile: Boolean = false,
+    onEditProfile: () -> Unit = {},
+    isBlocked: Boolean = false,
+    onBlockUser: (() -> Unit)? = null,
+    onUnblockUser: (() -> Unit)? = null,
+    onNoteClick: (NostrEvent) -> Unit = {},
+    onQuotedNoteClick: ((String) -> Unit)? = null,
+    onReact: (NostrEvent, String) -> Unit = { _, _ -> },
+    onZap: (NostrEvent, Long, String, Boolean, Boolean) -> Unit = { _, _, _, _, _ -> },
+    userPubkey: String? = null,
+    isWalletConnected: Boolean = false,
+    onWallet: () -> Unit = {},
+    zapSuccess: SharedFlow<String>? = null,
+    zapError: SharedFlow<String>? = null,
+    zapInProgressIds: Set<String> = emptySet(),
+    canPrivateZap: Boolean = false,
+    fetchDmRelays: (suspend (String) -> Boolean)? = null,
+    ownLists: List<FollowSet> = emptyList(),
+    onAddToList: ((String, String) -> Unit)? = null,
+    onRemoveFromList: ((String, String) -> Unit)? = null,
+    onCreateList: ((String, Boolean) -> Unit)? = null,
+    profilePubkey: String = "",
+    relayInfoRepo: RelayInfoRepository? = null,
+    nip05Repo: Nip05Repository? = null,
+    listedIds: Set<String> = emptySet(),
+    pinnedIds: Set<String> = emptySet(),
+    onTogglePin: (String) -> Unit = {},
+    onDeleteEvent: (String, Int) -> Unit = { _, _ -> },
+    onAddNoteToList: (String) -> Unit = {},
+    onSendDm: (() -> Unit)? = null,
+    onZapProfile: ((amountMsats: Long, message: String, isAnonymous: Boolean) -> Unit)? = null,
+    signer: cooking.zap.app.nostr.NostrSigner? = null,
+    translationRepo: TranslationRepository? = null,
+    autoTranslate: Boolean = false,
+    onArticleClick: ((Int, String, String) -> Unit)? = null,
+    onPollVote: (String, List<String>) -> Unit = { _, _ -> },
+    onZapPollVote: (String, Int) -> Unit = { _, _ -> },
+    resolvedEmojis: Map<String, String> = emptyMap(),
+    unicodeEmojis: List<String> = emptyList(),
+    onOpenEmojiLibrary: (() -> Unit)? = null,
+    onSearchAuthor: (() -> Unit)? = null,
+    onPayInvoice: (suspend (String) -> Boolean)? = null,
+    onGroupRoom: ((String, String) -> Unit)? = null,
+    onLiveStreamClick: ((String, String, String?) -> Unit)? = null,
+    fetchGroupPreview: (suspend (String, String) -> cooking.zap.app.repo.GroupPreview?)? = null,
+    onAddEmojiSet: ((String, String) -> Unit)? = null,
+    onRemoveEmojiSet: ((String, String) -> Unit)? = null,
+    isEmojiSetAdded: ((String, String) -> Boolean)? = null,
+    onMuteUser: (() -> Unit)? = null
+) {
+    val resolvedEmojisState = rememberUpdatedState(resolvedEmojis)
+    val unicodeEmojisState = rememberUpdatedState(unicodeEmojis)
+    val invoiceNoteActions = remember(onPayInvoice, onGroupRoom, onLiveStreamClick, fetchGroupPreview, onAddEmojiSet, onOpenEmojiLibrary) {
+        if (onPayInvoice != null || onGroupRoom != null || fetchGroupPreview != null || onAddEmojiSet != null || onLiveStreamClick != null || onOpenEmojiLibrary != null) {
+            cooking.zap.app.ui.component.NoteActions(
+            onProfileClick = { pubkey -> onNavigateToProfile?.invoke(pubkey) },
+            onPayInvoice = onPayInvoice,
+            onGroupRoom = onGroupRoom,
+            onLiveStreamClick = onLiveStreamClick,
+            fetchGroupPreview = fetchGroupPreview,
+            onAddEmojiSet = onAddEmojiSet,
+            onRemoveEmojiSet = onRemoveEmojiSet,
+            isEmojiSetAdded = isEmojiSetAdded,
+            onPollVote = onPollVote,
+            nip05Repo = nip05Repo,
+            resolvedEmojisProvider = { resolvedEmojisState.value },
+            unicodeEmojisProvider = { unicodeEmojisState.value },
+            onOpenEmojiLibrary = onOpenEmojiLibrary
+        )
+        } else null
+    }
+    val profile by viewModel.profile.collectAsState()
+    val isFollowing by viewModel.isFollowing.collectAsState()
+    val rootNotes by viewModel.rootNotes.collectAsState()
+    val replies by viewModel.replies.collectAsState()
+    val followList by viewModel.followList.collectAsState()
+    val relayList by viewModel.relayList.collectAsState()
+    val relayHints by viewModel.relayHints.collectAsState()
+    val followedBy by viewModel.followedBy.collectAsState()
+    val followProfileVersion by viewModel.followProfileVersion.collectAsState()
+    val myFollowList by contactRepo.followList.collectAsState()
+
+    val nip05Version by nip05Repo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
+    val reactionVersion by eventRepo?.reactionVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
+    val replyCountVersion by eventRepo?.replyCountVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
+    val repostVersion by eventRepo?.repostVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
+    val zapVersion by eventRepo?.zapVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
+    val translationVersion by translationRepo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
+    val relaySourceVersion by eventRepo?.relaySourceVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
+    val pollVoteVersion by eventRepo?.pollVoteVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
+
+    var zapTargetEvent by remember { mutableStateOf<NostrEvent?>(null) }
+    var zapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
+    var zapErrorMessage by remember { mutableStateOf<String?>(null) }
+
+    var showProfileZapDialog by remember { mutableStateOf(false) }
+    var profileZapStatus by remember { mutableStateOf<ProfileZapStatus>(ProfileZapStatus.Idle) }
+
+    LaunchedEffect(Unit) {
+        zapSuccess?.collect { id ->
+            if (id == profilePubkey) {
+                val msats = (profileZapStatus as? ProfileZapStatus.InProgress)?.msats ?: 0L
+                profileZapStatus = ProfileZapStatus.Success(msats / 1000)
+            } else {
+                zapAnimatingIds = zapAnimatingIds + id
+                delay(1500)
+                zapAnimatingIds = zapAnimatingIds - id
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        zapError?.collect { error ->
+            if (profileZapStatus is ProfileZapStatus.InProgress) {
+                profileZapStatus = ProfileZapStatus.Failure(error)
+            } else {
+                zapErrorMessage = error
+            }
+        }
+    }
+
+    if (zapTargetEvent != null) {
+        val zapRecipient = zapTargetEvent!!.pubkey
+        var resolvedCanPrivateZap by remember(zapRecipient) { mutableStateOf(canPrivateZap) }
+        if (!canPrivateZap && fetchDmRelays != null) {
+            LaunchedEffect(zapRecipient) {
+                val result = fetchDmRelays(zapRecipient)
+                if (result) resolvedCanPrivateZap = true
+            }
+        }
+        ZapDialog(
+            isWalletConnected = isWalletConnected,
+            onDismiss = { zapTargetEvent = null },
+            onZap = { amountMsats, message, isAnonymous, isPrivate ->
+                val event = zapTargetEvent ?: return@ZapDialog
+                zapTargetEvent = null
+                onZap(event, amountMsats, message, isAnonymous, isPrivate)
+            },
+            onGoToWallet = onWallet,
+            canPrivateZap = resolvedCanPrivateZap
+        )
+    }
+
+    if (showProfileZapDialog) {
+        ZapDialog(
+            isWalletConnected = isWalletConnected,
+            onDismiss = { showProfileZapDialog = false },
+            onZap = { amountMsats, message, isAnonymous, _ ->
+                showProfileZapDialog = false
+                profileZapStatus = ProfileZapStatus.InProgress(amountMsats)
+                onZapProfile?.invoke(amountMsats, message, isAnonymous)
+            },
+            onGoToWallet = onWallet,
+            canPrivateZap = false
+        )
+    }
+
+    when (val s = profileZapStatus) {
+        is ProfileZapStatus.Idle -> {}
+        is ProfileZapStatus.InProgress -> {
+            AlertDialog(
+                onDismissRequest = {},
+                title = { Text("Sending zap...") },
+                text = { CircularProgressIndicator() },
+                confirmButton = {}
+            )
+        }
+        is ProfileZapStatus.Success -> {
+            AlertDialog(
+                onDismissRequest = { profileZapStatus = ProfileZapStatus.Idle },
+                title = { Text("\u26A1 Zap sent!") },
+                text = { Text("${s.sats} sats sent") },
+                confirmButton = {
+                    TextButton(onClick = { profileZapStatus = ProfileZapStatus.Idle }) { Text(stringResource(R.string.btn_ok)) }
+                }
+            )
+        }
+        is ProfileZapStatus.Failure -> {
+            AlertDialog(
+                onDismissRequest = { profileZapStatus = ProfileZapStatus.Idle },
+                title = { Text(stringResource(R.string.zap_failed)) },
+                text = { Text(s.message) },
+                confirmButton = {
+                    TextButton(onClick = { profileZapStatus = ProfileZapStatus.Idle }) { Text(stringResource(R.string.btn_ok)) }
+                }
+            )
+        }
+    }
+
+    if (zapErrorMessage != null) {
+        AlertDialog(
+            onDismissRequest = { zapErrorMessage = null },
+            title = { Text(stringResource(R.string.zap_failed)) },
+            text = { Text(zapErrorMessage ?: "") },
+            confirmButton = {
+                TextButton(onClick = { zapErrorMessage = null }) { Text(stringResource(R.string.btn_ok)) }
+            }
+        )
+    }
+
+    var showQrDialog by remember { mutableStateOf(false) }
+    var showAddToListDialog by remember { mutableStateOf(false) }
+
+    if (showQrDialog) {
+        ProfileQrSheet(
+            pubkeyHex = profilePubkey,
+            avatarUrl = profile?.picture,
+            lud16 = profile?.lud16,
+            onDismiss = { showQrDialog = false }
+        )
+    }
+
+    if (showAddToListDialog && !isOwnProfile) {
+        AddToListDialog(
+            pubkey = profilePubkey,
+            ownLists = ownLists,
+            onAddToList = { dTag -> onAddToList?.invoke(dTag, profilePubkey) },
+            onRemoveFromList = { dTag -> onRemoveFromList?.invoke(dTag, profilePubkey) },
+            onCreateList = onCreateList,
+            onDismiss = { showAddToListDialog = false }
+        )
+    }
+
+    val notesSortMode by viewModel.notesSortMode.collectAsState()
+    val repliesSortMode by viewModel.repliesSortMode.collectAsState()
+    val sortedNotes by viewModel.sortedNotes.collectAsState()
+    val sortedNotesLoading by viewModel.sortedNotesLoading.collectAsState()
+    val sortedReplies by viewModel.sortedReplies.collectAsState()
+    val sortedRepliesLoading by viewModel.sortedRepliesLoading.collectAsState()
+    val followers by viewModel.followers.collectAsState()
+    val followersLoading by viewModel.followersLoading.collectAsState()
+    val groups by viewModel.groups.collectAsState()
+    val groupsLoading by viewModel.groupsLoading.collectAsState()
+
+    // Dynamic tab list: Pair(contentId, title). contentId 8 = Conversation.
+    val showConversationTab = !isOwnProfile && userPubkey != null
+    val profileTabs: List<Pair<Int, String>> = buildList {
+        add(0 to stringResource(R.string.profile_tab_notes))
+        add(1 to stringResource(R.string.profile_tab_replies))
+        if (showConversationTab) add(8 to stringResource(R.string.profile_tab_conversation))
+        add(2 to stringResource(R.string.profile_tab_gallery))
+        add(3 to stringResource(R.string.profile_tab_media))
+        add(4 to stringResource(R.string.profile_tab_following))
+        add(5 to stringResource(R.string.profile_tab_followers))
+        add(6 to stringResource(R.string.profile_tab_groups))
+        add(7 to stringResource(R.string.profile_tab_relays))
+    }
+
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val selectedTabId = profileTabs.getOrNull(selectedTab)?.first ?: 0
+    var showSortDropdown by remember { mutableStateOf(false) }
+
+    if (selectedTabId == 5) {
+        LaunchedEffect(Unit) { viewModel.loadFollowers() }
+    }
+
+    // Conversation tab: profile replies that tag the current user
+    val conversationNotes = remember(replies, userPubkey, showConversationTab) {
+        if (!showConversationTab) emptyList()
+        else replies.filter { event ->
+            event.tags.any { tag -> tag.size >= 2 && tag[0] == "p" && tag[1] == userPubkey }
+        }
+    }
+
+    var blockedContentRevealed by remember { mutableStateOf(false) }
+    var fullScreenMediaImageUrl by remember { mutableStateOf<String?>(null) }
+    var fullScreenMediaVideoUrl by remember { mutableStateOf<String?>(null) }
+
+    if (fullScreenMediaImageUrl != null) {
+        FullScreenImageViewer(
+            imageUrl = fullScreenMediaImageUrl!!,
+            onDismiss = { fullScreenMediaImageUrl = null }
+        )
+    }
+
+    if (fullScreenMediaVideoUrl != null) {
+        cooking.zap.app.ui.component.FullScreenVideoPlayer(
+            videoUrl = fullScreenMediaVideoUrl!!,
+            onDismiss = { fullScreenMediaVideoUrl = null }
+        )
+    }
+
+    Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        profile?.displayString ?: "Profile",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                },
+                actions = {
+                    val context = LocalContext.current
+                    if (onSearchAuthor != null) {
+                        IconButton(onClick = onSearchAuthor) {
+                            Icon(Icons.Default.Search, stringResource(R.string.profile_search_notes))
+                        }
+                    }
+                    IconButton(onClick = { showQrDialog = true }) {
+                        Icon(Icons.Default.QrCodeScanner, stringResource(R.string.cd_show_qr_code))
+                    }
+                    var menuExpanded by remember { mutableStateOf(false) }
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Default.MoreVert, stringResource(R.string.cd_more_options))
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.profile_copy_json)) },
+                            onClick = {
+                                menuExpanded = false
+                                profile?.let { p ->
+                                    val json = buildJsonObject {
+                                        p.name?.let { put("name", it) }
+                                        p.displayName?.let { put("display_name", it) }
+                                        p.about?.let { put("about", it) }
+                                        p.picture?.let { put("picture", it) }
+                                        p.banner?.let { put("banner", it) }
+                                        p.nip05?.let { put("nip05", it) }
+                                        p.lud16?.let { put("lud16", it) }
+                                    }.toString()
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("Profile JSON", json))
+                                    Toast.makeText(context, context.getString(R.string.profile_json_copied), Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                        if (!isOwnProfile) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.profile_add_to_list)) },
+                                onClick = {
+                                    menuExpanded = false
+                                    showAddToListDialog = true
+                                }
+                            )
+                            if (isBlocked) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.profile_unblock)) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onUnblockUser?.invoke()
+                                    }
+                                )
+                            } else {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.profile_block)) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onBlockUser?.invoke()
+                                    }
+                                )
+                            }
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        }
+    ) { padding ->
+        val galleryPosts by viewModel.galleryPosts.collectAsState()
+        val mediaItems = remember(rootNotes.size, replies.size, selectedTabId) {
+            if (selectedTabId != 3) emptyList()
+            else (rootNotes + replies)
+                .sortedByDescending { it.created_at }
+                .flatMap { event ->
+                    val imeta = parseImetaTags(event.tags)
+                    parseContent(event.content, imetaMap = imeta).mapNotNull { segment ->
+                        when (segment) {
+                            is ContentSegment.ImageSegment -> MediaItem(segment.meta.url, MediaType.IMAGE)
+                            is ContentSegment.VideoSegment -> MediaItem(segment.meta.url, MediaType.VIDEO)
+                            is ContentSegment.UnknownMediaSegment -> MediaItem(segment.meta.url, MediaType.IMAGE)
+                            else -> null
+                        }
+                    }
+                }
+                .distinctBy { it.url }
+        }
+
+        val listState = rememberLazyListState()
+
+        // Auto-load more media when scrolling near the bottom of the grid
+        if (selectedTabId == 3 && mediaItems.isNotEmpty()) {
+            LaunchedEffect(listState) {
+                snapshotFlow {
+                    val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                    val totalItems = listState.layoutInfo.totalItemsCount
+                    lastVisible to totalItems
+                }.collect { (lastVisible, totalItems) ->
+                    if (totalItems > 0 && lastVisible >= totalItems - 3) {
+                        viewModel.loadMoreNotes()
+                        viewModel.loadMoreReplies()
+                    }
+                }
+            }
+        }
+
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            val showSort = selectedTabId == 0 || selectedTabId == 1
+            val currentSortMode = if (selectedTabId == 0) notesSortMode else repliesSortMode
+            val sortButtonContent: (@Composable RowScope.() -> Unit)? = if (showSort) {
+                {
+                    Box {
+                        Surface(
+                            onClick = { showSortDropdown = true },
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    stringResource(currentSortMode.labelResId),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Icon(
+                                    Icons.Default.ArrowDropDown,
+                                    contentDescription = "Sort",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = showSortDropdown,
+                            onDismissRequest = { showSortDropdown = false }
+                        ) {
+                            ProfileSortMode.entries.forEach { mode ->
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(mode.labelResId)) },
+                                    onClick = {
+                                        showSortDropdown = false
+                                        if (selectedTabId == 0) viewModel.setNotesSortMode(mode)
+                                        else viewModel.setRepliesSortMode(mode)
+                                    },
+                                    trailingIcon = if (currentSortMode == mode) {{
+                                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    }} else null
+                                )
+                            }
+                        }
+                    }
+                }
+            } else null
+
+            item {
+                @Suppress("UNUSED_EXPRESSION")
+                nip05Version
+                ProfileHeader(
+                    profile = profile,
+                    isOwnProfile = isOwnProfile,
+                    isFollowing = isFollowing,
+                    onEditProfile = onEditProfile,
+                    onToggleFollow = { viewModel.toggleFollow(contactRepo, relayPool, signer) },
+                    nip05Repo = nip05Repo,
+                    pubkey = profilePubkey,
+                    eventRepo = eventRepo,
+                    onNavigateToProfile = onNavigateToProfile,
+                    onSendDm = onSendDm,
+                    onZapClick = if (onZapProfile != null) { { showProfileZapDialog = true } } else null,
+                    followingCount = followList.size,
+                    followerCount = followers.size.takeIf { followers.isNotEmpty() },
+                    followedBy = followedBy,
+                    followsYou = !isOwnProfile && userPubkey != null && followList.any { it.pubkey == userPubkey },
+                    isBlocked = isBlocked,
+                    onMuteUser = onMuteUser,
+                    onUnmuteUser = onUnblockUser,
+                    sortContent = sortButtonContent
+                )
+            }
+
+            stickyHeader {
+                // Tab strip uses `background` (true near-black) instead of
+                // `surface` so the chrome reads as part of the body and
+                // doesn't stack two distinct grey tiers — matches iOS.
+                val surfaceColor = MaterialTheme.colorScheme.background
+                Column {
+                    Box(
+                        modifier = Modifier.background(surfaceColor).drawWithContent {
+                            drawContent()
+                            drawRect(
+                                brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                    colors = listOf(
+                                        surfaceColor.copy(alpha = 0f),
+                                        surfaceColor
+                                    ),
+                                    startX = size.width - 48.dp.toPx(),
+                                    endX = size.width
+                                )
+                            )
+                        }
+                    ) {
+                        ScrollableTabRow(
+                            selectedTabIndex = selectedTab,
+                            containerColor = surfaceColor,
+                            edgePadding = 0.dp,
+                            divider = {},
+                            indicator = { tabPositions ->
+                                if (selectedTab < tabPositions.size) {
+                                    val pos = tabPositions[selectedTab]
+                                    Box(modifier = Modifier.fillMaxSize()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.BottomStart)
+                                                .offset(x = pos.left + 6.dp)
+                                                .width(pos.width - 12.dp)
+                                                .height(2.dp)
+                                                .background(
+                                                    MaterialTheme.colorScheme.primary,
+                                                    RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp)
+                                                )
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            profileTabs.forEachIndexed { index, (_, title) ->
+                                val selected = selectedTab == index
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        // 28dp (was 34) — matches iOS tighter
+                                        // tab row over the profile header.
+                                        .height(28.dp)
+                                        .clickable { selectedTab = index }
+                                        .padding(horizontal = 10.dp)
+                                ) {
+                                    Text(
+                                        text = title,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (selected) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+            }
+
+            when (selectedTabId) {
+                0 -> if (isBlocked && !blockedContentRevealed) {
+                    item { BlockedContentOverlay(onReveal = { blockedContentRevealed = true }) }
+                } else {
+                    // Pinned notes at the top of the Notes tab
+                    val pinnedEvents = pinnedIds.mapNotNull { id -> eventRepo?.getEvent(id) }
+                        .sortedByDescending { it.created_at }
+                    if (pinnedEvents.isNotEmpty()) {
+                        item {
+                            Text(
+                                stringResource(R.string.profile_pinned),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                            )
+                        }
+                        items(items = pinnedEvents, key = { "pinned-${it.id}" }) { event ->
+                            val eventProfile = eventRepo?.getProfileData(event.pubkey)
+                            val pinnedTranslationState = remember(translationVersion, event.id) {
+                                translationRepo?.getState(event.id) ?: cooking.zap.app.repo.TranslationState()
+                            }
+                            val pinnedPollVoteCounts = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 1068) eventRepo?.getPollVoteCounts(event.id) ?: emptyMap() else emptyMap()
+                            }
+                            val pinnedPollTotalVotes = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 1068) eventRepo?.getPollTotalVotes(event.id) ?: 0 else 0
+                            }
+                            val pinnedUserPollVotes = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 1068) eventRepo?.getUserPollVotes(event.id) ?: emptyList() else emptyList()
+                            }
+                            val pinnedZapPollSatsCounts = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getZapPollSatsCounts(event.id) ?: emptyMap() else emptyMap()
+                            }
+                            val pinnedZapPollTotalSats = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getZapPollTotalSats(event.id) ?: 0L else 0L
+                            }
+                            val pinnedUserZapPollVote = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getUserZapPollVote(event.id) else null
+                            }
+                            PostCard(
+                                event = event,
+                                profile = eventProfile,
+                                onReply = { onReply(event) },
+                                onNavigateToProfile = onNavigateToProfile,
+                                onNoteClick = { onNoteClick(event) },
+                                onQuotedNoteClick = onQuotedNoteClick,
+                                onReact = { emoji -> onReact(event, emoji) },
+                                onRepost = { onRepost(event) },
+                                onQuote = { onQuote(event) },
+                                eventRepo = eventRepo,
+                                onAddToList = { onAddNoteToList(event.id) },
+                                isInList = event.id in listedIds,
+                                onPin = { onTogglePin(event.id) },
+                                isPinned = true,
+                                onDelete = { onDeleteEvent(event.id, event.kind) },
+                                isOwnEvent = event.pubkey == userPubkey,
+                                translationState = pinnedTranslationState,
+                                onTranslate = { translationRepo?.translate(event.id, event.content) },
+                                autoTranslate = autoTranslate,
+                                pollVoteCounts = pinnedPollVoteCounts,
+                                pollTotalVotes = pinnedPollTotalVotes,
+                                userPollVotes = pinnedUserPollVotes,
+                                onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                                zapPollSatsCounts = pinnedZapPollSatsCounts,
+                                zapPollTotalSats = pinnedZapPollTotalSats,
+                                userZapPollVote = pinnedUserZapPollVote,
+                                onZapPollVote = { idx -> onZapPollVote(event.id, idx) },
+                                resolvedEmojis = resolvedEmojis,
+                                unicodeEmojis = unicodeEmojis,
+                                onOpenEmojiLibrary = onOpenEmojiLibrary,
+                                noteActions = invoiceNoteActions
+                            )
+                        }
+                    }
+
+                    val displayNotes = if (notesSortMode == ProfileSortMode.RECENCY) rootNotes else sortedNotes
+                    if (notesSortMode != ProfileSortMode.RECENCY && sortedNotes.isEmpty() && sortedNotesLoading) {
+                        item {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(32.dp)) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    } else if (notesSortMode != ProfileSortMode.RECENCY && sortedNotes.isEmpty() && !sortedNotesLoading) {
+                        item { FeedCrawlingMessage() }
+                    } else if (displayNotes.isEmpty() && pinnedEvents.isEmpty()) {
+                        item { EmptyTabContent(stringResource(R.string.profile_no_notes)) }
+                    } else {
+                        items(items = displayNotes, key = { it.id }) { event ->
+                            if (event.kind == 30023) {
+                                ProfileArticleCard(
+                                    event = event,
+                                    profile = profile,
+                                    eventRepo = eventRepo,
+                                    onArticleClick = onArticleClick,
+                                    onProfileClick = onNavigateToProfile
+                                )
+                                return@items
+                            }
+                            val likeCount = reactionVersion.let { eventRepo?.getReactionCount(event.id) ?: 0 }
+                            val replyCount = replyCountVersion.let { eventRepo?.getReplyCount(event.id) ?: 0 }
+                            val repostCount = repostVersion.let { eventRepo?.getRepostCount(event.id) ?: 0 }
+                            val zapSats = zapVersion.let { eventRepo?.getZapSats(event.id) ?: 0L }
+                            val userEmojis = reactionVersion.let { userPubkey?.let { eventRepo?.getUserReactionEmojis(event.id, it) } ?: emptySet() }
+                            val reactionDetails = remember(reactionVersion, event.id) {
+                                eventRepo?.getReactionDetails(event.id) ?: emptyMap()
+                            }
+                            val zapDetails = remember(zapVersion, event.id) {
+                                eventRepo?.getZapDetails(event.id) ?: emptyList()
+                            }
+                            val relayIcons = remember(relaySourceVersion, event.id) {
+                                eventRepo?.getEventRelays(event.id)?.map { url ->
+                                    url to relayInfoRepo?.getIconUrl(url)
+                                } ?: emptyList()
+                            }
+                            val repostPubkey = viewModel.repostAuthors[event.id]
+                            val profileRepostPubkeys = remember(repostPubkey) {
+                                if (repostPubkey != null) listOf(repostPubkey) else emptyList()
+                            }
+                            val hasUserReposted = eventRepo?.hasUserReposted(event.id) == true
+                            val hasUserZapped = zapVersion.let { eventRepo?.hasUserZapped(event.id) == true }
+                            val eventReactionEmojiUrls = reactionVersion.let { eventRepo?.getReactionEmojiUrls(event.id) ?: emptyMap() }
+                            val rootTranslationState = remember(translationVersion, event.id) {
+                                translationRepo?.getState(event.id) ?: cooking.zap.app.repo.TranslationState()
+                            }
+                            val rootPollVoteCounts = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 1068) eventRepo?.getPollVoteCounts(event.id) ?: emptyMap() else emptyMap()
+                            }
+                            val rootPollTotalVotes = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 1068) eventRepo?.getPollTotalVotes(event.id) ?: 0 else 0
+                            }
+                            val rootUserPollVotes = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 1068) eventRepo?.getUserPollVotes(event.id) ?: emptyList() else emptyList()
+                            }
+                            val rootZapPollSatsCounts = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getZapPollSatsCounts(event.id) ?: emptyMap() else emptyMap()
+                            }
+                            val rootZapPollTotalSats = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getZapPollTotalSats(event.id) ?: 0L else 0L
+                            }
+                            val rootUserZapPollVote = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getUserZapPollVote(event.id) else null
+                            }
+                            PostCard(
+                                event = event,
+                                profile = if (repostPubkey != null) eventRepo?.getProfileData(event.pubkey) else profile,
+                                onReply = { onReply(event) },
+                                onProfileClick = { onNavigateToProfile?.invoke(event.pubkey) },
+                                onNavigateToProfile = onNavigateToProfile,
+                                onNoteClick = { onNoteClick(event) },
+                                onQuotedNoteClick = onQuotedNoteClick,
+                                onReact = { emoji -> onReact(event, emoji) },
+                                onRepost = { onRepost(event) },
+                                onQuote = { onQuote(event) },
+                                userReactionEmojis = userEmojis,
+                                hasUserReposted = hasUserReposted,
+                                onZap = { zapTargetEvent = event },
+                                hasUserZapped = hasUserZapped,
+                                likeCount = likeCount,
+                                replyCount = replyCount,
+                                repostCount = repostCount,
+                                zapSats = zapSats,
+                                isZapAnimating = event.id in zapAnimatingIds,
+                                isZapInProgress = event.id in zapInProgressIds,
+                                eventRepo = eventRepo,
+                                repostPubkeys = profileRepostPubkeys,
+                                reactionDetails = reactionDetails,
+                                zapDetails = zapDetails,
+                                reactionEmojiUrls = eventReactionEmojiUrls,
+                                relayIcons = relayIcons,
+                                onNavigateToProfileFromDetails = onNavigateToProfile,
+                                onFollowAuthor = { onToggleFollow?.invoke(event.pubkey) },
+                                onBlockAuthor = { onBlockUser?.invoke() },
+                                isFollowingAuthor = contactRepo.isFollowing(event.pubkey),
+                                isOwnEvent = event.pubkey == userPubkey,
+                                nip05Repo = nip05Repo,
+                                onAddToList = { onAddNoteToList(event.id) },
+                                isInList = event.id in listedIds,
+                                onPin = { onTogglePin(event.id) },
+                                isPinned = event.id in pinnedIds,
+                                onDelete = { onDeleteEvent(event.id, event.kind) },
+                                translationState = rootTranslationState,
+                                onTranslate = { translationRepo?.translate(event.id, event.content) },
+                                autoTranslate = autoTranslate,
+                                pollVoteCounts = rootPollVoteCounts,
+                                pollTotalVotes = rootPollTotalVotes,
+                                userPollVotes = rootUserPollVotes,
+                                onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                                zapPollSatsCounts = rootZapPollSatsCounts,
+                                zapPollTotalSats = rootZapPollTotalSats,
+                                userZapPollVote = rootUserZapPollVote,
+                                onZapPollVote = { idx -> onZapPollVote(event.id, idx) },
+                                resolvedEmojis = resolvedEmojis,
+                                unicodeEmojis = unicodeEmojis,
+                                onOpenEmojiLibrary = onOpenEmojiLibrary,
+                                noteActions = invoiceNoteActions
+                            )
+                        }
+                        if (rootNotes.isNotEmpty() && notesSortMode == ProfileSortMode.RECENCY) {
+                            item {
+                                LoadMoreButton(onClick = { viewModel.loadMoreNotes() })
+                            }
+                        }
+                    }
+                }
+                2 -> {
+                    // Gallery tab — 2-column grid of gallery posts
+                    if (galleryPosts.isEmpty()) {
+                        item { EmptyTabContent(stringResource(R.string.profile_no_gallery)) }
+                    } else {
+                        items(items = galleryPosts.chunked(2), key = { row -> row.first().id }) { row ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 2.dp),
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                for (event in row) {
+                                    val firstMedia = remember(event.id) {
+                                        val img = cooking.zap.app.nostr.Nip68.parseImetaEntries(event).firstOrNull()
+                                        val vid = cooking.zap.app.nostr.Nip71.parseVideoMeta(event).firstOrNull()
+                                        Triple(img?.url ?: vid?.thumbnailUrl, vid != null && img == null, event)
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .aspectRatio(1f)
+                                            .padding(1.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .clickable { onNoteClick(event) }
+                                    ) {
+                                        if (firstMedia.first != null) {
+                                            coil3.compose.AsyncImage(
+                                                model = firstMedia.first,
+                                                contentDescription = null,
+                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                            )
+                                        }
+                                        // Play icon overlay for video posts
+                                        if (firstMedia.second) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.Center)
+                                                    .size(32.dp)
+                                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                                    .background(Color.Black.copy(alpha = 0.5f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.PlayArrow,
+                                                    contentDescription = "Video",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                // Fill remaining space if odd number
+                                if (row.size == 1) {
+                                    Spacer(Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+                }
+                1 -> if (isBlocked && !blockedContentRevealed) {
+                    item { BlockedContentOverlay(onReveal = { blockedContentRevealed = true }) }
+                } else {
+                    val displayReplies = if (repliesSortMode == ProfileSortMode.RECENCY) replies else sortedReplies
+                    if (repliesSortMode != ProfileSortMode.RECENCY && sortedReplies.isEmpty() && sortedRepliesLoading) {
+                        item {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(32.dp)) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    } else if (repliesSortMode != ProfileSortMode.RECENCY && sortedReplies.isEmpty() && !sortedRepliesLoading) {
+                        item { FeedCrawlingMessage() }
+                    } else if (displayReplies.isEmpty()) {
+                        item { EmptyTabContent(stringResource(R.string.profile_no_replies)) }
+                    } else {
+                        items(items = displayReplies, key = { it.id }) { event ->
+                            val likeCount = reactionVersion.let { eventRepo?.getReactionCount(event.id) ?: 0 }
+                            val replyCount = replyCountVersion.let { eventRepo?.getReplyCount(event.id) ?: 0 }
+                            val repostCount2 = repostVersion.let { eventRepo?.getRepostCount(event.id) ?: 0 }
+                            val zapSats = zapVersion.let { eventRepo?.getZapSats(event.id) ?: 0L }
+                            val userEmojis = reactionVersion.let { userPubkey?.let { eventRepo?.getUserReactionEmojis(event.id, it) } ?: emptySet() }
+                            val reactionDetails = remember(reactionVersion, event.id) {
+                                eventRepo?.getReactionDetails(event.id) ?: emptyMap()
+                            }
+                            val zapDetails = remember(zapVersion, event.id) {
+                                eventRepo?.getZapDetails(event.id) ?: emptyList()
+                            }
+                            val relayIcons = remember(relaySourceVersion, event.id) {
+                                eventRepo?.getEventRelays(event.id)?.map { url ->
+                                    url to relayInfoRepo?.getIconUrl(url)
+                                } ?: emptyList()
+                            }
+                            val hasUserReposted2 = eventRepo?.hasUserReposted(event.id) == true
+                            val hasUserZapped2 = zapVersion.let { eventRepo?.hasUserZapped(event.id) == true }
+                            val eventReactionEmojiUrls2 = reactionVersion.let { eventRepo?.getReactionEmojiUrls(event.id) ?: emptyMap() }
+                            val replyTranslationState = remember(translationVersion, event.id) {
+                                translationRepo?.getState(event.id) ?: cooking.zap.app.repo.TranslationState()
+                            }
+                            val replyPollVoteCounts = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 1068) eventRepo?.getPollVoteCounts(event.id) ?: emptyMap() else emptyMap()
+                            }
+                            val replyPollTotalVotes = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 1068) eventRepo?.getPollTotalVotes(event.id) ?: 0 else 0
+                            }
+                            val replyUserPollVotes = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 1068) eventRepo?.getUserPollVotes(event.id) ?: emptyList() else emptyList()
+                            }
+                            val replyZapPollSatsCounts = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getZapPollSatsCounts(event.id) ?: emptyMap() else emptyMap()
+                            }
+                            val replyZapPollTotalSats = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getZapPollTotalSats(event.id) ?: 0L else 0L
+                            }
+                            val replyUserZapPollVote = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo?.getUserZapPollVote(event.id) else null
+                            }
+                            PostCard(
+                                event = event,
+                                profile = profile,
+                                onReply = { onReply(event) },
+                                onNavigateToProfile = onNavigateToProfile,
+                                onNoteClick = { onNoteClick(event) },
+                                onQuotedNoteClick = onQuotedNoteClick,
+                                onReact = { emoji -> onReact(event, emoji) },
+                                onRepost = { onRepost(event) },
+                                onQuote = { onQuote(event) },
+                                userReactionEmojis = userEmojis,
+                                hasUserReposted = hasUserReposted2,
+                                onZap = { zapTargetEvent = event },
+                                hasUserZapped = hasUserZapped2,
+                                likeCount = likeCount,
+                                replyCount = replyCount,
+                                repostCount = repostCount2,
+                                zapSats = zapSats,
+                                isZapAnimating = event.id in zapAnimatingIds,
+                                isZapInProgress = event.id in zapInProgressIds,
+                                eventRepo = eventRepo,
+                                reactionDetails = reactionDetails,
+                                zapDetails = zapDetails,
+                                reactionEmojiUrls = eventReactionEmojiUrls2,
+                                relayIcons = relayIcons,
+                                onNavigateToProfileFromDetails = onNavigateToProfile,
+                                onFollowAuthor = { onToggleFollow?.invoke(event.pubkey) },
+                                onBlockAuthor = { onBlockUser?.invoke() },
+                                isFollowingAuthor = contactRepo.isFollowing(event.pubkey),
+                                isOwnEvent = event.pubkey == userPubkey,
+                                nip05Repo = nip05Repo,
+                                onAddToList = { onAddNoteToList(event.id) },
+                                isInList = event.id in listedIds,
+                                onPin = { onTogglePin(event.id) },
+                                isPinned = event.id in pinnedIds,
+                                onDelete = { onDeleteEvent(event.id, event.kind) },
+                                translationState = replyTranslationState,
+                                onTranslate = { translationRepo?.translate(event.id, event.content) },
+                                autoTranslate = autoTranslate,
+                                pollVoteCounts = replyPollVoteCounts,
+                                pollTotalVotes = replyPollTotalVotes,
+                                userPollVotes = replyUserPollVotes,
+                                onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                                zapPollSatsCounts = replyZapPollSatsCounts,
+                                zapPollTotalSats = replyZapPollTotalSats,
+                                userZapPollVote = replyUserZapPollVote,
+                                onZapPollVote = { idx -> onZapPollVote(event.id, idx) },
+                                resolvedEmojis = resolvedEmojis,
+                                unicodeEmojis = unicodeEmojis,
+                                onOpenEmojiLibrary = onOpenEmojiLibrary,
+                                noteActions = invoiceNoteActions
+                            )
+                        }
+                        if (repliesSortMode == ProfileSortMode.RECENCY) {
+                            item {
+                                LoadMoreButton(onClick = { viewModel.loadMoreReplies() })
+                            }
+                        }
+                    }
+                }
+                8 -> {
+                    if (conversationNotes.isEmpty()) {
+                        item { EmptyTabContent(stringResource(R.string.profile_no_conversation)) }
+                    } else {
+                        items(items = conversationNotes, key = { it.id }) { event ->
+                            val likeCount = reactionVersion.let { eventRepo?.getReactionCount(event.id) ?: 0 }
+                            val replyCount = replyCountVersion.let { eventRepo?.getReplyCount(event.id) ?: 0 }
+                            val repostCount = repostVersion.let { eventRepo?.getRepostCount(event.id) ?: 0 }
+                            val zapSats = zapVersion.let { eventRepo?.getZapSats(event.id) ?: 0L }
+                            val userEmojis = reactionVersion.let { userPubkey?.let { eventRepo?.getUserReactionEmojis(event.id, it) } ?: emptySet() }
+                            val hasUserReposted = eventRepo?.hasUserReposted(event.id) == true
+                            val hasUserZapped = zapVersion.let { eventRepo?.hasUserZapped(event.id) == true }
+                            val convTranslationState = remember(translationVersion, event.id) {
+                                translationRepo?.getState(event.id) ?: cooking.zap.app.repo.TranslationState()
+                            }
+                            PostCard(
+                                event = event,
+                                profile = profile,
+                                onReply = { onReply(event) },
+                                onNavigateToProfile = onNavigateToProfile,
+                                onNoteClick = { onNoteClick(event) },
+                                onQuotedNoteClick = onQuotedNoteClick,
+                                onReact = { emoji -> onReact(event, emoji) },
+                                onRepost = { onRepost(event) },
+                                onQuote = { onQuote(event) },
+                                userReactionEmojis = userEmojis,
+                                hasUserReposted = hasUserReposted,
+                                onZap = { zapTargetEvent = event },
+                                hasUserZapped = hasUserZapped,
+                                likeCount = likeCount,
+                                replyCount = replyCount,
+                                repostCount = repostCount,
+                                zapSats = zapSats,
+                                isZapAnimating = event.id in zapAnimatingIds,
+                                isZapInProgress = event.id in zapInProgressIds,
+                                eventRepo = eventRepo,
+                                isOwnEvent = event.pubkey == userPubkey,
+                                nip05Repo = nip05Repo,
+                                translationState = convTranslationState,
+                                onTranslate = { translationRepo?.translate(event.id, event.content) },
+                                autoTranslate = autoTranslate,
+                                resolvedEmojis = resolvedEmojis,
+                                unicodeEmojis = unicodeEmojis,
+                                onOpenEmojiLibrary = onOpenEmojiLibrary,
+                                noteActions = invoiceNoteActions
+                            )
+                        }
+                    }
+                }
+                3 -> {
+                    if (mediaItems.isEmpty()) {
+                        item { EmptyTabContent(stringResource(R.string.profile_no_media)) }
+                    } else {
+                        items(items = mediaItems.chunked(3), key = { row -> row.first().url }) { row ->
+                            MediaGridRow(
+                                items = row,
+                                onImageClick = { url -> fullScreenMediaImageUrl = url },
+                                onVideoClick = { url -> fullScreenMediaVideoUrl = url }
+                            )
+                        }
+                    }
+                }
+                4 -> {
+                    if (followList.isEmpty()) {
+                        item { EmptyTabContent(stringResource(R.string.profile_not_following)) }
+                    } else {
+                        @Suppress("UNUSED_EXPRESSION")
+                        followProfileVersion
+                        items(items = followList, key = { it.pubkey }) { entry ->
+                            val isEntryFollowed = myFollowList.any { it.pubkey == entry.pubkey }
+                            FollowEntryRow(
+                                entry = entry,
+                                eventRepo = eventRepo,
+                                isFollowing = isEntryFollowed,
+                                isOwnProfile = isOwnProfile,
+                                onToggleFollow = { onToggleFollow?.invoke(entry.pubkey) },
+                                onClick = { onNavigateToProfile?.invoke(entry.pubkey) }
+                            )
+                        }
+                    }
+                }
+                5 -> {
+                    if (followersLoading && followers.isEmpty()) {
+                        item {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(32.dp)) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    } else if (followers.isEmpty()) {
+                        item { EmptyTabContent(stringResource(R.string.profile_no_followers)) }
+                    } else {
+                        items(items = followers, key = { it.pubkey }) { followerProfile ->
+                            FollowerRow(
+                                profile = followerProfile,
+                                isFollowing = myFollowList.any { it.pubkey == followerProfile.pubkey },
+                                onToggleFollow = { onToggleFollow?.invoke(followerProfile.pubkey) },
+                                onClick = { onNavigateToProfile?.invoke(followerProfile.pubkey) }
+                            )
+                        }
+                    }
+                }
+                6 -> {
+                    if (groupsLoading && groups.isEmpty()) {
+                        item {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(32.dp)) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    } else if (groups.isEmpty()) {
+                        item { EmptyTabContent(stringResource(R.string.profile_no_groups)) }
+                    } else {
+                        items(items = groups, key = { "${it.relayUrl}|${it.groupId}" }) { entry ->
+                            Box(modifier = Modifier.padding(horizontal = 12.dp)) {
+                                cooking.zap.app.ui.component.GroupCard(
+                                    relayUrl = entry.relayUrl,
+                                    groupId = entry.groupId,
+                                    onClick = if (onGroupRoom != null) {
+                                        { onGroupRoom.invoke(entry.relayUrl, entry.groupId) }
+                                    } else null,
+                                    onFetchPreview = fetchGroupPreview,
+                                    eventRepo = eventRepo
+                                )
+                            }
+                        }
+                    }
+                }
+                7 -> {
+                    if (relayList.isEmpty() && relayHints.isEmpty()) {
+                        item { EmptyTabContent(stringResource(R.string.profile_no_relays)) }
+                    } else {
+                        if (relayList.isNotEmpty()) {
+                            item {
+                                SectionLabel(stringResource(R.string.profile_relay_list))
+                            }
+                            items(items = relayList.distinctBy { it.url }, key = { it.url }) { relay ->
+                                RelayRow(relay)
+                            }
+                        }
+                        // Show relay hints (discovered from events) that aren't already in the relay list
+                        val relayListUrls = relayList.map { it.url }.toSet()
+                        val extraHints = relayHints.filter { it !in relayListUrls }.sorted()
+                        if (extraHints.isNotEmpty()) {
+                            item {
+                                SectionLabel(stringResource(if (relayList.isEmpty()) R.string.profile_discovered_relays else R.string.profile_other_discovered_relays))
+                            }
+                            items(items = extraHints, key = { it }) { url ->
+                                HintRelayRow(url)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun formatFollowCount(count: Int): String = when {
+    count >= 1_000_000 -> "${count / 1_000_000}.${(count % 1_000_000) / 100_000}M"
+    count >= 1_000 -> "${count / 1_000}.${(count % 1_000) / 100}k"
+    else -> "$count"
+}
+
+@Composable
+private fun ProfileHeader(
+    profile: ProfileData?,
+    isOwnProfile: Boolean,
+    isFollowing: Boolean,
+    onEditProfile: () -> Unit,
+    onToggleFollow: () -> Unit,
+    nip05Repo: Nip05Repository? = null,
+    pubkey: String = "",
+    eventRepo: EventRepository? = null,
+    onNavigateToProfile: ((String) -> Unit)? = null,
+    onSendDm: (() -> Unit)? = null,
+    onZapClick: (() -> Unit)? = null,
+    followingCount: Int = 0,
+    followerCount: Int? = null,
+    followedBy: List<String> = emptyList(),
+    followsYou: Boolean = false,
+    isBlocked: Boolean = false,
+    onMuteUser: (() -> Unit)? = null,
+    onUnmuteUser: (() -> Unit)? = null,
+    sortContent: (@Composable RowScope.() -> Unit)? = null
+) {
+    var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
+    val canSign = LocalCanSign.current
+
+    if (fullScreenImageUrl != null) {
+        FullScreenImageViewer(
+            imageUrl = fullScreenImageUrl!!,
+            onDismiss = { fullScreenImageUrl = null }
+        )
+    }
+
+    // Banner
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(150.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        profile?.banner?.let { bannerUrl ->
+            AsyncImage(
+                model = bannerUrl,
+                contentDescription = "Banner",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable { fullScreenImageUrl = bannerUrl }
+            )
+        }
+    }
+
+    // Profile info overlapping banner
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            modifier = Modifier.offset(y = (-16).dp)
+        ) {
+            ProfilePicture(
+                url = profile?.picture,
+                size = 72,
+                showBlockedBadge = isBlocked,
+                onClick = profile?.picture?.let { url -> { fullScreenImageUrl = url } }
+            )
+            Spacer(Modifier.weight(1f))
+            if (canSign && isOwnProfile) {
+                androidx.compose.material3.Button(
+                    onClick = onEditProfile,
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Text(stringResource(R.string.profile_edit), style = MaterialTheme.typography.labelMedium)
+                }
+            } else if (canSign) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (onSendDm != null) {
+                        Surface(
+                            onClick = onSendDm,
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Send,
+                                contentDescription = stringResource(R.string.profile_send_message),
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
+                    if (profile?.lud16 != null && onZapClick != null) {
+                        val useZapBolt = cooking.zap.app.ui.util.useBoltIcon()
+                        Surface(
+                            onClick = onZapClick,
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            if (useZapBolt) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_bolt),
+                                    contentDescription = "Zap",
+                                    tint = Color(0xFFFFC107),
+                                    modifier = Modifier.padding(11.dp)
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Outlined.CurrencyBitcoin,
+                                    contentDescription = "Zap",
+                                    tint = Color(0xFFFFC107),
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
+                        }
+                    }
+                    // Follow circle button
+                    Surface(
+                        onClick = onToggleFollow,
+                        shape = CircleShape,
+                        color = if (isFollowing) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isFollowing) Icons.Default.PersonRemove else Icons.Default.PersonAdd,
+                            contentDescription = if (isFollowing) "Unfollow" else "Follow",
+                            tint = if (isFollowing) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(9.dp)
+                        )
+                    }
+                    // Mute circle button
+                    if (onMuteUser != null || onUnmuteUser != null) {
+                        Surface(
+                            onClick = { if (isBlocked) onUnmuteUser?.invoke() else onMuteUser?.invoke() },
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isBlocked) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                                contentDescription = if (isBlocked) "Unmute" else "Mute",
+                                tint = if (isBlocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(9.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = profile?.displayString ?: "",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (followsYou) {
+                Text(
+                    text = stringResource(R.string.profile_follows_you),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            RoundedCornerShape(4.dp)
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+        }
+
+        profile?.nip05?.let { nip05 ->
+            Nip05Badge(
+                nip05 = nip05,
+                pubkey = pubkey,
+                nip05Repo = nip05Repo,
+                verifiedTint = Color(0xFFFF8C00),
+                iconLeading = true
+            )
+        }
+
+        profile?.about?.let { about ->
+            val emojiMap = remember(pubkey) { Nip30.parseEmojiTags(emptyList()) }
+            val imetaMap = remember(pubkey) { parseImetaTags(emptyList()) }
+            val bioIsLong = remember(about) { about.length > 180 || about.contains('\n') }
+            var bioExpanded by remember(pubkey) { mutableStateOf(false) }
+            Spacer(Modifier.height(8.dp))
+            if (bioIsLong && !bioExpanded) {
+                // Clip to ~5 lines of bodyMedium; RichContent renders mentions/hashtags correctly
+                Box(modifier = Modifier.heightIn(max = 100.dp).clipToBounds()) {
+                    RichContent(
+                        content = about,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        plainLinks = true,
+                        emojiMap = emojiMap,
+                        imetaMap = imetaMap,
+                        eventRepo = eventRepo,
+                        onProfileClick = onNavigateToProfile
+                    )
+                }
+                androidx.compose.material3.TextButton(
+                    onClick = { bioExpanded = true },
+                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        "Read more",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            } else {
+                RichContent(
+                    content = about,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    plainLinks = true,
+                    emojiMap = emojiMap,
+                    imetaMap = imetaMap,
+                    eventRepo = eventRepo,
+                    onProfileClick = onNavigateToProfile
+                )
+                if (bioIsLong) {
+                    androidx.compose.material3.TextButton(
+                        onClick = { bioExpanded = false },
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            "Show less",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+        }
+
+        profile?.lud16?.let { lightning ->
+            val context = LocalContext.current
+            Spacer(Modifier.height(6.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Lightning address", lightning))
+                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                }
+            ) {
+                val useBoltIcon = cooking.zap.app.ui.util.useBoltIcon()
+                if (useBoltIcon) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_bolt),
+                        contentDescription = "Lightning address",
+                        tint = Color(0xFFFFC107),
+                        modifier = Modifier.size(16.dp)
+                    )
+                } else {
+                    Icon(
+                        Icons.Outlined.CurrencyBitcoin,
+                        contentDescription = "Lightning address",
+                        tint = Color(0xFFFFC107),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = lightning,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // Following / Followers counts row — sort button sits on the right
+        Spacer(Modifier.height(10.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (followingCount > 0) {
+                Text(
+                    text = formatFollowCount(followingCount),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.width(3.dp))
+                Text(
+                    text = "Following",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(16.dp))
+            }
+            Text(
+                text = if (followerCount != null) formatFollowCount(followerCount) else "∞",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.width(3.dp))
+            Text(
+                text = "Followers",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (sortContent != null) {
+                Spacer(Modifier.weight(1f))
+                sortContent()
+            }
+        }
+
+        // Followed-by avatars row
+        if (followedBy.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            val displayPubkeys = followedBy.take(10)
+            val othersCount = followedBy.size - displayPubkeys.size
+            val avatarSize = 22
+            val overlap = 16
+            val boxWidth = (avatarSize + (displayPubkeys.size - 1) * overlap).dp
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.width(boxWidth).height(avatarSize.dp)) {
+                    displayPubkeys.forEachIndexed { index, pk ->
+                        Box(modifier = Modifier.offset(x = (index * overlap).dp)) {
+                            ProfilePicture(
+                                url = eventRepo?.getProfileData(pk)?.picture,
+                                size = avatarSize,
+                                onClick = { onNavigateToProfile?.invoke(pk) }
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                if (othersCount > 0) {
+                    Text(
+                        text = "+$othersCount others in your network",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun FollowEntryRow(
+    entry: Nip02.FollowEntry,
+    eventRepo: EventRepository?,
+    isFollowing: Boolean,
+    isOwnProfile: Boolean,
+    onToggleFollow: () -> Unit,
+    onClick: () -> Unit
+) {
+    val profile = eventRepo?.getProfileData(entry.pubkey)
+    val displayName = profile?.displayString
+        ?: entry.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        ProfilePicture(url = profile?.picture, size = 40)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = displayName,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (entry.petname != null) {
+                Text(
+                    text = entry.petname,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        if (!isOwnProfile) {
+            Spacer(Modifier.width(8.dp))
+            FollowButton(
+                isFollowing = isFollowing,
+                onClick = onToggleFollow
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RelayRow(relay: RelayConfig) {
+    val displayUrl = relay.url
+        .removePrefix("wss://")
+        .removePrefix("ws://")
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Text(
+            text = displayUrl,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(8.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (relay.read) {
+                Text(
+                    text = "R",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier
+                        .background(
+                            MaterialTheme.colorScheme.secondaryContainer,
+                            RoundedCornerShape(4.dp)
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+            if (relay.write) {
+                Text(
+                    text = "W",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier
+                        .background(
+                            MaterialTheme.colorScheme.tertiaryContainer,
+                            RoundedCornerShape(4.dp)
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+    )
+}
+
+@Composable
+private fun HintRelayRow(url: String) {
+    val displayUrl = url
+        .removePrefix("wss://")
+        .removePrefix("ws://")
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Text(
+            text = displayUrl,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = "hint",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .background(
+                    MaterialTheme.colorScheme.surfaceVariant,
+                    RoundedCornerShape(4.dp)
+                )
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        )
+    }
+}
+
+@Composable
+private fun AddToListDialog(
+    pubkey: String,
+    ownLists: List<FollowSet>,
+    onAddToList: (String) -> Unit,
+    onRemoveFromList: (String) -> Unit,
+    onCreateList: ((String, Boolean) -> Unit)?,
+    onDismiss: () -> Unit
+) {
+    var newListName by remember { mutableStateOf("") }
+    var newListPrivate by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add to List") },
+        text = {
+            Column {
+                if (ownLists.isEmpty()) {
+                    Text(
+                        "No lists yet. Create one below.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                } else {
+                    ownLists.forEach { list ->
+                        val isMember = pubkey in list.members
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (isMember) onRemoveFromList(list.dTag)
+                                    else onAddToList(list.dTag)
+                                }
+                                .padding(vertical = 8.dp)
+                        ) {
+                            androidx.compose.material3.Checkbox(
+                                checked = isMember,
+                                onCheckedChange = {
+                                    if (isMember) onRemoveFromList(list.dTag)
+                                    else onAddToList(list.dTag)
+                                }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                list.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (list.isPrivate) {
+                                androidx.compose.material3.Icon(
+                                    Icons.Outlined.Lock,
+                                    contentDescription = "Private",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                            }
+                            Text(
+                                "${list.members.size}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    androidx.compose.material3.OutlinedTextField(
+                        value = newListName,
+                        onValueChange = { newListName = it },
+                        placeholder = { Text("New list name") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(
+                        onClick = {
+                            if (newListName.isNotBlank()) {
+                                onCreateList?.invoke(newListName.trim(), newListPrivate)
+                                newListName = ""
+                                newListPrivate = false
+                            }
+                        },
+                        enabled = newListName.isNotBlank()
+                    ) {
+                        Text("Create")
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    androidx.compose.material3.Icon(
+                        Icons.Outlined.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "Private",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    androidx.compose.material3.Switch(
+                        checked = newListPrivate,
+                        onCheckedChange = { newListPrivate = it },
+                        modifier = Modifier.height(24.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        },
+        dismissButton = {}
+    )
+}
+
+@Composable
+private fun LoadMoreButton(onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 16.dp)
+    ) {
+        OutlinedButton(onClick = onClick) {
+            Text("Load More")
+        }
+    }
+}
+
+@Composable
+private fun FollowerRow(
+    profile: ProfileData,
+    isFollowing: Boolean,
+    onToggleFollow: () -> Unit,
+    onClick: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        ProfilePicture(url = profile.picture, size = 40)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = profile.displayString,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(8.dp))
+        FollowButton(isFollowing = isFollowing, onClick = onToggleFollow)
+    }
+}
+
+@Composable
+private fun FeedCrawlingMessage() {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 32.dp, vertical = 40.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.profile_crawling_still),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = stringResource(R.string.profile_crawling_no_results),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun EmptyTabContent(message: String) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp)
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private enum class MediaType { IMAGE, VIDEO }
+
+private data class MediaItem(val url: String, val type: MediaType)
+
+@Composable
+private fun MediaGridRow(
+    items: List<MediaItem>,
+    onImageClick: (String) -> Unit,
+    onVideoClick: (String) -> Unit
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 2.dp)
+    ) {
+        items.forEach { item ->
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .aspectRatio(1f)
+                    .clickable {
+                        when (item.type) {
+                            MediaType.IMAGE -> onImageClick(item.url)
+                            MediaType.VIDEO -> onVideoClick(item.url)
+                        }
+                    }
+            ) {
+                AsyncImage(
+                    model = item.url,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                if (item.type == MediaType.VIDEO) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.3f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Play video",
+                            tint = Color.White,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
+            }
+        }
+        // Fill remaining cells in incomplete rows
+        repeat(3 - items.size) {
+            Spacer(modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun BlockedContentOverlay(onReveal: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp)
+            .padding(16.dp)
+            .background(
+                MaterialTheme.colorScheme.errorContainer,
+                RoundedCornerShape(12.dp)
+            )
+            .clickable(onClick = onReveal)
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                Icons.Default.Block,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(32.dp)
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "This user is blocked",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Tap to reveal content",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProfileArticleCard(
+    event: NostrEvent,
+    profile: ProfileData?,
+    eventRepo: EventRepository?,
+    onArticleClick: ((Int, String, String) -> Unit)?,
+    onProfileClick: ((String) -> Unit)?
+) {
+    val title = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "title" }?.get(1) }
+    val summary = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "summary" }?.get(1) }
+    val image = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "image" }?.get(1) }
+    val dTag = remember(event) { event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: "" }
+    val publishedAt = remember(event) {
+        event.tags.firstOrNull { it.size >= 2 && it[0] == "published_at" }?.get(1)?.toLongOrNull()
+    }
+
+    androidx.compose.material3.Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .then(
+                if (onArticleClick != null) Modifier.clickable { onArticleClick(30023, event.pubkey, dTag) }
+                else Modifier
+            )
+    ) {
+        Column {
+            if (image != null) {
+                coil3.compose.AsyncImage(
+                    model = image,
+                    contentDescription = title,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                )
+            }
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Text(
+                            text = "ARTICLE",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Text(
+                        text = title ?: "Untitled Article",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (!summary.isNullOrBlank()) {
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 3,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                if (publishedAt != null) {
+                    Text(
+                        text = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.US)
+                            .format(java.util.Date(publishedAt * 1000)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+            }
+        }
+    }
+}

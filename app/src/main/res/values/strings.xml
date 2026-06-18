@@ -65,7 +65,7 @@
     <string name="google_auth_choose_title_with_backups">Your backed-up accounts</string>
     <string name="google_auth_choose_body_with_backups">Tap an account to restore it, or create a new one. New accounts are encrypted and added to your Google Drive backup.</string>
     <string name="google_auth_choose_title_empty">Create your account</string>
-    <string name="google_auth_choose_body_empty">Wisp will generate a new Nostr key and save an encrypted backup to a hidden folder in your Google Drive.</string>
+    <string name="google_auth_choose_body_empty">Zap Cooking will generate a new Nostr key and save an encrypted backup to a hidden folder in your Google Drive.</string>
     <string name="google_auth_restore">Restore</string>
     <string name="google_auth_create_first">Create account &amp; back up</string>
     <string name="google_auth_create_another">Create another account</string>
@@ -78,7 +78,7 @@
     <string name="pin_confirm_body">Enter your PIN again to make sure you remember it.</string>
     <string name="pin_mismatch">PINs didn\'t match. Try again.</string>
     <string name="pin_restore_title">Enter your recovery PIN</string>
-    <string name="pin_restore_body">This is the PIN you set when you first signed in to Wisp with this Google account.</string>
+    <string name="pin_restore_body">This is the PIN you set when you first signed in to Zap Cooking with this Google account.</string>
     <string name="pin_restore_incorrect">Incorrect PIN. Try again.</string>
     <string name="pin_placeholder">PIN</string>
     <string name="pin_too_short">Use 4–8 digits</string>
@@ -87,14 +87,14 @@
     <string name="online_now">Online Now</string>
     <string name="online_in_network">%d online in your network</string>
     <string name="online_all_nostr">%d online across all of Nostr</string>
-    <string name="cd_wisp_logo">Wisp logo</string>
+    <string name="cd_wisp_logo">Zap Cooking logo</string>
 
     <!-- Auth Screen -->
     <string name="auth_sign_up">Sign Up</string>
     <string name="auth_log_in">Log In</string>
     <string name="auth_or_log_in_with_key">Or log in with your key</string>
     <string name="auth_nsec_or_npub">nsec or npub…</string>
-    <string name="auth_wisp">wisp</string>
+    <string name="auth_wisp">Zap Cooking</string>
     <string name="auth_tagline">a wee interface to scroll posts</string>
     <string name="auth_hide_key">Hide key</string>
     <string name="auth_show_key">Show key</string>
@@ -455,12 +455,12 @@
     <string name="onboarding_welcome_back">Welcome back</string>
     <string name="onboarding_lets_get_set_up">Let\'s get you set up</string>
     <string name="onboarding_your_network_relays">Your network, your relays</string>
-    <string name="onboarding_network_description">Wisp discovers which relays your friends actually use, then connects directly to those relays. This means faster delivery and fewer missed posts — no central server needed.</string>
+    <string name="onboarding_network_description">Zap Cooking discovers which relays your friends actually use, then connects directly to those relays. This means faster delivery and fewer missed posts — no central server needed.</string>
     <string name="onboarding_quick_follow">Quick follow</string>
     <string name="onboarding_long_press_hint">Long-press any profile picture to follow or unfollow</string>
     <string name="onboarding_utxo">utxo</string>
     <string name="onboarding_try_it">Try it — long-press the picture above</string>
-    <string name="onboarding_lightning_wallet_info">Wisp supports zaps with an embedded Lightning wallet or Nostr Wallet Connect. You can set this up anytime from the Wallet screen.</string>
+    <string name="onboarding_lightning_wallet_info">Zap Cooking supports zaps with an embedded Lightning wallet or Nostr Wallet Connect. You can set this up anytime from the Wallet screen.</string>
     <string name="onboarding_setting_things_up">Setting things up</string>
     <string name="onboarding_youre_all_set">You\'re all set!</string>
     <string name="onboarding_mapping_graph">Mapping your social graph…</string>
@@ -474,7 +474,7 @@
     <string name="onboarding_please_wait">Please wait…</string>
     <string name="onboarding_publishing">Publishing…</string>
     <string name="onboarding_creating_account">Creating account…</string>
-    <string name="onboarding_wisp_logo">Wisp logo</string>
+    <string name="onboarding_wisp_logo">Zap Cooking logo</string>
     <string name="onboarding_follow_all_x">Follow All (%d)</string>
 
     <!-- Zap / Wallet -->
@@ -540,8 +540,8 @@
     <string name="settings_hide_live_streams">Hide live streams</string>
     <string name="settings_hide_live_streams_description">Hide the live streams row from the top of your feed</string>
     <string name="settings_client_tag">Client Tag</string>
-    <string name="settings_tag_notes">Tag notes with Wisp</string>
-    <string name="settings_tag_notes_description">Include a tag identifying Wisp as the client. This is visible to others.</string>
+    <string name="settings_tag_notes">Tag notes with Zap Cooking</string>
+    <string name="settings_tag_notes_description">Include a tag identifying Zap Cooking as the client. This is visible to others.</string>
     <string name="settings_posting">Posting</string>
     <string name="settings_undo_countdown">Undo countdown</string>
     <string name="settings_undo_countdown_description">Holds new posts for a few seconds before publishing so you can cancel.</string>

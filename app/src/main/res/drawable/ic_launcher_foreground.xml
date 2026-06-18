@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Zap Cooking mark (frying pan + zap) inset into the adaptive-icon safe zone. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@mipmap/ic_launcher_pan"
+    android:insetLeft="18dp"
+    android:insetRight="18dp"
+    android:insetTop="18dp"
+    android:insetBottom="18dp" />
