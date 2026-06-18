@@ -1346,6 +1346,7 @@ private fun GroupMessageBubble(
                 modifier = Modifier.weight(1f, fill = isOwnMessage),
                 contentAlignment = if (isOwnMessage) Alignment.BottomEnd else Alignment.BottomStart
             ) {
+                val bubbleMaxWidth = maxWidth
                 Surface(
                     shape = if (isOwnMessage)
                         RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 4.dp, bottomStart = 16.dp)
@@ -1359,13 +1360,11 @@ private fun GroupMessageBubble(
                 ) {
                     Column(
                         modifier = Modifier
-                            .width(IntrinsicSize.Max)
                             .padding(horizontal = 12.dp, vertical = 8.dp)
                     ) {
                         // Header row hidden for own messages
                         if (!isOwnMessage) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
@@ -1375,7 +1374,7 @@ private fun GroupMessageBubble(
                                     color = nameColor,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.widthIn(max = bubbleMaxWidth - 96.dp)
                                 )
                                 if (hasZaps) {
                                     Text(
