@@ -81,6 +81,13 @@ sealed class AutoCheckState {
     object NotFound : AutoCheckState()
 }
 
+sealed class NwcRestoreState {
+    object Idle : NwcRestoreState()
+    object Searching : NwcRestoreState()
+    data class Found(val uri: String, val createdAt: Long) : NwcRestoreState()
+    object NotFound : NwcRestoreState()
+}
+
 sealed class FeeState {
     object Idle : FeeState()
     object Loading : FeeState()
@@ -254,6 +261,11 @@ class WalletViewModel(
     private val _autoCheckState = MutableStateFlow<AutoCheckState>(AutoCheckState.Idle)
     val autoCheckState: StateFlow<AutoCheckState> = _autoCheckState
 
+    // NWC connection-string restore from NIP-78 backup (per NWC_BACKUP_PARITY.md)
+    private val _nwcRestoreState = MutableStateFlow<NwcRestoreState>(NwcRestoreState.Idle)
+    val nwcRestoreState: StateFlow<NwcRestoreState> = _nwcRestoreState
+    private var nwcRestoreJob: Job? = null
+
     // Per-relay backup status
     private val _relayBackupStatuses = MutableStateFlow<List<RelayBackupInfo>>(emptyList())
     val relayBackupStatuses: StateFlow<List<RelayBackupInfo>> = _relayBackupStatuses
@@ -332,6 +344,7 @@ class WalletViewModel(
         relayPool.registerDedupBypass("auto-check-")
         relayPool.registerDedupBypass("wallet-backup-")
         relayPool.registerDedupBypass("delete-backup-")
+        relayPool.registerDedupBypass("nwc-restore-")
 
         val mode = walletModeRepo.getMode()
         when (mode) {
@@ -464,6 +477,7 @@ class WalletViewModel(
 
     fun selectNwcMode() {
         navigateTo(WalletPage.NwcSetup)
+        searchNwcBackup()
     }
 
     fun selectSparkMode() {
@@ -605,6 +619,114 @@ class WalletViewModel(
 
     fun dismissAutoCheck() {
         _autoCheckState.value = AutoCheckState.Idle
+    }
+
+    // --- NWC backup (NIP-78 kind 30078, d=nwc-wallet-backup) ---
+    //
+    // Cross-platform with iOS per `NWC_BACKUP_PARITY.md`. Publish on every
+    // successful connect (best-effort); search on NWC setup screen open and
+    // surface a "Restore previous wallet" affordance when found.
+
+    private fun searchNwcBackup() {
+        val signer = buildSigner() ?: run {
+            _nwcRestoreState.value = NwcRestoreState.NotFound
+            return
+        }
+        // Don't re-search while one is in flight or already has a result the
+        // user hasn't dismissed yet.
+        if (_nwcRestoreState.value is NwcRestoreState.Searching) return
+        nwcRestoreJob?.cancel()
+        _nwcRestoreState.value = NwcRestoreState.Searching
+        nwcRestoreJob = viewModelScope.launch {
+            try {
+                relayPool.ensureWriteRelaysConnected()
+                val pubkey = signer.pubkeyHex
+                val subId = "nwc-restore-${System.currentTimeMillis()}"
+                val filter = Nip78.nwcBackupFilter(pubkey)
+                val seenIds = mutableSetOf<String>()
+                val events = mutableListOf<NostrEvent>()
+                var eoseCount = 0
+                val collectJob = launch {
+                    relayPool.relayEvents.collect { relayEvent: RelayEvent ->
+                        if (relayEvent.subscriptionId == subId && seenIds.add(relayEvent.event.id)) {
+                            events.add(relayEvent.event)
+                        }
+                    }
+                }
+                val eoseJob = launch {
+                    relayPool.eoseSignals.collect { id ->
+                        if (id == subId) eoseCount++
+                    }
+                }
+                yield()
+                val allCount = relayPool.getRelayUrls().size
+                val minEose = (allCount * 2 + 2) / 3
+                relayPool.sendToAll(ClientMessage.req(subId, filter))
+                withTimeoutOrNull(10_000) {
+                    while (eoseCount < allCount) {
+                        delay(200)
+                        if (eoseCount >= minEose && events.isNotEmpty()) break
+                    }
+                }
+                collectJob.cancel()
+                eoseJob.cancel()
+                relayPool.closeOnAllRelays(subId)
+
+                val newest = events
+                    .filter { !it.content.isBlank() }
+                    .maxByOrNull { it.created_at }
+                if (newest == null) {
+                    _nwcRestoreState.value = NwcRestoreState.NotFound
+                    return@launch
+                }
+                val uri = withContext(Dispatchers.Default) {
+                    Nip78.decryptNwcBackup(signer, newest)
+                }
+                if (uri.isNullOrBlank()) {
+                    _nwcRestoreState.value = NwcRestoreState.NotFound
+                } else {
+                    // Don't offer to restore if it's already the active connection.
+                    val active = nwcRepo.getConnectionString()
+                    if (active != null && active.trim() == uri.trim()) {
+                        _nwcRestoreState.value = NwcRestoreState.NotFound
+                    } else {
+                        _nwcRestoreState.value = NwcRestoreState.Found(uri, newest.created_at)
+                    }
+                }
+            } catch (_: Exception) {
+                _nwcRestoreState.value = NwcRestoreState.NotFound
+            }
+        }
+    }
+
+    fun restoreFromNwcBackup() {
+        val state = _nwcRestoreState.value
+        if (state is NwcRestoreState.Found) {
+            _nwcRestoreState.value = NwcRestoreState.Idle
+            _connectionString.value = state.uri
+            connectNwcWallet(state.uri)
+        }
+    }
+
+    fun dismissNwcRestore() {
+        nwcRestoreJob?.cancel()
+        _nwcRestoreState.value = NwcRestoreState.Idle
+    }
+
+    private suspend fun publishNwcBackup(uri: String) {
+        val signer = buildSigner() ?: return
+        val trimmed = uri.trim()
+        if (trimmed.isEmpty()) return
+        try {
+            relayPool.ensureWriteRelaysConnected()
+            val event = withContext(Dispatchers.Default) {
+                Nip78.createNwcBackupEvent(signer, trimmed)
+            }
+            val sent = relayPool.sendToWriteRelays(ClientMessage.event(event))
+            Log.d("NwcBackup", "publish: sent to $sent relays")
+        } catch (e: Exception) {
+            Log.d("NwcBackup", "publish failed (non-fatal): ${e.message}")
+        }
     }
 
     // --- NWC Connection ---
@@ -760,6 +882,25 @@ class WalletViewModel(
                     // needed there.
                     if (provider === nwcRepo) {
                         launch { nwcRepo.fetchNodeInfo() }
+                        // Best-effort cross-device backup of the URI per
+                        // NWC_BACKUP_PARITY.md. Publish each connect so a
+                        // reconnect / wallet swap replaces the prior backup.
+                        val uri = nwcRepo.getConnectionString()
+                        if (!uri.isNullOrBlank()) {
+                            launch { publishNwcBackup(uri) }
+                        }
+                    }
+                    // Once the wallet finishes connecting, leave the setup
+                    // screen and land on Home — otherwise currentPage stays
+                    // at NwcSetup/SparkSetup and the Scaffold's "Wallet"
+                    // TopAppBar keeps showing over the dashboard. Guarded
+                    // to the setup pages so a connect-during-navigation
+                    // doesn't pop the user out of an unrelated sub-page.
+                    val page = _currentPage.value
+                    if (page is WalletPage.NwcSetup || page is WalletPage.SparkSetup) {
+                        pageStack.clear()
+                        pageStack.add(WalletPage.Home)
+                        _currentPage.value = WalletPage.Home
                     }
                 }
             }
@@ -818,16 +959,18 @@ class WalletViewModel(
 
         // Suppress the auto-create on the next navigateHome — the user
         // explicitly disconnected to choose a different wallet. They'll land
-        // on the SparkSetup screen with the three options. Persist so the
-        // choice survives app restarts.
+        // on the wallet-mode picker (Spark vs NWC), matching iOS. Persist
+        // so the choice survives app restarts.
         skipAutoCreate = true
         walletModeRepo.setAutoCreateSkipped(true)
 
         pageStack.clear()
         pageStack.add(WalletPage.Home)
         if (wasSpark && keyRepo.hasKeypair()) {
-            pageStack.add(WalletPage.SparkSetup)
-            _currentPage.value = WalletPage.SparkSetup
+            // Drop the user at the top-level wallet picker so they can
+            // re-enter via Spark or NWC, not just Spark. iOS does the
+            // same — Switch is a true "start over" affordance.
+            _currentPage.value = WalletPage.Home
         } else {
             _currentPage.value = WalletPage.Home
         }
