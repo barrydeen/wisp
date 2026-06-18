@@ -1,6 +1,6 @@
-# Wisp
+# Zap Cooking
 
-A minimal, performant Android client for the [Nostr](https://nostr.com) protocol. Built with Kotlin and Jetpack Compose (Material 3), Wisp prioritizes decentralization, intelligent relay routing, strong privacy, and a clean native experience.
+A minimal, performant Android client for the [Nostr](https://nostr.com) protocol. Built with Kotlin and Jetpack Compose (Material 3), Zap Cooking prioritizes decentralization, intelligent relay routing, strong privacy, and a clean native experience.
 
 > **Status:** v1.0.0 — stable, actively developed.
 
@@ -8,7 +8,7 @@ A minimal, performant Android client for the [Nostr](https://nostr.com) protocol
 
 ## Table of Contents
 
-- [Why Wisp](#why-wisp)
+- [Why Zap Cooking](#why-zap-cooking)
 - [Key Features](#key-features)
 - [Architecture](#architecture)
 - [Supported NIPs](#supported-nips)
@@ -20,11 +20,11 @@ A minimal, performant Android client for the [Nostr](https://nostr.com) protocol
 
 ---
 
-## Why Wisp
+## Why Zap Cooking
 
-Most Nostr clients treat relays as interchangeable dumb pipes and lean on a small handful of "mega-relays." Wisp takes a different approach — it implements the full outbox/inbox relay model with reliability scoring, routes messages based on where users actually publish and read, and is built so that decentralization is the default path, not an opt-in.
+Most Nostr clients treat relays as interchangeable dumb pipes and lean on a small handful of "mega-relays." Zap Cooking takes a different approach — it implements the full outbox/inbox relay model with reliability scoring, routes messages based on where users actually publish and read, and is built so that decentralization is the default path, not an opt-in.
 
-The result is faster event delivery, less wasted bandwidth, and a client that actively reinforces the architecture Nostr was designed for. Wisp is built to be fast, lightweight, and respectful of both your device and the relay network.
+The result is faster event delivery, less wasted bandwidth, and a client that actively reinforces the architecture Nostr was designed for. Zap Cooking is built to be fast, lightweight, and respectful of both your device and the relay network.
 
 ---
 
@@ -32,7 +32,7 @@ The result is faster event delivery, less wasted bandwidth, and a client that ac
 
 ### Intelligent Outbox/Inbox Relay Routing
 
-Wisp implements a full NIP-65 outbox/inbox model with relay scoring:
+Zap Cooking implements a full NIP-65 outbox/inbox model with relay scoring:
 
 - **Outbox reads** — fetches a user's posts from their *write relays* (where they actually publish), not from a hardcoded list
 - **Inbox writes** — delivers replies, reactions, and mentions to the recipient's *read relays* so they actually see them
@@ -134,7 +134,7 @@ A built-in non-custodial Lightning wallet powered by [Breez SDK (Spark)](https:/
 
 ## Architecture
 
-Wisp follows an MVVM architecture with clear layer separation:
+Zap Cooking follows an MVVM architecture with clear layer separation:
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -246,7 +246,7 @@ APK downloads are available on the [Releases](../../releases) page.
 1. **Create or import a key** — generate a fresh keypair or paste your `nsec`
 2. **Set up your profile** — the onboarding flow walks you through name, picture, and bio
 3. **Pick some interests** — topic/interest selection seeds your first follow suggestions
-4. **Follow some people** — Wisp suggests popular accounts to get your feed started
+4. **Follow some people** — Zap Cooking suggests popular accounts to get your feed started
 5. **Configure relays** — your relay list is published as a NIP-65 event so other outbox-aware clients can find you
 
 ---
@@ -263,8 +263,8 @@ APK downloads are available on the [Releases](../../releases) page.
 
 ```bash
 # Clone the repository
-git clone https://github.com/barrydeen/wisp.git
-cd wisp
+git clone https://github.com/zapcooking/zap_cooking_android.git
+cd zap_cooking_android
 
 # Build debug APK
 ./gradlew assembleDebug
@@ -282,7 +282,7 @@ Release builds use R8 minification; keep rules live in `app/proguard-rules.pro` 
 
 ## Contributing
 
-Contributions are welcome. Wisp is open source and community help makes it better.
+Contributions are welcome. Zap Cooking is open source and community help makes it better.
 
 ### How to Contribute
 
@@ -347,7 +347,11 @@ Contributions are welcome. Wisp is open source and community help makes it bette
 
 ## License
 
-Wisp is released under the [MIT License](LICENSE).
+Zap Cooking is released under the [MIT License](LICENSE).
+
+It is **forked from [Wisp](https://github.com/barrydeen/wisp) by Barry Deen (MIT)** — the upstream Nostr client this app is built on. The original copyright and permission notice are retained in full, both in [`LICENSE`](LICENSE) and in the notice below.
+
+Copyright (c) 2026 Zap Cooking contributors
 
 ```
 MIT License
