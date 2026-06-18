@@ -49,7 +49,12 @@ Membership:
 - `GET /api/membership?pubkey=<hex>` — **public batch read** of status
   (no auth). Use for displaying a user's own/others' member state.
 - `POST /api/membership/check-status` — **NIP-98 verified**
-  (`verifyNip98`). This is the real auth round-trip.
+  (`verifyNip98`). This is the real auth round-trip. Body `{ pubkey }`;
+  the signing pubkey must equal the body pubkey. Success signal is
+  `owner: true` in the response — an absent/invalid/mismatched signature
+  **silently degrades to the public shape** (it does NOT 4xx). Route is
+  also gated by the server flag `MEMBERSHIP_ENABLED`; a `403 Forbidden`
+  there means the flag is off, not a bad signature.
 - Status source: `pantry.zap.cooking/api/members/{pubkey}`.
 - **Purchase is out of app.** A "Become a member" entry point opens the
   `zap.cooking` membership page in a Custom Tab. No in-app Lightning
@@ -61,8 +66,14 @@ Membership:
   header `Authorization: Nostr <base64(event)>`.
 - Reference client: frontend `$lib/nip98` `signNip98AuthHeader`.
   Verifier: frontend `src/lib/nip98.server.ts`. **Match the verifier's
-  byte reconstruction exactly** — URL canonicalization (query included)
-  and method casing are the known footguns.
+  byte reconstruction exactly** — URL canonicalization and method casing
+  are the known footguns. Correction to an earlier assumption: the `u`
+  tag is `origin + pathname` ONLY — `normalizeUrl` **drops the query
+  string and fragment** and strips a trailing slash on non-root paths
+  (both sides normalize identically, so including the query buys
+  nothing). The canonical auth-event JSON is key-ordered
+  `id,pubkey,created_at,kind,tags,content,sig` with `created_at` as a
+  number, base64-encoded behind the `Nostr ` prefix.
 - Sign via the `NostrSigner` abstraction. **This fork is LocalSigner
   only** — Amber/NIP-55 remote signing was removed (§6). `READ_ONLY`
   accounts have no key and cannot sign NIP-98; gate member-only AI
@@ -101,12 +112,16 @@ Target **Zapstore** (primary) and **Google Play**.
 ## 3. Phases (stop-gated; one concern per PR, surgical diffs)
 
 ### Phase 0 — Rebrand + foundation
-Concern 0: this doc committed (system of record).
-Concern 1: fix + rebrand CLAUDE.md (ObjectBox is used — the "no
-database" claim is wrong; note Amber removed; point here).
-Concern 2: `Nip98.kt` + `ZapCookingApi` (reuse `HttpClientFactory`,
-`Dispatchers.IO`). Smoke test against `POST /api/membership/check-status`
-(it verifies NIP-98), **not** the public GET.
+Concern 0: ✅ this doc committed (system of record).
+Concern 1: ✅ fix + rebrand CLAUDE.md (ObjectBox is used — the "no
+database" claim is wrong; note Amber removed; point here). README
+remote-signing copy fixed; full README product-rebrand deferred to
+Concern 4.
+Concern 2: ✅ (code) `Nip98.kt` + `ZapCookingApi` added, reusing
+`HttpClientFactory` on `Dispatchers.IO`; byte-for-byte unit test passes
+against frontend goldens. **Remaining:** on-device NIP-98 round-trip
+against `POST /api/membership/check-status` (assert `owner: true`) — the
+JVM env here has no device/emulator.
 Concern 3: package rename `com.wisp.app -> cooking.zap.app` (mechanical;
 keep `wisp_*` storage strings, ObjectBox UIDs, and class names untouched
 — see §5). Fold in a minimal `zapstore`/`play` flavor skeleton here.
