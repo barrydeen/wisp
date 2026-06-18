@@ -107,6 +107,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.TextButton
 import com.wisp.app.R
 import com.wisp.app.nostr.Bolt11
+import com.wisp.app.nostr.Noffer
+import com.wisp.app.nostr.NofferData
 import com.wisp.app.nostr.toNpub
 import com.wisp.app.nostr.Nip19
 import com.wisp.app.nostr.Nip30
@@ -207,6 +209,8 @@ internal sealed interface ContentSegment {
     data class CustomEmojiSegment(val shortcode: String, val url: String) : ContentSegment
     data class HashtagSegment(val tag: String) : ContentSegment
     data class LightningInvoiceSegment(val invoice: String, val decoded: Bolt11.DecodedInvoice) : ContentSegment
+    /** CLINK payment offer (`noffer1…`) — rendered as a "Pay offer" card. */
+    data class NofferSegment(val noffer: NofferData) : ContentSegment
     data class GroupInviteSegment(val relayUrl: String, val groupId: String) : ContentSegment
 }
 
@@ -387,10 +391,20 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
     }
 
     // Third pass: detect lightning invoices in text segments
-    val finalResult = mutableListOf<ContentSegment>()
+    val afterInvoices = mutableListOf<ContentSegment>()
     for (segment in afterEmoji) {
         if (segment is ContentSegment.TextSegment) {
-            finalResult.addAll(splitTextForInvoices(segment.text))
+            afterInvoices.addAll(splitTextForInvoices(segment.text))
+        } else {
+            afterInvoices.add(segment)
+        }
+    }
+
+    // Fourth pass: detect CLINK offers (noffer1…) in text segments
+    val finalResult = mutableListOf<ContentSegment>()
+    for (segment in afterInvoices) {
+        if (segment is ContentSegment.TextSegment) {
+            finalResult.addAll(splitTextForNoffers(segment.text))
         } else {
             finalResult.add(segment)
         }
@@ -429,6 +443,33 @@ private fun splitTextForInvoices(text: String): List<ContentSegment> {
             result.add(ContentSegment.TextSegment(text.substring(lastEnd, match.range.first)))
         }
         result.add(ContentSegment.LightningInvoiceSegment(invoice, decoded))
+        lastEnd = match.range.last + 1
+    }
+    if (!anyFound) return listOf(ContentSegment.TextSegment(text))
+    if (lastEnd < text.length) {
+        result.add(ContentSegment.TextSegment(text.substring(lastEnd)))
+    }
+    return result
+}
+
+private val nofferRegex = Regex(
+    """(?:nostr:)?noffer1[023456789acdefghjklmnpqrstuvwxyz]{20,}""",
+    RegexOption.IGNORE_CASE
+)
+
+private fun splitTextForNoffers(text: String): List<ContentSegment> {
+    val matches = nofferRegex.findAll(text).toList()
+    if (matches.isEmpty()) return listOf(ContentSegment.TextSegment(text))
+    val result = mutableListOf<ContentSegment>()
+    var lastEnd = 0
+    var anyFound = false
+    for (match in matches) {
+        val decoded = Noffer.decodeOrNull(match.value) ?: continue
+        anyFound = true
+        if (match.range.first > lastEnd) {
+            result.add(ContentSegment.TextSegment(text.substring(lastEnd, match.range.first)))
+        }
+        result.add(ContentSegment.NofferSegment(decoded))
         lastEnd = match.range.last + 1
     }
     if (!anyFound) return listOf(ContentSegment.TextSegment(text))
@@ -1038,6 +1079,13 @@ fun RichContent(
                         LightningInvoiceCard(
                             invoice = segment.invoice,
                             decoded = segment.decoded,
+                            onPayInvoice = noteActions?.onPayInvoice
+                        )
+                    }
+                    is ContentSegment.NofferSegment -> {
+                        NofferCard(
+                            noffer = segment.noffer,
+                            eventRepo = eventRepo,
                             onPayInvoice = noteActions?.onPayInvoice
                         )
                     }
