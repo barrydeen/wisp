@@ -855,21 +855,6 @@ fun ComposeScreen(
                             )
                         }
 
-                        if (uploadProgress != null) {
-                            Spacer(Modifier.width(8.dp))
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                stringResource(R.string.compose_uploading),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
                         Spacer(Modifier.weight(1f))
 
                             if (content.text.isNotBlank()) {
@@ -877,6 +862,41 @@ fun ComposeScreen(
                                 onClick = onSaveDraft
                             ) {
                                 Text(stringResource(R.string.btn_save_draft))
+                            }
+                        }
+                    }
+
+                    // Uploading indicator on its own line as a capsule pill, so
+                    // the label never has to wrap inside the crowded icon row.
+                    AnimatedVisibility(
+                        visible = uploadProgress != null,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 4.dp)
+                        ) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(50)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        stringResource(R.string.compose_uploading),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
