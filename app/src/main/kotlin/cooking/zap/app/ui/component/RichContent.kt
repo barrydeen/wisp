@@ -2963,7 +2963,7 @@ private suspend fun fetchOgData(url: String): OgData? = withContext(Dispatchers.
     try {
         val request = Request.Builder()
             .url(url)
-            .header("User-Agent", "Mozilla/5.0 (compatible; Wisp/1.0)")
+            .header("User-Agent", "Mozilla/5.0 (compatible; ZapCooking/1.0)")
             .build()
         httpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return@withContext null

@@ -4,6 +4,44 @@ import androidx.compose.ui.graphics.Color
 
 object Themes {
     val themes = listOf(
+        // Zap Cooking brand theme — the default. Tokens mirror the web app's
+        // src/app.css (seed orange #ec4700 light / #ff5722 dark; surfaces,
+        // text, and outline from the same palette). Listed first so the
+        // getTheme() fallback resolves to the brand.
+        ThemePreset(
+            name = "zapcooking",
+            displayName = "Zap Cooking",
+            dark = ThemeColors(
+                primary = Color(0xFFFF5722),
+                secondary = Color(0xFFFF8A65),
+                background = Color(0xFF111827),
+                surface = Color(0xFF1F2937),
+                surfaceVariant = Color(0xFF374151),
+                onBackground = Color(0xFFF3F4F6),
+                onSurface = Color(0xFFF3F4F6),
+                onSurfaceVariant = Color(0xFFD1D5DB),
+                outline = Color(0xFF4B5563),
+                zapColor = Color(0xFFFF5722),
+                repostColor = Color(0xFF4CAF50),
+                bookmarkColor = Color(0xFFFF5722),
+                paidColor = Color(0xFFFFD54F)
+            ),
+            light = ThemeColors(
+                primary = Color(0xFFEC4700),
+                secondary = Color(0xFFFF8A50),
+                background = Color(0xFFFFFFFF),
+                surface = Color(0xFFF9FAFB),
+                surfaceVariant = Color(0xFFF3F4F6),
+                onBackground = Color(0xFF111827),
+                onSurface = Color(0xFF111827),
+                onSurfaceVariant = Color(0xFF4B5563),
+                outline = Color(0xFFE5E7EB),
+                zapColor = Color(0xFFEC4700),
+                repostColor = Color(0xFF2E7D32),
+                bookmarkColor = Color(0xFFEC4700),
+                paidColor = Color(0xFFC9A000)
+            )
+        ),
         ThemePreset(
             name = "custom",
             displayName = "Custom",

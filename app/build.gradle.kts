@@ -21,7 +21,7 @@ android {
         targetSdk = 35
         versionCode = 81
         versionName = "1.1.1"
-        resValue("string", "app_name", "Wisp")
+        resValue("string", "app_name", "Zap Cooking")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
@@ -41,7 +41,7 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = debugApplicationIdSuffix
-            resValue("string", "app_name", "Wisp Debug")
+            resValue("string", "app_name", "Zap Cooking Debug")
         }
 
         release {

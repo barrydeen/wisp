@@ -392,12 +392,12 @@
     <string name="onboarding_welcome_back">おかえりなさい</string>
     <string name="onboarding_lets_get_set_up">アカウントを設定しましょう</string>
     <string name="onboarding_your_network_relays">あなたのネットワーク、あなたのリレー</string>
-    <string name="onboarding_network_description">Wispは友達が実際に使っているリレーを発見し、直接それに接続します。これにより、より 빠른配信と投稿の見逃しが少なくなります— центрарサーバー的必要がありません。</string>
+    <string name="onboarding_network_description">Zap Cookingは友達が実際に使っているリレーを発見し、直接それに接続します。これにより、より 빠른配信と投稿の見逃しが少なくなります— центрарサーバー的必要がありません。</string>
     <string name="onboarding_quick_follow">クイックフォロー</string>
     <string name="onboarding_long_press_hint">プロフィール写真をロングプレスするとフォロー/フォロー解除できます</string>
     <string name="onboarding_utxo">utxo</string>
     <string name="onboarding_try_it">試してみよう— 上記の画像をロングプレス</string>
-    <string name="onboarding_lightning_wallet_info">Wispは組み込みLightningウォレットまたはNostr Wallet Connectでサップをサポートします。ウォレット画面からいつでも設定できます。</string>
+    <string name="onboarding_lightning_wallet_info">Zap Cookingは組み込みLightningウォレットまたはNostr Wallet Connectでサップをサポートします。ウォレット画面からいつでも設定できます。</string>
     <string name="onboarding_setting_things_up">設定中</string>
     <string name="onboarding_youre_all_set">準備完了！</string>
     <string name="onboarding_mapping_graph">ソーシャルグラフをマッピング中…</string>
@@ -410,7 +410,7 @@
     <string name="onboarding_almost_there">もう少しで完了…</string>
     <string name="onboarding_please_wait">お待ちください…</string>
     <string name="onboarding_publishing">公開中…</string>
-    <string name="onboarding_wisp_logo">Wispロゴ</string>
+    <string name="onboarding_wisp_logo">Zap Cookingロゴ</string>
     <string name="onboarding_follow_all_x">全員をフォロー（%d）</string>
 
     <!-- Zap / Wallet -->
@@ -464,8 +464,8 @@
     <string name="settings_hide_live_streams">ライブ配信を非表示</string>
     <string name="settings_hide_live_streams_description">フィード上部のライブ配信の行を非表示にする</string>
     <string name="settings_client_tag">クライアントタグ</string>
-    <string name="settings_tag_notes">ノートにWispをタグ付け</string>
-    <string name="settings_tag_notes_description">Wispをクライアントとして識別するタグを含める。これは他の人に表示されます。</string>
+    <string name="settings_tag_notes">ノートにZap Cookingをタグ付け</string>
+    <string name="settings_tag_notes_description">Zap Cookingをクライアントとして識別するタグを含める。これは他の人に表示されます。</string>
     <string name="settings_public_key">公開鍵</string>
     <string name="settings_private_key">秘密鍵</string>
     <string name="settings_public_key_copied">公開鍵をコピーしました</string>
@@ -630,7 +630,7 @@
     <string name="online_in_network">ネットワーク内で%d人がオンライン</string>
     <string name="online_all_nostr">Nostr全体で%d人がオンライン</string>
     <string name="splash_people_online">%d人がオンライン</string>
-    <string name="cd_wisp_logo">Wispロゴ</string>
+    <string name="cd_wisp_logo">Zap Cookingロゴ</string>
 
     <!-- NIP-29 Chat Rooms -->
     <string name="tab_direct_messages">ダイレクトメッセージ</string>

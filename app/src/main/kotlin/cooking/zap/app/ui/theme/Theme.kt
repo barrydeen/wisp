@@ -85,7 +85,7 @@ private fun darkenColor(color: Color, fraction: Float = 0.6f): Color {
 @Composable
 fun WispTheme(
     isDarkTheme: Boolean = true,
-    accentColor: Color = Color(0xFFFF9800),
+    accentColor: Color = Color(0xFFFF5722),
     isLargeText: Boolean = false,
     themeName: String = "custom",
     content: @Composable () -> Unit
@@ -98,13 +98,12 @@ fun WispTheme(
     val primaryContainerDark = remember(primary) { darkenColor(primary, 0.6f) }
     val primaryContainerLight = remember(primary) { lightenColor(primary, 0.7f) }
 
-    // iOS systemRed (#FF3B30) for destructive / error UI. Material 3's
-    // default `error` renders pinkish in dark mode (`#F2B8B5`) and a
-    // muted brick red in light mode (`#B3261E`); both read "off" next
-    // to the iOS counterpart. Setting `error` explicitly propagates to
-    // every `MaterialTheme.colorScheme.error` consumer (logout, alerts,
-    // destructive labels).
-    val iosRed = Color(0xFFFF3B30)
+    // Zap Cooking brand danger (web src/app.css --color-danger): #dc2626
+    // light / #ef4444 dark. Material 3's default `error` renders pinkish in
+    // dark and a muted brick red in light; setting `error` explicitly
+    // propagates the brand red to every `MaterialTheme.colorScheme.error`
+    // consumer (logout, alerts, destructive labels).
+    val dangerColor = if (isDarkTheme) Color(0xFFEF4444) else Color(0xFFDC2626)
     val colorScheme = if (isDarkTheme) {
         if (isCustomTheme) {
             darkColorScheme(
@@ -120,7 +119,7 @@ fun WispTheme(
                 onSurface = Color(0xFFE0E0E0),
                 onSurfaceVariant = Color(0xFF9998A0),
                 outline = Color(0xFF38383A),
-                error = iosRed,
+                error = dangerColor,
                 onError = Color.White
             )
         } else {
@@ -139,7 +138,7 @@ fun WispTheme(
                 onSurface = colors.onSurface,
                 onSurfaceVariant = colors.onSurfaceVariant,
                 outline = colors.outline,
-                error = iosRed,
+                error = dangerColor,
                 onError = Color.White
             )
         }
@@ -158,7 +157,7 @@ fun WispTheme(
                 onSurface = Color(0xFF1C1B1F),
                 onSurfaceVariant = Color(0xFF6B6B6B),
                 outline = Color(0xFFCCCCCC),
-                error = iosRed,
+                error = dangerColor,
                 onError = Color.White
             )
         } else {
@@ -177,7 +176,7 @@ fun WispTheme(
                 onSurface = colors.onSurface,
                 onSurfaceVariant = colors.onSurfaceVariant,
                 outline = colors.outline,
-                error = iosRed,
+                error = dangerColor,
                 onError = Color.White
             )
         }

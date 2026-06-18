@@ -124,7 +124,7 @@ class Relay(
             val request = try {
                 Request.Builder()
                     .url(config.url)
-                    .header("User-Agent", "Wisp/1.0 (Android; Nostr)")
+                    .header("User-Agent", "ZapCooking/1.0 (Android; Nostr)")
                     .build()
             } catch (e: IllegalArgumentException) {
                 Log.w("Relay", "Invalid relay URL: ${config.url}")

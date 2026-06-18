@@ -392,12 +392,12 @@
     <string name="onboarding_welcome_back">Willkommen zurück</string>
     <string name="onboarding_lets_get_set_up">Richten wir dein Konto ein</string>
     <string name="onboarding_your_network_relays">Dein Netzwerk, deine Relays</string>
-    <string name="onboarding_network_description">Wisp findet heraus, welche Relays deine Freunde tatsächlich nutzen, und verbindet sich direkt mit diesen Relays. Das bedeutet schnellere Lieferung und weniger verpasste Posts — kein zentraler Server nötig.</string>
+    <string name="onboarding_network_description">Zap Cooking findet heraus, welche Relays deine Freunde tatsächlich nutzen, und verbindet sich direkt mit diesen Relays. Das bedeutet schnellere Lieferung und weniger verpasste Posts — kein zentraler Server nötig.</string>
     <string name="onboarding_quick_follow">Schnell folgen</string>
     <string name="onboarding_long_press_hint">Halte ein beliebiges Profilbild lange gedrückt, um zu folgen oder nicht mehr zu folgen</string>
     <string name="onboarding_utxo">utxo</string>
     <string name="onboarding_try_it">Probier es aus — halte das Bild oben lange gedrückt</string>
-    <string name="onboarding_lightning_wallet_info">Wisp unterstützt Zaps mit einer integrierten Lightning-Wallet oder Nostr Wallet Connect. Du kannst dies jederzeit auf dem Wallet-Bildschirm einrichten.</string>
+    <string name="onboarding_lightning_wallet_info">Zap Cooking unterstützt Zaps mit einer integrierten Lightning-Wallet oder Nostr Wallet Connect. Du kannst dies jederzeit auf dem Wallet-Bildschirm einrichten.</string>
     <string name="onboarding_setting_things_up">Einrichtung läuft</string>
     <string name="onboarding_youre_all_set">Du bist bereit!</string>
     <string name="onboarding_mapping_graph">Dein sozialer Graph wird kartiert…</string>
@@ -410,7 +410,7 @@
     <string name="onboarding_almost_there">Gleich geschafft…</string>
     <string name="onboarding_please_wait">Bitte warten…</string>
     <string name="onboarding_publishing">Wird veröffentlicht…</string>
-    <string name="onboarding_wisp_logo">Wisp-Logo</string>
+    <string name="onboarding_wisp_logo">Zap Cooking-Logo</string>
     <string name="onboarding_follow_all_x">Alle folgen (%d)</string>
 
     <!-- Zap / Wallet -->
@@ -464,8 +464,8 @@
     <string name="settings_hide_live_streams">Livestreams ausblenden</string>
     <string name="settings_hide_live_streams_description">Die Livestream-Leiste oben im Feed ausblenden</string>
     <string name="settings_client_tag">Client-Tag</string>
-    <string name="settings_tag_notes">Notizen mit Wisp taggen</string>
-    <string name="settings_tag_notes_description">Ein Tag einfügen, das Wisp als Client identifiziert. Dies ist für andere sichtbar.</string>
+    <string name="settings_tag_notes">Notizen mit Zap Cooking taggen</string>
+    <string name="settings_tag_notes_description">Ein Tag einfügen, das Zap Cooking als Client identifiziert. Dies ist für andere sichtbar.</string>
     <string name="settings_public_key">Öffentlicher Schlüssel</string>
     <string name="settings_private_key">Privater Schlüssel</string>
     <string name="settings_public_key_copied">Öffentlicher Schlüssel kopiert</string>
@@ -630,7 +630,7 @@
     <string name="online_in_network">%d online in deinem Netzwerk</string>
     <string name="online_all_nostr">%d online überall auf Nostr</string>
     <string name="splash_people_online">%d Personen online</string>
-    <string name="cd_wisp_logo">Wisp-Logo</string>
+    <string name="cd_wisp_logo">Zap Cooking-Logo</string>
 
     <!-- NIP-29 Chat Rooms -->
     <string name="tab_direct_messages">Direktnachrichten</string>

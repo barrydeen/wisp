@@ -3484,7 +3484,7 @@ private fun WalletSettingsContent(
             )
         ) {
             Text(
-                "IMPORTANT: Wisp never holds user funds. You manage your own wallet and are responsible for securing it properly.",
+                "IMPORTANT: Zap Cooking never holds user funds. You manage your own wallet and are responsible for securing it properly.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(16.dp)

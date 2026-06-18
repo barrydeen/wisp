@@ -806,7 +806,7 @@ fun InterfaceScreen(
             var diagnosticEnabled by remember { mutableStateOf(DiagnosticLogger.isEnabled) }
 
             Text(
-                text = "Wisp v$versionName",
+                text = "Zap Cooking v$versionName",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier

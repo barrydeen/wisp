@@ -475,7 +475,7 @@ class SparkRepository(
 
                 val amountSats = (amountMsats / 1000).toULong()
                 val method = ReceivePaymentMethod.Bolt11Invoice(
-                    description = description.ifEmpty { "Wisp wallet" },
+                    description = description.ifEmpty { "Zap Cooking wallet" },
                     amountSats = amountSats,
                     expirySecs = 3600u,
                     paymentHash = null
@@ -583,7 +583,7 @@ class SparkRepository(
 
     suspend fun registerLightningAddress(
         username: String,
-        description: String = "Wisp wallet"
+        description: String = "Zap Cooking wallet"
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))

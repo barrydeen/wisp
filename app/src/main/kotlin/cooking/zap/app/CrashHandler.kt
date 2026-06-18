@@ -37,7 +37,7 @@ object CrashHandler {
             }
 
             val log = buildString {
-                appendLine("Wisp Crash Report")
+                appendLine("Zap Cooking Crash Report")
                 appendLine("=================")
                 appendLine("Time: $timestamp")
                 appendLine("Version: $version")

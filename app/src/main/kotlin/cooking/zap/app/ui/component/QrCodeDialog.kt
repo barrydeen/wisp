@@ -114,7 +114,7 @@ fun QrCodeDialog(pubkeyHex: String, avatarUrl: String? = null, onDismiss: () -> 
                         } else {
                             Icon(
                                 painter = painterResource(R.drawable.ic_wisp_logo),
-                                contentDescription = "Wisp",
+                                contentDescription = "Zap Cooking",
                                 tint = androidx.compose.ui.graphics.Color.Unspecified,
                                 modifier = Modifier.matchParentSize()
                             )

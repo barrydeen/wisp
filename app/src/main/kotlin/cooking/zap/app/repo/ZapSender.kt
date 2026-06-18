@@ -117,7 +117,7 @@ class ZapSender(
         }
 
         val allExtraTags = buildList {
-            if (interfacePrefs.isClientTagEnabled()) add(listOf("client", "Wisp"))
+            if (interfacePrefs.isClientTagEnabled()) add(listOf("client", "Zap Cooking"))
             addAll(extraTags)
         }
 

@@ -19,7 +19,7 @@ class InterfacePreferences(context: Context) {
 
     private val prefs = context.getSharedPreferences("wisp_settings", Context.MODE_PRIVATE)
 
-    fun getAccentColor(): Int = prefs.getInt("accent_color", 0xFFFF9800.toInt())
+    fun getAccentColor(): Int = prefs.getInt("accent_color", 0xFFFF5722.toInt())
     fun setAccentColor(colorInt: Int) = prefs.edit().putInt("accent_color", colorInt).apply()
 
     fun isLargeText(): Boolean = prefs.getBoolean("large_text", false)
@@ -28,7 +28,7 @@ class InterfacePreferences(context: Context) {
     fun isNewNotesButtonHidden(): Boolean = prefs.getBoolean("new_notes_button_hidden", false)
     fun setNewNotesButtonHidden(hidden: Boolean) = prefs.edit().putBoolean("new_notes_button_hidden", hidden).apply()
 
-    fun getTheme(): String = prefs.getString("theme", "custom") ?: "custom"
+    fun getTheme(): String = prefs.getString("theme", "zapcooking") ?: "zapcooking"
     fun setTheme(theme: String) = prefs.edit().putString("theme", theme).apply()
 
     fun isClientTagEnabled(): Boolean = prefs.getBoolean("client_tag_enabled", true)

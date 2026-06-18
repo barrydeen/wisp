@@ -223,7 +223,7 @@ class SocialActionManager(
                 val hint = outboxRouter.getRelayHint(event.pubkey)
                 val tags = Nip18.buildRepostTags(event, hint).toMutableList()
                 if (interfacePrefs.isClientTagEnabled()) {
-                    tags.add(listOf("client", "Wisp"))
+                    tags.add(listOf("client", "Zap Cooking"))
                 }
                 val repostEvent = s.signEvent(kind = 6, content = event.toJson(), tags = tags)
                 val msg = ClientMessage.event(repostEvent)
@@ -299,7 +299,7 @@ class SocialActionManager(
                     }
 
                     if (interfacePrefs.isClientTagEnabled()) {
-                        tags = tags + listOf(listOf("client", "Wisp"))
+                        tags = tags + listOf(listOf("client", "Zap Cooking"))
                     }
 
                     val createdAt: Long
@@ -550,7 +550,7 @@ class SocialActionManager(
             try {
                 val tags = Nip88.buildResponseTags(pollEventId, optionIds).toMutableList()
                 if (interfacePrefs.isClientTagEnabled()) {
-                    tags.add(listOf("client", "Wisp"))
+                    tags.add(listOf("client", "Zap Cooking"))
                 }
                 val event = s.signEvent(kind = Nip88.KIND_POLL_RESPONSE, content = "", tags = tags)
                 val msg = ClientMessage.event(event)
