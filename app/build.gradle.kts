@@ -22,6 +22,7 @@ android {
         versionCode = 81
         versionName = "1.1.1"
         resValue("string", "app_name", "Wisp")
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -72,6 +73,11 @@ android {
 dependencies {
     testImplementation(libs.kotlinx.serialization.json)
     testImplementation("junit:junit:4.13.2")
+
+    // Instrumented (connected) tests only — e.g. the live NIP-98 round-trip.
+    // Not on the hermetic :app:testDebugUnitTest classpath.
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
