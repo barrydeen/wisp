@@ -131,8 +131,15 @@ config-free `zapstore`(default)/`play` flavor skeleton. Verified: clean
 fileprovider authorities auto-resolved), unit suite 8/0/0/0, zero
 `com.wisp.app` in source. NOTE: flavors make `testDebugUnitTest` ambiguous
 — use `testZapstoreDebugUnitTest`.
-Concern 4: branding (app name, icon, splash, M3 tokens, user-visible
-strings, client tag, User-Agent; class-name rebrand optional).
+Concern 4: ✅ branding — app name "Zap Cooking"; "zapcooking" M3 preset
+(default) wired from web src/app.css (primary #ec4700/#ff5722, brand
+surfaces/text, danger #dc2626/#ef4444); user-visible strings + 11 locales;
+client tag "Zap Cooking" (matches web), User-Agent ZapCooking/1.0;
+onboarding card + seed + crash recipient -> Zap Cooking account
+(319ad3e7…); launcher icon (orange bg + pan mark) + splash + in-app logo
+from frontend assets; README rebranded with MIT/Barry-Deen attribution
+preserved. Left (optional): WispApp/Theme.Wisp identifiers, dead
+WispLogo.kt, unused <API26 legacy mipmaps. Verified assembleZapstoreDebug.
 Concern 5: relays — add Pantry as members, align `default` to the web
 set, leave bootstrap/discovery aggregators in place.
 **Gate:** builds/installs; a real NIP-98 round-trip the backend accepts;
