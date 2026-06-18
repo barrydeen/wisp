@@ -221,20 +221,57 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
                 _enabledTypes
             ) { items: List<FlatNotificationItem>, dmItems: List<FlatNotificationItem>, enabled: Set<NotificationFilter> ->
                 val chatEnabled = _chatRoomsEnabled.value
-                (items + dmItems)
-                    .filter { isItemEnabled(it, enabled, chatEnabled) }
-                    .sortedByDescending { it.timestamp }
+                collapseSameActorZapSpam(
+                    (items + dmItems)
+                        .filter { isItemEnabled(it, enabled, chatEnabled) }
+                        .sortedByDescending { it.timestamp }
+                )
             }.collect { filtered -> _filteredFlatNotifications.value = filtered }
         }
         // Re-filter when chat rooms toggle changes
         viewModelScope.launch {
             _chatRoomsEnabled.collect { chatEnabled ->
                 val enabled = _enabledTypes.value
-                _filteredFlatNotifications.value = (flatNotifications.value + dmNotifications.value)
-                    .filter { isItemEnabled(it, enabled, chatEnabled) }
-                    .sortedByDescending { it.timestamp }
+                _filteredFlatNotifications.value = collapseSameActorZapSpam(
+                    (flatNotifications.value + dmNotifications.value)
+                        .filter { isItemEnabled(it, enabled, chatEnabled) }
+                        .sortedByDescending { it.timestamp }
+                )
             }
         }
+    }
+
+    /**
+     * Folds consecutive zaps from the same actor against the same note into
+     * one row so a sender spamming 1-sat zaps can't drown out everything else.
+     * Walks `items` in the order given (newest-first by the caller), so the
+     * most-recent zap becomes the primary and older duplicates ride along in
+     * `mergedZaps`. Only `NotificationType.ZAP` with a non-empty
+     * `referencedEventId` participates — DM_ZAP / PROFILE_ZAP have nothing
+     * to dedupe against.
+     *
+     * Mirrors the iOS `NotificationsViewModel.filteredItems` collapse logic
+     * in PR barrydeen/wisp-ios#161; see the iOS file for the design notes.
+     */
+    private fun collapseSameActorZapSpam(items: List<FlatNotificationItem>): List<FlatNotificationItem> {
+        val result = mutableListOf<FlatNotificationItem>()
+        val zapIndexByKey = mutableMapOf<String, Int>()
+        for (item in items) {
+            if (item.type == NotificationType.ZAP && item.referencedEventId.isNotEmpty()) {
+                val key = "${item.actorPubkey}|${item.referencedEventId}"
+                val idx = zapIndexByKey[key]
+                if (idx != null) {
+                    val primary = result[idx]
+                    result[idx] = primary.copy(mergedZaps = primary.mergedZaps + item)
+                } else {
+                    zapIndexByKey[key] = result.size
+                    result.add(item)
+                }
+            } else {
+                result.add(item)
+            }
+        }
+        return result
     }
 
     private fun startSummaryCombine() {
