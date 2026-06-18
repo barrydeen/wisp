@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## System of record
+
+This repository is a fork of the **Wisp** Nostr client being adapted into **Zap Cooking**, a food-first Nostr client. The adaptation plan — protocol/API contracts, event kinds, backend endpoints, relay sets, and the stop-gated phase breakdown — lives in [`ZAPCOOKING_ANDROID_BUILD.md`](ZAPCOOKING_ANDROID_BUILD.md) at the repo root. **Read it first; it wins over this file (and the README) wherever they disagree.** The Nostr plumbing described below is inherited from Wisp; food features are layered on per that spec.
+
 ## Build Commands
 
 ```bash
@@ -15,17 +19,20 @@ No test suite exists yet. JDK 17 and Android SDK 35 are required.
 
 ## Architecture
 
-Wisp is a minimal Android Nostr client using Kotlin + Jetpack Compose (Material 3). MVVM with five layers:
+Zap Cooking is a food-first Android Nostr client, forked from Wisp, using Kotlin + Jetpack Compose (Material 3). MVVM with five layers:
 
 **UI** (`ui/screen/`, `ui/component/`) → **ViewModel** (`viewmodel/`) → **Repository** (`repo/`) → **Protocol** (`nostr/`) → **Relay** (`relay/`)
+
+Plus a **persistence layer** (`db/`) backed by ObjectBox — see Key Design Decisions.
 
 All source lives under `app/src/main/kotlin/com/wisp/app/`.
 
 ### Key Design Decisions
 
-- **No database** — all state in-memory (LRU caches) or SharedPreferences/EncryptedSharedPreferences. Events re-fetched from relays each session.
+- **Mostly in-memory, selectively persistent** — the bulk of state lives in LRU caches, but the app **does** have an on-device database: **ObjectBox** (`db/`, model at `app/objectbox-models/default.json`) persists a narrow set of kinds (notes, articles, media posts, reactions, reposts, zap receipts, polls, profiles) plus joined groups and recent group/DM messages, so cold starts are fast. Everything else is re-fetched from relays each session. Preferences live in SharedPreferences; private keys in EncryptedSharedPreferences.
 - **Flow-based reactivity** — SharedFlow for relay events, StateFlow for UI state. No RxJava or LiveData.
 - **NIP objects** — each NIP implemented as a Kotlin `object` with static helpers (e.g., `Nip17.createGiftWrap()`). New NIPs go in `NipXX.kt`.
+- **Signer abstraction** — `NostrSigner` is an interface, but this fork ships **only `LocalSigner`** (key held on-device). Amber / NIP-55 remote signing has been **removed**: `SigningMode` is `LOCAL`/`READ_ONLY` only, and `KeyRepository.migrateRemoveRemoteSigner()` purges any legacy remote-signer accounts on launch. `READ_ONLY` accounts hold no key and cannot sign — gate signing-dependent features (e.g. NIP-98 auth) behind "account has a signing key."
 - **Outbox/inbox relay model** — `OutboxRouter` routes queries to author write relays and delivers to recipient read relays based on NIP-65.
 - **Relay pool** — `RelayPool` manages persistent connections (max 30) and ephemeral connections (max 50) with automatic cleanup and cooldowns.
 - **Encrypted key storage** — private keys in EncryptedSharedPreferences (AES256-GCM), never plain SharedPreferences.
@@ -51,6 +58,10 @@ Each NIP is a standalone Kotlin `object`:
 - `ContactRepository` — follow list with SharedPreferences persistence
 - `KeyRepository` — EncryptedSharedPreferences for private keys
 - `DmRepository` — conversation caching with ECDH key cache
+
+### Persistence Layer (`db/`)
+
+ObjectBox-backed on-device store for fast cold-start. Entities: `EventEntity`, `DmMessageEntity`, `GroupMessageEntity`, `GroupMetaEntity`. The box is initialized via `WispObjectBox`; the generated model is versioned at `app/objectbox-models/default.json` (entity UIDs are stable — do not regenerate or rename entities casually). Only a curated set of kinds is persisted; the rest stays in the LRU caches above.
 
 ## Code Conventions
 
