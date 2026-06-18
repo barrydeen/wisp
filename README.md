@@ -49,7 +49,6 @@ Wisp implements a full NIP-65 outbox/inbox model with relay scoring:
 - **NIP-04 fallback** — legacy encrypted DMs still read for backward compatibility
 - **Dedicated DM relays** — publish DMs to a separate relay set (NIP-51 kind 10050) from your public posts
 - **Encrypted media** — optional encrypted image attachments in DMs
-- **Optional Amber / NIP-55 remote signer** — keep your `nsec` in a dedicated signer app and never hand it to Wisp at all
 
 ### Lightning & Zaps
 
@@ -114,7 +113,6 @@ A built-in non-custodial Lightning wallet powered by [Breez SDK (Spark)](https:/
 - **Multiple accounts** with per-account encrypted storage
 - **EncryptedSharedPreferences** (AES256-GCM) for private keys — `nsec` never touches plain SharedPreferences
 - **Biometric authentication** for key access
-- **NIP-55 remote signing** — delegate all signing/encryption to Amber (or another signer app) via Android intents, so Wisp never holds the key
 - **NIP-19 bech32** — npub, nsec, note, nevent, nprofile encode/decode, with `nostr:` URI rendering in post content
 - **NIP-05 DNS verification** with result caching
 - **QR code display** for sharing keys and profiles
@@ -172,7 +170,7 @@ Wisp follows an MVVM architecture with clear layer separation:
 - **Mostly in-memory, selectively persistent** — the bulk of state lives in LRU caches; ObjectBox persists a narrow set of kinds (notes, articles, media posts, reactions, reposts, zap receipts, polls, profiles) plus joined groups, so cold starts are fast without the complexity of a full event store. Preferences live in SharedPreferences; private keys live in EncryptedSharedPreferences.
 - **NIP objects** — each NIP is implemented as a Kotlin `object` with pure helper functions (e.g., `Nip17.createGiftWrap()`, `Nip44.encrypt()`), making the protocol layer modular and easy to test.
 - **Flow-based reactivity** — SharedFlow for relay events, StateFlow for UI state. No RxJava, no LiveData — pure coroutines.
-- **Signer abstraction** — `NostrSigner` is an interface. `LocalSigner` holds the key; `RemoteSigner` delegates every sign/encrypt/decrypt to an external NIP-55 app. UI code never sees the difference.
+- **Signer abstraction** — `NostrSigner` is an interface; this fork ships only `LocalSigner`, which holds the key on-device. Amber / NIP-55 remote signing was removed: `SigningMode` is `LOCAL`/`READ_ONLY` only, and read-only accounts cannot sign.
 - **Off-main-thread crypto** — all signing, NIP-44 encryption, and PoW mining run on `Dispatchers.Default` with proper cancellation support.
 - **Encrypted key storage** — private keys use AES256-GCM via Android's Security Crypto library, never plain SharedPreferences.
 
@@ -219,7 +217,7 @@ app/src/main/kotlin/com/wisp/app/
 | [47](https://github.com/nostr-protocol/nips/blob/master/47.md) | Wallet Connect (NWC) | ✅ |
 | [51](https://github.com/nostr-protocol/nips/blob/master/51.md) | Lists (mute, bookmark, pin, follow sets, relay sets) | ✅ |
 | [53](https://github.com/nostr-protocol/nips/blob/master/53.md) | Live activities | ✅ |
-| [55](https://github.com/nostr-protocol/nips/blob/master/55.md) | Android signer (Amber) | ✅ |
+| [55](https://github.com/nostr-protocol/nips/blob/master/55.md) | Android signer (Amber) | ❌ (removed) |
 | [57](https://github.com/nostr-protocol/nips/blob/master/57.md) | Lightning zaps | ✅ |
 | [65](https://github.com/nostr-protocol/nips/blob/master/65.md) | Relay list metadata | ✅ |
 | [68](https://github.com/nostr-protocol/nips/blob/master/68.md) | Picture-first posts | ✅ |
@@ -237,7 +235,7 @@ Also: **Blossom** media servers (BUDs 01–03), **NWC** transport, and **bolt11*
 ### Requirements
 
 - Android 8.0 (API 26) or higher
-- A Nostr keypair (generate one in-app, import an existing `nsec`, or pair Amber for NIP-55 remote signing)
+- A Nostr keypair (generate one in-app, or import an existing `nsec`)
 
 ### Installation
 
@@ -245,7 +243,7 @@ APK downloads are available on the [Releases](../../releases) page.
 
 ### First Launch
 
-1. **Create, import, or pair a signer** — generate a fresh keypair, paste your `nsec`, or connect Amber for remote signing
+1. **Create or import a key** — generate a fresh keypair or paste your `nsec`
 2. **Set up your profile** — the onboarding flow walks you through name, picture, and bio
 3. **Pick some interests** — topic/interest selection seeds your first follow suggestions
 4. **Follow some people** — Wisp suggests popular accounts to get your feed started
@@ -299,7 +297,7 @@ Contributions are welcome. Wisp is open source and community help makes it bette
 
 - **Kotlin** with Jetpack Compose — no XML layouts
 - **NIP implementations** go in `NipXX.kt` as Kotlin `object` with static helper functions
-- **Events** are created via `NostrEvent.create(privkey, pubkey, kind, content, tags)` — or, for remote-signer accounts, through the `NostrSigner` abstraction
+- **Events** are created via `NostrEvent.create(privkey, pubkey, kind, content, tags)`, routed through the `NostrSigner` (`LocalSigner`) abstraction
 - **Hex encoding** uses `ByteArray.toHex()` / `String.hexToByteArray()` extensions
 - **Coroutines** for all async work — `Dispatchers.Default` for CPU-bound (crypto, PoW), `Dispatchers.IO` for network
 - **StateFlow** for UI state, **SharedFlow** for relay events
