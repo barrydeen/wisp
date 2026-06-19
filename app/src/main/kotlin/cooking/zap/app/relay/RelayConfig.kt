@@ -40,6 +40,24 @@ data class RelayConfig(
             "wss://auth.nostr1.com"
         )
 
+        /**
+         * The `articles` relay set — recipe (kind 30023) READS target these,
+         * NOT [DEFAULTS]. Mirrors the zap.cooking web `articles` set (build
+         * doc §1). Recipes live on these public aggregators, not on the
+         * members-only Pantry. Treat as a *union*: coverage is uneven (a
+         * Step-0 live probe found `nostr.wine` returned 0 for `#t zapcooking`
+         * while primal/nos.lol/damus carried the same recipes), so query the
+         * whole set and merge.
+         */
+        val ARTICLES_RELAYS = listOf(
+            "wss://relay.primal.net",
+            "wss://nos.lol",
+            "wss://relay.damus.io",
+            "wss://nostr.wine",
+            "wss://eden.nostr.land",
+            "wss://relay.noswhere.com"
+        )
+
         /** Fallback indexer relays used when the user hasn't configured search relays (kind 10007). */
         val DEFAULT_INDEXER_RELAYS = listOf(
             "wss://indexer.coracle.social",

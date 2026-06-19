@@ -28,7 +28,15 @@ HTTPS endpoints; it does not reimplement them in Kotlin.
   `{ kinds: [30023], "#t": ["zapcooking", "nostrcooking"] }`
   (`zapcooking` = new, `nostrcooking` = legacy — support both).
 - **Premium/gated recipe:** `kind 35000`, tag `zapcooking-premium`.
-  Body gated on active membership.
+  Body gated on active membership. **All 35000 handling is deferred to
+  Phase 3** (it's meaningless without the membership check). ⚠️ Live probe
+  (Step 0, Phase 1) found bare `kind 35000` is **squatted by an unrelated
+  app** (events carry `sender`/`status` tags + JSON order payloads) and
+  **zero** real `zapcooking-premium` events exist on the public relays or
+  Pantry. When Phase 3 builds this, the filter MUST be tag-qualified
+  (`#t: zapcooking-premium`), never bare `kinds: [35000]`. Phase 1 feed
+  filters stay `kinds: [30023]` only — premium simply doesn't surface,
+  which is correct.
 - Wisp already renders 30023 (ArticleScreen) — branch it for the recipe
   layout, don't reinvent it.
 
@@ -150,10 +158,54 @@ no "Wisp" in UI/CLAUDE.md/README; package renamed; flavors build;
 relays correct.
 
 ### Phase 1 — Recipes + foodstr feed
-RecipeRepository (30023 + `#t` filter, naddr fetch, 35000 gating);
-RecipeDetailScreen (branched from ArticleScreen); CookMode (screen-on,
-timers, scaling); home = recipes + `#foodstr`. Recipe reads target the
-`articles` relay set.
+RecipeRepository (30023 + `#t` filter, naddr fetch); RecipeDetailScreen
+(branched from ArticleScreen); CookMode (screen-on, timers, scaling);
+home = recipes + `#foodstr`. Recipe reads target the `articles` relay set.
+35000/premium gating is **deferred to Phase 3** (see §1).
+
+Step 0 (MCP/live probe, no code) is ✅: fetched 5 real `#t zapcooking`
+recipes + legacy `nostrcooking` + `#foodstr` notes off the live relays and
+confirmed the canonical `parseMarkdownForEditing` shape. Drift found and
+now baked into the parser contract: `published_at` is **optional** (absent
+on all 5 new `zapcooking` events; present on legacy `nostrcooking`) → fall
+back to `created_at`; `## Details` prep/cook/servings are **all optional +
+free-text** (no normalized units, e.g. "10", "30min") → tolerate missing,
+never assume parseable; category t-tags follow `<root>-<category>`
+(`zapcooking-italian`, …) plus a per-recipe `<root>-<slug>`; `articles`
+relay coverage is uneven (`nostr.wine` returned 0 — treat the set as a
+union); premium 35000 is squatted + has zero live events (see §1, deferred).
+
+Sub-concern breakdown (one PR each, off main, no stacking):
+- **1.1** RecipeParser (`nostr/RecipeParser.kt`, mirrors frontend
+  `parseMarkdownForEditing`) + `RelayConfig.ARTICLES_RELAYS`. No UI.
+  **Gate:** golden unit test vs the real *Tuscan Peposo* event, including
+  the missing-`published_at` and missing-`servings` cases.
+- **1.2** `RecipeRepository` — `{kinds:[30023], #t:[zapcooking,nostrcooking]}`
+  reads targeting `ARTICLES_RELAYS`; naddr fetch. (No 35000.)
+- **1.3** `RecipeDetailScreen` branched from ArticleScreen — hero, summary,
+  chef's notes, ingredients, numbered directions, prep/cook/servings,
+  serving scaler (ingredient-qty only; **best-effort free-text qty parse,
+  mirror the frontend's scaler if present — do not block 1.3 on perfect
+  parsing, but the parser must not choke on "1½"**). New `recipe/{naddr}`.
+- **1.4** CookMode — keep-screen-on, step paging, inline timers, scaling.
+- **1.5** Home foodstr feed — recipes (30023 `#zapcooking`) + `#foodstr`
+  notes via the existing FeedScreen/HashtagFeed infra.
+
+### Phase 1.5 — Onboarding foodstr cleanup (DEFERRED)
+Tracked here so it isn't lost; **do not start until Phase 1 lands.** Closes
+the Concern 6 OPEN item (`CREATOR_PUBKEYS` is fiatjaf + the Zap Cooking
+account, not a curated food set) and aligns onboarding with the food-first
+product:
+- **Creator starter-pack seed** — replace the inherited `CREATOR_PUBKEYS`
+  with a curated set of active food/`#foodstr` creators (the recipe authors
+  surfaced in Phase 1 are live candidates), pending a product decision on
+  who's in the pack.
+- **Food-framed onboarding copy** — onboarding card/seed/empty-states speak
+  food, not generic Nostr.
+- **`#foodstr` discovery** — surface the foodstr/recipe feed as a first-run
+  discovery affordance so new accounts have something to follow/see.
+Deferred because it's product-curation + copy, not feed plumbing; Phase 1
+ships the feeds it depends on.
 
 ### Phase 2 — Recipe import + Cheffy
 Native camera + share-target import → `extract-recipe`. Cheffy chat
@@ -163,7 +215,10 @@ fast-follow — pending decision.]
 ### Phase 3 — Membership + premium
 `MembershipRepository` (public GET status + cache); flavor-gated
 "Become a member" Custom Tab link; unlock 35000 + member AI on active
-status. No in-app checkout.
+status. No in-app checkout. **Premium recipes (35000) land here, not
+Phase 1** — filter tag-qualified (`#t: zapcooking-premium`), never bare
+kind (the kind is squatted; see §1). Verify real premium events exist on
+Pantry before building the unlock path (Step 0 found none).
 
 ### Phase 4 — Nourish + polish
 NourishSheet → `nourish`; push notifications; saved-recipes (NIP-51);
