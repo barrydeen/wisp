@@ -270,6 +270,18 @@ Sub-concern breakdown (one PR each, off main, no stacking):
   let its `closeAll` CLOSE `onlyfood-0` and kill the new sub on the shared
   ephemeral relay. TRACKED: `HashtagFeedViewModel.loadCounter` is the same
   instance-scoped pattern (no rapid re-entry there, so left as-is).
+  THROTTLE FIX: blank-after-toggle was relay-side throttling (logcat: REQ
+  sent, EOSE 0 events in ~305ms = relay refusing to search) from CLOSE-frame
+  hammering, not capacity/cooldown. Three churn cuts: (1) all loads —
+  initial/toggle/pagination — serialize through one `submit()` that
+  `cancelAndJoin`s the previous job before the next REQ (no overlapping/
+  orphaned subs); (2) `loadMore()` goes through that same path (was
+  overwriting `activeJob` without cancelling); (3) teardown CLOSEs **only the
+  subIds actually opened** (1 global / real chunk count) — the old
+  `base-0..base-39` sweep × `closeOnAllRelays` fan-to-all-connections was
+  ~450 stray CLOSE frames per teardown. NOTE (latent RelayPool bug, not
+  fixed here): the ephemeral cooldown-failure path doesn't
+  `subscriptionTracker.untrackRelay`, leaking tracked subs — separate concern.
   `OnlyFoodFeedScreen` =
   Global|Following segmented toggle + shared `PostCard` (full inline
   `NoteActions`/zap) + infinite scroll. Reachable via an "OnlyFood" drawer

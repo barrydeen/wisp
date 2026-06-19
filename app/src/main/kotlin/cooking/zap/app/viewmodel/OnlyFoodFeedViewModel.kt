@@ -11,6 +11,7 @@ import cooking.zap.app.repo.ContactRepository
 import cooking.zap.app.repo.EventRepository
 import cooking.zap.app.repo.MuteRepository
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,24 +23,24 @@ import kotlinx.coroutines.withTimeoutOrNull
  * OnlyFood 🍳 — a kind-1 social food feed over the expanded [FoodHashtags] set
  * (concern 1.6). Two modes (v1): [Mode.GLOBAL] (all matching notes) and
  * [Mode.FOLLOWING] (matching notes from the user's kind-3 contacts, via a
- * server-side `authors` filter). Members + replies are deferred (Phase 3 /
- * later).
+ * server-side `authors` filter). Members + replies are deferred.
  *
- * Filtering is mute-only (blocked author or muted word) — matching the
- * proven `HashtagFeedViewModel` and the web foodstr feed, neither of which
- * runs a spam classifier. (v1 dropped NSpam: running `score()` inside the
- * relay collector both over-filtered hashtag/link-heavy food posts at the
- * `>= 0.7` threshold and risked an exception cancelling the whole stream.
- * Re-adding spam filtering correctly is a tracked follow-up — see build doc.)
+ * Filtering is mute-only (blocked author or muted word) — matching the proven
+ * `HashtagFeedViewModel` and the web foodstr feed, neither of which runs a
+ * spam classifier (re-adding NSpam correctly is a tracked follow-up).
  *
- * Pagination is web-style time-windowed (global 7-day initial, following
- * 3-day; older windows on scroll via `until = oldest - 1`). The subscription
- * lifecycle mirrors [HashtagFeedViewModel] — REQ, collect, EOSE/timeout,
- * close — on the search relay.
- *
- * (Forward note, per review: outbox routing via OutboxRouter is the
- * completeness upgrade for following-mode if the single search relay is
- * sparse — not wired here.)
+ * **Subscription discipline (why this isn't a plain REQ/collect/close).** The
+ * search relay throttles a churning connection. Three things keep churn down:
+ *  1. **One sub at a time, serialized.** Every load — initial, mode toggle,
+ *     pagination — goes through [submit], which `cancelAndJoin`s the previous
+ *     job (so its teardown CLOSEs run to completion) *before* the next REQ.
+ *     No overlapping/orphaned jobs racing the relay.
+ *  2. **Close only what was opened.** A teardown CLOSEs exactly the subIds it
+ *     sent (1 for global, the real chunk count for following) — not a blind
+ *     `base-0..base-39` sweep, each of which `RelayPool` fans to every
+ *     connection (~450 stray CLOSE frames/teardown → relay throttle).
+ *  3. **Process-wide unique subIds** ([SUB_SEQ]) so an old instance's CLOSE
+ *     can never target a new instance's sub.
  */
 class OnlyFoodFeedViewModel : ViewModel() {
 
@@ -81,13 +82,13 @@ class OnlyFoodFeedViewModel : ViewModel() {
     ) {
         if (deps != null) return
         deps = Deps(relayPool, eventRepo, muteRepo, contactRepo)
-        startFresh()
+        reload()
     }
 
     fun setMode(mode: Mode) {
         if (_mode.value == mode) return
         _mode.value = mode
-        startFresh()
+        reload()
     }
 
     /** Infinite-scroll hook: page one window further back in time. */
@@ -95,47 +96,45 @@ class OnlyFoodFeedViewModel : ViewModel() {
         if (_isLoading.value || _isPaging.value || endReached) return
         val oldest = seen.values.minOfOrNull { it.created_at } ?: return
         val until = oldest - 1
-        subscribe(since = until - windowSeconds(), until = until, initial = false)
+        // reset=false → append older notes to the existing feed.
+        submit(reset = false, initial = false, since = until - windowSeconds(), until = until)
     }
 
-    private fun startFresh() {
-        activeJob?.cancel()
-        seen.clear()
+    /** Fresh load (initial / mode switch): no `since` floor — newest 100. */
+    private fun reload() {
         endReached = false
-        _emptyFollows.value = false
-        _notes.value = emptyList()
-        // No `since` floor on the initial load — match the working
-        // HashtagFeedViewModel. The search/archive relay has weak recent
-        // coverage, so a 7-day `since` excluded everything; "newest 100, no
-        // floor" is what actually returns posts. The window only matters for
-        // pagination (loadMore), where `until` already bounds the query.
-        subscribe(since = null, until = null, initial = true)
+        submit(reset = true, initial = true, since = null, until = null)
     }
 
-    private fun subscribe(since: Long?, until: Long?, initial: Boolean) {
-        val d = deps ?: return
-        val mode = _mode.value
-
-        val follows: Set<String>? = if (mode == Mode.FOLLOWING) {
-            d.contactRepo.getFollowList().map { it.pubkey }.toSet()
-        } else null
-        if (follows != null && follows.isEmpty()) {
-            _emptyFollows.value = true
-            _isLoading.value = false
-            return
-        }
-
-        if (initial) _isLoading.value = true else _isPaging.value = true
-        // Process-wide unique subId. A VM-instance counter starting at 0
-        // collided ("onlyfood-0") across nav back-stack entries: re-entering
-        // the screen within the prior instance's ~14s teardown let its
-        // closeAll send CLOSE "onlyfood-0" and kill the new sub on the shared
-        // ephemeral search-relay connection. A global sequence makes the old
-        // instance's CLOSE target its own ids, never the new sub.
-        val base = "onlyfood-${SUB_SEQ.incrementAndGet()}"
-        var received = 0
-
+    /**
+     * The single serialized entry point. Chains off the previous job and
+     * `cancelAndJoin`s it first, so the prior subscription's CLOSEs finish
+     * before this one's REQ — deterministic teardown, no connection churn.
+     */
+    private fun submit(reset: Boolean, initial: Boolean, since: Long?, until: Long?) {
+        val previous = activeJob
         activeJob = viewModelScope.launch {
+            previous?.cancelAndJoin()
+            val d = deps ?: return@launch
+
+            val follows: Set<String>? = if (_mode.value == Mode.FOLLOWING) {
+                d.contactRepo.getFollowList().map { it.pubkey }.toSet()
+            } else null
+            if (follows != null && follows.isEmpty()) {
+                if (reset) { seen.clear(); _notes.value = emptyList() }
+                _emptyFollows.value = true
+                _isLoading.value = false
+                _isPaging.value = false
+                return@launch
+            }
+            _emptyFollows.value = false
+            if (reset) { seen.clear(); _notes.value = emptyList() }
+            if (initial) _isLoading.value = true else _isPaging.value = true
+
+            val base = "onlyfood-${SUB_SEQ.incrementAndGet()}"
+            val opened = mutableListOf<String>()
+            var received = 0
+
             try {
                 val collector = launch {
                     d.relayPool.relayEvents.collect { relayEvent ->
@@ -158,6 +157,7 @@ class OnlyFoodFeedViewModel : ViewModel() {
                     limit = 100,
                 )
                 if (follows == null) {
+                    opened.add(base)
                     d.relayPool.sendToRelayOrEphemeral(
                         SearchViewModel.DEFAULT_SEARCH_RELAY,
                         ClientMessage.req(base, filter),
@@ -167,9 +167,11 @@ class OnlyFoodFeedViewModel : ViewModel() {
                     // sub on a relay, so each author chunk gets its own subId
                     // under the shared `base` prefix the collector matches.
                     follows.toList().chunked(AUTHOR_CHUNK).forEachIndexed { i, chunk ->
+                        val subId = "$base-$i"
+                        opened.add(subId)
                         d.relayPool.sendToRelayOrEphemeral(
                             SearchViewModel.DEFAULT_SEARCH_RELAY,
-                            ClientMessage.req("$base-$i", filter.copy(authors = chunk)),
+                            ClientMessage.req(subId, filter.copy(authors = chunk)),
                         )
                     }
                 }
@@ -180,7 +182,8 @@ class OnlyFoodFeedViewModel : ViewModel() {
                 delay(6_000) // collect stragglers, then tear down
                 collector.cancel()
             } finally {
-                closeAll(d, base)
+                // Close ONLY the subIds we actually opened (not a base-0..39 sweep).
+                for (subId in opened) d.relayPool.closeOnAllRelays(subId)
             }
         }
     }
@@ -192,20 +195,12 @@ class OnlyFoodFeedViewModel : ViewModel() {
         return true
     }
 
-    private fun closeAll(d: Deps, base: String) {
-        // Close the global sub and any author-chunk subs under this base.
-        d.relayPool.closeOnAllRelays(base)
-        for (i in 0 until AUTHOR_CHUNKS_MAX) d.relayPool.closeOnAllRelays("$base-$i")
-    }
-
     private fun publish() {
         _notes.value = seen.values.sortedByDescending { it.created_at }
     }
 
     private fun windowSeconds(): Long =
         if (_mode.value == Mode.FOLLOWING) THREE_DAYS else SEVEN_DAYS
-
-    private fun nowSeconds(): Long = System.currentTimeMillis() / 1000
 
     override fun onCleared() {
         super.onCleared()
@@ -218,6 +213,5 @@ class OnlyFoodFeedViewModel : ViewModel() {
         private const val THREE_DAYS = 3L * 24 * 60 * 60
         private const val SEVEN_DAYS = 7L * 24 * 60 * 60
         private const val AUTHOR_CHUNK = 500
-        private const val AUTHOR_CHUNKS_MAX = 40 // close-all bound (≈20k follows)
     }
 }
