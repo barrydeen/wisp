@@ -113,11 +113,17 @@ object RecipeParser {
     private val DIRECTIONS = section("Directions")
     private val ADDITIONAL = section("Additional Resources")
 
-    // Emoji-prefixed Details fields. The labels (incl. the variation-selector
-    // bytes on ⏲️ / 🍽️) match the web editor's output exactly.
-    private val PREP_TIME = Regex("⏲️ Prep time[:\\s]+([^\\n]+)", RegexOption.IGNORE_CASE)
-    private val COOK_TIME = Regex("🍳 Cook time[:\\s]+([^\\n]+)", RegexOption.IGNORE_CASE)
-    private val SERVINGS = Regex("🍽️ Servings[:\\s]+([^\\n]+)", RegexOption.IGNORE_CASE)
+    // Emoji-prefixed Details fields. The live bytes are irregular: ⏲️ Prep is
+    // U+23F2 + U+FE0F and 🍽️ Servings is U+1F37D + U+FE0F (variation selector
+    // present), but 🍳 Cook is bare U+1F373 (no selector). Each pattern is the
+    // base emoji followed by `️?` — a trailing U+FE0F made OPTIONAL — and `\s*`
+    // for the gap, so this is a strict SUPERSET of the frontend's single
+    // authored-glyph + single-space regex: it matches everything the editor
+    // emits, and also survives a client that strips the selector or pads the
+    // space. (Cook keeps an optional selector too; harmless, and symmetric.)
+    private val PREP_TIME = Regex("⏲️?\\s*Prep time[:\\s]+([^\\n]+)", RegexOption.IGNORE_CASE)
+    private val COOK_TIME = Regex("🍳️?\\s*Cook time[:\\s]+([^\\n]+)", RegexOption.IGNORE_CASE)
+    private val SERVINGS = Regex("🍽️?\\s*Servings[:\\s]+([^\\n]+)", RegexOption.IGNORE_CASE)
 
     private val NUMBERED_STEP = Regex("^(\\d+)\\.\\s*(.+)$")
 

@@ -1,6 +1,7 @@
 package cooking.zap.app.nostr
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -82,6 +83,41 @@ class RecipeParserTest {
         assertEquals("10 min", recipe.content.details.prepTime)
         assertEquals("3 hours", recipe.content.details.cookTime)
         assertNull(recipe.content.details.servings)
+    }
+
+    /**
+     * The one spot where a clean regex passes synthetic input but misses real
+     * events: the `## Details` emoji labels carry U+FE0F variation selectors
+     * in the live bytes. This proves the REAL event's prep AND cook extract to
+     * non-null actual values — i.e. the emoji handling works on production
+     * bytes, not just on hand-typed glyphs.
+     */
+    @Test
+    fun realEmojiDetails_extractNonNull_despiteVariationSelector() {
+        // Guard: the fixture must actually contain the hard case (⏲️ = U+23F2
+        // U+FE0F). If someone "cleans" the fixture and drops the selector, this
+        // fails loudly rather than silently weakening the golden.
+        val content = loadEvent("tuscan_peposo.json").content
+        assertTrue(
+            "fixture lost its U+FE0F variation selector — golden no longer exercises the hard path",
+            content.contains("⏲️")
+        )
+
+        val details = recipe.content.details
+        assertNotNull("real ⏲️ Prep time (U+23F2 U+FE0F) must extract", details.prepTime)
+        assertNotNull("real 🍳 Cook time (U+1F373) must extract", details.cookTime)
+        assertEquals("10 min", details.prepTime)
+        assertEquals("3 hours", details.cookTime)
+    }
+
+    @Test
+    fun details_tolerateMissingVariationSelectorAndMultiSpace() {
+        // Base emoji without U+FE0F + irregular spacing — a stricter regex
+        // would miss these; the hardened one must not.
+        val md = "## Details\n\n- ⏲  Prep time:  12 min\n- 🍽   Servings:   4\n"
+        val d = RecipeParser.parseContent(md).details
+        assertEquals("12 min", d.prepTime)   // ⏲ with NO selector, double space
+        assertEquals("4", d.servings)        // 🍽 with NO selector, triple space
     }
 
     @Test
