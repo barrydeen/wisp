@@ -269,6 +269,13 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // Recipe reads (kind 30023 #t zapcooking/nostrcooking) target the
+    // `articles` relay union, not DEFAULTS — see RecipeRepository. Owns the
+    // recipe feed flow shared by the home feed + recipe-detail screens.
+    val recipeRepo = cooking.zap.app.repo.RecipeRepository(
+        relayPool, eventRepo, subManager, viewModelScope, processingDispatcher
+    )
+
     val interfacePrefs = InterfacePreferences(app)
     val nwcRepo = NwcRepository(app, relayPool, pubkeyHex)
     val sparkRepo = SparkRepository(app, pubkeyHex)

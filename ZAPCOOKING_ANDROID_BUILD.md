@@ -184,12 +184,21 @@ relay coverage is uneven (`nostr.wine` returned 0 — treat the set as a
 union); premium 35000 is squatted + has zero live events (see §1, deferred).
 
 Sub-concern breakdown (one PR each, off main, no stacking):
-- **1.1** RecipeParser (`nostr/RecipeParser.kt`, mirrors frontend
-  `parseMarkdownForEditing`) + `RelayConfig.ARTICLES_RELAYS`. No UI.
-  **Gate:** golden unit test vs the real *Tuscan Peposo* event, including
-  the missing-`published_at` and missing-`servings` cases.
-- **1.2** `RecipeRepository` — `{kinds:[30023], #t:[zapcooking,nostrcooking]}`
-  reads targeting `ARTICLES_RELAYS`; naddr fetch. (No 35000.)
+- **1.1** ✅ (PR #7, merged) RecipeParser (`nostr/RecipeParser.kt`, mirrors
+  frontend `parseMarkdownForEditing`) + `RelayConfig.ARTICLES_RELAYS`. No UI.
+  Golden unit test vs the real *Tuscan Peposo* event incl. missing-
+  `published_at`/`servings` and the live U+FE0F emoji bytes. 14 tests.
+- **1.2** ✅ `repo/RecipeRepository.kt` — `{kinds:[30023],
+  #t:[zapcooking,nostrcooking]}` reads fanned out to the `ARTICLES_RELAYS`
+  **union** (not DEFAULTS), deduped by addressable coordinate
+  (`kind:author:dTag`) newest-wins with the NIP-01 equal-`created_at`
+  lower-id tiebreaker; `requestRecipe(author,dTag)` resolves a single recipe
+  cache-first then via the same union (NOT `EventRepository.request-
+  AddressableEvent`, which routes to general relays). Repo OWNS the recipe
+  flow (one shared dedup for 1.3 detail + 1.5 home). Load-then-close sub
+  lifecycle (closed on all relays in `finally`). Wired into `FeedViewModel`
+  (service-locator). No 35000. Pure merge funcs unit-tested vs the real
+  multi-relay-duplicate + older/newer-revision cases. 7 tests; suite 40/0/0/0.
 - **1.3** `RecipeDetailScreen` branched from ArticleScreen — hero, summary,
   chef's notes, ingredients, numbered directions, prep/cook/servings,
   serving scaler (ingredient-qty only; **best-effort free-text qty parse,
