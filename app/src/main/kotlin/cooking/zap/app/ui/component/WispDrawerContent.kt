@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.Restaurant
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.EmojiEmotions
@@ -92,6 +93,7 @@ fun WispDrawerContent(
     onSearch: () -> Unit,
     onMessages: () -> Unit,
     onWallet: () -> Unit,
+    onRecipes: () -> Unit = {},
     onLists: () -> Unit = {},
     onDrafts: () -> Unit = {},
     onMediaServers: () -> Unit,
@@ -423,6 +425,13 @@ fun WispDrawerContent(
                 modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
             )
         }
+        NavigationDrawerItem(
+            icon = { Icon(Icons.Outlined.Restaurant, contentDescription = null) },
+            label = { Text(stringResource(R.string.drawer_recipes)) },
+            selected = false,
+            onClick = onRecipes,
+            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
+        )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.FormatListBulleted, contentDescription = null) },
             label = { Text(stringResource(R.string.drawer_lists)) },
