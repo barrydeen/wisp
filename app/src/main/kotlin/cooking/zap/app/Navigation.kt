@@ -76,7 +76,8 @@ import cooking.zap.app.ui.screen.SocialGraphScreen
 import cooking.zap.app.ui.screen.BookmarkSetScreen
 import cooking.zap.app.ui.screen.ArticleScreen
 import cooking.zap.app.ui.screen.RecipeDetailScreen
-import cooking.zap.app.ui.screen.FoodstrFeedScreen
+import cooking.zap.app.ui.screen.RecipeFeedScreen
+import cooking.zap.app.ui.screen.OnlyFoodFeedScreen
 import cooking.zap.app.ui.screen.BookmarksScreen
 import cooking.zap.app.ui.screen.HashtagFeedScreen
 import cooking.zap.app.ui.screen.KeysScreen
@@ -106,7 +107,8 @@ import cooking.zap.app.ui.screen.WalletScreen
 import cooking.zap.app.viewmodel.BlossomServersViewModel
 import cooking.zap.app.viewmodel.ArticleViewModel
 import cooking.zap.app.viewmodel.RecipeDetailViewModel
-import cooking.zap.app.viewmodel.FoodstrFeedViewModel
+import cooking.zap.app.viewmodel.RecipeFeedViewModel
+import cooking.zap.app.viewmodel.OnlyFoodFeedViewModel
 import cooking.zap.app.viewmodel.AuthViewModel
 import cooking.zap.app.viewmodel.ComposeViewModel
 import cooking.zap.app.viewmodel.DmConversationViewModel
@@ -181,7 +183,8 @@ object Routes {
     const val ARTICLE = "article/{kind}/{author}/{dTag}"
     const val LIVE_STREAM = "live_stream/{hostPubkey}/{dTag}?relayHint={relayHint}"
     const val RECIPE_DETAIL = "recipe/{author}/{dTag}"
-    const val FOODSTR = "foodstr"
+    const val RECIPES = "recipes"
+    const val ONLY_FOOD = "onlyfood"
 
     /**
      * Build a recipe-detail route, URL-encoding the d-tag. Recipe kind is the
@@ -931,7 +934,10 @@ fun WispNavHost(
                     navController.navigate(Routes.WALLET)
                 },
                 onRecipes = {
-                    navController.navigate(Routes.FOODSTR)
+                    navController.navigate(Routes.RECIPES)
+                },
+                onOnlyFood = {
+                    navController.navigate(Routes.ONLY_FOOD)
                 },
                 onLists = {
                     navController.navigate(Routes.LISTS_HUB)
@@ -2657,50 +2663,67 @@ fun WispNavHost(
             )
         }
 
-        composable(Routes.FOODSTR) {
-            val foodstrViewModel: FoodstrFeedViewModel = viewModel()
+        composable(Routes.RECIPES) {
+            val recipeFeedViewModel: RecipeFeedViewModel = viewModel()
+            LaunchedEffect(Unit) { recipeFeedViewModel.load(feedViewModel.recipeRepo) }
+            RecipeFeedScreen(
+                viewModel = recipeFeedViewModel,
+                eventRepo = feedViewModel.eventRepo,
+                onRecipeClick = { author, dTag -> navController.navigate(Routes.recipe(author, dTag)) },
+                onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.ONLY_FOOD) {
+            val onlyFoodViewModel: OnlyFoodFeedViewModel = viewModel()
             LaunchedEffect(Unit) {
-                foodstrViewModel.load(feedViewModel.recipeRepo, feedViewModel.relayPool, feedViewModel.eventRepo)
-            }
-
-            var foodstrZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
-            val foodstrZapInProgress by feedViewModel.zapInProgress.collectAsState()
-            var foodstrZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
-            val isFoodstrNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
-
-            LaunchedEffect(Unit) {
-                feedViewModel.zapSuccess.collect { eventId ->
-                    foodstrZapAnimatingIds = foodstrZapAnimatingIds + eventId
-                    kotlinx.coroutines.delay(1500)
-                    foodstrZapAnimatingIds = foodstrZapAnimatingIds - eventId
-                }
-            }
-
-            if (foodstrZapTarget != null) {
-                val foodstrZapRecipient = foodstrZapTarget!!.pubkey
-                val foodstrUserHasDmRelays = feedViewModel.relayPool.hasDmRelays()
-                var foodstrRecipientHasDmRelays by remember(foodstrZapRecipient) {
-                    mutableStateOf(feedViewModel.relayListRepo.hasDmRelays(foodstrZapRecipient))
-                }
-                if (foodstrUserHasDmRelays && !foodstrRecipientHasDmRelays) {
-                    LaunchedEffect(foodstrZapRecipient) {
-                        foodstrRecipientHasDmRelays = feedViewModel.fetchDmRelaysIfMissing(foodstrZapRecipient)
-                    }
-                }
-                ZapDialog(
-                    isWalletConnected = isFoodstrNwcConnected,
-                    onDismiss = { foodstrZapTarget = null },
-                    onZap = { amountMsats, message, isAnonymous, isPrivate ->
-                        val event = foodstrZapTarget ?: return@ZapDialog
-                        foodstrZapTarget = null
-                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
-                    },
-                    onGoToWallet = { navController.navigate(Routes.WALLET) },
-                    canPrivateZap = feedViewModel.hasLocalKeypair && foodstrUserHasDmRelays && foodstrRecipientHasDmRelays
+                onlyFoodViewModel.init(
+                    relayPool = feedViewModel.relayPool,
+                    eventRepo = feedViewModel.eventRepo,
+                    muteRepo = feedViewModel.muteRepo,
+                    contactRepo = feedViewModel.contactRepo,
                 )
             }
 
-            val foodstrNoteActions = remember {
+            var onlyFoodZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
+            val onlyFoodZapInProgress by feedViewModel.zapInProgress.collectAsState()
+            var onlyFoodZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
+            val isOnlyFoodNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
+
+            LaunchedEffect(Unit) {
+                feedViewModel.zapSuccess.collect { eventId ->
+                    onlyFoodZapAnimatingIds = onlyFoodZapAnimatingIds + eventId
+                    kotlinx.coroutines.delay(1500)
+                    onlyFoodZapAnimatingIds = onlyFoodZapAnimatingIds - eventId
+                }
+            }
+
+            if (onlyFoodZapTarget != null) {
+                val onlyFoodZapRecipient = onlyFoodZapTarget!!.pubkey
+                val onlyFoodUserHasDmRelays = feedViewModel.relayPool.hasDmRelays()
+                var onlyFoodRecipientHasDmRelays by remember(onlyFoodZapRecipient) {
+                    mutableStateOf(feedViewModel.relayListRepo.hasDmRelays(onlyFoodZapRecipient))
+                }
+                if (onlyFoodUserHasDmRelays && !onlyFoodRecipientHasDmRelays) {
+                    LaunchedEffect(onlyFoodZapRecipient) {
+                        onlyFoodRecipientHasDmRelays = feedViewModel.fetchDmRelaysIfMissing(onlyFoodZapRecipient)
+                    }
+                }
+                ZapDialog(
+                    isWalletConnected = isOnlyFoodNwcConnected,
+                    onDismiss = { onlyFoodZapTarget = null },
+                    onZap = { amountMsats, message, isAnonymous, isPrivate ->
+                        val event = onlyFoodZapTarget ?: return@ZapDialog
+                        onlyFoodZapTarget = null
+                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
+                    },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
+                    canPrivateZap = feedViewModel.hasLocalKeypair && onlyFoodUserHasDmRelays && onlyFoodRecipientHasDmRelays
+                )
+            }
+
+            val onlyFoodNoteActions = remember {
                 cooking.zap.app.ui.component.NoteActions(
                     onReply = { event ->
                         replyTarget = event
@@ -2716,7 +2739,7 @@ fun WispNavHost(
                         composeViewModel.clear()
                         navController.navigate(Routes.COMPOSE)
                     },
-                    onZap = { event -> foodstrZapTarget = event },
+                    onZap = { event -> onlyFoodZapTarget = event },
                     onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                     onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                     onAddToList = { eventId -> addToListEventId = eventId },
@@ -2737,16 +2760,14 @@ fun WispNavHost(
                 )
             }
 
-            FoodstrFeedScreen(
-                viewModel = foodstrViewModel,
+            OnlyFoodFeedScreen(
+                viewModel = onlyFoodViewModel,
                 eventRepo = feedViewModel.eventRepo,
                 userPubkey = feedViewModel.getUserPubkey(),
-                noteActions = foodstrNoteActions,
-                onRecipeClick = { author, dTag -> navController.navigate(Routes.recipe(author, dTag)) },
-                onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
+                noteActions = onlyFoodNoteActions,
                 onBack = { navController.popBackStack() },
-                zapAnimatingIds = foodstrZapAnimatingIds,
-                zapInProgressIds = foodstrZapInProgress
+                zapAnimatingIds = onlyFoodZapAnimatingIds,
+                zapInProgressIds = onlyFoodZapInProgress
             )
         }
 

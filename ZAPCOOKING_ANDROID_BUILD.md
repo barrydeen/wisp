@@ -237,6 +237,72 @@ Sub-concern breakdown (one PR each, off main, no stacking):
   asymmetry: notes zap inline, recipe cards zap one tap into detail.
   `FeedSubscriptionManager`/`FeedViewModel` core untouched. Suite 57/0/0/0,
   `assembleZapstoreDebug` clean.
+  NOTE: 1.6 un-merged the notes out of this screen — see below.
+- **1.6** ✅ OnlyFood 🍳 social feed + Recipes un-merge/rename. **Un-merge:**
+  `FoodstrFeed*`/`Routes.FOODSTR` renamed → `RecipeFeed*`/`Routes.RECIPES`
+  (`"recipes"`) and gutted to recipe cards ONLY (dropped the `#foodstr` note
+  sub + `mergeFoodstrItems` + the merge test) — so a post never shows in two
+  feeds. **OnlyFood (new, additive):** `nostr/FoodHashtags.kt` (the expanded
+  ~85-tag set from web `FoodstrFeedOptimized.svelte`, deduped + unit-tested);
+  `OnlyFoodFeedViewModel` — kind-1 feed with **GLOBAL/FOLLOWING** modes (v1;
+  members + replies deferred). Global = all matching notes (search relay);
+  Following = server-side `authors` filter from the kind-3 contact list,
+  chunked at 500/REQ (distinct subIds under one prefix, since a same-subId
+  REQ replaces). **Filtering is mute-only** (blocked author / muted word) —
+  matches the proven mute-only `HashtagFeedViewModel` and the web (no NSpam).
+  NSpam was dropped after the feed came back empty on device: a live relay
+  probe proved `since`/relay were NOT the cause (search.nostrarchives.com
+  returns ~78 food notes all <7d old, with or without `since`), leaving the
+  one filter OnlyFood added over the working HashtagFeed — `score()` run
+  inside the collector, which both over-filtered hashtag/link-heavy food
+  posts at `>= 0.7` and risked an exception cancelling the stream. Initial
+  load takes **no `since` floor** (newest-100, like HashtagFeed); `since`/
+  `until` apply ONLY in `loadMore()` pagination (older windows via
+  `until = oldest-1` on infinite scroll; global 7d / following 3d windows).
+  ⏭️ FORWARD (not done): if Global is spammy in practice, re-add spam
+  filtering CORRECTLY — `score()` in try/catch (keep-on-error so one bad note
+  can't cancel the collector) + the `>= 0.7` threshold verified against real
+  food posts first; and audit existing `score()`-inside-`collect{}` sites
+  (e.g. notifications) for the same stream-cancellation latent bug.
+  RELOAD FIX: subIds are process-wide unique (companion `AtomicLong SUB_SEQ`,
+  not an instance counter) — an instance counter restarted at 0 per nav
+  back-stack entry, so re-entering within the prior instance's ~14s teardown
+  let its `closeAll` CLOSE `onlyfood-0` and kill the new sub on the shared
+  ephemeral relay. TRACKED: `HashtagFeedViewModel.loadCounter` is the same
+  instance-scoped pattern (no rapid re-entry there, so left as-is).
+  THROTTLE FIX: blank-after-toggle was relay-side throttling (logcat: REQ
+  sent, EOSE 0 events in ~305ms = relay refusing to search) from CLOSE-frame
+  hammering, not capacity/cooldown. Three churn cuts: (1) all loads —
+  initial/toggle/pagination — serialize through one `submit()` that
+  `cancelAndJoin`s the previous job before the next REQ (no overlapping/
+  orphaned subs); (2) `loadMore()` goes through that same path (was
+  overwriting `activeJob` without cancelling); (3) teardown CLOSEs **only the
+  subIds actually opened** (1 global / real chunk count) — the old
+  `base-0..base-39` sweep × `closeOnAllRelays` fan-to-all-connections was
+  ~450 stray CLOSE frames per teardown. NOTE (latent RelayPool bug, not
+  fixed here): the ephemeral cooldown-failure path doesn't
+  `subscriptionTracker.untrackRelay`, leaking tracked subs — separate concern.
+  THROTTLE ROOT CAUSE (logcat-confirmed): `search.nostrarchives.com`
+  rate-limits repeated queries PER CONNECTION — identical filter, same conn,
+  99 events → 0 events ~12s later. Toggling re-queried each switch, so every
+  toggle after the first was throttled to blank. FIX = **per-mode result
+  cache, don't re-query on toggle**: each Mode keeps its own `ModeState`
+  (`seen`/`loaded`/`endReached`/`emptyFollows`); `setMode` swaps `_notes` to
+  the target's cache INSTANTLY with no relay query; a mode is queried once
+  (`loaded=true` on completion regardless of event count, so a legit-0 mode
+  isn't re-throttled). Correctness: `ModeState` captured at `submit()`
+  call-time (mid-flight mode switch can't mis-route), collector touches
+  `_notes` only while its mode is current. **Pull-to-refresh**
+  (`PullToRefreshBox`; empty states live inside the LazyColumn so the gesture
+  works when blank) is the ONLY path that re-queries a loaded mode.
+  `OnlyFoodFeedScreen` =
+  Global|Following segmented toggle + shared `PostCard` (full inline
+  `NoteActions`/zap) + infinite scroll. Reachable via an "OnlyFood" drawer
+  entry. Additive: general/Following feed + `FeedViewModel`/nav structure
+  untouched. Keyword relevance scorer skipped (v1 = hashtag set only;
+  `#beef`/`#steak` ambiguity caught by NSpam+mutes). Forward note: outbox
+  routing is the following-mode completeness upgrade if the search relay is
+  sparse. Suite 58/0/0/0, `assembleZapstoreDebug` clean.
 
 ### Phase 1.5 — Onboarding foodstr cleanup (DEFERRED)
 Tracked here so it isn't lost; **do not start until Phase 1 lands.** Closes
