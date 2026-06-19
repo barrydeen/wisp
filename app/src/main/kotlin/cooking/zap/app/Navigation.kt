@@ -74,6 +74,7 @@ import cooking.zap.app.ui.screen.SearchScreen
 import cooking.zap.app.ui.screen.SocialGraphScreen
 import cooking.zap.app.ui.screen.BookmarkSetScreen
 import cooking.zap.app.ui.screen.ArticleScreen
+import cooking.zap.app.ui.screen.RecipeDetailScreen
 import cooking.zap.app.ui.screen.BookmarksScreen
 import cooking.zap.app.ui.screen.HashtagFeedScreen
 import cooking.zap.app.ui.screen.KeysScreen
@@ -102,6 +103,7 @@ import cooking.zap.app.ui.screen.RelayDetailScreen
 import cooking.zap.app.ui.screen.WalletScreen
 import cooking.zap.app.viewmodel.BlossomServersViewModel
 import cooking.zap.app.viewmodel.ArticleViewModel
+import cooking.zap.app.viewmodel.RecipeDetailViewModel
 import cooking.zap.app.viewmodel.AuthViewModel
 import cooking.zap.app.viewmodel.ComposeViewModel
 import cooking.zap.app.viewmodel.DmConversationViewModel
@@ -175,6 +177,17 @@ object Routes {
     const val RELAY_HEALTH = "relay_health"
     const val ARTICLE = "article/{kind}/{author}/{dTag}"
     const val LIVE_STREAM = "live_stream/{hostPubkey}/{dTag}?relayHint={relayHint}"
+    const val RECIPE_DETAIL = "recipe/{author}/{dTag}"
+
+    /**
+     * Build a recipe-detail route, URL-encoding the d-tag. Recipe kind is the
+     * constant 30023, so the route carries only author + d-tag. Real recipe
+     * d-tags contain `(`, `)`, and even `/` (e.g.
+     * "mai-tai-barcadi-(german/-deutsch)") — an un-encoded d-tag would break
+     * the NavController path; the composable decodes it back with URLDecoder.
+     */
+    fun recipe(author: String, dTag: String): String =
+        "recipe/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}"
 }
 
 /**
@@ -2516,6 +2529,99 @@ fun WispNavHost(
                     onDismiss = { showArticleEmojiLibrary = false; pendingEmojiReactCallback = null }
                 )
             }
+        }
+
+        composable(
+            Routes.RECIPE_DETAIL,
+            arguments = listOf(
+                navArgument("author") { type = NavType.StringType },
+                navArgument("dTag") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val author = backStackEntry.arguments?.getString("author") ?: return@composable
+            val dTag = java.net.URLDecoder.decode(
+                backStackEntry.arguments?.getString("dTag") ?: return@composable, "UTF-8"
+            )
+            val recipeDetailViewModel: RecipeDetailViewModel = viewModel()
+            LaunchedEffect(author, dTag) {
+                recipeDetailViewModel.load(author, dTag, feedViewModel.recipeRepo, feedViewModel.eventRepo)
+            }
+
+            var recipeZapTarget by remember { mutableStateOf<cooking.zap.app.nostr.NostrEvent?>(null) }
+            val recipeZapInProgress by feedViewModel.zapInProgress.collectAsState()
+            var recipeZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
+            val isNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
+            val recipeSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
+            val recipeBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
+            val recipeListedIds = remember(recipeSetListedIds, recipeBookmarkedIds) { recipeSetListedIds + recipeBookmarkedIds }
+            val recipeResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
+            val recipeUnicodeEmojis by feedViewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
+
+            LaunchedEffect(Unit) {
+                feedViewModel.zapSuccess.collect { eventId ->
+                    recipeZapAnimatingIds = recipeZapAnimatingIds + eventId
+                    kotlinx.coroutines.delay(1500)
+                    recipeZapAnimatingIds = recipeZapAnimatingIds - eventId
+                }
+            }
+
+            if (recipeZapTarget != null) {
+                val zapRecipient = recipeZapTarget!!.pubkey
+                val recipeUserHasDmRelays = feedViewModel.relayPool.hasDmRelays()
+                var recipeRecipientHasDmRelays by remember(zapRecipient) {
+                    mutableStateOf(feedViewModel.relayListRepo.hasDmRelays(zapRecipient))
+                }
+                if (recipeUserHasDmRelays && !recipeRecipientHasDmRelays) {
+                    LaunchedEffect(zapRecipient) {
+                        recipeRecipientHasDmRelays = feedViewModel.fetchDmRelaysIfMissing(zapRecipient)
+                    }
+                }
+                ZapDialog(
+                    isWalletConnected = isNwcConnected,
+                    onDismiss = { recipeZapTarget = null },
+                    onZap = { amountMsats, message, isAnonymous, isPrivate ->
+                        val event = recipeZapTarget ?: return@ZapDialog
+                        recipeZapTarget = null
+                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
+                    },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
+                    canPrivateZap = feedViewModel.hasLocalKeypair && recipeUserHasDmRelays && recipeRecipientHasDmRelays
+                )
+            }
+
+            RecipeDetailScreen(
+                viewModel = recipeDetailViewModel,
+                eventRepo = feedViewModel.eventRepo,
+                onBack = { navController.popBackStack() },
+                onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
+                onHashtagClick = { tag ->
+                    navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
+                },
+                onReply = { event ->
+                    replyTarget = event
+                    quoteTarget = null
+                    composeViewModel.clear()
+                    navController.navigate(Routes.COMPOSE)
+                },
+                onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
+                onRepost = { event -> feedViewModel.sendRepost(event) },
+                onQuote = { event ->
+                    quoteTarget = event
+                    replyTarget = null
+                    composeViewModel.clear()
+                    navController.navigate(Routes.COMPOSE)
+                },
+                onZap = { event -> recipeZapTarget = event },
+                onAddToList = { eventId -> addToListEventId = eventId },
+                zapAnimatingIds = recipeZapAnimatingIds,
+                zapInProgressIds = recipeZapInProgress,
+                listedIds = recipeListedIds,
+                userPubkey = feedViewModel.getUserPubkey(),
+                resolvedEmojis = recipeResolvedEmojis,
+                unicodeEmojis = recipeUnicodeEmojis,
+                // Cook mode (onStartCooking) lands in 1.4 — null here, so no button renders.
+                onStartCooking = null
+            )
         }
 
         composable(

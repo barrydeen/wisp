@@ -199,11 +199,24 @@ Sub-concern breakdown (one PR each, off main, no stacking):
   lifecycle (closed on all relays in `finally`). Wired into `FeedViewModel`
   (service-locator). No 35000. Pure merge funcs unit-tested vs the real
   multi-relay-duplicate + older/newer-revision cases. 7 tests; suite 40/0/0/0.
-- **1.3** `RecipeDetailScreen` branched from ArticleScreen — hero, summary,
-  chef's notes, ingredients, numbered directions, prep/cook/servings,
-  serving scaler (ingredient-qty only; **best-effort free-text qty parse,
-  mirror the frontend's scaler if present — do not block 1.3 on perfect
-  parsing, but the parser must not choke on "1½"**). New `recipe/{naddr}`.
+- **1.3** ✅ `RecipeDetailScreen` (branched from ArticleScreen) +
+  `RecipeDetailViewModel` (resolves via `RecipeRepository.requestRecipe`) +
+  `nostr/IngredientScaler.kt`. Hero, summary, prep/cook/servings chips,
+  chef's notes, ingredients, numbered directions. **Engagement bar
+  (`ActionBar`) reused — zap/react/repost kept; only the comment THREAD is
+  deferred.** Serving scaler = multiplier chips (½×/1×/2×/3×) scaling the
+  **leading numeric token only** (secondary alt-measures stay unscaled);
+  understands integers/decimals/unicode+mixed+ascii fractions/ranges and
+  returns lines **verbatim on unparseable** (never crashes). Servings chip
+  scales with the multiplier; prep/cook (free-text) don't. Route
+  **`recipe/{author}/{dTag}`** (kind const 30023; `naddr` only at a future
+  share/deep-link boundary) via `Routes.recipe()` which URL-encodes the
+  d-tag (real d-tags carry `(`,`)`,`/`). Cook-mode hook (`onStartCooking`)
+  is null in 1.3 → no dead button ships; 1.4 flips it on. The route is
+  registered but not yet the destination for recipe taps — that rewiring
+  rides with 1.5 (home feed). Pure `IngredientScaler` + `Routes.recipe`
+  unit-tested vs the real Tuscan + Milk Bread lines and the encode cases;
+  suite 54/0/0/0, `assembleZapstoreDebug` clean.
 - **1.4** CookMode — keep-screen-on, step paging, inline timers, scaling.
 - **1.5** Home foodstr feed — recipes (30023 `#zapcooking`) + `#foodstr`
   notes via the existing FeedScreen/HashtagFeed infra.
