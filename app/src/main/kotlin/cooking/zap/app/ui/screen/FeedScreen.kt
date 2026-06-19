@@ -175,6 +175,7 @@ fun FeedScreen(
     onWallet: () -> Unit = {},
     onLists: () -> Unit = {},
     onRecipes: () -> Unit = {},
+    onSousChef: () -> Unit = {},
     onOnlyFood: () -> Unit = {},
     onDrafts: () -> Unit = {},
     onSocialGraph: () -> Unit = {},
@@ -689,6 +690,10 @@ fun FeedScreen(
                 onRecipes = {
                     scope.launch { drawerState.close() }
                     onRecipes()
+                },
+                onSousChef = {
+                    scope.launch { drawerState.close() }
+                    onSousChef()
                 },
                 onOnlyFood = {
                     scope.launch { drawerState.close() }

@@ -276,6 +276,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         relayPool, eventRepo, subManager, viewModelScope, processingDispatcher
     )
 
+    /** zap.cooking backend client (membership today; Phase 2 AI endpoints). */
+    val zapCookingApi = cooking.zap.app.api.ZapCookingApi()
+
     val interfacePrefs = InterfacePreferences(app)
     val nwcRepo = NwcRepository(app, relayPool, pubkeyHex)
     val sparkRepo = SparkRepository(app, pubkeyHex)

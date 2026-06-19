@@ -1,31 +1,22 @@
 package cooking.zap.app.ui.screen
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -39,31 +30,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
-import cooking.zap.app.nostr.IngredientScaler
 import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.nostr.toNpub
 import cooking.zap.app.repo.EventRepository
 import cooking.zap.app.ui.component.ActionBar
 import cooking.zap.app.ui.component.ProfilePicture
+import cooking.zap.app.ui.component.recipeBody
 
 /**
  * Recipe reading view — branched from [ArticleScreen] (a recipe IS a kind
- * 30023 event), but laid out from the structured [RecipeParser.Recipe]:
- * hero image, summary, prep/cook/servings, a serving scaler, chef's notes,
- * ingredients, and numbered directions. The engagement bar ([ActionBar]) is
- * reused unchanged — zapping a recipe is the core on-brand action.
+ * 30023 event), laid out from the structured [RecipeParser.Recipe] via the
+ * shared [recipeBody] (hero, summary, prep/cook/servings, serving scaler,
+ * chef's notes, ingredients, directions). The engagement bar ([ActionBar]) is
+ * appended below the body — zapping a recipe is the core on-brand action. The
+ * byline and "Start cooking" button are passed as [recipeBody] header slots.
  *
- * Scope (concern 1.3): the comment THREAD is deferred (the heavy part);
- * cook mode is wired in 1.4 via [onStartCooking] (when null, no button
- * renders, so no dead UI ships).
+ * Scope (concern 1.3): the comment THREAD is deferred; cook mode is wired in
+ * 1.4 via [onStartCooking] (when null, no button renders).
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecipeDetailScreen(
     viewModel: cooking.zap.app.viewmodel.RecipeDetailViewModel,
@@ -140,25 +127,12 @@ fun RecipeDetailScreen(
             }
             else -> {
                 LazyColumn(Modifier.fillMaxSize().padding(padding)) {
-                    item(key = "header") {
-                        Column(Modifier.padding(horizontal = 16.dp)) {
-                            current.image?.let { image ->
-                                AsyncImage(
-                                    model = image,
-                                    contentDescription = current.title,
-                                    contentScale = ContentScale.FillWidth,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .padding(top = 8.dp),
-                                )
-                                Spacer(Modifier.height(16.dp))
-                            }
-                            Text(
-                                text = current.title ?: "Untitled",
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
+                    recipeBody(
+                        recipe = current,
+                        multiplier = multiplier,
+                        onMultiplierChange = { multiplier = it },
+                        onHashtagClick = onHashtagClick,
+                        headerAuthorSlot = {
                             if (authorPubkey != null) {
                                 Spacer(Modifier.height(12.dp))
                                 Row(
@@ -175,101 +149,16 @@ fun RecipeDetailScreen(
                                     )
                                 }
                             }
-                            current.summary?.takeIf { it.isNotBlank() }?.let { summary ->
-                                Spacer(Modifier.height(12.dp))
-                                Text(
-                                    text = summary,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontStyle = FontStyle.Italic,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            MetaChips(current.content.details, multiplier)
-                            if (current.hashtags.isNotEmpty()) {
-                                Spacer(Modifier.height(8.dp))
-                                FlowRow {
-                                    current.hashtags.forEach { tag ->
-                                        SuggestionChip(
-                                            onClick = { onHashtagClick?.invoke(tag) },
-                                            label = { Text(tag) },
-                                            modifier = Modifier.padding(end = 6.dp),
-                                        )
-                                    }
-                                }
-                            }
+                        },
+                        headerTrailingSlot = {
                             if (onStartCooking != null && current.content.directions.isNotEmpty()) {
                                 Spacer(Modifier.height(12.dp))
                                 androidx.compose.material3.Button(onClick = { onStartCooking(current) }) {
                                     Text("Start cooking")
                                 }
                             }
-                        }
-                    }
-
-                    current.content.chefNotes?.takeIf { it.isNotBlank() }?.let { notes ->
-                        item(key = "chef-notes") {
-                            Section(title = "Chef's notes") {
-                                Text(
-                                    text = notes,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                            }
-                        }
-                    }
-
-                    if (current.content.ingredients.isNotEmpty()) {
-                        item(key = "ingredients") {
-                            Section(title = "Ingredients") {
-                                ScalerChips(multiplier) { multiplier = it }
-                                Spacer(Modifier.height(8.dp))
-                                current.content.ingredients.forEach { line ->
-                                    Row(Modifier.padding(vertical = 3.dp)) {
-                                        Text("•  ", color = MaterialTheme.colorScheme.primary)
-                                        Text(
-                                            text = IngredientScaler.scaleLine(line, multiplier),
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (current.content.directions.isNotEmpty()) {
-                        item(key = "directions") {
-                            Section(title = "Directions") {
-                                current.content.directions.forEachIndexed { index, step ->
-                                    Row(Modifier.padding(vertical = 4.dp)) {
-                                        Text(
-                                            text = "${index + 1}.",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.width(28.dp),
-                                        )
-                                        Text(
-                                            text = step,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    current.content.additionalMarkdown?.takeIf { it.isNotBlank() }?.let { extra ->
-                        item(key = "additional") {
-                            Section(title = "Additional resources") {
-                                Text(
-                                    text = extra,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
+                        },
+                    )
 
                     val recipeEvent = event
                     if (recipeEvent != null) {
@@ -314,50 +203,5 @@ fun RecipeDetailScreen(
                 }
             }
         }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun MetaChips(details: RecipeParser.RecipeDetails, multiplier: Double) {
-    val prep = details.prepTime
-    val cook = details.cookTime
-    // Servings scales with the multiplier (the only Details field that does —
-    // prep/cook are free-text durations that don't).
-    val servings = details.servings?.let { IngredientScaler.scaleLine(it, multiplier) }
-    if (prep == null && cook == null && servings == null) return
-    Spacer(Modifier.height(12.dp))
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        prep?.let { AssistChip(onClick = {}, label = { Text("Prep $it") }) }
-        cook?.let { AssistChip(onClick = {}, label = { Text("Cook $it") }) }
-        servings?.let { AssistChip(onClick = {}, label = { Text("Serves $it") }) }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun ScalerChips(multiplier: Double, onSelect: (Double) -> Unit) {
-    val options = listOf(0.5 to "½×", 1.0 to "1×", 2.0 to "2×", 3.0 to "3×")
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        options.forEach { (value, label) ->
-            FilterChip(
-                selected = multiplier == value,
-                onClick = { onSelect(value) },
-                label = { Text(label) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(8.dp))
-        content()
     }
 }

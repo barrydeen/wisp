@@ -392,9 +392,22 @@ VM/screen, **Chrome Custom Tabs** (`androidx.browser`, absent) for the
 membership link-out, `MembershipRepository` (Phase 3).
 
 **Proposed breakdown + build order (one concern each):**
-- **2.0** API plumbing — `postJson` + request/response models. Tiny; underpins all.
-- **2.1** Sous Chef — URL import → **structured preview only** (read-only),
-  reusing `ZapCookingApi`. Free/unauthed URL path. **No posting.** (See decision.)
+- **2.0** ✅ API plumbing — `ZapCookingApi.postJson` (unauth POST, surfaces the
+  HTTP code for 400/429/403) + `extractRecipeFromUrl` + `ExtractRecipeResponse`/
+  `NormalizedRecipe` models + `parseError`. Folded into the 2.1 PR (no
+  standalone consumer).
+- **2.1** ✅ Sous Chef — URL import → **read-only preview** (no posting). Drawer
+  "Sous Chef" entry → `Routes.SOUS_CHEF` → `SousChefScreen` (URL field +
+  paste + Import) → `SousChefViewModel.import` calls the free anon
+  `/api/extract-recipe/public` → maps `NormalizedRecipe.toRecipePreview()` →
+  renders via the **shared `recipeBody`** (extracted from `RecipeDetailScreen`,
+  which is pixel-identical after — byline + Start-cooking via header slots,
+  `ActionBar` still appended). Errors: 400→server message, 429→"try again",
+  else generic. Empty `imageUrls` guarded (no hero). "Save coming soon"
+  affordance (Save = 2.2). Golden-tested vs the live *Easy Meatloaf* response.
+  Suite 63/0/0/0. ⚠️ PRE-SHIP: the drawer mark is a placeholder
+  (`AutoAwesome`) — port the real Sous Chef SVG for symbol parity before
+  release.
 - **2.2** Recipe-create pipeline — `RecipeSerializer` (2.2a, pure+tested) →
   kind-30023 publish + image upload reuse (2.2b) → wire Sous Chef preview to
   **Save** (2.2c, needs a signing key). The create pipeline you need anyway.

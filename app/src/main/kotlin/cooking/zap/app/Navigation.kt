@@ -78,6 +78,7 @@ import cooking.zap.app.ui.screen.ArticleScreen
 import cooking.zap.app.ui.screen.RecipeDetailScreen
 import cooking.zap.app.ui.screen.RecipeFeedScreen
 import cooking.zap.app.ui.screen.OnlyFoodFeedScreen
+import cooking.zap.app.ui.screen.SousChefScreen
 import cooking.zap.app.ui.screen.BookmarksScreen
 import cooking.zap.app.ui.screen.HashtagFeedScreen
 import cooking.zap.app.ui.screen.KeysScreen
@@ -109,6 +110,7 @@ import cooking.zap.app.viewmodel.ArticleViewModel
 import cooking.zap.app.viewmodel.RecipeDetailViewModel
 import cooking.zap.app.viewmodel.RecipeFeedViewModel
 import cooking.zap.app.viewmodel.OnlyFoodFeedViewModel
+import cooking.zap.app.viewmodel.SousChefViewModel
 import cooking.zap.app.viewmodel.AuthViewModel
 import cooking.zap.app.viewmodel.ComposeViewModel
 import cooking.zap.app.viewmodel.DmConversationViewModel
@@ -185,6 +187,7 @@ object Routes {
     const val RECIPE_DETAIL = "recipe/{author}/{dTag}"
     const val RECIPES = "recipes"
     const val ONLY_FOOD = "onlyfood"
+    const val SOUS_CHEF = "souschef"
 
     /**
      * Build a recipe-detail route, URL-encoding the d-tag. Recipe kind is the
@@ -935,6 +938,9 @@ fun WispNavHost(
                 },
                 onRecipes = {
                     navController.navigate(Routes.RECIPES)
+                },
+                onSousChef = {
+                    navController.navigate(Routes.SOUS_CHEF)
                 },
                 onOnlyFood = {
                     navController.navigate(Routes.ONLY_FOOD)
@@ -2672,6 +2678,15 @@ fun WispNavHost(
                 onRecipeClick = { author, dTag -> navController.navigate(Routes.recipe(author, dTag)) },
                 onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.SOUS_CHEF) {
+            val sousChefViewModel: SousChefViewModel = viewModel()
+            SousChefScreen(
+                viewModel = sousChefViewModel,
+                onImport = { url -> sousChefViewModel.import(url, feedViewModel.zapCookingApi) },
+                onBack = { navController.popBackStack() },
             )
         }
 

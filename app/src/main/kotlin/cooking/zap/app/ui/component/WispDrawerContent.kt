@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Restaurant
@@ -95,6 +96,7 @@ fun WispDrawerContent(
     onMessages: () -> Unit,
     onWallet: () -> Unit,
     onRecipes: () -> Unit = {},
+    onSousChef: () -> Unit = {},
     onOnlyFood: () -> Unit = {},
     onLists: () -> Unit = {},
     onDrafts: () -> Unit = {},
@@ -432,6 +434,14 @@ fun WispDrawerContent(
             label = { Text(stringResource(R.string.drawer_recipes)) },
             selected = false,
             onClick = onRecipes,
+            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
+        )
+        NavigationDrawerItem(
+            // Placeholder mark — port the real Sous Chef SVG before release (build doc §Phase 2).
+            icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null) },
+            label = { Text(stringResource(R.string.drawer_souschef)) },
+            selected = false,
+            onClick = onSousChef,
             modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(

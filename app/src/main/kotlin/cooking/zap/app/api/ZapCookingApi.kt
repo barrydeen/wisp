@@ -92,6 +92,44 @@ class ZapCookingApi(
         execute(Request.Builder().url(url).get().build(), deserializer)
     }
 
+    /**
+     * Unauthenticated JSON POST on `Dispatchers.IO`. The Phase 2 AI endpoints
+     * gate on a client-supplied `pubkey` in the body (not NIP-98 — see build
+     * doc §Phase 2), so they use this rather than [authedPost]. Non-2xx throws
+     * [ZapCookingApiException] carrying the HTTP code + body, so callers can
+     * distinguish 400 (bad URL) / 429 (rate-limited) / 403 (membership).
+     */
+    private suspend fun <T> postJson(
+        path: String,
+        bodyString: String,
+        deserializer: DeserializationStrategy<T>,
+    ): T = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url("$baseUrl$path")
+            .post(bodyString.toRequestBody(jsonMediaType))
+            .build()
+        execute(request, deserializer)
+    }
+
+    /**
+     * `POST /api/extract-recipe/public` — anon URL-only recipe import (Sous
+     * Chef, concern 2.1). Free + per-IP rate-limited; no pubkey, no NIP-98.
+     * Returns the structured [NormalizedRecipe], NOT markdown.
+     */
+    suspend fun extractRecipeFromUrl(url: String): ExtractRecipeResponse =
+        postJson(
+            "/api/extract-recipe/public",
+            json.encodeToString(ExtractUrlRequest.serializer(), ExtractUrlRequest(url)),
+            ExtractRecipeResponse.serializer(),
+        )
+
+    /** Best-effort extraction of the server's `{ "error": ... }` from a 4xx body. */
+    fun parseError(body: String): String? = try {
+        json.decodeFromString(ExtractRecipeResponse.serializer(), body).error
+    } catch (_: Exception) {
+        null
+    }
+
     /** Single error/decode path. Call only from a `Dispatchers.IO` context. */
     private fun <T> execute(request: Request, deserializer: DeserializationStrategy<T>): T {
         client.newCall(request).execute().use { resp ->
@@ -108,6 +146,67 @@ class ZapCookingApi(
 
 @Serializable
 private data class CheckStatusRequest(val pubkey: String)
+
+@Serializable
+private data class ExtractUrlRequest(val url: String)
+
+/** `/api/extract-recipe(/public)` response. Lenient — unknown keys ignored. */
+@Serializable
+data class ExtractRecipeResponse(
+    val success: Boolean = false,
+    val recipe: NormalizedRecipe? = null,
+    val error: String? = null,
+)
+
+/**
+ * The structured recipe the import endpoint returns — NOT markdown. Field
+ * names match the server's `NormalizedRecipe` exactly (validated live). All
+ * defaulted so a partial response never throws.
+ */
+@Serializable
+data class NormalizedRecipe(
+    val title: String = "",
+    val summary: String = "",
+    val chefsnotes: String = "",
+    val preptime: String = "",
+    val cooktime: String = "",
+    val servings: String = "",
+    val ingredients: List<String> = emptyList(),
+    val directions: List<String> = emptyList(),
+    val tags: List<String> = emptyList(),
+    val imageUrls: List<String> = emptyList(),
+) {
+    /**
+     * Map to a [cooking.zap.app.nostr.RecipeParser.Recipe] for the read-only
+     * import preview, reusing the recipe-detail rendering. Pure (unit-tested).
+     * `id`/`author`/`dTag` are empty (not a published event); the missing
+     * author means the preview shows no byline/date. Empty `imageUrls` →
+     * `image = null` → no hero (guarded — never `imageUrls.first` on empty).
+     */
+    fun toRecipePreview(): cooking.zap.app.nostr.RecipeParser.Recipe =
+        cooking.zap.app.nostr.RecipeParser.Recipe(
+            id = "",
+            author = "",
+            dTag = "",
+            title = title.ifBlank { null },
+            image = imageUrls.firstOrNull(),
+            summary = summary.ifBlank { null },
+            publishedAt = 0L,
+            hashtags = tags,
+            categories = emptyList(),
+            content = cooking.zap.app.nostr.RecipeParser.RecipeContent(
+                chefNotes = chefsnotes.ifBlank { null },
+                details = cooking.zap.app.nostr.RecipeParser.RecipeDetails(
+                    prepTime = preptime.ifBlank { null },
+                    cookTime = cooktime.ifBlank { null },
+                    servings = servings.ifBlank { null },
+                ),
+                ingredients = ingredients,
+                directions = directions,
+                additionalMarkdown = null,
+            ),
+        )
+}
 
 /**
  * Response for both `/api/membership` (public) and
