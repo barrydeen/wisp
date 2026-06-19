@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -75,6 +76,7 @@ import cooking.zap.app.ui.screen.SocialGraphScreen
 import cooking.zap.app.ui.screen.BookmarkSetScreen
 import cooking.zap.app.ui.screen.ArticleScreen
 import cooking.zap.app.ui.screen.RecipeDetailScreen
+import cooking.zap.app.ui.screen.FoodstrFeedScreen
 import cooking.zap.app.ui.screen.BookmarksScreen
 import cooking.zap.app.ui.screen.HashtagFeedScreen
 import cooking.zap.app.ui.screen.KeysScreen
@@ -104,6 +106,7 @@ import cooking.zap.app.ui.screen.WalletScreen
 import cooking.zap.app.viewmodel.BlossomServersViewModel
 import cooking.zap.app.viewmodel.ArticleViewModel
 import cooking.zap.app.viewmodel.RecipeDetailViewModel
+import cooking.zap.app.viewmodel.FoodstrFeedViewModel
 import cooking.zap.app.viewmodel.AuthViewModel
 import cooking.zap.app.viewmodel.ComposeViewModel
 import cooking.zap.app.viewmodel.DmConversationViewModel
@@ -178,6 +181,7 @@ object Routes {
     const val ARTICLE = "article/{kind}/{author}/{dTag}"
     const val LIVE_STREAM = "live_stream/{hostPubkey}/{dTag}?relayHint={relayHint}"
     const val RECIPE_DETAIL = "recipe/{author}/{dTag}"
+    const val FOODSTR = "foodstr"
 
     /**
      * Build a recipe-detail route, URL-encoding the d-tag. Recipe kind is the
@@ -188,6 +192,32 @@ object Routes {
      */
     fun recipe(author: String, dTag: String): String =
         "recipe/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}"
+
+    /** The plain article route (kind 30023 long-form that isn't a recipe). */
+    fun article(kind: Int, author: String, dTag: String): String =
+        "article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}"
+}
+
+/**
+ * Open an addressable 30023 event as a **recipe** if it carries the recipe
+ * tag, otherwise as a plain article. Detection reads the already-cached
+ * event ([EventRepository.findAddressableEvent]) — in a feed tap the event is
+ * normally present. **Cache-miss guard:** if the event was evicted between
+ * render and tap (or it simply isn't a recipe), fall back to the article
+ * route — never route to a recipe screen with no event behind it.
+ */
+fun NavController.openArticleOrRecipe(
+    eventRepo: cooking.zap.app.repo.EventRepository,
+    kind: Int,
+    author: String,
+    dTag: String,
+) {
+    val event = eventRepo.findAddressableEvent(kind, author, dTag)
+    if (event != null && cooking.zap.app.nostr.RecipeParser.isRecipe(event)) {
+        navigate(Routes.recipe(author, dTag))
+    } else {
+        navigate(Routes.article(kind, author, dTag))
+    }
 }
 
 /**
@@ -900,6 +930,9 @@ fun WispNavHost(
                 onWallet = {
                     navController.navigate(Routes.WALLET)
                 },
+                onRecipes = {
+                    navController.navigate(Routes.FOODSTR)
+                },
                 onLists = {
                     navController.navigate(Routes.LISTS_HUB)
                 },
@@ -950,7 +983,7 @@ fun WispNavHost(
                     navController.navigate("hashtag_set/$encodedName/$encodedTags")
                 },
                 onArticleClick = { kind, author, dTag ->
-                    navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
+                    navController.openArticleOrRecipe(feedViewModel.eventRepo, kind, author, dTag)
                 },
                 onGroupRoom = { relayUrl, groupId ->
                     val encoded = android.util.Base64.encodeToString(
@@ -1194,7 +1227,7 @@ fun WispNavHost(
                 translationRepo = feedViewModel.translationRepo,
                 autoTranslate = feedViewModel.interfacePrefs.isAutoTranslate(),
                 onArticleClick = { kind, articleAuthor, articleDTag ->
-                    navController.navigate("article/$kind/$articleAuthor/${java.net.URLEncoder.encode(articleDTag, "UTF-8")}")
+                    navController.openArticleOrRecipe(feedViewModel.eventRepo, kind, articleAuthor, articleDTag)
                 },
                 onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
                 resolvedEmojis = profileResolvedEmojis,
@@ -1998,7 +2031,7 @@ fun WispNavHost(
                     navController.popBackStack(Routes.FEED, inclusive = false)
                 },
                 onArticleClick = { kind, author, dTag ->
-                    navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
+                    navController.openArticleOrRecipe(feedViewModel.eventRepo, kind, author, dTag)
                 },
                 translationRepo = feedViewModel.translationRepo,
                 autoTranslate = feedViewModel.interfacePrefs.isAutoTranslate(),
@@ -2140,7 +2173,7 @@ fun WispNavHost(
                         navController.popBackStack(Routes.FEED, inclusive = false)
                     },
                     onArticleClick = { kind, author, dTag ->
-                        navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
+                        navController.openArticleOrRecipe(feedViewModel.eventRepo, kind, author, dTag)
                     },
                     onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
                     onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
@@ -2292,7 +2325,7 @@ fun WispNavHost(
                         navController.popBackStack(Routes.FEED, inclusive = false)
                     },
                     onArticleClick = { kind, author, dTag ->
-                        navController.navigate("article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}")
+                        navController.openArticleOrRecipe(feedViewModel.eventRepo, kind, author, dTag)
                     },
                     onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
                     onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
@@ -2452,7 +2485,7 @@ fun WispNavHost(
                         navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
                     },
                     onArticleClick = { k, a, d ->
-                        navController.navigate("article/$k/$a/${java.net.URLEncoder.encode(d, "UTF-8")}")
+                        navController.openArticleOrRecipe(feedViewModel.eventRepo, k, a, d)
                     },
                     onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
                     onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
@@ -2621,6 +2654,99 @@ fun WispNavHost(
                 unicodeEmojis = recipeUnicodeEmojis,
                 // Cook mode (onStartCooking) lands in 1.4 — null here, so no button renders.
                 onStartCooking = null
+            )
+        }
+
+        composable(Routes.FOODSTR) {
+            val foodstrViewModel: FoodstrFeedViewModel = viewModel()
+            LaunchedEffect(Unit) {
+                foodstrViewModel.load(feedViewModel.recipeRepo, feedViewModel.relayPool, feedViewModel.eventRepo)
+            }
+
+            var foodstrZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
+            val foodstrZapInProgress by feedViewModel.zapInProgress.collectAsState()
+            var foodstrZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
+            val isFoodstrNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
+
+            LaunchedEffect(Unit) {
+                feedViewModel.zapSuccess.collect { eventId ->
+                    foodstrZapAnimatingIds = foodstrZapAnimatingIds + eventId
+                    kotlinx.coroutines.delay(1500)
+                    foodstrZapAnimatingIds = foodstrZapAnimatingIds - eventId
+                }
+            }
+
+            if (foodstrZapTarget != null) {
+                val foodstrZapRecipient = foodstrZapTarget!!.pubkey
+                val foodstrUserHasDmRelays = feedViewModel.relayPool.hasDmRelays()
+                var foodstrRecipientHasDmRelays by remember(foodstrZapRecipient) {
+                    mutableStateOf(feedViewModel.relayListRepo.hasDmRelays(foodstrZapRecipient))
+                }
+                if (foodstrUserHasDmRelays && !foodstrRecipientHasDmRelays) {
+                    LaunchedEffect(foodstrZapRecipient) {
+                        foodstrRecipientHasDmRelays = feedViewModel.fetchDmRelaysIfMissing(foodstrZapRecipient)
+                    }
+                }
+                ZapDialog(
+                    isWalletConnected = isFoodstrNwcConnected,
+                    onDismiss = { foodstrZapTarget = null },
+                    onZap = { amountMsats, message, isAnonymous, isPrivate ->
+                        val event = foodstrZapTarget ?: return@ZapDialog
+                        foodstrZapTarget = null
+                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
+                    },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
+                    canPrivateZap = feedViewModel.hasLocalKeypair && foodstrUserHasDmRelays && foodstrRecipientHasDmRelays
+                )
+            }
+
+            val foodstrNoteActions = remember {
+                cooking.zap.app.ui.component.NoteActions(
+                    onReply = { event ->
+                        replyTarget = event
+                        quoteTarget = null
+                        composeViewModel.clear()
+                        navController.navigate(Routes.COMPOSE)
+                    },
+                    onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
+                    onRepost = { event -> feedViewModel.sendRepost(event) },
+                    onQuote = { event ->
+                        quoteTarget = event
+                        replyTarget = null
+                        composeViewModel.clear()
+                        navController.navigate(Routes.COMPOSE)
+                    },
+                    onZap = { event -> foodstrZapTarget = event },
+                    onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
+                    onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
+                    onAddToList = { eventId -> addToListEventId = eventId },
+                    onFollowAuthor = { pubkey -> feedViewModel.toggleFollow(pubkey) },
+                    onBlockAuthor = { pubkey -> feedViewModel.blockUser(pubkey) },
+                    onPin = { eventId -> feedViewModel.togglePin(eventId) },
+                    isFollowing = { pubkey -> feedViewModel.contactRepo.isFollowing(pubkey) },
+                    userPubkey = feedViewModel.getUserPubkey(),
+                    nip05Repo = feedViewModel.nip05Repo,
+                    onHashtagClick = { clickedTag ->
+                        navController.navigate("hashtag/${java.net.URLEncoder.encode(clickedTag, "UTF-8")}")
+                    },
+                    onArticleClick = { kind, author, dTag ->
+                        navController.openArticleOrRecipe(feedViewModel.eventRepo, kind, author, dTag)
+                    },
+                    onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
+                    onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) }
+                )
+            }
+
+            FoodstrFeedScreen(
+                viewModel = foodstrViewModel,
+                eventRepo = feedViewModel.eventRepo,
+                userPubkey = feedViewModel.getUserPubkey(),
+                noteActions = foodstrNoteActions,
+                onRecipeClick = { author, dTag -> navController.navigate(Routes.recipe(author, dTag)) },
+                onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
+                onBack = { navController.popBackStack() },
+                zapAnimatingIds = foodstrZapAnimatingIds,
+                zapInProgressIds = foodstrZapInProgress
             )
         }
 

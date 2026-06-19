@@ -218,8 +218,25 @@ Sub-concern breakdown (one PR each, off main, no stacking):
   unit-tested vs the real Tuscan + Milk Bread lines and the encode cases;
   suite 54/0/0/0, `assembleZapstoreDebug` clean.
 - **1.4** CookMode — keep-screen-on, step paging, inline timers, scaling.
-- **1.5** Home foodstr feed — recipes (30023 `#zapcooking`) + `#foodstr`
-  notes via the existing FeedScreen/HashtagFeed infra.
+- **1.5** ✅ Home foodstr feed — `FoodstrFeedViewModel` merges recipes
+  (reusing `RecipeRepository` wholesale: `ARTICLES_RELAYS` union + coordinate
+  dedup) with `#foodstr` kind:1 notes (lightweight hashtag sub on the search
+  relay) into one time-sorted `FoodstrItem` stream (recipes by `publishedAt`,
+  notes by `created_at`; pure merge unit-tested). `FoodstrFeedScreen` renders
+  recipes as a lightweight `RecipeCard` (tap → recipe route) and notes via the
+  shared `PostCard` with full inline `NoteActions`/zap. **Part A tap-rewiring:**
+  `NavController.openArticleOrRecipe()` opens any 30023 as a recipe when
+  `RecipeParser.isRecipe`, else the article route — with a **cache-miss guard**
+  (evicted event → article fallback, never a recipe screen with no event);
+  applied to all 6 `onArticleClick` sites, so recipes in the *existing* home
+  feed now open the recipe screen too. Reachable via a "Recipes" drawer entry
+  (`WispDrawerContent` → `FeedScreen.onRecipes` → `Routes.FOODSTR`).
+  **Deferred:** the post-login default-landing swap (FEED→FOODSTR anchor
+  repoint touches bottom-nav/back-stack that can't be verified without an
+  emulator here — fast follow after a device smoke test). Conscious MVP
+  asymmetry: notes zap inline, recipe cards zap one tap into detail.
+  `FeedSubscriptionManager`/`FeedViewModel` core untouched. Suite 57/0/0/0,
+  `assembleZapstoreDebug` clean.
 
 ### Phase 1.5 — Onboarding foodstr cleanup (DEFERRED)
 Tracked here so it isn't lost; **do not start until Phase 1 lands.** Closes
