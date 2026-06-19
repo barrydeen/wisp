@@ -2,8 +2,6 @@ package cooking.zap.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import cooking.zap.app.ml.NSpamClassifier
-import cooking.zap.app.ml.NoteInput
 import cooking.zap.app.nostr.ClientMessage
 import cooking.zap.app.nostr.Filter
 import cooking.zap.app.nostr.FoodHashtags
@@ -27,9 +25,12 @@ import kotlinx.coroutines.withTimeoutOrNull
  * server-side `authors` filter). Members + replies are deferred (Phase 3 /
  * later).
  *
- * Filtering mirrors the rest of the app: notes are dropped on mute
- * (blocked author or muted word) and on NSpam score `>= 0.7` (same threshold
- * the notification path uses; fail-open if the classifier hasn't loaded).
+ * Filtering is mute-only (blocked author or muted word) — matching the
+ * proven `HashtagFeedViewModel` and the web foodstr feed, neither of which
+ * runs a spam classifier. (v1 dropped NSpam: running `score()` inside the
+ * relay collector both over-filtered hashtag/link-heavy food posts at the
+ * `>= 0.7` threshold and risked an exception cancelling the whole stream.
+ * Re-adding spam filtering correctly is a tracked follow-up — see build doc.)
  *
  * Pagination is web-style time-windowed (global 7-day initial, following
  * 3-day; older windows on scroll via `until = oldest - 1`). The subscription
@@ -71,7 +72,6 @@ class OnlyFoodFeedViewModel : ViewModel() {
         val eventRepo: EventRepository,
         val muteRepo: MuteRepository,
         val contactRepo: ContactRepository,
-        val nspam: NSpamClassifier?,
     )
 
     fun init(
@@ -79,10 +79,9 @@ class OnlyFoodFeedViewModel : ViewModel() {
         eventRepo: EventRepository,
         muteRepo: MuteRepository,
         contactRepo: ContactRepository,
-        nspam: NSpamClassifier?,
     ) {
         if (deps != null) return
-        deps = Deps(relayPool, eventRepo, muteRepo, contactRepo, nspam)
+        deps = Deps(relayPool, eventRepo, muteRepo, contactRepo)
         startFresh()
     }
 
@@ -106,10 +105,15 @@ class OnlyFoodFeedViewModel : ViewModel() {
         endReached = false
         _emptyFollows.value = false
         _notes.value = emptyList()
-        subscribe(since = nowSeconds() - windowSeconds(), until = null, initial = true)
+        // No `since` floor on the initial load — match the working
+        // HashtagFeedViewModel. The search/archive relay has weak recent
+        // coverage, so a 7-day `since` excluded everything; "newest 100, no
+        // floor" is what actually returns posts. The window only matters for
+        // pagination (loadMore), where `until` already bounds the query.
+        subscribe(since = null, until = null, initial = true)
     }
 
-    private fun subscribe(since: Long, until: Long?, initial: Boolean) {
+    private fun subscribe(since: Long?, until: Long?, initial: Boolean) {
         val d = deps ?: return
         val mode = _mode.value
 
@@ -180,11 +184,6 @@ class OnlyFoodFeedViewModel : ViewModel() {
         if (follows != null && event.pubkey !in follows) return false
         if (d.muteRepo.isBlocked(event.pubkey)) return false
         if (d.muteRepo.containsMutedWord(event.content)) return false
-        val nspam = d.nspam
-        if (nspam != null) {
-            val score = nspam.score(listOf(NoteInput(event.content, event.tags, event.created_at)))
-            if (score != null && score >= NSPAM_SPAM_THRESHOLD) return false
-        }
         return true
     }
 
@@ -209,7 +208,6 @@ class OnlyFoodFeedViewModel : ViewModel() {
     }
 
     companion object {
-        private const val NSPAM_SPAM_THRESHOLD = 0.7f
         private const val THREE_DAYS = 3L * 24 * 60 * 60
         private const val SEVEN_DAYS = 7L * 24 * 60 * 60
         private const val AUTHOR_CHUNK = 500

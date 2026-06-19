@@ -2683,7 +2683,6 @@ fun WispNavHost(
                     eventRepo = feedViewModel.eventRepo,
                     muteRepo = feedViewModel.muteRepo,
                     contactRepo = feedViewModel.contactRepo,
-                    nspam = feedViewModel.nspamClassifier,
                 )
             }
 

@@ -248,10 +248,23 @@ Sub-concern breakdown (one PR each, off main, no stacking):
   members + replies deferred). Global = all matching notes (search relay);
   Following = server-side `authors` filter from the kind-3 contact list,
   chunked at 500/REQ (distinct subIds under one prefix, since a same-subId
-  REQ replaces). Filtering mirrors the app: drop on mute (blocked author /
-  muted word) **and** NSpam score `>= 0.7` (fail-open if classifier not
-  loaded). Web-style time-window pagination (global 7d / following 3d; older
-  windows via `until = oldest-1` on infinite scroll). `OnlyFoodFeedScreen` =
+  REQ replaces). **Filtering is mute-only** (blocked author / muted word) —
+  matches the proven mute-only `HashtagFeedViewModel` and the web (no NSpam).
+  NSpam was dropped after the feed came back empty on device: a live relay
+  probe proved `since`/relay were NOT the cause (search.nostrarchives.com
+  returns ~78 food notes all <7d old, with or without `since`), leaving the
+  one filter OnlyFood added over the working HashtagFeed — `score()` run
+  inside the collector, which both over-filtered hashtag/link-heavy food
+  posts at `>= 0.7` and risked an exception cancelling the stream. Initial
+  load takes **no `since` floor** (newest-100, like HashtagFeed); `since`/
+  `until` apply ONLY in `loadMore()` pagination (older windows via
+  `until = oldest-1` on infinite scroll; global 7d / following 3d windows).
+  ⏭️ FORWARD (not done): if Global is spammy in practice, re-add spam
+  filtering CORRECTLY — `score()` in try/catch (keep-on-error so one bad note
+  can't cancel the collector) + the `>= 0.7` threshold verified against real
+  food posts first; and audit existing `score()`-inside-`collect{}` sites
+  (e.g. notifications) for the same stream-cancellation latent bug.
+  `OnlyFoodFeedScreen` =
   Global|Following segmented toggle + shared `PostCard` (full inline
   `NoteActions`/zap) + infinite scroll. Reachable via an "OnlyFood" drawer
   entry. Additive: general/Following feed + `FeedViewModel`/nav structure
