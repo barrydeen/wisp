@@ -95,12 +95,11 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val TAG = "OnboardingSuggestions"
-        private const val WISP_RELAY_URL = "wss://relay.wisp.talk"
         val CREATOR_PUBKEYS = listOf(
             "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d", // fiatjaf
             "319ad3e790634dbe86f14db9c2995b26ee3c6228be55f89c4c7fea9acc01d50a"  // Zap Cooking
         )
-        private val ACTIVE_RELAYS = listOf("wss://premium.primal.net", "wss://nostr.wine", "wss://relay.wisp.talk", "wss://pyramid.fiatjaf.com")
+        private val ACTIVE_RELAYS = listOf("wss://premium.primal.net", "wss://nostr.wine", "wss://pyramid.fiatjaf.com")
         private const val NEWS_RELAY = "wss://news.utxo.one"
 
         private val COLORS = listOf(
@@ -215,13 +214,13 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     ): Boolean {
         val s = signer ?: keyRepo.getKeypair()?.let { LocalSigner(it.privkey, it.pubkey) } ?: return false
         val discovered = _discoveredRelays.value ?: RelayConfig.DEFAULTS
-        // Always include Wisp's own relay in the new account's NIP-65 list,
-        // regardless of what relay probing discovered. Read+write so the new
-        // user both publishes to and reads from it from day one.
-        val relays = if (discovered.any { it.url.equals(WISP_RELAY_URL, ignoreCase = true) }) {
+        // Always include The Pantry (zap.cooking's members relay) in the new
+        // account's NIP-65 list. Read+write so the user publishes to and reads
+        // from it from day one; membership AUTH is enforced relay-side.
+        val relays = if (discovered.any { it.url.equals(RelayConfig.MEMBERS_RELAY, ignoreCase = true) }) {
             discovered
         } else {
-            discovered + RelayConfig(WISP_RELAY_URL, read = true, write = true)
+            discovered + RelayConfig(RelayConfig.MEMBERS_RELAY, read = true, write = true)
         }
 
         return try {

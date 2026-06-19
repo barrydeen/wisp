@@ -471,7 +471,7 @@ private fun JoinGroupDialog(
                     value = inviteLink,
                     onValueChange = { inviteLink = it; showError = false },
                     label = { Text(stringResource(R.string.label_invite_link)) },
-                    placeholder = { Text("chat.example.com'roomid") },
+                    placeholder = { Text("pantry.zap.cooking'roomid") },
                     singleLine = true,
                     isError = showError,
                     supportingText = if (showError) {
