@@ -54,7 +54,6 @@ class RecipeDetailViewModel : ViewModel() {
     val nourishUi: StateFlow<NourishUi> = _nourishUi
 
     private var loadedKey: String? = null
-    private var hasSigningKey: Boolean = false
 
     fun load(
         author: String,
@@ -67,7 +66,6 @@ class RecipeDetailViewModel : ViewModel() {
         val key = "$author:$dTag"
         if (loadedKey == key && _recipe.value != null) return
         loadedKey = key
-        this.hasSigningKey = hasSigningKey
         _isLoading.value = true
         _nourishUi.value = if (hasSigningKey) NourishUi.Loading else NourishUi.Hidden
         viewModelScope.launch {
@@ -101,6 +99,7 @@ class RecipeDetailViewModel : ViewModel() {
         val recipe = _recipe.value ?: return
         val pubkey = signer?.pubkeyHex ?: return // READ_ONLY — no compute
         if (_nourishUi.value == NourishUi.Computing) return
+        val key = loadedKey
         _nourishUi.value = NourishUi.Computing
         viewModelScope.launch {
             val request = NourishComputeRequest(
@@ -115,10 +114,12 @@ class RecipeDetailViewModel : ViewModel() {
                 // Byte-exact with the server: SHA-256 over the raw event content (UTF-8), no trim.
                 contentHash = Nip98.sha256Hex(event.content.toByteArray(Charsets.UTF_8)),
             )
-            _nourishUi.value = when (val r = api.computeNourish(request)) {
-                is NourishComputeResult.Success -> NourishUi.Scored(r.score)
+            val result = api.computeNourish(request)
+            if (loadedKey != key) return@launch // navigated to another recipe — drop stale result
+            _nourishUi.value = when (result) {
+                is NourishComputeResult.Success -> NourishUi.Scored(result.score)
                 NourishComputeResult.MembersOnly -> NourishUi.MembersOnly
-                is NourishComputeResult.Error -> NourishUi.Error(r.message)
+                is NourishComputeResult.Error -> NourishUi.Error(result.message)
             }
         }
     }

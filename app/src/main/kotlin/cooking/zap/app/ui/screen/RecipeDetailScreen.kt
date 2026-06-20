@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
@@ -321,7 +322,7 @@ private fun NourishCompute(onCompute: () -> Unit, computing: Boolean) {
         Button(onClick = onCompute, enabled = !computing) {
             if (computing) {
                 CircularProgressIndicator(
-                    modifier = Modifier.height(18.dp),
+                    modifier = Modifier.size(18.dp),
                     color = MaterialTheme.colorScheme.onPrimary,
                     strokeWidth = 2.dp,
                 )
