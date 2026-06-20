@@ -2593,7 +2593,7 @@ fun WispNavHost(
             val recipeDetailViewModel: RecipeDetailViewModel = viewModel()
             LaunchedEffect(author, dTag) {
                 recipeDetailViewModel.load(
-                    author, dTag, feedViewModel.recipeRepo, feedViewModel.eventRepo,
+                    author, dTag, feedViewModel.recipeRepo,
                     feedViewModel.nourishRepo, hasSigningKey = feedViewModel.signer != null,
                 )
             }

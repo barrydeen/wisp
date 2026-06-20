@@ -443,6 +443,32 @@ membership link-out, `MembershipRepository` (Phase 3).
   (web's "make your title unique" caption mirrored; collision warning deferred);
   **no draft autosave** (state survives rotation, not process death — web
   parity); edit-existing prefill + video upload out of scope. Suite 84/0/0/0.
+- **2.2c** ✅ Recipe-format seam (PURE refactor — zero behavior change, one PR).
+  A `RecipeFormat` abstraction so a future recipe NIP (e.g. `kind 333xx`) plugs
+  in as a second implementation with NO rewrite of screens/feeds/compose or the
+  `RecipeParser.Recipe` domain model. `nostr/RecipeFormat` (interface: `kind`,
+  `formatRank`, `matches`, `parse`, `serialize→UnsignedRecipeEvent`, `slug`,
+  `feedFilter`, `coordinateFilter`) + `Nip23RecipeFormat` (a **thin adapter**
+  delegating verbatim to the retained `RecipeParser`/`RecipeSerializer` — that's
+  what keeps the byte-output and parity tests unchanged) + `RecipeFormats`
+  registry (`active`/`primary`/`forEvent`/`rankOf` — the one-line extension
+  point) + `Nip333RecipeFormat` **stub** (compile-checked against the interface,
+  `TODO()` bodies, **never in `active`/iterated** so they can't fire). Repos
+  rewired through the registry: `RecipeRepository` feed (per-format filter
+  union), `isRecipe`→`forEvent`, parse skip-on-null; **single-recipe fetch fans
+  out per format too** (`requestRecipe` per-format `coordinateFilter`s +
+  `findRecipeEvent` per-format cache dispatch — the detail screen's raw event no
+  longer hardcodes 30023); `RecipePublisher` serializes via `primary`. Read-side
+  cross-format dedup shaped now (not exercised): Stage 1 within-format
+  newest-wins (`recipeCoordinate`), Stage 2 `dedupeAcrossFormats` keyed by
+  `RecipeKey(author, slug)` (kind-independent) with `(formatRank desc,
+  created_at desc, id asc)` canonical-pick — a **true pass-through while one
+  format is active**. ⚠️ Dual-write caveat (flagged in `RecipeFormat` KDoc):
+  rank-before-recency can mask a newer low-rank edit — keep events in lockstep
+  or put recency ahead of rank when dual-write turns on. Parity tests
+  (`RecipeSerializerTest`/`RecipeParserTest`) and `RecipeRepositoryTest` left
+  **byte-untouched**; new `RecipeFormatTest` covers adapter identity, the
+  pass-through, the cross-format pick, and the stub guard. Suite 92/0/0/0.
 - **2.3** Cheffy chat — member-gated chat screen → `/api/zappy` (chat/hungry);
   scan (vision) as 2.3b. Heaviest branding (port `CheffyIcon`/`CheffyAvatar`).
   Recipe-format output can deep-link into 2.2 create.

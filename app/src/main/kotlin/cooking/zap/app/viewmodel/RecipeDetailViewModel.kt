@@ -10,7 +10,6 @@ import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.nostr.NourishScore
 import cooking.zap.app.nostr.RecipeParser
-import cooking.zap.app.repo.EventRepository
 import cooking.zap.app.repo.NourishRepository
 import cooking.zap.app.repo.RecipeRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -59,7 +58,6 @@ class RecipeDetailViewModel : ViewModel() {
         author: String,
         dTag: String,
         recipeRepo: RecipeRepository,
-        eventRepo: EventRepository,
         nourishRepo: NourishRepository,
         hasSigningKey: Boolean,
     ) {
@@ -72,7 +70,9 @@ class RecipeDetailViewModel : ViewModel() {
             val resolved = recipeRepo.requestRecipe(author, dTag)
             if (loadedKey != key) return@launch // a newer recipe was requested — drop stale result
             _recipe.value = resolved
-            _event.value = eventRepo.findAddressableEvent(RecipeParser.RECIPE_KIND, author, dTag)
+            // Per-format dispatch (not a hardcoded 30023 lookup) so a future
+            // second-format recipe resolves its raw event here too.
+            _event.value = recipeRepo.findRecipeEvent(author, dTag)
             _isLoading.value = false
         }
         // Nourish read runs independently (auth'd Pantry round-trip) — never

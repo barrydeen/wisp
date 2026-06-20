@@ -2,8 +2,8 @@ package cooking.zap.app.repo
 
 import cooking.zap.app.nostr.ClientMessage
 import cooking.zap.app.nostr.NostrSigner
+import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.nostr.RecipeParser
-import cooking.zap.app.nostr.RecipeSerializer
 import cooking.zap.app.relay.HttpClientFactory
 import cooking.zap.app.relay.RelayConfig
 import cooking.zap.app.relay.RelayPool
@@ -17,7 +17,8 @@ import okhttp3.Request
  * Publishes a recipe as a signed kind-30023 event (concern 2.2) — the shared
  * create spine (Sous Chef "Save" today; the manual recipe-create modal later).
  *
- * Mirrors the web create flow: serialize via [RecipeSerializer], **re-host the
+ * Mirrors the web create flow: serialize via the primary [RecipeFormat]
+ * ([RecipeFormats.primary] — NIP-23 today), **re-host the
  * cover image** through Blossom so the recipe owns its image (with a fallback
  * to the source URL if re-host fails — Save never blocks on it), sign with the
  * local key, and broadcast to the author's write relays **and**
@@ -106,12 +107,14 @@ class RecipePublisher(
         // Signing/publish can throw — convert to Result.Error (never leave the
         // caller stuck in "Publishing"); still propagate cancellation.
         return try {
-            val content = RecipeSerializer.toContent(recipe)
-            val tags = RecipeSerializer.toTags(title, recipe.summary, imageUrls, categories)
-                .toMutableList()
+            // Serialize via the primary (write) format — NIP-23 today. The
+            // unsigned event is byte-identical to the previous direct
+            // RecipeSerializer call.
+            val unsigned = RecipeFormats.primary.serialize(recipe, title, imageUrls, categories)
+            val tags = unsigned.tags.toMutableList()
             if (includeClientTag) tags.add(listOf("client", "Zap Cooking"))
 
-            val event = signer.signEvent(RecipeParser.RECIPE_KIND, content, tags)
+            val event = signer.signEvent(unsigned.kind, unsigned.content, tags)
             // Cache first so the detail screen renders optimistically (no relay round-trip).
             eventRepo.cacheEvent(event)
 
@@ -120,7 +123,7 @@ class RecipePublisher(
             // Also broadcast to the article relays the Recipes feed reads.
             for (url in RelayConfig.ARTICLES_RELAYS) relayPool.sendToRelayOrEphemeral(url, msg)
 
-            Result.Published(author = signer.pubkeyHex, dTag = RecipeSerializer.slug(title))
+            Result.Published(author = signer.pubkeyHex, dTag = RecipeFormats.primary.slug(title))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

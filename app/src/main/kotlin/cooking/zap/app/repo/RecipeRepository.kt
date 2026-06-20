@@ -1,9 +1,10 @@
 package cooking.zap.app.repo
 
 import cooking.zap.app.nostr.ClientMessage
-import cooking.zap.app.nostr.Filter
 import cooking.zap.app.nostr.NostrEvent
+import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.nostr.RecipeParser
+import cooking.zap.app.nostr.dedupeAcrossFormats
 import cooking.zap.app.relay.RelayConfig
 import cooking.zap.app.relay.RelayPool
 import cooking.zap.app.relay.SubscriptionManager
@@ -76,19 +77,18 @@ class RecipeRepository(
                     if (relayEvent.subscriptionId != subId) return@collect
                     val event = relayEvent.event
                     if (event.id in seenIds) return@collect
-                    if (!RecipeParser.isRecipe(event)) return@collect
+                    if (RecipeFormats.forEvent(event) == null) return@collect
                     seenIds.add(event.id)
                     eventRepo.cacheEvent(event)
                     eventRepo.requestProfileIfMissing(event.pubkey)
                     if (acceptEvent(event)) emitRecipes()
                 }
             }
-            val filter = Filter(
-                kinds = listOf(RecipeParser.RECIPE_KIND),
-                tTags = RecipeParser.RECIPE_HASHTAGS,
-                limit = limit,
-            )
-            val req = ClientMessage.req(subId, filter)
+            // One filter per active format (NIP-23 only today). A single REQ
+            // carries them all; with one format this is byte-identical to the
+            // previous single-filter REQ.
+            val filters = RecipeFormats.active.map { it.feedFilter(limit) }
+            val req = ClientMessage.req(subId, filters)
             var sent = 0
             for (url in RelayConfig.ARTICLES_RELAYS) {
                 if (relayPool.sendToRelayOrEphemeral(url, req)) sent++
@@ -110,28 +110,26 @@ class RecipeRepository(
      * top relays where recipes may not live. Returns null if not found.
      */
     suspend fun requestRecipe(author: String, dTag: String): RecipeParser.Recipe? {
-        eventRepo.findAddressableEvent(RecipeParser.RECIPE_KIND, author, dTag)?.let {
-            return RecipeParser.parse(it)
+        findRecipeEvent(author, dTag)?.let { cached ->
+            return RecipeFormats.forEvent(cached)?.parse(cached)
         }
         val subId = "recipe-one-${subCounter++}"
-        var best: NostrEvent? = null
+        val matches = mutableListOf<NostrEvent>()
         val collector = scope.launch(processingContext) {
             relayPool.relayEvents.collect { relayEvent ->
                 if (relayEvent.subscriptionId != subId) return@collect
                 val event = relayEvent.event
-                if (event.kind != RecipeParser.RECIPE_KIND || event.pubkey != author) return@collect
+                if (event.pubkey != author) return@collect
+                // Must be a recipe in some active format AND address this coordinate.
+                if (RecipeFormats.forEvent(event) == null) return@collect
                 if (event.tags.none { it.size >= 2 && it[0] == "d" && it[1] == dTag }) return@collect
                 eventRepo.cacheEvent(event)
-                best = best?.let { preferNewer(it, event) } ?: event
+                matches.add(event)
             }
         }
-        val filter = Filter(
-            kinds = listOf(RecipeParser.RECIPE_KIND),
-            authors = listOf(author),
-            dTags = listOf(dTag),
-            limit = 1,
-        )
-        val req = ClientMessage.req(subId, filter)
+        // One coordinate filter per active format (queries each format's kind).
+        val filters = RecipeFormats.active.map { it.coordinateFilter(author, dTag) }
+        val req = ClientMessage.req(subId, filters)
         var sent = 0
         for (url in RelayConfig.ARTICLES_RELAYS) {
             if (relayPool.sendToRelayOrEphemeral(url, req)) sent++
@@ -142,7 +140,21 @@ class RecipeRepository(
             collector.cancel()
             subManager.closeSubscription(subId)
         }
-        return best?.let { RecipeParser.parse(it) }
+        // Canonical-pick across formats (and across relay duplicates within one).
+        val winner = dedupeAcrossFormats(matches) { RecipeFormats.rankOf(it) }.firstOrNull()
+        return winner?.let { RecipeFormats.forEvent(it)?.parse(it) }
+    }
+
+    /**
+     * The raw recipe event for a coordinate, from cache only, dispatched across
+     * **all active formats** (the detail screen's engagement bar needs the raw
+     * event; a future second-format recipe must resolve here too, not just in
+     * the feed). Canonical-pick when the coordinate exists in more than one
+     * format. Identical to a single NIP-23 cache lookup while one format is active.
+     */
+    fun findRecipeEvent(author: String, dTag: String): NostrEvent? {
+        val cached = RecipeFormats.active.mapNotNull { eventRepo.findAddressableEvent(it.kind, author, dTag) }
+        return dedupeAcrossFormats(cached) { RecipeFormats.rankOf(it) }.firstOrNull()
     }
 
     /** Drop the in-memory feed (e.g. on account switch). */
@@ -164,8 +176,13 @@ class RecipeRepository(
     }
 
     private fun emitRecipes() {
-        _recipes.value = byCoordinate.values
-            .map { RecipeParser.parse(it) }
+        // Stage 1 (byCoordinate): newest-wins per "kind:author:dTag" — collapses
+        // relay duplicates of the same replaceable event. Stage 2
+        // (dedupeAcrossFormats): collapse the SAME logical recipe across formats
+        // by RecipeKey(author, slug). With one format active, Stage 2 is a
+        // pass-through, so the feed is byte-for-byte what it was.
+        _recipes.value = dedupeAcrossFormats(byCoordinate.values) { RecipeFormats.rankOf(it) }
+            .mapNotNull { RecipeFormats.forEvent(it)?.parse(it) }
             .sortedByDescending { it.publishedAt }
     }
 }

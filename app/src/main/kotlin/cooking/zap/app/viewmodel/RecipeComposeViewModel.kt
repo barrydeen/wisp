@@ -6,8 +6,8 @@ import android.webkit.MimeTypeMap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cooking.zap.app.nostr.NostrSigner
+import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.nostr.RecipeParser
-import cooking.zap.app.nostr.RecipeSerializer
 import cooking.zap.app.repo.BlossomRepository
 import cooking.zap.app.repo.RecipePublisher
 import cooking.zap.app.ui.util.MediaCompressor
@@ -102,8 +102,8 @@ class RecipeComposeViewModel : ViewModel() {
         val v = raw.trim()
         if (v.isEmpty()) return
         // De-dupe on the slugged form so "Italian" and "italian" don't both add.
-        val slug = RecipeSerializer.slug(v.lowercase())
-        if (_categories.value.any { RecipeSerializer.slug(it.lowercase()) == slug }) return
+        val slug = RecipeFormats.primary.slug(v.lowercase())
+        if (_categories.value.any { RecipeFormats.primary.slug(it.lowercase()) == slug }) return
         _categories.update { it + v }
     }
 
@@ -235,7 +235,7 @@ class RecipeComposeViewModel : ViewModel() {
         val recipe = RecipeParser.Recipe(
             id = "",
             author = signer.pubkeyHex,
-            dTag = RecipeSerializer.slug(title),
+            dTag = RecipeFormats.primary.slug(title),
             title = title,
             image = imageUrls.firstOrNull(),
             summary = _summary.value.trim().ifBlank { null },
