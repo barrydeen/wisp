@@ -421,6 +421,28 @@ membership link-out, `MembershipRepository` (Phase 3).
   Gated on a signing key (READ_ONLY can't). Sous Chef "Save" is now live:
   no-image/READ_ONLY block with an explicit reason; after Save, optimistic nav
   to the just-cached recipe (no relay round-trip). Suite 69/0/0/0.
+- **2.2b** ✅ Standalone recipe compose ("Create recipe", one PR) — authors a
+  recipe from scratch on the 2.2 spine. `ui/screen/RecipeComposeScreen` +
+  `viewmodel/RecipeComposeViewModel`: a dedicated full-screen form (NOT an
+  extension of the inherited kind-1 note modal) mirroring the web `/create`
+  field order — title, categories (free-text chips), summary, chef's notes,
+  prep/cook/servings, add/remove ingredient & direction rows, multi-image
+  picker, additional resources. Images upload to Blossom **as picked**
+  (per-image uploading/done/failed + remove); publish is **blocked while any
+  upload is pending or failed** so a half-uploaded image can't be signed in.
+  Validation mirrors web `canPublish` (title, ≥1 category, ≥1 image, ≥1
+  ingredient, ≥1 direction) via `blockReason` — the button shows the reason,
+  never a silent disable. `RecipePublisher` got an **additive** multi-image
+  overload `publish(…, imageUrls: List<String>, …)` (already-hosted URLs →
+  shared serialize/sign/broadcast core, **no re-host**); Sous Chef's original
+  re-host `publish(…)` is untouched. Entry = a single "Create recipe" FAB on
+  the Recipes feed, **hidden for READ_ONLY** (`onCreateRecipe == null`); the
+  general-feed note FAB is unchanged. On success: optimistic nav to the
+  just-cached recipe (same pattern as Sous Chef Save). v1 caveats (TODOs):
+  **same title → same d-tag silently replaces** that author's existing recipe
+  (web's "make your title unique" caption mirrored; collision warning deferred);
+  **no draft autosave** (state survives rotation, not process death — web
+  parity); edit-existing prefill + video upload out of scope. Suite 84/0/0/0.
 - **2.3** Cheffy chat — member-gated chat screen → `/api/zappy` (chat/hungry);
   scan (vision) as 2.3b. Heaviest branding (port `CheffyIcon`/`CheffyAvatar`).
   Recipe-format output can deep-link into 2.2 create.

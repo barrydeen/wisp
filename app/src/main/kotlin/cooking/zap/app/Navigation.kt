@@ -76,6 +76,7 @@ import cooking.zap.app.ui.screen.SocialGraphScreen
 import cooking.zap.app.ui.screen.BookmarkSetScreen
 import cooking.zap.app.ui.screen.ArticleScreen
 import cooking.zap.app.ui.screen.RecipeDetailScreen
+import cooking.zap.app.ui.screen.RecipeComposeScreen
 import cooking.zap.app.ui.screen.RecipeFeedScreen
 import cooking.zap.app.ui.screen.OnlyFoodFeedScreen
 import cooking.zap.app.ui.screen.SousChefScreen
@@ -108,6 +109,7 @@ import cooking.zap.app.ui.screen.WalletScreen
 import cooking.zap.app.viewmodel.BlossomServersViewModel
 import cooking.zap.app.viewmodel.ArticleViewModel
 import cooking.zap.app.viewmodel.RecipeDetailViewModel
+import cooking.zap.app.viewmodel.RecipeComposeViewModel
 import cooking.zap.app.viewmodel.RecipeFeedViewModel
 import cooking.zap.app.viewmodel.OnlyFoodFeedViewModel
 import cooking.zap.app.viewmodel.SousChefViewModel
@@ -188,6 +190,7 @@ object Routes {
     const val RECIPES = "recipes"
     const val ONLY_FOOD = "onlyfood"
     const val SOUS_CHEF = "souschef"
+    const val RECIPE_COMPOSE = "recipe_compose"
 
     /**
      * Build a recipe-detail route, URL-encoding the d-tag. Recipe kind is the
@@ -2683,7 +2686,42 @@ fun WispNavHost(
                 eventRepo = feedViewModel.eventRepo,
                 onRecipeClick = { author, dTag -> navController.navigate(Routes.recipe(author, dTag)) },
                 onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                // READ_ONLY can't sign → no compose entry point.
+                onCreateRecipe = if (signingMode == SigningMode.READ_ONLY) null else {
+                    { navController.navigate(Routes.RECIPE_COMPOSE) }
+                },
+            )
+        }
+
+        composable(Routes.RECIPE_COMPOSE) {
+            val recipeComposeViewModel: RecipeComposeViewModel = viewModel()
+            val context = androidx.compose.ui.platform.LocalContext.current
+            RecipeComposeScreen(
+                viewModel = recipeComposeViewModel,
+                canSign = feedViewModel.signer != null,
+                onPickImages = { uris ->
+                    recipeComposeViewModel.addImages(
+                        uris = uris,
+                        contentResolver = context.contentResolver,
+                        blossomRepo = feedViewModel.blossomRepo,
+                        signer = feedViewModel.signer,
+                    )
+                },
+                onPublish = {
+                    recipeComposeViewModel.publish(
+                        publisher = feedViewModel.recipePublisher,
+                        signer = feedViewModel.signer,
+                        clientTagEnabled = feedViewModel.interfacePrefs.isClientTagEnabled(),
+                    )
+                },
+                onPublished = { author, dTag ->
+                    navController.navigate(Routes.recipe(author, dTag)) {
+                        // Replace the composer in the back stack — back returns to the feed.
+                        popUpTo(Routes.RECIPE_COMPOSE) { inclusive = true }
+                    }
+                },
+                onBack = { navController.popBackStack() },
             )
         }
 

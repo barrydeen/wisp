@@ -38,6 +38,12 @@ class RecipePublisher(
         data class Error(val message: String) : Result
     }
 
+    /**
+     * Sous Chef "Save" path: the recipe carries a single **source image URL**
+     * (from the imported recipe) that we re-host through Blossom so the recipe
+     * owns its image. Re-host failure falls back to the source URL (Save never
+     * blocks on it). Unchanged — this is the original 2.2 entry point.
+     */
     suspend fun publish(
         recipe: RecipeParser.Recipe,
         categories: List<String>,
@@ -51,12 +57,57 @@ class RecipePublisher(
         val sourceImage = recipe.image?.takeIf { it.isNotBlank() }
             ?: return@withContext Result.Error("Add an image to publish this recipe.")
 
+        val imageUrl = try {
+            reHost(sourceImage, signer) ?: sourceImage
+        } catch (e: CancellationException) {
+            throw e
+        }
+        publishCore(recipe, categories, listOf(imageUrl), signer, includeClientTag, title)
+    }
+
+    /**
+     * Manual recipe-compose path: images are **already hosted** on Blossom
+     * (uploaded from the device by the compose screen, which blocks publish
+     * until every upload has resolved), so no re-host — every URL goes straight
+     * into an `image` tag (first = cover), mirroring the web's multi-image
+     * create. Title/image are guaranteed by the screen's validation, but
+     * re-checked here so the publisher is never the one to sign a bad event.
+     */
+    suspend fun publish(
+        recipe: RecipeParser.Recipe,
+        categories: List<String>,
+        imageUrls: List<String>,
+        signer: NostrSigner?,
+        includeClientTag: Boolean,
+    ): Result = withContext(Dispatchers.IO) {
+        if (signer == null) return@withContext Result.Error("Sign in to publish recipes.")
+        val title = recipe.title?.takeIf { it.isNotBlank() }
+            ?: return@withContext Result.Error("This recipe needs a title to publish.")
+        val images = imageUrls.filter { it.isNotBlank() }
+        if (images.isEmpty()) return@withContext Result.Error("Add an image to publish this recipe.")
+        publishCore(recipe, categories, images, signer, includeClientTag, title)
+    }
+
+    /**
+     * Shared serialize → sign → broadcast core. [imageUrls] are final hosted
+     * URLs (re-hosted or device-uploaded); [title] is pre-validated non-blank.
+     * Caches the signed event first so the detail screen can render it
+     * optimistically, then broadcasts to the author's write relays **and**
+     * [RelayConfig.ARTICLES_RELAYS] (the web's "all" publish).
+     */
+    private suspend fun publishCore(
+        recipe: RecipeParser.Recipe,
+        categories: List<String>,
+        imageUrls: List<String>,
+        signer: NostrSigner,
+        includeClientTag: Boolean,
+        title: String,
+    ): Result {
         // Signing/publish can throw — convert to Result.Error (never leave the
-        // caller stuck in "Saving"); still propagate cancellation.
-        try {
-            val imageUrl = reHost(sourceImage, signer) ?: sourceImage
+        // caller stuck in "Publishing"); still propagate cancellation.
+        return try {
             val content = RecipeSerializer.toContent(recipe)
-            val tags = RecipeSerializer.toTags(title, recipe.summary, listOf(imageUrl), categories)
+            val tags = RecipeSerializer.toTags(title, recipe.summary, imageUrls, categories)
                 .toMutableList()
             if (includeClientTag) tags.add(listOf("client", "Zap Cooking"))
 
