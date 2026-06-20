@@ -17,7 +17,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,12 +37,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import cooking.zap.app.nostr.NourishScore
 import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.nostr.toNpub
 import cooking.zap.app.repo.EventRepository
 import cooking.zap.app.viewmodel.RecipeDetailViewModel
 import cooking.zap.app.ui.component.ActionBar
+import cooking.zap.app.ui.component.NourishCard
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.recipeBody
 
@@ -174,7 +173,7 @@ fun RecipeDetailScreen(
                     // Sous Chef preview stays score-free. Hidden/Loading render nothing.
                     when (val n = nourishUi) {
                         is RecipeDetailViewModel.NourishUi.Scored ->
-                            item(key = "nourish") { NourishSection(n.score) }
+                            item(key = "nourish") { NourishCard(n.score) }
                         RecipeDetailViewModel.NourishUi.NotScored ->
                             item(key = "nourish") { NourishCompute(onComputeNourish, computing = false) }
                         RecipeDetailViewModel.NourishUi.Computing ->
@@ -227,75 +226,6 @@ fun RecipeDetailScreen(
                     }
 
                     item(key = "footer") { Spacer(Modifier.height(32.dp)) }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Nourish health-score card (concern 2.4a): overall + label, the 8 dimensions
- * as score bars, and top suggestions. Shown only when a score was read from
- * Pantry. (Pre-ship: port the real Nourish visual for parity with the web.)
- */
-@Composable
-private fun NourishSection(score: NourishScore) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "Nourish",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = "${score.overall}/10 · ${score.overallLabel}",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        score.dimensions.forEach { dim ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-            ) {
-                Text(
-                    text = dim.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.width(124.dp),
-                )
-                LinearProgressIndicator(
-                    progress = { dim.score / 10f },
-                    modifier = Modifier.weight(1f).height(6.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "${dim.score}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.width(20.dp),
-                )
-            }
-        }
-        if (score.improvements.isNotEmpty()) {
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = "Suggestions",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(4.dp))
-            score.improvements.forEach { tip ->
-                Row(Modifier.padding(vertical = 2.dp)) {
-                    Text("•  ", color = MaterialTheme.colorScheme.primary)
-                    Text(
-                        text = tip,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
                 }
             }
         }

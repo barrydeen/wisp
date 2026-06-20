@@ -530,9 +530,19 @@ membership link-out, `MembershipRepository` (Phase 3).
   suggestions) **outside `recipeBody`** (Sous Chef preview stays score-free),
   **only when a score comes back** — READ_ONLY/miss = quiet absence, never an
   error. Wired via `RecipeDetailViewModel.load` (independent of recipe load).
-  Suite 77/0/0/0. ⚠️ PRE-SHIP: Nourish visual is placeholder — port the web
-  styling. OPEN (device-resolves): does a non-member signing account auth-read
-  pantry, or is it member-gated?
+  Suite 77/0/0/0. ✅ PRE-SHIP DONE — Nourish visual ported (`ui/component/NourishCard`):
+  a pure-visual mirror of the web `NourishResult` "green island" (no data/logic
+  change — `NourishScore` + parsing untouched). Green-only (strong ≥7 `#22C55E`,
+  moderate 4–6 `#4ADE80`, light 0–3 `#86EFAC`; ported constants, independent of
+  the orange brand), soft language for low scores ("Not a focus here"/"Lightly
+  present"), no per-dim numeric, no amber/red/letter-grade. Compact green overall
+  header (number + leaf; stark Low/Fair grade suppressed — affirming label only at
+  Moderate+); "What this meal brings" strength pills (top 2–3 dims ≥5); 2-col grid
+  of 8 tiles (🥬/🌱/💪/🧘/⚖️/🛡️/🧠/🫀, icon+label+green-tier bar); "Simple upgrades"
+  left-green-border rows; "Not medical advice" footer. Omitted (no data in
+  `NourishScore`): quick-take, per-dim reason, key ingredients. Deferred: the
+  "↑ Dimension" upgrade pill. Suite 102/0/0/0. OPEN (device-resolves): does a
+  non-member signing account auth-read pantry, or is it member-gated?
   AUTH FIX (device-confirmed CLOSED auth-required + stale isAuthenticated):
   two bugs — (1) `authenticatedRelays` was never cleared on a transient
   disconnect, so `isAuthenticated(pantry)` stayed stale-true and the query
