@@ -196,9 +196,10 @@ class ZapCookingApi(
                     // The server reports failures as { ok:false, error } even on
                     // a 200, so parse the body rather than trusting the status.
                     val obj = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull()
-                    val ok = obj?.get("ok")?.let { it.toString() == "true" } == true
+                        ?: return@withContext CheffyResult.Error(parseError(body) ?: "Cheffy could not respond.")
+                    val ok = obj["ok"]?.let { it.toString() == "true" } == true
                     if (!resp.isSuccessful || !ok) {
-                        val msg = obj?.get("error")?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                        val msg = obj["error"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
                             ?: parseError(body)
                         return@withContext CheffyResult.Error(msg ?: "Cheffy could not respond.")
                     }

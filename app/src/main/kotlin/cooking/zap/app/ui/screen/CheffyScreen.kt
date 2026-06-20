@@ -60,8 +60,9 @@ import cooking.zap.app.viewmodel.CheffyViewModel.Role
 
 /**
  * Cheffy — the member-gated kitchen-companion chat (concern 2.3 v1: chat +
- * hungry). Whole-response (no streaming): a pending bubble cycles a status line
- * while the long-timeout request runs, then resolves to a markdown reply.
+ * hungry). Whole-response (no streaming): a pending bubble shows a status line
+ * (one picked per request) while the long-timeout request runs, then resolves
+ * to a markdown reply.
  * READ_ONLY (no signing key) is gated to a members/sign-in message with no
  * composer; a 403 surfaces the same message-only "Pro Kitchen" notice inline.
  */

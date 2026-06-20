@@ -478,8 +478,9 @@ membership link-out, `MembershipRepository` (Phase 3).
   `getComputeClient()` (75s — whole-response, **no streaming**), mirroring
   `computeNourish` one-to-one: `CheffyResult { Reply | MembersOnly | Error }`,
   **403 → MembersOnly**, `ok:false`/non-2xx → Error. Wait-not-stream: a pending
-  bubble cycles `THINKING_LINES` (`COOKING_LINES` when a recipe is expected, via
-  `looksLikeRecipeRequest`); replies render markdown;
+  bubble shows a `THINKING_LINES` status line (`COOKING_LINES` when a recipe is
+  expected, via `looksLikeRecipeRequest`; one line picked per request, not timed
+  rotation); replies render markdown;
   `looksLikeStructuredRecipe` flips the expression to happy + renders the recipe
   cleanly (NO Save/Share/Zap actions — those are 2.3c). **MembersOnly is
   message-only** (the "Pro Kitchen members feature" line, like 2.4b — no

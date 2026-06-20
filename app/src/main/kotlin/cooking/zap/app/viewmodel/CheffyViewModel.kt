@@ -121,30 +121,39 @@ class CheffyViewModel : ViewModel() {
             )
         }
         viewModelScope.launch {
-            val result = api.sendCheffy(
-                CheffyRequest(prompt = prompt, mode = mode.wire, pubkey = pubkey, messages = history),
-            )
-            val resolved = when (result) {
-                is CheffyResult.Reply -> {
-                    val isRecipe = Cheffy.looksLikeStructuredRecipe(result.output)
-                    Message(
-                        id = pendingId, role = Role.CHEFFY, content = result.output,
-                        kind = if (isRecipe) Kind.RECIPE else Kind.TEXT,
-                        expression = if (isRecipe) Cheffy.Expression.HAPPY else Cheffy.Expression.NEUTRAL,
+            try {
+                val result = api.sendCheffy(
+                    CheffyRequest(prompt = prompt, mode = mode.wire, pubkey = pubkey, messages = history),
+                )
+                val resolved = when (result) {
+                    is CheffyResult.Reply -> {
+                        val isRecipe = Cheffy.looksLikeStructuredRecipe(result.output)
+                        Message(
+                            id = pendingId, role = Role.CHEFFY, content = result.output,
+                            kind = if (isRecipe) Kind.RECIPE else Kind.TEXT,
+                            expression = if (isRecipe) Cheffy.Expression.HAPPY else Cheffy.Expression.NEUTRAL,
+                        )
+                    }
+                    CheffyResult.MembersOnly -> Message(
+                        id = pendingId, role = Role.CHEFFY, content = Cheffy.MEMBERS_ONLY_MESSAGE,
+                        kind = Kind.MEMBERS_ONLY, expression = Cheffy.Expression.NEUTRAL,
+                    )
+                    is CheffyResult.Error -> Message(
+                        id = pendingId, role = Role.CHEFFY, content = result.message,
+                        kind = Kind.ERROR, expression = Cheffy.Expression.CONCERNED,
+                        statusLine = Cheffy.pickLine(Cheffy.ERROR_LINES),
                     )
                 }
-                CheffyResult.MembersOnly -> Message(
-                    id = pendingId, role = Role.CHEFFY, content = Cheffy.MEMBERS_ONLY_MESSAGE,
-                    kind = Kind.MEMBERS_ONLY, expression = Cheffy.Expression.NEUTRAL,
-                )
-                is CheffyResult.Error -> Message(
-                    id = pendingId, role = Role.CHEFFY, content = result.message,
-                    kind = Kind.ERROR, expression = Cheffy.Expression.CONCERNED,
-                    statusLine = Cheffy.pickLine(Cheffy.ERROR_LINES),
-                )
+                _thread.update { list -> list.map { if (it.id == pendingId) resolved else it } }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Cancelled mid-flight (e.g. navigated away) — drop the stranded
+                // pending bubble so a restored screen never shows a frozen spinner.
+                _thread.update { list -> list.filterNot { it.id == pendingId } }
+                throw e
+            } finally {
+                // Always clear loading, even on cancellation, so the composer re-enables.
+                _loading.value = false
             }
-            _thread.update { list -> list.map { if (it.id == pendingId) resolved else it } }
-            _loading.value = false
         }
     }
 
