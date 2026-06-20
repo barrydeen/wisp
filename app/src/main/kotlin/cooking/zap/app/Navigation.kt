@@ -2589,7 +2589,10 @@ fun WispNavHost(
             )
             val recipeDetailViewModel: RecipeDetailViewModel = viewModel()
             LaunchedEffect(author, dTag) {
-                recipeDetailViewModel.load(author, dTag, feedViewModel.recipeRepo, feedViewModel.eventRepo)
+                recipeDetailViewModel.load(
+                    author, dTag, feedViewModel.recipeRepo, feedViewModel.eventRepo,
+                    feedViewModel.nourishRepo, hasSigningKey = feedViewModel.signer != null,
+                )
             }
 
             var recipeZapTarget by remember { mutableStateOf<cooking.zap.app.nostr.NostrEvent?>(null) }

@@ -424,8 +424,22 @@ membership link-out, `MembershipRepository` (Phase 3).
 - **2.3** Cheffy chat — member-gated chat screen → `/api/zappy` (chat/hungry);
   scan (vision) as 2.3b. Heaviest branding (port `CheffyIcon`/`CheffyAvatar`).
   Recipe-format output can deep-link into 2.2 create.
-- **2.4** Nourish (sub-phased): **2.4a READ** — query pantry for the kind-30078
-  score, render 8 dimensions on RecipeDetail. ⚠️ CORRECTION (live-confirmed):
+- **2.4** Nourish (sub-phased): **2.4a READ** ✅ — `nostr/NourishParser` (pure;
+  kind-30078 JSON → `NourishScore`, **trusts the stored `overall`**, legacy
+  dims default 0; 6 unit tests on a synthetic spec-accurate fixture — real
+  golden TBD on device). `repo/NourishRepository.fetchScore` —
+  `autoApproveRelayAuth(pantry)` → warm-up REQ to open the conn + trigger
+  silent NIP-42 AUTH → poll `isAuthenticated` (fast-path; `authCompleted` is
+  non-replay) → REQ
+  `{ kinds:[30078], authors:[service], "#d":["nourish:30023:author:dTag"] }` →
+  parse → cache per recipe key. Null on miss/timeout/**no signing key**.
+  RecipeDetail renders a Nourish section (overall+label, 8 dimension bars, top
+  suggestions) **outside `recipeBody`** (Sous Chef preview stays score-free),
+  **only when a score comes back** — READ_ONLY/miss = quiet absence, never an
+  error. Wired via `RecipeDetailViewModel.load` (independent of recipe load).
+  Suite 77/0/0/0. ⚠️ PRE-SHIP: Nourish visual is placeholder — port the web
+  styling. OPEN (device-resolves): does a non-member signing account auth-read
+  pantry, or is it member-gated? ⚠️ CORRECTION (live-confirmed):
   pantry requires **NIP-42 AUTH** on every read (`["AUTH",…]` →
   `["CLOSED","auth-required"]`, even kind 1), so this is **NOT "ungated"** — it
   needs a NIP-42-authed pantry connection and therefore a **signing key**
