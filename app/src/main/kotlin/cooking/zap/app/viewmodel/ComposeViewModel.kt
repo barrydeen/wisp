@@ -17,6 +17,7 @@ import cooking.zap.app.nostr.ClientMessage
 import cooking.zap.app.nostr.Keys
 import cooking.zap.app.nostr.Nip10
 import cooking.zap.app.nostr.Nip30
+import cooking.zap.app.nostr.Nip89
 import cooking.zap.app.nostr.Nip18
 import cooking.zap.app.nostr.Nip19
 import cooking.zap.app.nostr.Nip37
@@ -687,7 +688,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         if (replyTo != null && _privateReply.value) {
             for (hashtag in _hashtags.value) tags.add(listOf("t", hashtag))
             tags.addAll(Nip30.buildEmojiTagsForContent(content, resolvedEmojis))
-            if (interfacePrefs.isClientTagEnabled()) tags.add(listOf("client", "Zap Cooking"))
+            if (interfacePrefs.isClientTagEnabled()) tags.add(Nip89.clientTag())
             return publishPrivateReply(content, replyTo, tags, signer, relayPool, powPrefs)
         }
 
@@ -794,7 +795,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         tags.addAll(Nip30.buildEmojiTagsForContent(content, resolvedEmojis))
 
         if (interfacePrefs.isClientTagEnabled()) {
-            tags.add(listOf("client", "Zap Cooking"))
+            tags.add(Nip89.clientTag())
         }
 
         // Scheduled post — sign with future created_at and send to scheduler relays

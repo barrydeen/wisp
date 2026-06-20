@@ -6,6 +6,7 @@ import cooking.zap.app.nostr.Filter
 import cooking.zap.app.nostr.Nip02
 import cooking.zap.app.nostr.Nip13
 import cooking.zap.app.nostr.Nip25
+import cooking.zap.app.nostr.Nip89
 import cooking.zap.app.nostr.Nip30
 import cooking.zap.app.nostr.Nip51
 import cooking.zap.app.nostr.NostrEvent
@@ -223,7 +224,7 @@ class SocialActionManager(
                 val hint = outboxRouter.getRelayHint(event.pubkey)
                 val tags = Nip18.buildRepostTags(event, hint).toMutableList()
                 if (interfacePrefs.isClientTagEnabled()) {
-                    tags.add(listOf("client", "Zap Cooking"))
+                    tags.add(Nip89.clientTag())
                 }
                 val repostEvent = s.signEvent(kind = 6, content = event.toJson(), tags = tags)
                 val msg = ClientMessage.event(repostEvent)
@@ -299,7 +300,7 @@ class SocialActionManager(
                     }
 
                     if (interfacePrefs.isClientTagEnabled()) {
-                        tags = tags + listOf(listOf("client", "Zap Cooking"))
+                        tags = tags + listOf(Nip89.clientTag())
                     }
 
                     val createdAt: Long
@@ -550,7 +551,7 @@ class SocialActionManager(
             try {
                 val tags = Nip88.buildResponseTags(pollEventId, optionIds).toMutableList()
                 if (interfacePrefs.isClientTagEnabled()) {
-                    tags.add(listOf("client", "Zap Cooking"))
+                    tags.add(Nip89.clientTag())
                 }
                 val event = s.signEvent(kind = Nip88.KIND_POLL_RESPONSE, content = "", tags = tags)
                 val msg = ClientMessage.event(event)
