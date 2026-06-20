@@ -58,6 +58,31 @@ class RecipeComposeViewModelTest {
         assertEquals(emptyList<String>(), vm.categories.value)
     }
 
+    @Test
+    fun blockReason_valueOverload_clearsTitleGateWhenTitlePresent() {
+        // The UI computes the gate from COLLECTED state via this overload, so a
+        // present title must clear the title gate (a Cheffy pre-fill fills the
+        // title → the button must stop saying "Add a title").
+        val img = RecipeComposeViewModel.ImageItem(1, RecipeComposeViewModel.ImageItem.Status.Done("u"))
+        val ing = listOf(RecipeComposeViewModel.Row(1, "2 eggs"))
+        val dir = listOf(RecipeComposeViewModel.Row(2, "Whisk"))
+
+        // Title present + everything else → not gated on the title.
+        assertEquals(
+            "Add at least one category.",
+            RecipeComposeViewModel.blockReason(true, "Tuscan Peposo", emptyList(), listOf(img), ing, dir),
+        )
+        // Fully filled → publishable.
+        assertNull(
+            RecipeComposeViewModel.blockReason(true, "Tuscan Peposo", listOf("italian"), listOf(img), ing, dir),
+        )
+        // Blank title → the title gate.
+        assertEquals(
+            "Add a title.",
+            RecipeComposeViewModel.blockReason(true, "  ", listOf("italian"), listOf(img), ing, dir),
+        )
+    }
+
     // ---- prefillFromMarkdown (Cheffy "Save" — concern 2.3c) ----------------
 
     private val cheffyRecipe = """

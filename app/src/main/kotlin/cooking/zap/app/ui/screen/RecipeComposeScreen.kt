@@ -100,7 +100,14 @@ fun RecipeComposeScreen(
         ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris -> if (uris.isNotEmpty()) onPickImages(uris) }
 
-    val reason = viewModel.blockReason(canSign)
+    // Compute the gate from COLLECTED state (not viewModel.blockReason(), which
+    // reads StateFlow.value directly and wouldn't recompose as fields fill in —
+    // e.g. after a Cheffy pre-fill the title arrives but a value-read gate stays
+    // frozen at "Add a title"). Reading these collected vals here subscribes the
+    // scope so the publish button re-evaluates on every field change.
+    val reason = RecipeComposeViewModel.blockReason(
+        canSign, title, categories, images, ingredients, directions,
+    )
     val publishing = publishState is RecipeComposeViewModel.PublishState.Publishing
     val errorMsg = (publishState as? RecipeComposeViewModel.PublishState.Error)?.message
 

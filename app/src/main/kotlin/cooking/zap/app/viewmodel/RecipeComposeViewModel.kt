@@ -260,27 +260,20 @@ class RecipeComposeViewModel : ViewModel() {
     private val hostedImageUrls: List<String>
         get() = _images.value.mapNotNull { (it.status as? ImageItem.Status.Done)?.url }
 
-    private val hasPendingOrFailedUpload: Boolean
-        get() = _images.value.any { it.status !is ImageItem.Status.Done }
-
     /** Trimmed, non-blank ingredient strings, in row order. */
     private fun cleanIngredients() = _ingredients.value.map { it.text.trim() }.filter { it.isNotEmpty() }
     private fun cleanDirections() = _directions.value.map { it.text.trim() }.filter { it.isNotEmpty() }
 
     /**
-     * Why publish is blocked, or null if ready. Drives both the disabled button
-     * and the helper text — never a silently-disabled button.
+     * Why publish is blocked, or null if ready — the defensive publish-time
+     * check (reads current `.value`s). The UI must use the value-taking
+     * [blockReason] overload with **collected** state so the gate recomposes
+     * (reading `.value` here is not a Compose snapshot read — a screen that
+     * called this directly would freeze the gate at its first value).
      */
-    fun blockReason(canSign: Boolean): String? = when {
-        !canSign -> "Sign in to publish recipes."
-        _title.value.isBlank() -> "Add a title."
-        _categories.value.isEmpty() -> "Add at least one category."
-        _images.value.isEmpty() -> "Add at least one photo."
-        hasPendingOrFailedUpload -> "Wait for photos to finish uploading (remove any that failed)."
-        cleanIngredients().isEmpty() -> "Add at least one ingredient."
-        cleanDirections().isEmpty() -> "Add at least one direction."
-        else -> null
-    }
+    fun blockReason(canSign: Boolean): String? = blockReason(
+        canSign, _title.value, _categories.value, _images.value, _ingredients.value, _directions.value,
+    )
 
     /**
      * Build the recipe from the form and publish via the multi-image
@@ -345,6 +338,32 @@ class RecipeComposeViewModel : ViewModel() {
     }
 
     companion object {
+        /**
+         * Pure gate over plain values (mirrors the web `canPublish` + the
+         * upload-block guard). The UI calls this with **collected** snapshot
+         * state so Compose subscribes and the publish gate recomposes as fields
+         * fill in (e.g. after a Cheffy pre-fill); the instance [blockReason]
+         * delegates here with current `.value`s for the publish-time re-check.
+         */
+        fun blockReason(
+            canSign: Boolean,
+            title: String,
+            categories: List<String>,
+            images: List<ImageItem>,
+            ingredients: List<Row>,
+            directions: List<Row>,
+        ): String? = when {
+            !canSign -> "Sign in to publish recipes."
+            title.isBlank() -> "Add a title."
+            categories.isEmpty() -> "Add at least one category."
+            images.isEmpty() -> "Add at least one photo."
+            images.any { it.status !is ImageItem.Status.Done } ->
+                "Wait for photos to finish uploading (remove any that failed)."
+            ingredients.none { it.text.isNotBlank() } -> "Add at least one ingredient."
+            directions.none { it.text.isNotBlank() } -> "Add at least one direction."
+            else -> null
+        }
+
         // Process-wide monotonic row/image ids (stable Compose keys). Not for crypto.
         private var counter = 0L
         @Synchronized private fun nextId(): Long = ++counter
