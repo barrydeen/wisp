@@ -2704,6 +2704,15 @@ fun WispNavHost(
         composable(Routes.RECIPE_COMPOSE) {
             val recipeComposeViewModel: RecipeComposeViewModel = viewModel()
             val context = androidx.compose.ui.platform.LocalContext.current
+            // Consume a pending Cheffy "Save" hand-off ONCE (read-then-null), so
+            // recomposition/back-nav can't re-prefill and an abandoned hand-off
+            // can't leak into a later FAB-launched empty compose (concern 2.3c).
+            LaunchedEffect(Unit) {
+                feedViewModel.pendingComposeMarkdown?.let { md ->
+                    feedViewModel.pendingComposeMarkdown = null
+                    recipeComposeViewModel.prefillFromMarkdown(md)
+                }
+            }
             RecipeComposeScreen(
                 viewModel = recipeComposeViewModel,
                 canSign = feedViewModel.signer != null,
@@ -2770,6 +2779,12 @@ fun WispNavHost(
                 },
                 onRetry = {
                     cheffyViewModel.retry(feedViewModel.zapCookingApi, feedViewModel.getUserPubkey())
+                },
+                onSaveRecipe = { content ->
+                    // Transient hand-off: pre-fill the compose editor with Cheffy's
+                    // recipe markdown (consumed once by the compose route). 2.3c.
+                    feedViewModel.pendingComposeMarkdown = content
+                    navController.navigate(Routes.RECIPE_COMPOSE)
                 },
                 onBack = { navController.popBackStack() },
             )

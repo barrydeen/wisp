@@ -34,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -85,6 +86,7 @@ fun RecipeComposeScreen(
     val directions by viewModel.directions.collectAsState()
     val images by viewModel.images.collectAsState()
     val publishState by viewModel.publishState.collectAsState()
+    val prefillNotice by viewModel.prefillNotice.collectAsState()
 
     // Optimistic nav once the event is signed + cached.
     val published = publishState as? RecipeComposeViewModel.PublishState.Published
@@ -122,6 +124,23 @@ fun RecipeComposeScreen(
             Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
+            // Pre-fill notice (e.g. a lossy Cheffy parse — concern 2.3c).
+            prefillNotice?.let { notice ->
+                item("prefill_notice") {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            notice,
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                    }
+                }
+            }
             // 1. Title
             item("title") {
                 FieldSection("Title*", "Remember to make your title unique!") {

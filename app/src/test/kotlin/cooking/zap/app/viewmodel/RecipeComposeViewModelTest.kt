@@ -1,6 +1,9 @@
 package cooking.zap.app.viewmodel
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -53,6 +56,75 @@ class RecipeComposeViewModelTest {
         vm.addCategory("   ")
         vm.addCategory("")
         assertEquals(emptyList<String>(), vm.categories.value)
+    }
+
+    // ---- prefillFromMarkdown (Cheffy "Save" — concern 2.3c) ----------------
+
+    private val cheffyRecipe = """
+        # Garlic Butter Shrimp
+
+        A quick weeknight shrimp dish.
+
+        ## Details
+        ⏲️ Prep time: 10 min
+        🍳 Cook time: 8 min
+        🍽️ Servings: 2
+
+        ## Ingredients
+        - 1 lb shrimp
+        - 3 cloves garlic
+
+        ## Directions
+        1. Melt the butter.
+        2. Add shrimp and garlic; cook 8 min.
+    """.trimIndent()
+
+    @Test
+    fun prefill_cleanParse_seedsBody_leavesImagesCategoriesSummaryEmpty() {
+        val vm = vm()
+        vm.prefillFromMarkdown(cheffyRecipe)
+
+        assertEquals("Garlic Butter Shrimp", vm.title.value)
+        assertEquals(listOf("1 lb shrimp", "3 cloves garlic"), vm.ingredients.value.map { it.text })
+        assertEquals(
+            listOf("Melt the butter.", "Add shrimp and garlic; cook 8 min."),
+            vm.directions.value.map { it.text },
+        )
+        assertEquals("10 min", vm.prepTime.value)
+        assertEquals("8 min", vm.cookTime.value)
+        assertEquals("2", vm.servings.value)
+        // Web parity: image, category, summary are NOT seeded — the user adds them.
+        assertTrue(vm.images.value.isEmpty())
+        assertTrue(vm.categories.value.isEmpty())
+        assertEquals("", vm.summary.value)
+        assertNull(vm.prefillNotice.value)
+        // Still gated until the user adds a category + photo.
+        assertEquals("Add at least one category.", vm.blockReason(canSign = true))
+    }
+
+    @Test
+    fun prefill_lossyParse_salvagesRawText_andStaysGated() {
+        val vm = vm()
+        vm.prefillFromMarkdown("Just sauté some veggies with olive oil and garlic, no real recipe here.")
+
+        assertEquals("Untitled", vm.title.value)
+        // Raw text preserved in Additional Resources; rows stay empty.
+        assertTrue(vm.additionalResources.value.contains("sauté some veggies"))
+        assertTrue(vm.ingredients.value.all { it.text.isBlank() })
+        assertTrue(vm.directions.value.all { it.text.isBlank() })
+        assertNotNull(vm.prefillNotice.value)
+        // Publish stays blocked (defense: a bad parse can't be published blindly).
+        assertNotNull(vm.blockReason(canSign = true))
+    }
+
+    @Test
+    fun prefill_isIdempotent() {
+        val vm = vm()
+        vm.prefillFromMarkdown(cheffyRecipe)
+        // A second call (e.g. a re-entrant route) must not re-seed/duplicate.
+        vm.prefillFromMarkdown("# Other\n\n## Ingredients\n- x\n\n## Directions\n1. y")
+        assertEquals("Garlic Butter Shrimp", vm.title.value)
+        assertEquals(2, vm.ingredients.value.size)
     }
 
     @Test

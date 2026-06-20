@@ -492,10 +492,31 @@ membership link-out, `MembershipRepository` (Phase 3).
   (`PROMPT_PLACEHOLDERS`/`THINKING`/`COOKING`/`ERROR` pools + `pickLine` +
   `looksLikeStructuredRecipe`, verbatim from the web, unit-tested). Drawer entry
   "Cheffy" with the icon. Endpoint stays `/api/zappy`. Suite 98/0/0/0.
-  **2.3b** = scan (fridge vision, `/api/zappy/scan`, base64 image). **2.3c** =
-  Save/Share/Zap actions on a structured Cheffy reply (reuse 2.2 publisher) +
-  the character/avatar mascot. Deferred: `format` mode (create-page tool),
-  zap-to-Cheffy (LN `ZapCooking@getalby.com`).
+  - **2.3b** = scan (fridge vision, `/api/zappy/scan`, base64 image).
+- **2.3c** ✅ Cheffy Save (the hungry-mode fast-follow — one PR, SAVE only).
+  A structured Cheffy reply (`looksLikeStructuredRecipe`) gains a **"Save to my
+  recipes"** button that routes through the existing write spine — no new
+  publish logic. Mirrors the web `saveAsRecipeDraft`: parse →
+  pre-fill `RecipeComposeScreen` → user adds image + category + tweaks →
+  publish via `RecipePublisher` + `RecipeFormats.primary`. `RecipeComposeViewModel.prefillFromMarkdown`
+  parses with the shared `RecipeParser.parseContent` (byte-faithful port of the
+  web `parseMarkdownForEditing`) + extracts the title from the first `# `
+  heading; seeds title/chefNotes/prep/cook/servings/ingredients/directions/additional
+  and **leaves images, categories, summary empty** (web parity), so full compose
+  validation (title, ≥1 image, ≥1 category, ≥1 ingredient, ≥1 direction) still
+  gates publish. **Lossy-parse salvage**: if `parseLooksGood` (ingredients>0 &&
+  directions>0) is false, the raw markdown drops into Additional Resources with
+  empty rows + a "couldn't parse cleanly" notice — `blockReason` stays active so
+  a bad parse can't be published blindly. **Transient hand-off** (no draft
+  store): `FeedViewModel.pendingComposeMarkdown` set on Save, **consumed once**
+  (read-then-null in a one-shot `LaunchedEffect`) so back-nav/recomposition
+  can't re-prefill and an abandoned hand-off can't leak into a later
+  FAB-launched empty compose. READ_ONLY: Cheffy chat has no composer for them,
+  so no Save affordance; compose re-gates on `canSign`. `prefillFromMarkdown`
+  idempotent. Share + zap-to-Cheffy stay deferred. Suite 101/0/0/0.
+  - **2.3d** (was 2.3c-extras) = Share action + character/avatar mascot.
+    Deferred: `format` mode (create-page tool), zap-to-Cheffy
+    (LN `ZapCooking@getalby.com`).
 - **2.4** Nourish (sub-phased): **2.4a READ** ✅ — `nostr/NourishParser` (pure;
   kind-30078 JSON → `NourishScore`, **trusts the stored `overall`**, legacy
   dims default 0; 6 unit tests on a synthetic spec-accurate fixture — real

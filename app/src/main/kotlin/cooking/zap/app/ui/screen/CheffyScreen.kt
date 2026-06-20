@@ -21,12 +21,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -73,6 +75,7 @@ fun CheffyScreen(
     canSign: Boolean,
     onSend: (text: String, mode: cooking.zap.app.api.CheffyMode) -> Unit,
     onRetry: () -> Unit,
+    onSaveRecipe: (content: String) -> Unit,
     onBack: () -> Unit,
 ) {
     val thread by viewModel.thread.collectAsState()
@@ -131,7 +134,7 @@ fun CheffyScreen(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    items(thread, key = { it.id }) { msg -> MessageBubble(msg, onRetry, loading) }
+                    items(thread, key = { it.id }) { msg -> MessageBubble(msg, onRetry, onSaveRecipe, loading) }
                 }
             }
             Composer(
@@ -204,7 +207,7 @@ private fun EmptyState(
 }
 
 @Composable
-private fun MessageBubble(msg: Message, onRetry: () -> Unit, loading: Boolean) {
+private fun MessageBubble(msg: Message, onRetry: () -> Unit, onSaveRecipe: (String) -> Unit, loading: Boolean) {
     val isUser = msg.role == Role.USER
     Row(
         Modifier.fillMaxWidth(),
@@ -214,24 +217,39 @@ private fun MessageBubble(msg: Message, onRetry: () -> Unit, loading: Boolean) {
             Kind.PENDING -> PendingBubble(msg)
             Kind.ERROR -> ErrorBubble(msg, onRetry, loading)
             else -> {
-                Surface(
-                    color = if (isUser) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.widthIn(max = 320.dp),
+                Column(
+                    horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    val textColor = if (isUser) MaterialTheme.colorScheme.onPrimary
-                    else MaterialTheme.colorScheme.onSurface
-                    if (isUser || msg.kind == Kind.MEMBERS_ONLY) {
-                        Text(
-                            msg.content,
-                            modifier = Modifier.padding(12.dp),
-                            color = textColor,
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    } else {
-                        // Cheffy text / recipe replies render markdown.
-                        CheffyMarkdown(msg.content, Modifier.padding(12.dp), textColor)
+                    Surface(
+                        color = if (isUser) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.widthIn(max = 320.dp),
+                    ) {
+                        val textColor = if (isUser) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurface
+                        if (isUser || msg.kind == Kind.MEMBERS_ONLY) {
+                            Text(
+                                msg.content,
+                                modifier = Modifier.padding(12.dp),
+                                color = textColor,
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        } else {
+                            // Cheffy text / recipe replies render markdown.
+                            CheffyMarkdown(msg.content, Modifier.padding(12.dp), textColor)
+                        }
+                    }
+                    // A structured Cheffy recipe → Save to my recipes (concern 2.3c).
+                    // Routes through the compose editor (add a photo + category there);
+                    // Cheffy chat is gated to signing accounts, so no READ_ONLY case here.
+                    if (msg.kind == Kind.RECIPE) {
+                        FilledTonalButton(onClick = { onSaveRecipe(msg.content) }) {
+                            Icon(Icons.Outlined.BookmarkAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Save to my recipes")
+                        }
                     }
                 }
             }
