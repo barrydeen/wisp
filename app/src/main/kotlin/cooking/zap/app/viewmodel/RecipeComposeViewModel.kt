@@ -260,9 +260,6 @@ class RecipeComposeViewModel : ViewModel() {
     private val hostedImageUrls: List<String>
         get() = _images.value.mapNotNull { (it.status as? ImageItem.Status.Done)?.url }
 
-    private val hasPendingOrFailedUpload: Boolean
-        get() = _images.value.any { it.status !is ImageItem.Status.Done }
-
     /** Trimmed, non-blank ingredient strings, in row order. */
     private fun cleanIngredients() = _ingredients.value.map { it.text.trim() }.filter { it.isNotEmpty() }
     private fun cleanDirections() = _directions.value.map { it.text.trim() }.filter { it.isNotEmpty() }
