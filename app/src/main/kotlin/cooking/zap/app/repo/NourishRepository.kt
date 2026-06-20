@@ -7,9 +7,10 @@ import cooking.zap.app.nostr.NourishParser
 import cooking.zap.app.nostr.NourishScore
 import cooking.zap.app.relay.RelayConfig
 import cooking.zap.app.relay.RelayPool
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
@@ -67,7 +68,9 @@ class NourishRepository(private val relayPool: RelayPool) {
                 relayPool.sendToRelayOrEphemeral(PANTRY, ClientMessage.req(sub, filter))
                 withTimeoutOrNull(QUERY_TIMEOUT_MS) { relayPool.eoseSignals.first { it == sub } }
                 delay(STRAGGLER_MS)
-                collector.cancel()
+                // cancelAndJoin (not cancel) so the final emission is processed and
+                // there's a happens-before edge for the `event` read below.
+                collector.cancelAndJoin()
             }
         } finally {
             relayPool.closeOnAllRelays(sub)
@@ -90,7 +93,13 @@ class NourishRepository(private val relayPool: RelayPool) {
         val warm = "nourish-auth-${subSeq.incrementAndGet()}"
         try {
             relayPool.sendToRelayOrEphemeral(PANTRY, ClientMessage.req(warm, filter))
-            withTimeoutOrNull(AUTH_TIMEOUT_MS) { relayPool.authCompleted.first { it == PANTRY } }
+            // Poll isAuthenticated() rather than awaiting authCompleted: that's a
+            // non-replay SharedFlow, so an AUTH that lands between the send and a
+            // `.first` subscription would be missed and burn the full timeout.
+            // Polling exits within ~POLL_MS of auth completing (fast-path).
+            withTimeoutOrNull(AUTH_TIMEOUT_MS) {
+                while (!relayPool.isAuthenticated(PANTRY)) delay(POLL_MS)
+            }
         } finally {
             relayPool.closeOnAllRelays(warm)
         }
@@ -104,5 +113,6 @@ class NourishRepository(private val relayPool: RelayPool) {
         private const val AUTH_TIMEOUT_MS = 8_000L
         private const val QUERY_TIMEOUT_MS = 6_000L
         private const val STRAGGLER_MS = 400L
+        private const val POLL_MS = 100L
     }
 }

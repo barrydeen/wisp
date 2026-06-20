@@ -52,6 +52,7 @@ class RecipeDetailViewModel : ViewModel() {
         _nourish.value = null
         viewModelScope.launch {
             val resolved = recipeRepo.requestRecipe(author, dTag)
+            if (loadedKey != key) return@launch // a newer recipe was requested — drop stale result
             _recipe.value = resolved
             _event.value = eventRepo.findAddressableEvent(RecipeParser.RECIPE_KIND, author, dTag)
             _isLoading.value = false
@@ -59,9 +60,9 @@ class RecipeDetailViewModel : ViewModel() {
         // Nourish read runs independently (auth'd Pantry round-trip) — never
         // blocks the recipe, never surfaces an error. Null → render nothing.
         viewModelScope.launch {
-            _nourish.value = runCatching {
-                nourishRepo.fetchScore(author, dTag, hasSigningKey)
-            }.getOrNull()
+            val score = runCatching { nourishRepo.fetchScore(author, dTag, hasSigningKey) }.getOrNull()
+            if (loadedKey != key) return@launch // drop stale Nourish result on fast navigation
+            _nourish.value = score
         }
     }
 }

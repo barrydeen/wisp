@@ -58,14 +58,15 @@ object NourishParser {
     fun parse(content: String): NourishScore? = try {
         val obj = json.parseToJsonElement(content).jsonObject
         val overallObj = obj["overall"]?.jsonObject ?: return null
-        // Trust the stored overall; we can't render without it.
+        // Trust the stored overall; we can't render without it. Clamp to 0..10
+        // so malformed/future-scale values can't break the score bars downstream.
         val overall = overallObj["score"]?.jsonPrimitive?.doubleOrNull
-            ?.let { Math.round(it).toInt() } ?: return null
+            ?.let { clampScore(it) } ?: return null
         val overallLabel = overallObj["label"]?.jsonPrimitive?.contentOrNull ?: labelFor(overall)
 
         val dimensions = DIMENSIONS.map { (key, name) ->
             val s = obj[key]?.jsonObject?.get("score")?.jsonPrimitive?.doubleOrNull ?: 0.0
-            NourishDimension(name, Math.round(s).toInt())
+            NourishDimension(name, clampScore(s))
         }
         val improvements = obj["improvements"]?.jsonArray
             ?.mapNotNull { it.jsonPrimitive.contentOrNull }
@@ -77,6 +78,8 @@ object NourishParser {
     } catch (e: Exception) {
         null
     }
+
+    private fun clampScore(raw: Double): Int = Math.round(raw).toInt().coerceIn(0, 10)
 
     /** Score band → label (only used when the event omits the stored label). */
     private fun labelFor(score: Int): String = when {

@@ -429,8 +429,9 @@ membership link-out, `MembershipRepository` (Phase 3).
   dims default 0; 6 unit tests on a synthetic spec-accurate fixture — real
   golden TBD on device). `repo/NourishRepository.fetchScore` —
   `autoApproveRelayAuth(pantry)` → warm-up REQ to open the conn + trigger
-  silent NIP-42 AUTH → await `authCompleted` → REQ
-  `{kinds:[30078], authors:[<service>], #d:[nourish:30023:<author>:<dTag>]}` →
+  silent NIP-42 AUTH → poll `isAuthenticated` (fast-path; `authCompleted` is
+  non-replay) → REQ
+  `{ kinds:[30078], authors:[service], "#d":["nourish:30023:author:dTag"] }` →
   parse → cache per recipe key. Null on miss/timeout/**no signing key**.
   RecipeDetail renders a Nourish section (overall+label, 8 dimension bars, top
   suggestions) **outside `recipeBody`** (Sous Chef preview stays score-free),

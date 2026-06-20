@@ -80,6 +80,20 @@ class NourishParserTest {
     }
 
     @Test
+    fun outOfRangeScores_areClampedTo0to10() {
+        val json = """
+            {"realFood":{"score":15},"gut":{"score":-3},"protein":{"score":7},
+             "antiInflammatory":{"score":0},"bloodSugar":{"score":0},
+             "immuneSupportive":{"score":0},"brainHealth":{"score":0},
+             "heartHealth":{"score":0},"overall":{"score":99}}
+        """.trimIndent()
+        val s = NourishParser.parse(json)!!
+        assertEquals(10, s.overall) // 99 → 10, so the progress bar stays in 0..1
+        assertEquals(10, s.dimensions.first { it.name == "Real Food" }.score) // 15 → 10
+        assertEquals(0, s.dimensions.first { it.name == "Gut" }.score)        // -3 → 0
+    }
+
+    @Test
     fun dTag_format() {
         assertEquals(
             "nourish:30023:abc:tuscan-peposo-(black-pepper-beef-stew)",
