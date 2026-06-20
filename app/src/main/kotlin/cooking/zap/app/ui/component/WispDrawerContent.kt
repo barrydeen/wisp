@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Restaurant
@@ -80,6 +81,9 @@ import cooking.zap.app.nostr.toNpub
 import cooking.zap.app.repo.AccountInfo
 import cooking.zap.app.ui.util.LocalCanSign
 
+
+/** Sous Chef accent — the web's purple (`#a855f7`); used wherever the Sous Chef sparkle renders. */
+val SousChefPurple = Color(0xFFA855F7)
 
 @Composable
 fun WispDrawerContent(
@@ -438,8 +442,9 @@ fun WispDrawerContent(
             modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(
-            // Placeholder mark — port the real Sous Chef SVG before release (build doc §Phase 2).
-            icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null) },
+            // Sous Chef = sparkle in the web's purple accent (#a855f7). The web
+            // uses a generic sparkle glyph (no bespoke mark), so this matches it.
+            icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = SousChefPurple) },
             label = { Text(stringResource(R.string.drawer_souschef)) },
             selected = false,
             onClick = onSousChef,
