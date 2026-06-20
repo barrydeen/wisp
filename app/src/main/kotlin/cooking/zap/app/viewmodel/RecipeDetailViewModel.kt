@@ -2,7 +2,12 @@ package cooking.zap.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cooking.zap.app.api.NourishComputeRequest
+import cooking.zap.app.api.NourishComputeResult
+import cooking.zap.app.api.ZapCookingApi
+import cooking.zap.app.nostr.Nip98
 import cooking.zap.app.nostr.NostrEvent
+import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.nostr.NourishScore
 import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.repo.EventRepository
@@ -31,9 +36,22 @@ class RecipeDetailViewModel : ViewModel() {
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading
 
-    /** Nourish health score (concern 2.4a). Null = none / READ_ONLY / miss → quiet absence. */
-    private val _nourish = MutableStateFlow<NourishScore?>(null)
-    val nourish: StateFlow<NourishScore?> = _nourish
+    /**
+     * Nourish section state (concern 2.4a read + 2.4b compute). READ_ONLY ⇒
+     * always [NourishUi.Hidden] (no key to auth-read or compute).
+     */
+    sealed interface NourishUi {
+        data object Hidden : NourishUi          // READ_ONLY, or nothing to show
+        data object Loading : NourishUi         // 2.4a read in flight
+        data class Scored(val score: NourishScore) : NourishUi
+        data object NotScored : NourishUi       // read done, no score, signing account
+        data object Computing : NourishUi        // 2.4b compute in flight
+        data object MembersOnly : NourishUi      // compute returned 403
+        data class Error(val message: String) : NourishUi
+    }
+
+    private val _nourishUi = MutableStateFlow<NourishUi>(NourishUi.Hidden)
+    val nourishUi: StateFlow<NourishUi> = _nourishUi
 
     private var loadedKey: String? = null
 
@@ -49,7 +67,7 @@ class RecipeDetailViewModel : ViewModel() {
         if (loadedKey == key && _recipe.value != null) return
         loadedKey = key
         _isLoading.value = true
-        _nourish.value = null
+        _nourishUi.value = if (hasSigningKey) NourishUi.Loading else NourishUi.Hidden
         viewModelScope.launch {
             val resolved = recipeRepo.requestRecipe(author, dTag)
             if (loadedKey != key) return@launch // a newer recipe was requested — drop stale result
@@ -58,11 +76,51 @@ class RecipeDetailViewModel : ViewModel() {
             _isLoading.value = false
         }
         // Nourish read runs independently (auth'd Pantry round-trip) — never
-        // blocks the recipe, never surfaces an error. Null → render nothing.
+        // blocks the recipe, never surfaces an error.
         viewModelScope.launch {
             val score = runCatching { nourishRepo.fetchScore(author, dTag, hasSigningKey) }.getOrNull()
-            if (loadedKey != key) return@launch // drop stale Nourish result on fast navigation
-            _nourish.value = score
+            if (loadedKey != key) return@launch // drop stale result on fast navigation
+            _nourishUi.value = when {
+                !hasSigningKey -> NourishUi.Hidden
+                score != null -> NourishUi.Scored(score)
+                else -> NourishUi.NotScored // signing account, no score → offer compute
+            }
+        }
+    }
+
+    /**
+     * Compute the Nourish score for this recipe (member-gated). Optimistic:
+     * any signing account may try; a 403 → [NourishUi.MembersOnly]. Uses the
+     * compute response directly (no pantry re-read); the server publishes to
+     * pantry for future viewers.
+     */
+    fun computeNourish(api: ZapCookingApi, signer: NostrSigner?) {
+        val event = _event.value ?: return
+        val recipe = _recipe.value ?: return
+        val pubkey = signer?.pubkeyHex ?: return // READ_ONLY — no compute
+        if (_nourishUi.value == NourishUi.Computing) return
+        val key = loadedKey
+        _nourishUi.value = NourishUi.Computing
+        viewModelScope.launch {
+            val request = NourishComputeRequest(
+                pubkey = pubkey,
+                eventId = event.id,
+                title = recipe.title ?: "",
+                ingredients = recipe.content.ingredients,
+                tags = recipe.hashtags,
+                servings = recipe.content.details.servings ?: "",
+                recipePubkey = recipe.author,
+                recipeDTag = recipe.dTag,
+                // Byte-exact with the server: SHA-256 over the raw event content (UTF-8), no trim.
+                contentHash = Nip98.sha256Hex(event.content.toByteArray(Charsets.UTF_8)),
+            )
+            val result = api.computeNourish(request)
+            if (loadedKey != key) return@launch // navigated to another recipe — drop stale result
+            _nourishUi.value = when (result) {
+                is NourishComputeResult.Success -> NourishUi.Scored(result.score)
+                NourishComputeResult.MembersOnly -> NourishUi.MembersOnly
+                is NourishComputeResult.Error -> NourishUi.Error(result.message)
+            }
         }
     }
 }

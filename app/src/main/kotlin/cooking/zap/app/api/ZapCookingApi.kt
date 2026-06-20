@@ -2,6 +2,9 @@ package cooking.zap.app.api
 
 import cooking.zap.app.nostr.Nip98
 import cooking.zap.app.nostr.NostrSigner
+import cooking.zap.app.nostr.NourishParser
+import cooking.zap.app.nostr.NourishScore
+import kotlinx.serialization.json.jsonObject
 import cooking.zap.app.relay.HttpClientFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -130,6 +133,44 @@ class ZapCookingApi(
         null
     }
 
+    /**
+     * `POST /api/nourish` — member-gated compute (concern 2.4b). pubkey-in-body
+     * (not NIP-98, same as the other AI endpoints). The response carries the
+     * score directly, so we parse it here (no pantry re-read); the server also
+     * publishes to pantry for future viewers. Uses the long-timeout compute
+     * client — LLM scoring + the awaited pantry publish routinely exceed 15s.
+     * Lenient: ignores audience_scores/promptVersion/createdAt for v1.
+     */
+    suspend fun computeNourish(request: NourishComputeRequest): NourishComputeResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val bodyString = json.encodeToString(NourishComputeRequest.serializer(), request)
+                val httpRequest = Request.Builder()
+                    .url("$baseUrl/api/nourish")
+                    .post(bodyString.toRequestBody(jsonMediaType))
+                    .build()
+                HttpClientFactory.getComputeClient().newCall(httpRequest).execute().use { resp ->
+                    val body = resp.body?.string().orEmpty()
+                    if (resp.code == 403) return@withContext NourishComputeResult.MembersOnly
+                    if (!resp.isSuccessful) {
+                        return@withContext NourishComputeResult.Error(
+                            parseError(body) ?: "Couldn't compute the Nourish score (${resp.code})."
+                        )
+                    }
+                    val obj = json.parseToJsonElement(body).jsonObject
+                    val scores = obj["scores"]?.jsonObject
+                        ?: return@withContext NourishComputeResult.Error("No score in the response.")
+                    val score = NourishParser.parseScores(scores, NourishParser.extractImprovements(obj))
+                        ?: return@withContext NourishComputeResult.Error("Couldn't read the Nourish score.")
+                    NourishComputeResult.Success(score)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                NourishComputeResult.Error("Network error — please try again.")
+            }
+        }
+
     /** Single error/decode path. Call only from a `Dispatchers.IO` context. */
     private fun <T> execute(request: Request, deserializer: DeserializationStrategy<T>): T {
         client.newCall(request).execute().use { resp ->
@@ -149,6 +190,33 @@ private data class CheckStatusRequest(val pubkey: String)
 
 @Serializable
 private data class ExtractUrlRequest(val url: String)
+
+/**
+ * `POST /api/nourish` request (concern 2.4b). pubkey is the signed-in user's
+ * (membership gate); recipePubkey/recipeDTag/contentHash let the server publish
+ * the result to pantry for future viewers. contentHash = SHA-256 of the recipe
+ * event's raw content (UTF-8), byte-exact with the server.
+ */
+@Serializable
+data class NourishComputeRequest(
+    val pubkey: String,
+    val eventId: String,
+    val title: String,
+    val ingredients: List<String>,
+    val tags: List<String>,
+    val servings: String,
+    val recipePubkey: String,
+    val recipeDTag: String,
+    val contentHash: String,
+)
+
+/** Outcome of [ZapCookingApi.computeNourish]. */
+sealed interface NourishComputeResult {
+    data class Success(val score: NourishScore) : NourishComputeResult
+    /** 403 — the account isn't an active member. */
+    object MembersOnly : NourishComputeResult
+    data class Error(val message: String) : NourishComputeResult
+}
 
 /** `/api/extract-recipe(/public)` response. Lenient — unknown keys ignored. */
 @Serializable

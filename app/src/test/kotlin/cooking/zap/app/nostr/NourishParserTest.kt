@@ -1,5 +1,7 @@
 package cooking.zap.app.nostr
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -91,6 +93,38 @@ class NourishParserTest {
         assertEquals(10, s.overall) // 99 → 10, so the progress bar stays in 0..1
         assertEquals(10, s.dimensions.first { it.name == "Real Food" }.score) // 15 → 10
         assertEquals(0, s.dimensions.first { it.name == "Gut" }.score)        // -3 → 0
+    }
+
+    @Test
+    fun parseScores_computeResponsePath_trustsStoredOverall() {
+        // The /api/nourish response nests dims+overall under `scores`, with
+        // `improvements` at the top level — fed to the shared parseScores core.
+        val response = """
+            {
+              "success": true,
+              "scores": {
+                "realFood": {"score": 1}, "gut": {"score": 1}, "protein": {"score": 1},
+                "antiInflammatory": {"score": 0}, "bloodSugar": {"score": 0},
+                "immuneSupportive": {"score": 0}, "brainHealth": {"score": 0},
+                "heartHealth": {"score": 0}, "overall": {"score": 8, "label": "Strong"}
+              },
+              "improvements": ["Add greens"],
+              "audience_scores": {"kidFriendly": {"score": 5}},
+              "promptVersion": "3",
+              "createdAt": 1700000000
+            }
+        """.trimIndent()
+        val obj = Json.parseToJsonElement(response).jsonObject
+        val s = NourishParser.parseScores(
+            obj["scores"]!!.jsonObject,
+            NourishParser.extractImprovements(obj),
+        )!!
+        // Stored overall trusted (8), not recomputed from the low dims.
+        assertEquals(8, s.overall)
+        assertEquals("Strong", s.overallLabel)
+        assertEquals(8, s.dimensions.size)
+        assertEquals(listOf("Add greens"), s.improvements)
+        // audience_scores / promptVersion / createdAt ignored without throwing.
     }
 
     @Test

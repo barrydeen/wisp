@@ -1,6 +1,7 @@
 package cooking.zap.app.nostr
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonArray
@@ -55,29 +56,45 @@ object NourishParser {
     fun dTag(recipeAuthor: String, recipeDTag: String): String =
         "nourish:30023:$recipeAuthor:$recipeDTag"
 
+    /**
+     * Parse the pantry event content (2.4a). The scores object (8 dims +
+     * `overall`) and `improvements` are both top-level in the event content.
+     */
     fun parse(content: String): NourishScore? = try {
         val obj = json.parseToJsonElement(content).jsonObject
-        val overallObj = obj["overall"]?.jsonObject ?: return null
-        // Trust the stored overall; we can't render without it. Clamp to 0..10
-        // so malformed/future-scale values can't break the score bars downstream.
+        parseScores(obj, extractImprovements(obj))
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
+     * Shared core used by BOTH the pantry read (2.4a) and the compute response
+     * (2.4b). [scores] holds the 8 per-dimension `{score,label}` objects + the
+     * stored `overall`; [improvements] is passed separately because the compute
+     * response nests scores under `scores` but keeps `improvements` at the top
+     * level. **Trusts the stored `overall`** — never recomputes from dims (a
+     * legacy event's missing dims default to 0 and would deflate it). Returns
+     * null if `overall` is absent — both paths must agree on the headline number.
+     */
+    fun parseScores(scores: JsonObject, improvements: List<String>): NourishScore? {
+        val overallObj = scores["overall"]?.jsonObject ?: return null
         val overall = overallObj["score"]?.jsonPrimitive?.doubleOrNull
             ?.let { clampScore(it) } ?: return null
         val overallLabel = overallObj["label"]?.jsonPrimitive?.contentOrNull ?: labelFor(overall)
-
         val dimensions = DIMENSIONS.map { (key, name) ->
-            val s = obj[key]?.jsonObject?.get("score")?.jsonPrimitive?.doubleOrNull ?: 0.0
+            val s = scores[key]?.jsonObject?.get("score")?.jsonPrimitive?.doubleOrNull ?: 0.0
             NourishDimension(name, clampScore(s))
         }
-        val improvements = obj["improvements"]?.jsonArray
+        return NourishScore(overall, overallLabel, dimensions, improvements)
+    }
+
+    /** Extract & clean the (top-level) `improvements` list, ≤5 non-blank entries. */
+    fun extractImprovements(obj: JsonObject): List<String> =
+        obj["improvements"]?.jsonArray
             ?.mapNotNull { it.jsonPrimitive.contentOrNull }
             ?.filter { it.isNotBlank() }
             ?.take(5)
             ?: emptyList()
-
-        NourishScore(overall, overallLabel, dimensions, improvements)
-    } catch (e: Exception) {
-        null
-    }
 
     private fun clampScore(raw: Double): Int = Math.round(raw).toInt().coerceIn(0, 10)
 

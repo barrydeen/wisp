@@ -463,8 +463,20 @@ membership link-out, `MembershipRepository` (Phase 3).
   for silent AUTH). OPEN QUESTION (device-test answers it): does a non-member
   signing account auth-and-read pantry (share-once-read-many implies yes), or
   does pantry restrict reads to active members (→ Nourish read becomes
-  member-gated)? **2.4b COMPUTE** — member-gated `/api/nourish` on miss;
-  **2.4c flag** a score.
+  member-gated)? **2.4b COMPUTE** ✅ — `ZapCookingApi.computeNourish` →
+  `POST /api/nourish` (pubkey-in-body, NOT NIP-98) on a long-timeout compute
+  client (`getComputeClient`, 75s — LLM + awaited pantry publish exceed the
+  general 15s). **Response-direct** (no pantry re-read; the server publishes to
+  pantry for future viewers). Request carries `recipePubkey`/`recipeDTag`/
+  `contentHash` (SHA-256 over raw event content, UTF-8, no trim — byte-exact
+  via `Nip98.sha256Hex`). `NourishParser` refactored to a shared
+  `parseScores(scoresJson, improvements)` both paths use (trusts stored
+  `overall`; lenient — ignores audience_scores/promptVersion/createdAt).
+  `RecipeDetailViewModel.NourishUi` state machine + `computeNourish`: signing-
+  account-no-score → "Get Nourish score" → Computing → Scored | **MembersOnly
+  (403, message-only)** | Error(retry). **READ_ONLY ⇒ always Hidden.**
+  Optimistic + graceful-403 — no MembershipRepository (Phase 3). Suite 79/0/0/0.
+  **2.4c flag** a score — deferred (separate endpoint + UI).
 - **2.5** Cookbook intro — **DEFERRED** (blocked on a Recipe Packs feature
   not in scope).
 

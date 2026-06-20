@@ -108,6 +108,21 @@ object HttpClientFactory {
         }
     }
 
+    // Server-side AI compute (e.g. POST /api/nourish) runs an LLM over 8
+    // dimensions AND awaits a pantry publish — routinely 20–60s. The general
+    // client's 15s read timeout would abort mid-compute and surface a bogus
+    // error while the server is still working.
+    @Volatile private var computeClient: OkHttpClient? = null
+    fun getComputeClient(): OkHttpClient {
+        computeClient?.let { return it }
+        return synchronized(this) {
+            computeClient ?: createHttpClient(
+                connectTimeoutSeconds = 10,
+                readTimeoutSeconds = 75
+            ).also { computeClient = it }
+        }
+    }
+
     fun createExoPlayer(context: Context): ExoPlayer {
         val client = getMediaClient()
         val dataSourceFactory = OkHttpDataSource.Factory(client)

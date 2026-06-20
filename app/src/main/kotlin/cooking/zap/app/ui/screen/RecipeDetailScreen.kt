@@ -10,12 +10,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +42,7 @@ import cooking.zap.app.nostr.NourishScore
 import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.nostr.toNpub
 import cooking.zap.app.repo.EventRepository
+import cooking.zap.app.viewmodel.RecipeDetailViewModel
 import cooking.zap.app.ui.component.ActionBar
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.recipeBody
@@ -76,11 +80,12 @@ fun RecipeDetailScreen(
     unicodeEmojis: List<String> = emptyList(),
     onOpenEmojiLibrary: (() -> Unit)? = null,
     onStartCooking: ((RecipeParser.Recipe) -> Unit)? = null,
+    onComputeNourish: () -> Unit = {},
 ) {
     val recipe by viewModel.recipe.collectAsState()
     val event by viewModel.event.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val nourish by viewModel.nourish.collectAsState()
+    val nourishUi by viewModel.nourishUi.collectAsState()
 
     val reactionVersion by eventRepo.reactionVersion.collectAsState()
     val zapVersion by eventRepo.zapVersion.collectAsState()
@@ -165,10 +170,21 @@ fun RecipeDetailScreen(
                         },
                     )
 
-                    // Nourish health score (concern 2.4a) — outside recipeBody so the
-                    // Sous Chef preview stays score-free. Renders only when present.
-                    nourish?.let { score ->
-                        item(key = "nourish") { NourishSection(score) }
+                    // Nourish (2.4a read / 2.4b compute) — outside recipeBody so the
+                    // Sous Chef preview stays score-free. Hidden/Loading render nothing.
+                    when (val n = nourishUi) {
+                        is RecipeDetailViewModel.NourishUi.Scored ->
+                            item(key = "nourish") { NourishSection(n.score) }
+                        RecipeDetailViewModel.NourishUi.NotScored ->
+                            item(key = "nourish") { NourishCompute(onComputeNourish, computing = false) }
+                        RecipeDetailViewModel.NourishUi.Computing ->
+                            item(key = "nourish") { NourishCompute(onComputeNourish, computing = true) }
+                        RecipeDetailViewModel.NourishUi.MembersOnly ->
+                            item(key = "nourish") { NourishMessage("Nourish scoring is a Zap Cooking members feature.") }
+                        is RecipeDetailViewModel.NourishUi.Error ->
+                            item(key = "nourish") { NourishMessage(n.message, retry = onComputeNourish) }
+                        RecipeDetailViewModel.NourishUi.Loading,
+                        RecipeDetailViewModel.NourishUi.Hidden -> Unit
                     }
 
                     val recipeEvent = event
@@ -282,6 +298,61 @@ private fun NourishSection(score: NourishScore) {
                     )
                 }
             }
+        }
+    }
+}
+
+/** "Get Nourish score" affordance — a signing account with no cached score (2.4b). */
+@Composable
+private fun NourishCompute(onCompute: () -> Unit, computing: Boolean) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        Text(
+            text = "Nourish",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "See this recipe's health score across 8 dimensions.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = onCompute, enabled = !computing) {
+            if (computing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    strokeWidth = 2.dp,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Scoring… (this can take a moment)")
+            } else {
+                Text("Get Nourish score")
+            }
+        }
+    }
+}
+
+/** Nourish info/error message (members-only, or an error with optional retry). */
+@Composable
+private fun NourishMessage(message: String, retry: (() -> Unit)? = null) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        Text(
+            text = "Nourish",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (retry != null) {
+            TextButton(onClick = retry) { Text("Try again") }
         }
     }
 }

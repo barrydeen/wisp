@@ -2640,6 +2640,9 @@ fun WispNavHost(
             RecipeDetailScreen(
                 viewModel = recipeDetailViewModel,
                 eventRepo = feedViewModel.eventRepo,
+                onComputeNourish = {
+                    recipeDetailViewModel.computeNourish(feedViewModel.zapCookingApi, feedViewModel.signer)
+                },
                 onBack = { navController.popBackStack() },
                 onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                 onHashtagClick = { tag ->
