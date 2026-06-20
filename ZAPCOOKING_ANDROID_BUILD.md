@@ -542,8 +542,7 @@ membership link-out, `MembershipRepository` (Phase 3).
   left-green-border rows; "Not medical advice" footer. Omitted (no data in
   `NourishScore`): quick-take, per-dim reason, key ingredients. Deferred: the
   "↑ Dimension" upgrade pill. Suite 102/0/0/0. OPEN (device-resolves): does a
-  non-member signing account auth-read
-  pantry, or is it member-gated?
+  non-member signing account auth-read pantry, or is it member-gated?
   AUTH FIX (device-confirmed CLOSED auth-required + stale isAuthenticated):
   two bugs — (1) `authenticatedRelays` was never cleared on a transient
   disconnect, so `isAuthenticated(pantry)` stayed stale-true and the query

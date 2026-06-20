@@ -7,8 +7,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -28,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cooking.zap.app.nostr.NourishDimension
@@ -184,6 +187,7 @@ private fun DimensionTile(dim: NourishDimension, modifier: Modifier) {
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Spacer(Modifier.size(6.dp))
@@ -224,13 +228,14 @@ private fun UpgradeRow(text: String) {
     Row(
         Modifier
             .fillMaxWidth()
+            .height(IntrinsicSize.Min) // accent matches the (possibly multi-line) text height
             .padding(vertical = 3.dp),
     ) {
         // Left green border accent (the web's `border-left`).
         Box(
             Modifier
                 .width(2.dp)
-                .height(20.dp)
+                .fillMaxHeight()
                 .clip(RoundedCornerShape(1.dp))
                 .background(NourishGreen.Strong.copy(alpha = 0.22f)),
         )
