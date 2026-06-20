@@ -1,6 +1,7 @@
 package cooking.zap.app.repo
 
 import cooking.zap.app.nostr.ClientMessage
+import cooking.zap.app.nostr.Nip89
 import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.nostr.RecipeParser
@@ -114,7 +115,7 @@ class RecipePublisher(
             // RecipeSerializer call.
             val unsigned = RecipeFormats.primary.serialize(recipe, title, imageUrls, categories)
             val tags = unsigned.tags.toMutableList()
-            if (includeClientTag) tags.add(listOf("client", "Zap Cooking"))
+            if (includeClientTag) tags.add(Nip89.clientTag())
 
             val event = signer.signEvent(unsigned.kind, unsigned.content, tags)
             // Cache first so the detail screen renders optimistically (no relay round-trip).

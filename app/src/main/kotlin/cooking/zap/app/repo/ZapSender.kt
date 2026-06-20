@@ -6,6 +6,7 @@ import android.util.Log
 import cooking.zap.app.nostr.Bolt11
 import cooking.zap.app.nostr.Keys
 import cooking.zap.app.nostr.Nip57
+import cooking.zap.app.nostr.Nip89
 import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.relay.RelayPool
 import okhttp3.OkHttpClient
@@ -117,7 +118,7 @@ class ZapSender(
         }
 
         val allExtraTags = buildList {
-            if (interfacePrefs.isClientTagEnabled()) add(listOf("client", "Zap Cooking"))
+            if (interfacePrefs.isClientTagEnabled()) add(Nip89.clientTag())
             addAll(extraTags)
         }
 

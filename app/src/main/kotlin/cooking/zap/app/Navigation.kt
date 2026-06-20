@@ -124,6 +124,7 @@ import cooking.zap.app.viewmodel.RelayViewModel
 import cooking.zap.app.viewmodel.ThreadViewModel
 import cooking.zap.app.viewmodel.UserProfileViewModel
 import cooking.zap.app.nostr.Nip88
+import cooking.zap.app.nostr.Nip89
 import cooking.zap.app.viewmodel.NotificationFilter
 import cooking.zap.app.viewmodel.NotificationsViewModel
 import cooking.zap.app.viewmodel.ConsoleViewModel
@@ -3549,7 +3550,7 @@ fun WispNavHost(
                         val hint = feedViewModel.outboxRouter?.getRelayHint(replyToEvent.pubkey) ?: ""
                         val tags = cooking.zap.app.nostr.Nip10.buildReplyTags(replyToEvent, hint) +
                             cooking.zap.app.nostr.Nip30.buildEmojiTagsForContent(content, notifResolvedEmojis) +
-                            if (notifInterfacePrefs.isClientTagEnabled()) listOf(listOf("client", "Zap Cooking")) else emptyList()
+                            if (notifInterfacePrefs.isClientTagEnabled()) listOf(Nip89.clientTag()) else emptyList()
 
                         // If the parent is a private reply we received, keep the thread encrypted
                         // by gift-wrapping this reply too. Otherwise fall through to the public path.
