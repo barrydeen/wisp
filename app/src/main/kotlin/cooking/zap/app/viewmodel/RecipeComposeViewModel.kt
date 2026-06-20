@@ -88,6 +88,12 @@ class RecipeComposeViewModel : ViewModel() {
     private val _publishState = MutableStateFlow<PublishState>(PublishState.Idle)
     val publishState: StateFlow<PublishState> = _publishState
 
+    /** One-line notice shown after a pre-fill (e.g. a lossy Cheffy parse). */
+    private val _prefillNotice = MutableStateFlow<String?>(null)
+    val prefillNotice: StateFlow<String?> = _prefillNotice
+
+    private var prefilled = false
+
     // --- simple field setters ---
     fun setTitle(v: String) { _title.value = v }
     fun setSummary(v: String) { _summary.value = v }
@@ -134,6 +140,49 @@ class RecipeComposeViewModel : ViewModel() {
             // Always keep at least one (empty) row so the field never disappears.
             next.ifEmpty { listOf(Row(nextId(), "")) }
         }
+
+    // --- pre-fill from a Cheffy structured-recipe reply (concern 2.3c) ---
+
+    /**
+     * Seed the form from raw recipe markdown (a Cheffy "Save"). Parses via the
+     * shared [RecipeParser.parseContent] (the byte-faithful port of the web
+     * `parseMarkdownForEditing`) and extracts the title from the first `# `
+     * heading. **Leaves images, categories, and summary empty** (mirroring the
+     * web), so the user must add a photo + category before publish.
+     *
+     * Lossy-parse salvage (mirrors the web): if the parse yields no
+     * ingredients/directions, the raw markdown is dropped into Additional
+     * Resources with empty rows and a notice — `blockReason` then stays active
+     * until the user fills the rows, so a bad parse can't be published blindly.
+     *
+     * Runs **once** (idempotent) — the compose route also consumes the hand-off
+     * once, but this guards against a re-entrant call.
+     */
+    fun prefillFromMarkdown(markdown: String) {
+        if (prefilled) return
+        prefilled = true
+
+        val title = TITLE_HEADING.find(markdown)?.groupValues?.get(1)?.trim()?.ifBlank { null } ?: "Untitled"
+        val parsed = RecipeParser.parseContent(markdown)
+        val parseLooksGood = parsed.ingredients.isNotEmpty() && parsed.directions.isNotEmpty()
+
+        _title.value = title
+        if (parseLooksGood) {
+            _chefNotes.value = parsed.chefNotes.orEmpty()
+            _prepTime.value = parsed.details.prepTime.orEmpty()
+            _cookTime.value = parsed.details.cookTime.orEmpty()
+            _servings.value = parsed.details.servings.orEmpty()
+            _ingredients.value = parsed.ingredients.map { Row(nextId(), it) }
+            _directions.value = parsed.directions.map { Row(nextId(), it) }
+            _additionalResources.value = parsed.additionalMarkdown.orEmpty()
+        } else {
+            // Salvage the raw text so nothing is lost; rows stay empty (single
+            // blank row each) so publish remains gated until the user fixes it.
+            _additionalResources.value = markdown.trim()
+            _prefillNotice.value = "Couldn't parse that recipe cleanly — review the raw text in Additional Resources."
+        }
+        // images / categories / summary intentionally left empty (web parity).
+    }
 
     // --- images ---
 
@@ -277,5 +326,8 @@ class RecipeComposeViewModel : ViewModel() {
         // Process-wide monotonic row/image ids (stable Compose keys). Not for crypto.
         private var counter = 0L
         @Synchronized private fun nextId(): Long = ++counter
+
+        // First `# ` heading → recipe title (mirrors the web `extractRecipeTitle`).
+        private val TITLE_HEADING = Regex("^#\\s+(.+)$", RegexOption.MULTILINE)
     }
 }

@@ -143,6 +143,15 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     var signer: NostrSigner? = null
         private set
 
+    /**
+     * Transient hand-off for "Save" from a Cheffy structured recipe reply
+     * (concern 2.3c): the raw recipe markdown to pre-fill [RecipeComposeScreen].
+     * Set on Save, consumed **once** by the compose route (read-then-null), so an
+     * abandoned hand-off can't leak into a later FAB-launched empty compose. Not
+     * persisted (no draft store — v1 deliberately has none).
+     */
+    var pendingComposeMarkdown: String? = null
+
     fun setSigner(s: NostrSigner) {
         signer = s
         zapSender.signer = s
