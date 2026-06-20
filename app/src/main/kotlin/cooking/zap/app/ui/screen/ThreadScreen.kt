@@ -50,8 +50,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
@@ -419,12 +417,6 @@ fun ThreadScreen(
                                     .fillMaxWidth()
                                     .padding(vertical = 32.dp)
                             ) {
-                                androidx.compose.foundation.Image(
-                                    painter = painterResource(R.drawable.ic_no_replies),
-                                    contentDescription = null,
-                                    modifier = androidx.compose.ui.Modifier.size(72.dp),
-                                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f))
-                                )
                                 Text(
                                     stringResource(R.string.thread_no_replies),
                                     style = MaterialTheme.typography.bodyMedium,
