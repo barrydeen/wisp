@@ -97,6 +97,7 @@ fun WispDrawerContent(
     onWallet: () -> Unit,
     onRecipes: () -> Unit = {},
     onSousChef: () -> Unit = {},
+    onCheffy: () -> Unit = {},
     onOnlyFood: () -> Unit = {},
     onLists: () -> Unit = {},
     onDrafts: () -> Unit = {},
@@ -442,6 +443,13 @@ fun WispDrawerContent(
             label = { Text(stringResource(R.string.drawer_souschef)) },
             selected = false,
             onClick = onSousChef,
+            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
+        )
+        NavigationDrawerItem(
+            icon = { CheffyIcon(size = 24.dp) },
+            label = { Text(stringResource(R.string.drawer_cheffy)) },
+            selected = false,
+            onClick = onCheffy,
             modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(

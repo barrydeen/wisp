@@ -79,6 +79,7 @@ import cooking.zap.app.ui.screen.RecipeDetailScreen
 import cooking.zap.app.ui.screen.RecipeComposeScreen
 import cooking.zap.app.ui.screen.RecipeFeedScreen
 import cooking.zap.app.ui.screen.OnlyFoodFeedScreen
+import cooking.zap.app.ui.screen.CheffyScreen
 import cooking.zap.app.ui.screen.SousChefScreen
 import cooking.zap.app.ui.screen.BookmarksScreen
 import cooking.zap.app.ui.screen.HashtagFeedScreen
@@ -112,6 +113,7 @@ import cooking.zap.app.viewmodel.RecipeDetailViewModel
 import cooking.zap.app.viewmodel.RecipeComposeViewModel
 import cooking.zap.app.viewmodel.RecipeFeedViewModel
 import cooking.zap.app.viewmodel.OnlyFoodFeedViewModel
+import cooking.zap.app.viewmodel.CheffyViewModel
 import cooking.zap.app.viewmodel.SousChefViewModel
 import cooking.zap.app.viewmodel.AuthViewModel
 import cooking.zap.app.viewmodel.ComposeViewModel
@@ -192,6 +194,7 @@ object Routes {
     const val ONLY_FOOD = "onlyfood"
     const val SOUS_CHEF = "souschef"
     const val RECIPE_COMPOSE = "recipe_compose"
+    const val CHEFFY = "cheffy"
 
     /**
      * Build a recipe-detail route, URL-encoding the d-tag. Recipe kind is the
@@ -945,6 +948,9 @@ fun WispNavHost(
                 },
                 onSousChef = {
                     navController.navigate(Routes.SOUS_CHEF)
+                },
+                onCheffy = {
+                    navController.navigate(Routes.CHEFFY)
                 },
                 onOnlyFood = {
                     navController.navigate(Routes.ONLY_FOOD)
@@ -2745,6 +2751,26 @@ fun WispNavHost(
                     }
                 },
                 canSign = feedViewModel.signer != null,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(Routes.CHEFFY) {
+            val cheffyViewModel: CheffyViewModel = viewModel()
+            CheffyScreen(
+                viewModel = cheffyViewModel,
+                canSign = feedViewModel.signer != null,
+                onSend = { text, mode ->
+                    cheffyViewModel.send(
+                        content = text,
+                        mode = mode,
+                        api = feedViewModel.zapCookingApi,
+                        pubkey = feedViewModel.getUserPubkey(),
+                    )
+                },
+                onRetry = {
+                    cheffyViewModel.retry(feedViewModel.zapCookingApi, feedViewModel.getUserPubkey())
+                },
                 onBack = { navController.popBackStack() },
             )
         }

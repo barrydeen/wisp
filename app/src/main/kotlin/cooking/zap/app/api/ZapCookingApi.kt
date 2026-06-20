@@ -5,6 +5,7 @@ import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.nostr.NourishParser
 import cooking.zap.app.nostr.NourishScore
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import cooking.zap.app.relay.HttpClientFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -171,6 +172,50 @@ class ZapCookingApi(
             }
         }
 
+    /**
+     * `POST /api/zappy` — Cheffy, the member-gated kitchen-companion chat
+     * (concern 2.3; endpoint stays `/zappy` for back-compat, the feature is
+     * "Cheffy"). pubkey-in-body (not NIP-98, same as the other AI endpoints).
+     * **Stateless full-history**: the client passes the live thread
+     * ([CheffyRequest.messages]) every request — the server keeps no session.
+     * Whole-response (no streaming), so it uses the long-timeout compute client
+     * — `gpt-4.1-mini` replies routinely exceed the general 15s read timeout.
+     * 403 → [CheffyResult.MembersOnly], mirroring [computeNourish].
+     */
+    suspend fun sendCheffy(request: CheffyRequest): CheffyResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val bodyString = json.encodeToString(CheffyRequest.serializer(), request)
+                val httpRequest = Request.Builder()
+                    .url("$baseUrl/api/zappy")
+                    .post(bodyString.toRequestBody(jsonMediaType))
+                    .build()
+                HttpClientFactory.getComputeClient().newCall(httpRequest).execute().use { resp ->
+                    val body = resp.body?.string().orEmpty()
+                    if (resp.code == 403) return@withContext CheffyResult.MembersOnly
+                    // The server reports failures as { ok:false, error } even on
+                    // a 200, so parse the body rather than trusting the status.
+                    val obj = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull()
+                        ?: return@withContext CheffyResult.Error(parseError(body) ?: "Cheffy could not respond.")
+                    val ok = obj["ok"]?.let { it.toString() == "true" } == true
+                    if (!resp.isSuccessful || !ok) {
+                        val msg = obj["error"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                            ?: parseError(body)
+                        return@withContext CheffyResult.Error(msg ?: "Cheffy could not respond.")
+                    }
+                    val output = obj["output"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }?.trim()
+                    if (output.isNullOrEmpty()) {
+                        return@withContext CheffyResult.Error("Cheffy went quiet. Please try again.")
+                    }
+                    CheffyResult.Reply(output)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                CheffyResult.Error("Network error — please try again.")
+            }
+        }
+
     /** Single error/decode path. Call only from a `Dispatchers.IO` context. */
     private fun <T> execute(request: Request, deserializer: DeserializationStrategy<T>): T {
         client.newCall(request).execute().use { resp ->
@@ -216,6 +261,35 @@ sealed interface NourishComputeResult {
     /** 403 — the account isn't an active member. */
     object MembersOnly : NourishComputeResult
     data class Error(val message: String) : NourishComputeResult
+}
+
+/** Cheffy chat mode (concern 2.3). `chat` = conversation; `hungry` = "surprise me". */
+enum class CheffyMode(val wire: String) { CHAT("chat"), HUNGRY("hungry") }
+
+/** One prior turn in the stateless history the client re-sends each request. */
+@Serializable
+data class CheffyMessage(val role: String, val content: String)
+
+/**
+ * `POST /api/zappy` request (concern 2.3). [pubkey] is the signed-in user's
+ * (membership gate). [messages] is the live thread (stateless — re-sent every
+ * request; server keeps no session). For [CheffyMode.HUNGRY] the server
+ * supplies its own prompt, so [prompt] is empty.
+ */
+@Serializable
+data class CheffyRequest(
+    val prompt: String,
+    val mode: String,
+    val pubkey: String,
+    val messages: List<CheffyMessage>,
+)
+
+/** Outcome of [ZapCookingApi.sendCheffy]. Mirrors [NourishComputeResult]. */
+sealed interface CheffyResult {
+    data class Reply(val output: String) : CheffyResult
+    /** 403 — the account isn't an active member. */
+    object MembersOnly : CheffyResult
+    data class Error(val message: String) : CheffyResult
 }
 
 /** `/api/extract-recipe(/public)` response. Lenient — unknown keys ignored. */

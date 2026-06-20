@@ -12,6 +12,7 @@
     <string name="drawer_feeds">Feeds</string>
     <string name="drawer_recipes">Recipes</string>
     <string name="drawer_souschef">Sous Chef</string>
+    <string name="drawer_cheffy">Cheffy</string>
     <string name="drawer_onlyfood">OnlyFood</string>
     <string name="drawer_lists">Lists</string>
     <string name="drawer_drafts">Drafts &amp; Scheduled</string>

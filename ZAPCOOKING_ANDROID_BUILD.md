@@ -469,9 +469,33 @@ membership link-out, `MembershipRepository` (Phase 3).
   (`RecipeSerializerTest`/`RecipeParserTest`) and `RecipeRepositoryTest` left
   **byte-untouched**; new `RecipeFormatTest` covers adapter identity, the
   pass-through, the cross-format pick, and the stub guard. Suite 92/0/0/0.
-- **2.3** Cheffy chat — member-gated chat screen → `/api/zappy` (chat/hungry);
-  scan (vision) as 2.3b. Heaviest branding (port `CheffyIcon`/`CheffyAvatar`).
-  Recipe-format output can deep-link into 2.2 create.
+- **2.3** ✅ Cheffy chat v1 (member-gated, chat + hungry, pure conversation —
+  one PR). `ui/screen/CheffyScreen` + `viewmodel/CheffyViewModel`: thread as
+  `StateFlow<List<Message>>`, **stateless full-history** per send (maps
+  non-pending/non-error msgs → `{role,content}`, mirrors the web `buildHistory`
+  exactly, server-cap 12 turns + 2000-char prompt enforced client-side), "Start
+  over" clears it, no DB/Nostr. `ZapCookingApi.sendCheffy(CheffyRequest)` on
+  `getComputeClient()` (75s — whole-response, **no streaming**), mirroring
+  `computeNourish` one-to-one: `CheffyResult { Reply | MembersOnly | Error }`,
+  **403 → MembersOnly**, `ok:false`/non-2xx → Error. Wait-not-stream: a pending
+  bubble shows a `THINKING_LINES` status line (`COOKING_LINES` when a recipe is
+  expected, via `looksLikeRecipeRequest`; one line picked per request, not timed
+  rotation); replies render markdown;
+  `looksLikeStructuredRecipe` flips the expression to happy + renders the recipe
+  cleanly (NO Save/Share/Zap actions — those are 2.3c). **MembersOnly is
+  message-only** (the "Pro Kitchen members feature" line, like 2.4b — no
+  purchase CTA; that link-out + Play compliance belongs to the membership/release
+  work). READ_ONLY → gated (members/sign-in message, no composer). Branding:
+  `ui/component/CheffyIcon` (compact variant ported from the web SVG via
+  `PathParser` — toque + Zap fold + neutral/thinking/cooking/happy/concerned;
+  character/avatar deferred to 2.3b), `cheffy/Cheffy` brand object
+  (`PROMPT_PLACEHOLDERS`/`THINKING`/`COOKING`/`ERROR` pools + `pickLine` +
+  `looksLikeStructuredRecipe`, verbatim from the web, unit-tested). Drawer entry
+  "Cheffy" with the icon. Endpoint stays `/api/zappy`. Suite 98/0/0/0.
+  **2.3b** = scan (fridge vision, `/api/zappy/scan`, base64 image). **2.3c** =
+  Save/Share/Zap actions on a structured Cheffy reply (reuse 2.2 publisher) +
+  the character/avatar mascot. Deferred: `format` mode (create-page tool),
+  zap-to-Cheffy (LN `ZapCooking@getalby.com`).
 - **2.4** Nourish (sub-phased): **2.4a READ** ✅ — `nostr/NourishParser` (pure;
   kind-30078 JSON → `NourishScore`, **trusts the stored `overall`**, legacy
   dims default 0; 6 unit tests on a synthetic spec-accurate fixture — real
