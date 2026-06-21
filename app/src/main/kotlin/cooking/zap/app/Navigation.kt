@@ -627,14 +627,14 @@ fun WispNavHost(
         )
     }
 
-    // Recipes is the home/root tab. On non-RECIPES app screens: pop the back
-    // stack, falling back to RECIPES if empty. On RECIPES: let the system
-    // handle back (minimizes the app).
+    // Feed is the home anchor. On non-FEED app screens: pop the back stack,
+    // falling back to FEED if empty. On FEED: let the system handle back
+    // (minimizes the app). Recipes is still a root tab, but Feed is "home".
     val isAppRoute = currentRoute != null && currentRoute !in nonAppRoutes
-    BackHandler(enabled = isAppRoute && currentRoute != Routes.RECIPES) {
+    BackHandler(enabled = isAppRoute && currentRoute != Routes.FEED) {
         val popped = navController.popBackStack()
         if (!popped) {
-            navController.navigate(Routes.RECIPES) {
+            navController.navigate(Routes.FEED) {
                 popUpTo(0) { inclusive = true }
                 launchSingleTop = true
             }
@@ -691,14 +691,14 @@ fun WispNavHost(
                 onFeed = {
                     drawerScope.launch { drawerState.close() }
                     navController.navigate(Routes.FEED) {
-                        popUpTo(Routes.RECIPES) { inclusive = false }
+                        popUpTo(Routes.FEED) { inclusive = false }
                         launchSingleTop = true
                     }
                 },
                 onSearch = {
                     drawerScope.launch { drawerState.close() }
                     navController.navigate(Routes.SEARCH) {
-                        popUpTo(Routes.RECIPES) { saveState = true }
+                        popUpTo(Routes.FEED) { saveState = true }
                         launchSingleTop = true
                         restoreState = true
                     }
@@ -708,7 +708,7 @@ fun WispNavHost(
                 onRecipes = {
                     drawerScope.launch { drawerState.close() }
                     navController.navigate(Routes.RECIPES) {
-                        popUpTo(Routes.RECIPES) { inclusive = false }
+                        popUpTo(Routes.FEED) { inclusive = false }
                         launchSingleTop = true
                     }
                 },
@@ -787,7 +787,7 @@ fun WispNavHost(
                             } else {
                                 if (tab == BottomTab.WALLET) walletViewModel.navigateHome()
                                 navController.navigate(tab.route) {
-                                    popUpTo(Routes.RECIPES) { inclusive = false }
+                                    popUpTo(Routes.FEED) { inclusive = false }
                                     launchSingleTop = true
                                 }
                             }
@@ -946,13 +946,13 @@ fun WispNavHost(
                     val target = deepLinkRoute
                     if (target != null) {
                         onDeepLinkConsumed()
-                        // Navigate to Recipes first (as backstack root), then to the deep link target
-                        navController.navigate(Routes.RECIPES) {
+                        // Navigate to Feed first (the home anchor), then to the deep link target
+                        navController.navigate(Routes.FEED) {
                             popUpTo(Routes.LOADING) { inclusive = true }
                         }
                         navController.navigate(target)
                     } else {
-                        navController.navigate(Routes.RECIPES) {
+                        navController.navigate(Routes.FEED) {
                             popUpTo(Routes.LOADING) { inclusive = true }
                         }
                     }
@@ -964,7 +964,7 @@ fun WispNavHost(
             ExistingUserOnboardingScreen(
                 feedViewModel = feedViewModel,
                 onReady = {
-                    navController.navigate(Routes.RECIPES) {
+                    navController.navigate(Routes.FEED) {
                         popUpTo(Routes.EXISTING_USER_ONBOARDING) { inclusive = true }
                     }
                 }
@@ -975,7 +975,7 @@ fun WispNavHost(
             WatchOnlyOnboardingScreen(
                 feedViewModel = feedViewModel,
                 onReady = {
-                    navController.navigate(Routes.RECIPES) {
+                    navController.navigate(Routes.FEED) {
                         popUpTo(Routes.WATCH_ONLY_ONBOARDING) { inclusive = true }
                     }
                 }
@@ -1027,7 +1027,7 @@ fun WispNavHost(
                 },
                 onSearch = {
                     navController.navigate(Routes.SEARCH) {
-                        popUpTo(Routes.RECIPES) { saveState = true }
+                        popUpTo(Routes.FEED) { saveState = true }
                         launchSingleTop = true
                         restoreState = true
                     }
@@ -1303,7 +1303,7 @@ fun WispNavHost(
                         ?: ProfileData(pubkey = pubkey, name = null, displayName = null, about = null, picture = null, nip05 = null, banner = null, lud16 = null, updatedAt = 0)
                     searchViewModel.prepareAuthorSearch(authorProfile)
                     navController.navigate(Routes.SEARCH) {
-                        popUpTo(Routes.RECIPES) { saveState = true }
+                        popUpTo(Routes.FEED) { saveState = true }
                         launchSingleTop = true
                         restoreState = true
                     }
@@ -3525,13 +3525,13 @@ fun WispNavHost(
                 signer = activeSigner,
                 onPosted = {
                     topicOnboardingViewModel.reset()
-                    navController.navigate(Routes.RECIPES) {
+                    navController.navigate(Routes.FEED) {
                         popUpTo(0) { inclusive = true }
                     }
                 },
                 onSkip = {
                     topicOnboardingViewModel.reset()
-                    navController.navigate(Routes.RECIPES) {
+                    navController.navigate(Routes.FEED) {
                         popUpTo(0) { inclusive = true }
                     }
                 }
