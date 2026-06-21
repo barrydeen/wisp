@@ -50,6 +50,10 @@ import cooking.zap.app.ui.component.HapticHelper
 import cooking.zap.app.ui.component.NotifBlipSound
 import cooking.zap.app.ui.component.BottomTab
 import cooking.zap.app.ui.component.WispBottomBar
+import cooking.zap.app.ui.component.WispDrawerContent
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.rememberDrawerState
 import cooking.zap.app.ui.component.ZapDialog
 import cooking.zap.app.ui.component.pendingEmojiReactCallback
 import cooking.zap.app.ui.component.AuthApprovalDialog
@@ -623,8 +627,9 @@ fun WispNavHost(
         )
     }
 
-    // On non-FEED app screens: pop the back stack, falling back to FEED if empty.
-    // On FEED: let the system handle back (minimizes the app).
+    // Feed is the home anchor. On non-FEED app screens: pop the back stack,
+    // falling back to FEED if empty. On FEED: let the system handle back
+    // (minimizes the app). Recipes is still a root tab, but Feed is "home".
     val isAppRoute = currentRoute != null && currentRoute !in nonAppRoutes
     BackHandler(enabled = isAppRoute && currentRoute != Routes.FEED) {
         val popped = navController.popBackStack()
@@ -635,6 +640,131 @@ fun WispNavHost(
             }
         }
     }
+
+    // ───── Hoisted navigation drawer ─────
+    // Shared by the Recipes & Feed root tabs (and reachable from every screen
+    // that opens it via onOpenDrawer). Lives here, not inside FeedScreen, so
+    // Recipes — the default/home tab — can open the same drawer.
+    val drawerScope = rememberCoroutineScope()
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val onOpenDrawer: () -> Unit = { drawerScope.launch { drawerState.open() } }
+    // Edge-swipe-to-open is allowed only on the root tabs — never on sub-screens
+    // (recipe detail, threads, DM/group rooms, settings, etc.).
+    val rootTabRoutes = remember {
+        setOf(Routes.RECIPES, Routes.FEED, Routes.WALLET, Routes.DM_LIST, Routes.NOTIFICATIONS)
+    }
+    val drawerPubkey = feedViewModel.getUserPubkey()
+    val drawerProfileVersion by feedViewModel.eventRepo.profileVersion.collectAsState()
+    val drawerProfile = drawerProfileVersion.let {
+        drawerPubkey?.let { pk -> feedViewModel.eventRepo.getProfileData(pk) }
+    }
+    val drawerStatusVersion by feedViewModel.eventRepo.statusVersion.collectAsState()
+    val drawerHasEmbeddedWallet =
+        walletViewModel.walletMode.collectAsState().value == cooking.zap.app.repo.WalletMode.SPARK
+    val closeDrawerAndNavigate: (String) -> Unit = { route ->
+        drawerScope.launch { drawerState.close() }
+        navController.navigate(route)
+    }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = currentRoute in rootTabRoutes,
+        drawerContent = {
+            WispDrawerContent(
+                profile = drawerProfile,
+                pubkey = drawerPubkey,
+                isDarkTheme = isDarkTheme,
+                onToggleTheme = onToggleTheme,
+                accounts = accounts,
+                onSwitchAccount = { pubkeyHex ->
+                    drawerScope.launch { drawerState.close() }
+                    onSwitchAccount(pubkeyHex)
+                },
+                onAddAccount = {
+                    drawerScope.launch { drawerState.close() }
+                    onAddAccount()
+                },
+                onProfile = {
+                    drawerScope.launch { drawerState.close() }
+                    drawerPubkey?.let { navController.navigate("profile/$it") }
+                },
+                onFeed = {
+                    drawerScope.launch { drawerState.close() }
+                    navController.navigate(Routes.FEED) {
+                        popUpTo(Routes.FEED) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
+                onSearch = {
+                    drawerScope.launch { drawerState.close() }
+                    navController.navigate(Routes.SEARCH) {
+                        popUpTo(Routes.FEED) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                onMessages = { closeDrawerAndNavigate(Routes.DM_LIST) },
+                onWallet = { closeDrawerAndNavigate(Routes.WALLET) },
+                onRecipes = {
+                    drawerScope.launch { drawerState.close() }
+                    navController.navigate(Routes.RECIPES) {
+                        popUpTo(Routes.FEED) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
+                onSousChef = { closeDrawerAndNavigate(Routes.SOUS_CHEF) },
+                onCheffy = { closeDrawerAndNavigate(Routes.CHEFFY) },
+                onOnlyFood = { closeDrawerAndNavigate(Routes.ONLY_FOOD) },
+                onLists = { closeDrawerAndNavigate(Routes.LISTS_HUB) },
+                onDrafts = { closeDrawerAndNavigate(Routes.DRAFTS) },
+                onMediaServers = { closeDrawerAndNavigate(Routes.BLOSSOM_SERVERS) },
+                onSocialGraph = { closeDrawerAndNavigate(Routes.SOCIAL_GRAPH) },
+                onSafety = { closeDrawerAndNavigate(Routes.SAFETY) },
+                onCustomEmojis = { closeDrawerAndNavigate(Routes.CUSTOM_EMOJIS) },
+                onKeys = { closeDrawerAndNavigate(Routes.KEYS) },
+                onPowSettings = { closeDrawerAndNavigate(Routes.POW_SETTINGS) },
+                onConsole = { closeDrawerAndNavigate(Routes.CONSOLE) },
+                onRelayHealth = { closeDrawerAndNavigate(Routes.RELAY_HEALTH) },
+                onRelaySettings = { closeDrawerAndNavigate(Routes.RELAYS) },
+                onInterfaceSettings = { closeDrawerAndNavigate(Routes.INTERFACE_SETTINGS) },
+                onLogout = {
+                    drawerScope.launch { drawerState.close() }
+                    feedViewModel.clearSigner()
+                    feedViewModel.resetForAccountSwitch()
+                    walletViewModel.disconnectWallet()  // full clear — intentional logout
+                    val hasRemaining = authViewModel.logOut()
+                    if (hasRemaining) {
+                        // logOut() already switched to the first remaining account
+                        feedViewModel.reloadForNewAccount()
+                        relayViewModel.reload()
+                        blossomServersViewModel.reload()
+                        composeViewModel.reloadBlossomRepo()
+                        walletViewModel.refreshState()
+                        // initRelays() triggered by LOADING composable LaunchedEffect
+                        navController.navigate(Routes.LOADING) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    } else {
+                        // Full logout — reset UI preferences and refresh in-memory theme state
+                        cooking.zap.app.repo.InterfacePreferences(context).reset()
+                        onInterfaceChanged()
+                        navController.navigate(Routes.SPLASH) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                },
+                hasEmbeddedWallet = drawerHasEmbeddedWallet,
+                userStatus = drawerStatusVersion.let {
+                    drawerPubkey?.let { pk -> feedViewModel.eventRepo.getUserStatus(pk) }
+                },
+                onUpdateStatus = { status -> feedViewModel.publishUserStatus(status) },
+                onScanResult = { route ->
+                    drawerScope.launch { drawerState.close() }
+                    navController.navigate(route)
+                }
+            )
+        }
+    ) {
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -816,7 +946,7 @@ fun WispNavHost(
                     val target = deepLinkRoute
                     if (target != null) {
                         onDeepLinkConsumed()
-                        // Navigate to Feed first (as backstack root), then to the deep link target
+                        // Navigate to Feed first (the home anchor), then to the deep link target
                         navController.navigate(Routes.FEED) {
                             popUpTo(Routes.LOADING) { inclusive = true }
                         }
@@ -855,8 +985,7 @@ fun WispNavHost(
         composable(Routes.FEED) {
             FeedScreen(
                 viewModel = feedViewModel,
-                isDarkTheme = isDarkTheme,
-                onToggleTheme = onToggleTheme,
+                onOpenDrawer = onOpenDrawer,
                 scrollToTopTrigger = scrollToTopTrigger,
                 onCompose = if (signingMode == SigningMode.READ_ONLY) null else {
                     {
@@ -881,20 +1010,8 @@ fun WispNavHost(
                     composeViewModel.clear()
                     navController.navigate(Routes.COMPOSE)
                 },
-                onRelays = {
-                    navController.navigate(Routes.RELAYS)
-                },
-                onProfileEdit = {
-                    val pubkey = feedViewModel.getUserPubkey()
-                    if (pubkey != null) {
-                        navController.navigate("profile/$pubkey")
-                    }
-                },
                 onProfileClick = { pubkey ->
                     navController.navigate("profile/$pubkey")
-                },
-                onDms = {
-                    navController.navigate(Routes.DM_LIST)
                 },
                 onReact = { event, emoji ->
                     feedViewModel.toggleReaction(event, emoji)
@@ -905,64 +1022,8 @@ fun WispNavHost(
                 onQuotedNoteClick = { eventId ->
                     navController.navigate("thread/$eventId")
                 },
-                onScanResult = { route ->
-                    navController.navigate(route)
-                },
-                accounts = accounts,
-                onSwitchAccount = onSwitchAccount,
-                onAddAccount = onAddAccount,
-                hasEmbeddedWallet = walletViewModel.walletMode.collectAsState().value == cooking.zap.app.repo.WalletMode.SPARK,
-                onLogout = {
-                    feedViewModel.clearSigner()
-                    feedViewModel.resetForAccountSwitch()
-                    walletViewModel.disconnectWallet()  // full clear — intentional logout
-                    val hasRemaining = authViewModel.logOut()
-                    if (hasRemaining) {
-                        // logOut() already switched to the first remaining account
-                        feedViewModel.reloadForNewAccount()
-                        relayViewModel.reload()
-                        blossomServersViewModel.reload()
-                        composeViewModel.reloadBlossomRepo()
-                        walletViewModel.refreshState()
-                        // initRelays() triggered by LOADING composable LaunchedEffect
-                        navController.navigate(Routes.LOADING) {
-                            popUpTo(0) { inclusive = true }
-                        }
-                    } else {
-                        // Full logout — reset UI preferences and refresh in-memory theme state
-                        cooking.zap.app.repo.InterfacePreferences(context).reset()
-                        onInterfaceChanged()
-                        navController.navigate(Routes.SPLASH) {
-                            popUpTo(0) { inclusive = true }
-                        }
-                    }
-                },
-                onMediaServers = {
-                    navController.navigate(Routes.BLOSSOM_SERVERS)
-                },
                 onWallet = {
                     navController.navigate(Routes.WALLET)
-                },
-                onRecipes = {
-                    navController.navigate(Routes.RECIPES)
-                },
-                onSousChef = {
-                    navController.navigate(Routes.SOUS_CHEF)
-                },
-                onCheffy = {
-                    navController.navigate(Routes.CHEFFY)
-                },
-                onOnlyFood = {
-                    navController.navigate(Routes.ONLY_FOOD)
-                },
-                onLists = {
-                    navController.navigate(Routes.LISTS_HUB)
-                },
-                onDrafts = {
-                    navController.navigate(Routes.DRAFTS)
-                },
-                onSafety = {
-                    navController.navigate(Routes.SAFETY)
                 },
                 onSearch = {
                     navController.navigate(Routes.SEARCH) {
@@ -973,24 +1034,6 @@ fun WispNavHost(
                 },
                 onSocialGraph = {
                     navController.navigate(Routes.SOCIAL_GRAPH)
-                },
-                onCustomEmojis = {
-                    navController.navigate(Routes.CUSTOM_EMOJIS)
-                },
-                onConsole = {
-                    navController.navigate(Routes.CONSOLE)
-                },
-                onRelayHealth = {
-                    navController.navigate(Routes.RELAY_HEALTH)
-                },
-                onKeys = {
-                    navController.navigate(Routes.KEYS)
-                },
-                onPowSettings = {
-                    navController.navigate(Routes.POW_SETTINGS)
-                },
-                onInterfaceSettings = {
-                    navController.navigate(Routes.INTERFACE_SETTINGS)
                 },
                 onAddToList = { eventId -> addToListEventId = eventId },
                 onRelayDetail = { url ->
@@ -2688,12 +2731,25 @@ fun WispNavHost(
         composable(Routes.RECIPES) {
             val recipeFeedViewModel: RecipeFeedViewModel = viewModel()
             LaunchedEffect(Unit) { recipeFeedViewModel.load(feedViewModel.recipeRepo) }
+            // Avatar for the nav icon — mirrors the Feed tab's avatar→drawer button.
+            val recipesProfileVersion by feedViewModel.eventRepo.profileVersion.collectAsState()
+            val recipesAvatarUrl = recipesProfileVersion.let {
+                feedViewModel.getUserPubkey()?.let { pk -> feedViewModel.eventRepo.getProfileData(pk)?.picture }
+            }
             RecipeFeedScreen(
                 viewModel = recipeFeedViewModel,
                 eventRepo = feedViewModel.eventRepo,
                 onRecipeClick = { author, dTag -> navController.navigate(Routes.recipe(author, dTag)) },
                 onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
-                onBack = { navController.popBackStack() },
+                onOpenDrawer = onOpenDrawer,
+                onSearch = {
+                    navController.navigate(Routes.SEARCH) {
+                        popUpTo(Routes.RECIPES) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                userAvatarUrl = recipesAvatarUrl,
                 // READ_ONLY can't sign → no compose entry point.
                 onCreateRecipe = if (signingMode == SigningMode.READ_ONLY) null else {
                     { navController.navigate(Routes.RECIPE_COMPOSE) }
@@ -3802,4 +3858,5 @@ fun WispNavHost(
     } // Box
 
     } // Scaffold
+    } // ModalNavigationDrawer
 }

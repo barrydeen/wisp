@@ -44,21 +44,18 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -93,7 +90,6 @@ import cooking.zap.app.ui.component.isGalleryEvent
 import cooking.zap.app.ui.component.PostCard
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.RelayIcon
-import cooking.zap.app.ui.component.WispDrawerContent
 import cooking.zap.app.ui.component.ZapDialog
 import cooking.zap.app.repo.RelayInfoRepository
 import cooking.zap.app.relay.ScoredRelay
@@ -140,7 +136,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import cooking.zap.app.nostr.ProfileData
-import cooking.zap.app.repo.AccountInfo
 import cooking.zap.app.ui.component.FollowButton
 import cooking.zap.app.viewmodel.TRENDING_USERS_RELAY_URL
 import kotlinx.coroutines.delay
@@ -153,41 +148,20 @@ import kotlinx.coroutines.launch
 @Composable
 fun FeedScreen(
     viewModel: FeedViewModel,
-    isDarkTheme: Boolean = true,
-    onToggleTheme: () -> Unit = {},
+    // Opens the app-wide navigation drawer, which is hoisted to WispNavHost
+    // so it's shared with the Recipes root tab. The avatar tap calls this.
+    onOpenDrawer: () -> Unit = {},
     onCompose: (() -> Unit)? = null,
     onReply: (NostrEvent) -> Unit,
-    onRelays: () -> Unit,
-    onProfileEdit: () -> Unit = {},
     onProfileClick: (String) -> Unit = {},
-    onDms: () -> Unit = {},
     onReact: (NostrEvent, String) -> Unit = { _, _ -> },
     onRepost: (NostrEvent) -> Unit = {},
     onQuote: (NostrEvent) -> Unit = {},
     onNoteClick: (NostrEvent) -> Unit = {},
     onQuotedNoteClick: ((String) -> Unit)? = null,
     onSearch: () -> Unit = {},
-    accounts: List<AccountInfo> = emptyList(),
-    onSwitchAccount: (String) -> Unit = {},
-    onAddAccount: () -> Unit = {},
-    onLogout: () -> Unit = {},
-    hasEmbeddedWallet: Boolean = false,
-    onMediaServers: () -> Unit = {},
     onWallet: () -> Unit = {},
-    onLists: () -> Unit = {},
-    onRecipes: () -> Unit = {},
-    onSousChef: () -> Unit = {},
-    onCheffy: () -> Unit = {},
-    onOnlyFood: () -> Unit = {},
-    onDrafts: () -> Unit = {},
     onSocialGraph: () -> Unit = {},
-    onSafety: () -> Unit = {},
-    onCustomEmojis: () -> Unit = {},
-    onConsole: () -> Unit = {},
-    onRelayHealth: () -> Unit = {},
-    onKeys: () -> Unit = {},
-    onPowSettings: () -> Unit = {},
-    onInterfaceSettings: () -> Unit = {},
     onAddToList: (String) -> Unit = {},
     onRelayDetail: (String) -> Unit = {},
     onHashtagClick: ((String) -> Unit)? = null,
@@ -197,7 +171,6 @@ fun FeedScreen(
     onLiveStreamClick: ((String, String, String?) -> Unit)? = null,
     fetchGroupPreview: (suspend (String, String) -> cooking.zap.app.repo.GroupPreview?)? = null,
     scrollToTopTrigger: Int = 0,
-    onScanResult: (String) -> Unit = {},
 ) {
     val feed by viewModel.feed.collectAsState()
     val feedType by viewModel.feedType.collectAsState()
@@ -294,7 +267,6 @@ fun FeedScreen(
     val globalOnlineCount by viewModel.globalOnlineCount.collectAsState()
     var showFeedTypeDropdown by remember { mutableStateOf(false) }
     var showSocialGraphDialog by remember { mutableStateOf(false) }
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val userProfile = profileVersion.let { userPubkey?.let { viewModel.eventRepo.getProfileData(it) } }
 
@@ -653,122 +625,8 @@ fun FeedScreen(
         )
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            WispDrawerContent(
-                profile = userProfile,
-                pubkey = userPubkey,
-                isDarkTheme = isDarkTheme,
-                onToggleTheme = onToggleTheme,
-                accounts = accounts,
-                onSwitchAccount = { pubkeyHex ->
-                    scope.launch { drawerState.close() }
-                    onSwitchAccount(pubkeyHex)
-                },
-                onAddAccount = {
-                    scope.launch { drawerState.close() }
-                    onAddAccount()
-                },
-                onProfile = {
-                    scope.launch { drawerState.close() }
-                    onProfileEdit()
-                },
-                onFeed = {
-                    scope.launch { drawerState.close() }
-                },
-                onSearch = {
-                    scope.launch { drawerState.close() }
-                    onSearch()
-                },
-                onMessages = {
-                    scope.launch { drawerState.close() }
-                    onDms()
-                },
-                onWallet = {
-                    scope.launch { drawerState.close() }
-                    onWallet()
-                },
-                onRecipes = {
-                    scope.launch { drawerState.close() }
-                    onRecipes()
-                },
-                onSousChef = {
-                    scope.launch { drawerState.close() }
-                    onSousChef()
-                },
-                onCheffy = {
-                    scope.launch { drawerState.close() }
-                    onCheffy()
-                },
-                onOnlyFood = {
-                    scope.launch { drawerState.close() }
-                    onOnlyFood()
-                },
-                onLists = {
-                    scope.launch { drawerState.close() }
-                    onLists()
-                },
-                onDrafts = {
-                    scope.launch { drawerState.close() }
-                    onDrafts()
-                },
-                onMediaServers = {
-                    scope.launch { drawerState.close() }
-                    onMediaServers()
-                },
-                onSocialGraph = {
-                    scope.launch { drawerState.close() }
-                    onSocialGraph()
-                },
-                onSafety = {
-                    scope.launch { drawerState.close() }
-                    onSafety()
-                },
-                onCustomEmojis = {
-                    scope.launch { drawerState.close() }
-                    onCustomEmojis()
-                },
-                onKeys = {
-                    scope.launch { drawerState.close() }
-                    onKeys()
-                },
-                onPowSettings = {
-                    scope.launch { drawerState.close() }
-                    onPowSettings()
-                },
-                onConsole = {
-                    scope.launch { drawerState.close() }
-                    onConsole()
-                },
-                onRelayHealth = {
-                    scope.launch { drawerState.close() }
-                    onRelayHealth()
-                },
-                onRelaySettings = {
-                    scope.launch { drawerState.close() }
-                    onRelays()
-                },
-                onInterfaceSettings = {
-                    scope.launch { drawerState.close() }
-                    onInterfaceSettings()
-                },
-                onLogout = {
-                    scope.launch { drawerState.close() }
-                    onLogout()
-                },
-                hasEmbeddedWallet = hasEmbeddedWallet,
-                userStatus = statusVersion.let { userPubkey?.let { viewModel.eventRepo.getUserStatus(it) } },
-                onUpdateStatus = { status ->
-                    viewModel.publishUserStatus(status)
-                },
-                onScanResult = { route ->
-                    scope.launch { drawerState.close() }
-                    onScanResult(route)
-                }
-            )
-        }
-    ) {
+    // The navigation drawer is hoisted to WispNavHost (shared with the
+    // Recipes root tab); FeedScreen just opens it via onOpenDrawer.
         Scaffold(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
@@ -904,7 +762,7 @@ fun FeedScreen(
                     ),
                     navigationIcon = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            IconButton(onClick = onOpenDrawer) {
                                 ProfilePicture(url = userProfile?.picture, size = 32)
                             }
                             // Content type filter toggle — rotates through All → Notes → Gallery → Polls
@@ -1305,7 +1163,6 @@ fun FeedScreen(
             }
             } // Column
         }
-    }
 
     if (showEmojiLibrary) {
         val sheetUnicodeEmojis by viewModel.customEmojiRepo.unicodeEmojis.collectAsState()
