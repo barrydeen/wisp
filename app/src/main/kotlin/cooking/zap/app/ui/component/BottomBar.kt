@@ -10,12 +10,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
-import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Restaurant
 import androidx.compose.material3.Icon
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.Column
@@ -47,9 +47,9 @@ enum class BottomTab(
     val selectedIconRes: Int? = null,
     val unselectedIconRes: Int? = null
 ) {
+    RECIPES(Routes.RECIPES, R.string.nav_recipes, Icons.Filled.Restaurant, Icons.Outlined.Restaurant),
     FEED(Routes.FEED, R.string.nav_feed, Icons.Filled.Home, Icons.Outlined.Home),
     WALLET(Routes.WALLET, R.string.nav_wallet, null, null, R.drawable.ic_wallet, R.drawable.ic_wallet_outlined),
-    SEARCH(Routes.SEARCH, R.string.nav_search, Icons.Filled.Search, Icons.Outlined.Search),
     MESSAGES(Routes.DM_LIST, R.string.nav_messages, Icons.Filled.Forum, Icons.Outlined.Forum),
     NOTIFICATIONS(Routes.NOTIFICATIONS, R.string.nav_notifications, Icons.Filled.Notifications, Icons.Outlined.Notifications)
 }
@@ -96,9 +96,9 @@ fun WispBottomBar(
         visibleTabs.forEach { tab ->
             val selected = currentRoute == tab.route
             val hasUnread = when (tab) {
+                BottomTab.RECIPES -> false
                 BottomTab.FEED -> hasUnreadHome
                 BottomTab.WALLET -> false
-                BottomTab.SEARCH -> false
                 BottomTab.MESSAGES -> hasUnreadMessages
                 BottomTab.NOTIFICATIONS -> hasUnreadNotifications
             }

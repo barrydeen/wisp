@@ -6,8 +6,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cooking.zap.app.repo.EventRepository
+import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.RecipeCard
 import cooking.zap.app.viewmodel.RecipeFeedViewModel
 
@@ -42,7 +43,12 @@ fun RecipeFeedScreen(
     eventRepo: EventRepository,
     onRecipeClick: (author: String, dTag: String) -> Unit,
     onProfileClick: (String) -> Unit,
-    onBack: () -> Unit,
+    // Recipes is a root tab: no back arrow. The nav icon opens the shared
+    // drawer (hoisted to WispNavHost) and the top bar carries a search icon,
+    // mirroring the Feed tab. No content-type filter here.
+    onOpenDrawer: () -> Unit = {},
+    onSearch: () -> Unit = {},
+    userAvatarUrl: String? = null,
     // Null for READ_ONLY accounts (no signing key) — the FAB is then hidden.
     onCreateRecipe: (() -> Unit)? = null,
 ) {
@@ -55,8 +61,17 @@ fun RecipeFeedScreen(
             TopAppBar(
                 title = { Text("Recipes") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    IconButton(onClick = onOpenDrawer) {
+                        ProfilePicture(url = userAvatarUrl, size = 32)
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onSearch) {
+                        Icon(
+                            Icons.Outlined.Search,
+                            contentDescription = "Search",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
