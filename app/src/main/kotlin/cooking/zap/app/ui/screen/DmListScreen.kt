@@ -90,6 +90,9 @@ fun DmListScreen(
     val conversations by viewModel.conversationList.collectAsState()
     val groups by groupListViewModel.groups.collectAsState()
 
+    // Tab 0 = Chat Rooms (groups) — the primary, default-selected tab.
+    // Tab 1 = Direct Messages. rememberSaveable keeps the last-viewed tab
+    // within a session; a fresh open defaults to Groups.
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showJoinDialog by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -129,18 +132,18 @@ fun DmListScreen(
             Box {
                 FloatingActionButton(
                     onClick = {
-                        if (selectedTab == 0) onNewGroupDm()
+                        if (selectedTab == 1) onNewGroupDm()
                         else showFabMenu = true
                     },
                     containerColor = MaterialTheme.colorScheme.primary
                 ) {
-                    if (selectedTab == 0) {
+                    if (selectedTab == 1) {
                         Icon(Icons.Outlined.GroupAdd, contentDescription = stringResource(R.string.cd_new_group_dm))
                     } else {
                         Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.cd_group_actions))
                     }
                 }
-                if (selectedTab == 1) {
+                if (selectedTab == 0) {
                     DropdownMenu(
                         expanded = showFabMenu,
                         onDismissRequest = { showFabMenu = false }
@@ -171,12 +174,12 @@ fun DmListScreen(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text(stringResource(R.string.tab_direct_messages)) }
+                    text = { Text(stringResource(R.string.tab_chat_rooms)) }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text(stringResource(R.string.tab_chat_rooms)) }
+                    text = { Text(stringResource(R.string.tab_direct_messages)) }
                 )
             }
 
@@ -184,8 +187,7 @@ fun DmListScreen(
             val notifiedGroups by groupListViewModel.notifiedGroups.collectAsState()
 
             when (selectedTab) {
-                0 -> DmListContent(conversations, eventRepo, onConversation)
-                1 -> GroupListContent(
+                0 -> GroupListContent(
                     groups = groups,
                     eventRepo = eventRepo,
                     onGroupRoom = onGroupRoom,
@@ -195,6 +197,7 @@ fun DmListScreen(
                         groupListViewModel.setGroupNotified(relayUrl, groupId, enabled)
                     }
                 )
+                1 -> DmListContent(conversations, eventRepo, onConversation)
             }
         }
     }
