@@ -480,6 +480,10 @@ fun WispDrawerContent(
             if (settingsExpanded) {
                 delay(300) // wait for AnimatedVisibility expansion
                 scrollState.animateScrollTo(scrollState.maxValue)
+            } else {
+                // Collapse Advanced with its parent so re-opening Settings
+                // starts gated, not with all advanced items showing.
+                advancedExpanded = false
             }
         }
         LaunchedEffect(advancedExpanded) {
