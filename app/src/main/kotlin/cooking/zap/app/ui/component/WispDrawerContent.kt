@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Visibility
@@ -479,8 +480,19 @@ fun WispDrawerContent(
             modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         var settingsExpanded by remember { mutableStateOf(false) }
+        var advancedExpanded by remember { mutableStateOf(false) }
         LaunchedEffect(settingsExpanded) {
             if (settingsExpanded) {
+                delay(300) // wait for AnimatedVisibility expansion
+                scrollState.animateScrollTo(scrollState.maxValue)
+            } else {
+                // Collapse Advanced with its parent so re-opening Settings
+                // starts gated, not with all advanced items showing.
+                advancedExpanded = false
+            }
+        }
+        LaunchedEffect(advancedExpanded) {
+            if (advancedExpanded) {
                 delay(300) // wait for AnimatedVisibility expansion
                 scrollState.animateScrollTo(scrollState.maxValue)
             }
@@ -516,13 +528,6 @@ fun WispDrawerContent(
                     modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
-                    icon = { Icon(Icons.Outlined.Cloud, contentDescription = null) },
-                    label = { Text(stringResource(R.string.drawer_media_servers)) },
-                    selected = false,
-                    onClick = onMediaServers,
-                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
-                )
-                NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
                     label = { Text(stringResource(R.string.drawer_keys)) },
                     selected = false,
@@ -536,41 +541,68 @@ fun WispDrawerContent(
                     onClick = onSafety,
                     modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
+                // Advanced — power-user / developer settings, nested one level
+                // deeper so they don't crowd the everyday settings above.
                 NavigationDrawerItem(
-                    icon = { Icon(Icons.Outlined.Shield, contentDescription = null) },
-                    label = { Text(stringResource(R.string.drawer_proof_of_work)) },
+                    icon = { Icon(Icons.Outlined.Tune, contentDescription = null) },
+                    label = { Text(stringResource(R.string.drawer_advanced)) },
+                    badge = {
+                        Icon(
+                            if (advancedExpanded) Icons.Outlined.KeyboardArrowDown
+                            else Icons.Outlined.KeyboardArrowRight,
+                            contentDescription = null
+                        )
+                    },
                     selected = false,
-                    onClick = onPowSettings,
+                    onClick = { advancedExpanded = !advancedExpanded },
                     modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
-                NavigationDrawerItem(
-                    icon = { Icon(Icons.Outlined.Hub, contentDescription = null) },
-                    label = { Text(stringResource(R.string.drawer_social_graph)) },
-                    selected = false,
-                    onClick = onSocialGraph,
-                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
-                )
-                NavigationDrawerItem(
-                    icon = { Icon(Icons.Outlined.EmojiEmotions, contentDescription = null) },
-                    label = { Text(stringResource(R.string.drawer_custom_emojis)) },
-                    selected = false,
-                    onClick = onCustomEmojis,
-                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
-                )
-                NavigationDrawerItem(
-                    icon = { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null) },
-                    label = { Text(stringResource(R.string.drawer_relay_health)) },
-                    selected = false,
-                    onClick = onRelayHealth,
-                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
-                )
-                NavigationDrawerItem(
-                    icon = { Icon(Icons.Outlined.BugReport, contentDescription = null) },
-                    label = { Text(stringResource(R.string.drawer_console)) },
-                    selected = false,
-                    onClick = onConsole,
-                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
-                )
+                AnimatedVisibility(visible = advancedExpanded) {
+                    Column {
+                        NavigationDrawerItem(
+                            icon = { Icon(Icons.Outlined.Cloud, contentDescription = null) },
+                            label = { Text(stringResource(R.string.drawer_media_servers)) },
+                            selected = false,
+                            onClick = onMediaServers,
+                            modifier = Modifier.height(48.dp).padding(start = 56.dp, end = 12.dp)
+                        )
+                        NavigationDrawerItem(
+                            icon = { Icon(Icons.Outlined.Shield, contentDescription = null) },
+                            label = { Text(stringResource(R.string.drawer_proof_of_work)) },
+                            selected = false,
+                            onClick = onPowSettings,
+                            modifier = Modifier.height(48.dp).padding(start = 56.dp, end = 12.dp)
+                        )
+                        NavigationDrawerItem(
+                            icon = { Icon(Icons.Outlined.Hub, contentDescription = null) },
+                            label = { Text(stringResource(R.string.drawer_social_graph)) },
+                            selected = false,
+                            onClick = onSocialGraph,
+                            modifier = Modifier.height(48.dp).padding(start = 56.dp, end = 12.dp)
+                        )
+                        NavigationDrawerItem(
+                            icon = { Icon(Icons.Outlined.EmojiEmotions, contentDescription = null) },
+                            label = { Text(stringResource(R.string.drawer_custom_emojis)) },
+                            selected = false,
+                            onClick = onCustomEmojis,
+                            modifier = Modifier.height(48.dp).padding(start = 56.dp, end = 12.dp)
+                        )
+                        NavigationDrawerItem(
+                            icon = { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null) },
+                            label = { Text(stringResource(R.string.drawer_relay_health)) },
+                            selected = false,
+                            onClick = onRelayHealth,
+                            modifier = Modifier.height(48.dp).padding(start = 56.dp, end = 12.dp)
+                        )
+                        NavigationDrawerItem(
+                            icon = { Icon(Icons.Outlined.BugReport, contentDescription = null) },
+                            label = { Text(stringResource(R.string.drawer_console)) },
+                            selected = false,
+                            onClick = onConsole,
+                            modifier = Modifier.height(48.dp).padding(start = 56.dp, end = 12.dp)
+                        )
+                    }
+                }
             }
         }
 
