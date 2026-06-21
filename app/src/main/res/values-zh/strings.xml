@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Navigation -->
-    <string name="nav_home">首页</string>
     <string name="nav_wallet">钱包</string>
     <string name="nav_search">搜索</string>
     <string name="nav_messages">消息</string>

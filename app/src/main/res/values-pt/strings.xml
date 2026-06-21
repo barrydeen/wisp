@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Navigation -->
-    <string name="nav_home">Início</string>
     <string name="nav_wallet">Carteira</string>
     <string name="nav_search">Pesquisar</string>
     <string name="nav_messages">Mensagens</string>

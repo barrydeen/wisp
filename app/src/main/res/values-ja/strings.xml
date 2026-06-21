@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Navigation -->
-    <string name="nav_home">ホーム</string>
     <string name="nav_wallet">ウォレット</string>
     <string name="nav_search">検索</string>
     <string name="nav_messages">メッセージ</string>

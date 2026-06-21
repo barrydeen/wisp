@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Navigation -->
-    <string name="nav_home">홈</string>
     <string name="nav_wallet">지갑</string>
     <string name="nav_search">검색</string>
     <string name="nav_messages">메시지</string>

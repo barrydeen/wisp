@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Navigation -->
-    <string name="nav_home">Home</string>
+    <string name="nav_feed">Feed</string>
     <string name="nav_wallet">Wallet</string>
     <string name="nav_search">Search</string>
     <string name="nav_messages">Messages</string>

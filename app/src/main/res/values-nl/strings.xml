@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Navigation -->
-    <string name="nav_home">Home</string>
     <string name="nav_wallet">Portemonnee</string>
     <string name="nav_search">Zoeken</string>
     <string name="nav_messages">Berichten</string>

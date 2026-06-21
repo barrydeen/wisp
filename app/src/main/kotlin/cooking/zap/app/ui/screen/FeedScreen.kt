@@ -130,6 +130,7 @@ import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.HowToVote
 import androidx.compose.material.icons.outlined.Photo
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Person
@@ -932,6 +933,14 @@ fun FeedScreen(
                         }
                     },
                     actions = {
+                        // Persistent search affordance (web-style) — first action.
+                        IconButton(onClick = onSearch) {
+                            Icon(
+                                Icons.Outlined.Search,
+                                contentDescription = stringResource(R.string.title_search),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         if (onlinePubkeys.isNotEmpty()) {
                             Surface(
                                 onClick = { showOnlineSheet = true },

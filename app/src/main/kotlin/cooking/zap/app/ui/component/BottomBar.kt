@@ -47,7 +47,7 @@ enum class BottomTab(
     val selectedIconRes: Int? = null,
     val unselectedIconRes: Int? = null
 ) {
-    HOME(Routes.FEED, R.string.nav_home, Icons.Filled.Home, Icons.Outlined.Home),
+    FEED(Routes.FEED, R.string.nav_feed, Icons.Filled.Home, Icons.Outlined.Home),
     WALLET(Routes.WALLET, R.string.nav_wallet, null, null, R.drawable.ic_wallet, R.drawable.ic_wallet_outlined),
     SEARCH(Routes.SEARCH, R.string.nav_search, Icons.Filled.Search, Icons.Outlined.Search),
     MESSAGES(Routes.DM_LIST, R.string.nav_messages, Icons.Filled.Forum, Icons.Outlined.Forum),
@@ -96,7 +96,7 @@ fun WispBottomBar(
         visibleTabs.forEach { tab ->
             val selected = currentRoute == tab.route
             val hasUnread = when (tab) {
-                BottomTab.HOME -> hasUnreadHome
+                BottomTab.FEED -> hasUnreadHome
                 BottomTab.WALLET -> false
                 BottomTab.SEARCH -> false
                 BottomTab.MESSAGES -> hasUnreadMessages
