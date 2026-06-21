@@ -91,8 +91,9 @@ fun DmListScreen(
     val groups by groupListViewModel.groups.collectAsState()
 
     // Tab 0 = Chat Rooms (groups) — the primary, default-selected tab.
-    // Tab 1 = Direct Messages. rememberSaveable keeps the last-viewed tab
-    // within a session; a fresh open defaults to Groups.
+    // Tab 1 = Direct Messages. rememberSaveable restores the last-viewed
+    // tab across configuration changes and saved-state restoration; a fresh
+    // composition (no saved state) defaults to Groups.
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showJoinDialog by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -173,12 +174,14 @@ fun DmListScreen(
             TabRow(selectedTabIndex = selectedTab) {
                 Tab(
                     selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
+                    // Dismiss the group-actions overflow so it doesn't
+                    // re-open when returning to this tab.
+                    onClick = { selectedTab = 0; showFabMenu = false },
                     text = { Text(stringResource(R.string.tab_chat_rooms)) }
                 )
                 Tab(
                     selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
+                    onClick = { selectedTab = 1; showFabMenu = false },
                     text = { Text(stringResource(R.string.tab_direct_messages)) }
                 )
             }
