@@ -28,7 +28,20 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import coil3.compose.AsyncImage
-private val DEFAULT_UNICODE_EMOJIS = listOf("\uD83E\uDDE1", "\uD83D\uDC4D", "\uD83D\uDC4E", "\uD83E\uDD19", "\uD83D\uDE80", "\uD83E\uDD17", "\uD83D\uDE02", "\uD83D\uDE22", "\uD83D\uDC68\u200D\uD83D\uDCBB", "\uD83D\uDC40", "\u2705", "\uD83E\uDD21", "\uD83D\uDC38", "\uD83D\uDC80", "\u26A1", "\uD83D\uDE4F", "\uD83C\uDF46")
+/**
+ * Default quick-reaction pack \u2014 mirrors the web's curated reaction set
+ * (QUICK_EMOJIS) plus food extras. Standard unicode (NOT NIP-30 custom emoji);
+ * neutral/yellow base for the hand/person emoji (no skin-tone modifier).
+ * Overridden by a user's configured unicodeEmojis when set.
+ *
+ * \u2764\uFE0F \uD83D\uDD25 \uD83D\uDC4D \uD83E\uDD19 \uD83D\uDE0B \uD83E\uDD24 \uD83E\uDD29 \uD83D\uDCAF \uD83D\uDE4F \uD83C\uDF73 \uD83E\uDD0C \uD83E\uDDD1\u200D\uD83C\uDF73 \uD83D\uDE0D \uD83C\uDF36\uFE0F \uD83E\uDD57 \uD83C\uDF7D\uFE0F
+ */
+private val DEFAULT_UNICODE_EMOJIS = listOf(
+    "\u2764\uFE0F", "\uD83D\uDD25", "\uD83D\uDC4D", "\uD83E\uDD19",
+    "\uD83D\uDE0B", "\uD83E\uDD24", "\uD83E\uDD29", "\uD83D\uDCAF",
+    "\uD83D\uDE4F", "\uD83C\uDF73", "\uD83E\uDD0C", "\uD83E\uDDD1\u200D\uD83C\uDF73",
+    "\uD83D\uDE0D", "\uD83C\uDF36\uFE0F", "\uD83E\uDD57", "\uD83C\uDF7D\uFE0F",
+)
 
 /**
  * Bridge for passing the pending reaction callback from EmojiReactionPopup
