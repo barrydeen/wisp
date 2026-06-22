@@ -321,7 +321,11 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                             // Parse via the registry (format-agnostic); skip non-recipes.
                             val recipe = RecipeFormats.forEvent(event)?.parse(event) ?: return@collect
                             val key = "${recipe.author}:${recipe.dTag}"
-                            if (key !in recipeByCoord) {
+                            // kind-30023 is replaceable — keep the NEWEST version per
+                            // coordinate (publishedAt == created_at for live recipes;
+                            // lower id breaks ties), so titles/images stay current.
+                            val existing = recipeByCoord[key]
+                            if (existing == null || isNewerRecipe(recipe, existing)) {
                                 recipeByCoord[key] = recipe
                                 eventRepo.cacheEvent(event)
                                 eventRepo.requestProfileIfMissing(recipe.author)
@@ -385,6 +389,18 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             eventJob.cancel()
             eoseJob.cancel()
         }
+    }
+
+    /**
+     * Replaceable-event newest-wins (mirrors RecipeRepository.preferNewer): a
+     * higher effective timestamp wins; on a tie the lexicographically lower id
+     * is kept. [RecipeParser.Recipe.publishedAt] is `published_at` if present,
+     * else the event `created_at` (absent on live zapcooking recipes, so it ==
+     * created_at there).
+     */
+    private fun isNewerRecipe(incoming: RecipeParser.Recipe, existing: RecipeParser.Recipe): Boolean = when {
+        incoming.publishedAt != existing.publishedAt -> incoming.publishedAt > existing.publishedAt
+        else -> incoming.id < existing.id
     }
 
     /** True iff the recipe's title or summary contains [query] (case-insensitive). */
