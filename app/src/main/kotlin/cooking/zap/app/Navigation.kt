@@ -2738,9 +2738,7 @@ fun WispNavHost(
             }
             RecipeFeedScreen(
                 viewModel = recipeFeedViewModel,
-                eventRepo = feedViewModel.eventRepo,
                 onRecipeClick = { author, dTag -> navController.navigate(Routes.recipe(author, dTag)) },
-                onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                 onOpenDrawer = onOpenDrawer,
                 onSearch = {
                     navController.navigate(Routes.SEARCH) {
