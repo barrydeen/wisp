@@ -23,7 +23,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.ModeComment
 import androidx.compose.material.icons.outlined.Repeat
@@ -90,34 +89,13 @@ fun ActionBar(
     modifier: Modifier = Modifier
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val useZapBoltIcon = cooking.zap.app.ui.util.useBoltIcon()
     val fiatMode = cooking.zap.app.ui.util.isFiatMode()
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showRepostMenu by remember { mutableStateOf(false) }
 
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onReply) {
-            Icon(
-                Icons.Outlined.ModeComment,
-                contentDescription = stringResource(R.string.cd_reply),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp)
-            )
-        }
-        // Hide the count when zero — matches iOS minimalistic action bar
-        // where empty metrics drop entirely instead of showing "0".
-        if (replyCount > 0) {
-            Text(
-                text = replyCount.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
-        }
-        // React + Zap are available on private replies as gift-wrapped/DIP-03 actions.
-        // Repost / Quote stay hidden on private replies because those events would
-        // publicly attach an e-tag pointing at the encrypted rumor id.
-        Spacer(Modifier.width(8.dp))
+        // React first — mirrors the web action-row order
+        // (react · comment · renote · zap).
         Box {
             Box(
                 contentAlignment = Alignment.Center,
@@ -172,6 +150,28 @@ fun ActionBar(
                 maxLines = 1
             )
         }
+        Spacer(Modifier.width(8.dp))
+        IconButton(onClick = onReply) {
+            Icon(
+                Icons.Outlined.ModeComment,
+                contentDescription = stringResource(R.string.cd_reply),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        // Hide the count when zero — matches iOS minimalistic action bar
+        // where empty metrics drop entirely instead of showing "0".
+        if (replyCount > 0) {
+            Text(
+                text = replyCount.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
+        // React + Zap are available on private replies as gift-wrapped/DIP-03 actions.
+        // Repost / Quote stay hidden on private replies because those events would
+        // publicly attach an e-tag pointing at the encrypted rumor id.
         if (!isPrivate) {
             Spacer(Modifier.width(8.dp))
             Box {
@@ -221,25 +221,24 @@ fun ActionBar(
                 if (isZapInProgress) {
                     LightningAnimation(modifier = Modifier.size(width = 14.dp, height = 22.dp))
                 } else if (fiatMode) {
+                    // Fiat mode keeps the coin — the app-wide "amounts shown in
+                    // fiat" indicator (also used by zap receipts, notifications,
+                    // etc.). Intentionally NOT replaced here.
                     Icon(
                         painter = painterResource(R.drawable.ic_coin_stack),
                         contentDescription = stringResource(R.string.cd_zaps),
                         tint = zapTint,
                         modifier = Modifier.size(22.dp)
                     )
-                } else if (useZapBoltIcon) {
+                } else {
+                    // ⚡ is the resting default for the zap action (replaces the
+                    // former ₿ symbol). The zapped/active state is shown by the
+                    // zapColor tint above; the in-progress state animates.
                     Icon(
                         painter = painterResource(R.drawable.ic_bolt),
                         contentDescription = stringResource(R.string.cd_zaps),
                         tint = zapTint,
                         modifier = Modifier.size(18.dp)
-                    )
-                } else {
-                    Icon(
-                        Icons.Outlined.CurrencyBitcoin,
-                        contentDescription = stringResource(R.string.cd_zaps),
-                        tint = zapTint,
-                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
