@@ -16,7 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -80,21 +79,9 @@ fun LazyListScope.recipeBody(
                 )
             }
             MetaChips(recipe.content.details, multiplier)
-            if (recipe.hashtags.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                FlowRow {
-                    recipe.hashtags.forEach { tag ->
-                        SuggestionChip(
-                            onClick = { onHashtagClick?.invoke(tag) },
-                            // No handler (e.g. the import preview) → non-interactive,
-                            // so a11y doesn't announce a clickable control that no-ops.
-                            enabled = onHashtagClick != null,
-                            label = { Text(tag) },
-                            modifier = Modifier.padding(end = 6.dp),
-                        )
-                    }
-                }
-            }
+            // The recipe's `#t` tags (zapcooking / zapcooking-<category>) are
+            // intentionally NOT displayed — they're still written at publish and
+            // power sorting/filtering + the category chips, just not shown here.
             headerTrailingSlot()
         }
     }
