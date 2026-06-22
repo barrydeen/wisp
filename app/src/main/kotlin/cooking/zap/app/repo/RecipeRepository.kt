@@ -22,13 +22,15 @@ import kotlin.coroutines.CoroutineContext
 
 /**
  * Reads zap.cooking recipes (NIP-23 `kind 30023` tagged `#t zapcooking` /
- * legacy `nostrcooking`) from the **`articles` relay set**
- * ([RelayConfig.ARTICLES_RELAYS]) — deliberately NOT [RelayConfig.DEFAULTS]
- * and NOT the general top-relay router. Recipes live on the public article
- * aggregators (build doc §1), and a Step-0 live probe confirmed coverage is
- * uneven across them (the same recipe shows up on primal/nos.lol/eden but
- * not nostr.wine/noswhere), so every read fans out to the whole set as a
- * **union** and the results are de-duplicated by addressable coordinate.
+ * legacy `nostrcooking`) from a **widened read union** ([readRelays]): the
+ * `articles` aggregators ([RelayConfig.ARTICLES_RELAYS]) ∪ indexer/discovery
+ * relays ([RelayConfig.DEFAULT_INDEXER_RELAYS]) ∪ the [RelayConfig.DEFAULTS]
+ * read relays ∪ the signed-in user's own kind-10002 read relays. Coverage is
+ * uneven across any single relay (a Step-0 live probe found `nostr.wine`
+ * returned 0 for `#t zapcooking` while primal/nos.lol/eden carried the same
+ * recipes), so every read fans the SAME registry filter to the whole union and
+ * the results are de-duplicated by addressable coordinate. The union is
+ * de-duped (trailing-slash normalized) so no relay is queried twice.
  *
  * Unlike [cooking.zap.app.viewmodel.HashtagFeedViewModel] — which keeps its
  * note list in the ViewModel — this repository OWNS the recipe flow. Both
@@ -96,8 +98,10 @@ class RecipeRepository(
     private var refreshJob: Job? = null
     /**
      * Bumped on every reload/refresh. A [loadMore] started under a previous
-     * epoch must NOT flip [exhausted] after a refresh has reset it.
+     * epoch must NOT flip [exhausted] after a refresh has reset it. `@Volatile`
+     * so the guard read on a [processingContext] thread sees main-thread writes.
      */
+    @Volatile
     private var epoch = 0L
     private var subCounter = 0
 
@@ -197,6 +201,10 @@ class RecipeRepository(
      */
     fun refresh(limit: Int = 100) {
         if (_isRefreshing.value) return
+        // Supersede any in-flight initial load — both are newest-window queries;
+        // running two concurrently would duplicate the fanout. Its finally sets
+        // _isLoading=false on cancel.
+        loadJob?.cancel()
         refreshJob?.cancel()
         loadMoreJob?.cancel()
         epoch++
