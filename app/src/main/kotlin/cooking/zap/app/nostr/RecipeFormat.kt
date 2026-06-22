@@ -48,8 +48,11 @@ interface RecipeFormat {
     /** The addressable identifier (the `d`/slug value) for [title]. */
     fun slug(title: String): String
 
-    /** Relay filter for the recipe feed in this format. */
-    fun feedFilter(limit: Int): Filter
+    /**
+     * Relay filter for the recipe feed in this format. [until] pages backwards
+     * in time (NIP-01 `until`); null fetches the newest window.
+     */
+    fun feedFilter(limit: Int, until: Long? = null): Filter
 
     /** Relay filter to resolve a single recipe by its coordinate (author + d/slug). */
     fun coordinateFilter(author: String, dTag: String): Filter

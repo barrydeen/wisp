@@ -41,7 +41,7 @@ object Nip333RecipeFormat : RecipeFormat {
     override fun slug(title: String): String =
         TODO("Derive this format's addressable identifier from the title.")
 
-    override fun feedFilter(limit: Int): Filter =
+    override fun feedFilter(limit: Int, until: Long?): Filter =
         TODO("Relay filter for this format's recipe feed.")
 
     override fun coordinateFilter(author: String, dTag: String): Filter =

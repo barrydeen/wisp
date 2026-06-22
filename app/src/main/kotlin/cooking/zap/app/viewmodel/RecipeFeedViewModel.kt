@@ -27,13 +27,32 @@ class RecipeFeedViewModel : ViewModel() {
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading
 
+    private val _isLoadingMore = MutableStateFlow(false)
+    val isLoadingMore: StateFlow<Boolean> = _isLoadingMore
+
+    private val _exhausted = MutableStateFlow(false)
+    val exhausted: StateFlow<Boolean> = _exhausted
+
+    private var repo: RecipeRepository? = null
     private var started = false
 
     fun load(recipeRepo: RecipeRepository) {
         if (started) return
         started = true
+        repo = recipeRepo
         viewModelScope.launch { recipeRepo.recipes.collect { _recipes.value = it } }
         viewModelScope.launch { recipeRepo.isLoading.collect { _isLoading.value = it } }
+        viewModelScope.launch { recipeRepo.isLoadingMore.collect { _isLoadingMore.value = it } }
+        viewModelScope.launch { recipeRepo.exhausted.collect { _exhausted.value = it } }
         recipeRepo.loadFeed()
+    }
+
+    /**
+     * Fetch the next (older) page. Safe to call repeatedly from the grid's
+     * scroll-end trigger — the repository is single-flight and no-ops once
+     * exhausted.
+     */
+    fun loadMore() {
+        repo?.loadMore()
     }
 }

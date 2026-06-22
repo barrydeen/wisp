@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -51,6 +53,14 @@ class RecipeRepository(
     /** Newest event per addressable coordinate ("kind:author:dTag"). */
     private val byCoordinate = LinkedHashMap<String, NostrEvent>()
 
+    /**
+     * Serializes ALL [byCoordinate] reads/writes. `loadFeed` and `loadMore`
+     * each run a collector on the [processingContext] thread pool, and the
+     * pagination cursor reads the same map — without this lock those could
+     * race / throw ConcurrentModificationException.
+     */
+    private val coordMutex = Mutex()
+
     private val _recipes = MutableStateFlow<List<RecipeParser.Recipe>>(emptyList())
     /** The deduped, `publishedAt`-desc recipe feed. Single source of truth. */
     val recipes: StateFlow<List<RecipeParser.Recipe>> = _recipes.asStateFlow()
@@ -58,7 +68,16 @@ class RecipeRepository(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _isLoadingMore = MutableStateFlow(false)
+    /** A follow-up (older) page is in flight. */
+    val isLoadingMore: StateFlow<Boolean> = _isLoadingMore.asStateFlow()
+
+    private val _exhausted = MutableStateFlow(false)
+    /** True once a full-EOSE page returned nothing older — stop paging. */
+    val exhausted: StateFlow<Boolean> = _exhausted.asStateFlow()
+
     private var loadJob: Job? = null
+    private var loadMoreJob: Job? = null
     private var subCounter = 0
 
     /**
@@ -68,6 +87,10 @@ class RecipeRepository(
      */
     fun loadFeed(limit: Int = 100) {
         loadJob?.cancel()
+        // A fresh feed resets pagination state.
+        loadMoreJob?.cancel()
+        _isLoadingMore.value = false
+        _exhausted.value = false
         val subId = "recipe-feed-${subCounter++}"
         _isLoading.value = true
         loadJob = scope.launch(processingContext) {
@@ -81,7 +104,9 @@ class RecipeRepository(
                     seenIds.add(event.id)
                     eventRepo.cacheEvent(event)
                     eventRepo.requestProfileIfMissing(event.pubkey)
-                    if (acceptEvent(event)) emitRecipes()
+                    coordMutex.withLock {
+                        if (acceptEvent(event)) emitRecipes()
+                    }
                 }
             }
             // One filter per active format (NIP-23 only today). A single REQ
@@ -99,6 +124,81 @@ class RecipeRepository(
                 collector.cancel()
                 subManager.closeSubscription(subId) // closeOnAllRelays — no leaked sub
                 _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Page backwards in time: fetch recipes older than the oldest currently
+     * loaded (`until = oldestCreatedAt - 1`) and append. Single-flight (guarded
+     * by [isLoadingMore]); a no-op once [exhausted] or while no recipes are
+     * loaded yet. New events funnel through the SAME [acceptEvent]/[emitRecipes]
+     * path as [loadFeed], so coordinate/format dedup is identical.
+     *
+     * Exhaustion is slow-relay-safe: it flips [exhausted] ONLY when a full EOSE
+     * round (every queried relay replied) added zero new recipes. A timeout
+     * (partial EOSE) with zero new does NOT exhaust — a slow relay may still
+     * hold older recipes — so the next scroll retries.
+     */
+    fun loadMore(pageSize: Int = 50) {
+        // Don't overlap the initial load (it shares byCoordinate), don't
+        // double-page, and stop once exhausted.
+        if (_isLoading.value || _isLoadingMore.value || _exhausted.value) return
+        _isLoadingMore.value = true
+        val subId = "recipe-more-${subCounter++}"
+        loadMoreJob = scope.launch(processingContext) {
+            // Cursor = the oldest event created_at we hold (NIP-01 `until` is on
+            // the event timestamp, not the display `publishedAt`). Read under the
+            // lock; no data yet → nothing to page from.
+            val oldest = coordMutex.withLock { byCoordinate.values.minOfOrNull { it.created_at } }
+            if (oldest == null) {
+                _isLoadingMore.value = false
+                return@launch
+            }
+            val until = oldest - 1
+            // Under an `until` filter every returned event is older than anything
+            // loaded, so acceptEvent() == true marks a genuinely new coordinate.
+            var newCoordinates = 0
+            val seenIds = mutableSetOf<String>()
+            val collector = launch {
+                relayPool.relayEvents.collect { relayEvent ->
+                    if (relayEvent.subscriptionId != subId) return@collect
+                    val event = relayEvent.event
+                    if (event.id in seenIds) return@collect
+                    if (RecipeFormats.forEvent(event) == null) return@collect
+                    seenIds.add(event.id)
+                    eventRepo.cacheEvent(event)
+                    eventRepo.requestProfileIfMissing(event.pubkey)
+                    coordMutex.withLock {
+                        if (acceptEvent(event)) {
+                            newCoordinates++
+                            emitRecipes()
+                        }
+                    }
+                }
+            }
+            val filters = RecipeFormats.active.map { it.feedFilter(pageSize, until) }
+            val req = ClientMessage.req(subId, filters)
+            var sent = 0
+            for (url in RelayConfig.ARTICLES_RELAYS) {
+                if (relayPool.sendToRelayOrEphemeral(url, req)) sent++
+            }
+            try {
+                // sent == 0 (no relay accepted) → don't wait the full timeout for
+                // EOSEs that can't arrive; just clean up and let the next scroll
+                // retry. Don't exhaust — we never actually asked.
+                if (sent > 0) {
+                    val eoseCount = subManager.awaitEoseCount(subId, expectedCount = sent, timeoutMs = 8_000)
+                    // Full round (all relays EOSE'd) with nothing new ⇒ exhausted.
+                    // Partial (timeout) ⇒ leave the trigger live to retry.
+                    if (eoseCount >= sent && newCoordinates == 0) {
+                        _exhausted.value = true
+                    }
+                }
+            } finally {
+                collector.cancel()
+                subManager.closeSubscription(subId)
+                _isLoadingMore.value = false
             }
         }
     }
@@ -160,9 +260,12 @@ class RecipeRepository(
     /** Drop the in-memory feed (e.g. on account switch). */
     fun clear() {
         loadJob?.cancel()
+        loadMoreJob?.cancel()
         byCoordinate.clear()
         _recipes.value = emptyList()
         _isLoading.value = false
+        _isLoadingMore.value = false
+        _exhausted.value = false
     }
 
     /** Merge [event] into [byCoordinate]; return true iff it became the winner. */

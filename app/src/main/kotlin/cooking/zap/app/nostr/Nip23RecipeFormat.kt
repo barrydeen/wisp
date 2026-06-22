@@ -33,9 +33,10 @@ object Nip23RecipeFormat : RecipeFormat {
 
     override fun slug(title: String): String = RecipeSerializer.slug(title)
 
-    override fun feedFilter(limit: Int): Filter = Filter(
+    override fun feedFilter(limit: Int, until: Long?): Filter = Filter(
         kinds = listOf(RecipeParser.RECIPE_KIND),
         tTags = RecipeParser.RECIPE_HASHTAGS,
+        until = until,
         limit = limit,
     )
 
