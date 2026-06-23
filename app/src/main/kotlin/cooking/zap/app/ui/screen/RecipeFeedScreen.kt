@@ -164,7 +164,7 @@ fun RecipeFeedScreen(
             PullToRefreshBox(
                 isRefreshing = isRefreshing,
                 onRefresh = { viewModel.refresh() },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxWidth().weight(1f),
             ) {
             when {
                 recipes.isEmpty() && isLoading -> {

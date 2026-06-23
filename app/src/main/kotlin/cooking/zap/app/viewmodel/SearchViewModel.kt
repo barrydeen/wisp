@@ -96,6 +96,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     fun selectFilter(filter: SearchFilter) {
         _filter.value = filter
         if (filter == SearchFilter.TAGS) {
+            stopNetworkSearchForTags()
             _tagResults.value = RecipeTagCatalog.search(_query.value)
         }
     }
@@ -151,7 +152,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         val normalized = newQuery.trim().removePrefix("nostr:")
         _tagResults.value = RecipeTagCatalog.search(normalized)
         if (_filter.value == SearchFilter.TAGS) {
-            _isSearching.value = false
+            stopNetworkSearchForTags()
             return
         }
         // Debounced auto-search: trigger after 500ms of no typing
@@ -509,5 +510,12 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         relayPool.closeOnAllRelays(recipeSubId)
         relayPool.closeOnAllRelays(authorSubId)
         relayPool.closeOnAllRelays(metricsSubId)
+    }
+
+    private fun stopNetworkSearchForTags() {
+        autoSearchJob?.cancel()
+        searchJob?.cancel()
+        relayPool?.let { closeSubscriptions(it) }
+        _isSearching.value = false
     }
 }

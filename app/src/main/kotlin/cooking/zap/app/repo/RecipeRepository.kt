@@ -670,8 +670,25 @@ class RecipeRepository(
     private fun eventMatchesCategoryTag(event: NostrEvent, tag: String): Boolean {
         val normalizedTag = tag.trim().lowercase()
         if (normalizedTag.isBlank()) return false
+        // Fast-path current NIP-23 recipes: derive category from tags only.
+        if (event.kind == RecipeParser.RECIPE_KIND && matchesNip23CategoryTag(event, normalizedTag)) {
+            return true
+        }
         val recipe = RecipeFormats.forEvent(event)?.parse(event) ?: return false
         return recipe.categories.any { it.equals(normalizedTag, ignoreCase = true) }
+    }
+
+    private fun matchesNip23CategoryTag(event: NostrEvent, normalizedTag: String): Boolean {
+        val hashtags = event.tags
+            .asSequence()
+            .filter { it.size >= 2 && it[0] == "t" }
+            .map { it[1].trim().lowercase() }
+            .toList()
+        val root = hashtags.firstOrNull { it in RecipeParser.RECIPE_HASHTAGS } ?: return false
+        val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)?.trim().orEmpty().lowercase()
+        val slugTag = "$root-$dTag"
+        val expected = "$root-$normalizedTag"
+        return hashtags.any { it != root && it != slugTag && it == expected }
     }
 
     private fun acceptTagEvent(event: NostrEvent): Boolean {

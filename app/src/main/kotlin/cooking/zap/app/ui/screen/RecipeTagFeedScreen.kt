@@ -35,8 +35,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import cooking.zap.app.R
 import cooking.zap.app.nostr.RecipeTag
 import cooking.zap.app.ui.component.RecipeCard
 import cooking.zap.app.ui.component.RecipePosterSkeleton
@@ -80,12 +82,12 @@ fun RecipeTagFeedScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text("Recipes") },
+                title = { Text(stringResource(R.string.tab_recipes)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = stringResource(R.string.cd_back),
                         )
                     }
                 },
@@ -114,7 +116,7 @@ fun RecipeTagFeedScreen(
             PullToRefreshBox(
                 isRefreshing = isRefreshing,
                 onRefresh = { viewModel.refresh() },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxWidth().weight(1f),
             ) {
                 when {
                     recipes.isEmpty() && isLoading -> {
