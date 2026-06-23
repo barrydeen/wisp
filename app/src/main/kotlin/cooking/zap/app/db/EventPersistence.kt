@@ -147,6 +147,24 @@ class EventPersistence(
         }
     }
 
+    /**
+     * All persisted events of a [kind], newest first, bounded by [limit]. Cheap
+     * — `kind` is `@Index`. Used by recipe search to filter the FULL persisted
+     * catalog (kind 30023) rather than only the recipes in the grid window.
+     */
+    fun getEventsByKind(kind: Int, limit: Int = 1000): List<NostrEvent> {
+        return try {
+            box.query(EventEntity_.kind.equal(kind))
+                .order(EventEntity_.createdAt, io.objectbox.query.QueryBuilder.DESCENDING)
+                .build()
+                .use { it.find(0, limit.toLong()) }
+                .mapNotNull { it.toNostrEvent() }
+        } catch (e: Exception) {
+            Log.w("EventPersistence", "getEventsByKind failed: ${e.message}")
+            emptyList()
+        }
+    }
+
     /** Query recent notification-relevant events (kinds 1, 6, 7, 9735) for seeding NotificationRepository. */
     fun getRecentNotificationEvents(limit: Int = 500): List<NostrEvent> {
         return try {
