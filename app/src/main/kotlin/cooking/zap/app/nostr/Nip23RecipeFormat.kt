@@ -53,4 +53,15 @@ object Nip23RecipeFormat : RecipeFormat {
         search = query,
         limit = limit,
     )
+
+    override fun tagFeedFilter(tag: String, limit: Int, until: Long?): Filter {
+        val slug = tag.trim().lowercase()
+        val prefixedTags = RecipeParser.RECIPE_HASHTAGS.map { root -> "$root-$slug" }
+        return Filter(
+            kinds = listOf(RecipeParser.RECIPE_KIND),
+            tTags = prefixedTags,
+            until = until,
+            limit = limit,
+        )
+    }
 }

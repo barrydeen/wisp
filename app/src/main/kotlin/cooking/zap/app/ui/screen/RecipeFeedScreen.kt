@@ -3,6 +3,8 @@ package cooking.zap.app.ui.screen
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -22,6 +24,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +41,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import cooking.zap.app.nostr.RecipeTagCatalog
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.RecipeCard
 import cooking.zap.app.ui.component.RecipePosterSkeleton
@@ -58,11 +62,12 @@ private const val LOAD_MORE_PREFETCH = 6
  * opens the recipe-detail route. Social `#foodstr` notes moved to the OnlyFood
  * feed, so a post never appears in two feeds.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun RecipeFeedScreen(
     viewModel: RecipeFeedViewModel,
     onRecipeClick: (author: String, dTag: String) -> Unit,
+    onTagClick: (tag: String) -> Unit = {},
     // Recipes is a root tab: no back arrow. The nav icon opens the shared
     // drawer (hoisted to WispNavHost) and the top bar carries a search icon,
     // mirroring the Feed tab. No content-type filter here.
@@ -136,62 +141,83 @@ fun RecipeFeedScreen(
         val columns = GridCells.Adaptive(minSize = 160.dp)
         val contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
         val spacing = Arrangement.spacedBy(12.dp)
-        PullToRefreshBox(
-            isRefreshing = isRefreshing,
-            onRefresh = { viewModel.refresh() },
-            modifier = Modifier.fillMaxSize().padding(padding),
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
         ) {
-        when {
-            recipes.isEmpty() && isLoading -> {
-                LazyVerticalGrid(
-                    columns = columns,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = contentPadding,
-                    horizontalArrangement = spacing,
-                    verticalArrangement = spacing,
-                ) {
-                    items(12) {
-                        RecipePosterSkeleton(Modifier.fillMaxWidth().aspectRatio(2f / 3f))
-                    }
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                RecipeTagCatalog.recipeTags.forEach { tag ->
+                    FilterChip(
+                        selected = false,
+                        onClick = { onTagClick(tag.tag) },
+                        label = { Text("${tag.emoji} ${tag.label}") },
+                    )
                 }
             }
-            recipes.isEmpty() -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "🍳", style = MaterialTheme.typography.displaySmall)
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = "No recipes yet",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = { viewModel.refresh() },
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            ) {
+            when {
+                recipes.isEmpty() && isLoading -> {
+                    LazyVerticalGrid(
+                        columns = columns,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = contentPadding,
+                        horizontalArrangement = spacing,
+                        verticalArrangement = spacing,
+                    ) {
+                        items(12) {
+                            RecipePosterSkeleton(Modifier.fillMaxWidth().aspectRatio(2f / 3f))
+                        }
                     }
                 }
-            }
-            else -> {
-                LazyVerticalGrid(
-                    state = gridState,
-                    columns = columns,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = contentPadding,
-                    horizontalArrangement = spacing,
-                    verticalArrangement = spacing,
-                ) {
-                    items(recipes, key = { it.id }) { recipe ->
-                        RecipeCard(
-                            recipe = recipe,
-                            onClick = { onRecipeClick(recipe.author, recipe.dTag) },
-                        )
+                recipes.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = "🍳", style = MaterialTheme.typography.displaySmall)
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = "No recipes yet",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
-                    // Loading-more footer: a full-width (all columns) row with a
-                    // poster skeleton while the next page is in flight.
-                    if (isLoadingMore) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            Box(
-                                Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                RecipePosterSkeleton(Modifier.width(150.dp).aspectRatio(2f / 3f))
+                }
+                else -> {
+                    LazyVerticalGrid(
+                        state = gridState,
+                        columns = columns,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = contentPadding,
+                        horizontalArrangement = spacing,
+                        verticalArrangement = spacing,
+                    ) {
+                        items(recipes, key = { it.id }) { recipe ->
+                            RecipeCard(
+                                recipe = recipe,
+                                onClick = { onRecipeClick(recipe.author, recipe.dTag) },
+                            )
+                        }
+                        // Loading-more footer: a full-width (all columns) row with a
+                        // poster skeleton while the next page is in flight.
+                        if (isLoadingMore) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                Box(
+                                    Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    RecipePosterSkeleton(Modifier.width(150.dp).aspectRatio(2f / 3f))
+                                }
                             }
                         }
                     }

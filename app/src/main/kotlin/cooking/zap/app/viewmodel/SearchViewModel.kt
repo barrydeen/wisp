@@ -9,6 +9,8 @@ import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.ProfileData
 import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.nostr.RecipeParser
+import cooking.zap.app.nostr.RecipeTag
+import cooking.zap.app.nostr.RecipeTagCatalog
 import cooking.zap.app.relay.RelayConfig
 import cooking.zap.app.relay.RelayPool
 import cooking.zap.app.repo.EventRepository
@@ -22,7 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 // Recipes first — recipe-first, mirroring the web's submit priority.
-enum class SearchFilter { RECIPES, PEOPLE, NOTES }
+enum class SearchFilter { RECIPES, TAGS, PEOPLE, NOTES }
 
 enum class RelayOption {
     DEFAULT,
@@ -70,6 +72,9 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private val _recipeResults = MutableStateFlow<List<RecipeParser.Recipe>>(emptyList())
     val recipeResults: StateFlow<List<RecipeParser.Recipe>> = _recipeResults
 
+    private val _tagResults = MutableStateFlow<List<RecipeTag>>(emptyList())
+    val tagResults: StateFlow<List<RecipeTag>> = _tagResults
+
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching
 
@@ -90,6 +95,10 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectFilter(filter: SearchFilter) {
         _filter.value = filter
+        if (filter == SearchFilter.TAGS) {
+            stopNetworkSearchForTags()
+            _tagResults.value = RecipeTagCatalog.search(_query.value)
+        }
     }
 
     fun selectDefaultRelay() {
@@ -140,12 +149,17 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateQuery(newQuery: String) {
         _query.value = newQuery
+        val normalized = newQuery.trim().removePrefix("nostr:")
+        _tagResults.value = RecipeTagCatalog.search(normalized)
+        if (_filter.value == SearchFilter.TAGS) {
+            stopNetworkSearchForTags()
+            return
+        }
         // Debounced auto-search: trigger after 500ms of no typing
         autoSearchJob?.cancel()
         val pool = relayPool ?: return
         val repo = eventRepoRef ?: return
-        val trimmed = newQuery.trim().removePrefix("nostr:")
-        if (trimmed.length < 2) return
+        if (normalized.length < 2) return
         autoSearchJob = viewModelScope.launch {
             delay(500)
             search(newQuery, pool, repo, muteRepoRef)
@@ -253,8 +267,14 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         _users.value = emptyList()
         _notes.value = emptyList()
         _recipeResults.value = emptyList()
+        _tagResults.value = emptyList()
 
         val activeFilter = _filter.value
+        if (activeFilter == SearchFilter.TAGS) {
+            _tagResults.value = RecipeTagCatalog.search(trimmed)
+            _isSearching.value = false
+            return
+        }
         val relaysToQuery = when (_selectedRelayOption.value) {
             RelayOption.DEFAULT -> listOf(DEFAULT_SEARCH_RELAY)
             RelayOption.ALL_RELAYS -> _searchRelays.value
@@ -302,6 +322,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 noteSubId
             }
+            SearchFilter.TAGS -> return
         }
 
         val seenUserPubkeys = mutableSetOf<String>()
@@ -347,6 +368,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                                 eventRepo.cacheEvent(event)
                             }
                         }
+                        SearchFilter.TAGS -> return@collect
                     }
                 }
             }
@@ -462,6 +484,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         _users.value = emptyList()
         _notes.value = emptyList()
         _recipeResults.value = emptyList()
+        _tagResults.value = emptyList()
         _isSearching.value = false
         _authorFilter.value = null
         _authorSearchResults.value = emptyList()
@@ -487,5 +510,12 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         relayPool.closeOnAllRelays(recipeSubId)
         relayPool.closeOnAllRelays(authorSubId)
         relayPool.closeOnAllRelays(metricsSubId)
+    }
+
+    private fun stopNetworkSearchForTags() {
+        autoSearchJob?.cancel()
+        searchJob?.cancel()
+        relayPool?.let { closeSubscriptions(it) }
+        _isSearching.value = false
     }
 }

@@ -49,4 +49,7 @@ object Nip333RecipeFormat : RecipeFormat {
 
     override fun searchFilter(query: String, limit: Int): Filter =
         TODO("NIP-50 search filter for this format's recipes.")
+
+    override fun tagFeedFilter(tag: String, limit: Int, until: Long?): Filter =
+        TODO("Relay filter for one category/tag feed in this format.")
 }

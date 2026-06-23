@@ -82,6 +82,7 @@ import cooking.zap.app.ui.screen.ArticleScreen
 import cooking.zap.app.ui.screen.RecipeDetailScreen
 import cooking.zap.app.ui.screen.RecipeComposeScreen
 import cooking.zap.app.ui.screen.RecipeFeedScreen
+import cooking.zap.app.ui.screen.RecipeTagFeedScreen
 import cooking.zap.app.ui.screen.OnlyFoodFeedScreen
 import cooking.zap.app.ui.screen.CheffyScreen
 import cooking.zap.app.ui.screen.SousChefScreen
@@ -116,6 +117,7 @@ import cooking.zap.app.viewmodel.ArticleViewModel
 import cooking.zap.app.viewmodel.RecipeDetailViewModel
 import cooking.zap.app.viewmodel.RecipeComposeViewModel
 import cooking.zap.app.viewmodel.RecipeFeedViewModel
+import cooking.zap.app.viewmodel.RecipeTagFeedViewModel
 import cooking.zap.app.viewmodel.OnlyFoodFeedViewModel
 import cooking.zap.app.viewmodel.CheffyViewModel
 import cooking.zap.app.viewmodel.SousChefViewModel
@@ -131,6 +133,7 @@ import cooking.zap.app.viewmodel.ThreadViewModel
 import cooking.zap.app.viewmodel.UserProfileViewModel
 import cooking.zap.app.nostr.Nip88
 import cooking.zap.app.nostr.Nip89
+import cooking.zap.app.nostr.RecipeTagCatalog
 import cooking.zap.app.viewmodel.NotificationFilter
 import cooking.zap.app.viewmodel.NotificationsViewModel
 import cooking.zap.app.viewmodel.ConsoleViewModel
@@ -194,6 +197,7 @@ object Routes {
     const val ARTICLE = "article/{kind}/{author}/{dTag}"
     const val LIVE_STREAM = "live_stream/{hostPubkey}/{dTag}?relayHint={relayHint}"
     const val RECIPE_DETAIL = "recipe/{author}/{dTag}"
+    const val RECIPE_TAG_FEED = "recipe_tag/{tag}"
     const val RECIPES = "recipes"
     const val ONLY_FOOD = "onlyfood"
     const val SOUS_CHEF = "souschef"
@@ -209,6 +213,10 @@ object Routes {
      */
     fun recipe(author: String, dTag: String): String =
         "recipe/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}"
+
+    /** Build a recipe-by-tag feed route, URL-encoding the slug-like tag. */
+    fun recipeTag(tag: String): String =
+        "recipe_tag/${java.net.URLEncoder.encode(tag.trim().lowercase(), "UTF-8")}"
 
     /** The plain article route (kind 30023 long-form that isn't a recipe). */
     fun article(kind: Int, author: String, dTag: String): String =
@@ -1432,6 +1440,9 @@ fun WispNavHost(
                 },
                 onHashtagClick = { tag ->
                     navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
+                },
+                onTagClick = { tag ->
+                    navController.navigate(Routes.recipeTag(tag))
                 },
                 onBlockUser = { pubkey ->
                     feedViewModel.blockUser(pubkey)
@@ -2743,6 +2754,7 @@ fun WispNavHost(
             RecipeFeedScreen(
                 viewModel = recipeFeedViewModel,
                 onRecipeClick = { author, dTag -> navController.navigate(Routes.recipe(author, dTag)) },
+                onTagClick = { tag -> navController.navigate(Routes.recipeTag(tag)) },
                 onOpenDrawer = onOpenDrawer,
                 onSearch = {
                     navController.navigate(Routes.SEARCH) {
@@ -2756,6 +2768,24 @@ fun WispNavHost(
                 onCreateRecipe = if (signingMode == SigningMode.READ_ONLY) null else {
                     { navController.navigate(Routes.RECIPE_COMPOSE) }
                 },
+            )
+        }
+
+        composable(
+            Routes.RECIPE_TAG_FEED,
+            arguments = listOf(navArgument("tag") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val encodedTag = backStackEntry.arguments?.getString("tag") ?: return@composable
+            val tag = java.net.URLDecoder.decode(encodedTag, "UTF-8").trim().lowercase()
+            val tagFeedViewModel: RecipeTagFeedViewModel = viewModel()
+            LaunchedEffect(tag) {
+                tagFeedViewModel.load(tag, feedViewModel.recipeRepo)
+            }
+            RecipeTagFeedScreen(
+                viewModel = tagFeedViewModel,
+                tagInfo = RecipeTagCatalog.byTag(tag),
+                onRecipeClick = { author, dTag -> navController.navigate(Routes.recipe(author, dTag)) },
+                onBack = { navController.popBackStack() },
             )
         }
 

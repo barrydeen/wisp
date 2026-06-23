@@ -63,6 +63,12 @@ interface RecipeFormat {
      * recipe search; format-agnostic so search never hardcodes a kind.
      */
     fun searchFilter(query: String, limit: Int): Filter
+
+    /**
+     * Relay filter for one category/tag feed (e.g. "italian"), scoped to this
+     * format's category-tag convention. [until] pages backwards by created_at.
+     */
+    fun tagFeedFilter(tag: String, limit: Int, until: Long? = null): Filter
 }
 
 /** A recipe event before signing — the publisher signs this verbatim. */

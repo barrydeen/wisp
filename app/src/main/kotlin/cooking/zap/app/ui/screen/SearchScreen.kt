@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -84,6 +85,7 @@ import cooking.zap.app.ui.component.NsecPasteGuard
 import cooking.zap.app.ui.component.PostCard
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.nostr.RecipeParser
+import cooking.zap.app.nostr.RecipeTag
 import coil3.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
@@ -114,6 +116,7 @@ fun SearchScreen(
     zapAnimatingIds: Set<String> = emptySet(),
     onToggleFollow: (String) -> Unit = {},
     onHashtagClick: ((String) -> Unit)? = null,
+    onTagClick: (String) -> Unit = {},
     onBlockUser: (String) -> Unit = {},
     userPubkey: String? = null,
     listedIds: Set<String> = emptySet(),
@@ -133,6 +136,7 @@ fun SearchScreen(
     val users by viewModel.users.collectAsState()
     val notes by viewModel.notes.collectAsState()
     val recipeResults by viewModel.recipeResults.collectAsState()
+    val tagResults by viewModel.tagResults.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
     val selectedRelayOption by viewModel.selectedRelayOption.collectAsState()
     val selectedRelayUrl by viewModel.selectedRelayUrl.collectAsState()
@@ -185,7 +189,7 @@ fun SearchScreen(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Segmented tab: Recipes | People | Notes (recipe-first)
+                    // Segmented tab: Recipes | Tags | People | Notes (recipe-first)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -197,6 +201,13 @@ fun SearchScreen(
                             icon = Icons.Default.Restaurant,
                             selected = filter == SearchFilter.RECIPES,
                             onClick = { viewModel.selectFilter(SearchFilter.RECIPES) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        SearchTab(
+                            label = stringResource(R.string.tab_tags),
+                            icon = Icons.Outlined.Tag,
+                            selected = filter == SearchFilter.TAGS,
+                            onClick = { viewModel.selectFilter(SearchFilter.TAGS) },
                             modifier = Modifier.weight(1f)
                         )
                         SearchTab(
@@ -301,6 +312,7 @@ fun SearchScreen(
             // hidden by the global people/notes check.
             val activeResultsEmpty = when (filter) {
                 SearchFilter.RECIPES -> recipeResults.isEmpty()
+                SearchFilter.TAGS -> tagResults.isEmpty()
                 SearchFilter.PEOPLE -> users.isEmpty()
                 SearchFilter.NOTES -> notes.isEmpty()
             }
@@ -355,6 +367,14 @@ fun SearchScreen(
                                         authorName = profile?.displayString,
                                         authorPicture = profile?.picture,
                                         onClick = { onRecipeClick(recipe.author, recipe.dTag) },
+                                    )
+                                }
+                            }
+                            SearchFilter.TAGS -> {
+                                items(tagResults, key = { it.tag }, contentType = { "tag" }) { tag ->
+                                    TagResultItem(
+                                        tag = tag,
+                                        onClick = { onTagClick(tag.tag) },
                                     )
                                 }
                             }
@@ -499,6 +519,38 @@ private fun RecipeResultItem(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun TagResultItem(
+    tag: RecipeTag,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = tag.emoji,
+            style = MaterialTheme.typography.headlineSmall,
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = tag.label,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "#${tag.tag}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

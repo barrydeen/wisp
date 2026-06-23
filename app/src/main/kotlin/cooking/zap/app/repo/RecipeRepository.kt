@@ -97,6 +97,26 @@ class RecipeRepository(
     private var loadJob: Job? = null
     private var loadMoreJob: Job? = null
     private var refreshJob: Job? = null
+
+    /** Independent state for the shared recipe-by-tag feed surface. */
+    private val tagByCoordinate = LinkedHashMap<String, NostrEvent>()
+    private val tagCoordMutex = Mutex()
+    private val _tagRecipes = MutableStateFlow<List<RecipeParser.Recipe>>(emptyList())
+    val tagRecipes: StateFlow<List<RecipeParser.Recipe>> = _tagRecipes.asStateFlow()
+    private val _isTagLoading = MutableStateFlow(false)
+    val isTagLoading: StateFlow<Boolean> = _isTagLoading.asStateFlow()
+    private val _isTagLoadingMore = MutableStateFlow(false)
+    val isTagLoadingMore: StateFlow<Boolean> = _isTagLoadingMore.asStateFlow()
+    private val _isTagRefreshing = MutableStateFlow(false)
+    val isTagRefreshing: StateFlow<Boolean> = _isTagRefreshing.asStateFlow()
+    private val _tagExhausted = MutableStateFlow(false)
+    val tagExhausted: StateFlow<Boolean> = _tagExhausted.asStateFlow()
+    @Volatile
+    private var tagEpoch = 0L
+    private var activeTag: String? = null
+    private var tagLoadJob: Job? = null
+    private var tagLoadMoreJob: Job? = null
+    private var tagRefreshJob: Job? = null
     /**
      * Bumped on every reload/refresh. A [loadMore] started under a previous
      * epoch must NOT flip [exhausted] after a refresh has reset it. `@Volatile`
@@ -474,19 +494,242 @@ class RecipeRepository(
     /** Outcome of one [collectRecipePage]: new coordinates added + full-EOSE flag. */
     private data class PageResult(val newCoordinates: Int, val fullEose: Boolean)
 
+    /**
+     * Cache-first + union-backed category feed (e.g. "italian"), shared by
+     * chips/search tag taps. Results are recipe cards only and dedup newest-wins
+     * by replaceable coordinate, then canonicalized across formats.
+     */
+    fun loadTagFeed(tag: String, limit: Int = 100) {
+        val normalizedTag = tag.trim().lowercase()
+        if (normalizedTag.isBlank()) return
+
+        tagLoadJob?.cancel()
+        tagRefreshJob?.cancel()
+        tagLoadMoreJob?.cancel()
+        tagEpoch++
+        activeTag = normalizedTag
+        _isTagLoadingMore.value = false
+        _isTagRefreshing.value = false
+        _tagExhausted.value = false
+        _isTagLoading.value = true
+        tagByCoordinate.clear()
+        _tagRecipes.value = emptyList()
+
+        // Cache-first: ObjectBox by kind, then Kotlin tag match.
+        scope.launch(processingContext) {
+            val cached = cachedTagEvents(normalizedTag)
+            if (cached.isNotEmpty() && activeTag == normalizedTag) {
+                tagCoordMutex.withLock {
+                    cached.forEach { acceptTagEvent(it) }
+                    emitTagRecipes()
+                }
+            }
+        }
+        preloadCatalog()
+        tagLoadJob = launchTagNewestWindowQuery(normalizedTag, limit, _isTagLoading)
+    }
+
+    /** Pull-to-refresh for the active tag feed. */
+    fun refreshTagFeed(limit: Int = 100) {
+        val tag = activeTag ?: return
+        if (_isTagRefreshing.value) return
+        tagLoadJob?.cancel()
+        tagRefreshJob?.cancel()
+        tagLoadMoreJob?.cancel()
+        tagEpoch++
+        _isTagLoadingMore.value = false
+        _tagExhausted.value = false
+        tagRefreshJob = launchTagNewestWindowQuery(tag, limit, _isTagRefreshing)
+    }
+
+    /** Backward pagination for the active tag feed. */
+    fun loadMoreTagFeed(pageSize: Int = 50) {
+        val tag = activeTag ?: return
+        if (_isTagLoading.value || _isTagRefreshing.value || _isTagLoadingMore.value || _tagExhausted.value) return
+        _isTagLoadingMore.value = true
+        val startedEpoch = tagEpoch
+        val subId = "recipe-tag-more-${subCounter.getAndIncrement()}"
+
+        tagLoadMoreJob = scope.launch(processingContext) {
+            val oldest = tagCoordMutex.withLock { tagByCoordinate.values.minOfOrNull { it.created_at } }
+            if (oldest == null) {
+                _isTagLoadingMore.value = false
+                return@launch
+            }
+
+            val until = oldest - 1
+            var newCoordinates = 0
+            val seenIds = mutableSetOf<String>()
+            val collector = launch {
+                relayPool.relayEvents.collect { relayEvent ->
+                    if (relayEvent.subscriptionId != subId) return@collect
+                    val event = relayEvent.event
+                    if (event.id in seenIds) return@collect
+                    if (RecipeFormats.forEvent(event) == null) return@collect
+                    if (!eventMatchesCategoryTag(event, tag)) return@collect
+                    seenIds.add(event.id)
+                    eventRepo.cacheEvent(event)
+                    eventRepo.requestProfileIfMissing(event.pubkey)
+                    tagCoordMutex.withLock {
+                        if (acceptTagEvent(event)) {
+                            newCoordinates++
+                            emitTagRecipes()
+                        }
+                    }
+                }
+            }
+
+            val filters = RecipeFormats.active.map { it.tagFeedFilter(tag, pageSize, until) }
+            val req = ClientMessage.req(subId, filters)
+            var sent = 0
+            for (url in readRelays()) {
+                if (relayPool.sendToRelayOrEphemeral(url, req)) sent++
+            }
+            try {
+                if (sent > 0) {
+                    val eoseCount = subManager.awaitEoseCount(subId, expectedCount = sent, timeoutMs = 8_000)
+                    if (tagEpoch == startedEpoch && eoseCount >= sent && newCoordinates == 0) {
+                        _tagExhausted.value = true
+                    }
+                }
+            } finally {
+                collector.cancel()
+                subManager.closeSubscription(subId)
+                _isTagLoadingMore.value = false
+            }
+        }
+    }
+
+    /**
+     * Search the persisted recipe catalog by one recipe category tag.
+     * Cache-only and format-agnostic: no hardcoded kind.
+     */
+    suspend fun searchCachedRecipesByTag(
+        tag: String,
+        limit: Int = 2_000,
+    ): List<RecipeParser.Recipe> = withContext(processingContext) {
+        cachedTagEvents(tag, limit)
+            .mapNotNull { RecipeFormats.forEvent(it)?.parse(it) }
+            .sortedByDescending { it.publishedAt }
+    }
+
+    private fun launchTagNewestWindowQuery(
+        tag: String,
+        limit: Int,
+        loadingFlag: MutableStateFlow<Boolean>,
+    ): Job {
+        val subId = "recipe-tag-feed-${subCounter.getAndIncrement()}"
+        loadingFlag.value = true
+        return scope.launch(processingContext) {
+            val seenIds = mutableSetOf<String>()
+            val collector = launch {
+                relayPool.relayEvents.collect { relayEvent ->
+                    if (relayEvent.subscriptionId != subId) return@collect
+                    val event = relayEvent.event
+                    if (event.id in seenIds) return@collect
+                    if (RecipeFormats.forEvent(event) == null) return@collect
+                    if (!eventMatchesCategoryTag(event, tag)) return@collect
+                    seenIds.add(event.id)
+                    eventRepo.cacheEvent(event)
+                    eventRepo.requestProfileIfMissing(event.pubkey)
+                    tagCoordMutex.withLock {
+                        if (acceptTagEvent(event)) emitTagRecipes()
+                    }
+                }
+            }
+
+            val filters = RecipeFormats.active.map { it.tagFeedFilter(tag, limit) }
+            val req = ClientMessage.req(subId, filters)
+            var sent = 0
+            for (url in readRelays()) {
+                if (relayPool.sendToRelayOrEphemeral(url, req)) sent++
+            }
+
+            try {
+                if (sent > 0) {
+                    subManager.awaitEoseCount(subId, expectedCount = sent, timeoutMs = 8_000)
+                    delay(EOSE_GRACE_MS)
+                }
+            } finally {
+                collector.cancel()
+                subManager.closeSubscription(subId)
+                loadingFlag.value = false
+            }
+        }
+    }
+
+    private suspend fun cachedTagEvents(tag: String, limit: Int = 2_000): List<NostrEvent> {
+        val normalizedTag = tag.trim().lowercase()
+        if (normalizedTag.isBlank()) return emptyList()
+        val persistence = eventRepo.eventPersistence ?: return emptyList()
+        val events = RecipeFormats.active.flatMap { persistence.getEventsByKind(it.kind, limit) }
+        return dedupeAcrossFormats(events) { RecipeFormats.rankOf(it) }
+            .filter { eventMatchesCategoryTag(it, normalizedTag) }
+    }
+
+    private fun eventMatchesCategoryTag(event: NostrEvent, tag: String): Boolean {
+        val normalizedTag = tag.trim().lowercase()
+        if (normalizedTag.isBlank()) return false
+        // Fast-path current NIP-23 recipes: derive category from tags only.
+        if (event.kind == RecipeParser.RECIPE_KIND && matchesNip23CategoryTag(event, normalizedTag)) {
+            return true
+        }
+        val recipe = RecipeFormats.forEvent(event)?.parse(event) ?: return false
+        return recipe.categories.any { it.equals(normalizedTag, ignoreCase = true) }
+    }
+
+    private fun matchesNip23CategoryTag(event: NostrEvent, normalizedTag: String): Boolean {
+        val hashtags = event.tags
+            .asSequence()
+            .filter { it.size >= 2 && it[0] == "t" }
+            .map { it[1].trim().lowercase() }
+            .toList()
+        val root = hashtags.firstOrNull { it in RecipeParser.RECIPE_HASHTAGS } ?: return false
+        val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)?.trim().orEmpty().lowercase()
+        val slugTag = "$root-$dTag"
+        val expected = "$root-$normalizedTag"
+        return hashtags.any { it != root && it != slugTag && it == expected }
+    }
+
+    private fun acceptTagEvent(event: NostrEvent): Boolean {
+        val key = recipeCoordinate(event)
+        val current = tagByCoordinate[key]
+        val winner = if (current == null) event else preferNewer(current, event)
+        if (winner === current) return false
+        tagByCoordinate[key] = winner
+        return true
+    }
+
+    private fun emitTagRecipes() {
+        _tagRecipes.value = dedupeAcrossFormats(tagByCoordinate.values) { RecipeFormats.rankOf(it) }
+            .mapNotNull { RecipeFormats.forEvent(it)?.parse(it) }
+            .sortedByDescending { it.publishedAt }
+    }
+
     /** Drop the in-memory feed (e.g. on account switch). */
     fun clear() {
         loadJob?.cancel()
         loadMoreJob?.cancel()
         refreshJob?.cancel()
         preloadJob?.cancel()
+        tagLoadJob?.cancel()
+        tagLoadMoreJob?.cancel()
+        tagRefreshJob?.cancel()
         epoch++
+        tagEpoch++
         byCoordinate.clear()
+        tagByCoordinate.clear()
+        activeTag = null
         _recipes.value = emptyList()
+        _tagRecipes.value = emptyList()
         _isLoading.value = false
         _isLoadingMore.value = false
         _isRefreshing.value = false
         _exhausted.value = false
+        _isTagLoading.value = false
+        _isTagLoadingMore.value = false
+        _isTagRefreshing.value = false
+        _tagExhausted.value = false
     }
 
     /** Merge [event] into [byCoordinate]; return true iff it became the winner. */
