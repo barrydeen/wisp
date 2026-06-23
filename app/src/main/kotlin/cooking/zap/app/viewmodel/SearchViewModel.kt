@@ -291,12 +291,19 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 // OPPORTUNISTIC NETWORK NIP-50 via the registry searchFilter (no
                 // hardcoded 30023). NOT required for results — the guaranteed path
                 // is the persisted-catalog baseline + deep fill seeded in the
-                // coroutine below. Fanned to the selected relays PLUS dedicated
-                // recipe-search relays that actually index kind-30023.
-                val recipeFilters = RecipeFormats.active.map { it.searchFilter(trimmed, 50) }
-                val recipeReq = ClientMessage.req(recipeSubId, recipeFilters)
-                for (url in (relaysToQuery + RECIPE_SEARCH_RELAYS).distinct()) {
-                    relayPool.sendToRelayOrEphemeral(url, recipeReq)
+                // coroutine below. Default relay path intentionally sends NO
+                // recipe NIP-50 REQ (confirmed dead for kind-30023); keep
+                // opportunistic NIP-50 only for user-selected relays.
+                val recipeNetworkRelays = when (_selectedRelayOption.value) {
+                    RelayOption.DEFAULT -> emptyList()
+                    RelayOption.ALL_RELAYS, RelayOption.INDIVIDUAL -> relaysToQuery
+                }
+                if (recipeNetworkRelays.isNotEmpty()) {
+                    val recipeFilters = RecipeFormats.active.map { it.searchFilter(trimmed, 50) }
+                    val recipeReq = ClientMessage.req(recipeSubId, recipeFilters)
+                    for (url in recipeNetworkRelays.distinct()) {
+                        relayPool.sendToRelayOrEphemeral(url, recipeReq)
+                    }
                 }
                 recipeSubId
             }
@@ -493,15 +500,6 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         const val DEFAULT_SEARCH_RELAY = "wss://search.nostrarchives.com"
-
-        /**
-         * Extra relays the recipe NIP-50 query always fans to (on top of the
-         * user's selected search relays), because they actually index
-         * kind-30023 over full-text search. Opportunistic only — recipe results
-         * are guaranteed by the persisted-catalog baseline + deep fill, so an
-         * empty network response here never empties the results.
-         */
-        val RECIPE_SEARCH_RELAYS = listOf("wss://relay.nostr.band")
     }
 
     private fun closeSubscriptions(relayPool: RelayPool) {
