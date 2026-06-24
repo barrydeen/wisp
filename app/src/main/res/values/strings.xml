@@ -241,6 +241,10 @@
     <string name="tab_connected">Connected</string>
     <string name="tab_bad">Bad</string>
     <string name="tab_recipes">Recipes</string>
+    <string name="tab_packs">Packs</string>
+    <string name="tab_discover">Discover</string>
+    <string name="tab_mine">Mine</string>
+    <string name="tab_saved">Saved</string>
     <string name="tab_tags">Tags</string>
     <string name="tab_people">Profiles</string>
     <string name="tab_notes">Notes</string>
@@ -614,6 +618,10 @@
     <string name="error_relay_broadcast">Relay list broadcast</string>
     <string name="error_broadcast_failed">Failed to broadcast</string>
     <string name="error_no_results_found">No results found</string>
+    <string name="error_no_recipe_packs_found">No recipe packs found.</string>
+    <string name="error_no_recipe_packs_mine">You have not published any packs.</string>
+    <string name="error_no_recipe_packs_saved">No saved packs yet.</string>
+    <string name="error_sign_in_packs_tab">Sign in to view this tab.</string>
     <string name="error_search_hint">Search recipes, people, and notes</string>
     <string name="error_no_notifications">No notifications yet</string>
     <string name="error_no_messages">No messages yet</string>

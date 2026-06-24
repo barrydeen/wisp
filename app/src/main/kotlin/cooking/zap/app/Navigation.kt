@@ -82,6 +82,7 @@ import cooking.zap.app.ui.screen.ArticleScreen
 import cooking.zap.app.ui.screen.RecipeDetailScreen
 import cooking.zap.app.ui.screen.RecipeComposeScreen
 import cooking.zap.app.ui.screen.RecipeFeedScreen
+import cooking.zap.app.ui.screen.RecipePackDetailStubScreen
 import cooking.zap.app.ui.screen.RecipeTagFeedScreen
 import cooking.zap.app.ui.screen.OnlyFoodFeedScreen
 import cooking.zap.app.ui.screen.CheffyScreen
@@ -117,6 +118,7 @@ import cooking.zap.app.viewmodel.ArticleViewModel
 import cooking.zap.app.viewmodel.RecipeDetailViewModel
 import cooking.zap.app.viewmodel.RecipeComposeViewModel
 import cooking.zap.app.viewmodel.RecipeFeedViewModel
+import cooking.zap.app.viewmodel.RecipePacksViewModel
 import cooking.zap.app.viewmodel.RecipeTagFeedViewModel
 import cooking.zap.app.viewmodel.OnlyFoodFeedViewModel
 import cooking.zap.app.viewmodel.CheffyViewModel
@@ -197,6 +199,7 @@ object Routes {
     const val ARTICLE = "article/{kind}/{author}/{dTag}"
     const val LIVE_STREAM = "live_stream/{hostPubkey}/{dTag}?relayHint={relayHint}"
     const val RECIPE_DETAIL = "recipe/{author}/{dTag}"
+    const val RECIPE_PACK_DETAIL = "recipe_pack/{author}/{dTag}"
     const val RECIPE_TAG_FEED = "recipe_tag/{tag}"
     const val RECIPES = "recipes"
     const val ONLY_FOOD = "onlyfood"
@@ -213,6 +216,10 @@ object Routes {
      */
     fun recipe(author: String, dTag: String): String =
         "recipe/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}"
+
+    /** Build a recipe-pack detail route (stubbed in PR A, implemented in PR B). */
+    fun recipePack(author: String, dTag: String): String =
+        "recipe_pack/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}"
 
     /** Build a recipe-by-tag feed route, URL-encoding the slug-like tag. */
     fun recipeTag(tag: String): String =
@@ -2745,7 +2752,11 @@ fun WispNavHost(
 
         composable(Routes.RECIPES) {
             val recipeFeedViewModel: RecipeFeedViewModel = viewModel()
+            val recipePacksViewModel: RecipePacksViewModel = viewModel()
             LaunchedEffect(Unit) { recipeFeedViewModel.load(feedViewModel.recipeRepo) }
+            LaunchedEffect(Unit) {
+                recipePacksViewModel.load(feedViewModel.recipePackRepo) { feedViewModel.getUserPubkey() }
+            }
             // Avatar for the nav icon — mirrors the Feed tab's avatar→drawer button.
             val recipesProfileVersion by feedViewModel.eventRepo.profileVersion.collectAsState()
             val recipesAvatarUrl = recipesProfileVersion.let {
@@ -2753,7 +2764,11 @@ fun WispNavHost(
             }
             RecipeFeedScreen(
                 viewModel = recipeFeedViewModel,
+                packsViewModel = recipePacksViewModel,
+                eventRepo = feedViewModel.eventRepo,
+                userPubkey = feedViewModel.getUserPubkey(),
                 onRecipeClick = { author, dTag -> navController.navigate(Routes.recipe(author, dTag)) },
+                onPackClick = { author, dTag -> navController.navigate(Routes.recipePack(author, dTag)) },
                 onTagClick = { tag -> navController.navigate(Routes.recipeTag(tag)) },
                 onOpenDrawer = onOpenDrawer,
                 onSearch = {
@@ -2768,6 +2783,18 @@ fun WispNavHost(
                 onCreateRecipe = if (signingMode == SigningMode.READ_ONLY) null else {
                     { navController.navigate(Routes.RECIPE_COMPOSE) }
                 },
+            )
+        }
+
+        composable(
+            Routes.RECIPE_PACK_DETAIL,
+            arguments = listOf(
+                navArgument("author") { type = NavType.StringType },
+                navArgument("dTag") { type = NavType.StringType }
+            )
+        ) {
+            RecipePackDetailStubScreen(
+                onBack = { navController.popBackStack() }
             )
         }
 

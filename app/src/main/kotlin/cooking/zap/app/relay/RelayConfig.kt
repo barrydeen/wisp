@@ -68,6 +68,18 @@ data class RelayConfig(
             "wss://relay.primal.net"
         )
 
+        /**
+         * Explicit relay set used by the packs listing (PR A), mirroring web `/packs`:
+         * Discover and Saved resolution fan queries here instead of relying on outbox routing.
+         */
+        val PACK_STANDARD_RELAYS = listOf(
+            "wss://relay.damus.io",
+            "wss://nos.lol",
+            "wss://purplepag.es",
+            "wss://relay.primal.net",
+            "wss://nostr.wine"
+        )
+
         private val IP_HOST_REGEX = Regex("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$")
 
         /**

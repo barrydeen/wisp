@@ -1,11 +1,13 @@
 package cooking.zap.app.ui.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items as rowItems
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -26,6 +29,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
@@ -34,6 +38,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -48,12 +54,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import cooking.zap.app.R
 import cooking.zap.app.nostr.RecipeTagCatalog
+import cooking.zap.app.repo.EventRepository
+import cooking.zap.app.repo.RecipePackSummary
+import cooking.zap.app.ui.component.RecipePackCard
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.RecipeCard
 import cooking.zap.app.ui.component.RecipePosterSkeleton
 import cooking.zap.app.viewmodel.RecipeFeedViewModel
+import cooking.zap.app.viewmodel.RecipePacksTab
+import cooking.zap.app.viewmodel.RecipePacksViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 
@@ -63,6 +79,8 @@ import kotlinx.coroutines.flow.filter
  * Sized to ~one row at the widest column count so it triggers a bit early.
  */
 private const val LOAD_MORE_PREFETCH = 6
+
+private enum class RecipesMainTab { RECIPES, PACKS }
 
 /**
  * The Recipes feed — recipe cards only (concern 1.6 un-merge), rendered as a
@@ -74,7 +92,11 @@ private const val LOAD_MORE_PREFETCH = 6
 @Composable
 fun RecipeFeedScreen(
     viewModel: RecipeFeedViewModel,
+    packsViewModel: RecipePacksViewModel,
+    eventRepo: EventRepository,
+    userPubkey: String?,
     onRecipeClick: (author: String, dTag: String) -> Unit,
+    onPackClick: (author: String, dTag: String) -> Unit,
     onTagClick: (tag: String) -> Unit = {},
     // Recipes is a root tab: no back arrow. The nav icon opens the shared
     // drawer (hoisted to WispNavHost) and the top bar carries a search icon,
@@ -91,6 +113,7 @@ fun RecipeFeedScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val gridState = rememberLazyGridState()
     var showMoreTagsSheet by remember { mutableStateOf(false) }
+    var mainTab by remember { mutableStateOf(RecipesMainTab.RECIPES) }
 
     // Scroll-end pagination: when the last visible tile nears the end of the
     // grid, fetch the next (older) page. distinctUntilChanged debounces repeat
@@ -155,6 +178,38 @@ fun RecipeFeedScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, androidx.compose.foundation.shape.RoundedCornerShape(50))
+                    .padding(4.dp)
+            ) {
+                RecipesMainTabButton(
+                    label = stringResource(R.string.tab_recipes),
+                    selected = mainTab == RecipesMainTab.RECIPES,
+                    onClick = { mainTab = RecipesMainTab.RECIPES },
+                    modifier = Modifier.weight(1f),
+                )
+                RecipesMainTabButton(
+                    label = stringResource(R.string.tab_packs),
+                    selected = mainTab == RecipesMainTab.PACKS,
+                    onClick = { mainTab = RecipesMainTab.PACKS },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            if (mainTab == RecipesMainTab.PACKS) {
+                RecipePacksSection(
+                    viewModel = packsViewModel,
+                    eventRepo = eventRepo,
+                    userPubkey = userPubkey,
+                    onPackClick = onPackClick,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                )
+                return@Column
+            }
+
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -177,66 +232,66 @@ fun RecipeFeedScreen(
                 onRefresh = { viewModel.refresh() },
                 modifier = Modifier.fillMaxWidth().weight(1f),
             ) {
-            when {
-                recipes.isEmpty() && isLoading -> {
-                    LazyVerticalGrid(
-                        columns = columns,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = contentPadding,
-                        horizontalArrangement = spacing,
-                        verticalArrangement = spacing,
-                    ) {
-                        repeat(12) {
-                            item {
-                                RecipePosterSkeleton(Modifier.fillMaxWidth().aspectRatio(2f / 3f))
+                when {
+                    recipes.isEmpty() && isLoading -> {
+                        LazyVerticalGrid(
+                            columns = columns,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = contentPadding,
+                            horizontalArrangement = spacing,
+                            verticalArrangement = spacing,
+                        ) {
+                            repeat(12) {
+                                item {
+                                    RecipePosterSkeleton(Modifier.fillMaxWidth().aspectRatio(2f / 3f))
+                                }
                             }
                         }
                     }
-                }
-                recipes.isEmpty() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(text = "🍳", style = MaterialTheme.typography.displaySmall)
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = "No recipes yet",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                    recipes.isEmpty() -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(text = "🍳", style = MaterialTheme.typography.displaySmall)
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "No recipes yet",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
-                }
-                else -> {
-                    LazyVerticalGrid(
-                        state = gridState,
-                        columns = columns,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = contentPadding,
-                        horizontalArrangement = spacing,
-                        verticalArrangement = spacing,
-                    ) {
-                        gridItems(recipes, key = { it.id }) { recipe ->
-                            RecipeCard(
-                                recipe = recipe,
-                                onClick = { onRecipeClick(recipe.author, recipe.dTag) },
-                            )
-                        }
-                        // Loading-more footer: a full-width (all columns) row with a
-                        // poster skeleton while the next page is in flight.
-                        if (isLoadingMore) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                Box(
-                                    Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    RecipePosterSkeleton(Modifier.width(150.dp).aspectRatio(2f / 3f))
+                    else -> {
+                        LazyVerticalGrid(
+                            state = gridState,
+                            columns = columns,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = contentPadding,
+                            horizontalArrangement = spacing,
+                            verticalArrangement = spacing,
+                        ) {
+                            gridItems(recipes, key = { it.id }) { recipe ->
+                                RecipeCard(
+                                    recipe = recipe,
+                                    onClick = { onRecipeClick(recipe.author, recipe.dTag) },
+                                )
+                            }
+                            // Loading-more footer: a full-width (all columns) row with a
+                            // poster skeleton while the next page is in flight.
+                            if (isLoadingMore) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    Box(
+                                        Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        RecipePosterSkeleton(Modifier.width(150.dp).aspectRatio(2f / 3f))
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-        }
         }
         if (showMoreTagsSheet) {
             ModalBottomSheet(
@@ -285,4 +340,132 @@ private fun RecipeTagChip(
         onClick = onClick,
         label = { Text("${tag.emoji} ${tag.label}") },
     )
+}
+
+@Composable
+private fun RecipesMainTabButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .background(
+                if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                androidx.compose.foundation.shape.RoundedCornerShape(50)
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+        )
+    }
+}
+
+@Composable
+private fun RecipePacksSection(
+    viewModel: RecipePacksViewModel,
+    eventRepo: EventRepository,
+    userPubkey: String?,
+    onPackClick: (author: String, dTag: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selectedTab by viewModel.selectedTab.collectAsState()
+    val discoverPacks by viewModel.discoverPacks.collectAsState()
+    val minePacks by viewModel.minePacks.collectAsState()
+    val savedPacks by viewModel.savedPacks.collectAsState()
+    val isDiscoverLoading by viewModel.isDiscoverLoading.collectAsState()
+    val isMineLoading by viewModel.isMineLoading.collectAsState()
+    val isSavedLoading by viewModel.isSavedLoading.collectAsState()
+
+    val packs = when (selectedTab) {
+        RecipePacksTab.DISCOVER -> discoverPacks
+        RecipePacksTab.MINE -> minePacks
+        RecipePacksTab.SAVED -> savedPacks
+    }
+    val isLoading = when (selectedTab) {
+        RecipePacksTab.DISCOVER -> isDiscoverLoading
+        RecipePacksTab.MINE -> isMineLoading
+        RecipePacksTab.SAVED -> isSavedLoading
+    }
+
+    Column(modifier = modifier) {
+        TabRow(selectedTabIndex = selectedTab.ordinal) {
+            Tab(
+                selected = selectedTab == RecipePacksTab.DISCOVER,
+                onClick = { viewModel.selectTab(RecipePacksTab.DISCOVER) },
+                text = { Text(stringResource(R.string.tab_discover)) }
+            )
+            Tab(
+                selected = selectedTab == RecipePacksTab.MINE,
+                onClick = { viewModel.selectTab(RecipePacksTab.MINE) },
+                text = { Text(stringResource(R.string.tab_mine)) }
+            )
+            Tab(
+                selected = selectedTab == RecipePacksTab.SAVED,
+                onClick = { viewModel.selectTab(RecipePacksTab.SAVED) },
+                text = { Text(stringResource(R.string.tab_saved)) }
+            )
+        }
+
+        if ((selectedTab == RecipePacksTab.MINE || selectedTab == RecipePacksTab.SAVED) && userPubkey.isNullOrBlank()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = stringResource(R.string.error_sign_in_packs_tab),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            return
+        }
+
+        when {
+            isLoading && packs.isEmpty() -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+            packs.isEmpty() -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = when (selectedTab) {
+                            RecipePacksTab.DISCOVER -> stringResource(R.string.error_no_recipe_packs_found)
+                            RecipePacksTab.MINE -> stringResource(R.string.error_no_recipe_packs_mine)
+                            RecipePacksTab.SAVED -> stringResource(R.string.error_no_recipe_packs_saved)
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            else -> {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 280.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    gridItems(
+                        items = packs,
+                        key = { "${it.author}:${it.dTag}:${it.event.id}" }
+                    ) { pack ->
+                        val profile = eventRepo.getProfileData(pack.author)
+                        RecipePackCard(
+                            pack = pack,
+                            creatorName = profile?.displayString,
+                            creatorPicture = profile?.picture,
+                            onClick = { onPackClick(pack.author, pack.dTag) },
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
