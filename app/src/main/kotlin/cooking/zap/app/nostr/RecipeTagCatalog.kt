@@ -47,8 +47,21 @@ object RecipeTagCatalog {
     )
 
     private val byTag = recipeTags.associateBy { it.tag }
+    private val popularTagKeys = listOf(
+        "breakfast",
+        "dinner",
+        "dessert",
+        "chicken",
+        "vegan",
+        "pasta",
+        "soup",
+        "cocktail",
+    )
 
     fun byTag(tag: String): RecipeTag? = byTag[tag.trim().lowercase()]
+
+    val popularRecipeTags: List<RecipeTag>
+        get() = popularTagKeys.mapNotNull { byTag[it] }
 
     fun search(query: String): List<RecipeTag> {
         val needle = query.trim().lowercase()

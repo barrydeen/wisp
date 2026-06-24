@@ -14,10 +14,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items as rowItems
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -28,6 +32,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
@@ -37,10 +42,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import cooking.zap.app.nostr.RecipeTag
 import cooking.zap.app.nostr.RecipeTagCatalog
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.RecipeCard
@@ -82,6 +91,7 @@ fun RecipeFeedScreen(
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val gridState = rememberLazyGridState()
+    var showMoreTagsSheet by remember { mutableStateOf(false) }
 
     // Scroll-end pagination: when the last visible tile nears the end of the
     // grid, fetch the next (older) page. distinctUntilChanged debounces repeat
@@ -146,18 +156,20 @@ fun RecipeFeedScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            FlowRow(
+            LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                RecipeTagCatalog.recipeTags.forEach { tag ->
+                rowItems(RecipeTagCatalog.popularRecipeTags, key = { it.tag }) { tag ->
+                    RecipeTagChip(tag = tag, onClick = { onTagClick(tag.tag) })
+                }
+                item("more-tags") {
                     FilterChip(
                         selected = false,
-                        onClick = { onTagClick(tag.tag) },
-                        label = { Text("${tag.emoji} ${tag.label}") },
+                        onClick = { showMoreTagsSheet = true },
+                        label = { Text("More ⌄") },
                     )
                 }
             }
@@ -175,8 +187,10 @@ fun RecipeFeedScreen(
                         horizontalArrangement = spacing,
                         verticalArrangement = spacing,
                     ) {
-                        items(12) {
-                            RecipePosterSkeleton(Modifier.fillMaxWidth().aspectRatio(2f / 3f))
+                        repeat(12) {
+                            item {
+                                RecipePosterSkeleton(Modifier.fillMaxWidth().aspectRatio(2f / 3f))
+                            }
                         }
                     }
                 }
@@ -202,7 +216,7 @@ fun RecipeFeedScreen(
                         horizontalArrangement = spacing,
                         verticalArrangement = spacing,
                     ) {
-                        items(recipes, key = { it.id }) { recipe ->
+                        gridItems(recipes, key = { it.id }) { recipe ->
                             RecipeCard(
                                 recipe = recipe,
                                 onClick = { onRecipeClick(recipe.author, recipe.dTag) },
@@ -225,5 +239,51 @@ fun RecipeFeedScreen(
             }
         }
         }
+        if (showMoreTagsSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showMoreTagsSheet = false },
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "All categories",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        RecipeTagCatalog.recipeTags.forEach { tag ->
+                            RecipeTagChip(
+                                tag = tag,
+                                onClick = {
+                                    showMoreTagsSheet = false
+                                    onTagClick(tag.tag)
+                                }
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
+        }
     }
+}
+
+@Composable
+private fun RecipeTagChip(
+    tag: RecipeTag,
+    onClick: () -> Unit,
+) {
+    FilterChip(
+        selected = false,
+        onClick = onClick,
+        label = { Text("${tag.emoji} ${tag.label}") },
+    )
 }
