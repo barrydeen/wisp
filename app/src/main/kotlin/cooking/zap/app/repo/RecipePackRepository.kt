@@ -14,6 +14,7 @@ import cooking.zap.app.relay.SubscriptionManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -248,6 +249,7 @@ class RecipePackRepository(
         val subId = "$subPrefix-${subCounter.getAndIncrement()}"
         val collected = mutableListOf<NostrEvent>()
         val seenIds = mutableSetOf<String>()
+        val targetedRelays = mutableSetOf<String>()
         val collector = scope.launch(processingContext) {
             relayPool.relayEvents.collect { relayEvent ->
                 if (relayEvent.subscriptionId != subId) return@collect
@@ -261,30 +263,31 @@ class RecipePackRepository(
             }
         }
 
-        var sent = 0
         if (readFilters.isNotEmpty()) {
             val req = ClientMessage.req(subId, readFilters)
             for (url in discoverReadRelays()) {
-                if (relayPool.sendToRelayOrEphemeral(url, req)) sent++
+                if (relayPool.sendToRelayOrEphemeral(url, req)) targetedRelays.add(url)
             }
         }
         for (scoped in authorScoped) {
-            val targeted = outboxRouter.subscribeToUserWriteRelays(subId, scoped.author, scoped.filter)
-            // Some relays may be known bad; only count healthy targets in expected EOSE.
-            sent += targeted.count { relayPool.healthTracker?.isBad(it) != true }
+            targetedRelays.addAll(
+                outboxRouter.subscribeToUserWriteRelays(subId, scoped.author, scoped.filter)
+            )
         }
+        // Count each relay once per subId; overlapping author-scoped routes share EOSE.
+        val expectedEose = targetedRelays.count { relayPool.healthTracker?.isBad(it) != true }
 
         try {
-            if (sent > 0) {
-                subManager.awaitEoseCount(subId, expectedCount = sent, timeoutMs = 8_000)
+            if (expectedEose > 0) {
+                subManager.awaitEoseCount(subId, expectedCount = expectedEose, timeoutMs = 8_000)
                 // Mirror RecipeRepository's grace: don't drop just-arriving events from slow relays.
                 delay(EOSE_GRACE_MS)
             }
         } finally {
-            collector.cancel()
+            collector.cancelAndJoin()
             subManager.closeSubscription(subId)
         }
-        collected.toList()
+        return@withContext collected.toList()
     }
 
     private fun discoverReadRelays(): List<String> {
