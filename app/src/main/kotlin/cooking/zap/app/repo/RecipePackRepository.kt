@@ -7,6 +7,7 @@ import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.PackFormats
 import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.nostr.packKey
+import cooking.zap.app.relay.OutboxRouter
 import cooking.zap.app.relay.RelayConfig
 import cooking.zap.app.relay.RelayPool
 import cooking.zap.app.relay.SubscriptionManager
@@ -14,10 +15,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.CoroutineContext
 
 data class RecipePackSummary(
@@ -35,15 +38,20 @@ data class RecipePackSummary(
  */
 class RecipePackRepository(
     private val relayPool: RelayPool,
+    private val outboxRouter: OutboxRouter,
     private val eventRepo: EventRepository,
     private val subManager: SubscriptionManager,
     private val scope: CoroutineScope,
     private val processingContext: CoroutineContext = Dispatchers.Default,
+    private val userReadRelaysProvider: () -> List<String> = { emptyList() },
     private val userPubkeyProvider: () -> String? = { null },
 ) {
     companion object {
         private const val PAGE_LIMIT = 60
         private const val SAVED_PACKS_DTAG = "zapcooking-saved-packs"
+        const val OFFICIAL_PACKS_PUBKEY = "319ad3e790634dbe86f14db9c2995b26ee3c6228be55f89c4c7fea9acc01d50a"
+        private const val EOSE_GRACE_MS = 2_000L
+        private const val CACHE_LIMIT = 2_000
         private val RECIPE_KINDS = RecipeFormats.active.map { it.kind }.toSet()
     }
 
@@ -76,11 +84,24 @@ class RecipePackRepository(
             _isDiscoverLoading.value = true
             try {
                 val format = PackFormats.primary
-                val events = queryAcrossStandardRelays(
-                    filters = listOf(format.packDiscoverFilter(limit = limit)),
-                    subPrefix = "pack-discover"
+                // Cache-first paint: discover-tagged packs + official packs.
+                val cached = cachedPackEvents()
+                    .filter { eventMatchesDiscoverTags(it) || it.pubkey == OFFICIAL_PACKS_PUBKEY }
+                _discoverPacks.value = sanitizeAndSort(cached)
+
+                val events = queryPacks(
+                    subPrefix = "pack-discover",
+                    readFilters = listOf(format.packDiscoverFilter(limit = limit)),
+                    authorScoped = listOf(
+                        AuthorScopedFilter(
+                            author = OFFICIAL_PACKS_PUBKEY,
+                            filter = format.packMineFilter(author = OFFICIAL_PACKS_PUBKEY, limit = limit),
+                        )
+                    )
                 )
-                _discoverPacks.value = sanitizeAndSort(events)
+                _discoverPacks.value = sanitizeAndSort(
+                    events.filter { eventMatchesDiscoverTags(it) || it.pubkey == OFFICIAL_PACKS_PUBKEY }
+                )
             } finally {
                 _isDiscoverLoading.value = false
             }
@@ -98,9 +119,19 @@ class RecipePackRepository(
             _isMineLoading.value = true
             try {
                 val format = PackFormats.primary
-                val events = queryAcrossStandardRelays(
-                    filters = listOf(format.packMineFilter(author = author, limit = limit)),
-                    subPrefix = "pack-mine"
+                // Cache-first paint for my packs.
+                _minePacks.value = sanitizeAndSort(
+                    cachedPackEvents().filter { it.pubkey == author }
+                )
+                val events = queryPacks(
+                    subPrefix = "pack-mine",
+                    readFilters = listOf(format.packMineFilter(author = author, limit = limit)),
+                    authorScoped = listOf(
+                        AuthorScopedFilter(
+                            author = author,
+                            filter = format.packMineFilter(author = author, limit = limit),
+                        )
+                    )
                 )
                 _minePacks.value = sanitizeAndSort(events)
             } finally {
@@ -119,18 +150,48 @@ class RecipePackRepository(
         savedJob = scope.launch(processingContext) {
             _isSavedLoading.value = true
             try {
-                val savedListEvents = queryAcrossStandardRelays(
-                    filters = listOf(
-                        Filter(
-                            kinds = listOf(Nip51.KIND_BOOKMARK_SET),
-                            authors = listOf(author),
-                            dTags = listOf(SAVED_PACKS_DTAG),
-                            limit = 1,
-                        )
-                    ),
-                    subPrefix = "pack-saved-list"
+                // Cache-first saved-list + saved-pack paint.
+                val cachedSavedList = cachedSavedListEvent(author)
+                val cachedCoordinates = cachedSavedList
+                    ?.let { Nip51.parseBookmarkSet(it) }
+                    ?.coordinates
+                    ?.mapNotNull { parseSavedPackCoordinate(it) }
+                    ?.groupBy({ it.first }, { it.second })
+                    ?.mapValues { it.value.toSet() }
+                    .orEmpty()
+                if (cachedCoordinates.isNotEmpty()) {
+                    val cachedSavedPacks = cachedPackEvents().filter { e ->
+                        val dTag = e.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)?.trim()
+                        val wanted = cachedCoordinates[e.pubkey]
+                        dTag != null && wanted != null && dTag in wanted
+                    }
+                    _savedPacks.value = sanitizeAndSort(cachedSavedPacks)
+                } else {
+                    _savedPacks.value = emptyList()
+                }
+
+                val savedListFilter = Filter(
+                    kinds = listOf(Nip51.KIND_BOOKMARK_SET),
+                    authors = listOf(author),
+                    dTags = listOf(SAVED_PACKS_DTAG),
+                    limit = 1,
                 )
-                val newestSavedList = dedupeNewestPerPackCoordinate(savedListEvents).firstOrNull()
+                val savedListEvents = queryPacks(
+                    subPrefix = "pack-saved-list",
+                    readFilters = listOf(savedListFilter),
+                    authorScoped = listOf(
+                        AuthorScopedFilter(
+                            author = author,
+                            filter = savedListFilter,
+                        )
+                    )
+                )
+                val newestSavedList = dedupeNewestPerPackCoordinate(
+                    buildList {
+                        cachedSavedList?.let(::add)
+                        addAll(savedListEvents)
+                    }
+                ).firstOrNull()
                 val savedCoordinates = newestSavedList
                     ?.let { Nip51.parseBookmarkSet(it) }
                     ?.coordinates
@@ -151,9 +212,21 @@ class RecipePackRepository(
                         limit = dTags.size,
                     )
                 }
-                val savedPackEvents = queryAcrossStandardRelays(
-                    filters = byAuthorFilters,
-                    subPrefix = "pack-saved-resolve"
+                val savedAuthorScoped = savedCoordinates.map { (packAuthor, dTags) ->
+                    AuthorScopedFilter(
+                        author = packAuthor,
+                        filter = Filter(
+                            kinds = listOf(PackFormats.primary.kind),
+                            authors = listOf(packAuthor),
+                            dTags = dTags.toList(),
+                            limit = dTags.size,
+                        )
+                    )
+                }
+                val savedPackEvents = queryPacks(
+                    subPrefix = "pack-saved-resolve",
+                    readFilters = byAuthorFilters,
+                    authorScoped = savedAuthorScoped,
                 )
                 _savedPacks.value = sanitizeAndSort(savedPackEvents)
             } finally {
@@ -162,36 +235,100 @@ class RecipePackRepository(
         }
     }
 
-    private suspend fun queryAcrossStandardRelays(
-        filters: List<Filter>,
+    private data class AuthorScopedFilter(
+        val author: String,
+        val filter: Filter,
+    )
+
+    private suspend fun queryPacks(
         subPrefix: String,
-    ): List<NostrEvent> {
-        if (filters.isEmpty()) return emptyList()
+        readFilters: List<Filter>,
+        authorScoped: List<AuthorScopedFilter> = emptyList(),
+    ): List<NostrEvent> = withContext(processingContext) {
+        if (readFilters.isEmpty() && authorScoped.isEmpty()) return@withContext emptyList()
         val subId = "$subPrefix-${subCounter.getAndIncrement()}"
-        val req = ClientMessage.req(subId, filters)
         val collected = mutableListOf<NostrEvent>()
+        val seenIds = mutableSetOf<String>()
+        val targetedRelays = mutableSetOf<String>()
         val collector = scope.launch(processingContext) {
             relayPool.relayEvents.collect { relayEvent ->
                 if (relayEvent.subscriptionId != subId) return@collect
-                collected.add(relayEvent.event)
-                eventRepo.cacheEvent(relayEvent.event)
-                eventRepo.requestProfileIfMissing(relayEvent.event.pubkey)
+                val event = relayEvent.event
+                if (event.id in seenIds) return@collect
+                if (PackFormats.forEvent(event) == null && event.kind != Nip51.KIND_BOOKMARK_SET) return@collect
+                seenIds.add(event.id)
+                collected.add(event)
+                eventRepo.cacheEvent(event)
+                eventRepo.requestProfileIfMissing(event.pubkey)
             }
         }
-        var sent = 0
-        for (url in RelayConfig.PACK_STANDARD_RELAYS) {
-            if (relayPool.sendToRelayOrEphemeral(url, req)) sent++
+
+        if (readFilters.isNotEmpty()) {
+            val req = ClientMessage.req(subId, readFilters)
+            for (url in discoverReadRelays()) {
+                if (relayPool.sendToRelayOrEphemeral(url, req)) targetedRelays.add(url)
+            }
         }
+        for (scoped in authorScoped) {
+            targetedRelays.addAll(
+                outboxRouter.subscribeToUserWriteRelays(subId, scoped.author, scoped.filter)
+            )
+        }
+        // Count each relay once per subId; overlapping author-scoped routes share EOSE.
+        val expectedEose = targetedRelays.count { relayPool.healthTracker?.isBad(it) != true }
+
         try {
-            if (sent > 0) {
-                subManager.awaitEoseCount(subId, expectedCount = sent, timeoutMs = 8_000)
+            if (expectedEose > 0) {
+                subManager.awaitEoseCount(subId, expectedCount = expectedEose, timeoutMs = 8_000)
+                // Mirror RecipeRepository's grace: don't drop just-arriving events from slow relays.
+                delay(EOSE_GRACE_MS)
             }
         } finally {
-            collector.cancel()
             collector.cancelAndJoin()
             subManager.closeSubscription(subId)
         }
-        return collected.toList()
+        return@withContext collected.toList()
+    }
+
+    private fun discoverReadRelays(): List<String> {
+        val bad = relayPool.healthTracker?.getBadRelays().orEmpty()
+        val union = LinkedHashSet<String>()
+        fun add(url: String) {
+            val normalized = url.trim().trimEnd('/')
+            if (normalized.isBlank()) return
+            if (normalized in bad) return
+            union.add(normalized)
+        }
+        RelayConfig.PACK_STANDARD_RELAYS.forEach(::add)
+        RelayConfig.DEFAULT_INDEXER_RELAYS.forEach(::add)
+        RelayConfig.DEFAULTS.filter { it.read }.forEach { add(it.url) }
+        userReadRelaysProvider().forEach(::add)
+        return union.toList()
+    }
+
+    private fun cachedPackEvents(limit: Int = CACHE_LIMIT): List<NostrEvent> {
+        val persistence = eventRepo.eventPersistence ?: return emptyList()
+        val events = PackFormats.active.flatMap { persistence.getEventsByKind(it.kind, limit) }
+        return dedupeNewestPerPackCoordinate(events)
+    }
+
+    private fun cachedSavedListEvent(author: String, limit: Int = CACHE_LIMIT): NostrEvent? {
+        eventRepo.findAddressableEvent(Nip51.KIND_BOOKMARK_SET, author, SAVED_PACKS_DTAG)?.let { return it }
+        val persistence = eventRepo.eventPersistence ?: return null
+        val events = persistence.getEventsByKind(Nip51.KIND_BOOKMARK_SET, limit)
+            .filter { it.pubkey == author }
+            .filter { e ->
+                e.tags.any { it.size >= 2 && it[0] == "d" && it[1] == SAVED_PACKS_DTAG }
+            }
+        return dedupeNewestPerPackCoordinate(events).firstOrNull()
+    }
+
+    private fun eventMatchesDiscoverTags(event: NostrEvent): Boolean {
+        val tags = event.tags.asSequence()
+            .filter { it.size >= 2 && it[0] == "t" }
+            .map { it[1].trim().lowercase() }
+            .toSet()
+        return "zap-cooking" in tags && "recipe-pack" in tags
     }
 
     private fun sanitizeAndSort(events: List<NostrEvent>): List<RecipePackSummary> {

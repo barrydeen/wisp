@@ -292,10 +292,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     /** Read-only Recipe Packs listing repository (PR A). */
     val recipePackRepo = cooking.zap.app.repo.RecipePackRepository(
         relayPool = relayPool,
+        outboxRouter = outboxRouter,
         eventRepo = eventRepo,
         subManager = subManager,
         scope = viewModelScope,
         processingContext = processingDispatcher,
+        userReadRelaysProvider = { pubkeyHex?.let { relayListRepo.getReadRelays(it) } ?: emptyList() },
         userPubkeyProvider = { getUserPubkey() },
     )
 
