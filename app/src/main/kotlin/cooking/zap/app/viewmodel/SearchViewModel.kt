@@ -288,12 +288,12 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
         val activeSubId = when (activeFilter) {
             SearchFilter.RECIPES -> {
-                // OPPORTUNISTIC NETWORK NIP-50 via the registry searchFilter (no
-                // hardcoded 30023). NOT required for results — the guaranteed path
-                // is the persisted-catalog baseline + deep fill seeded in the
-                // coroutine below. Default relay path intentionally sends NO
-                // recipe NIP-50 REQ (confirmed dead for kind-30023); keep
-                // opportunistic NIP-50 only for user-selected relays.
+                // Opportunistic network NIP-50 via the registry searchFilter.
+                // No hardcoded 30023. This is not required for results because
+                // cached catalog search plus deep fill is the guaranteed path.
+                // Default relay path intentionally sends no recipe NIP-50 REQ
+                // (confirmed dead for kind-30023). Keep opportunistic NIP-50
+                // only for user-selected relays.
                 val recipeNetworkRelays = when (_selectedRelayOption.value) {
                     RelayOption.DEFAULT -> emptyList()
                     RelayOption.ALL_RELAYS, RelayOption.INDIVIDUAL -> relaysToQuery
