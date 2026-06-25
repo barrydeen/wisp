@@ -557,6 +557,7 @@ class StartupCoordinator(
         val addressableKinds = listOf(
             Nip51.KIND_FOLLOW_SET, Nip51.KIND_BOOKMARK_SET, Nip51.KIND_RELAY_SET,
             Nip51.KIND_INTEREST_SET, Nip30.KIND_EMOJI_SET,
+            cooking.zap.app.repo.RecipeBookmarkRepository.LIST_KIND, // A14 canonical recipe bookmarks (kind 30001)
             30315 // NIP-38: user status
         )
         val selfDataFilters = listOf(

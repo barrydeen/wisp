@@ -2711,6 +2711,8 @@ fun WispNavHost(
                     author, dTag, feedViewModel.recipeRepo,
                     feedViewModel.nourishRepo, hasSigningKey = feedViewModel.signer != null,
                 )
+                // Hydrate the canonical recipe-bookmark list so the save state is fresh.
+                feedViewModel.loadRecipeBookmarks()
             }
 
             var recipeZapTarget by remember { mutableStateOf<cooking.zap.app.nostr.NostrEvent?>(null) }
@@ -2719,7 +2721,18 @@ fun WispNavHost(
             val isNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
             val recipeSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
             val recipeBookmarkedIds by feedViewModel.bookmarkRepo.bookmarkedIds.collectAsState()
-            val recipeListedIds = remember(recipeSetListedIds, recipeBookmarkedIds) { recipeSetListedIds + recipeBookmarkedIds }
+            // A14: canonical kind-30001 recipe bookmarks (a-coordinates), unioned with
+            // legacy 10003 e-ids so old Android bookmarks still render filled.
+            val recipeCanonicalBookmarks by feedViewModel.recipeBookmarkRepo.bookmarkedCoordinates.collectAsState()
+            val recipeDetailEvent by recipeDetailViewModel.event.collectAsState()
+            val recipeListedIds = remember(
+                recipeSetListedIds, recipeBookmarkedIds, recipeCanonicalBookmarks, recipeDetailEvent
+            ) {
+                val base = recipeSetListedIds + recipeBookmarkedIds
+                val ev = recipeDetailEvent
+                val coord = ev?.let { feedViewModel.recipeBookmarkRepo.coordinateForEvent(it) }
+                if (ev != null && coord != null && recipeCanonicalBookmarks.contains(coord)) base + ev.id else base
+            }
             val recipeResolvedEmojis by feedViewModel.customEmojiRepo.resolvedEmojis.collectAsState()
             val recipeUnicodeEmojis by feedViewModel.customEmojiRepo.sortedUnicodeEmojis.collectAsState()
 
@@ -2784,7 +2797,9 @@ fun WispNavHost(
                     navController.navigate(Routes.COMPOSE)
                 },
                 onZap = { event -> recipeZapTarget = event },
-                onAddToList = { eventId -> addToListEventId = eventId },
+                // A14: recipe bookmarks go to the canonical kind-30001 list by
+                // coordinate (web-interop), not the generic note-bookmark dialog.
+                onAddToList = { eventId -> feedViewModel.toggleRecipeBookmark(eventId) },
                 zapAnimatingIds = recipeZapAnimatingIds,
                 zapInProgressIds = recipeZapInProgress,
                 listedIds = recipeListedIds,

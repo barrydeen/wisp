@@ -301,6 +301,22 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         userPubkeyProvider = { getUserPubkey() },
     )
 
+    /**
+     * A14 canonical recipe bookmarks — the kind-30001 `nostrcooking-bookmarks`
+     * list shared with the web client (separate from generic note bookmarks).
+     */
+    val recipeBookmarkRepo = cooking.zap.app.repo.RecipeBookmarkRepository(
+        relayPool = relayPool,
+        outboxRouter = outboxRouter,
+        eventRepo = eventRepo,
+        subManager = subManager,
+        scope = viewModelScope,
+        processingContext = processingDispatcher,
+        userReadRelaysProvider = { pubkeyHex?.let { relayListRepo.getReadRelays(it) } ?: emptyList() },
+        userPubkeyProvider = { getUserPubkey() },
+        signerProvider = { signer },
+    )
+
     /** zap.cooking backend client (membership today; Phase 2 AI endpoints). */
     val zapCookingApi = cooking.zap.app.api.ZapCookingApi()
 
@@ -334,6 +350,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     val eventRouter: EventRouter = EventRouter(
         relayPool, eventRepo, contactRepo, muteRepo, notifRepo, listRepo, bookmarkRepo,
+        recipeBookmarkRepo,
         bookmarkSetRepo, pinRepo, blossomRepo, customEmojiRepo, relayListRepo, interestRepo, relaySetRepo,
         relayScoreBoard, relayHintStore, keyRepo, dmRepo, extendedNetworkRepo, groupRepo, liveStreamRepo, metadataFetcher,
         getUserPubkey = { getUserPubkey() },
@@ -474,11 +491,30 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         startup.resetForAccountSwitch()
         groupRepo.clear()
         liveStreamRepo.clear()
+        recipeBookmarkRepo.reset()
     }
     fun reloadForNewAccount() {
         safetyPrefs.reload(getUserPubkey())
         startup.reloadForNewAccount()
         groupRepo.reload(getUserPubkey())
+        recipeBookmarkRepo.load(getUserPubkey())
+    }
+
+    /** Cache-first paint + relay refresh of the canonical recipe-bookmark list. */
+    fun loadRecipeBookmarks() {
+        recipeBookmarkRepo.paintFromCache()
+        recipeBookmarkRepo.load()
+    }
+
+    /**
+     * Toggle a recipe's bookmark in the canonical kind-30001 list by coordinate.
+     * Resolves the event by id (recipe surfaces pass the recipe event id); a
+     * no-op for non-recipe events or read-only accounts.
+     */
+    fun toggleRecipeBookmark(eventId: String) {
+        val event = eventRepo.getEvent(eventId) ?: return
+        // Off the Main dispatcher — toggle() reads ObjectBox and signs the event.
+        viewModelScope.launch(processingDispatcher) { recipeBookmarkRepo.toggle(event) }
     }
     /** Called after relay reconnect to re-subscribe notified group channels. */
     var onGroupReconnect: (() -> Unit)? = null

@@ -36,6 +36,7 @@ import cooking.zap.app.repo.MetadataFetcher
 import cooking.zap.app.repo.MuteRepository
 import cooking.zap.app.repo.NotificationRepository
 import cooking.zap.app.repo.PinRepository
+import cooking.zap.app.repo.RecipeBookmarkRepository
 import cooking.zap.app.repo.DiagnosticLogger
 import cooking.zap.app.repo.GroupRepository
 import cooking.zap.app.repo.LiveStreamRepository
@@ -57,6 +58,7 @@ class EventRouter(
     private val notifRepo: NotificationRepository,
     private val listRepo: ListRepository,
     private val bookmarkRepo: BookmarkRepository,
+    private val recipeBookmarkRepo: RecipeBookmarkRepository,
     private val bookmarkSetRepo: BookmarkSetRepository,
     private val pinRepo: PinRepository,
     private val blossomRepo: BlossomRepository,
@@ -416,6 +418,10 @@ class EventRouter(
             if (event.kind == Nip51.KIND_BOOKMARK_LIST) {
                 val myPubkey = getUserPubkey()
                 if (myPubkey != null && event.pubkey == myPubkey) bookmarkRepo.loadFromEvent(event)
+            }
+            if (event.kind == RecipeBookmarkRepository.LIST_KIND) {
+                val myPubkey = getUserPubkey()
+                if (myPubkey != null && event.pubkey == myPubkey) recipeBookmarkRepo.applyEvent(event)
             }
             if (event.kind == Nip51.KIND_PIN_LIST) {
                 val myPubkey = getUserPubkey()
