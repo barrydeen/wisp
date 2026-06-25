@@ -180,7 +180,7 @@ private fun DrawScope.drawBoltParticle(
     if (alpha <= 0f || scale <= 0f) return
 
     val boltW = particle.boltSize * density * scale
-    val boltH = boltW * (94f / 55f)
+    val boltH = boltW * BOLT_ASPECT_RATIO
     val boltPath = icBoltPath(boltW, boltH)
 
     translate(left = px - boltW / 2f, top = py - boltH / 2f) {

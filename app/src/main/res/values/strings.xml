@@ -775,10 +775,8 @@
     <!-- Wallet -->
     <string name="wallet_connect_title">Zap Cooking is better with zaps!</string>
     <string name="wallet_connect_subtitle">Send and receive Lightning payments, and zap anyone on Nostr.</string>
-    <string name="wallet_connect_body1_pre">Connect a Lightning wallet to send value directly to creators and help</string>
-    <string name="wallet_connect_body1_post">keep publishing great recipes, tips, and stories.</string>
-    <string name="wallet_connect_body2">If you don\'t have a wallet yet, you can create your first one right now.</string>
-    <string name="wallet_section_embedded">Embedded Wallets</string>
+    <string name="wallet_connect_hashtag">#Nostrichefs</string>
+    <string name="wallet_connect_body1">Connect a Lightning wallet to send value directly to creators and help %1$s keep publishing great recipes, tips, and stories.</string>
     <string name="wallet_spark_title">Breez Spark (Self-Custodial)</string>
     <string name="wallet_spark_subtitle">Self-custody, embedded. Use your default wallet or restore from seed/relays.</string>
     <string name="wallet_spark_subtitle_recommended">Built-in wallet &#8211; simplest for new users</string>

@@ -25,6 +25,7 @@ import android.util.Log
 import cooking.zap.app.repo.WalletTransaction
 import cooking.zap.app.repo.ZapSender
 import cooking.zap.app.relay.RelayPool
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -510,19 +511,22 @@ class WalletViewModel(
                         if (id == subId) eoseCount++
                     }
                 }
-                yield()
-                val allCount = relayPool.getRelayUrls().size
-                relayPool.sendToAll(ClientMessage.req(subId, filter))
+                try {
+                    yield()
+                    val allCount = relayPool.getRelayUrls().size
+                    relayPool.sendToAll(ClientMessage.req(subId, filter))
 
-                withTimeoutOrNull(8_000) {
-                    while (eoseCount < allCount) {
-                        delay(200)
-                        if (eoseCount >= (allCount * 2 + 2) / 3) break
+                    withTimeoutOrNull(8_000) {
+                        while (eoseCount < allCount) {
+                            delay(200)
+                            if (eoseCount >= (allCount * 2 + 2) / 3) break
+                        }
                     }
+                } finally {
+                    collectJob.cancel()
+                    eoseJob.cancel()
+                    relayPool.closeOnAllRelays(subId)
                 }
-                collectJob.cancel()
-                eoseJob.cancel()
-                relayPool.closeOnAllRelays(subId)
 
                 val latest = events
                     .filter { !Nip78.isDeletedBackup(it) }
@@ -545,6 +549,8 @@ class WalletViewModel(
                 } else {
                     _nwcRestoreState.value = NwcRestoreState.NotFound
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 _nwcRestoreState.value = NwcRestoreState.NotFound
             }

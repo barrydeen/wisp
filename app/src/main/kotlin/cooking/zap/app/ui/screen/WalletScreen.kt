@@ -144,7 +144,6 @@ import androidx.compose.ui.text.style.TextAlign
 import cooking.zap.app.ui.theme.WispThemeColors
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -2612,15 +2611,20 @@ private fun WalletModeSelectionContent(
                 textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(12.dp))
+            val hashtag = stringResource(R.string.wallet_connect_hashtag)
+            val body1 = stringResource(R.string.wallet_connect_body1, hashtag)
             Text(
                 buildAnnotatedString {
-                    append(stringResource(R.string.wallet_connect_body1_pre))
-                    append(" ")
-                    withStyle(SpanStyle(color = accent, fontWeight = FontWeight.SemiBold)) {
-                        append("#Nostrichefs")
+                    val start = body1.indexOf(hashtag)
+                    if (start < 0) {
+                        append(body1)
+                    } else {
+                        append(body1.substring(0, start))
+                        withStyle(SpanStyle(color = accent, fontWeight = FontWeight.SemiBold)) {
+                            append(hashtag)
+                        }
+                        append(body1.substring(start + hashtag.length))
                     }
-                    append(" ")
-                    append(stringResource(R.string.wallet_connect_body1_post))
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2663,15 +2667,15 @@ private fun WalletModeSelectionContent(
 
 /**
  * Amber circle with the custom bolt shape and a diagonal shine sweep.
- * Matches the web app's welcome-bolt animation exactly:
- *   0–55 % of the 2.8 s cycle → fast crossing sweep (left → right)
+ * Matches the web app's welcome-bolt animation:
+ *   0–55 % of the 2.2 s cycle → fast crossing sweep (left → right)
  *   55–100 % → pause (band stays off-screen right, invisible)
  */
 @Composable
 private fun WelcomeBoltIcon() {
     val amber = Color(0xFFFBBF24)
     val infiniteTransition = rememberInfiniteTransition(label = "bolt-shine")
-    // 1 400 ms total: 0–55 % = fast sweep, 55–100 % = pause off-screen
+    // 2 200 ms total: 0–55 % = fast sweep, 55–100 % = pause off-screen
     val shineProgress by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,

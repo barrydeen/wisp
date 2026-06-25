@@ -320,25 +320,48 @@ internal fun LightningAnimation(modifier: Modifier = Modifier) {
     }
 }
 
-/** Builds the ic_bolt shape path scaled to the given dimensions with optional scale. */
+/**
+ * Builds the ic_bolt (Phosphor "Lightning" fill) shape path scaled to the given
+ * dimensions, keeping the Canvas-drawn bolt consistent with `ic_bolt.xml`.
+ *
+ * The points are the path corners with the 8px rounded corners flattened, taken
+ * from the 256x256 viewBox path; they are normalized to the bolt's bounding box
+ * (see [BOLT_ASPECT_RATIO]) so the shape fills the requested size like the icon.
+ */
 internal fun icBoltPath(w: Float, h: Float, scale: Float = 1f): Path {
-    // Original ic_bolt viewBox: 55 x 94
-    // Path: M35.563,0 V40.406 H54.969 L21.016,93.75 V51.719 H0 L35.563,0 Z
-    val sx = w / 55f * scale
-    val sy = h / 94f * scale
+    val sx = w / BOLT_VIEW_W * scale
+    val sy = h / BOLT_VIEW_H * scale
     val ox = w * (1f - scale) / 2f
     val oy = h * (1f - scale) / 2f
     return Path().apply {
-        moveTo(ox + 35.563f * sx, oy + 0f)
-        lineTo(ox + 35.563f * sx, oy + 40.406f * sy)
-        lineTo(ox + 54.969f * sx, oy + 40.406f * sy)
-        lineTo(ox + 21.016f * sx, oy + 93.75f * sy)
-        lineTo(ox + 21.016f * sx, oy + 51.719f * sy)
-        lineTo(ox + 0f * sx, oy + 51.719f * sy)
-        lineTo(ox + 35.563f * sx, oy + 0f)
+        moveTo(ox + (BOLT_POINTS[0] - BOLT_MIN_X) * sx, oy + (BOLT_POINTS[1] - BOLT_MIN_Y) * sy)
+        var i = 2
+        while (i < BOLT_POINTS.size) {
+            lineTo(ox + (BOLT_POINTS[i] - BOLT_MIN_X) * sx, oy + (BOLT_POINTS[i + 1] - BOLT_MIN_Y) * sy)
+            i += 2
+        }
         close()
     }
 }
+
+private val BOLT_POINTS = floatArrayOf(
+    213.85f, 125.46f,
+    101.85f, 245.46f,
+    88.16f, 238.46f,
+    102.82f, 165.13f,
+    45.19f, 143.49f,
+    42.19f, 130.49f,
+    154.19f, 10.49f,
+    167.88f, 17.49f,
+    153.18f, 90.9f,
+    210.81f, 112.51f,
+)
+private const val BOLT_MIN_X = 42.19f
+private const val BOLT_MIN_Y = 10.49f
+private const val BOLT_VIEW_W = 213.85f - BOLT_MIN_X
+private const val BOLT_VIEW_H = 245.46f - BOLT_MIN_Y
+/** Height-to-width ratio of the bolt's bounding box, for callers that size by width. */
+internal const val BOLT_ASPECT_RATIO = BOLT_VIEW_H / BOLT_VIEW_W
 
 @Composable
 private fun RepostPopup(
