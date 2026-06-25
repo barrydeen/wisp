@@ -689,6 +689,13 @@ fun WispNavHost(
         drawerScope.launch { drawerState.close() }
         navController.navigate(route)
     }
+    // Network diagnostics relocated from the Feed top-bar chips (PR 3): the
+    // counts feed the Advanced "Network" rows, and the online-members sheet is
+    // hosted here so it survives the chip removal.
+    val drawerConnectedCount by feedViewModel.relayPool.connectedCount.collectAsState()
+    val drawerOnlinePubkeys by feedViewModel.eventRepo.onlinePubkeys.collectAsState()
+    val drawerGlobalOnlineCount by feedViewModel.globalOnlineCount.collectAsState()
+    var showOnlineNowSheet by remember { mutableStateOf(false) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -748,7 +755,17 @@ fun WispNavHost(
                 onKeys = { closeDrawerAndNavigate(Routes.KEYS) },
                 onPowSettings = { closeDrawerAndNavigate(Routes.POW_SETTINGS) },
                 onConsole = { closeDrawerAndNavigate(Routes.CONSOLE) },
-                onRelayHealth = { closeDrawerAndNavigate(Routes.RELAY_HEALTH) },
+                connectedRelayCount = drawerConnectedCount,
+                onlineCount = drawerOnlinePubkeys.size,
+                onNetworkStatus = { closeDrawerAndNavigate(Routes.RELAY_HEALTH) },
+                onOnlineNow = {
+                    // Close the drawer, THEN present the sheet in the same
+                    // coroutine so the modal doesn't overlap the drawer scrim.
+                    drawerScope.launch {
+                        drawerState.close()
+                        showOnlineNowSheet = true
+                    }
+                },
                 onRelaySettings = { closeDrawerAndNavigate(Routes.RELAYS) },
                 onInterfaceSettings = { closeDrawerAndNavigate(Routes.INTERFACE_SETTINGS) },
                 onLogout = {
@@ -789,6 +806,20 @@ fun WispNavHost(
             )
         }
     ) {
+
+    // Relocated "Online Now" members sheet (was the Feed top-bar online chip).
+    if (showOnlineNowSheet) {
+        cooking.zap.app.ui.component.OnlineNowSheet(
+            onlinePubkeys = drawerOnlinePubkeys,
+            globalOnlineCount = drawerGlobalOnlineCount,
+            profileProvider = { pk -> feedViewModel.eventRepo.getProfileData(pk) },
+            onProfileClick = { pk ->
+                showOnlineNowSheet = false
+                navController.navigate("profile/$pk")
+            },
+            onDismiss = { showOnlineNowSheet = false },
+        )
+    }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),

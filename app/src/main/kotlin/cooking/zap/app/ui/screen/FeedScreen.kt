@@ -192,7 +192,6 @@ fun FeedScreen(
     val nip05Version by viewModel.nip05Repo.version.collectAsState()
     val pollVoteVersion by viewModel.eventRepo.pollVoteVersion.collectAsState()
     val translationVersion by viewModel.translationRepo.version.collectAsState()
-    val connectedCount by viewModel.relayPool.connectedCount.collectAsState()
     val liveNowStreams by viewModel.liveNowStreams.collectAsState()
     val listState = rememberLazyListState()
 
@@ -265,10 +264,6 @@ fun FeedScreen(
             viewModel.clearHashtagPickerRequest()
         }
     }
-    var showRelayDropdown by remember { mutableStateOf(false) }
-    var showOnlineSheet by remember { mutableStateOf(false) }
-    val onlinePubkeys by viewModel.eventRepo.onlinePubkeys.collectAsState()
-    val globalOnlineCount by viewModel.globalOnlineCount.collectAsState()
     var showFeedTypeDropdown by remember { mutableStateOf(false) }
     var showSocialGraphDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -377,73 +372,6 @@ fun FeedScreen(
 
     val favoriteRelays by viewModel.relaySetRepo.favoriteRelays.collectAsState()
     val ownRelaySets by viewModel.relaySetRepo.ownRelaySets.collectAsState()
-
-    if (showOnlineSheet) {
-        androidx.compose.material3.ModalBottomSheet(
-            onDismissRequest = { showOnlineSheet = false },
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 24.dp)
-                    .navigationBarsPadding()
-            ) {
-                Text(
-                    stringResource(R.string.online_now),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(Modifier.height(8.dp))
-                val greenColor = WispThemeColors.repostColor
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.foundation.Canvas(modifier = Modifier.size(8.dp)) {
-                        drawCircle(color = greenColor)
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        stringResource(R.string.online_in_network, onlinePubkeys.size),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                if (globalOnlineCount != null) {
-                    Spacer(Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.foundation.Canvas(modifier = Modifier.size(8.dp)) {
-                            drawCircle(color = greenColor)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            stringResource(R.string.online_all_nostr, globalOnlineCount ?: 0),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-                FlowRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    onlinePubkeys.forEach { pubkey ->
-                        val profile = viewModel.eventRepo.getProfileData(pubkey)
-                        ProfilePicture(
-                            url = profile?.picture,
-                            size = 44,
-                            onClick = {
-                                showOnlineSheet = false
-                                onProfileClick(pubkey)
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    }
 
     if (showRelayPicker) {
         RelayPickerDialog(
@@ -804,106 +732,16 @@ fun FeedScreen(
                             )
                         }
                         // Intelligence menu — mirrors the web's IntelligenceMenu
-                        // (Sous Chef → Cheffy → Nourish). Additive in this PR; the
-                        // relay/online chips below are relocated in a follow-up.
+                        // (Sous Chef → Cheffy → Nourish). The relay-count and
+                        // online-count diagnostics chips moved to the drawer's
+                        // Advanced "Network" section; relay switching stays in the
+                        // feed-type Relay picker, online members in the relocated
+                        // "Online Now" sheet.
                         IntelligenceMenu(
                             onSousChef = onSousChef,
                             onCheffy = onCheffy,
                             onNourish = onNourish,
                         )
-                        if (onlinePubkeys.isNotEmpty()) {
-                            Surface(
-                                onClick = { showOnlineSheet = true },
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        Icons.Outlined.Person,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
-                                        tint = WispThemeColors.repostColor
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(
-                                        "${onlinePubkeys.size}",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.width(4.dp))
-                        }
-                        Box {
-                            Surface(
-                                onClick = { showRelayDropdown = true },
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        Icons.Outlined.Hub,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
-                                        tint = if (connectedCount > 0)
-                                            WispThemeColors.repostColor
-                                        else
-                                            androidx.compose.ui.graphics.Color(0xFFFF5252)
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(
-                                        "$connectedCount",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            DropdownMenu(
-                                expanded = showRelayDropdown,
-                                onDismissRequest = { showRelayDropdown = false }
-                            ) {
-                                val connectedUrls = viewModel.relayPool.getAllConnectedUrls()
-                                if (connectedUrls.isEmpty()) {
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                "No relays connected",
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        },
-                                        onClick = {}
-                                    )
-                                } else {
-                                    val coverageCounts = viewModel.getRelayCoverageCounts()
-                                    connectedUrls.forEach { url ->
-                                        val count = coverageCounts[url]
-                                        val label = buildString {
-                                            append(url.removePrefix("wss://").removeSuffix("/"))
-                                            if (count != null && count > 0) append(" ($count)")
-                                        }
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    label,
-                                                    style = MaterialTheme.typography.bodyMedium
-                                                )
-                                            },
-                                            onClick = {
-                                                showRelayDropdown = false
-                                                viewModel.setSelectedRelay(url)
-                                                viewModel.setFeedType(FeedType.RELAY)
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
                     }
                 )
             },

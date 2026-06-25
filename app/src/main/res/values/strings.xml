@@ -28,6 +28,7 @@
     <string name="drawer_custom_emojis">Custom Emojis</string>
     <string name="drawer_relay_health">Relay Health</string>
     <string name="drawer_console">Console</string>
+    <string name="drawer_network_status">Network Status</string>
     <string name="drawer_advanced">Advanced</string>
 
     <!-- Screen Titles -->

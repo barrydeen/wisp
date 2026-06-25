@@ -40,7 +40,6 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Key
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Settings
@@ -113,7 +112,12 @@ fun WispDrawerContent(
     onPowSettings: () -> Unit = {},
     onCustomEmojis: () -> Unit = {},
     onConsole: () -> Unit = {},
-    onRelayHealth: () -> Unit = {},
+    // Network diagnostics relocated from the Feed top-bar chips (PR 3).
+    // onNetworkStatus is the single relay-diagnostics entry (was Relay Health).
+    connectedRelayCount: Int = 0,
+    onlineCount: Int = 0,
+    onNetworkStatus: () -> Unit = {},
+    onOnlineNow: () -> Unit = {},
     onRelaySettings: () -> Unit,
     onInterfaceSettings: () -> Unit = {},
     onLogout: () -> Unit,
@@ -587,11 +591,38 @@ fun WispDrawerContent(
                             onClick = onCustomEmojis,
                             modifier = Modifier.height(48.dp).padding(start = 56.dp, end = 12.dp)
                         )
+                        // Network Status — single entry point for relay
+                        // diagnostics (replaces the old standalone Relay Health
+                        // row). Carries the relay-count badge relocated from the
+                        // Feed top bar and taps through to the Relay Health screen.
                         NavigationDrawerItem(
-                            icon = { Icon(Icons.Outlined.FavoriteBorder, contentDescription = null) },
-                            label = { Text(stringResource(R.string.drawer_relay_health)) },
+                            icon = { Icon(Icons.Outlined.Hub, contentDescription = null) },
+                            label = { Text(stringResource(R.string.drawer_network_status)) },
+                            badge = {
+                                Text(
+                                    stringResource(R.string.relay_count_format, connectedRelayCount),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
                             selected = false,
-                            onClick = onRelayHealth,
+                            onClick = onNetworkStatus,
+                            modifier = Modifier.height(48.dp).padding(start = 56.dp, end = 12.dp)
+                        )
+                        // Online Now — the online-count chip's new home; taps open
+                        // the relocated members sheet (avatars → profiles).
+                        NavigationDrawerItem(
+                            icon = { Icon(Icons.Outlined.Person, contentDescription = null) },
+                            label = { Text(stringResource(R.string.online_now)) },
+                            badge = {
+                                Text(
+                                    "$onlineCount",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            selected = false,
+                            onClick = onOnlineNow,
                             modifier = Modifier.height(48.dp).padding(start = 56.dp, end = 12.dp)
                         )
                         NavigationDrawerItem(
