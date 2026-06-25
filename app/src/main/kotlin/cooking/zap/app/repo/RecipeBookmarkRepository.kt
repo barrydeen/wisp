@@ -186,6 +186,58 @@ class RecipeBookmarkRepository(
         }
     }
 
+    /**
+     * Batch-add recipe coordinates to the canonical list in a **single**
+     * republish (used by the one-time legacy migration — never republish per
+     * bookmark). Carries forward title/summary/image/cover + unknown tags like
+     * [toggle]. Returns the coordinates that were newly added; empty for a
+     * read-only account or when every coordinate is already saved.
+     */
+    suspend fun addCoordinates(coordinates: Collection<String>): Set<String> {
+        if (coordinates.isEmpty()) return emptySet()
+        val signer = signerProvider() ?: return emptySet()
+        return toggleMutex.withLock {
+            val author = signer.pubkeyHex
+            val base = listEvent ?: cachedListEvent(author)
+            val currentCoords = base?.let { parseCoordinates(it) } ?: _bookmarkedCoordinates.value
+            val nextCoords = LinkedHashSet(currentCoords)
+            val added = coordinates.asSequence()
+                .map { it.trim() }
+                .filter { it.isNotBlank() && nextCoords.add(it) }
+                .toCollection(LinkedHashSet())
+            if (added.isEmpty()) return@withLock emptySet()
+            val tags = buildToggledTags(base, nextCoords)
+            val content = base?.content.orEmpty()
+            val signed = signer.signEvent(kind = LIST_KIND, content = content, tags = tags)
+            applyEvent(signed)
+            relayPool.sendToWriteRelays(ClientMessage.event(signed))
+            added
+        }
+    }
+
+    /**
+     * One-time legacy migration (A14 PR 2). Resolves [legacyEventIds] (the old
+     * kind-10003 note-bookmark e-ids), keeps the ones that resolve to a
+     * recognized recipe ([RecipeFormats]), and batch-adds their a-coordinates to
+     * the canonical list in a single republish. **ADD-ONLY** — does not touch the
+     * legacy 10003 list (PR 1's read-union dedups by coordinate, so nothing
+     * double-displays and no bookmark can be stranded). Returns the coordinates
+     * newly added.
+     */
+    suspend fun migrateLegacyBookmarks(legacyEventIds: Set<String>): Set<String> {
+        if (legacyEventIds.isEmpty()) return emptySet()
+        if (signerProvider() == null) return emptySet()
+        val resolved = resolveEventsByIds(legacyEventIds)
+        // coordinateForEvent returns null for non-recipe events, so non-recipe
+        // and unresolved e-ids are naturally skipped (never lost — they stay in
+        // the legacy 10003 list untouched).
+        val coords = resolved
+            .mapNotNull { coordinateForEvent(it) }
+            .toCollection(LinkedHashSet())
+        if (coords.isEmpty()) return emptySet()
+        return addCoordinates(coords)
+    }
+
     fun reset() {
         // Cancel any in-flight load so a stale fetch can't repopulate state after
         // an account switch.
@@ -194,6 +246,42 @@ class RecipeBookmarkRepository(
         listEvent = null
         _isLoading.value = false
         _bookmarkedCoordinates.value = emptySet()
+    }
+
+    /** Resolve events by id, cache-first then a single broadened-union relay REQ. */
+    private suspend fun resolveEventsByIds(ids: Set<String>): List<NostrEvent> = withContext(processingContext) {
+        if (ids.isEmpty()) return@withContext emptyList()
+        val resolved = LinkedHashMap<String, NostrEvent>()
+        ids.forEach { id -> eventRepo.getEvent(id)?.let { resolved[id] = it } }
+        val missing = ids.filterNot { it in resolved }.toSet()
+        if (missing.isNotEmpty()) {
+            val subId = "recipe-bm-migrate-${subCounter.getAndIncrement()}"
+            val collector = scope.launch(processingContext) {
+                relayPool.relayEvents.collect { relayEvent ->
+                    if (relayEvent.subscriptionId != subId) return@collect
+                    val event = relayEvent.event
+                    if (event.id !in missing || event.id in resolved) return@collect
+                    resolved[event.id] = event
+                    eventRepo.cacheEvent(event)
+                }
+            }
+            val req = ClientMessage.req(subId, Filter(ids = missing.toList()))
+            val targetedRelays = mutableSetOf<String>()
+            for (url in readRelays()) {
+                if (relayPool.sendToRelayOrEphemeral(url, req)) targetedRelays.add(url)
+            }
+            val expectedEose = targetedRelays.count { relayPool.healthTracker?.isBad(it) != true }
+            try {
+                if (expectedEose > 0) {
+                    subManager.awaitEoseCount(subId, expectedCount = expectedEose, timeoutMs = 8_000)
+                    delay(EOSE_GRACE_MS)
+                }
+            } finally {
+                collector.cancelAndJoin()
+                subManager.closeSubscription(subId)
+            }
+        }
+        resolved.values.toList()
     }
 
     private suspend fun queryList(

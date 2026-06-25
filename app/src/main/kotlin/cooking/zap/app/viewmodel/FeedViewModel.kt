@@ -386,7 +386,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         getUserPubkey = { getUserPubkey() },
         registerAuthSigner = { registerAuthSigner() },
         fetchEmojiSets = { listCrud.fetchEmojiSets() },
-        getSigner = { signer }
+        getSigner = { signer },
+        migrateRecipeBookmarks = { migrateRecipeBookmarksIfNeeded() }
     )
 
     // -- Global online count from nostrarchives live-metrics --
@@ -515,6 +516,42 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         val event = eventRepo.getEvent(eventId) ?: return
         // Off the Main dispatcher — toggle() reads ObjectBox and signs the event.
         viewModelScope.launch(processingDispatcher) { recipeBookmarkRepo.toggle(event) }
+    }
+
+    /**
+     * A14 PR 2 — one-time, one-shot background migration of legacy kind-10003
+     * recipe bookmarks into the canonical kind-30001 list, so existing Android
+     * bookmarks sync to web. Idempotent: guarded by a per-user persisted flag
+     * (mirrors KeyRepository.migrateRemoveRemoteSigner). ADD-ONLY — the legacy
+     * 10003 list is never mutated (PR 1's read-union dedups by coordinate, so no
+     * double-display and no bookmark can be stranded).
+     */
+    fun migrateRecipeBookmarksIfNeeded() {
+        val s = signer ?: return
+        val prefs = getApplication<Application>().getSharedPreferences(
+            "wisp_recipe_bookmark_migration_${s.pubkeyHex}", android.content.Context.MODE_PRIVATE
+        )
+        if (prefs.getBoolean("recipe_bookmarks_migrated_v1", false)) return
+        viewModelScope.launch(processingDispatcher) {
+            try {
+                // Let a freshly-synced 10003 list land before reading legacy ids;
+                // persisted ids (the common case) are already available.
+                kotlinx.coroutines.delay(2_000)
+                val legacyIds = bookmarkRepo.getBookmarkedIds()
+                if (legacyIds.isNotEmpty()) {
+                    val added = recipeBookmarkRepo.migrateLegacyBookmarks(legacyIds)
+                    if (added.isNotEmpty()) {
+                        Log.d("FeedVM", "Recipe bookmark migration: added ${added.size} canonical coordinate(s)")
+                    }
+                }
+                prefs.edit().putBoolean("recipe_bookmarks_migrated_v1", true).apply()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Leave the flag unset so the migration retries on a later launch.
+                Log.w("FeedVM", "Recipe bookmark migration failed; will retry next launch", e)
+            }
+        }
     }
     /** Called after relay reconnect to re-subscribe notified group channels. */
     var onGroupReconnect: (() -> Unit)? = null
