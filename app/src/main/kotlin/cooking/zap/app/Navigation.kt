@@ -1056,6 +1056,9 @@ fun WispNavHost(
                         restoreState = true
                     }
                 },
+                onSousChef = { navController.navigate(Routes.SOUS_CHEF) },
+                onCheffy = { navController.navigate(Routes.CHEFFY) },
+                onNourish = { navController.navigate(Routes.nourish()) },
                 onSocialGraph = {
                     navController.navigate(Routes.SOCIAL_GRAPH)
                 },
@@ -2790,6 +2793,9 @@ fun WispNavHost(
                         restoreState = true
                     }
                 },
+                onSousChef = { navController.navigate(Routes.SOUS_CHEF) },
+                onCheffy = { navController.navigate(Routes.CHEFFY) },
+                onNourish = { navController.navigate(Routes.nourish()) },
                 userAvatarUrl = recipesAvatarUrl,
                 // READ_ONLY can't sign → no compose entry point.
                 onCreateRecipe = if (signingMode == SigningMode.READ_ONLY) null else {

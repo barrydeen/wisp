@@ -295,6 +295,7 @@
 
     <!-- Content Descriptions -->
     <string name="cd_back">Back</string>
+    <string name="cd_intelligence_menu">Intelligence tools</string>
     <string name="cd_toggle_theme">Toggle theme</string>
     <string name="cd_show_qr_code">Show QR code</string>
     <string name="cd_lightning_address">Lightning address</string>

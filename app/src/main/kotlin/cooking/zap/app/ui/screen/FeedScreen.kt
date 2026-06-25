@@ -83,6 +83,7 @@ import cooking.zap.app.nostr.Nip69
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.R
 import cooking.zap.app.ui.component.NoteActions
+import cooking.zap.app.ui.component.IntelligenceMenu
 import cooking.zap.app.ui.component.EmojiLibrarySheet
 import cooking.zap.app.ui.component.pendingEmojiReactCallback
 import cooking.zap.app.ui.component.GalleryCard
@@ -160,6 +161,9 @@ fun FeedScreen(
     onNoteClick: (NostrEvent) -> Unit = {},
     onQuotedNoteClick: ((String) -> Unit)? = null,
     onSearch: () -> Unit = {},
+    onSousChef: () -> Unit = {},
+    onCheffy: () -> Unit = {},
+    onNourish: () -> Unit = {},
     onWallet: () -> Unit = {},
     onSocialGraph: () -> Unit = {},
     onAddToList: (String) -> Unit = {},
@@ -799,6 +803,14 @@ fun FeedScreen(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        // Intelligence menu — mirrors the web's IntelligenceMenu
+                        // (Sous Chef → Cheffy → Nourish). Additive in this PR; the
+                        // relay/online chips below are relocated in a follow-up.
+                        IntelligenceMenu(
+                            onSousChef = onSousChef,
+                            onCheffy = onCheffy,
+                            onNourish = onNourish,
+                        )
                         if (onlinePubkeys.isNotEmpty()) {
                             Surface(
                                 onClick = { showOnlineSheet = true },

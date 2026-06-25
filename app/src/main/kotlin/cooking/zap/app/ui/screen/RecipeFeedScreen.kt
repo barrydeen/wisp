@@ -64,6 +64,7 @@ import cooking.zap.app.nostr.RecipeTag
 import cooking.zap.app.nostr.RecipeTagCatalog
 import cooking.zap.app.repo.EventRepository
 import cooking.zap.app.repo.RecipePackSummary
+import cooking.zap.app.ui.component.IntelligenceMenu
 import cooking.zap.app.ui.component.RecipePackCard
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.RecipeCard
@@ -104,6 +105,9 @@ fun RecipeFeedScreen(
     // mirroring the Feed tab. No content-type filter here.
     onOpenDrawer: () -> Unit = {},
     onSearch: () -> Unit = {},
+    onSousChef: () -> Unit = {},
+    onCheffy: () -> Unit = {},
+    onNourish: () -> Unit = {},
     userAvatarUrl: String? = null,
     // Null for READ_ONLY accounts (no signing key) — the FAB is then hidden.
     onCreateRecipe: (() -> Unit)? = null,
@@ -154,6 +158,11 @@ fun RecipeFeedScreen(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    IntelligenceMenu(
+                        onSousChef = onSousChef,
+                        onCheffy = onCheffy,
+                        onNourish = onNourish,
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
