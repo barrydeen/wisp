@@ -31,7 +31,7 @@ private const val TARGET_PHOTOS = 80
 private const val FETCH_TIMEOUT_MS = 20_000L
 
 private val IMAGE_URL_REGEX = Regex(
-    """https?://\S+\.(?:jpg|jpeg|png|webp|gif)(?:[?#]\S*)?""",
+    """https?://\S+\.(?:jpg|jpeg|png)(?:[?#]\S*)?""",
     RegexOption.IGNORE_CASE
 )
 
