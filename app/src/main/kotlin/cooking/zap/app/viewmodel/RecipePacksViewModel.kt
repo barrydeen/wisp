@@ -1,5 +1,6 @@
 package cooking.zap.app.viewmodel
 
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cooking.zap.app.repo.RecipePackRepository
@@ -35,35 +36,76 @@ class RecipePacksViewModel : ViewModel() {
     private var started = false
     private var repo: RecipePackRepository? = null
     private var userPubkeyProvider: (() -> String?)? = null
+    private val lastFetchAtMs = mutableMapOf<RecipePacksTab, Long>()
+
+    companion object {
+        private const val REFRESH_DEBOUNCE_MS = 15_000L
+    }
 
     fun load(
         recipePackRepo: RecipePackRepository,
         currentUserPubkey: () -> String?,
     ) {
-        if (started) return
-        started = true
         repo = recipePackRepo
         userPubkeyProvider = currentUserPubkey
-        viewModelScope.launch { recipePackRepo.discoverPacks.collect { _discoverPacks.value = it } }
-        viewModelScope.launch { recipePackRepo.minePacks.collect { _minePacks.value = it } }
-        viewModelScope.launch { recipePackRepo.savedPacks.collect { _savedPacks.value = it } }
-        viewModelScope.launch { recipePackRepo.isDiscoverLoading.collect { _isDiscoverLoading.value = it } }
-        viewModelScope.launch { recipePackRepo.isMineLoading.collect { _isMineLoading.value = it } }
-        viewModelScope.launch { recipePackRepo.isSavedLoading.collect { _isSavedLoading.value = it } }
-        recipePackRepo.loadDiscover()
+        if (!started) {
+            started = true
+            viewModelScope.launch { recipePackRepo.discoverPacks.collect { _discoverPacks.value = it } }
+            viewModelScope.launch { recipePackRepo.minePacks.collect { _minePacks.value = it } }
+            viewModelScope.launch { recipePackRepo.savedPacks.collect { _savedPacks.value = it } }
+            viewModelScope.launch { recipePackRepo.isDiscoverLoading.collect { _isDiscoverLoading.value = it } }
+            viewModelScope.launch { recipePackRepo.isMineLoading.collect { _isMineLoading.value = it } }
+            viewModelScope.launch { recipePackRepo.isSavedLoading.collect { _isSavedLoading.value = it } }
+        }
+        // Cache paint must happen on every activation.
+        activateCurrentTab(forceNetwork = false)
     }
 
     fun selectTab(tab: RecipePacksTab) {
         _selectedTab.value = tab
-        when (tab) {
-            RecipePacksTab.DISCOVER -> repo?.loadDiscover()
-            RecipePacksTab.MINE -> repo?.loadMine(userPubkeyProvider?.invoke())
-            RecipePacksTab.SAVED -> repo?.loadSaved(userPubkeyProvider?.invoke())
-        }
+        activateTab(tab, forceNetwork = false)
     }
 
     fun refreshActiveTab() {
-        selectTab(_selectedTab.value)
+        activateCurrentTab(forceNetwork = true)
+    }
+
+    /** Called when the main Packs tab becomes active (including re-entry). */
+    fun onPacksActivated() {
+        activateCurrentTab(forceNetwork = false)
+    }
+
+    private fun activateCurrentTab(forceNetwork: Boolean) {
+        activateTab(_selectedTab.value, forceNetwork = forceNetwork)
+    }
+
+    private fun activateTab(tab: RecipePacksTab, forceNetwork: Boolean) {
+        val repo = repo ?: return
+        val userPubkey = userPubkeyProvider?.invoke()
+        val shouldFetch = shouldFetch(tab, forceNetwork)
+
+        // Avoid cache-vs-fetch races: when we fetch, repository load* already paints
+        // cache first; when debounced, paint directly here.
+        if (shouldFetch) {
+            when (tab) {
+                RecipePacksTab.DISCOVER -> repo.loadDiscover()
+                RecipePacksTab.MINE -> repo.loadMine(userPubkey)
+                RecipePacksTab.SAVED -> repo.loadSaved(userPubkey)
+            }
+            lastFetchAtMs[tab] = SystemClock.elapsedRealtime()
+            return
+        }
+        when (tab) {
+            RecipePacksTab.DISCOVER -> repo.paintDiscoverFromCache()
+            RecipePacksTab.MINE -> repo.paintMineFromCache(userPubkey)
+            RecipePacksTab.SAVED -> repo.paintSavedFromCache(userPubkey)
+        }
+    }
+
+    private fun shouldFetch(tab: RecipePacksTab, forceNetwork: Boolean): Boolean {
+        if (forceNetwork) return true
+        val last = lastFetchAtMs[tab] ?: return true
+        return (SystemClock.elapsedRealtime() - last) >= REFRESH_DEBOUNCE_MS
     }
 }
 

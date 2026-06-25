@@ -84,16 +84,45 @@ class RecipePackRepository(
     private var mineJob: Job? = null
     private var savedJob: Job? = null
 
+    /** Always-on cache paint for Discover tab activation/reselection. */
+    fun paintDiscoverFromCache() {
+        scope.launch(processingContext) {
+            _discoverPacks.value = discoverPacksFromCache()
+        }
+    }
+
+    /** Always-on cache paint for Mine tab activation/reselection. */
+    fun paintMineFromCache(pubkey: String? = userPubkeyProvider()) {
+        val author = pubkey?.trim().orEmpty()
+        if (author.isBlank()) {
+            _minePacks.value = emptyList()
+            return
+        }
+        scope.launch(processingContext) {
+            _minePacks.value = minePacksFromCache(author)
+        }
+    }
+
+    /** Always-on cache paint for Saved tab activation/reselection. */
+    fun paintSavedFromCache(pubkey: String? = userPubkeyProvider()) {
+        val author = pubkey?.trim().orEmpty()
+        if (author.isBlank()) {
+            _savedPacks.value = emptyList()
+            return
+        }
+        scope.launch(processingContext) {
+            _savedPacks.value = savedPacksFromCache(author)
+        }
+    }
+
     fun loadDiscover(limit: Int = PAGE_LIMIT) {
         discoverJob?.cancel()
         discoverJob = scope.launch(processingContext) {
             _isDiscoverLoading.value = true
             try {
                 val format = PackFormats.primary
-                // Cache-first paint: discover-tagged packs + official packs.
-                val cached = cachedPackEvents()
-                    .filter { eventMatchesDiscoverTags(it) || it.pubkey == OFFICIAL_PACKS_PUBKEY }
-                _discoverPacks.value = sanitizeAndSort(cached)
+                // Keep cache-first behavior in the fetch path too.
+                _discoverPacks.value = discoverPacksFromCache()
 
                 val events = queryPacks(
                     subPrefix = "pack-discover",
@@ -126,9 +155,7 @@ class RecipePackRepository(
             try {
                 val format = PackFormats.primary
                 // Cache-first paint for my packs.
-                _minePacks.value = sanitizeAndSort(
-                    cachedPackEvents().filter { it.pubkey == author }
-                )
+                _minePacks.value = minePacksFromCache(author)
                 val events = queryPacks(
                     subPrefix = "pack-mine",
                     readFilters = listOf(format.packMineFilter(author = author, limit = limit)),
@@ -165,16 +192,7 @@ class RecipePackRepository(
                     ?.groupBy({ it.first }, { it.second })
                     ?.mapValues { it.value.toSet() }
                     .orEmpty()
-                if (cachedCoordinates.isNotEmpty()) {
-                    val cachedSavedPacks = cachedPackEvents().filter { e ->
-                        val dTag = e.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)?.trim()
-                        val wanted = cachedCoordinates[e.pubkey]
-                        dTag != null && wanted != null && dTag in wanted
-                    }
-                    _savedPacks.value = sanitizeAndSort(cachedSavedPacks)
-                } else {
-                    _savedPacks.value = emptyList()
-                }
+                _savedPacks.value = savedPacksFromCache(author, cachedCoordinates)
 
                 val savedListFilter = Filter(
                     kinds = listOf(Nip51.KIND_BOOKMARK_SET),
@@ -367,6 +385,36 @@ class RecipePackRepository(
         val persistence = eventRepo.eventPersistence ?: return emptyList()
         val events = PackFormats.active.flatMap { persistence.getEventsByKind(it.kind, limit) }
         return dedupeNewestPerPackCoordinate(events)
+    }
+
+    private fun discoverPacksFromCache(): List<RecipePackSummary> {
+        val cached = cachedPackEvents()
+            .filter { eventMatchesDiscoverTags(it) || it.pubkey == OFFICIAL_PACKS_PUBKEY }
+        return sanitizeAndSort(cached)
+    }
+
+    private fun minePacksFromCache(author: String): List<RecipePackSummary> {
+        return sanitizeAndSort(cachedPackEvents().filter { it.pubkey == author })
+    }
+
+    private fun savedPacksFromCache(
+        author: String,
+        cachedCoordinatesOverride: Map<String, Set<String>>? = null,
+    ): List<RecipePackSummary> {
+        val cachedCoordinates = cachedCoordinatesOverride ?: cachedSavedListEvent(author)
+            ?.let { Nip51.parseBookmarkSet(it) }
+            ?.coordinates
+            ?.mapNotNull { parseSavedPackCoordinate(it) }
+            ?.groupBy({ it.first }, { it.second })
+            ?.mapValues { it.value.toSet() }
+            .orEmpty()
+        if (cachedCoordinates.isEmpty()) return emptyList()
+        val cachedSavedPacks = cachedPackEvents().filter { event ->
+            val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)?.trim()
+            val wanted = cachedCoordinates[event.pubkey]
+            dTag != null && wanted != null && dTag in wanted
+        }
+        return sanitizeAndSort(cachedSavedPacks)
     }
 
     private fun cachedPackEventByCoordinate(author: String, dTag: String): NostrEvent? {
