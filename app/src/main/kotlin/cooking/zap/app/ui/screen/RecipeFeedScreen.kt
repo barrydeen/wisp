@@ -203,8 +203,11 @@ fun RecipeFeedScreen(
                     label = stringResource(R.string.tab_packs),
                     selected = mainTab == RecipesMainTab.PACKS,
                     onClick = {
-                        mainTab = RecipesMainTab.PACKS
-                        packsViewModel.onPacksActivated()
+                        if (mainTab == RecipesMainTab.PACKS) {
+                            packsViewModel.onPacksActivated()
+                        } else {
+                            mainTab = RecipesMainTab.PACKS
+                        }
                     },
                     modifier = Modifier.weight(1f),
                 )

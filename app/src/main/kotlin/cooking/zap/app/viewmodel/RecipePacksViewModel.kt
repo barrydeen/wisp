@@ -1,5 +1,6 @@
 package cooking.zap.app.viewmodel
 
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cooking.zap.app.repo.RecipePackRepository
@@ -81,27 +82,30 @@ class RecipePacksViewModel : ViewModel() {
     private fun activateTab(tab: RecipePacksTab, forceNetwork: Boolean) {
         val repo = repo ?: return
         val userPubkey = userPubkeyProvider?.invoke()
+        val shouldFetch = shouldFetch(tab, forceNetwork)
 
-        // Always repaint cache first; never gate this behind fetch guards.
+        // Avoid cache-vs-fetch races: when we fetch, repository load* already paints
+        // cache first; when debounced, paint directly here.
+        if (shouldFetch) {
+            when (tab) {
+                RecipePacksTab.DISCOVER -> repo.loadDiscover()
+                RecipePacksTab.MINE -> repo.loadMine(userPubkey)
+                RecipePacksTab.SAVED -> repo.loadSaved(userPubkey)
+            }
+            lastFetchAtMs[tab] = SystemClock.elapsedRealtime()
+            return
+        }
         when (tab) {
             RecipePacksTab.DISCOVER -> repo.paintDiscoverFromCache()
             RecipePacksTab.MINE -> repo.paintMineFromCache(userPubkey)
             RecipePacksTab.SAVED -> repo.paintSavedFromCache(userPubkey)
         }
-
-        if (!shouldFetch(tab, forceNetwork)) return
-        when (tab) {
-            RecipePacksTab.DISCOVER -> repo.loadDiscover()
-            RecipePacksTab.MINE -> repo.loadMine(userPubkey)
-            RecipePacksTab.SAVED -> repo.loadSaved(userPubkey)
-        }
-        lastFetchAtMs[tab] = System.currentTimeMillis()
     }
 
     private fun shouldFetch(tab: RecipePacksTab, forceNetwork: Boolean): Boolean {
         if (forceNetwork) return true
         val last = lastFetchAtMs[tab] ?: return true
-        return (System.currentTimeMillis() - last) >= REFRESH_DEBOUNCE_MS
+        return (SystemClock.elapsedRealtime() - last) >= REFRESH_DEBOUNCE_MS
     }
 }
 
