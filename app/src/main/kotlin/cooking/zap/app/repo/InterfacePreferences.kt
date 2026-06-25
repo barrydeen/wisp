@@ -48,7 +48,7 @@ class InterfacePreferences(context: Context) {
     fun getLanguage(): String = prefs.getString("language", "system") ?: "system"
     fun setLanguage(language: String) = prefs.edit().putString("language", language).apply()
 
-    fun isZapBoltIcon(): Boolean = prefs.getBoolean("zap_bolt_icon", false)
+    fun isZapBoltIcon(): Boolean = prefs.getBoolean("zap_bolt_icon", true)
     fun setZapBoltIcon(enabled: Boolean) = prefs.edit().putBoolean("zap_bolt_icon", enabled).apply()
 
     fun isLiveStreamsHidden(): Boolean = prefs.getBoolean("live_streams_hidden", false)

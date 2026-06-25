@@ -22,7 +22,7 @@ fun useBoltIcon(): Boolean {
     val prefs = remember(context) {
         context.getSharedPreferences("wisp_settings", Context.MODE_PRIVATE)
     }
-    return prefs.getBoolean("zap_bolt_icon", false)
+    return prefs.getBoolean("zap_bolt_icon", true)
 }
 
 /**
