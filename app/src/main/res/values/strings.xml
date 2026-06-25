@@ -103,7 +103,7 @@
     <string name="auth_or_log_in_with_key">Or log in with your key</string>
     <string name="auth_nsec_or_npub">nsec or npub…</string>
     <string name="auth_wisp">Zap Cooking</string>
-    <string name="auth_tagline">a wee interface to scroll posts</string>
+    <string name="auth_tagline">recipes on Nostr</string>
     <string name="auth_hide_key">Hide key</string>
     <string name="auth_show_key">Show key</string>
 
@@ -473,7 +473,7 @@
     <string name="onboarding_network_description">Zap Cooking discovers which relays your friends actually use, then connects directly to those relays. This means faster delivery and fewer missed posts — no central server needed.</string>
     <string name="onboarding_quick_follow">Quick follow</string>
     <string name="onboarding_long_press_hint">Long-press any profile picture to follow or unfollow</string>
-    <string name="onboarding_utxo">utxo</string>
+    <string name="onboarding_utxo">Zap Cooking</string>
     <string name="onboarding_try_it">Try it — long-press the picture above</string>
     <string name="onboarding_lightning_wallet_info">Zap Cooking supports zaps with an embedded Lightning wallet or Nostr Wallet Connect. You can set this up anytime from the Wallet screen.</string>
     <string name="onboarding_setting_things_up">Setting things up</string>
