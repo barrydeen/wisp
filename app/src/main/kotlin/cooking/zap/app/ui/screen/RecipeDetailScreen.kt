@@ -35,8 +35,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import cooking.zap.app.R
 import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.nostr.toNpub
 import cooking.zap.app.repo.EventRepository
@@ -80,6 +82,7 @@ fun RecipeDetailScreen(
     onOpenEmojiLibrary: (() -> Unit)? = null,
     onStartCooking: ((RecipeParser.Recipe) -> Unit)? = null,
     onComputeNourish: () -> Unit = {},
+    onOpenNourishHub: ((RecipeParser.Recipe) -> Unit)? = null,
 ) {
     val recipe by viewModel.recipe.collectAsState()
     val event by viewModel.event.collectAsState()
@@ -184,6 +187,16 @@ fun RecipeDetailScreen(
                             item(key = "nourish") { NourishMessage(n.message, retry = onComputeNourish) }
                         RecipeDetailViewModel.NourishUi.Loading,
                         RecipeDetailViewModel.NourishUi.Hidden -> Unit
+                    }
+                    if (onOpenNourishHub != null) {
+                        item(key = "nourish-hub-link") {
+                            TextButton(
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                                onClick = { onOpenNourishHub(current) },
+                            ) {
+                                Text(stringResource(R.string.nourish_hub_open_action))
+                            }
+                        }
                     }
 
                     val recipeEvent = event

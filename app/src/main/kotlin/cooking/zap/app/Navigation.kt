@@ -86,6 +86,7 @@ import cooking.zap.app.ui.screen.RecipePackDetailScreen
 import cooking.zap.app.ui.screen.RecipeTagFeedScreen
 import cooking.zap.app.ui.screen.OnlyFoodFeedScreen
 import cooking.zap.app.ui.screen.CheffyScreen
+import cooking.zap.app.ui.screen.NourishHubScreen
 import cooking.zap.app.ui.screen.SousChefScreen
 import cooking.zap.app.ui.screen.BookmarksScreen
 import cooking.zap.app.ui.screen.HashtagFeedScreen
@@ -203,6 +204,7 @@ object Routes {
     const val RECIPE_PACK_DETAIL = "recipe_pack/{author}/{dTag}"
     const val RECIPE_TAG_FEED = "recipe_tag/{tag}"
     const val RECIPES = "recipes"
+    const val NOURISH = "nourish?author={author}&dTag={dTag}"
     const val ONLY_FOOD = "onlyfood"
     const val SOUS_CHEF = "souschef"
     const val RECIPE_COMPOSE = "recipe_compose"
@@ -225,6 +227,12 @@ object Routes {
     /** Build a recipe-by-tag feed route, URL-encoding the slug-like tag. */
     fun recipeTag(tag: String): String =
         "recipe_tag/${java.net.URLEncoder.encode(tag.trim().lowercase(), "UTF-8")}"
+
+    /** Build the Nourish hub route (optionally preloading a selected recipe). */
+    fun nourish(author: String? = null, dTag: String? = null): String {
+        if (author.isNullOrBlank() || dTag.isNullOrBlank()) return "nourish"
+        return "nourish?author=$author&dTag=${java.net.URLEncoder.encode(dTag, "UTF-8")}"
+    }
 
     /** The plain article route (kind 30023 long-form that isn't a recipe). */
     fun article(kind: Int, author: String, dTag: String): String =
@@ -2719,6 +2727,9 @@ fun WispNavHost(
                 onComputeNourish = {
                     recipeDetailViewModel.computeNourish(feedViewModel.zapCookingApi, feedViewModel.signer)
                 },
+                onOpenNourishHub = { recipe ->
+                    navController.navigate(Routes.nourish(recipe.author, recipe.dTag))
+                },
                 onBack = { navController.popBackStack() },
                 onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                 onHashtagClick = { tag ->
@@ -2920,6 +2931,56 @@ fun WispNavHost(
                     navController.navigate(Routes.RECIPE_COMPOSE)
                 },
                 onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route = Routes.NOURISH,
+            arguments = listOf(
+                navArgument("author") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("dTag") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) { backStackEntry ->
+            val author = backStackEntry.arguments?.getString("author")?.trim().orEmpty()
+            val dTag = java.net.URLDecoder.decode(
+                backStackEntry.arguments?.getString("dTag")?.trim().orEmpty(), "UTF-8"
+            )
+            val selectedAuthor = author.takeIf { it.isNotBlank() }
+            val selectedDTag = dTag.takeIf { it.isNotBlank() }
+            val recipeDetailViewModel: RecipeDetailViewModel = viewModel()
+            LaunchedEffect(selectedAuthor, selectedDTag) {
+                if (!selectedAuthor.isNullOrBlank() && !selectedDTag.isNullOrBlank()) {
+                    recipeDetailViewModel.load(
+                        author = selectedAuthor,
+                        dTag = selectedDTag,
+                        recipeRepo = feedViewModel.recipeRepo,
+                        nourishRepo = feedViewModel.nourishRepo,
+                        hasSigningKey = feedViewModel.signer != null,
+                    )
+                }
+            }
+            NourishHubScreen(
+                viewModel = recipeDetailViewModel,
+                selectedAuthor = selectedAuthor,
+                selectedDTag = selectedDTag,
+                canSign = feedViewModel.signer != null,
+                onComputeNourish = {
+                    recipeDetailViewModel.computeNourish(feedViewModel.zapCookingApi, feedViewModel.signer)
+                },
+                onBack = { navController.popBackStack() },
+                onBrowseRecipes = { navController.navigate(Routes.RECIPES) },
+                onOpenSelectedRecipe = { authorHex, recipeDTag ->
+                    navController.navigate(Routes.recipe(authorHex, recipeDTag))
+                },
+                onExploreRecipes = { navController.navigate(Routes.RECIPES) },
             )
         }
 

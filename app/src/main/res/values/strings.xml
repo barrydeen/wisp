@@ -47,6 +47,7 @@
     <string name="title_chat">Chat</string>
     <string name="title_list">List</string>
     <string name="title_community">Community</string>
+    <string name="title_nourish_hub">Nourish</string>
 
     <!-- Splash Screen -->
     <string name="splash_create_account">Create Account</string>
@@ -622,6 +623,7 @@
     <string name="error_no_recipe_packs_mine">You have not published any packs</string>
     <string name="error_no_recipe_packs_saved">No saved packs yet</string>
     <string name="error_sign_in_packs_tab">Sign in to view this tab</string>
+    <string name="error_recipe_not_found">Recipe not found</string>
     <string name="error_recipe_pack_not_found">Recipe pack not found</string>
     <string name="error_recipe_pack_missing_members">Couldn\'t load %d recipes</string>
     <plurals name="recipe_count_label">
@@ -644,6 +646,25 @@
     <string name="loading_preparing_feed">Preparing your feed…</string>
     <string name="error_list_not_found">List not found</string>
     <string name="error_no_list_members">This list has no members</string>
+    <string name="nourish_title">Nourish</string>
+    <string name="nourish_compute_action">Get Nourish profile</string>
+    <string name="nourish_compute_loading">Scoring… (this can take a moment)</string>
+    <string name="nourish_compute_body">See this recipe\'s Nourish profile across 8 dimensions.</string>
+    <string name="nourish_members_only">Nourish scoring is a Zap Cooking members feature.</string>
+    <string name="nourish_signing_required">Sign in with a key to fetch Nourish profiles.</string>
+    <string name="nourish_hub_open_action">Open in Nourish hub</string>
+    <string name="nourish_hub_hero_title">See the Nourish profile of a recipe</string>
+    <string name="nourish_hub_hero_body">Nourish gives a gentle, non-judgmental snapshot of a recipe using our green-island profile card.</string>
+    <string name="nourish_hub_deferred_hint">Scanner inputs and ranked Nourish discovery are coming in a later update.</string>
+    <string name="nourish_hub_pick_title">Pick a recipe</string>
+    <string name="nourish_hub_pick_body">Open a recipe from the Recipes surfaces, then return here to see its Nourish profile.</string>
+    <string name="nourish_hub_pick_action">Browse recipes</string>
+    <string name="nourish_hub_loading_recipe">Loading recipe…</string>
+    <string name="nourish_hub_selected_body">Using your selected recipe for Pantry read/compute.</string>
+    <string name="nourish_hub_open_recipe">Open recipe details</string>
+    <string name="nourish_hub_explore_title">Explore analyzed recipes</string>
+    <string name="nourish_hub_explore_body">For now, browse the Recipes feed while we prepare a dedicated Nourish explore surface.</string>
+    <string name="nourish_hub_explore_action">Go to Recipes</string>
 
     <!-- Dropdown / Menu Options -->
     <string name="menu_add_to_relay_set">Add to Relay Set</string>
