@@ -10,8 +10,8 @@ package cooking.zap.app.nostr
  */
 object Nip89 {
     /** The `client` tag value (NIP-89 display name) for events this app signs. */
-    const val CLIENT_NAME = "Zap Cooking Android"
+    const val CLIENT_NAME = "Zap Cooking"
 
-    /** The `["client", "Zap Cooking Android"]` tag. */
+    /** The `["client", "Zap Cooking"]` tag. */
     fun clientTag(): List<String> = listOf("client", CLIENT_NAME)
 }

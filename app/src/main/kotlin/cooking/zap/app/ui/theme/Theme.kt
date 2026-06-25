@@ -205,9 +205,9 @@ fun WispTheme(
         if (isCustomTheme) {
             WispColors(
                 backgroundColor = Color(0xFFECECEC),
-                zapColor = Color(0xFFB85C00),
+                zapColor = Color(0xFFEC4700),
                 repostColor = Color(0xFF2E7D32),
-                bookmarkColor = Color(0xFFB85C00),
+                bookmarkColor = Color(0xFFEC4700),
                 paidColor = Color(0xFFC9A000)
             )
         } else {

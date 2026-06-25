@@ -53,7 +53,7 @@ private enum class OnboardingStep {
     WELCOME, DECENTRALIZATION, LONG_PRESS_DEMO, NWC_SETUP, WAITING
 }
 
-private val UTXO_PICTURE: String? = null  // Generic avatar — avoids stale relay images
+private const val ZAP_COOKING_PUBKEY = "319ad3e790634dbe86f14db9c2995b26ee3c6228be55f89c4c7fea9acc01d50a"
 
 @Composable
 fun ExistingUserOnboardingScreen(
@@ -102,6 +102,7 @@ fun ExistingUserOnboardingScreen(
                     onContinue = { stepIndex = OnboardingStep.LONG_PRESS_DEMO.ordinal }
                 )
                 OnboardingStep.LONG_PRESS_DEMO -> LongPressDemoStep(
+                    feedViewModel = feedViewModel,
                     onContinue = { stepIndex = OnboardingStep.NWC_SETUP.ordinal }
                 )
                 OnboardingStep.NWC_SETUP -> NwcInfoStep(
@@ -214,9 +215,22 @@ private fun DecentralizationStep(onContinue: () -> Unit) {
 }
 
 @Composable
-private fun LongPressDemoStep(onContinue: () -> Unit) {
+private fun LongPressDemoStep(feedViewModel: FeedViewModel, onContinue: () -> Unit) {
     var showFollowBadge by remember { mutableStateOf(false) }
     var hasLongPressed by remember { mutableStateOf(false) }
+
+    var zcPictureUrl by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        feedViewModel.forceProfileFetch(ZAP_COOKING_PUBKEY)
+        repeat(20) {
+            delay(500)
+            val pic = feedViewModel.eventRepo.getProfileData(ZAP_COOKING_PUBKEY)?.picture
+            if (!pic.isNullOrBlank()) {
+                zcPictureUrl = pic
+                return@repeat
+            }
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -250,7 +264,7 @@ private fun LongPressDemoStep(onContinue: () -> Unit) {
 
             // Demo profile picture with breathing glow
             ProfilePicture(
-                url = UTXO_PICTURE,
+                url = zcPictureUrl,
                 size = 80,
                 highlighted = true,
                 showFollowBadge = showFollowBadge,

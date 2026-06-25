@@ -1,7 +1,20 @@
 package cooking.zap.app.ui.screen
 
 import androidx.activity.ComponentActivity
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -13,18 +26,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import cooking.zap.app.ui.component.QrScanner
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -36,6 +45,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,20 +55,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -66,17 +71,72 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.res.stringResource
 import coil3.compose.AsyncImage
 import cooking.zap.app.R
 import cooking.zap.app.auth.NostrCredentialSaver
+import cooking.zap.app.ui.component.QrScanner
 import cooking.zap.app.viewmodel.AuthViewModel
-import cooking.zap.app.viewmodel.LiveMetrics
 import cooking.zap.app.viewmodel.SplashViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val AVATAR_SIZE = 44.dp
-private val AVATAR_GAP = 4.dp
+private val BG_COLOR = Color(0xFF111827)
+private val TILE_SIZE = 80.dp
+private val TILE_GAP = 6.dp
+private val TILE_RADII = 12.dp
+
+private val TILE_ALPHAS = floatArrayOf(
+    0.10f, 0.06f, 0.14f, 0.08f, 0.12f, 0.05f, 0.16f, 0.07f, 0.11f, 0.09f,
+    0.13f, 0.07f, 0.09f, 0.15f, 0.06f, 0.11f, 0.08f, 0.14f, 0.10f, 0.12f
+)
+
+@Composable
+private fun AnimatedFoodTile(
+    photos: List<String>,
+    tileIndex: Int,
+    numCols: Int,
+    alpha: Float
+) {
+    var displayUrl by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(photos) {
+        if (photos.isEmpty()) return@LaunchedEffect
+        // Spread starting photos so no two adjacent tiles share the same image.
+        // Column offset of 7 and row offset of 1 are coprime to typical photo counts.
+        val startIndex = (tileIndex * 7 + (tileIndex / numCols) * 13) % photos.size
+        displayUrl = photos[startIndex]
+        if (photos.size <= 1) return@LaunchedEffect
+        var idx = startIndex
+        delay((tileIndex * 371L) % 8000L)          // stagger so tiles don't all swap at once
+        while (true) {
+            delay(2500L + (tileIndex * 197L) % 3500L)  // 2.5–6s per tile
+            idx = (idx + 1) % photos.size
+            displayUrl = photos[idx]
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .size(TILE_SIZE)
+            .clip(RoundedCornerShape(TILE_RADII))
+            .background(Color.White.copy(alpha = alpha))
+    ) {
+        AnimatedContent(
+            targetState = displayUrl,
+            transitionSpec = { fadeIn(tween(700)) togetherWith fadeOut(tween(700)) },
+            label = "tile_$tileIndex"
+        ) { url ->
+            if (url != null) {
+                AsyncImage(
+                    model = url,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize()
+                )
+            }
+        }
+    }
+}
 
 @Composable
 fun SplashScreen(
@@ -86,83 +146,80 @@ fun SplashScreen(
     onLoggedIn: () -> Unit,
     onContinueWithGoogle: () -> Unit
 ) {
-    val profilePictures by viewModel.profilePictures.collectAsState()
-    val liveMetrics by viewModel.liveMetrics.collectAsState()
-    val backgroundColor = MaterialTheme.colorScheme.background
-    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
+    val foodPhotos by viewModel.foodPhotos.collectAsState()
 
     var showNostrSheet by remember { mutableStateOf(false) }
     var showQrScanner by remember { mutableStateOf(false) }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(backgroundColor)) {
-        val cols = ((maxWidth + AVATAR_GAP) / (AVATAR_SIZE + AVATAR_GAP)).toInt().coerceAtLeast(1)
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BG_COLOR)
+    ) {
         val screenHeightPx = constraints.maxHeight.toFloat()
+        val cols = ((maxWidth + TILE_GAP) / (TILE_SIZE + TILE_GAP)).toInt().coerceAtLeast(1)
+        val rows = ((maxHeight + TILE_GAP) / (TILE_SIZE + TILE_GAP)).toInt().coerceAtLeast(1) + 1
 
-        val pics = profilePictures.ifEmpty {
-            val placeholderRows = ((maxHeight + AVATAR_GAP) / (AVATAR_SIZE + AVATAR_GAP)).toInt() + 1
-            List(placeholderRows * cols) { "" }
-        }
-
-        val rows = (pics.size + cols - 1) / cols
-
+        // Animated food photo tile grid
         Column(modifier = Modifier.align(Alignment.TopCenter)) {
-            for (row in 0 until rows) {
+            repeat(rows) { row ->
                 Row {
-                    for (col in 0 until cols) {
-                        val idx = row * cols + col
-                        if (idx >= pics.size) break
-                        val url = pics[idx]
-                        Box(
-                            modifier = Modifier
-                                .size(AVATAR_SIZE)
-                                .clip(CircleShape)
-                                .background(surfaceVariant)
-                        ) {
-                            if (url.isNotEmpty()) {
-                                AsyncImage(
-                                    model = url,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.matchParentSize()
-                                )
-                            }
-                        }
-                        if (col < cols - 1) Spacer(Modifier.width(AVATAR_GAP))
+                    repeat(cols) { col ->
+                        val tileIndex = row * cols + col
+                        val alpha = TILE_ALPHAS[(row * 3 + col * 7) % TILE_ALPHAS.size]
+                        AnimatedFoodTile(
+                            photos = foodPhotos,
+                            tileIndex = tileIndex,
+                            numCols = cols,
+                            alpha = alpha
+                        )
+                        if (col < cols - 1) Spacer(Modifier.width(TILE_GAP))
                     }
                 }
-                if (row < rows - 1) Spacer(Modifier.height(AVATAR_GAP))
+                Spacer(Modifier.height(TILE_GAP))
             }
         }
 
+        // Gradient: transparent at top, soft mid-screen darkening so content is readable
+        // while food tiles still peek through, fully opaque at bottom.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, backgroundColor),
-                        startY = 0.25f * screenHeightPx,
-                        endY = 0.72f * screenHeightPx
+                        colorStops = arrayOf(
+                            0.00f to Color.Transparent,
+                            0.30f to Color.Transparent,
+                            0.50f to BG_COLOR.copy(alpha = 0.50f),
+                            0.72f to BG_COLOR.copy(alpha = 0.88f),
+                            1.00f to BG_COLOR
+                        ),
+                        startY = 0f,
+                        endY = screenHeightPx
                     )
                 )
         )
 
+        // Content — centered as one block
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 48.dp, start = 32.dp, end = 32.dp)
+                .fillMaxSize()
+                .padding(horizontal = 32.dp)
         ) {
-            val wispTransition = rememberInfiniteTransition(label = "zapCooking")
-            val bob by wispTransition.animateFloat(
+
+            val logoTransition = rememberInfiniteTransition(label = "logo")
+            val bob by logoTransition.animateFloat(
                 initialValue = 0f,
                 targetValue = -8f,
                 animationSpec = infiniteRepeatable(
-                    animation = tween(1200, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                    animation = tween(1200, easing = FastOutSlowInEasing),
                     repeatMode = RepeatMode.Reverse
                 ),
                 label = "bob"
             )
-            val sway by wispTransition.animateFloat(
+            val sway by logoTransition.animateFloat(
                 initialValue = -3f,
                 targetValue = 3f,
                 animationSpec = infiniteRepeatable(
@@ -171,54 +228,72 @@ fun SplashScreen(
                 ),
                 label = "sway"
             )
+
             Icon(
                 painter = painterResource(R.drawable.ic_wisp_logo),
                 contentDescription = stringResource(R.string.cd_wisp_logo),
                 tint = Color.Unspecified,
                 modifier = Modifier
-                    .size(96.dp)
+                    .size(88.dp)
+                    .drawBehind {
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    Color.Black.copy(alpha = 0.85f),
+                                    Color.Black.copy(alpha = 0.55f),
+                                    Color.Black.copy(alpha = 0.15f),
+                                    Color.Transparent,
+                                ),
+                                center = center,
+                                radius = size.minDimension * 2.2f,
+                            ),
+                            radius = size.minDimension * 2.2f,
+                            center = center,
+                        )
+                    }
                     .graphicsLayer {
                         translationY = bob * density
                         rotationZ = sway
                     }
-                    .drawBehind {
-                        drawCircle(
-                            brush = androidx.compose.ui.graphics.Brush.radialGradient(
-                                colors = listOf(
-                                    Color.Black,
-                                    Color.Black.copy(alpha = 0.6f),
-                                    Color.Transparent
-                                ),
-                                radius = size.minDimension * 0.65f
-                            ),
-                            radius = size.minDimension * 0.65f
-                        )
-                    }
             )
+
+            Spacer(Modifier.height(20.dp))
+
+            Icon(
+                painter = painterResource(R.drawable.ic_zc_wordmark),
+                contentDescription = stringResource(R.string.cd_wisp_logo),
+                tint = Color.Unspecified,
+                modifier = Modifier
+                    .fillMaxWidth(0.72f)
+                    .height(32.dp)
+            )
+
+            Spacer(Modifier.height(12.dp))
+
             Text(
-                text = "Zap Cooking",
-                style = MaterialTheme.typography.titleLarge.copy(
+                text = stringResource(R.string.auth_tagline),
+                style = MaterialTheme.typography.bodyMedium.copy(
                     fontFamily = FontFamily.SansSerif,
-                    fontSize = 56.sp,
-                    fontWeight = FontWeight.W500
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp
                 ),
                 color = Color.White
             )
-            liveMetrics?.let { OnlineCard(it) }
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(48.dp))
 
+            // Sign-in buttons
             Button(
                 onClick = onContinueWithGoogle,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
-                shape = RoundedCornerShape(24.dp),
+                    .height(52.dp),
+                shape = RoundedCornerShape(26.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF131314),
+                    containerColor = Color(0xFF1F2937),
                     contentColor = Color(0xFFE3E3E3)
                 ),
-                border = BorderStroke(1.dp, Color(0xFF8E918F))
+                border = BorderStroke(1.dp, Color(0xFF374151))
             ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_google_g),
@@ -237,14 +312,14 @@ fun SplashScreen(
                 )
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
 
             Button(
                 onClick = { showNostrSheet = true },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
-                shape = RoundedCornerShape(24.dp),
+                    .height(52.dp),
+                shape = RoundedCornerShape(26.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFF1A0E2E),
                     contentColor = Color(0xFFE9DDFF)
@@ -267,6 +342,7 @@ fun SplashScreen(
                     )
                 )
             }
+
         }
     }
 
@@ -301,7 +377,7 @@ fun SplashScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(androidx.compose.ui.graphics.Color.Black)
+                    .background(Color.Black)
             ) {
                 QrScanner(
                     onResult = { raw ->
@@ -469,30 +545,6 @@ private fun NostrLoginSheet(
                     style = MaterialTheme.typography.bodySmall
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun OnlineCard(metrics: LiveMetrics) {
-    Spacer(Modifier.height(16.dp))
-    Card(shape = RoundedCornerShape(24.dp)) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF4CAF50))
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = stringResource(R.string.splash_people_online, metrics.online),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface
-            )
         }
     }
 }

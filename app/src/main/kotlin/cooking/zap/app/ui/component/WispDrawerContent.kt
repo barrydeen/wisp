@@ -718,7 +718,7 @@ fun WispDrawerContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Version info with wisp logo
+        // Version info with app logo
         val versionContext = androidx.compose.ui.platform.LocalContext.current
         val versionName = remember {
             try {
