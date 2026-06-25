@@ -23,12 +23,12 @@ import okhttp3.WebSocketListener
 import java.util.concurrent.TimeUnit
 
 private const val PREFS_NAME = "splash_food_cache"
-private const val PREF_URLS = "food_photo_urls"
-private const val PREF_TIMESTAMP = "food_photo_timestamp"
+private const val PREF_URLS = "food_photo_urls_v2"
+private const val PREF_TIMESTAMP = "food_photo_timestamp_v2"
 private const val CACHE_TTL_MS = 24 * 60 * 60 * 1000L  // 24 hours
-private const val MIN_FOLLOWS = 50                        // minimum contacts to pass spam filter
-private const val TARGET_PHOTOS = 40
-private const val FETCH_TIMEOUT_MS = 15_000L
+private const val MIN_FOLLOWS = 20                        // minimum contacts to pass spam filter
+private const val TARGET_PHOTOS = 80
+private const val FETCH_TIMEOUT_MS = 20_000L
 
 private val IMAGE_URL_REGEX = Regex(
     """https?://\S+\.(?:jpg|jpeg|png|webp|gif)(?:[?#]\S*)?""",
@@ -90,7 +90,7 @@ class SplashViewModel(app: Application) : AndroidViewModel(app) {
             client.newWebSocket(req, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     webSocket.send(
-                        """["REQ","$noteSubId",{"kinds":[1],"#t":["foodstr"],"limit":150}]"""
+                        """["REQ","$noteSubId",{"kinds":[1],"#t":["foodstr"],"limit":300}]"""
                     )
                 }
 
