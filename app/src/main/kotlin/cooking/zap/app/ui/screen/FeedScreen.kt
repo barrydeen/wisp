@@ -757,7 +757,7 @@ fun FeedScreen(
                     )
                     cooking.zap.app.ui.component.ZapGradientFab(
                         onClick = onCompose,
-                        contentDescription = "New post",
+                        contentDescription = stringResource(R.string.cd_new_post),
                         icon = Icons.Default.Edit,
                         modifier = Modifier.graphicsLayer { alpha = fabAlpha }
                     )

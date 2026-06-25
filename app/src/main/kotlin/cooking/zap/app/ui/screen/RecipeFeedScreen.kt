@@ -180,7 +180,7 @@ fun RecipeFeedScreen(
             onCreateRecipe?.let {
                 cooking.zap.app.ui.component.ZapGradientFab(
                     onClick = it,
-                    contentDescription = "Create recipe"
+                    contentDescription = stringResource(R.string.cd_create_recipe)
                 )
             }
         },

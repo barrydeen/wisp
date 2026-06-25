@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import cooking.zap.app.R
 
@@ -56,6 +57,8 @@ fun ZapGradientFab(
             .clickable(
                 interactionSource = interactionSource,
                 indication = ripple(color = Color.White),
+                role = Role.Button,
+                onClickLabel = contentDescription,
                 onClick = onClick
             ),
         contentAlignment = Alignment.Center

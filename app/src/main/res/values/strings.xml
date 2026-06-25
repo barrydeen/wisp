@@ -355,6 +355,7 @@
     <string name="cd_copy_npub">Copy npub</string>
     <string name="cd_copy_hex_pubkey">Copy hex pubkey</string>
     <string name="cd_new_post">New post</string>
+    <string name="cd_create_recipe">Create recipe</string>
     <string name="cd_delete">Delete</string>
     <string name="cd_add_hashtag">Add hashtag</string>
     <string name="cd_change_timeframe">Change timeframe</string>

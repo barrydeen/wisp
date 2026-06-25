@@ -261,7 +261,9 @@ fun SplashScreen(
 
             Icon(
                 painter = painterResource(R.drawable.ic_zc_wordmark_splash),
-                contentDescription = stringResource(R.string.cd_wisp_logo),
+                // Decorative: the logo above already carries the "Zap Cooking logo"
+                // label, so the wordmark is null to avoid a duplicate TalkBack read.
+                contentDescription = null,
                 // Always-white wordmark variant (keeps the gradient dot) so it stays
                 // legible on the dark splash regardless of system light/dark mode.
                 tint = Color.Unspecified,
