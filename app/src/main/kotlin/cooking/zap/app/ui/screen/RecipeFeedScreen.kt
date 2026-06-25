@@ -136,6 +136,13 @@ fun RecipeFeedScreen(
             }
     }
 
+    // Repaint packs from cache whenever the main Packs tab is activated/re-entered.
+    LaunchedEffect(mainTab) {
+        if (mainTab == RecipesMainTab.PACKS) {
+            packsViewModel.onPacksActivated()
+        }
+    }
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -195,7 +202,10 @@ fun RecipeFeedScreen(
                 RecipesMainTabButton(
                     label = stringResource(R.string.tab_packs),
                     selected = mainTab == RecipesMainTab.PACKS,
-                    onClick = { mainTab = RecipesMainTab.PACKS },
+                    onClick = {
+                        mainTab = RecipesMainTab.PACKS
+                        packsViewModel.onPacksActivated()
+                    },
                     modifier = Modifier.weight(1f),
                 )
             }
