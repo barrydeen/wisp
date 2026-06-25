@@ -104,7 +104,8 @@ class StartupCoordinator(
     private val getUserPubkey: () -> String?,
     private val registerAuthSigner: () -> Unit,
     private val fetchEmojiSets: () -> Unit,
-    private val getSigner: () -> NostrSigner?
+    private val getSigner: () -> NostrSigner?,
+    private val migrateRecipeBookmarks: () -> Unit = {}
 ) {
     private var eventProcessingJob: Job? = null
     private var metadataSweepJob: Job? = null
@@ -658,6 +659,11 @@ class StartupCoordinator(
 
         // DMs and notifications are not feed-blocking — fire and forget
         subscribeDmsAndNotifications(myPubkey)
+
+        // A14 PR 2: one-shot background migration of legacy recipe bookmarks into
+        // the canonical kind-30001 list. Self-guarded by a persisted flag, so it's
+        // safe to invoke on every self-data pass (cold start + refresh).
+        migrateRecipeBookmarks()
     }
 
     /**
