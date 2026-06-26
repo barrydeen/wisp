@@ -18,9 +18,10 @@ object RecipeShare {
     }
 
     /**
-     * Canonical zap.cooking share URL, or null when [event] has no `d` tag or
-     * isn't a recognized recipe format (falls back to kind 30023 when format-
-     * agnostic coordinate building still applies).
+     * Canonical zap.cooking share URL, or null only when [event] has no usable
+     * `d` tag. Kind comes from the matching [RecipeFormats] format and falls
+     * back to 30023 when no active format recognizes the event, so any
+     * addressable event carrying a `d` tag still yields a URL.
      */
     fun shareUrl(event: NostrEvent): String? {
         val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)?.trim()

@@ -24,9 +24,11 @@ class Nip19Test {
     @Test
     fun naddrEncode_roundTrips_withRealRecipeFixture() {
         val event = loadEvent("tuscan_peposo.json")
-        val dTag = "tuscan-peposo-(black-pepper-beef-stew)"
-        val pubkey = "1852d83e2b9d12fa561071bfe159ff5ae510af1fc9b51b85539cb6a81486f207"
-        val kind = 30023
+        // Derive from the parsed event so the fixture meaningfully participates:
+        // a changed `d`/pubkey/kind in the fixture flows through to this assertion.
+        val dTag = event.tags.first { it.size >= 2 && it[0] == "d" }[1]
+        val pubkey = event.pubkey
+        val kind = event.kind
 
         val encoded = Nip19.naddrEncode(kind = kind, pubkeyHex = pubkey, dTag = dTag)
         assertTrue(encoded.startsWith("naddr1"))
