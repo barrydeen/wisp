@@ -293,6 +293,43 @@ private fun isStandaloneUrl(content: String, matchRange: IntRange): Boolean {
     return true
 }
 
+// Strip share/analytics tracking params that sites append when links are copied,
+// while preserving meaningful query params. `utm_*` plus the well-known click-ids below
+// are stripped on every host; the YouTube-specific share params (si/feature/pp) only on
+// YouTube hosts, since `si` is meaningful elsewhere (e.g. Spotify).
+private val youtubeHostRegex = Regex(
+    """^(?:https?://)?(?:[\w-]+\.)*(?:youtube\.com|youtu\.be|youtube-nocookie\.com)(?:[/?#]|$)""",
+    RegexOption.IGNORE_CASE
+)
+private val youtubeTrackingParams = setOf("si", "feature", "pp")
+private val globalTrackingParams = setOf(
+    "fbclid", "gclid", "gclsrc", "dclid", "gbraid", "wbraid", // Google / Facebook ads
+    "msclkid", "yclid", "twclid", "ttclid", "igshid", "igsh", // Bing / Yandex / X / TikTok / Instagram
+    "mc_cid", "mc_eid", "_hsenc", "_hsmi", "mkt_tok", "vero_id", "oly_enc_id", "oly_anon_id", // email marketing
+    "spm", "scm" // Alibaba/AliExpress
+)
+
+private fun isTrackingParam(key: String, isYoutube: Boolean): Boolean {
+    val k = key.lowercase()
+    return k.startsWith("utm_") ||
+        k in globalTrackingParams ||
+        (isYoutube && k in youtubeTrackingParams)
+}
+
+internal fun stripTrackingParams(url: String): String {
+    val queryStart = url.indexOf('?')
+    if (queryStart < 0) return url
+    val isYoutube = youtubeHostRegex.containsMatchIn(url)
+    val fragmentStart = url.indexOf('#', queryStart)
+    val base = url.substring(0, queryStart)
+    val queryEnd = if (fragmentStart >= 0) fragmentStart else url.length
+    val fragment = if (fragmentStart >= 0) url.substring(fragmentStart) else ""
+    val params = url.substring(queryStart + 1, queryEnd).split('&')
+    val kept = params.filter { it.isNotEmpty() && !isTrackingParam(it.substringBefore('='), isYoutube) }
+    if (kept.size == params.size) return url
+    return if (kept.isEmpty()) base + fragment else "$base?${kept.joinToString("&")}$fragment"
+}
+
 internal fun parseContent(content: String, emojiMap: Map<String, String> = emptyMap(), imetaMap: Map<String, MediaMeta> = emptyMap(), trimBlankLines: Boolean = true): List<ContentSegment> {
     val segments = mutableListOf<ContentSegment>()
     var lastEnd = 0
@@ -307,7 +344,7 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
         if (!hashtagCapture.isNullOrEmpty() && token.startsWith("#")) {
             segments.add(ContentSegment.HashtagSegment(hashtagCapture))
         } else if (!bareDomainCapture.isNullOrEmpty() && !token.startsWith("http")) {
-            val url = "https://$bareDomainCapture"
+            val url = stripTrackingParams("https://$bareDomainCapture")
             val meta = imetaMap[url]
             val imetaMime = meta?.mime?.let { classifyByMime(it) }
             val ext = url.substringAfterLast('.').substringBefore('?').lowercase()
@@ -341,7 +378,7 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
                 null -> segments.add(ContentSegment.TextSegment(token))
             }
         } else {
-            val url = token.trimEnd('.', ',', ')', ']', ';', ':', '!', '?')
+            val url = stripTrackingParams(token.trimEnd('.', ',', ')', ']', ';', ':', '!', '?'))
             val isWebSocket = url.startsWith("wss://") || url.startsWith("ws://")
             val meta = imetaMap[url]
             val imetaMime = meta?.mime?.let { classifyByMime(it) }
