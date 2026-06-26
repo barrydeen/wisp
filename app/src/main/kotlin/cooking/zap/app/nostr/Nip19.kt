@@ -32,6 +32,31 @@ object Nip19 {
         return bech32Encode("nevent", tlv)
     }
 
+    /**
+     * Encode a NIP-19 `naddr` for an addressable event (NIP-33 replaceable).
+     * TLV order matches [parseTlvAddress]: identifier, optional relays, pubkey, kind.
+     */
+    fun naddrEncode(
+        kind: Int,
+        pubkeyHex: String,
+        dTag: String,
+        relays: List<String> = emptyList(),
+    ): String {
+        val kindBytes = byteArrayOf(
+            ((kind shr 24) and 0xFF).toByte(),
+            ((kind shr 16) and 0xFF).toByte(),
+            ((kind shr 8) and 0xFF).toByte(),
+            (kind and 0xFF).toByte(),
+        )
+        val tlv = buildTlv {
+            addTlv(0x00, dTag.toByteArray(Charsets.UTF_8))
+            for (relay in relays) addTlv(0x01, relay.toByteArray(Charsets.UTF_8))
+            addTlv(0x02, pubkeyHex.hexToByteArray())
+            addTlv(0x03, kindBytes)
+        }
+        return bech32Encode("naddr", tlv)
+    }
+
     private class TlvBuilder {
         private val bytes = mutableListOf<Byte>()
         fun addTlv(type: Int, value: ByteArray) {

@@ -1,5 +1,6 @@
 package cooking.zap.app
 
+import android.content.Intent
 import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
@@ -2773,6 +2774,8 @@ fun WispNavHost(
                 )
             }
 
+            val recipeShareContext = LocalContext.current
+
             RecipeDetailScreen(
                 viewModel = recipeDetailViewModel,
                 eventRepo = feedViewModel.eventRepo,
@@ -2783,6 +2786,19 @@ fun WispNavHost(
                     navController.navigate(Routes.nourish(recipe.author, recipe.dTag))
                 },
                 onBack = { navController.popBackStack() },
+                onShare = {
+                    val event = recipeDetailEvent ?: return@RecipeDetailScreen
+                    val text = cooking.zap.app.nostr.RecipeShare.shareText(event) ?: return@RecipeDetailScreen
+                    val title = cooking.zap.app.nostr.RecipeShare.titleFor(event)
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_SUBJECT, title)
+                        putExtra(Intent.EXTRA_TEXT, text)
+                    }
+                    recipeShareContext.startActivity(
+                        Intent.createChooser(intent, recipeShareContext.getString(R.string.btn_share))
+                    )
+                },
                 onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                 onHashtagClick = { tag ->
                     navController.navigate("hashtag/${java.net.URLEncoder.encode(tag, "UTF-8")}")
