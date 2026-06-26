@@ -64,11 +64,13 @@ import cooking.zap.app.nostr.RecipeTag
 import cooking.zap.app.nostr.RecipeTagCatalog
 import cooking.zap.app.repo.EventRepository
 import cooking.zap.app.repo.RecipePackSummary
+import cooking.zap.app.ui.component.CookbookCollectionCard
 import cooking.zap.app.ui.component.IntelligenceMenu
 import cooking.zap.app.ui.component.RecipePackCard
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.RecipeCard
 import cooking.zap.app.ui.component.RecipePosterSkeleton
+import cooking.zap.app.viewmodel.CookbookViewModel
 import cooking.zap.app.viewmodel.RecipeFeedViewModel
 import cooking.zap.app.viewmodel.RecipePacksTab
 import cooking.zap.app.viewmodel.RecipePacksViewModel
@@ -82,7 +84,9 @@ import kotlinx.coroutines.flow.filter
  */
 private const val LOAD_MORE_PREFETCH = 6
 
-private enum class RecipesMainTab { RECIPES, PACKS }
+private enum class RecipesMainTab { RECIPES, PACKS, COOKBOOK }
+
+private enum class CookbookSubTab { SAVED, MY_RECIPES }
 
 /**
  * The Recipes feed — recipe cards only (concern 1.6 un-merge), rendered as a
@@ -95,10 +99,12 @@ private enum class RecipesMainTab { RECIPES, PACKS }
 fun RecipeFeedScreen(
     viewModel: RecipeFeedViewModel,
     packsViewModel: RecipePacksViewModel,
+    cookbookViewModel: CookbookViewModel,
     eventRepo: EventRepository,
     userPubkey: String?,
     onRecipeClick: (author: String, dTag: String) -> Unit,
     onPackClick: (author: String, dTag: String) -> Unit,
+    onCollectionClick: (dTag: String) -> Unit = {},
     onTagClick: (tag: String) -> Unit = {},
     // Recipes is a root tab: no back arrow. The nav icon opens the shared
     // drawer (hoisted to WispNavHost) and the top bar carries a search icon,
@@ -219,6 +225,12 @@ fun RecipeFeedScreen(
                     },
                     modifier = Modifier.weight(1f),
                 )
+                RecipesMainTabButton(
+                    label = stringResource(R.string.tab_cookbook),
+                    selected = mainTab == RecipesMainTab.COOKBOOK,
+                    onClick = { mainTab = RecipesMainTab.COOKBOOK },
+                    modifier = Modifier.weight(1f),
+                )
             }
 
             if (mainTab == RecipesMainTab.PACKS) {
@@ -227,6 +239,16 @@ fun RecipeFeedScreen(
                     eventRepo = eventRepo,
                     userPubkey = userPubkey,
                     onPackClick = onPackClick,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                )
+                return@Column
+            }
+
+            if (mainTab == RecipesMainTab.COOKBOOK) {
+                CookbookSection(
+                    viewModel = cookbookViewModel,
+                    userPubkey = userPubkey,
+                    onCollectionClick = onCollectionClick,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
                 return@Column
@@ -486,6 +508,113 @@ private fun RecipePacksSection(
                             onClick = { onPackClick(pack.author, pack.dTag) },
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Cookbook tab (A14 PR 3b-i). Two sub-tabs reusing the Packs `TabRow` pattern:
+ *  - **Saved** — the user's kind-30001 recipe collections (PR 3a): default Saved
+ *    list first, named collections after, each a cover card that drills into the
+ *    shared pack-detail grid.
+ *  - **My Recipes** — the user's own published recipes; the shell lands here, the
+ *    live author query is filled in PR 3b-ii.
+ *
+ * Both sub-tabs are personal: signed-out shows a sign-in prompt. READ_ONLY still
+ * renders (the account's own lists are fetchable); management affordances are PR 3b-iii.
+ */
+@Composable
+private fun CookbookSection(
+    viewModel: CookbookViewModel,
+    userPubkey: String?,
+    onCollectionClick: (dTag: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val lists by viewModel.lists.collectAsState()
+    val covers by viewModel.covers.collectAsState()
+    var subTab by remember { mutableStateOf(CookbookSubTab.SAVED) }
+
+    Column(modifier = modifier) {
+        TabRow(selectedTabIndex = subTab.ordinal) {
+            Tab(
+                selected = subTab == CookbookSubTab.SAVED,
+                onClick = { subTab = CookbookSubTab.SAVED },
+                text = { Text(stringResource(R.string.tab_saved)) }
+            )
+            Tab(
+                selected = subTab == CookbookSubTab.MY_RECIPES,
+                onClick = { subTab = CookbookSubTab.MY_RECIPES },
+                text = { Text(stringResource(R.string.cookbook_tab_my_recipes)) }
+            )
+        }
+
+        // Both sub-tabs are personal — gate on having an account at all.
+        if (userPubkey.isNullOrBlank()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = stringResource(R.string.cookbook_sign_in),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            return
+        }
+
+        when (subTab) {
+            CookbookSubTab.SAVED -> {
+                if (lists.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(horizontal = 32.dp),
+                        ) {
+                            Text(text = "📖", style = MaterialTheme.typography.displaySmall)
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = stringResource(R.string.cookbook_saved_empty_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = stringResource(R.string.cookbook_saved_empty_body),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            )
+                        }
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 280.dp),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        gridItems(lists, key = { it.dTag }) { list ->
+                            CookbookCollectionCard(
+                                title = list.title,
+                                coverUrl = covers[list.dTag],
+                                recipeCount = list.coordinates.size,
+                                isDefault = list.isDefault,
+                                onClick = { onCollectionClick(list.dTag) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Shell for PR 3b-ii — the live author query (kinds=recipe, authors=[me]) lands here.
+            CookbookSubTab.MY_RECIPES -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = stringResource(R.string.cookbook_my_recipes_empty),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }

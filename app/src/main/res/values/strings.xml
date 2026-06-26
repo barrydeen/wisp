@@ -244,6 +244,8 @@
     <string name="tab_bad">Bad</string>
     <string name="tab_recipes">Recipes</string>
     <string name="tab_packs">Packs</string>
+    <string name="tab_cookbook">Cookbook</string>
+    <string name="cookbook_tab_my_recipes">My Recipes</string>
     <string name="tab_discover">Discover</string>
     <string name="tab_mine">Mine</string>
     <string name="tab_saved">Saved</string>
@@ -633,6 +635,10 @@
         <item quantity="one">%d recipe</item>
         <item quantity="other">%d recipes</item>
     </plurals>
+    <string name="cookbook_sign_in">Sign in to view your cookbook</string>
+    <string name="cookbook_saved_empty_title">Start Your Cookbook</string>
+    <string name="cookbook_saved_empty_body">Save recipes you love and organize them into collections.</string>
+    <string name="cookbook_my_recipes_empty">No published recipes yet</string>
     <string name="recipe_list_chooser_title">Save to collection</string>
     <string name="recipe_list_chooser_new">New list</string>
     <string name="recipe_list_chooser_name_hint">Collection name</string>

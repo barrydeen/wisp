@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.nostr.RecipeParser
+import cooking.zap.app.repo.CookbookCovers
 import cooking.zap.app.repo.PackRecipeCoordinate
+import cooking.zap.app.repo.RecipeBookmarkRepository
 import cooking.zap.app.repo.RecipePackRepository
 import cooking.zap.app.repo.RecipePackSummary
 import cooking.zap.app.repo.RecipeRepository
@@ -68,43 +70,99 @@ class RecipePackDetailViewModel : ViewModel() {
 
             _pack.value = summary
             val coordinates = packRepo.extractRecipeCoordinates(packEvent)
-            val orderedKeys = coordinates.map(::coordinateKey)
-            _pendingCount.value = orderedKeys.size
-
-            val resolvedByKey = LinkedHashMap<String, RecipeParser.Recipe>()
-            fun emitResolved() {
-                _recipes.value = orderedKeys.mapNotNull { resolvedByKey[it] }
-                _pendingCount.value = (orderedKeys.size - resolvedByKey.size - _failedCount.value).coerceAtLeast(0)
-            }
-
-            // Cache-first (event cache + ObjectBox), then network fill missing coordinates.
-            for (coord in coordinates) {
-                if (loadedKey != key || !kotlin.coroutines.coroutineContext.isActive) return@launch
-                val event = recipeRepo.findRecipeEventByCoordinate(coord.kind, coord.author, coord.dTag)
-                val parsed = event?.let { RecipeFormats.forEvent(it)?.parse(it) }
-                if (parsed != null) {
-                    resolvedByKey[coordinateKey(coord)] = parsed
-                }
-            }
-            if (loadedKey != key || !kotlin.coroutines.coroutineContext.isActive) return@launch
-            emitResolved()
-
-            val unresolved = coordinates.filter { coordinateKey(it) !in resolvedByKey }
-            for (coord in unresolved) {
-                if (loadedKey != key || !kotlin.coroutines.coroutineContext.isActive) return@launch
-                val event = recipeRepo.requestRecipeEventByCoordinate(coord.kind, coord.author, coord.dTag)
-                val parsed = event?.let { RecipeFormats.forEvent(it)?.parse(it) }
-                if (parsed != null) {
-                    resolvedByKey[coordinateKey(coord)] = parsed
-                } else {
-                    _failedCount.value = _failedCount.value + 1
-                }
-                if (loadedKey != key || !kotlin.coroutines.coroutineContext.isActive) return@launch
-                emitResolved()
-            }
-
-            _isLoading.value = false
+            resolveCoordinates(key, coordinates, recipeRepo)
         }
+    }
+
+    /**
+     * Load a **cookbook collection** (A14 PR 3b-i) into the same detail surface a
+     * Recipe Pack uses — a synthetic [RecipePackSummary] header built from the
+     * kind-30001 list (PR 3a), then the **same** coordinate resolution + poster
+     * grid. No second resolver/grid: the collection's `a`-coordinates feed the
+     * identical cache-first → network-fill path.
+     */
+    fun loadCollection(
+        list: RecipeBookmarkRepository.CookbookList,
+        recipeRepo: RecipeRepository,
+    ) {
+        val key = "collection:${list.dTag}:${list.event.id}"
+        if (loadedKey == key && _pack.value != null) return
+        loadedKey = key
+
+        loadJob?.cancel()
+        _pack.value = null
+        _recipes.value = emptyList()
+        _pendingCount.value = 0
+        _failedCount.value = 0
+        _notFound.value = false
+        _isLoading.value = true
+
+        loadJob = viewModelScope.launch {
+            val coordinates = list.coordinates.mapNotNull(CookbookCovers::parseCoordinate)
+            // Header cover follows the web fallback chain (cover coord → first recipe → image tag).
+            val cover = CookbookCovers.resolve(list, recipeRepo)
+            if (loadedKey != key || !kotlin.coroutines.coroutineContext.isActive) return@launch
+            _pack.value = RecipePackSummary(
+                event = list.event,
+                author = list.event.pubkey,
+                dTag = list.dTag,
+                title = list.title,
+                description = list.summary.orEmpty(),
+                image = cover,
+                recipeCount = list.coordinates.size,
+            )
+            resolveCoordinates(key, coordinates, recipeRepo)
+        }
+    }
+
+    /**
+     * Resolve [coordinates] into the recipe grid for the load identified by [key]:
+     * cache-first (event cache + ObjectBox), then a network fill of the misses,
+     * emitting incrementally. Bails out if a newer load supersedes [key]. Clears
+     * [_isLoading] when it runs to completion. Shared by Recipe Packs and Cookbook
+     * collections so both surfaces resolve identically.
+     */
+    private suspend fun resolveCoordinates(
+        key: String,
+        coordinates: List<PackRecipeCoordinate>,
+        recipeRepo: RecipeRepository,
+    ) {
+        val orderedKeys = coordinates.map(::coordinateKey)
+        _pendingCount.value = orderedKeys.size
+
+        val resolvedByKey = LinkedHashMap<String, RecipeParser.Recipe>()
+        fun emitResolved() {
+            _recipes.value = orderedKeys.mapNotNull { resolvedByKey[it] }
+            _pendingCount.value = (orderedKeys.size - resolvedByKey.size - _failedCount.value).coerceAtLeast(0)
+        }
+
+        // Cache-first (event cache + ObjectBox), then network fill missing coordinates.
+        for (coord in coordinates) {
+            if (loadedKey != key || !kotlin.coroutines.coroutineContext.isActive) return
+            val event = recipeRepo.findRecipeEventByCoordinate(coord.kind, coord.author, coord.dTag)
+            val parsed = event?.let { RecipeFormats.forEvent(it)?.parse(it) }
+            if (parsed != null) {
+                resolvedByKey[coordinateKey(coord)] = parsed
+            }
+        }
+        if (loadedKey != key || !kotlin.coroutines.coroutineContext.isActive) return
+        emitResolved()
+
+        val unresolved = coordinates.filter { coordinateKey(it) !in resolvedByKey }
+        for (coord in unresolved) {
+            if (loadedKey != key || !kotlin.coroutines.coroutineContext.isActive) return
+            val event = recipeRepo.requestRecipeEventByCoordinate(coord.kind, coord.author, coord.dTag)
+            val parsed = event?.let { RecipeFormats.forEvent(it)?.parse(it) }
+            if (parsed != null) {
+                resolvedByKey[coordinateKey(coord)] = parsed
+            } else {
+                _failedCount.value = _failedCount.value + 1
+            }
+            if (loadedKey != key || !kotlin.coroutines.coroutineContext.isActive) return
+            emitResolved()
+        }
+
+        _isLoading.value = false
     }
 
     private fun coordinateKey(coord: PackRecipeCoordinate): String =
