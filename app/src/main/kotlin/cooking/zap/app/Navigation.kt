@@ -2874,7 +2874,11 @@ fun WispNavHost(
                 recipePacksViewModel.load(feedViewModel.recipePackRepo) { feedViewModel.getUserPubkey() }
             }
             LaunchedEffect(Unit) {
-                cookbookViewModel.bind(feedViewModel.recipeBookmarkRepo, feedViewModel.recipeRepo)
+                cookbookViewModel.bind(
+                    feedViewModel.recipeBookmarkRepo,
+                    feedViewModel.recipeRepo,
+                    feedViewModel.getUserPubkey(),
+                )
             }
             // Avatar for the nav icon — mirrors the Feed tab's avatar→drawer button.
             val recipesProfileVersion by feedViewModel.eventRepo.profileVersion.collectAsState()

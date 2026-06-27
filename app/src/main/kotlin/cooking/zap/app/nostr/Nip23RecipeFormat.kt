@@ -40,6 +40,14 @@ object Nip23RecipeFormat : RecipeFormat {
         limit = limit,
     )
 
+    override fun authorFeedFilter(author: String, limit: Int, until: Long?): Filter = Filter(
+        kinds = listOf(RecipeParser.RECIPE_KIND),
+        tTags = RecipeParser.RECIPE_HASHTAGS,
+        authors = listOf(author),
+        until = until,
+        limit = limit,
+    )
+
     override fun coordinateFilter(author: String, dTag: String): Filter = Filter(
         kinds = listOf(RecipeParser.RECIPE_KIND),
         authors = listOf(author),

@@ -62,6 +62,25 @@ class RecipeFormatTest {
         assertEquals(RecipeSerializer.slug(recipe.title!!), Nip23RecipeFormat.slug(recipe.title!!))
     }
 
+    // ---- authorFeedFilter (My Recipes live author query) ------------------
+
+    @Test
+    fun authorFeedFilter_isFeedFilterScopedToAuthor() {
+        val author = "a".repeat(64)
+        val filter = Nip23RecipeFormat.authorFeedFilter(author, limit = 200)
+        assertEquals(listOf(RecipeParser.RECIPE_KIND), filter.kinds)
+        assertEquals(RecipeParser.RECIPE_HASHTAGS, filter.tTags)
+        assertEquals(listOf(author), filter.authors)
+        assertEquals(200, filter.limit)
+        assertEquals(null, filter.until)
+    }
+
+    @Test
+    fun authorFeedFilter_passesUntilForPaging() {
+        val filter = Nip23RecipeFormat.authorFeedFilter("b".repeat(64), limit = 50, until = 1234L)
+        assertEquals(1234L, filter.until)
+    }
+
     // ---- RecipeKey -------------------------------------------------------
 
     @Test

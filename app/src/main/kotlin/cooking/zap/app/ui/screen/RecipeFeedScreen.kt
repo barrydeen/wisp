@@ -249,6 +249,7 @@ fun RecipeFeedScreen(
                     viewModel = cookbookViewModel,
                     userPubkey = userPubkey,
                     onCollectionClick = onCollectionClick,
+                    onRecipeClick = onRecipeClick,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
                 return@Column
@@ -515,21 +516,24 @@ private fun RecipePacksSection(
 }
 
 /**
- * Cookbook tab (A14 PR 3b-i). Two sub-tabs reusing the Packs `TabRow` pattern:
- *  - **Saved** — the user's kind-30001 recipe collections (PR 3a): default Saved
- *    list first, named collections after, each a cover card that drills into the
- *    shared pack-detail grid.
- *  - **My Recipes** — the user's own published recipes; the shell lands here, the
- *    live author query is filled in PR 3b-ii.
+ * Cookbook tab. Two sub-tabs reusing the Packs `TabRow` pattern:
+ *  - **Saved** (PR 3b-i) — the user's kind-30001 recipe collections (PR 3a):
+ *    default Saved list first, named collections after, each a cover card that
+ *    drills into the shared pack-detail grid.
+ *  - **My Recipes** (PR 3b-ii) — the user's OWN published recipes via the live
+ *    author query, rendered in the same `RecipeCard` poster grid. Distinct from
+ *    Saved (authored, not bookmarked). Loaded lazily when first shown.
  *
  * Both sub-tabs are personal: signed-out shows a sign-in prompt. READ_ONLY still
- * renders (the account's own lists are fetchable); management affordances are PR 3b-iii.
+ * renders (the account's own lists and authored recipes are fetchable); management
+ * affordances are PR 3b-iii.
  */
 @Composable
 private fun CookbookSection(
     viewModel: CookbookViewModel,
     userPubkey: String?,
     onCollectionClick: (dTag: String) -> Unit,
+    onRecipeClick: (author: String, dTag: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val lists by viewModel.lists.collectAsState()
@@ -607,14 +611,58 @@ private fun CookbookSection(
                 }
             }
 
-            // Shell for PR 3b-ii — the live author query (kinds=recipe, authors=[me]) lands here.
+            // PR 3b-ii — the user's OWN published recipes via the live author
+            // query, in the same poster grid as Saved/Recipes.
             CookbookSubTab.MY_RECIPES -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = stringResource(R.string.cookbook_my_recipes_empty),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                val authored by viewModel.authoredRecipes.collectAsState()
+                val isAuthoredLoading by viewModel.isAuthoredLoading.collectAsState()
+                // Lazy: kick off the author query the first time this sub-tab shows.
+                LaunchedEffect(Unit) { viewModel.requestMyRecipes() }
+
+                val columns = GridCells.Adaptive(minSize = 160.dp)
+                val contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
+                val spacing = Arrangement.spacedBy(12.dp)
+                when {
+                    authored.isEmpty() && isAuthoredLoading -> {
+                        LazyVerticalGrid(
+                            columns = columns,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = contentPadding,
+                            horizontalArrangement = spacing,
+                            verticalArrangement = spacing,
+                        ) {
+                            repeat(12) {
+                                item {
+                                    RecipePosterSkeleton(Modifier.fillMaxWidth().aspectRatio(2f / 3f))
+                                }
+                            }
+                        }
+                    }
+                    authored.isEmpty() -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = stringResource(R.string.cookbook_my_recipes_empty),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    else -> {
+                        LazyVerticalGrid(
+                            columns = columns,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = contentPadding,
+                            horizontalArrangement = spacing,
+                            verticalArrangement = spacing,
+                        ) {
+                            gridItems(authored, key = { it.id }) { recipe ->
+                                RecipeCard(
+                                    recipe = recipe,
+                                    onClick = { onRecipeClick(recipe.author, recipe.dTag) },
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

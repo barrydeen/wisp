@@ -98,6 +98,20 @@ class RecipeRepository(
     private var loadMoreJob: Job? = null
     private var refreshJob: Job? = null
 
+    /**
+     * Independent state for the **authored** ("My Recipes") feed — the user's
+     * OWN published recipes, scoped to one `authors` pubkey. Separate map/flow
+     * from the global feed so the two never cross-contaminate.
+     */
+    private val authoredByCoordinate = LinkedHashMap<String, NostrEvent>()
+    private val authoredCoordMutex = Mutex()
+    private val _authoredRecipes = MutableStateFlow<List<RecipeParser.Recipe>>(emptyList())
+    val authoredRecipes: StateFlow<List<RecipeParser.Recipe>> = _authoredRecipes.asStateFlow()
+    private val _isAuthoredLoading = MutableStateFlow(false)
+    val isAuthoredLoading: StateFlow<Boolean> = _isAuthoredLoading.asStateFlow()
+    private var authoredAuthor: String? = null
+    private var authoredLoadJob: Job? = null
+
     /** Independent state for the shared recipe-by-tag feed surface. */
     private val tagByCoordinate = LinkedHashMap<String, NostrEvent>()
     private val tagCoordMutex = Mutex()
@@ -568,6 +582,112 @@ class RecipeRepository(
     private data class PageResult(val newCoordinates: Int, val fullEose: Boolean)
 
     /**
+     * Load the recipes **authored by** [pubkey] — the user's OWN published
+     * recipes (the "My Recipes" sub-tab), distinct from saved recipes. This is
+     * the LIVE author query: fan the format-agnostic [RecipeFormat.authorFeedFilter]
+     * over the SAME widened read union ([readRelays]) as the main feed, paint
+     * cache-first from ObjectBox, then fill with an EOSE-grace window, deduping by
+     * coordinate (newest-wins → cross-format canonical pick).
+     *
+     * **Not** the kind-30004 `zapcooking-my-recipes` pack — that list is an
+     * export/share artifact, never the source of truth for display.
+     *
+     * Switching authors (account switch) clears the prior author's grid; a reload
+     * for the same author keeps it painted while the fresh window merges in.
+     */
+    fun loadAuthoredRecipes(pubkey: String, limit: Int = 200) {
+        val author = pubkey.trim()
+        authoredLoadJob?.cancel()
+        if (author.isBlank()) {
+            authoredAuthor = null
+            authoredByCoordinate.clear()
+            _authoredRecipes.value = emptyList()
+            _isAuthoredLoading.value = false
+            return
+        }
+        if (authoredAuthor != author) {
+            authoredByCoordinate.clear()
+            _authoredRecipes.value = emptyList()
+        }
+        authoredAuthor = author
+        _isAuthoredLoading.value = true
+
+        authoredLoadJob = scope.launch(processingContext) {
+            // Cache-first paint: the user's own recipes persist in ObjectBox, so a
+            // cold open shows them instantly before the relay round-trip.
+            val cached = cachedAuthoredEvents(author)
+            if (cached.isNotEmpty() && authoredAuthor == author) {
+                authoredCoordMutex.withLock {
+                    cached.forEach { acceptAuthored(author, it) }
+                    emitAuthored()
+                }
+            }
+
+            val subId = "recipe-authored-${subCounter.getAndIncrement()}"
+            val seenIds = mutableSetOf<String>()
+            val collector = launch {
+                relayPool.relayEvents.collect { relayEvent ->
+                    if (relayEvent.subscriptionId != subId) return@collect
+                    val event = relayEvent.event
+                    if (event.id in seenIds) return@collect
+                    if (event.pubkey != author) return@collect
+                    if (RecipeFormats.forEvent(event) == null) return@collect
+                    seenIds.add(event.id)
+                    eventRepo.cacheEvent(event)
+                    eventRepo.requestProfileIfMissing(event.pubkey)
+                    authoredCoordMutex.withLock {
+                        if (acceptAuthored(author, event)) emitAuthored()
+                    }
+                }
+            }
+            // One author-scoped filter per active format (NIP-23 only today),
+            // fanned to the SAME widened union as the main feed.
+            val filters = RecipeFormats.active.map { it.authorFeedFilter(author, limit) }
+            val req = ClientMessage.req(subId, filters)
+            var sent = 0
+            for (url in readRelays()) {
+                if (relayPool.sendToRelayOrEphemeral(url, req)) sent++
+            }
+            try {
+                if (sent > 0) {
+                    subManager.awaitEoseCount(subId, expectedCount = sent, timeoutMs = 8_000)
+                    delay(EOSE_GRACE_MS)
+                }
+            } finally {
+                collector.cancel()
+                subManager.closeSubscription(subId)
+                _isAuthoredLoading.value = false
+            }
+        }
+    }
+
+    private suspend fun cachedAuthoredEvents(author: String, limit: Int = 2_000): List<NostrEvent> {
+        val persistence = eventRepo.eventPersistence ?: return emptyList()
+        val events = RecipeFormats.active.flatMap {
+            persistence.getEventsByAuthorAndKind(author, it.kind, limit)
+        }
+        return dedupeAcrossFormats(events) { RecipeFormats.rankOf(it) }
+            .filter { it.pubkey == author }
+    }
+
+    /** Merge [event] into [authoredByCoordinate] (author-guarded); true iff it became the winner. */
+    private fun acceptAuthored(author: String, event: NostrEvent): Boolean {
+        if (event.pubkey != author) return false
+        val key = recipeCoordinate(event)
+        val current = authoredByCoordinate[key]
+        val winner = if (current == null) event else preferNewer(current, event)
+        if (winner === current) return false
+        authoredByCoordinate[key] = winner
+        return true
+    }
+
+    private fun emitAuthored() {
+        _authoredRecipes.value = dedupeAcrossFormats(authoredByCoordinate.values) { RecipeFormats.rankOf(it) }
+            .mapNotNull { RecipeFormats.forEvent(it)?.parse(it) }
+            .sortedByDescending { it.publishedAt }
+    }
+
+    /**
      * Cache-first + union-backed category feed (e.g. "italian"), shared by
      * chips/search tag taps. Results are recipe cards only and dedup newest-wins
      * by replaceable coordinate, then canonicalized across formats.
@@ -790,20 +910,25 @@ class RecipeRepository(
         loadMoreJob?.cancel()
         refreshJob?.cancel()
         preloadJob?.cancel()
+        authoredLoadJob?.cancel()
         tagLoadJob?.cancel()
         tagLoadMoreJob?.cancel()
         tagRefreshJob?.cancel()
         epoch++
         tagEpoch++
         byCoordinate.clear()
+        authoredByCoordinate.clear()
         tagByCoordinate.clear()
+        authoredAuthor = null
         activeTag = null
         _recipes.value = emptyList()
+        _authoredRecipes.value = emptyList()
         _tagRecipes.value = emptyList()
         _isLoading.value = false
         _isLoadingMore.value = false
         _isRefreshing.value = false
         _exhausted.value = false
+        _isAuthoredLoading.value = false
         _isTagLoading.value = false
         _isTagLoadingMore.value = false
         _isTagRefreshing.value = false

@@ -54,6 +54,14 @@ interface RecipeFormat {
      */
     fun feedFilter(limit: Int, until: Long? = null): Filter
 
+    /**
+     * Relay filter for the recipes AUTHORED by [author] in this format — the
+     * feed filter scoped to one `authors` pubkey (the "My Recipes" query).
+     * [until] pages backwards in time (NIP-01 `until`); null fetches the newest
+     * window. Format-agnostic so callers never hardcode a kind.
+     */
+    fun authorFeedFilter(author: String, limit: Int, until: Long? = null): Filter
+
     /** Relay filter to resolve a single recipe by its coordinate (author + d/slug). */
     fun coordinateFilter(author: String, dTag: String): Filter
 
