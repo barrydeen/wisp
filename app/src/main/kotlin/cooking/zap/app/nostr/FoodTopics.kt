@@ -16,7 +16,7 @@ import java.util.Locale
  */
 object FoodTopics {
 
-    data class Section(val emoji: String, val title: String, val tags: List<String>)
+    data class Section(val emoji: String, val title: String, val tags: List<String>, val note: String? = null)
 
     val SECTIONS: List<Section> = listOf(
         Section(
@@ -55,17 +55,35 @@ object FoodTopics {
         Section(
             emoji = "🔥",
             title = "Methods",
-            tags = listOf("Baked", "Fry", "Oven", "Roast", "Slowcooked"),
+            tags = listOf("Baked", "Fry", "Oven", "Roast", "Slowcooked", "Grill", "Smoked", "Fermented", "Pickled", "Stir-fry"),
         ),
         Section(
             emoji = "🥗",
             title = "Lifestyle",
-            tags = listOf("Vegan", "Keto", "Healthy", "Gluten Free"),
+            tags = listOf("Vegan", "Keto", "Healthy", "Gluten Free", "Vegetarian", "Paleo", "Dairy-Free"),
         ),
         Section(
             emoji = "🌶️",
             title = "Flavor",
             tags = listOf("Spicy", "Sweet", "Curry"),
+        ),
+        Section(
+            emoji = "🍴",
+            title = "From the foodstr feed",
+            tags = listOf(
+                "Foodstr", "Foodie", "Homemade", "From Scratch", "Home Cooking", "Meal Prep", "BBQ",
+                "Coffee", "Gourmet", "Chef", "Pastry", "Sushi", "Tacos", "Burrito",
+            ),
+        ),
+        Section(
+            emoji = "🌐",
+            title = "Beyond food",
+            note = "Zap Cooking is all about food — but Nostr is a wide-open network. Here are a few " +
+                "other topics people post about, if you'd like them in your interests too.",
+            tags = listOf(
+                "Ask Nostr", "Homesteading", "Sports", "AI", "Bitcoin", "Nostr", "Photography", "Art",
+                "Music", "Gardening", "Travel", "Health",
+            ),
         ),
     )
 
