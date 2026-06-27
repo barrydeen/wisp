@@ -14,8 +14,8 @@ import kotlinx.coroutines.flow.StateFlow
  *  - backup_needed: set true ONLY when a brand-new key is GENERATED on this
  *    device (signUp / Google new-account). Login/restore paths never set it, so a
  *    user who arrives with an existing key is never nudged.
- *  - backed_up: set true ONLY when the user confirms "I've saved it" (or later
- *    exports successfully). Clears the nudge for good.
+ *  - backed_up: set true ONLY when the user confirms "I've saved it" or
+ *    successfully downloads the backup file. Clears the nudge for good.
  *  - skip_count / last_reminded_launch: advanced when the user defers ("Skip for
  *    now"). They NEVER touch backed_up, so the need survives a skip and the
  *    cold-launch re-prompt backs off as skips accumulate.
@@ -47,7 +47,7 @@ class KeyBackupPreferences(private val context: Context, pubkeyHex: String? = nu
         refreshNudge()
     }
 
-    /** The user confirmed they saved their key — stops all nudging for this account. */
+    /** The user saved their key ("I've saved it" or a successful download) — stops nudging this account. */
     fun markBackedUp() {
         prefs.edit().putBoolean(KEY_BACKED_UP, true).apply()
         _backedUp.value = true

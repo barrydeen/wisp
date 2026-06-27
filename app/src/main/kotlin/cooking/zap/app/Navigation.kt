@@ -3746,7 +3746,8 @@ fun WispNavHost(
                 onSkip = {
                     authViewModel.recordKeyBackupSkip()
                     proceed()
-                }
+                },
+                onBackupExported = { authViewModel.markKeyBackedUp() }
             )
         }
 

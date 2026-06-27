@@ -574,6 +574,8 @@
     <string name="settings_authenticate_view_key">Authenticate to view your private key</string>
     <string name="settings_auth_failed">Authentication failed: %s</string>
     <string name="btn_hide_private_key">Hide private key</string>
+    <string name="nsec_qr_title">Private key QR</string>
+    <string name="nsec_qr_warning">Only show this to devices you trust. Anyone who scans it gains full control of your account.</string>
 
     <!-- Key backup step (shown right after a new account is created, and re-surfaced as a nudge) -->
     <string name="backup_key_title">Save your backup key</string>

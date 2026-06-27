@@ -125,7 +125,7 @@ fun PublicKeyCard(
             IconButton(onClick = { if (pubkeyHex != null) showQr = true }) {
                 Icon(
                     Icons.Outlined.QrCode,
-                    contentDescription = "Show QR code",
+                    contentDescription = stringResource(R.string.cd_show_qr_code),
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -200,7 +200,7 @@ fun PrivateKeyRevealSection(
                 IconButton(onClick = { showNsecQr = true }) {
                     Icon(
                         Icons.Outlined.QrCode,
-                        contentDescription = "Show QR code",
+                        contentDescription = stringResource(R.string.cd_show_qr_code),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -314,14 +314,14 @@ fun NsecQrDialog(nsec: String, avatarUrl: String? = null, onDismiss: () -> Unit)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Private key QR") },
+        title = { Text(stringResource(R.string.nsec_qr_title)) },
         text = {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "Only show this to devices you trust. Anyone who scans it gains full control of your account.",
+                    text = stringResource(R.string.nsec_qr_warning),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -362,7 +362,7 @@ fun NsecQrDialog(nsec: String, avatarUrl: String? = null, onDismiss: () -> Unit)
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Done") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.btn_done)) }
         }
     )
 }

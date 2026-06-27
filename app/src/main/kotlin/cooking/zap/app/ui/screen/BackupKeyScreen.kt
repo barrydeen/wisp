@@ -51,7 +51,8 @@ fun BackupKeyScreen(
     keyRepository: KeyRepository,
     avatarUrl: String? = null,
     onSaved: () -> Unit,
-    onSkip: () -> Unit
+    onSkip: () -> Unit,
+    onBackupExported: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val keypair = remember { keyRepository.getKeypair() }
@@ -80,6 +81,9 @@ fun BackupKeyScreen(
             if (ok) downloadSavedMsg else downloadFailedMsg,
             Toast.LENGTH_SHORT
         ).show()
+        // A successful export is a real backup — clear the nudge (the user can still
+        // tap "I've saved it" / "Skip" to leave the screen).
+        if (ok) onBackupExported()
     }
 
     Scaffold(
