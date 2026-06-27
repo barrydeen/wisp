@@ -120,8 +120,8 @@ class ExtendedNetworkRepository(
     suspend fun ensureFoodSeedLoaded() {
         if (foodSeedPubkeys.isNotEmpty() || foodSeedLoading) return
         foodSeedLoading = true
+        val subId = "food-seed-k3"
         try {
-            val subId = "food-seed-k3"
             val msg = ClientMessage.req(subId, Filter(kinds = listOf(3), authors = listOf(ZC_CURATOR_PUBKEY)))
             var latest: NostrEvent? = null
             coroutineScope {
@@ -138,7 +138,6 @@ class ExtendedNetworkRepository(
                 delay(500) // brief straggler window for a newer replaceable event
                 collector.cancel()
             }
-            relayPool.closeOnAllRelays(subId)
             val seed = latest?.let { ev -> Nip02.parseFollowList(ev).map { it.pubkey }.toSet() } ?: emptySet()
             if (seed.isNotEmpty()) {
                 foodSeedPubkeys = seed
@@ -148,6 +147,8 @@ class ExtendedNetworkRepository(
         } catch (e: Exception) {
             Log.w(TAG, "food seed fetch failed", e)
         } finally {
+            // Always close the sub — even on timeout/cancellation — so it stops collecting.
+            relayPool.closeOnAllRelays(subId)
             foodSeedLoading = false
         }
     }

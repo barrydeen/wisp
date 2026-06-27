@@ -261,7 +261,10 @@
     <string name="tab_hashtags">Hashtags</string>
     <string name="tab_onlyfood">OnlyFood</string>
     <string name="feed_onlyfood_empty">No food posts yet — pull to refresh</string>
-    <string name="feed_onlyfood_wot_hidden">%1$d posts were hidden by the food trust filter.</string>
+    <plurals name="feed_onlyfood_wot_hidden">
+        <item quantity="one">%d post was hidden by the food trust filter.</item>
+        <item quantity="other">%d posts were hidden by the food trust filter.</item>
+    </plurals>
     <string name="feed_onlyfood_show_all">Show all posts</string>
     <string name="tab_feed">Feed</string>
     <string name="interests">Interests</string>

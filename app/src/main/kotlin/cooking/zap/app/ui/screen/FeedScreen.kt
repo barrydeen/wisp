@@ -74,6 +74,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import cooking.zap.app.nostr.FollowSet
@@ -668,9 +669,10 @@ fun FeedScreen(
                                         onClick = {
                                             showFeedTypeDropdown = false
                                             viewModel.setFeedType(FeedType.ONLY_FOOD)
-                                            // WoT is on but no graph yet → nudge the user to compute it
-                                            // (the feed still works; WoT just no-ops until ready).
-                                            if (onlyFoodWotEnabled && viewModel.extendedNetworkRepo.cachedNetwork.value == null) {
+                                            // WoT is on but the graph isn't ready (missing OR stale) → nudge
+                                            // the user to (re)compute it. WoT no-ops until then, so the feed
+                                            // still works; this matches the no-op condition (isNetworkReady).
+                                            if (onlyFoodWotEnabled && !viewModel.extendedNetworkRepo.isNetworkReady()) {
                                                 showSocialGraphDialog = true
                                             }
                                         },
@@ -904,7 +906,11 @@ fun FeedScreen(
                                 // WoT removed everything we received — explain, don't show a silent blank.
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(
-                                        stringResource(R.string.feed_onlyfood_wot_hidden, onlyFoodWotDropped),
+                                        pluralStringResource(
+                                            R.plurals.feed_onlyfood_wot_hidden,
+                                            onlyFoodWotDropped,
+                                            onlyFoodWotDropped
+                                        ),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         textAlign = TextAlign.Center
                                     )

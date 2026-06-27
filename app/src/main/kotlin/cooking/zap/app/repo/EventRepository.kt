@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import cooking.zap.app.db.EventPersistence
 import java.util.concurrent.ConcurrentHashMap
@@ -1451,7 +1452,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 val isReply = Nip10.isReply(event)
                 if (!isReply) {
                     if (isOnlyFoodWotFiltered(event.pubkey)) {       // strong: web-of-trust
-                        _onlyFoodWotDropped.value += 1
+                        _onlyFoodWotDropped.update { it + 1 }
                         return
                     }
                     eventCache[event.id] = event
@@ -1463,7 +1464,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 if (muteRepo?.containsMutedWord(event.content) == true) return
                 if (isStructuralSpam(event)) return
                 if (isOnlyFoodWotFiltered(event.pubkey)) {
-                    _onlyFoodWotDropped.value += 1
+                    _onlyFoodWotDropped.update { it + 1 }
                     return
                 }
                 eventCache[event.id] = event
@@ -1480,7 +1481,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         // Drop only if BOTH the reposter and the inner author fail WoT —
                         // a trusted reposter surfacing a stranger's food note is allowed.
                         if (isOnlyFoodWotFiltered(event.pubkey) && isOnlyFoodWotFiltered(inner.pubkey)) {
-                            _onlyFoodWotDropped.value += 1
+                            _onlyFoodWotDropped.update { it + 1 }
                             return
                         }
                         val authors = repostAuthors.get(inner.id)
