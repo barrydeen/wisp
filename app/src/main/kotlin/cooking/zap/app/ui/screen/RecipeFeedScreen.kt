@@ -616,8 +616,10 @@ private fun CookbookSection(
             CookbookSubTab.MY_RECIPES -> {
                 val authored by viewModel.authoredRecipes.collectAsState()
                 val isAuthoredLoading by viewModel.isAuthoredLoading.collectAsState()
-                // Lazy: kick off the author query the first time this sub-tab shows.
-                LaunchedEffect(Unit) { viewModel.requestMyRecipes() }
+                // Lazy: kick off the author query when this sub-tab shows. Keyed on
+                // userPubkey so a late sign-in / account switch re-runs it for the
+                // new author (requestMyRecipes() no-ops if already loaded for it).
+                LaunchedEffect(userPubkey) { viewModel.requestMyRecipes() }
 
                 val columns = GridCells.Adaptive(minSize = 160.dp)
                 val contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
