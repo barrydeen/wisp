@@ -14,6 +14,7 @@ import cooking.zap.app.relay.SubscriptionManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +22,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.util.concurrent.atomic.AtomicBoolean
 
 @Serializable
 data class ExtendedNetworkCache(
@@ -91,8 +93,67 @@ class ExtendedNetworkRepository(
         private const val STALE_HOURS = 24
         private const val STALE_DRIFT_THRESHOLD = 0.10
 
+        /** zap.cooking curator account — its follows seed the OnlyFood trust set. */
+        private const val ZC_CURATOR_PUBKEY = "319ad3e790634dbe86f14db9c2995b26ee3c6228be55f89c4c7fea9acc01d50a"
+        private const val FOOD_SEED_TIMEOUT_MS = 6_000L
+
         private fun prefsName(pubkeyHex: String?): String =
             if (pubkeyHex != null) "wisp_extended_network_$pubkeyHex" else "wisp_extended_network"
+    }
+
+    // Food-seed bootstrap: the zap.cooking curator's follows, unioned into the
+    // OnlyFood trust set so users with a thin (but computed) social graph still
+    // see curated food authors. Account-independent → cached in a global prefs file.
+    private val foodSeedPrefs: SharedPreferences =
+        context.getSharedPreferences("wisp_food_seed", Context.MODE_PRIVATE)
+    @Volatile private var foodSeedPubkeys: Set<String> =
+        foodSeedPrefs.getStringSet("pubkeys", emptySet())?.toSet() ?: emptySet()
+    private val foodSeedLoading = AtomicBoolean(false)
+
+    /** True if [pubkey] is one of the curator's follows (OnlyFood seed). */
+    fun isInFoodSeed(pubkey: String): Boolean = pubkey in foodSeedPubkeys
+
+    /**
+     * Fetch the zap.cooking curator's kind-3 contact list ONCE and cache its
+     * p-tags as the OnlyFood food seed. Cheap (single-author kind-3); no-op if
+     * already loaded this process or persisted from a prior run.
+     */
+    suspend fun ensureFoodSeedLoaded() {
+        if (foodSeedPubkeys.isNotEmpty()) return
+        // Atomic compare-and-set: only the caller that flips false->true proceeds,
+        // so concurrent calls can't start overlapping subscriptions/collectors.
+        if (!foodSeedLoading.compareAndSet(false, true)) return
+        val subId = "food-seed-k3"
+        try {
+            val msg = ClientMessage.req(subId, Filter(kinds = listOf(3), authors = listOf(ZC_CURATOR_PUBKEY)))
+            var latest: NostrEvent? = null
+            coroutineScope {
+                val collector = launch {
+                    relayPool.relayEvents.collect { relayEvent: cooking.zap.app.relay.RelayEvent ->
+                        val ev = relayEvent.event
+                        if (relayEvent.subscriptionId == subId && ev.kind == 3 && ev.pubkey == ZC_CURATOR_PUBKEY) {
+                            if (latest == null || ev.created_at > latest!!.created_at) latest = ev
+                        }
+                    }
+                }
+                val sent = relayPool.sendToTopRelays(msg, maxRelays = 10)
+                subManager.awaitEoseCount(subId, sent, FOOD_SEED_TIMEOUT_MS)
+                delay(500) // brief straggler window for a newer replaceable event
+                collector.cancel()
+            }
+            val seed = latest?.let { ev -> Nip02.parseFollowList(ev).map { it.pubkey }.toSet() } ?: emptySet()
+            if (seed.isNotEmpty()) {
+                foodSeedPubkeys = seed
+                foodSeedPrefs.edit().putStringSet("pubkeys", seed).apply()
+                Log.d(TAG, "Loaded OnlyFood food seed: ${seed.size} pubkeys")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "food seed fetch failed", e)
+        } finally {
+            // Always close the sub — even on timeout/cancellation — so it stops collecting.
+            relayPool.closeOnAllRelays(subId)
+            foodSeedLoading.set(false)
+        }
     }
 
     private var prefs: SharedPreferences =

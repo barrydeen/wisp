@@ -828,6 +828,10 @@ class FeedSubscriptionManager(
         relayStatusMonitorJob?.cancel()
         _relayFeedStatus.value = RelayFeedStatus.Subscribing
 
+        // Warm the curator food-seed (one-time) so the WoT gate can rescue
+        // good authors outside a thin social graph.
+        scope.launch { extendedNetworkRepo.ensureFoodSeedLoaded() }
+
         val filter = Filter(kinds = ONLY_FOOD_KINDS, tTags = FoodHashtags.ALL, limit = 100)
         val msg = ClientMessage.req(relayFeedSubId, filter)
         val sentUrls = mutableSetOf<String>()

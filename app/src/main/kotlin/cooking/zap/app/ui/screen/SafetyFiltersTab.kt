@@ -39,6 +39,7 @@ fun SafetyFiltersTab(
 ) {
     val spamEnabled by safetyPrefs.spamFilterEnabled.collectAsState()
     val wotEnabled by safetyPrefs.wotFilterEnabled.collectAsState()
+    val onlyFoodWotEnabled by safetyPrefs.onlyFoodWotEnabled.collectAsState()
     val network by cachedNetwork.collectAsState()
 
     Column(
@@ -98,6 +99,34 @@ fun SafetyFiltersTab(
         }
         Text(
             text = stringResource(R.string.safety_wot_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+
+        Spacer(Modifier.height(8.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(16.dp))
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.safety_onlyfood_wot_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Switch(
+                checked = onlyFoodWotEnabled,
+                onCheckedChange = { safetyPrefs.setOnlyFoodWotEnabled(it) },
+                colors = wispSwitchColors()
+            )
+        }
+        Text(
+            text = stringResource(R.string.safety_onlyfood_wot_description),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp)

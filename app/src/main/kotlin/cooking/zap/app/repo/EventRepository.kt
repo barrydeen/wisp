@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import cooking.zap.app.db.EventPersistence
 import java.util.concurrent.ConcurrentHashMap
@@ -109,6 +110,17 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val relayFeedIds = HashSet<String>()
     private val _relayFeed = MutableStateFlow<List<NostrEvent>>(emptyList())
     val relayFeed: StateFlow<List<NostrEvent>> = _relayFeed
+
+    // Count of OnlyFood posts dropped by the WoT filter since the last feed (re)load.
+    // Surfaced so the UI can explain an empty/sparse feed instead of showing a silent blank.
+    private val _onlyFoodWotDropped = MutableStateFlow(0)
+    val onlyFoodWotDropped: StateFlow<Int> = _onlyFoodWotDropped
+
+    // OnlyFood structural spam caps — mirror the web client's FoodstrFeed thresholds.
+    private val HELLTHREAD_P_LIMIT = 25
+    private val MAX_HASHTAGS = 5
+    // Inline content hashtags, mirroring the web's HASHTAG_PATTERN = /(^|\s)#([^\s#]+)/g.
+    private val CONTENT_HASHTAG_REGEX = Regex("""(^|\s)#([^\s#]+)""")
 
     // Author filter: null = show all, non-null = only show events from these pubkeys
     private val _authorFilter = MutableStateFlow<Set<String>?>(null)
@@ -1438,8 +1450,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 if (muteRepo?.containsMutedWord(event.content) == true) return
                 val threadRoot = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
                 if (muteRepo?.isThreadMuted(threadRoot) == true) return
+                if (isStructuralSpam(event)) return                  // cheap: hellthread / hashtag cap
                 val isReply = Nip10.isReply(event)
                 if (!isReply) {
+                    if (isOnlyFoodWotFiltered(event.pubkey)) {       // strong: web-of-trust
+                        _onlyFoodWotDropped.update { it + 1 }
+                        return
+                    }
                     eventCache[event.id] = event
                     relayHintStore?.extractHintsFromTags(event)
                     relayFeedBinaryInsert(event)
@@ -1447,6 +1464,11 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             }
             Nip88.KIND_POLL -> {
                 if (muteRepo?.containsMutedWord(event.content) == true) return
+                if (isStructuralSpam(event)) return
+                if (isOnlyFoodWotFiltered(event.pubkey)) {
+                    _onlyFoodWotDropped.update { it + 1 }
+                    return
+                }
                 eventCache[event.id] = event
                 relayHintStore?.extractHintsFromTags(event)
                 relayFeedBinaryInsert(event)
@@ -1457,6 +1479,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                         val inner = NostrEvent.fromJson(event.content)
                         if (muteRepo?.isBlocked(inner.pubkey) == true) return
                         if (muteRepo?.containsMutedWord(inner.content) == true) return
+                        if (isStructuralSpam(inner)) return          // structural caps on reposted note
+                        // Drop only if BOTH the reposter and the inner author fail WoT —
+                        // a trusted reposter surfacing a stranger's food note is allowed.
+                        if (isOnlyFoodWotFiltered(event.pubkey) && isOnlyFoodWotFiltered(inner.pubkey)) {
+                            _onlyFoodWotDropped.update { it + 1 }
+                            return
+                        }
                         val authors = repostAuthors.get(inner.id)
                             ?: ConcurrentHashMap.newKeySet<String>().also { repostAuthors.put(inner.id, it) }
                         authors.add(event.pubkey)
@@ -1476,6 +1505,47 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 }
             }
         }
+    }
+
+    // -- OnlyFood spam-defense helpers (used only by addHashtagFeedEvent) --
+
+    /** Count inline #hashtags in note content, mirroring the web's countContentHashtags. */
+    private fun countContentHashtags(content: String): Int =
+        CONTENT_HASHTAG_REGEX.findAll(content).count()
+
+    /** Mirror the web client's structural caps: hellthread p-tags and hashtag spam. */
+    private fun isStructuralSpam(event: NostrEvent): Boolean {
+        var pCount = 0
+        var tCount = 0
+        for (tag in event.tags) {
+            if (tag.isEmpty()) continue
+            when (tag[0]) {
+                "p" -> pCount++
+                "t" -> tCount++
+            }
+        }
+        // Mirror the web's getHashtagCount = max(inline content #tags, t-tags), so
+        // inline-hashtag spam is caught even when the author omits #t tags.
+        val hashtagCount = maxOf(countContentHashtags(event.content), tCount)
+        return pCount >= HELLTHREAD_P_LIMIT || hashtagCount > MAX_HASHTAGS
+    }
+
+    /**
+     * OnlyFood web-of-trust gate. Drops authors outside the trust set
+     * (qualified network ∪ curator food seed). Opt-in toggle, default OFF to mirror
+     * the web client, which applies NO web-of-trust gate to the #foodstr discovery
+     * feed (structural + mute only). Distinct from the global
+     * [isWotFiltered]/wotFilterEnabled. NO-OPS when the social graph isn't ready, to
+     * avoid an empty feed (mute + structural still apply).
+     */
+    private fun isOnlyFoodWotFiltered(pubkey: String): Boolean {
+        if (safetyPrefs?.onlyFoodWotEnabled?.value != true) return false
+        val netRepo = extendedNetworkRepo ?: return false
+        if (!netRepo.isNetworkReady()) return false  // empty-feed guard
+        if (pubkey == currentUserPubkey) return false
+        if (netRepo.isInQualifiedNetwork(pubkey)) return false
+        if (netRepo.isInFoodSeed(pubkey)) return false
+        return true
     }
 
     private fun trendingFeedAppend(event: NostrEvent) {
@@ -1506,6 +1576,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             relayFeedIds.clear()
         }
         _relayFeed.value = emptyList()
+        _onlyFoodWotDropped.value = 0
     }
 
     fun getOldestRelayFeedTimestamp(): Long? {

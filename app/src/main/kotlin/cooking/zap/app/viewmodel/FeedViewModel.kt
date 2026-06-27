@@ -427,6 +427,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         if (type == FeedType.RELAY || type == FeedType.TRENDING || type == FeedType.ONLY_FOOD) relay else main
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** OnlyFood posts hidden by the WoT filter since the last (re)load — for the empty-state notice. */
+    val onlyFoodWotDropped: StateFlow<Int> = eventRepo.onlyFoodWotDropped
+
     val liveNowStreams: StateFlow<List<cooking.zap.app.repo.LiveStream>> = liveStreamRepo.liveStreams
         .map { streams ->
             streams.values
