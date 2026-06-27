@@ -260,6 +260,7 @@
     <string name="tab_list">List</string>
     <string name="tab_hashtags">Hashtags</string>
     <string name="tab_onlyfood">OnlyFood</string>
+    <string name="feed_onlyfood_empty">No food posts yet — pull to refresh</string>
     <string name="tab_feed">Feed</string>
     <string name="interests">Interests</string>
     <string name="loading_interest_sets">Loading interest sets…</string>

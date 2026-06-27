@@ -211,14 +211,9 @@ class FeedSubscriptionManager(
         viewportEngagementJob?.cancel()
         applyAuthorFilterForFeedType(type)
 
-        // Tear down relay-backed feeds (relay/trending/onlyfood) when leaving them
-        if (prev == FeedType.RELAY && type != FeedType.RELAY) {
-            unsubscribeRelayFeed()
-        }
-        if (prev == FeedType.TRENDING && type != FeedType.TRENDING) {
-            unsubscribeRelayFeed()
-        }
-        if (prev == FeedType.ONLY_FOOD && type != FeedType.ONLY_FOOD) {
+        // Tear down any relay-backed feed (relay/trending/onlyfood) when switching
+        // to a different type — including between two relay-backed feeds.
+        if (isRelayBackedFeed(prev) && prev != type) {
             unsubscribeRelayFeed()
         }
 

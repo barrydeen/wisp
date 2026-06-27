@@ -530,13 +530,20 @@ class EventRouter(
                 return
             }
             if (isRelayFeedSub) {
-                eventRepo.cacheEvent(event)
                 if (getIsHashtagFeed()) {
+                    // OnlyFood: skip cacheEvent() — it marks the global seenEventIds,
+                    // which would block the same event from later entering the
+                    // author-based main feed via addEvent(). addHashtagFeedEvent()
+                    // caches into eventCache itself without touching seenEventIds,
+                    // so a followed author's food note can appear in both feeds.
                     eventRepo.addHashtagFeedEvent(event)
-                } else if (getIsTrendingFeed()) {
-                    eventRepo.addTrendingFeedEvent(event)
                 } else {
-                    eventRepo.addRelayFeedEvent(event)
+                    eventRepo.cacheEvent(event)
+                    if (getIsTrendingFeed()) {
+                        eventRepo.addTrendingFeedEvent(event)
+                    } else {
+                        eventRepo.addRelayFeedEvent(event)
+                    }
                 }
                 onRelayFeedEventReceived()
                 eventRepo.addEventRelay(event.id, relayUrl)

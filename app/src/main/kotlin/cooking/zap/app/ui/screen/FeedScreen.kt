@@ -894,7 +894,7 @@ fun FeedScreen(
                             }
                             feedType == FeedType.ONLY_FOOD -> {
                                 Text(
-                                    "No food posts yet — pull to refresh",
+                                    stringResource(R.string.feed_onlyfood_empty),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
