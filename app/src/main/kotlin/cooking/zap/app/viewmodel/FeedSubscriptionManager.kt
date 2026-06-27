@@ -33,8 +33,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.CoroutineContext
 
 enum class FeedContentFilter { ALL, TEXT_ONLY, GALLERY_ONLY, POLLS_ONLY }
@@ -306,27 +309,80 @@ class FeedSubscriptionManager(
 
     fun subscribeFeed() {
         resubscribeFeed()
-        if (_feedType.value == FeedType.RELAY) {
-            eventRepo.clearRelayFeed()
-            subscribeRelayFeed()
-        } else if (_feedType.value == FeedType.TRENDING) {
-            eventRepo.clearRelayFeed()
-            if (_trendingMode.value == TrendingMode.USERS) {
-                subscribeTrendingUsers()
-            } else {
-                subscribeTrendingFeed()
+        if (isRelayBackedFeed()) restartRelayFeed(clear = true)
+    }
+
+    /**
+     * Re-dispatch the active relay-backed feed's subscription (OnlyFood / RELAY /
+     * TRENDING). When [clear] is true, the isolated relay feed is wiped first — the
+     * behavior the normal subscribe entry points want. When false, fresh events
+     * merge on top of the current feed with no blank flash — the pull-to-refresh
+     * path. The subscribe methods do not self-clear, so [clear]=false is a pure
+     * merge-on-top. No-op for author feeds.
+     *
+     * [trendingMode] is captured by the caller so the (re)subscribe choice and any
+     * completion signal it awaits stay consistent even if the user flips Trending
+     * mode mid-refresh.
+     */
+    private fun restartRelayFeed(clear: Boolean, trendingMode: TrendingMode = _trendingMode.value) {
+        when (_feedType.value) {
+            FeedType.RELAY -> {
+                if (clear) eventRepo.clearRelayFeed()
+                subscribeRelayFeed()
             }
-        } else if (_feedType.value == FeedType.ONLY_FOOD) {
-            eventRepo.clearRelayFeed()
-            subscribeOnlyFoodFeed()
+            FeedType.TRENDING -> {
+                if (clear) eventRepo.clearRelayFeed()
+                if (trendingMode == TrendingMode.USERS) {
+                    subscribeTrendingUsers()
+                } else {
+                    subscribeTrendingFeed()
+                }
+            }
+            FeedType.ONLY_FOOD -> {
+                if (clear) eventRepo.clearRelayFeed()
+                subscribeOnlyFoodFeed()
+            }
+            else -> {}
         }
     }
 
     fun refreshFeed() {
+        val type = _feedType.value
+
+        // Author feeds (For You / Follows / Extended / List): leave the legacy
+        // timed spinner untouched — a real refresh for these is a later scoped fix.
+        if (!isRelayBackedFeed(type)) {
+            _isRefreshing.value = true
+            scope.launch {
+                delay(3000)
+                _isRefreshing.value = false
+            }
+            return
+        }
+
+        // Relay-backed feeds: re-subscribe WITHOUT clearing (merge-on-top, no blank),
+        // then flip the spinner off once fresh results land — EOSE-count on the new
+        // sub with a hard timeout, no fixed delay. Capture the Trending mode once so
+        // the (re)subscribe and the completion signal can't disagree if the user
+        // flips mode mid-refresh.
+        val mode = _trendingMode.value
         _isRefreshing.value = true
+        restartRelayFeed(clear = false, trendingMode = mode)
+        val newSubId = relayFeedSubId
         scope.launch {
-            delay(3000)
-            _isRefreshing.value = false
+            try {
+                if (type == FeedType.TRENDING && mode == TrendingMode.USERS) {
+                    // Trending-users completes via its streaming collector, signalled
+                    // by trendingUsersLoading flipping false (hard-timeout backstop).
+                    withTimeoutOrNull(8_000) {
+                        _trendingUsersLoading.filter { !it }.first()
+                    }
+                } else {
+                    subManager.awaitEoseCount(newSubId, expectedCount = 1, timeoutMs = 8_000)
+                }
+            } finally {
+                _isRefreshing.value = false
+            }
         }
     }
 
