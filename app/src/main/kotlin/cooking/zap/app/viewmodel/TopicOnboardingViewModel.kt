@@ -28,10 +28,6 @@ class TopicOnboardingViewModel(app: Application) : AndroidViewModel(app) {
         _selectedTopics.value = if (hashtag in current) current - hashtag else current + hashtag
     }
 
-    /** Whether [displayTag] (a FoodTopics label) is currently selected. */
-    fun isSelected(displayTag: String): Boolean =
-        FoodTopics.toHashtag(displayTag) in _selectedTopics.value
-
     fun reset() {
         _selectedTopics.value = emptySet()
     }

@@ -86,8 +86,11 @@ fun OnboardingTopicsScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     section.tags.forEach { tag ->
+                        // Derive selection from the collected `selectedTopics` state so the
+                        // chip recomposes when the selection changes (not via an implicit
+                        // dependency on the button label reading the same flow).
                         FilterChip(
-                            selected = viewModel.isSelected(tag),
+                            selected = FoodTopics.toHashtag(tag) in selectedTopics,
                             onClick = { viewModel.toggleTopic(tag) },
                             label = { Text(tag) }
                         )
