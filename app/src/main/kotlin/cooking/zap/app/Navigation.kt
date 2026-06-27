@@ -3802,7 +3802,7 @@ fun WispNavHost(
                 totalSelected = selectedPubkeys.size,
                 onContinue = {
                     scope.launch {
-                        feedViewModel.setFeedType(FeedType.FOLLOWS)
+                        feedViewModel.setFeedType(FeedType.ONLY_FOOD)
                         feedViewModel.reloadForNewAccount()
                         relayViewModel.reload()
                         blossomServersViewModel.reload()
@@ -3823,7 +3823,7 @@ fun WispNavHost(
                 },
                 onSkip = {
                     scope.launch {
-                        feedViewModel.setFeedType(FeedType.EXTENDED_FOLLOWS)
+                        feedViewModel.setFeedType(FeedType.ONLY_FOOD)
                         feedViewModel.reloadForNewAccount()
                         relayViewModel.reload()
                         blossomServersViewModel.reload()
