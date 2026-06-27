@@ -3794,18 +3794,16 @@ fun WispNavHost(
 
         composable(Routes.ONBOARDING_SUGGESTIONS) {
             LaunchedEffect(Unit) {
-                onboardingViewModel.loadSuggestions(feedViewModel.relayPool)
+                onboardingViewModel.loadSuggestions(feedViewModel.relayPool, feedViewModel.extendedNetworkRepo)
             }
             val activeNow by onboardingViewModel.activeNow.collectAsState()
             val creators by onboardingViewModel.creators.collectAsState()
-            val news by onboardingViewModel.news.collectAsState()
             val selectedPubkeys by onboardingViewModel.selectedPubkeys.collectAsState()
             val scope = rememberCoroutineScope()
 
             OnboardingSuggestionsScreen(
                 activeNow = activeNow,
                 creators = creators,
-                news = news,
                 selectedPubkeys = selectedPubkeys,
                 onToggleFollowAll = { section -> onboardingViewModel.toggleFollowAll(section) },
                 onTogglePubkey = { pubkey -> onboardingViewModel.togglePubkey(pubkey) },

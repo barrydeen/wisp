@@ -15,6 +15,7 @@ import cooking.zap.app.nostr.Nip65
 import cooking.zap.app.nostr.LocalSigner
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.NostrSigner
+import cooking.zap.app.nostr.FoodHashtags
 import cooking.zap.app.nostr.ProfileData
 import cooking.zap.app.nostr.toHex
 import cooking.zap.app.relay.OnboardingPhase
@@ -24,6 +25,7 @@ import cooking.zap.app.relay.RelayProber
 import cooking.zap.app.nostr.Nip78
 import cooking.zap.app.repo.BlossomRepository
 import cooking.zap.app.repo.ContactRepository
+import cooking.zap.app.repo.ExtendedNetworkRepository
 import cooking.zap.app.repo.KeyRepository
 import cooking.zap.app.repo.SparkRepository
 import cooking.zap.app.repo.WalletMode
@@ -43,7 +45,7 @@ data class SuggestionSection(
     val isLoading: Boolean = true
 )
 
-enum class SectionType { ACTIVE_NOW, CREATORS, NEWS }
+enum class SectionType { ACTIVE_NOW, CREATORS }
 
 class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     private val keyRepo = KeyRepository(app)
@@ -85,9 +87,6 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     private val _creators = MutableStateFlow(SuggestionSection())
     val creators: StateFlow<SuggestionSection> = _creators
 
-    private val _news = MutableStateFlow(SuggestionSection())
-    val news: StateFlow<SuggestionSection> = _news
-
     private val _selectedPubkeys = MutableStateFlow<Set<String>>(emptySet())
     val selectedPubkeys: StateFlow<Set<String>> = _selectedPubkeys
 
@@ -95,12 +94,33 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val TAG = "OnboardingSuggestions"
-        val CREATOR_PUBKEYS = listOf(
-            "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d", // fiatjaf
-            "319ad3e790634dbe86f14db9c2995b26ee3c6228be55f89c4c7fea9acc01d50a"  // Zap Cooking
+
+        /**
+         * zap.cooking curator account — seeds "Meet the creators" and is pre-selected.
+         * Aliases the canonical [ExtendedNetworkRepository.ZC_CURATOR_PUBKEY] so the
+         * literal lives in exactly one place.
+         */
+        const val ZC_PUBKEY = ExtendedNetworkRepository.ZC_CURATOR_PUBKEY
+
+        /** Shown for Zap Cooking even if its kind-0 profile didn't load, so the
+         *  pre-selected follow stays visible and toggleable. */
+        private val ZC_FALLBACK_PROFILE = ProfileData(
+            pubkey = ZC_PUBKEY,
+            name = "Zap Cooking",
+            displayName = "Zap Cooking",
+            about = null,
+            picture = null,
+            banner = null,
+            nip05 = null,
+            lud16 = null,
+            updatedAt = 0L,
         )
-        private val ACTIVE_RELAYS = listOf("wss://premium.primal.net", "wss://nostr.wine", "wss://pyramid.fiatjaf.com")
-        private const val NEWS_RELAY = "wss://news.utxo.one"
+
+        /** Cap on curated creators shown so "Meet the creators" stays browsable. */
+        private const val MAX_CREATORS = 24
+
+        /** Cap on "Active in the kitchen" food posters shown. */
+        private const val MAX_ACTIVE = 20
 
         private val COLORS = listOf(
             "blue", "red", "green", "gold", "silver", "amber", "coral",
@@ -153,7 +173,6 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
         suggestionsJob = null
         _activeNow.value = SuggestionSection()
         _creators.value = SuggestionSection()
-        _news.value = SuggestionSection()
         _selectedPubkeys.value = emptySet()
         _publishing.value = false
         _error.value = null
@@ -313,20 +332,20 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Load follow suggestions from relays in three parallel sections.
+     * Load food-first follow suggestions in two parallel sections: curated creators
+     * (the ZC curator's food seed) and recent #foodstr posters. Zap Cooking is
+     * pre-selected so a new user follows it by default.
      */
-    fun loadSuggestions(relayPool: RelayPool) {
+    fun loadSuggestions(relayPool: RelayPool, extendedNetworkRepo: ExtendedNetworkRepository) {
         if (suggestionsJob != null) return
-        _selectedPubkeys.value = emptySet()
+        _selectedPubkeys.value = setOf(ZC_PUBKEY)
 
         suggestionsJob = viewModelScope.launch {
             // Wait for at least one relay to connect
             relayPool.awaitAnyConnected(minCount = 1, timeoutMs = 5_000)
 
-            // Launch all three sections in parallel
             launch { loadActiveNow(relayPool) }
-            launch { loadCreators(relayPool) }
-            launch { loadNews(relayPool) }
+            launch { loadCreators(relayPool, extendedNetworkRepo) }
         }
     }
 
@@ -363,16 +382,26 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
         relayPool.closeOnAllRelays(subId)
     }
 
+    /**
+     * "Active in the kitchen": recent #foodstr posters from the OnlyFood relays.
+     * Mirrors the OnlyFood feed query (notes/reposts/polls tagged with the food
+     * hashtags) and dedups by author. No `since` floor — the food stream is lower
+     * volume, so we take the newest window to avoid an empty section.
+     */
     private suspend fun loadActiveNow(relayPool: RelayPool) {
         try {
             val subId = "onb-active"
-            val since = System.currentTimeMillis() / 1000 - 20 * 60
-            val filter = Filter(kinds = listOf(1), since = since, limit = 200)
+            val filter = Filter(
+                kinds = FeedSubscriptionManager.ONLY_FOOD_KINDS,
+                tTags = FoodHashtags.ALL,
+                limit = 200,
+            )
             val reqMsg = ClientMessage.req(subId, filter)
-            for (url in ACTIVE_RELAYS) relayPool.sendToRelayOrEphemeral(url, reqMsg)
+            val relays = FeedSubscriptionManager.ONLY_FOOD_RELAYS
+            for (url in relays) relayPool.sendToRelayOrEphemeral(url, reqMsg)
 
             val authors = mutableSetOf<String>()
-            collectUntilEose(relayPool, subId, ACTIVE_RELAYS.size, 8_000) { event ->
+            collectUntilEose(relayPool, subId, relays.size, 8_000) { event ->
                 authors.add(event.pubkey)
             }
 
@@ -381,8 +410,8 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
                 return
             }
 
-            val selected = authors.shuffled().take(20)
-            val profiles = fetchProfiles(relayPool, selected, "onb-active-p", ACTIVE_RELAYS)
+            val selected = authors.shuffled().take(MAX_ACTIVE)
+            val profiles = fetchProfiles(relayPool, selected, "onb-active-p", relays)
             _activeNow.value = SuggestionSection(profiles = profiles, isLoading = false)
         } catch (e: Exception) {
             Log.e(TAG, "loadActiveNow failed: ${e.message}")
@@ -390,38 +419,26 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun loadCreators(relayPool: RelayPool) {
+    /**
+     * "Meet the creators": the ZC curator's food-seed follows ([ExtendedNetworkRepository.ensureFoodSeedLoaded]).
+     * Zap Cooking is always included and listed first (it is pre-selected).
+     */
+    private suspend fun loadCreators(relayPool: RelayPool, extendedNetworkRepo: ExtendedNetworkRepository) {
         try {
-            val profiles = fetchProfiles(relayPool, CREATOR_PUBKEYS, "onb-creators", ACTIVE_RELAYS)
-            _creators.value = SuggestionSection(profiles = profiles, isLoading = false)
+            extendedNetworkRepo.ensureFoodSeedLoaded()
+            val seed = extendedNetworkRepo.getFoodSeedPubkeys()
+            val pubkeys = (listOf(ZC_PUBKEY) + seed).distinct().take(MAX_CREATORS)
+            val profiles = fetchProfiles(relayPool, pubkeys, "onb-creators", FeedSubscriptionManager.ONLY_FOOD_RELAYS)
+            // Always keep a Zap Cooking card (it's pre-selected) — fall back to a
+            // placeholder if its kind-0 didn't load, so the follow stays visible and
+            // toggleable. Zap Cooking first; remaining creators follow.
+            val withZc = if (profiles.any { it.pubkey == ZC_PUBKEY }) profiles else profiles + ZC_FALLBACK_PROFILE
+            val ordered = withZc.sortedByDescending { it.pubkey == ZC_PUBKEY }
+            _creators.value = SuggestionSection(profiles = ordered, isLoading = false)
         } catch (e: Exception) {
             Log.e(TAG, "loadCreators failed: ${e.message}")
-            _creators.value = SuggestionSection(isLoading = false)
-        }
-    }
-
-    private suspend fun loadNews(relayPool: RelayPool) {
-        try {
-            val subId = "onb-news"
-            val filter = Filter(kinds = listOf(1), limit = 100)
-            val reqMsg = ClientMessage.req(subId, filter)
-            relayPool.sendToRelayOrEphemeral(NEWS_RELAY, reqMsg)
-
-            val authors = mutableSetOf<String>()
-            collectUntilEose(relayPool, subId, 1, 8_000) { event ->
-                authors.add(event.pubkey)
-            }
-
-            if (authors.isEmpty()) {
-                _news.value = SuggestionSection(isLoading = false)
-                return
-            }
-
-            val profiles = fetchProfiles(relayPool, authors.toList(), "onb-news-p", listOf(NEWS_RELAY))
-            _news.value = SuggestionSection(profiles = profiles, isLoading = false)
-        } catch (e: Exception) {
-            Log.e(TAG, "loadNews failed: ${e.message}")
-            _news.value = SuggestionSection(isLoading = false)
+            // Even on failure, keep Zap Cooking visible since it's pre-selected.
+            _creators.value = SuggestionSection(profiles = listOf(ZC_FALLBACK_PROFILE), isLoading = false)
         }
     }
 
@@ -468,7 +485,6 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
         val profiles = when (section) {
             SectionType.ACTIVE_NOW -> _activeNow.value.profiles
             SectionType.CREATORS -> _creators.value.profiles
-            SectionType.NEWS -> _news.value.profiles
         }
         val pubkeys = profiles.map { it.pubkey }.toSet()
         val current = _selectedPubkeys.value

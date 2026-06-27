@@ -43,6 +43,7 @@ import cooking.zap.app.nostr.toNpub
 import cooking.zap.app.ui.component.FollowToggleButton
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.StackedAvatars
+import cooking.zap.app.viewmodel.OnboardingViewModel
 import cooking.zap.app.viewmodel.SectionType
 import cooking.zap.app.viewmodel.SuggestionSection
 
@@ -50,7 +51,6 @@ import cooking.zap.app.viewmodel.SuggestionSection
 fun OnboardingSuggestionsScreen(
     activeNow: SuggestionSection,
     creators: SuggestionSection,
-    news: SuggestionSection,
     selectedPubkeys: Set<String>,
     onToggleFollowAll: (SectionType) -> Unit,
     onTogglePubkey: (String) -> Unit,
@@ -74,7 +74,7 @@ fun OnboardingSuggestionsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Find people to follow",
+                    text = "Follow cooks & creators",
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -86,14 +86,14 @@ fun OnboardingSuggestionsScreen(
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Follow at least 5 accounts to build your feed",
+                text = "Follow at least 5 accounts to fill your feed with food",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(Modifier.height(24.dp))
 
-            // Section: Creators
+            // Section: Creators (curator food seed)
             CreatorsSection(
                 section = creators,
                 selectedPubkeys = selectedPubkeys,
@@ -102,20 +102,11 @@ fun OnboardingSuggestionsScreen(
 
             Spacer(Modifier.height(24.dp))
 
-            // Section: Active Right Now
+            // Section: Active in the kitchen (recent #foodstr posters)
             ActiveNowSection(
                 section = activeNow,
                 selectedPubkeys = selectedPubkeys,
                 onToggleFollowAll = { onToggleFollowAll(SectionType.ACTIVE_NOW) },
-                onTogglePubkey = onTogglePubkey
-            )
-
-            Spacer(Modifier.height(24.dp))
-
-            // Section: News
-            NewsSection(
-                section = news,
-                selectedPubkeys = selectedPubkeys,
                 onTogglePubkey = onTogglePubkey
             )
 
@@ -156,74 +147,87 @@ private fun CreatorsSection(
         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
         color = MaterialTheme.colorScheme.onSurface
     )
+    Spacer(Modifier.height(4.dp))
+    Text(
+        text = "Chefs and cooks curated by Zap Cooking",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
     Spacer(Modifier.height(8.dp))
 
     if (section.isLoading) {
-        Box(modifier = Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
         }
     } else if (section.profiles.isEmpty()) {
-        // Show cards without profile data
-        CreatorCards(profiles = emptyList(), selectedPubkeys = selectedPubkeys, onTogglePubkey = onTogglePubkey)
+        Text(
+            text = "Couldn't load creators right now",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
     } else {
-        CreatorCards(profiles = section.profiles, selectedPubkeys = selectedPubkeys, onTogglePubkey = onTogglePubkey)
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(vertical = 4.dp)
+        ) {
+            items(section.profiles, key = { it.pubkey }) { profile ->
+                CreatorCard(
+                    profile = profile,
+                    role = if (profile.pubkey == OnboardingViewModel.ZC_PUBKEY) "Zap Cooking" else null,
+                    isSelected = profile.pubkey in selectedPubkeys,
+                    onToggle = { onTogglePubkey(profile.pubkey) }
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun CreatorCards(
-    profiles: List<ProfileData>,
-    selectedPubkeys: Set<String>,
-    onTogglePubkey: (String) -> Unit
+private fun CreatorCard(
+    profile: ProfileData,
+    role: String?,
+    isSelected: Boolean,
+    onToggle: () -> Unit
 ) {
-    val creatorDescriptions = mapOf(
-        "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d" to "Creator of Nostr",
-        "319ad3e790634dbe86f14db9c2995b26ee3c6228be55f89c4c7fea9acc01d50a" to "Zap Cooking"
-    )
-
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxWidth()
+    Card(
+        modifier = Modifier.width(120.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        shape = RoundedCornerShape(12.dp)
     ) {
-        creatorDescriptions.forEach { (pubkey, role) ->
-            val profile = profiles.find { it.pubkey == pubkey }
-            val isSelected = pubkey in selectedPubkeys
-            Card(
-                modifier = Modifier.weight(1f),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    ProfilePicture(url = profile?.picture, size = 56)
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = profile?.displayString ?: pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" },
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center
-                    )
-                    Text(
-                        text = role,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    FollowToggleButton(
-                        isSelected = isSelected,
-                        onClick = { onTogglePubkey(pubkey) }
-                    )
-                }
-            }
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            ProfilePicture(url = profile.picture, size = 56)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = profile.displayString,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                text = role ?: "Food creator",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(8.dp))
+            FollowToggleButton(
+                isSelected = isSelected,
+                onClick = onToggle
+            )
         }
     }
 }
@@ -241,13 +245,13 @@ private fun ActiveNowSection(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Active right now",
+                text = "Active in the kitchen",
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurface
             )
             if (!section.isLoading && section.profiles.isNotEmpty()) {
                 Text(
-                    text = "${section.profiles.size} people posting right now",
+                    text = "${section.profiles.size} people posting about food",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -281,7 +285,7 @@ private fun ActiveNowSection(
         }
     } else if (section.profiles.isEmpty()) {
         Text(
-            text = "No active users found",
+            text = "No active cooks found right now",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(vertical = 8.dp)
@@ -292,90 +296,5 @@ private fun ActiveNowSection(
             selectedPubkeys = selectedPubkeys,
             onTogglePubkey = onTogglePubkey
         )
-    }
-}
-
-@Composable
-private fun NewsSection(
-    section: SuggestionSection,
-    selectedPubkeys: Set<String>,
-    onTogglePubkey: (String) -> Unit
-) {
-    Text(
-        text = "News sources",
-        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-        color = MaterialTheme.colorScheme.onSurface
-    )
-    Spacer(Modifier.height(4.dp))
-    Text(
-        text = "Pick the news sources you want to follow",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    Spacer(Modifier.height(8.dp))
-
-    if (section.isLoading) {
-        Box(modifier = Modifier.fillMaxWidth().height(60.dp), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-        }
-    } else if (section.profiles.isEmpty()) {
-        Text(
-            text = "No news sources found",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(vertical = 8.dp)
-        )
-    } else {
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(vertical = 4.dp)
-        ) {
-            items(section.profiles, key = { it.pubkey }) { profile ->
-                NewsCard(
-                    profile = profile,
-                    isSelected = profile.pubkey in selectedPubkeys,
-                    onToggle = { onTogglePubkey(profile.pubkey) }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun NewsCard(
-    profile: ProfileData,
-    isSelected: Boolean,
-    onToggle: () -> Unit
-) {
-    Card(
-        modifier = Modifier.width(120.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        ),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
-        ) {
-            ProfilePicture(url = profile.picture, size = 56)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = profile.displayString,
-                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(8.dp))
-            FollowToggleButton(
-                isSelected = isSelected,
-                onClick = onToggle
-            )
-        }
     }
 }

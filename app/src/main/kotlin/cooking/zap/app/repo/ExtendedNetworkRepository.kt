@@ -93,8 +93,11 @@ class ExtendedNetworkRepository(
         private const val STALE_HOURS = 24
         private const val STALE_DRIFT_THRESHOLD = 0.10
 
-        /** zap.cooking curator account — its follows seed the OnlyFood trust set. */
-        private const val ZC_CURATOR_PUBKEY = "319ad3e790634dbe86f14db9c2995b26ee3c6228be55f89c4c7fea9acc01d50a"
+        /**
+         * zap.cooking curator account — its follows seed the OnlyFood trust set.
+         * Canonical constant; other call sites (e.g. onboarding) reference this.
+         */
+        const val ZC_CURATOR_PUBKEY = "319ad3e790634dbe86f14db9c2995b26ee3c6228be55f89c4c7fea9acc01d50a"
         private const val FOOD_SEED_TIMEOUT_MS = 6_000L
 
         private fun prefsName(pubkeyHex: String?): String =
@@ -112,6 +115,9 @@ class ExtendedNetworkRepository(
 
     /** True if [pubkey] is one of the curator's follows (OnlyFood seed). */
     fun isInFoodSeed(pubkey: String): Boolean = pubkey in foodSeedPubkeys
+
+    /** The curator's follow set (OnlyFood seed). Empty until [ensureFoodSeedLoaded]. */
+    fun getFoodSeedPubkeys(): Set<String> = foodSeedPubkeys
 
     /**
      * Fetch the zap.cooking curator's kind-3 contact list ONCE and cache its
