@@ -3,16 +3,25 @@ package cooking.zap.app.nostr
 import java.util.Locale
 
 /**
- * The curated, sectioned food-topic taxonomy shown in onboarding (the "What do
- * you like to cook?" step). This mirrors the web client's `CURATED_TAG_SECTIONS`
- * (zapcooking/frontend, `src/lib/consts.ts`) — same section names and the same
- * display tags — so Android and web present the same food categories.
+ * The curated, sectioned topic taxonomy shown in onboarding (the "What do you
+ * like to cook?" step). The food sections are based on the web client's
+ * `CURATED_TAG_SECTIONS` (zapcooking/frontend, `src/lib/consts.ts`) — same
+ * section names and display tags — so Android and web present the same food
+ * categories, with a few Android-only food sections layered on top (e.g. "From
+ * the foodstr feed").
+ *
+ * NOTE: this is no longer a strictly food-only taxonomy. The "Beyond food"
+ * section intentionally includes broad Nostr interests (e.g. "Bitcoin",
+ * "Photography") that do NOT normalize into [FoodHashtags.ALL]. Those publish as
+ * ordinary `#t` interests via the existing path and do not affect the
+ * food-filtered OnlyFood feed — only the food sections are guaranteed to map
+ * into [FoodHashtags.ALL]. Don't assume every tag here is a food hashtag.
  *
  * This is the single source of truth for the onboarding topic picker; do not
- * hardcode a second flat list elsewhere. Tags are stored as the web's display
- * labels (e.g. "Gluten Free", "Middle-Eastern"); [toHashtag] normalizes a label
- * into a nostr `#t` hashtag (lowercase, no spaces/hyphens) consistent with
- * [FoodHashtags.ALL] when the selection is published as a kind-30015 interest set.
+ * hardcode a second flat list elsewhere. Tags are stored as display labels
+ * (e.g. "Gluten Free", "Middle-Eastern"); [toHashtag] normalizes a label into a
+ * nostr `#t` hashtag (lowercase, no spaces/hyphens) when the selection is
+ * published as a kind-30015 interest set.
  */
 object FoodTopics {
 
