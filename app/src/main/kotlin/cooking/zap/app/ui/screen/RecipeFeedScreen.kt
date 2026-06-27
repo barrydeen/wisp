@@ -64,9 +64,16 @@ import cooking.zap.app.nostr.RecipeTag
 import cooking.zap.app.nostr.RecipeTagCatalog
 import cooking.zap.app.repo.EventRepository
 import cooking.zap.app.repo.RecipePackSummary
+import cooking.zap.app.repo.CookbookMemberRecipe
+import cooking.zap.app.repo.RecipeBookmarkRepository.CookbookList
+import cooking.zap.app.ui.component.ChooseCoverSheet
 import cooking.zap.app.ui.component.CookbookCollectionCard
+import cooking.zap.app.ui.component.DeleteCollectionDialog
+import cooking.zap.app.ui.component.EditDescriptionDialog
 import cooking.zap.app.ui.component.IntelligenceMenu
 import cooking.zap.app.ui.component.RecipePackCard
+import cooking.zap.app.ui.component.RenameCollectionDialog
+import cooking.zap.app.ui.util.LocalCanSign
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.RecipeCard
 import cooking.zap.app.ui.component.RecipePosterSkeleton
@@ -539,6 +546,9 @@ private fun CookbookSection(
     val lists by viewModel.lists.collectAsState()
     val covers by viewModel.covers.collectAsState()
     var subTab by remember { mutableStateOf(CookbookSubTab.SAVED) }
+    // Management (PR 3b-iii) is owner-only — a signing key is required.
+    val canManage = LocalCanSign.current
+    var manage by remember { mutableStateOf<CookbookManageState?>(null) }
 
     Column(modifier = modifier) {
         TabRow(selectedTabIndex = subTab.ordinal) {
@@ -605,6 +615,11 @@ private fun CookbookSection(
                                 recipeCount = list.coordinates.size,
                                 isDefault = list.isDefault,
                                 onClick = { onCollectionClick(list.dTag) },
+                                canManage = canManage,
+                                onRename = { manage = CookbookManageState.Rename(list) },
+                                onEditDescription = { manage = CookbookManageState.Description(list) },
+                                onChooseCover = { manage = CookbookManageState.Cover(list) },
+                                onDelete = { manage = CookbookManageState.Delete(list) },
                             )
                         }
                     }
@@ -667,6 +682,69 @@ private fun CookbookSection(
                     }
                 }
             }
+        }
+    }
+
+    // Management dialogs (PR 3b-iii) — owner-only; dismissed on confirm.
+    CookbookManageDialogs(
+        state = manage,
+        viewModel = viewModel,
+        onDismiss = { manage = null },
+    )
+}
+
+/** The active management dialog/sheet for a Saved collection (PR 3b-iii). */
+private sealed interface CookbookManageState {
+    val list: CookbookList
+    data class Rename(override val list: CookbookList) : CookbookManageState
+    data class Description(override val list: CookbookList) : CookbookManageState
+    data class Cover(override val list: CookbookList) : CookbookManageState
+    data class Delete(override val list: CookbookList) : CookbookManageState
+}
+
+/**
+ * Hosts the rename / description / cover / delete dialogs for the Saved sub-tab.
+ * Each confirm delegates to the [CookbookViewModel] write pass-through (which
+ * republishes via the kind-30001 repo) and dismisses. Cover resolves the list's
+ * member recipes lazily for the picker.
+ */
+@Composable
+private fun CookbookManageDialogs(
+    state: CookbookManageState?,
+    viewModel: CookbookViewModel,
+    onDismiss: () -> Unit,
+) {
+    when (state) {
+        null -> Unit
+        is CookbookManageState.Rename -> RenameCollectionDialog(
+            initialTitle = state.list.title,
+            onConfirm = { title -> viewModel.renameList(state.list.dTag, title); onDismiss() },
+            onDismiss = onDismiss,
+        )
+        is CookbookManageState.Description -> EditDescriptionDialog(
+            initialSummary = state.list.summary.orEmpty(),
+            onConfirm = { summary -> viewModel.setDescription(state.list.dTag, summary); onDismiss() },
+            onDismiss = onDismiss,
+        )
+        is CookbookManageState.Delete -> DeleteCollectionDialog(
+            title = state.list.title,
+            onConfirm = { viewModel.deleteList(state.list.dTag); onDismiss() },
+            onDismiss = onDismiss,
+        )
+        is CookbookManageState.Cover -> {
+            var members by remember(state.list.dTag) { mutableStateOf<List<CookbookMemberRecipe>>(emptyList()) }
+            var loading by remember(state.list.dTag) { mutableStateOf(true) }
+            LaunchedEffect(state.list.dTag) {
+                members = viewModel.memberRecipes(state.list)
+                loading = false
+            }
+            ChooseCoverSheet(
+                members = members,
+                currentCoord = state.list.coverCoord,
+                loading = loading,
+                onPick = { coord -> viewModel.setCover(state.list.dTag, coord); onDismiss() },
+                onDismiss = onDismiss,
+            )
         }
     }
 }

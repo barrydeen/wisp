@@ -13,6 +13,16 @@ import cooking.zap.app.repo.RecipeBookmarkRepository.CookbookList
  * cache-first, then [RecipeRepository.requestRecipeEventByCoordinate] network) — no
  * new resolver. A null result simply means the card falls back to its placeholder.
  */
+/**
+ * One member recipe of a collection, resolved for the cover-picker (PR 3b-iii):
+ * its a-[coord], display [title], and [image] (when the recipe resolved).
+ */
+data class CookbookMemberRecipe(
+    val coord: String,
+    val title: String,
+    val image: String?,
+)
+
 object CookbookCovers {
     /**
      * Resolve [list]'s cover URL, or null when nothing resolves (card shows a

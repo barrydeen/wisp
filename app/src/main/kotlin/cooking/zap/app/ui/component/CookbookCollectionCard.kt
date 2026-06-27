@@ -16,17 +16,27 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -39,6 +49,10 @@ import cooking.zap.app.R
  *
  * [coverUrl] is resolved by [cooking.zap.app.repo.CookbookCovers]; null falls back
  * to a neutral placeholder.
+ *
+ * When [canManage] is true (owner with a signing key — PR 3b-iii) an overflow
+ * menu surfaces the owner actions. Rename / delete are hidden for the default
+ * Saved list (its title is locked and it can't be deleted), matching the web.
  */
 @Composable
 fun CookbookCollectionCard(
@@ -48,6 +62,11 @@ fun CookbookCollectionCard(
     isDefault: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    canManage: Boolean = false,
+    onRename: () -> Unit = {},
+    onEditDescription: () -> Unit = {},
+    onChooseCover: () -> Unit = {},
+    onDelete: () -> Unit = {},
 ) {
     Surface(
         modifier = modifier
@@ -108,6 +127,56 @@ fun CookbookCollectionCard(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onPrimary,
                         )
+                    }
+                }
+
+                if (canManage) {
+                    var menuOpen by remember { mutableStateOf(false) }
+                    Box(modifier = Modifier.align(Alignment.TopEnd)) {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.55f))
+                                    .padding(4.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    Icons.Default.MoreVert,
+                                    contentDescription = stringResource(R.string.cookbook_manage_menu),
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            // The default Saved list can't be renamed (title locked) or deleted.
+                            if (!isDefault) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.cookbook_action_rename)) },
+                                    onClick = { menuOpen = false; onRename() },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.cookbook_action_edit_description)) },
+                                onClick = { menuOpen = false; onEditDescription() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.cookbook_action_choose_cover)) },
+                                onClick = { menuOpen = false; onChooseCover() },
+                            )
+                            if (!isDefault) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            stringResource(R.string.cookbook_action_delete),
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    },
+                                    onClick = { menuOpen = false; onDelete() },
+                                )
+                            }
+                        }
                     }
                 }
             }

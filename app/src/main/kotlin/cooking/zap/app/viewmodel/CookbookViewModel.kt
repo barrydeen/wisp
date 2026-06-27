@@ -2,11 +2,14 @@ package cooking.zap.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.repo.CookbookCovers
+import cooking.zap.app.repo.CookbookMemberRecipe
 import cooking.zap.app.repo.RecipeBookmarkRepository
 import cooking.zap.app.repo.RecipeBookmarkRepository.CookbookList
 import cooking.zap.app.repo.RecipeRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -20,7 +23,9 @@ import kotlinx.coroutines.launch
  *    author query ([RecipeRepository.loadAuthoredRecipes]); kicked off lazily the
  *    first time the sub-tab is shown.
  *
- * Read-only: no writes here. List management (rename/delete/cover) is PR 3b-iii.
+ * Also exposes the Saved-list management writes (PR 3b-iii: rename / description /
+ * cover / delete) as thin pass-throughs to [RecipeBookmarkRepository]. The UI
+ * gates these behind a signing key (LocalCanSign).
  */
 class CookbookViewModel : ViewModel() {
     private val _lists = MutableStateFlow<List<CookbookList>>(emptyList())
@@ -44,6 +49,7 @@ class CookbookViewModel : ViewModel() {
     // through a PROVIDER (not captured) so a late sign-in / account switch is
     // always reflected — bind() can't re-capture a value (collectors set once).
     private var recipeRepo: RecipeRepository? = null
+    private var bookmarkRepo: RecipeBookmarkRepository? = null
     private var userPubkeyProvider: () -> String? = { null }
     /** Pubkey the authored query last ran for; reload when it changes (account switch). */
     private var lastRequestedPubkey: String? = null
@@ -69,6 +75,7 @@ class CookbookViewModel : ViewModel() {
         userPubkeyProvider: () -> String?,
     ) {
         this.recipeRepo = recipeRepo
+        this.bookmarkRepo = bookmarkRepo
         this.userPubkeyProvider = userPubkeyProvider
         if (bound) return
         bound = true
@@ -117,6 +124,49 @@ class CookbookViewModel : ViewModel() {
             } finally {
                 resolvingCovers.remove(dTag)
             }
+        }
+    }
+
+    // ---- Management actions (PR 3b-iii) -----------------------------------
+    // Thin pass-throughs to the repo write methods (off the main thread). The
+    // repo republishes optimistically, so `lists`/`covers` update via the bound
+    // collectors — no extra refresh needed here.
+
+    /** Rename a named collection (no-op on the default list — its title is locked). */
+    fun renameList(dTag: String, newTitle: String) = launchWrite { it.renameList(dTag, newTitle) }
+
+    /** Set/clear a list's description (`summary`). */
+    fun setDescription(dTag: String, summary: String) = launchWrite { it.setListDescription(dTag, summary) }
+
+    /** Set the cover to a member recipe's a-coordinate. */
+    fun setCover(dTag: String, coverCoord: String) = launchWrite { it.setListCover(dTag, coverCoord) }
+
+    /** Delete a named collection (NIP-09 kind-5; no-op on the default list). */
+    fun deleteList(dTag: String) = launchWrite { it.deleteList(dTag) }
+
+    private inline fun launchWrite(crossinline block: suspend (RecipeBookmarkRepository) -> Unit) {
+        val repo = bookmarkRepo ?: return
+        viewModelScope.launch(Dispatchers.Default) { block(repo) }
+    }
+
+    /**
+     * Resolve [list]'s member recipes for the cover-picker — cache-first, then a
+     * network fill per coordinate (reuses the existing recipe lookups). An
+     * unresolved member still appears, labelled by its `d`-tag, so it remains
+     * pickable. Order follows the list's coordinates.
+     */
+    suspend fun memberRecipes(list: CookbookList): List<CookbookMemberRecipe> {
+        val repo = recipeRepo ?: return emptyList()
+        return list.coordinates.mapNotNull { raw ->
+            val c = CookbookCovers.parseCoordinate(raw) ?: return@mapNotNull null
+            val event = repo.findRecipeEventByCoordinate(c.kind, c.author, c.dTag)
+                ?: repo.requestRecipeEventByCoordinate(c.kind, c.author, c.dTag)
+            val recipe = event?.let { RecipeFormats.forEvent(it)?.parse(it) }
+            CookbookMemberRecipe(
+                coord = raw,
+                title = recipe?.title?.takeIf { it.isNotBlank() } ?: c.dTag,
+                image = recipe?.image,
+            )
         }
     }
 }
