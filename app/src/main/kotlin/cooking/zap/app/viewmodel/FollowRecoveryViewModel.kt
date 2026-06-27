@@ -92,6 +92,10 @@ class FollowRecoveryViewModel(
         val req = ClientMessage.req(subId, Filter(kinds = listOf(3), authors = listOf(pubkey), limit = 50))
         val collected = Collections.synchronizedList(mutableListOf<RelayEvent>())
 
+        // Bypass the pool's per-event dedup so kind:3 events already seen during
+        // normal session startup still reach our collector.
+        relayPool.registerDedupBypass("fr-")
+
         coroutineScope {
             val collectJob = launch {
                 relayPool.relayEvents
@@ -142,9 +146,18 @@ class FollowRecoveryViewModel(
             .maxByOrNull { it.followCount }
             ?.takeIf { it.followCount > currentCount || currentCount == 0 }
 
-        val filtered = candidates.filter { c ->
-            c.isCurrent || kotlin.math.abs(c.followCount - currentCount) >= 10
+        // Cluster non-current candidates: versions within 5 follows of an already-kept
+        // version are the same "era" — keep only the newest representative per cluster.
+        // Then drop any cluster whose count is within 10 of current (noise).
+        val clustered = mutableListOf<FollowListCandidate>()
+        for (c in candidates.filter { !it.isCurrent && it.followCount > 0 }) {
+            val covered = clustered.any { kotlin.math.abs(it.followCount - c.followCount) < 5 }
+            if (!covered) clustered.add(c)
         }
+        val current = candidates.firstOrNull { it.isCurrent }
+        val filtered = (listOfNotNull(current) + clustered.filter { c ->
+            kotlin.math.abs(c.followCount - currentCount) >= 10
+        })
 
         return FollowScanResult(
             candidates = filtered.map { c ->

@@ -314,7 +314,7 @@ private fun CandidateCard(
                         if (candidate.isRecommended) {
                             SuggestionChip(
                                 onClick = {},
-                                label = { Text("Recommended", style = MaterialTheme.typography.labelSmall) },
+                                label = { Text("Best", style = MaterialTheme.typography.labelSmall) },
                                 colors = SuggestionChipDefaults.suggestionChipColors(
                                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                                     labelColor = MaterialTheme.colorScheme.onPrimaryContainer
