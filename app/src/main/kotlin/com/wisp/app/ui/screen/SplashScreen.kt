@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Visibility
@@ -84,7 +85,8 @@ fun SplashScreen(
     authViewModel: AuthViewModel,
     onAccountCreated: () -> Unit,
     onLoggedIn: () -> Unit,
-    onContinueWithGoogle: () -> Unit
+    onContinueWithGoogle: () -> Unit,
+    onCancel: (() -> Unit)? = null
 ) {
     val profilePictures by viewModel.profilePictures.collectAsState()
     val liveMetrics by viewModel.liveMetrics.collectAsState()
@@ -145,6 +147,21 @@ fun SplashScreen(
                     )
                 )
         )
+
+        if (onCancel != null) {
+            Text(
+                text = "Cancel",
+                style = MaterialTheme.typography.labelLarge,
+                color = androidx.compose.ui.graphics.Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 120.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.15f))
+                    .clickable(onClick = onCancel)
+                    .padding(horizontal = 28.dp, vertical = 12.dp)
+            )
+        }
 
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,

@@ -31,6 +31,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
     val accountsFlow: StateFlow<List<AccountInfo>> = keyRepo.accountsFlow
 
     var isAddingAccount: Boolean = false
+    var previousAccountPubkey: String? = null
 
     val isLoggedIn: Boolean get() = keyRepo.isLoggedIn()
 
