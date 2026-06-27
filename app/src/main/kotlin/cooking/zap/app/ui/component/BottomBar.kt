@@ -39,7 +39,7 @@ import androidx.compose.ui.zIndex
 import cooking.zap.app.R
 import cooking.zap.app.Routes
 
-private val NavBarColor = Color(0xFF1F2937)
+private val NavBarDark = Color(0xFF1F2937)
 // Unread badge — brand amber-400, lighter than the orange nav icons so it
 // reads as a distinct "alert" dot rather than blending into the iconography.
 private val UnreadDotColor = Color(0xFFFBBF24)
@@ -76,17 +76,21 @@ fun WispBottomBar(
     hasUnreadHome: Boolean,
     hasUnreadMessages: Boolean,
     hasUnreadNotifications: Boolean,
+    isDarkTheme: Boolean = true,
     isZapAnimating: Boolean = false,
     isReplyAnimating: Boolean = false,
     notifSoundEnabled: Boolean = true,
     isReadOnly: Boolean = false,
     onTabSelected: (BottomTab) -> Unit
 ) {
+    val navBarColor = if (isDarkTheme) NavBarDark else MaterialTheme.colorScheme.surface
+
     if (isReadOnly) {
         ReadOnlyBottomBar(
             currentRoute = currentRoute,
             hasUnreadHome = hasUnreadHome,
             hasUnreadNotifications = hasUnreadNotifications,
+            isDarkTheme = isDarkTheme,
             isZapAnimating = isZapAnimating,
             isReplyAnimating = isReplyAnimating,
             notifSoundEnabled = notifSoundEnabled,
@@ -109,7 +113,7 @@ fun WispBottomBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(NAV_HEIGHT)
-                    .background(NavBarColor)
+                    .background(navBarColor)
             ) {
                 Row(
                     modifier = Modifier.fillMaxSize(),
@@ -159,7 +163,7 @@ fun WispBottomBar(
                 Modifier
                     .fillMaxWidth()
                     .windowInsetsBottomHeight(WindowInsets.navigationBars)
-                    .background(NavBarColor)
+                    .background(navBarColor)
             )
         }
 
@@ -173,7 +177,7 @@ fun WispBottomBar(
                 .offset(y = -PROTRUSION)
                 .zIndex(1f)
                 .clip(CircleShape)
-                .background(NavBarColor)
+                .background(navBarColor)
                 .clickable { onTabSelected(BottomTab.WALLET) },
             contentAlignment = Alignment.Center
         ) {
@@ -197,13 +201,15 @@ fun WispBottomBar(
                 Icon(
                     painter = painterResource(R.drawable.ic_zc_wallet_bolt),
                     contentDescription = null,
-                    tint = if (walletSelected) Color.White else NavBarColor,
+                    tint = if (walletSelected) Color.White else navBarColor,
                     modifier = Modifier.fillMaxSize()
                 )
                 Icon(
                     painter = painterResource(R.drawable.ic_zc_wallet_ring),
                     contentDescription = null,
-                    tint = if (walletSelected) Color.White else inactiveGrey,
+                    tint = if (walletSelected) {
+                        if (isDarkTheme) Color.White else inactiveGrey
+                    } else inactiveGrey,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -307,17 +313,19 @@ private fun ReadOnlyBottomBar(
     currentRoute: String?,
     hasUnreadHome: Boolean,
     hasUnreadNotifications: Boolean,
+    isDarkTheme: Boolean = true,
     isZapAnimating: Boolean,
     isReplyAnimating: Boolean,
     notifSoundEnabled: Boolean,
     onTabSelected: (BottomTab) -> Unit
 ) {
+    val navBarColor = if (isDarkTheme) NavBarDark else MaterialTheme.colorScheme.surface
     val visibleTabs = listOf(BottomTab.FEED, BottomTab.RECIPES, BottomTab.NOTIFICATIONS)
     val useBolt = cooking.zap.app.ui.util.useBoltIcon()
 
     Column {
         NavigationBar(
-            containerColor = NavBarColor,
+            containerColor = navBarColor,
             modifier = Modifier
                 .windowInsetsPadding(NavigationBarDefaults.windowInsets)
                 .height(NAV_HEIGHT),

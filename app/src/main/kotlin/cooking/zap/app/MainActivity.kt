@@ -66,7 +66,7 @@ class MainActivity : FragmentActivity() {
                     navigationBarStyle = if (isDarkTheme) {
                         SystemBarStyle.dark(0xFF1F2937.toInt())
                     } else {
-                        SystemBarStyle.light(0xFF1F2937.toInt(), 0xFF1F2937.toInt())
+                        SystemBarStyle.light(0xFFF5F5F5.toInt(), 0xFF1F2937.toInt())
                     }
                 )
             }
