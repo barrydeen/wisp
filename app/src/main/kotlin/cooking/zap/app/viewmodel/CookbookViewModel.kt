@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Backs the **Cookbook** tab's two sub-tabs:
@@ -157,16 +158,20 @@ class CookbookViewModel : ViewModel() {
      */
     suspend fun memberRecipes(list: CookbookList): List<CookbookMemberRecipe> {
         val repo = recipeRepo ?: return emptyList()
-        return list.coordinates.mapNotNull { raw ->
-            val c = CookbookCovers.parseCoordinate(raw) ?: return@mapNotNull null
-            val event = repo.findRecipeEventByCoordinate(c.kind, c.author, c.dTag)
-                ?: repo.requestRecipeEventByCoordinate(c.kind, c.author, c.dTag)
-            val recipe = event?.let { RecipeFormats.forEvent(it)?.parse(it) }
-            CookbookMemberRecipe(
-                coord = raw,
-                title = recipe?.title?.takeIf { it.isNotBlank() } ?: c.dTag,
-                image = recipe?.image,
-            )
+        // Off the main thread: the cache lookup scans persistence and the fill
+        // waits on relays — neither should run on the caller's UI dispatcher.
+        return withContext(Dispatchers.IO) {
+            list.coordinates.mapNotNull { raw ->
+                val c = CookbookCovers.parseCoordinate(raw) ?: return@mapNotNull null
+                val event = repo.findRecipeEventByCoordinate(c.kind, c.author, c.dTag)
+                    ?: repo.requestRecipeEventByCoordinate(c.kind, c.author, c.dTag)
+                val recipe = event?.let { RecipeFormats.forEvent(it)?.parse(it) }
+                CookbookMemberRecipe(
+                    coord = raw,
+                    title = recipe?.title?.takeIf { it.isNotBlank() } ?: c.dTag,
+                    image = recipe?.image,
+                )
+            }
         }
     }
 }

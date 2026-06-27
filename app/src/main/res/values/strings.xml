@@ -647,7 +647,7 @@
     <string name="cookbook_rename_label">Collection name</string>
     <string name="cookbook_description_label">Description</string>
     <string name="cookbook_delete_title">Delete collection?</string>
-    <string name="cookbook_delete_body">\"%1$s\" will be permanently deleted. The recipes in it stay saved elsewhere. This can\'t be undone.</string>
+    <string name="cookbook_delete_body">Delete \"%1$s\"? This removes the collection but won\'t delete the recipes themselves.</string>
     <string name="cookbook_cover_empty">Add recipes to this collection to choose a cover.</string>
     <string name="recipe_list_chooser_title">Save to collection</string>
     <string name="recipe_list_chooser_new">New list</string>
