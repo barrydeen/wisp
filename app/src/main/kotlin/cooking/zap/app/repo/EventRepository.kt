@@ -112,6 +112,17 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val _relayFeed = MutableStateFlow<List<NostrEvent>>(emptyList())
     val relayFeed: StateFlow<List<NostrEvent>> = _relayFeed
 
+    /** Serializes [addHashtagFeedEvent] across live relay ingestion and the cache paint. */
+    private val hashtagFeedLock = Any()
+
+    /**
+     * Bumped by [clearRelayFeed] so an in-flight [paintOnlyFoodFromCache] can detect a
+     * feed switch and stop inserting into the now-repurposed [relayFeedList]
+     * (RELAY/TRENDING reuse the same list).
+     */
+    @Volatile
+    private var relayFeedGeneration = 0
+
     // Count of OnlyFood posts dropped by the WoT filter since the last feed (re)load.
     // Surfaced so the UI can explain an empty/sparse feed instead of showing a silent blank.
     private val _onlyFoodWotDropped = MutableStateFlow(0)
@@ -1441,7 +1452,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
      * This is also the single hook for PR 2's WoT + structural spam layer.
      * Mirrors the web's kind set [1, 6, 1068] (notes, reposts, polls).
      */
-    fun addHashtagFeedEvent(event: NostrEvent) {
+    fun addHashtagFeedEvent(event: NostrEvent): Unit = synchronized(hashtagFeedLock) {
+        // Serializes all callers (live relay ingestion + cache paint) so concurrent
+        // calls can't race the non-atomic compound mutations below (e.g. the kind-6
+        // repostAuthors get-or-create). Live ingestion is already single-threaded via
+        // the relayEvents collector, so the only real contention is the paint overlap.
+        // Bare `return`s below are non-local returns from this function (synchronized
+        // is inline), so the monitor is always released on exit.
         if (event.created_at > System.currentTimeMillis() / 1000 + 30) return
         if (muteRepo?.isBlocked(event.pubkey) == true) return
         if (deletedEventsRepo?.isDeleted(event.id) == true) return
@@ -1572,6 +1589,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun clearRelayFeed() {
+        relayFeedGeneration++  // invalidate any in-flight cache paint
         synchronized(relayFeedList) {
             relayFeedList.clear()
             relayFeedIds.clear()
@@ -1594,9 +1612,15 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
      */
     fun paintOnlyFoodFromCache(limit: Int = 500) {
         val persistence = eventPersistence ?: return
+        // Captured on the caller thread, right after clearRelayFeed() bumped it. If the
+        // user switches feeds (RELAY/TRENDING reuse relayFeedList), clearRelayFeed bumps
+        // the generation again and this paint abandons mid-loop instead of polluting the
+        // next feed.
+        val gen = relayFeedGeneration
         scope.launch(Dispatchers.IO) {
             val cached = persistence.getEventsByKinds(intArrayOf(1, 6, Nip88.KIND_POLL), limit)
             for (event in cached) {
+                if (relayFeedGeneration != gen) return@launch
                 if (FoodHashtags.hasFoodTag(event)) addHashtagFeedEvent(event)
             }
         }

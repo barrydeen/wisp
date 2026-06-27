@@ -1,5 +1,7 @@
 package cooking.zap.app.nostr
 
+import java.util.Locale
+
 /**
  * The expanded food-hashtag set for the OnlyFood social feed (concern 1.6),
  * ported from the web client's `FoodstrFeedOptimized.svelte` `FOOD_HASHTAGS`.
@@ -30,8 +32,12 @@ object FoodHashtags {
         "dietitian", "mealplan", "batchcooking",
     )
 
-    /** Lowercase membership set for O(1) [hasFoodTag] lookups. */
-    val ALL_SET: Set<String> = ALL.map { it.lowercase() }.toSet()
+    /**
+     * Lowercase membership set for O(1) [hasFoodTag] lookups. Uses [Locale.ROOT] —
+     * hashtags are protocol identifiers, so lowercasing must be locale-invariant
+     * (e.g. under the Turkish locale `I` would otherwise map to `ı`, missing tags).
+     */
+    val ALL_SET: Set<String> = ALL.map { it.lowercase(Locale.ROOT) }.toSet()
 
     /**
      * True when [event] carries a `t`-tag in [ALL_SET] (case-insensitive). Mirrors
@@ -41,7 +47,7 @@ object FoodHashtags {
      */
     fun hasFoodTag(event: NostrEvent): Boolean {
         for (tag in event.tags) {
-            if (tag.size >= 2 && tag[0] == "t" && tag[1].lowercase() in ALL_SET) return true
+            if (tag.size >= 2 && tag[0] == "t" && tag[1].lowercase(Locale.ROOT) in ALL_SET) return true
         }
         return false
     }
