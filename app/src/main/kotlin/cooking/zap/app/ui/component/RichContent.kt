@@ -400,7 +400,7 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
     if (trimBlankLines) for (i in 0 until finalResult.size - 1) {
         val segment = finalResult[i]
         val next = finalResult[i + 1]
-        if (segment is ContentSegment.TextSegment && next !is ContentSegment.TextSegment && next !is ContentSegment.InlineLinkSegment && next !is ContentSegment.CustomEmojiSegment) {
+        if (segment is ContentSegment.TextSegment && next !is ContentSegment.TextSegment && next !is ContentSegment.InlineLinkSegment && next !is ContentSegment.CustomEmojiSegment && next !is ContentSegment.NostrProfileSegment && next !is ContentSegment.HashtagSegment) {
             val trimmed = segment.text.trimEnd('\n')
             if (trimmed != segment.text) {
                 finalResult[i] = ContentSegment.TextSegment(if (trimmed.isEmpty()) trimmed else "$trimmed\n")
