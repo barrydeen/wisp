@@ -67,6 +67,8 @@ class RecipeBookmarkRepository(
     companion object {
         /** The web's canonical recipe-list kind (NIP-51 generic list). */
         const val LIST_KIND = 30001
+        /** NIP-09 deletion event kind (used to delete a named collection). */
+        const val DELETE_KIND = 5
         /** Default Saved list `d`-tag (the list has NO `t` tag — read by `#d`). */
         const val DEFAULT_LIST_DTAG = "nostrcooking-bookmarks"
         /** Seed title when creating the default list fresh. */
@@ -276,6 +278,110 @@ class RecipeBookmarkRepository(
             relayPool.sendToWriteRelays(ClientMessage.event(signed))
             added
         }
+    }
+
+    // ---- Collection management (PR 3b-iii) --------------------------------
+    // All edits reuse the all-tags-preserving carry-forward republish: the
+    // a-coords, image, the untouched metadata, and any unknown tags ride
+    // through [buildListTags] unchanged; only the targeted tag is rewritten.
+
+    /**
+     * Rename a **named collection** — republish its kind-30001 with an updated
+     * `title`, carrying everything else (d-tag, a-coords, t, cover, image,
+     * summary, unknown tags) forward unchanged. The `d`-tag is the stable
+     * identity and is **never** changed (a new `d` = a different list = orphaned
+     * data). The **default Saved list cannot be renamed** (mirrors web). Returns
+     * false for a blank title, the default list, an unknown list, or read-only.
+     */
+    suspend fun renameList(dTag: String, newTitle: String): Boolean {
+        val trimmed = newTitle.trim()
+        if (trimmed.isEmpty() || dTag == DEFAULT_LIST_DTAG) return false
+        return editListMetadata(dTag) { base, coords ->
+            buildListTags(base, dTag, isDefault = false, seedTitleIfNew = trimmed, nextCoords = coords, newTitle = trimmed)
+        }
+    }
+
+    /**
+     * Set (or clear, when [summary] is blank) a list's `summary`/description,
+     * carrying the rest forward. Allowed on the default list too (web only locks
+     * the default's title). Returns false for an unknown list or read-only.
+     */
+    suspend fun setListDescription(dTag: String, summary: String): Boolean {
+        val isDefault = dTag == DEFAULT_LIST_DTAG
+        return editListMetadata(dTag) { base, coords ->
+            buildListTags(base, dTag, isDefault, seedTitleIfNew = null, nextCoords = coords, summaryEdit = MetaEdit(summary))
+        }
+    }
+
+    /**
+     * Set the `cover` tag to a **member** recipe's a-coordinate (mirrors the
+     * web cover-picker — the cover must already be in the list). Carries the
+     * rest forward. Returns false when [coverCoord] isn't a member, or for an
+     * unknown list / read-only.
+     */
+    suspend fun setListCover(dTag: String, coverCoord: String): Boolean {
+        val coord = coverCoord.trim()
+        if (coord.isEmpty()) return false
+        val isDefault = dTag == DEFAULT_LIST_DTAG
+        return editListMetadata(dTag) { base, coords ->
+            // Web guard: a cover can only be a recipe already in the collection.
+            if (coord !in coords) null
+            else buildListTags(base, dTag, isDefault, seedTitleIfNew = null, nextCoords = coords, coverEdit = MetaEdit(coord))
+        }
+    }
+
+    /**
+     * Delete a **named collection** via a NIP-09 kind-5 event tagging both the
+     * list event id (`e`) and its address (`a` = `30001:<pubkey>:<dTag>`), exactly
+     * like the web. The **default Saved list is never deletable**. Optimistically
+     * removes the list locally. Returns false for the default list, an unknown
+     * list, or read-only.
+     */
+    suspend fun deleteList(dTag: String): Boolean {
+        if (dTag == DEFAULT_LIST_DTAG) return false
+        val signer = signerProvider() ?: return false
+        return writeMutex.withLock {
+            val author = signer.pubkeyHex
+            val base = listEventFor(dTag) ?: cachedListEvent(author, dTag) ?: return@withLock false
+            val deleteTags = listOf(
+                listOf("e", base.id),
+                listOf("a", "$LIST_KIND:$author:$dTag"),
+            )
+            val signed = signer.signEvent(kind = DELETE_KIND, content = "", tags = deleteTags)
+            // Optimistic local removal so the Saved grid updates immediately.
+            removeListLocally(dTag)
+            relayPool.sendToWriteRelays(ClientMessage.event(signed))
+            true
+        }
+    }
+
+    /**
+     * Shared metadata-edit republish: load the newest known list event for
+     * [dTag] (cache included), let [buildTags] produce the new tag set (returning
+     * null to abort, e.g. a non-member cover), then sign + apply + publish to the
+     * user's write relays. Returns false when read-only, the list is unknown, or
+     * [buildTags] aborts.
+     */
+    private suspend fun editListMetadata(
+        dTag: String,
+        buildTags: (base: NostrEvent, coords: Set<String>) -> List<List<String>>?,
+    ): Boolean {
+        val signer = signerProvider() ?: return false
+        return writeMutex.withLock {
+            val author = signer.pubkeyHex
+            val base = listEventFor(dTag) ?: cachedListEvent(author, dTag) ?: return@withLock false
+            val tags = buildTags(base, parseCoordinates(base)) ?: return@withLock false
+            val signed = signer.signEvent(kind = LIST_KIND, content = base.content, tags = tags)
+            applyEvent(signed)
+            relayPool.sendToWriteRelays(ClientMessage.event(signed))
+            true
+        }
+    }
+
+    /** Drop [dTag] from the in-memory list set and republish state (optimistic delete). */
+    private fun removeListLocally(dTag: String) {
+        synchronized(listsLock) { listsByDTag.remove(dTag) }
+        publishListsState()
     }
 
     /**
@@ -546,12 +652,24 @@ class RecipeBookmarkRepository(
      * stamped with the recipe [COLLECTION_TAG] `t` tag when they lack one; the
      * default list is never given a `t` tag.
      */
+    /**
+     * A single-value metadata-tag edit applied on republish (PR 3b-iii). A
+     * non-blank [value] sets the tag; a blank/null [value] removes it. Passing
+     * the edit as `null` to [buildListTags] leaves the existing tag untouched
+     * (carried forward) — distinct from `MetaEdit(null)` which removes it.
+     */
+    private class MetaEdit(val value: String?)
+
     private fun buildListTags(
         existing: NostrEvent?,
         dTag: String,
         isDefault: Boolean,
         seedTitleIfNew: String?,
         nextCoords: Set<String>,
+        // PR 3b-iii metadata edits: null = carry the existing tag forward unchanged.
+        newTitle: String? = null,
+        summaryEdit: MetaEdit? = null,
+        coverEdit: MetaEdit? = null,
     ): List<List<String>> {
         val tags = mutableListOf<List<String>>()
         var hasD = false
@@ -570,10 +688,16 @@ class RecipeBookmarkRepository(
                 }
                 "title" -> {
                     if (!hasTitle) {
-                        tags.add(tag.toList())
+                        // A rename replaces the title; otherwise carry it forward.
+                        tags.add(if (newTitle != null) listOf("title", newTitle) else tag.toList())
                         hasTitle = true
                     }
                 }
+                // summary/cover are carried forward in place UNLESS an edit is
+                // pending — then the in-loop tag is dropped and the new value
+                // (or nothing, when removed) is appended below.
+                "summary" -> { if (summaryEdit == null) tags.add(tag.toList()) }
+                "cover" -> { if (coverEdit == null) tags.add(tag.toList()) }
                 "t" -> {
                     // The default Saved list must never carry a recipe `t` tag — the
                     // web enumerates collections by `#t` and reads Saved by `#d`.
@@ -582,13 +706,16 @@ class RecipeBookmarkRepository(
                         if (tag.size >= 2 && tag[1].trim() in RECIPE_T_TAGS) hasRecipeT = true
                     }
                 }
-                else -> tags.add(tag.toList()) // carry forward summary/image/cover/unknown
+                else -> tags.add(tag.toList()) // carry forward image/unknown
             }
         }
         if (!hasD) tags.add(0, listOf("d", dTag))
         if (!hasTitle) {
-            tags.add(listOf("title", seedTitleIfNew ?: if (isDefault) DEFAULT_LIST_TITLE else dTag))
+            tags.add(listOf("title", newTitle ?: seedTitleIfNew ?: if (isDefault) DEFAULT_LIST_TITLE else dTag))
         }
+        // Apply pending summary/cover edits (a blank value clears the tag).
+        summaryEdit?.value?.trim()?.takeIf { it.isNotBlank() }?.let { tags.add(listOf("summary", it)) }
+        coverEdit?.value?.trim()?.takeIf { it.isNotBlank() }?.let { tags.add(listOf("cover", it)) }
         if (!isDefault && !hasRecipeT) tags.add(listOf("t", COLLECTION_TAG))
         nextCoords.forEach { tags.add(listOf("a", it)) }
         return tags

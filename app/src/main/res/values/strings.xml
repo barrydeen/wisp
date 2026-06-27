@@ -639,6 +639,16 @@
     <string name="cookbook_saved_empty_title">Start Your Cookbook</string>
     <string name="cookbook_saved_empty_body">Save recipes you love and organize them into collections.</string>
     <string name="cookbook_my_recipes_empty">No published recipes yet</string>
+    <string name="cookbook_manage_menu">Manage collection</string>
+    <string name="cookbook_action_rename">Rename</string>
+    <string name="cookbook_action_edit_description">Edit description</string>
+    <string name="cookbook_action_choose_cover">Choose cover</string>
+    <string name="cookbook_action_delete">Delete</string>
+    <string name="cookbook_rename_label">Collection name</string>
+    <string name="cookbook_description_label">Description</string>
+    <string name="cookbook_delete_title">Delete collection?</string>
+    <string name="cookbook_delete_body">Delete \"%1$s\"? This removes the collection but won\'t delete the recipes themselves.</string>
+    <string name="cookbook_cover_empty">Add recipes to this collection to choose a cover.</string>
     <string name="recipe_list_chooser_title">Save to collection</string>
     <string name="recipe_list_chooser_new">New list</string>
     <string name="recipe_list_chooser_name_hint">Collection name</string>
