@@ -172,7 +172,7 @@ class FeedSubscriptionManager(
     private var engagementGeneration = 0
     private val engagedEventIds = mutableSetOf<String>()
     private var viewportEngagementJob: Job? = null
-    private var hasRestoredFeedType = false
+    private var hasResolvedInitialFeed = false
 
     // For You supplementary fetches (trending + hashtags)
     private var forYouSupplementaryJob: Job? = null
@@ -308,8 +308,81 @@ class FeedSubscriptionManager(
     }
 
     fun subscribeFeed() {
+        // On the very first subscribe, resolve the landing feed (explicit saved
+        // choice, else the OnlyFood default) BEFORE any REQ fires, then subscribe to
+        // it directly — no FOR_YOU bootstrap that gets swapped out post-hoc. This
+        // kills the cold-start flash, the wasted/leaked FOR_YOU subscription, and the
+        // scroll reset, and lets the landing feed own the loading-Done handoff.
+        if (!hasResolvedInitialFeed) {
+            hasResolvedInitialFeed = true
+            val landing = resolveInitialFeedType()
+            Log.d("RLC", "[FeedSub] subscribeFeed: resolved landing feed = $landing")
+            if (isRelayBackedFeed(landing)) {
+                // OnlyFood paints from cache first so there's instant content under the
+                // loading indicator (merge fresh on top → clear=false); its EOSE arms
+                // loading-Done via onRelayFeedEose(). Other relay feeds clear first.
+                if (landing == FeedType.ONLY_FOOD) {
+                    eventRepo.paintOnlyFoodFromCache()
+                    restartRelayFeed(clear = false)
+                } else {
+                    restartRelayFeed(clear = true)
+                }
+                return
+            }
+            // Author / List landing: resubscribeFeed() subscribes and arms
+            // loading-Done at the feed's own EOSE.
+            resubscribeFeed()
+            return
+        }
         resubscribeFeed()
         if (isRelayBackedFeed()) restartRelayFeed(clear = true)
+    }
+
+    /**
+     * Resolve the landing feed ONCE, before the first subscription fires, so we can
+     * subscribe directly to the right feed instead of booting FOR_YOU and swapping.
+     *
+     * An explicit saved choice ([KEY_LAST_FEED_TYPE]) wins; otherwise we fall back to
+     * the OnlyFood default. Applying the DEFAULT must NOT write [KEY_LAST_FEED_TYPE] —
+     * only an explicit user selection (via [setFeedType] → [persistFeedSelection])
+     * persists — so "never chose" stays distinct from "chose OnlyFood", preserving the
+     * "default unless the user picked something" logic. Sets [_feedType] (plus relay /
+     * list state) directly, without persisting or triggering a subscription.
+     */
+    private fun resolveInitialFeedType(): FeedType {
+        val savedName = prefs.getString(KEY_LAST_FEED_TYPE, null)
+        val savedType = savedName?.let { try { FeedType.valueOf(it) } catch (_: Exception) { null } }
+        var landing = savedType ?: FeedType.ONLY_FOOD
+
+        when (landing) {
+            FeedType.RELAY -> {
+                val relaySetName = prefs.getString(KEY_LAST_RELAY_SET_NAME, null)
+                val relaySetRelays = prefs.getString(KEY_LAST_RELAY_SET_RELAYS, null)
+                if (relaySetName != null && relaySetRelays != null) {
+                    val urls = relaySetRelays.split(",").filter { it.isNotBlank() }.toSet()
+                    if (urls.isNotEmpty()) {
+                        _selectedRelaySet.value = RelaySet(pubkeyHex ?: "", dTag = "", name = relaySetName, relays = urls, createdAt = 0)
+                    }
+                } else {
+                    prefs.getString(KEY_LAST_RELAY_URL, null)?.let { _selectedRelay.value = it }
+                }
+                // No restorable relay target → fall back to the default.
+                if (_selectedRelaySet.value == null && _selectedRelay.value == null) {
+                    landing = FeedType.ONLY_FOOD
+                }
+            }
+            FeedType.LIST -> {
+                val pubkey = prefs.getString(KEY_LAST_LIST_PUBKEY, null)
+                val dTag = prefs.getString(KEY_LAST_LIST_DTAG, null)
+                val list = if (pubkey != null && dTag != null) listRepo.getList(pubkey, dTag) else null
+                if (list != null) listRepo.selectList(list) else landing = FeedType.ONLY_FOOD
+            }
+            else -> {}
+        }
+
+        _feedType.value = landing
+        applyAuthorFilterForFeedType(landing)
+        return landing
     }
 
     /**
@@ -535,8 +608,6 @@ class FeedSubscriptionManager(
             withContext(processingContext) {
                 metadataFetcher.sweepMissingProfiles()
             }
-
-            restoreSavedFeedType()
 
             if (_feedType.value == FeedType.FOR_YOU) {
                 startForYouSupplementaryFetches()
@@ -1086,6 +1157,11 @@ class FeedSubscriptionManager(
 
     private fun onRelayFeedEose() {
         if (!isRelayBackedFeed()) return
+        // When a relay-backed feed (OnlyFood / RELAY / TRENDING) is the landing feed,
+        // its own EOSE owns the loading-screen handoff — never a feed that isn't
+        // showing. Idempotent for runtime switches (already Done by then).
+        _initialLoadDone.value = true
+        _initLoadingState.value = InitLoadingState.Done
         val status = _relayFeedStatus.value
         if (status is RelayFeedStatus.Connecting || status is RelayFeedStatus.Subscribing) {
             _relayFeedStatus.value = if (eventRepo.relayFeed.value.isEmpty()) {
@@ -1346,7 +1422,7 @@ class FeedSubscriptionManager(
         _trendingUsers.value = emptyList()
         _trendingUsersLoading.value = false
         isLoadingMore = false
-        hasRestoredFeedType = false
+        hasResolvedInitialFeed = false
         prefs.edit()
             .remove(KEY_LAST_FEED_TYPE).remove(KEY_LAST_RELAY_URL)
             .remove(KEY_LAST_RELAY_SET_NAME).remove(KEY_LAST_RELAY_SET_RELAYS)
@@ -1379,54 +1455,6 @@ class FeedSubscriptionManager(
             else -> {}
         }
         editor.apply()
-    }
-
-    private fun restoreSavedFeedType() {
-        if (hasRestoredFeedType) return
-        hasRestoredFeedType = true
-
-        // No prior explicit choice → land on OnlyFood (the app default). A saved
-        // selection always wins, so returning users keep whatever they last picked.
-        val savedName = prefs.getString(KEY_LAST_FEED_TYPE, null)
-        val savedType = if (savedName == null) {
-            FeedType.ONLY_FOOD
-        } else {
-            try { FeedType.valueOf(savedName) } catch (_: Exception) { FeedType.ONLY_FOOD }
-        }
-        if (savedType == _feedType.value) return
-
-        Log.d("RLC", "[FeedSub] restoring saved feed type: $savedType")
-        when (savedType) {
-            FeedType.FOLLOWS, FeedType.TRENDING, FeedType.EXTENDED_FOLLOWS, FeedType.ONLY_FOOD -> setFeedType(savedType)
-            FeedType.RELAY -> {
-                val relaySetName = prefs.getString(KEY_LAST_RELAY_SET_NAME, null)
-                val relaySetRelays = prefs.getString(KEY_LAST_RELAY_SET_RELAYS, null)
-                if (relaySetName != null && relaySetRelays != null) {
-                    val urls = relaySetRelays.split(",").filter { it.isNotBlank() }.toSet()
-                    if (urls.isNotEmpty()) {
-                        val set = RelaySet(pubkeyHex ?: "", dTag = "", name = relaySetName, relays = urls, createdAt = 0)
-                        _selectedRelaySet.value = set
-                        setFeedType(FeedType.RELAY)
-                        return
-                    }
-                }
-                val url = prefs.getString(KEY_LAST_RELAY_URL, null)
-                if (url != null) {
-                    _selectedRelay.value = url
-                    setFeedType(FeedType.RELAY)
-                }
-            }
-            FeedType.LIST -> {
-                val pubkey = prefs.getString(KEY_LAST_LIST_PUBKEY, null) ?: return
-                val dTag = prefs.getString(KEY_LAST_LIST_DTAG, null) ?: return
-                val list = listRepo.getList(pubkey, dTag)
-                if (list != null) {
-                    listRepo.selectList(list)
-                    setFeedType(FeedType.LIST)
-                }
-            }
-            else -> {}
-        }
     }
 
     /**

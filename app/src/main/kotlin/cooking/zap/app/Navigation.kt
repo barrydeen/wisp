@@ -3802,7 +3802,10 @@ fun WispNavHost(
                 totalSelected = selectedPubkeys.size,
                 onContinue = {
                     scope.launch {
-                        feedViewModel.setFeedType(FeedType.ONLY_FOOD)
+                        // Don't set the feed type here — reloadForNewAccount() runs
+                        // clearAll(), which would wipe a cache paint, and the REQ would
+                        // fire before the pool reconnects. Let the corrected default
+                        // (resolveInitialFeedType) own the OnlyFood landing.
                         feedViewModel.reloadForNewAccount()
                         relayViewModel.reload()
                         blossomServersViewModel.reload()
@@ -3823,7 +3826,8 @@ fun WispNavHost(
                 },
                 onSkip = {
                     scope.launch {
-                        feedViewModel.setFeedType(FeedType.ONLY_FOOD)
+                        // See onContinue: let the corrected default own the landing
+                        // instead of setting the feed type before clearAll() / reconnect.
                         feedViewModel.reloadForNewAccount()
                         relayViewModel.reload()
                         blossomServersViewModel.reload()
