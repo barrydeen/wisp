@@ -1385,8 +1385,14 @@ class FeedSubscriptionManager(
         if (hasRestoredFeedType) return
         hasRestoredFeedType = true
 
-        val savedName = prefs.getString(KEY_LAST_FEED_TYPE, null) ?: return
-        val savedType = try { FeedType.valueOf(savedName) } catch (_: Exception) { return }
+        // No prior explicit choice → land on OnlyFood (the app default). A saved
+        // selection always wins, so returning users keep whatever they last picked.
+        val savedName = prefs.getString(KEY_LAST_FEED_TYPE, null)
+        val savedType = if (savedName == null) {
+            FeedType.ONLY_FOOD
+        } else {
+            try { FeedType.valueOf(savedName) } catch (_: Exception) { FeedType.ONLY_FOOD }
+        }
         if (savedType == _feedType.value) return
 
         Log.d("RLC", "[FeedSub] restoring saved feed type: $savedType")

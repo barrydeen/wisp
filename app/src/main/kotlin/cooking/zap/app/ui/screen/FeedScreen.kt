@@ -621,6 +621,22 @@ fun FeedScreen(
                                     containerColor = MaterialTheme.colorScheme.surface
                                 ) {
                                     DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.tab_onlyfood)) },
+                                        onClick = {
+                                            showFeedTypeDropdown = false
+                                            viewModel.setFeedType(FeedType.ONLY_FOOD)
+                                            // WoT is on but the graph isn't ready (missing OR stale) → nudge
+                                            // the user to (re)compute it. WoT no-ops until then, so the feed
+                                            // still works; this matches the no-op condition (isNetworkReady).
+                                            if (onlyFoodWotEnabled && !viewModel.extendedNetworkRepo.isNetworkReady()) {
+                                                showSocialGraphDialog = true
+                                            }
+                                        },
+                                        trailingIcon = if (feedType == FeedType.ONLY_FOOD) {{
+                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        }} else null
+                                    )
+                                    DropdownMenuItem(
                                         text = { Text(stringResource(R.string.tab_for_you)) },
                                         onClick = {
                                             showFeedTypeDropdown = false
@@ -661,22 +677,6 @@ fun FeedScreen(
                                             viewModel.setFeedType(FeedType.TRENDING)
                                         },
                                         trailingIcon = if (feedType == FeedType.TRENDING) {{
-                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        }} else null
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.tab_onlyfood)) },
-                                        onClick = {
-                                            showFeedTypeDropdown = false
-                                            viewModel.setFeedType(FeedType.ONLY_FOOD)
-                                            // WoT is on but the graph isn't ready (missing OR stale) → nudge
-                                            // the user to (re)compute it. WoT no-ops until then, so the feed
-                                            // still works; this matches the no-op condition (isNetworkReady).
-                                            if (onlyFoodWotEnabled && !viewModel.extendedNetworkRepo.isNetworkReady()) {
-                                                showSocialGraphDialog = true
-                                            }
-                                        },
-                                        trailingIcon = if (feedType == FeedType.ONLY_FOOD) {{
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                         }} else null
                                     )
