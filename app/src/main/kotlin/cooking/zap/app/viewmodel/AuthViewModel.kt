@@ -8,6 +8,7 @@ import cooking.zap.app.nostr.hexToByteArray
 import cooking.zap.app.nostr.toHex
 import cooking.zap.app.repo.AccountInfo
 import cooking.zap.app.repo.FiatPreferences
+import cooking.zap.app.repo.KeyBackupPreferences
 import cooking.zap.app.repo.KeyRepository
 import cooking.zap.app.repo.SigningMode
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +16,17 @@ import kotlinx.coroutines.flow.StateFlow
 
 class AuthViewModel(app: Application) : AndroidViewModel(app) {
     val keyRepo = KeyRepository(app)
+
+    // Durable per-account "have you backed up your key?" state for the active account.
+    private val keyBackupPrefs = KeyBackupPreferences(app, keyRepo.getPubkeyHex())
+
+    /** True while the active account has a freshly generated key it hasn't backed up. */
+    val keyBackupNudge: StateFlow<Boolean> = keyBackupPrefs.nudgeRequired
+
+    init {
+        // Count this process start once, for whichever account is currently active.
+        keyBackupPrefs.onColdLaunch()
+    }
 
     private val _nsecInput = MutableStateFlow("")
     val nsecInput: StateFlow<String> = _nsecInput
@@ -49,6 +61,10 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             val keypair = Keys.generate()
             keyRepo.saveKeypair(keypair)
             keyRepo.reloadPrefs(keypair.pubkey.toHex())
+            // Brand-new key generated on-device → it must be backed up. This is the
+            // sole gate for the nudge; login/restore paths never set it.
+            keyBackupPrefs.reload(keypair.pubkey.toHex())
+            keyBackupPrefs.markBackupNeeded()
             _npub.value = Nip19.npubEncode(keypair.pubkey)
             _signingMode.value = SigningMode.LOCAL
             _error.value = null
@@ -89,6 +105,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             val keypair = Keys.fromPrivkey(privkey)
             keyRepo.saveKeypair(keypair)
             keyRepo.reloadPrefs(keypair.pubkey.toHex())
+            keyBackupPrefs.reload(keypair.pubkey.toHex())
             _npub.value = Nip19.npubEncode(keypair.pubkey)
             _signingMode.value = SigningMode.LOCAL
             _nsecInput.value = ""
@@ -106,6 +123,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             val pubkeyHex = pubkey.toHex()
             keyRepo.savePubkeyReadOnly(pubkeyHex)
             keyRepo.reloadPrefs(pubkeyHex)
+            keyBackupPrefs.reload(pubkeyHex)
             _npub.value = Nip19.npubEncode(pubkey)
             _signingMode.value = SigningMode.READ_ONLY
             _nsecInput.value = ""
@@ -122,6 +140,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             val profile = Nip19.nprofileDecode(nprofile)
             keyRepo.savePubkeyReadOnly(profile.pubkey)
             keyRepo.reloadPrefs(profile.pubkey)
+            keyBackupPrefs.reload(profile.pubkey)
             _npub.value = Nip19.npubEncode(profile.pubkey.hexToByteArray())
             _signingMode.value = SigningMode.READ_ONLY
             _nsecInput.value = ""
@@ -137,6 +156,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         return try {
             keyRepo.savePubkeyReadOnly(hex)
             keyRepo.reloadPrefs(hex)
+            keyBackupPrefs.reload(hex)
             _npub.value = Nip19.npubEncode(hex.hexToByteArray())
             _signingMode.value = SigningMode.READ_ONLY
             _nsecInput.value = ""
@@ -155,6 +175,8 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun refreshAfterExternalLogin() {
         keyRepo.refreshAccounts()
+        // Picks up backup_needed written by GoogleAuthViewModel for a new account.
+        keyBackupPrefs.reload(keyRepo.getPubkeyHex())
         _npub.value = keyRepo.getNpub()
         _signingMode.value = if (keyRepo.isLoggedIn()) keyRepo.getSigningMode() else null
         _error.value = null
@@ -163,9 +185,21 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
     fun switchAccount(pubkeyHex: String) {
         keyRepo.switchToAccount(pubkeyHex)
         keyRepo.reloadPrefs(pubkeyHex)
+        keyBackupPrefs.reload(pubkeyHex)
         _npub.value = Nip19.npubEncode(pubkeyHex.hexToByteArray())
         _signingMode.value = keyRepo.getSigningMode()
     }
+
+    // --- Key-backup nudge control (used by Navigation) ---
+
+    /** "I've saved it" — confirms backup and stops nudging this account. */
+    fun markKeyBackedUp() = keyBackupPrefs.markBackedUp()
+
+    /** "Skip for now" — defers; keeps the need alive and backs off the re-prompt. */
+    fun recordKeyBackupSkip() = keyBackupPrefs.recordSkip()
+
+    /** Whether this cold launch is due to actively re-show the backup screen. */
+    fun shouldRepromptKeyBackup(): Boolean = keyBackupPrefs.shouldRepromptOnLaunch()
 
     /**
      * Logs out the current account. Returns true if other accounts remain

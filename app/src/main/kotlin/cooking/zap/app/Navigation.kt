@@ -91,6 +91,7 @@ import cooking.zap.app.ui.screen.NourishHubScreen
 import cooking.zap.app.ui.screen.SousChefScreen
 import cooking.zap.app.ui.screen.BookmarksScreen
 import cooking.zap.app.ui.screen.HashtagFeedScreen
+import cooking.zap.app.ui.screen.BackupKeyScreen
 import cooking.zap.app.ui.screen.KeysScreen
 import cooking.zap.app.ui.screen.ListScreen
 import cooking.zap.app.ui.screen.LiveStreamScreen
@@ -109,6 +110,7 @@ import cooking.zap.app.ui.component.FloatingVideoPlayer
 import cooking.zap.app.ui.component.PipController
 import cooking.zap.app.ui.component.FullScreenVideoPlayer
 import cooking.zap.app.ui.component.FullScreenVideoState
+import cooking.zap.app.ui.component.KeyBackupBanner
 import cooking.zap.app.ui.component.NsecPasteWarningOverlay
 import cooking.zap.app.ui.screen.OnboardingSuggestionsScreen
 import cooking.zap.app.ui.screen.OnboardingTopicsScreen
@@ -185,6 +187,7 @@ object Routes {
     const val BOOKMARKS = "bookmarks"
     const val BOOKMARK_SET_DETAIL = "bookmark_set/{pubkey}/{dTag}"
     const val LOADING = "loading"
+    const val BACKUP_KEY = "backup_key?reprompt={reprompt}"
     const val ONBOARDING_PROFILE = "onboarding/profile"
     const val ONBOARDING_SUGGESTIONS = "onboarding/suggestions"
     const val ONBOARDING_TOPICS = "onboarding/topics"
@@ -244,6 +247,13 @@ object Routes {
     /** The plain article route (kind 30023 long-form that isn't a recipe). */
     fun article(kind: Int, author: String, dTag: String): String =
         "article/$kind/$author/${java.net.URLEncoder.encode(dTag, "UTF-8")}"
+
+    /**
+     * Build the key-backup route. `reprompt=false` (creation flow) advances to
+     * onboarding on dismiss; `reprompt=true` (banner / cold-launch nudge) sits on
+     * top of the feed and pops back to it.
+     */
+    fun backupKey(reprompt: Boolean): String = "backup_key?reprompt=$reprompt"
 }
 
 /**
@@ -476,7 +486,20 @@ fun WispNavHost(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    val nonAppRoutes = setOf(Routes.SPLASH, Routes.AUTH, Routes.GOOGLE_AUTH, Routes.LOADING, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS, Routes.ONBOARDING_TOPICS, Routes.ONBOARDING_FIRST_POST, Routes.EXISTING_USER_ONBOARDING, Routes.WATCH_ONLY_ONBOARDING)
+    // Active key-backup re-prompt: once per process, when we first land on the feed and
+    // the deferred reminder is due (1st skip → next launch, then backing off), re-show
+    // the backup screen on top of the feed. The passive banner handles ongoing nudging.
+    var launchRepromptHandled by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(currentRoute) {
+        if (!launchRepromptHandled && currentRoute == Routes.FEED) {
+            launchRepromptHandled = true
+            if (authViewModel.isLoggedIn && authViewModel.shouldRepromptKeyBackup()) {
+                navController.navigate(Routes.backupKey(reprompt = true))
+            }
+        }
+    }
+
+    val nonAppRoutes = setOf(Routes.SPLASH, Routes.AUTH, Routes.GOOGLE_AUTH, Routes.LOADING, Routes.BACKUP_KEY, Routes.ONBOARDING_PROFILE, Routes.ONBOARDING_SUGGESTIONS, Routes.ONBOARDING_TOPICS, Routes.ONBOARDING_FIRST_POST, Routes.EXISTING_USER_ONBOARDING, Routes.WATCH_ONLY_ONBOARDING)
     val hideBottomBarRoutes = nonAppRoutes + Routes.DM_CONVERSATION + Routes.DM_CONVERSATION_GROUP + Routes.CONTACT_PICKER + Routes.GROUP_ROOM + Routes.GROUP_DETAIL + Routes.LIVE_STREAM
     val socialGraphDiscoveryState by feedViewModel.extendedNetworkRepo.discoveryState.collectAsState()
     val socialGraphComputing = currentRoute == Routes.SOCIAL_GRAPH && (
@@ -704,6 +727,9 @@ fun WispNavHost(
     val drawerGlobalOnlineCount by feedViewModel.globalOnlineCount.collectAsState()
     var showOnlineNowSheet by remember { mutableStateOf(false) }
 
+    // Active account still needs to back up its key — drives the drawer dot + feed banner.
+    val keyBackupNudge by authViewModel.keyBackupNudge.collectAsState()
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = currentRoute in rootTabRoutes,
@@ -760,6 +786,7 @@ fun WispNavHost(
                 onSafety = { closeDrawerAndNavigate(Routes.SAFETY) },
                 onCustomEmojis = { closeDrawerAndNavigate(Routes.CUSTOM_EMOJIS) },
                 onKeys = { closeDrawerAndNavigate(Routes.KEYS) },
+                keyBackupNeeded = keyBackupNudge,
                 onPowSettings = { closeDrawerAndNavigate(Routes.POW_SETTINGS) },
                 onConsole = { closeDrawerAndNavigate(Routes.CONSOLE) },
                 connectedRelayCount = drawerConnectedCount,
@@ -878,7 +905,8 @@ fun WispNavHost(
                 viewModel = splashViewModel,
                 authViewModel = authViewModel,
                 onAccountCreated = {
-                    navController.navigate(Routes.ONBOARDING_PROFILE) {
+                    // New key generated → show the backup step before profile setup.
+                    navController.navigate(Routes.backupKey(reprompt = false)) {
                         popUpTo(Routes.SPLASH) { inclusive = true }
                     }
                 },
@@ -918,7 +946,7 @@ fun WispNavHost(
                     authViewModel.refreshAfterExternalLogin()
 
                     if (isNewAccount) {
-                        navController.navigate(Routes.ONBOARDING_PROFILE) {
+                        navController.navigate(Routes.backupKey(reprompt = false)) {
                             popUpTo(Routes.SPLASH) { inclusive = true }
                         }
                     } else if (wasAddingAccount && authViewModel.keyRepo.isOnboardingComplete()) {
@@ -956,8 +984,8 @@ fun WispNavHost(
                     authViewModel.isAddingAccount = false
 
                     if (isNewAccount) {
-                        // New key generation always goes through full onboarding
-                        navController.navigate(Routes.ONBOARDING_PROFILE)
+                        // New key generation: back up the key, then full onboarding.
+                        navController.navigate(Routes.backupKey(reprompt = false))
                     } else if (wasAddingAccount && authViewModel.keyRepo.isOnboardingComplete()) {
                         // Adding an existing account that already completed onboarding — skip straight to loading
                         feedViewModel.reloadForNewAccount()
@@ -3683,6 +3711,46 @@ fun WispNavHost(
             )
         }
 
+        composable(
+            Routes.BACKUP_KEY,
+            arguments = listOf(
+                navArgument("reprompt") { type = NavType.BoolType; defaultValue = false }
+            )
+        ) { backStackEntry ->
+            val reprompt = backStackEntry.arguments?.getBoolean("reprompt") ?: false
+            val backupPubkey = authViewModel.keyRepo.getPubkeyHex()
+            val backupAvatar = backupPubkey?.let { feedViewModel.eventRepo.getProfileData(it)?.picture }
+            // Creation flow → advance into onboarding. Re-prompt (banner / cold launch)
+            // sits on top of the feed → pop back to it.
+            val proceed: () -> Unit = {
+                if (reprompt) {
+                    navController.popBackStack()
+                } else {
+                    navController.navigate(Routes.ONBOARDING_PROFILE) {
+                        popUpTo(Routes.BACKUP_KEY) { inclusive = true }
+                    }
+                }
+            }
+            BackHandler {
+                // System back behaves like "Skip for now": keep the need alive, back off.
+                authViewModel.recordKeyBackupSkip()
+                proceed()
+            }
+            BackupKeyScreen(
+                keyRepository = authViewModel.keyRepo,
+                avatarUrl = backupAvatar,
+                onSaved = {
+                    authViewModel.markKeyBackedUp()
+                    proceed()
+                },
+                onSkip = {
+                    authViewModel.recordKeyBackupSkip()
+                    proceed()
+                },
+                onBackupExported = { authViewModel.markKeyBackedUp() }
+            )
+        }
+
         composable(Routes.ONBOARDING_PROFILE) {
             val onBack: () -> Unit = {
                 authViewModel.keyRepo.clearKeypair()
@@ -4138,6 +4206,16 @@ fun WispNavHost(
             .align(Alignment.BottomCenter)
             .padding(bottom = 16.dp)
     )
+    // Persistent key-backup nudge — only on the feed, only while the active account
+    // has an unconfirmed key backup. Collapse is per-session; it returns next launch.
+    var keyBackupBannerCollapsed by remember { mutableStateOf(false) }
+    KeyBackupBanner(
+        visible = keyBackupNudge && currentRoute == Routes.FEED && !keyBackupBannerCollapsed,
+        onBackup = { navController.navigate(Routes.backupKey(reprompt = true)) },
+        onDismiss = { keyBackupBannerCollapsed = true },
+        modifier = Modifier.align(Alignment.BottomCenter)
+    )
+
     NsecPasteWarningOverlay()
     } // CompositionLocalProvider
     } // Box

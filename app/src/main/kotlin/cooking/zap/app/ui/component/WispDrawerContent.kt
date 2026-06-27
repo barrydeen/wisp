@@ -2,6 +2,7 @@ package cooking.zap.app.ui.component
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
@@ -71,6 +72,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -107,6 +109,7 @@ fun WispDrawerContent(
     onDrafts: () -> Unit = {},
     onMediaServers: () -> Unit,
     onKeys: () -> Unit = {},
+    keyBackupNeeded: Boolean = false,
     onSocialGraph: () -> Unit = {},
     onSafety: () -> Unit = {},
     onPowSettings: () -> Unit = {},
@@ -505,11 +508,18 @@ fun WispDrawerContent(
             icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
             label = { Text(stringResource(R.string.drawer_settings)) },
             badge = {
-                Icon(
-                    if (settingsExpanded) Icons.Outlined.KeyboardArrowDown
-                    else Icons.Outlined.KeyboardArrowRight,
-                    contentDescription = null
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Surface the nested Keys nudge while Settings is collapsed.
+                    if (keyBackupNeeded && !settingsExpanded) {
+                        NudgeDot()
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Icon(
+                        if (settingsExpanded) Icons.Outlined.KeyboardArrowDown
+                        else Icons.Outlined.KeyboardArrowRight,
+                        contentDescription = null
+                    )
+                }
             },
             selected = false,
             onClick = { settingsExpanded = !settingsExpanded },
@@ -534,6 +544,7 @@ fun WispDrawerContent(
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
                     label = { Text(stringResource(R.string.drawer_keys)) },
+                    badge = { if (keyBackupNeeded) NudgeDot() },
                     selected = false,
                     onClick = onKeys,
                     modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
@@ -747,4 +758,15 @@ fun WispDrawerContent(
         }
         }
     }
+}
+
+/** Small accent dot indicating an unattended item (e.g. an un-backed-up key). */
+@Composable
+private fun NudgeDot() {
+    Box(
+        modifier = Modifier
+            .size(8.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.error)
+    )
 }

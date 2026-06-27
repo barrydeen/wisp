@@ -573,6 +573,25 @@
     <string name="settings_private_key_copied">Private key copied</string>
     <string name="settings_authenticate_view_key">Authenticate to view your private key</string>
     <string name="settings_auth_failed">Authentication failed: %s</string>
+    <string name="btn_hide_private_key">Hide private key</string>
+    <string name="nsec_qr_title">Private key QR</string>
+    <string name="nsec_qr_warning">Only show this to devices you trust. Anyone who scans it gains full control of your account.</string>
+
+    <!-- Key backup step (shown right after a new account is created, and re-surfaced as a nudge) -->
+    <string name="backup_key_title">Save your backup key</string>
+    <string name="backup_key_intro">Your account lives on your key. Save it now so you can always get back in.</string>
+    <string name="backup_key_private_label">Private key (nsec)</string>
+    <string name="backup_key_public_label">Public key (npub)</string>
+    <string name="backup_key_npub_safe">This is your public identity — safe to share.</string>
+    <string name="backup_key_download">Download backup file</string>
+    <string name="backup_key_downloaded">Backup file saved</string>
+    <string name="backup_key_download_failed">Couldn\'t save the backup file</string>
+    <string name="backup_key_warning">This key is the only way to recover your account. There is no password reset. Anyone who has it controls your account — never share it.</string>
+    <string name="backup_key_saved">I\'ve saved it</string>
+    <string name="backup_key_skip">Skip for now</string>
+    <string name="key_backup_banner_text">Back up your key so you never lose your account</string>
+    <string name="key_backup_banner_action">Back up</string>
+    <string name="key_backup_banner_dismiss">Dismiss</string>
     <string name="settings_never_share_key">Never share your private key. Anyone with your nsec has full control of your account.</string>
     <string name="settings_muted_words_description">Notes containing these words will be hidden from your feed.</string>
     <string name="settings_no_muted_users">No muted users</string>
