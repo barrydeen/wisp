@@ -5,10 +5,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.repo.RecipeRepository
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.Locale
 
 /**
  * UI state for the onboarding "Save a few recipes to your Cookbook" step.
@@ -31,34 +34,28 @@ class RecipeOnboardingViewModel(app: Application) : AndroidViewModel(app) {
     val loading: StateFlow<Boolean> = _loading
 
     private var started = false
+    private var loadJob: Job? = null
 
     fun load(recipeRepo: RecipeRepository) {
         if (started) return
         started = true
         recipeRepo.loadFeed(limit = 100)
-        viewModelScope.launch {
-            recipeRepo.recipes.collect { recipes ->
-                // Commit a single stable selection once a reasonable pool has
-                // arrived, so the cards don't reshuffle as results stream in.
-                if (_featured.value.isNotEmpty()) return@collect
-                if (recipes.size >= POOL_TARGET) {
-                    _featured.value = pickFeatured(recipes)
-                    _loading.value = false
-                }
-            }
-        }
-        // Fallback: commit whatever we have (possibly a thin pool) after a grace
-        // window so the step never hangs on a spinner.
-        viewModelScope.launch {
-            delay(LOAD_TIMEOUT_MS)
-            if (_featured.value.isEmpty()) {
-                _featured.value = pickFeatured(recipeRepo.recipes.value)
-            }
+        loadJob = viewModelScope.launch {
+            // Wait for a reasonable pool before committing ONE stable selection so
+            // the cards don't reshuffle as results stream in. `first { }` completes
+            // the collection once satisfied (no lingering collector); the timeout
+            // falls back to whatever has arrived so the step never hangs.
+            val pool = withTimeoutOrNull(LOAD_TIMEOUT_MS) {
+                recipeRepo.recipes.first { it.size >= POOL_TARGET }
+            } ?: recipeRepo.recipes.value
+            _featured.value = pickFeatured(pool)
             _loading.value = false
         }
     }
 
     fun reset() {
+        loadJob?.cancel()
+        loadJob = null
         started = false
         _featured.value = emptyList()
         _loading.value = true
@@ -73,7 +70,8 @@ class RecipeOnboardingViewModel(app: Application) : AndroidViewModel(app) {
         if (recipes.isEmpty()) return emptyList()
         val withImage = recipes.filter { !it.image.isNullOrBlank() }
         val pool = withImage.ifEmpty { recipes }
-        fun inCollection(r: RecipeParser.Recipe) = r.categories.any { it.lowercase() in COLLECTION_TAGS }
+        fun inCollection(r: RecipeParser.Recipe) =
+            r.categories.any { it.lowercase(Locale.ROOT) in COLLECTION_TAGS }
         val ordered = pool.filter(::inCollection).shuffled() + pool.filterNot(::inCollection).shuffled()
 
         val perAuthor = HashMap<String, Int>()
