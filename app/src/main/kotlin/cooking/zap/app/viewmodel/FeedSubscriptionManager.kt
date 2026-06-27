@@ -260,6 +260,9 @@ class FeedSubscriptionManager(
             }
             FeedType.ONLY_FOOD -> {
                 eventRepo.clearRelayFeed()
+                // Cache-first paint: show persisted food notes instantly, then merge
+                // fresh relay events on top (pack paint-from-cache → fetch-fill pattern).
+                eventRepo.paintOnlyFoodFromCache()
                 subscribeOnlyFoodFeed()
             }
         }

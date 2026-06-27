@@ -165,6 +165,25 @@ class EventPersistence(
         }
     }
 
+    /**
+     * All persisted events across several [kinds], newest first, bounded by [limit].
+     * Cheap — `kind` is `@Index`. Used by the OnlyFood cache-first paint to pull
+     * persisted kind 1/6/1068 events for the food feed.
+     */
+    fun getEventsByKinds(kinds: IntArray, limit: Int = 500): List<NostrEvent> {
+        if (kinds.isEmpty()) return emptyList()
+        return try {
+            box.query(EventEntity_.kind.oneOf(kinds))
+                .order(EventEntity_.createdAt, io.objectbox.query.QueryBuilder.DESCENDING)
+                .build()
+                .use { it.find(0, limit.toLong()) }
+                .mapNotNull { it.toNostrEvent() }
+        } catch (e: Exception) {
+            Log.w("EventPersistence", "getEventsByKinds failed: ${e.message}")
+            emptyList()
+        }
+    }
+
     /** Query recent notification-relevant events (kinds 1, 6, 7, 9735) for seeding NotificationRepository. */
     fun getRecentNotificationEvents(limit: Int = 500): List<NostrEvent> {
         return try {
