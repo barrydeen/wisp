@@ -319,8 +319,12 @@ class FeedSubscriptionManager(
      * merge on top of the current feed with no blank flash — the pull-to-refresh
      * path. The subscribe methods do not self-clear, so [clear]=false is a pure
      * merge-on-top. No-op for author feeds.
+     *
+     * [trendingMode] is captured by the caller so the (re)subscribe choice and any
+     * completion signal it awaits stay consistent even if the user flips Trending
+     * mode mid-refresh.
      */
-    private fun restartRelayFeed(clear: Boolean) {
+    private fun restartRelayFeed(clear: Boolean, trendingMode: TrendingMode = _trendingMode.value) {
         when (_feedType.value) {
             FeedType.RELAY -> {
                 if (clear) eventRepo.clearRelayFeed()
@@ -328,7 +332,7 @@ class FeedSubscriptionManager(
             }
             FeedType.TRENDING -> {
                 if (clear) eventRepo.clearRelayFeed()
-                if (_trendingMode.value == TrendingMode.USERS) {
+                if (trendingMode == TrendingMode.USERS) {
                     subscribeTrendingUsers()
                 } else {
                     subscribeTrendingFeed()
@@ -358,13 +362,16 @@ class FeedSubscriptionManager(
 
         // Relay-backed feeds: re-subscribe WITHOUT clearing (merge-on-top, no blank),
         // then flip the spinner off once fresh results land — EOSE-count on the new
-        // sub with a hard timeout, no fixed delay.
+        // sub with a hard timeout, no fixed delay. Capture the Trending mode once so
+        // the (re)subscribe and the completion signal can't disagree if the user
+        // flips mode mid-refresh.
+        val mode = _trendingMode.value
         _isRefreshing.value = true
-        restartRelayFeed(clear = false)
+        restartRelayFeed(clear = false, trendingMode = mode)
         val newSubId = relayFeedSubId
         scope.launch {
             try {
-                if (type == FeedType.TRENDING && _trendingMode.value == TrendingMode.USERS) {
+                if (type == FeedType.TRENDING && mode == TrendingMode.USERS) {
                     // Trending-users completes via its streaming collector, signalled
                     // by trendingUsersLoading flipping false (hard-timeout backstop).
                     withTimeoutOrNull(8_000) {
