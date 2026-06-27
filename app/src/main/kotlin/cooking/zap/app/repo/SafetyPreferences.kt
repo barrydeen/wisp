@@ -15,10 +15,11 @@ class SafetyPreferences(private val context: Context, pubkeyHex: String? = null)
     private val _wotFilterEnabled = MutableStateFlow(prefs.getBoolean(KEY_WOT_FILTER, false))
     val wotFilterEnabled: StateFlow<Boolean> = _wotFilterEnabled
 
-    // OnlyFood-specific WoT filter — distinct from the global [wotFilterEnabled]
-    // (which stays off by default). The OnlyFood global feed is a stranger-heavy
-    // discovery surface where WoT matters most, so this defaults ON.
-    private val _onlyFoodWotEnabled = MutableStateFlow(prefs.getBoolean(KEY_ONLYFOOD_WOT, true))
+    // OnlyFood-specific WoT filter — distinct from the global [wotFilterEnabled].
+    // Defaults OFF to mirror the web client, which applies NO web-of-trust gate to
+    // the #foodstr discovery feed (structural + mute only). Kept as an opt-in toggle
+    // for users who want to narrow the stranger-heavy feed to their trust set.
+    private val _onlyFoodWotEnabled = MutableStateFlow(prefs.getBoolean(KEY_ONLYFOOD_WOT, false))
     val onlyFoodWotEnabled: StateFlow<Boolean> = _onlyFoodWotEnabled
 
     private var safelistSet =
@@ -60,7 +61,7 @@ class SafetyPreferences(private val context: Context, pubkeyHex: String? = null)
         prefs = context.getSharedPreferences(prefsName(newPubkeyHex), Context.MODE_PRIVATE)
         _spamFilterEnabled.value = prefs.getBoolean(KEY_SPAM_FILTER, true)
         _wotFilterEnabled.value = prefs.getBoolean(KEY_WOT_FILTER, false)
-        _onlyFoodWotEnabled.value = prefs.getBoolean(KEY_ONLYFOOD_WOT, true)
+        _onlyFoodWotEnabled.value = prefs.getBoolean(KEY_ONLYFOOD_WOT, false)
         safelistSet = HashSet(prefs.getStringSet(KEY_SPAM_SAFELIST, emptySet()) ?: emptySet())
         _spamSafelist.value = safelistSet.toSet()
     }

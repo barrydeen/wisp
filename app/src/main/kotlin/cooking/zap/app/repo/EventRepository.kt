@@ -117,8 +117,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     val onlyFoodWotDropped: StateFlow<Int> = _onlyFoodWotDropped
 
     // OnlyFood structural spam caps — mirror the web client's FoodstrFeed thresholds.
-    private val HELLTHREAD_P_LIMIT = 15
+    private val HELLTHREAD_P_LIMIT = 25
     private val MAX_HASHTAGS = 5
+    // Inline content hashtags, mirroring the web's HASHTAG_PATTERN = /(^|\s)#([^\s#]+)/g.
+    private val CONTENT_HASHTAG_REGEX = Regex("""(^|\s)#([^\s#]+)""")
 
     // Author filter: null = show all, non-null = only show events from these pubkeys
     private val _authorFilter = MutableStateFlow<Set<String>?>(null)
@@ -1507,6 +1509,10 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
     // -- OnlyFood spam-defense helpers (used only by addHashtagFeedEvent) --
 
+    /** Count inline #hashtags in note content, mirroring the web's countContentHashtags. */
+    private fun countContentHashtags(content: String): Int =
+        CONTENT_HASHTAG_REGEX.findAll(content).count()
+
     /** Mirror the web client's structural caps: hellthread p-tags and hashtag spam. */
     private fun isStructuralSpam(event: NostrEvent): Boolean {
         var pCount = 0
@@ -1518,14 +1524,19 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 "t" -> tCount++
             }
         }
-        return pCount >= HELLTHREAD_P_LIMIT || tCount > MAX_HASHTAGS
+        // Mirror the web's getHashtagCount = max(inline content #tags, t-tags), so
+        // inline-hashtag spam is caught even when the author omits #t tags.
+        val hashtagCount = maxOf(countContentHashtags(event.content), tCount)
+        return pCount >= HELLTHREAD_P_LIMIT || hashtagCount > MAX_HASHTAGS
     }
 
     /**
      * OnlyFood web-of-trust gate. Drops authors outside the trust set
-     * (qualified network ∪ curator food seed). Toggle-gated (default on) and
-     * distinct from the global [isWotFiltered]/wotFilterEnabled. NO-OPS when the
-     * social graph isn't ready, to avoid an empty feed (mute + structural still apply).
+     * (qualified network ∪ curator food seed). Opt-in toggle, default OFF to mirror
+     * the web client, which applies NO web-of-trust gate to the #foodstr discovery
+     * feed (structural + mute only). Distinct from the global
+     * [isWotFiltered]/wotFilterEnabled. NO-OPS when the social graph isn't ready, to
+     * avoid an empty feed (mute + structural still apply).
      */
     fun isOnlyFoodWotFiltered(pubkey: String): Boolean {
         if (safetyPrefs?.onlyFoodWotEnabled?.value != true) return false
