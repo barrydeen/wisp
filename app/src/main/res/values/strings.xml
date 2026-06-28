@@ -114,7 +114,9 @@
     <string name="btn_save_profile">Save Profile</string>
     <string name="btn_save_draft">Save draft</string>
     <string name="compose_new_post">New Post</string>
-    <string name="new_group_dm">New Group DM</string>
+    <string name="new_conversation">New conversation</string>
+    <string name="cd_new_conversation">New conversation</string>
+    <string name="action_start_conversation">Start conversation (%1$d)</string>
     <string name="compose_reply">Reply</string>
     <string name="compose_quote">Quote</string>
     <string name="compose_placeholder">What\'s on your mind?</string>
@@ -329,7 +331,7 @@
     <string name="filter_zen">Zen</string>
     <string name="notif_filtered">Filtered</string>
     <string name="notif_filter_title">Notification Filters</string>
-    <string name="notif_chat_rooms">Chat rooms</string>
+    <string name="notif_chat_rooms">Groups</string>
     <string name="notif_enable_all">Enable all</string>
     <string name="notif_disable_all">Disable all</string>
     <string name="cd_mute_notifications">Mute notifications</string>
@@ -759,7 +761,7 @@
     <string name="profile_tab_media">Media</string>
     <string name="profile_tab_following">Following</string>
     <string name="profile_tab_followers">Followers</string>
-    <string name="profile_tab_groups">Chat Rooms</string>
+    <string name="profile_tab_groups">Groups</string>
     <string name="profile_tab_relays">Relays</string>
     <string name="profile_sort_recent">Recent</string>
     <string name="profile_sort_likes">Likes</string>
@@ -779,7 +781,7 @@
     <string name="profile_no_media">No media yet</string>
     <string name="profile_not_following">Not following anyone</string>
     <string name="profile_no_followers">No followers found</string>
-    <string name="profile_no_groups">No chat rooms</string>
+    <string name="profile_no_groups">No groups</string>
     <string name="profile_no_relays">No relay list published</string>
     <string name="profile_relay_list">Relay List (NIP-65)</string>
     <string name="profile_discovered_relays">Discovered Relays</string>
@@ -892,31 +894,28 @@
     <string name="wallet_recent">Recent</string>
     <string name="wallet_view_all">View all</string>
 
-    <!-- NIP-29 Chat Rooms -->
-    <string name="tab_direct_messages">Direct Messages</string>
-    <string name="tab_chat_rooms">Chat Rooms</string>
-    <string name="title_join_chat_room">Join Chat Room</string>
-    <string name="title_create_group">Create Chat Room</string>
+    <!-- NIP-29 Groups -->
+    <string name="title_join_chat_room">Join Group</string>
+    <string name="title_create_group">Create Group</string>
     <string name="error_invalid_invite_link">Invalid invite link</string>
-    <string name="title_join_rejected">Couldn\'t join chat room</string>
-    <string name="msg_join_rejected_body">The relay rejected your join request. This room may be invite-only — ask an admin for an invite link with a code.</string>
+    <string name="title_join_rejected">Couldn\'t join group</string>
+    <string name="msg_join_rejected_body">The relay rejected your join request. This group may be invite-only — ask an admin for an invite link with a code.</string>
     <string name="label_relay_url">Relay URL</string>
-    <string name="label_group_id">Room ID</string>
-    <string name="label_group_name">Room Name</string>
+    <string name="label_group_id">Group ID</string>
+    <string name="label_group_name">Group Name</string>
     <string name="action_join">Join</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_create">Create</string>
-    <string name="action_join_group">Join existing chat room</string>
-    <string name="action_create_group">Create new chat room</string>
-    <string name="action_discover_groups">Discover chat rooms</string>
-    <string name="title_discover_groups">Discover Chat Rooms</string>
-    <string name="error_no_chat_rooms">No chat rooms yet</string>
-    <string name="error_join_room_hint">Tap + to join or create a chat room</string>
-    <string name="cd_join_group">Join chat room</string>
-    <string name="cd_new_group_dm">New group DM</string>
-    <string name="cd_group_actions">Chat room actions</string>
-    <string name="title_group_detail">Chat Room Info</string>
-    <string name="cd_edit_group">Edit chat room</string>
+    <string name="action_join_group">Join existing group</string>
+    <string name="action_create_group">Create new group</string>
+    <string name="action_discover_groups">Discover groups</string>
+    <string name="title_discover_groups">Discover Groups</string>
+    <string name="error_no_chat_rooms">No groups yet</string>
+    <string name="error_join_room_hint">Tap + to join or create a group</string>
+    <string name="cd_join_group">Join group</string>
+    <string name="cd_group_actions">Group actions</string>
+    <string name="title_group_detail">Group Info</string>
+    <string name="cd_edit_group">Edit group</string>
     <string name="label_invite_link">Invite Link</string>
     <string name="cd_copy_link">Copy link</string>
     <string name="label_members_count">Members (%d)</string>
@@ -924,41 +923,41 @@
     <string name="title_remove_user">Remove User</string>
     <string name="msg_remove_user_confirm">Remove %s from this group?</string>
     <string name="action_remove">Remove</string>
-    <string name="title_edit_group">Edit Chat Room</string>
+    <string name="title_edit_group">Edit Group</string>
     <string name="label_group_about">About</string>
     <string name="action_save">Save</string>
     <string name="cd_remove_user">Remove user</string>
     <string name="label_group_picture">Picture URL</string>
     <string name="cd_upload_group_picture">Upload group picture</string>
-    <string name="action_leave_group">Leave Chat Room</string>
-    <string name="title_leave_group">Leave Chat Room</string>
-    <string name="msg_leave_group_confirm">Leave this chat room? You can rejoin later using the invite link.</string>
-    <string name="action_delete_group">Delete Chat Room</string>
-    <string name="title_delete_group">Delete Chat Room</string>
-    <string name="msg_delete_group_confirm">Permanently delete this chat room? This cannot be undone.</string>
+    <string name="action_leave_group">Leave Group</string>
+    <string name="title_leave_group">Leave Group</string>
+    <string name="msg_leave_group_confirm">Leave this group? You can rejoin later using the invite link.</string>
+    <string name="action_delete_group">Delete Group</string>
+    <string name="title_delete_group">Delete Group</string>
+    <string name="msg_delete_group_confirm">Permanently delete this group? This cannot be undone.</string>
     <string name="title_delete_note">Delete note?</string>
     <string name="msg_delete_note_confirm">Send a deletion request to relays for this note? This cannot be guaranteed.</string>
     <string name="label_notifications">Notifications</string>
     <string name="label_notifications_on">On — new messages will be tracked</string>
     <string name="label_notifications_off">Off — tap to enable</string>
 
-    <!-- Create-room access level (public/private) -->
-    <string name="label_room_access">Who can access this room?</string>
+    <!-- Create-group access level (public/private) -->
+    <string name="label_room_access">Who can access this group?</string>
     <string name="room_access_public_label">Public</string>
     <string name="room_access_public_desc">Anyone can find and read it. New members join by invite or approval.</string>
     <string name="room_access_private_label">Private</string>
     <string name="room_access_private_desc">Invite-only. Hidden from discovery and readable by members only.</string>
-    <string name="msg_create_members_only">Creating a chat room requires an active Zap Cooking membership.</string>
+    <string name="msg_create_members_only">Creating a group requires an active Zap Cooking membership.</string>
     <string name="title_action_failed">Action failed</string>
 
-    <!-- Top-level Rooms surface + invite redeem -->
-    <string name="title_rooms">Rooms</string>
-    <string name="cd_rooms">Rooms</string>
-    <string name="section_your_rooms">Your rooms</string>
+    <!-- Top-level Groups surface + invite redeem -->
+    <string name="title_rooms">Groups</string>
+    <string name="cd_rooms">Groups</string>
+    <string name="section_your_rooms">Your groups</string>
     <string name="section_discover_rooms">Discover</string>
-    <string name="error_no_rooms">No rooms yet</string>
-    <string name="error_no_rooms_hint">Create a room or paste an invite link to get started.</string>
-    <string name="error_no_public_rooms">No public rooms found.</string>
+    <string name="error_no_rooms">No groups yet</string>
+    <string name="error_no_rooms_hint">Create a group or paste an invite link to get started.</string>
+    <string name="error_no_public_rooms">No public groups found.</string>
     <string name="action_paste_invite">Paste invite link</string>
     <string name="title_redeem_invite">Join with invite</string>
     <string name="action_continue">Continue</string>
@@ -980,7 +979,7 @@
     <string name="report_cat_illegal">Illegal content</string>
     <string name="report_cat_other">Other</string>
     <string name="title_remove_ban">Remove &amp; ban</string>
-    <string name="msg_remove_ban_confirm">Remove and ban %s from this room? They won\'t be able to rejoin, even with an invite.</string>
+    <string name="msg_remove_ban_confirm">Remove and ban %s from this group? They won\'t be able to rejoin, even with an invite.</string>
 
     <!-- NIP-29 group configuration flags -->
     <string name="group_flag_private_label">Private</string>

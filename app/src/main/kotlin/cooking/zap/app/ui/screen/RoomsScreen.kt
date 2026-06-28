@@ -554,7 +554,7 @@ private fun RedeemInviteDialog(
                         value = link,
                         onValueChange = { link = it; showError = false },
                         label = { Text(stringResource(R.string.label_invite_link)) },
-                        placeholder = { Text("pantry.zap.cooking'roomid?code=…") },
+                        placeholder = { Text("pantry.zap.cooking'groupid?code=…") },
                         singleLine = true,
                         isError = showError,
                         supportingText = if (showError) {

@@ -19,7 +19,7 @@ fun AuthApprovalDialog(
             Text(
                 text = "The relay $relayUrl is requesting authentication. " +
                     "Authenticating will reveal your identity (pubkey) to the relay operator, " +
-                    "which some relays need before serving private DMs or chat rooms. " +
+                    "which some relays need before serving private DMs or groups. " +
                     "If you allow once, we'll remember this choice for this relay.",
                 style = MaterialTheme.typography.bodyMedium
             )

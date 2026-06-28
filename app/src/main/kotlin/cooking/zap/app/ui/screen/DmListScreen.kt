@@ -17,7 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.GroupAdd
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -121,7 +121,7 @@ fun DmListScreen(
                     onClick = onNewGroupDm,
                     contentDescription = null
                 ) {
-                    Icon(Icons.Outlined.GroupAdd, contentDescription = stringResource(R.string.cd_new_group_dm), tint = Color.White)
+                    Icon(Icons.AutoMirrored.Outlined.Chat, contentDescription = stringResource(R.string.cd_new_conversation), tint = Color.White)
                 }
             }
         }

@@ -77,7 +77,7 @@ fun ContactPickerScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.new_group_dm)) },
+                title = { Text(stringResource(R.string.new_conversation)) },
                 navigationIcon = {
                     IconButton(onClick = {
                         viewModel.clearContactSelection()
@@ -103,7 +103,7 @@ fun ContactPickerScreen(
                         .fillMaxWidth()
                         .padding(16.dp)
                 ) {
-                    Text("Start Group DM (${selected.size} selected)")
+                    Text(stringResource(R.string.action_start_conversation, selected.size))
                 }
             }
         }

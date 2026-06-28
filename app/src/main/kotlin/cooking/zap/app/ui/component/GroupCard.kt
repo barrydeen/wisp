@@ -114,8 +114,8 @@ fun GroupCard(
                     }
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = if (overflow > 0) "and $overflow more in this chat room"
-                               else "${members.size} in this chat room",
+                        text = if (overflow > 0) "and $overflow more in this group"
+                               else "${members.size} in this group",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
