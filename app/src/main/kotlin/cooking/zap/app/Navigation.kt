@@ -334,6 +334,18 @@ fun WispNavHost(
     val notificationsViewModel: NotificationsViewModel = viewModel()
     val draftsViewModel: DraftsViewModel = viewModel()
     val searchViewModel: SearchViewModel = viewModel()
+    val followRecoveryViewModel: cooking.zap.app.viewmodel.FollowRecoveryViewModel = viewModel(
+        factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                return cooking.zap.app.viewmodel.FollowRecoveryViewModel(
+                    feedViewModel.relayPool,
+                    feedViewModel.contactRepo,
+                    feedViewModel.keyRepo
+                ) as T
+            }
+        }
+    )
     val consoleViewModel: ConsoleViewModel = viewModel()
     val relayHealthViewModel: RelayHealthViewModel = viewModel()
     val onboardingViewModel: OnboardingViewModel = viewModel()
@@ -765,6 +777,7 @@ fun WispNavHost(
     val drawerOnlinePubkeys by feedViewModel.eventRepo.onlinePubkeys.collectAsState()
     val drawerGlobalOnlineCount by feedViewModel.globalOnlineCount.collectAsState()
     var showOnlineNowSheet by remember { mutableStateOf(false) }
+    var showFollowRecoverySheet by remember { mutableStateOf(false) }
 
     // Active account still needs to back up its key — drives the drawer dot + feed banner.
     val keyBackupNudge by authViewModel.keyBackupNudge.collectAsState()
@@ -823,6 +836,12 @@ fun WispNavHost(
                 onMediaServers = { closeDrawerAndNavigate(Routes.BLOSSOM_SERVERS) },
                 onSocialGraph = { closeDrawerAndNavigate(Routes.SOCIAL_GRAPH) },
                 onSafety = { closeDrawerAndNavigate(Routes.SAFETY) },
+                onFollowRecovery = {
+                    drawerScope.launch {
+                        drawerState.close()
+                        showFollowRecoverySheet = true
+                    }
+                },
                 onCustomEmojis = { closeDrawerAndNavigate(Routes.CUSTOM_EMOJIS) },
                 onKeys = { closeDrawerAndNavigate(Routes.KEYS) },
                 keyBackupNeeded = keyBackupNudge,
@@ -891,6 +910,13 @@ fun WispNavHost(
                 navController.navigate("profile/$pk")
             },
             onDismiss = { showOnlineNowSheet = false },
+        )
+    }
+
+    if (showFollowRecoverySheet) {
+        cooking.zap.app.ui.component.FollowRecoverySheet(
+            viewModel = followRecoveryViewModel,
+            onDismiss = { showFollowRecoverySheet = false }
         )
     }
 
@@ -1474,7 +1500,8 @@ fun WispNavHost(
                     val ref = cooking.zap.app.nostr.Nip30.buildSetReference(pk, dTag)
                     feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
                 },
-                onMuteUser = if (!isOwnProfile) { { feedViewModel.blockUser(pubkey) } } else null
+                onMuteUser = if (!isOwnProfile) { { feedViewModel.blockUser(pubkey) } } else null,
+                onRestoreFollows = if (isOwnProfile) { { showFollowRecoverySheet = true } } else null
             )
             if (showProfileEmojiLibrary) {
                 cooking.zap.app.ui.component.EmojiLibrarySheet(

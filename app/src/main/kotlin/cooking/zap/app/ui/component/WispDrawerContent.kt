@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Settings
@@ -112,6 +113,7 @@ fun WispDrawerContent(
     keyBackupNeeded: Boolean = false,
     onSocialGraph: () -> Unit = {},
     onSafety: () -> Unit = {},
+    onFollowRecovery: () -> Unit = {},
     onPowSettings: () -> Unit = {},
     onCustomEmojis: () -> Unit = {},
     onConsole: () -> Unit = {},
@@ -569,6 +571,13 @@ fun WispDrawerContent(
                             label = { Text(stringResource(R.string.drawer_custom_emojis)) },
                             selected = false,
                             onClick = onCustomEmojis,
+                            modifier = Modifier.height(48.dp).padding(start = 56.dp, end = 12.dp)
+                        )
+                        NavigationDrawerItem(
+                            icon = { Icon(Icons.Outlined.History, contentDescription = null) },
+                            label = { Text(stringResource(R.string.drawer_restore_follows)) },
+                            selected = false,
+                            onClick = onFollowRecovery,
                             modifier = Modifier.height(48.dp).padding(start = 56.dp, end = 12.dp)
                         )
                         // Network Status — single entry point for relay

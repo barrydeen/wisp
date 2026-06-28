@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="brand_orange">#FFEC4700</color>
+    <color name="mutable_text">#FF000000</color>
     <color name="bg_dark">#FF111827</color>
 </resources>

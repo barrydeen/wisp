@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CheckCircle
@@ -202,7 +203,8 @@ fun UserProfileScreen(
     onAddEmojiSet: ((String, String) -> Unit)? = null,
     onRemoveEmojiSet: ((String, String) -> Unit)? = null,
     isEmojiSetAdded: ((String, String) -> Boolean)? = null,
-    onMuteUser: (() -> Unit)? = null
+    onMuteUser: (() -> Unit)? = null,
+    onRestoreFollows: (() -> Unit)? = null
 ) {
     val resolvedEmojisState = rememberUpdatedState(resolvedEmojis)
     val unicodeEmojisState = rememberUpdatedState(unicodeEmojis)
@@ -638,6 +640,7 @@ fun UserProfileScreen(
                     isBlocked = isBlocked,
                     onMuteUser = onMuteUser,
                     onUnmuteUser = onUnblockUser,
+                    onRestoreFollows = if (isOwnProfile) onRestoreFollows else null,
                     sortContent = sortButtonContent
                 )
             }
@@ -1282,6 +1285,7 @@ private fun ProfileHeader(
     isBlocked: Boolean = false,
     onMuteUser: (() -> Unit)? = null,
     onUnmuteUser: (() -> Unit)? = null,
+    onRestoreFollows: (() -> Unit)? = null,
     sortContent: (@Composable RowScope.() -> Unit)? = null
 ) {
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
@@ -1564,6 +1568,20 @@ private fun ProfileHeader(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (onRestoreFollows != null) {
+                    Spacer(Modifier.width(4.dp))
+                    androidx.compose.material3.IconButton(
+                        onClick = onRestoreFollows,
+                        modifier = Modifier.size(20.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.History,
+                            contentDescription = stringResource(R.string.drawer_restore_follows),
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 Spacer(Modifier.width(16.dp))
             }
             Text(

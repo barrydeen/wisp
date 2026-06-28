@@ -23,6 +23,7 @@
     <string name="drawer_media_servers">Media Servers</string>
     <string name="drawer_keys">Keys</string>
     <string name="drawer_safety">Safety</string>
+    <string name="drawer_restore_follows">Restore Follows</string>
     <string name="drawer_proof_of_work">Proof of Work</string>
     <string name="drawer_social_graph">Social Graph</string>
     <string name="drawer_custom_emojis">Custom Emojis</string>
