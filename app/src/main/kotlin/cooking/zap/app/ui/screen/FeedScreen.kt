@@ -690,16 +690,12 @@ fun FeedScreen(
                                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                         }} else null
                                     )
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.tab_list)) },
-                                        onClick = {
-                                            showFeedTypeDropdown = false
-                                            showListPicker = true
-                                        },
-                                        trailingIcon = if (feedType == FeedType.LIST) {{
-                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        }} else null
-                                    )
+                                    // "List" feed-type entry removed from the dropdown. This
+                                    // was the only in-screen trigger for the list picker, so
+                                    // ListPickerDialog (below) is now unreachable from here by
+                                    // design; FeedType.LIST and the picker code are retained.
+                                    // A user already on FeedType.LIST can still switch to any
+                                    // other feed via this menu.
                                     DropdownMenuItem(
                                         text = { Text(stringResource(R.string.tab_hashtags)) },
                                         onClick = {
