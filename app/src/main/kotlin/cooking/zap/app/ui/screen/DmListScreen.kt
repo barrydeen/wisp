@@ -24,13 +24,18 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,54 +44,85 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cooking.zap.app.R
 import cooking.zap.app.nostr.DmConversation
+import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.nostr.toNpub
 import cooking.zap.app.repo.EventRepository
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.viewmodel.DmListViewModel
+import cooking.zap.app.viewmodel.GroupListViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * Direct Messages list. Chat Rooms (NIP-29 groups) used to live here as a second tab; they were
- * promoted to a dedicated top-level [RoomsScreen] reached from the feed, so this screen is now
- * DM-only.
+ * The Messages destination — a two-tab surface:
+ *  - "Messages": person-to-person direct messages (this screen's own content).
+ *  - "Rooms": the NIP-29 chat-rooms surface, hosted by reusing [RoomsTab] as-is.
+ *
+ * This is one bottom-bar destination (DM_LIST); the split is internal, not a new bottom-bar tab.
+ * The bottom-bar Messages unread badge stays driven by DM unreads for now (room activity isn't
+ * folded in yet).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DmListScreen(
     viewModel: DmListViewModel,
+    groupListViewModel: GroupListViewModel,
     eventRepo: EventRepository,
     userPubkey: String? = null,
+    signer: NostrSigner? = null,
     onBack: (() -> Unit)? = null,
     onConversation: (DmConversation) -> Unit,
-    onNewGroupDm: () -> Unit = {}
+    onNewGroupDm: () -> Unit = {},
+    onGroupRoom: (relayUrl: String, groupId: String) -> Unit = { _, _ -> }
 ) {
     val conversations by viewModel.conversationList.collectAsState()
+    // 0 = Messages (default), 1 = Rooms. Persist across config changes / tab returns.
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.nav_messages)) },
-                navigationIcon = {
-                    if (onBack != null) {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
+            Column {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.nav_messages)) },
+                    navigationIcon = {
+                        if (onBack != null) {
+                            IconButton(onClick = onBack) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
+                            }
                         }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background
+                    )
                 )
-            )
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = MaterialTheme.colorScheme.background
+                ) {
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text(stringResource(R.string.nav_messages)) }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text(stringResource(R.string.title_rooms)) }
+                    )
+                }
+            }
         },
         floatingActionButton = {
-            cooking.zap.app.ui.component.ZapGradientFab(
-                onClick = onNewGroupDm,
-                contentDescription = null
-            ) {
-                Icon(Icons.Outlined.GroupAdd, contentDescription = stringResource(R.string.cd_new_group_dm), tint = Color.White)
+            // New-DM FAB belongs to the Messages tab; the Rooms tab has its own create/invite header.
+            if (selectedTab == 0) {
+                cooking.zap.app.ui.component.ZapGradientFab(
+                    onClick = onNewGroupDm,
+                    contentDescription = null
+                ) {
+                    Icon(Icons.Outlined.GroupAdd, contentDescription = stringResource(R.string.cd_new_group_dm), tint = Color.White)
+                }
             }
         }
     ) { padding ->
@@ -95,7 +131,15 @@ fun DmListScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            DmListContent(conversations, eventRepo, onConversation)
+            when (selectedTab) {
+                0 -> DmListContent(conversations, eventRepo, onConversation)
+                else -> RoomsTab(
+                    groupListViewModel = groupListViewModel,
+                    eventRepo = eventRepo,
+                    signer = signer,
+                    onOpenRoom = onGroupRoom
+                )
+            }
         }
     }
 }

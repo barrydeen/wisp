@@ -127,7 +127,6 @@ import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.GridView
-import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.HowToVote
 import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.Search
@@ -155,7 +154,6 @@ fun FeedScreen(
     // Opens the app-wide navigation drawer, which is hoisted to WispNavHost
     // so it's shared with the Recipes root tab. The avatar tap calls this.
     onOpenDrawer: () -> Unit = {},
-    onRooms: (() -> Unit)? = null,
     onCompose: (() -> Unit)? = null,
     onReply: (NostrEvent) -> Unit,
     onProfileClick: (String) -> Unit = {},
@@ -742,17 +740,6 @@ fun FeedScreen(
                         }
                     },
                     actions = {
-                        // Rooms (NIP-29 chat rooms) — promoted to a top-level destination beside
-                        // the feed, mirroring the web's /community placement.
-                        if (onRooms != null) {
-                            IconButton(onClick = onRooms) {
-                                Icon(
-                                    Icons.Outlined.Groups,
-                                    contentDescription = stringResource(R.string.cd_rooms),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
                         // Persistent search affordance (web-style) — first action.
                         IconButton(onClick = onSearch) {
                             Icon(

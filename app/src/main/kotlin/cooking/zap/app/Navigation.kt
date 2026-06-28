@@ -71,7 +71,6 @@ import cooking.zap.app.ui.screen.DmConversationScreen
 import cooking.zap.app.ui.screen.DmListScreen
 import cooking.zap.app.ui.screen.DraftsScreen
 import cooking.zap.app.ui.screen.FeedScreen
-import cooking.zap.app.ui.screen.RoomsScreen
 import cooking.zap.app.ui.screen.ProfileEditScreen
 import cooking.zap.app.ui.screen.RelayScreen
 import cooking.zap.app.ui.screen.ThreadScreen
@@ -179,7 +178,6 @@ object Routes {
     const val DM_CONVERSATION = "dm/{pubkey}"
     const val DM_CONVERSATION_GROUP = "dm/group/{conversationKey}"
     const val CONTACT_PICKER = "contact_picker"
-    const val ROOMS = "rooms"
     const val GROUP_ROOM = "group_room/{encodedRelay}/{groupId}?scrollTo={scrollTo}"
     const val GROUP_DETAIL = "group_detail/{encodedRelay}/{groupId}"
     const val NOTIFICATIONS = "notifications"
@@ -1131,7 +1129,6 @@ fun WispNavHost(
             FeedScreen(
                 viewModel = feedViewModel,
                 onOpenDrawer = onOpenDrawer,
-                onRooms = { navController.navigate(Routes.ROOMS) },
                 scrollToTopTrigger = scrollToTopTrigger,
                 onCompose = if (signingMode == SigningMode.READ_ONLY) null else {
                     {
@@ -1619,8 +1616,10 @@ fun WispNavHost(
             }
             DmListScreen(
                 viewModel = dmListViewModel,
+                groupListViewModel = groupListViewModel,
                 eventRepo = feedViewModel.eventRepo,
                 userPubkey = feedViewModel.getUserPubkey(),
+                signer = activeSigner,
                 onBack = null,
                 onConversation = { convo ->
                     if (convo.isGroup) {
@@ -1631,18 +1630,8 @@ fun WispNavHost(
                 },
                 onNewGroupDm = {
                     navController.navigate(Routes.CONTACT_PICKER)
-                }
-            )
-        }
-
-        composable(Routes.ROOMS) {
-            LaunchedEffect(Unit) { refreshInboxSubscriptionsIfStale() }
-            RoomsScreen(
-                groupListViewModel = groupListViewModel,
-                eventRepo = feedViewModel.eventRepo,
-                signer = activeSigner,
-                onBack = { navController.popBackStack() },
-                onOpenRoom = { relayUrl, groupId ->
+                },
+                onGroupRoom = { relayUrl, groupId ->
                     val encoded = android.util.Base64.encodeToString(
                         relayUrl.toByteArray(Charsets.UTF_8),
                         android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING

@@ -2,11 +2,11 @@ package cooking.zap.app.ui.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,7 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Notifications
@@ -31,11 +30,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -61,20 +57,21 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Top-level Rooms destination — the promoted home for NIP-29 chat rooms (previously buried as a
- * tab inside the DM screen). Mirrors the web /community + /groups IA:
+ * Rooms surface — the home for NIP-29 chat rooms. Hosted as the "Rooms" tab inside the Messages
+ * (DM_LIST) destination. Mirrors the web /community + /groups IA:
  *  - "Your rooms": the rooms you've joined (keeps unread / mute affordances).
  *  - "Discover": a browse list of PUBLIC, VISIBLE rooms via [GroupListViewModel.discoverGroups].
  *    Hidden / private rooms are filtered out of public browse.
  *  - Create Room (PR 1 dialog) + Paste-invite redeem.
+ *
+ * This is content-only (no Scaffold/top bar) so it can be dropped into the Messages tab row.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RoomsScreen(
+fun RoomsTab(
     groupListViewModel: GroupListViewModel,
     eventRepo: EventRepository,
     signer: NostrSigner? = null,
-    onBack: (() -> Unit)? = null,
     onOpenRoom: (relayUrl: String, groupId: String) -> Unit = { _, _ -> }
 ) {
     val joined by groupListViewModel.groups.collectAsState()
@@ -112,42 +109,32 @@ fun RoomsScreen(
         }
     }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.title_rooms)) },
-                navigationIcon = {
-                    if (onBack != null) {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.cd_back))
-                        }
-                    }
-                },
-                actions = {
-                    // Create + invite-redeem both need to sign (9007 / 9021), so they're only
-                    // offered when there's a signing key — READ_ONLY accounts just browse.
-                    if (signer != null) {
-                        IconButton(onClick = { showRedeem = true }) {
-                            Icon(Icons.Outlined.Link, contentDescription = stringResource(R.string.action_paste_invite))
-                        }
-                        IconButton(onClick = { showCreate = true }) {
-                            Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.action_create_group))
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Create + invite-redeem both need to sign (9007 / 9021), so they're only offered when
+        // there's a signing key — READ_ONLY accounts just browse. (Hosted in a tab, so these live
+        // in an inline header row rather than a top-bar.)
+        if (signer != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { showRedeem = true }) {
+                    Icon(Icons.Outlined.Link, contentDescription = stringResource(R.string.action_paste_invite))
+                }
+                IconButton(onClick = { showCreate = true }) {
+                    Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.action_create_group))
+                }
+            }
         }
-    ) { padding ->
         val nothingToShow = joined.isEmpty() && browse.isEmpty() && !discoveryLoading
         if (nothingToShow) {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
+                    .fillMaxWidth()
+                    .weight(1f)
                     .padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -166,8 +153,8 @@ fun RoomsScreen(
         } else {
             LazyColumn(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
+                    .fillMaxWidth()
+                    .weight(1f)
             ) {
                 if (joined.isNotEmpty()) {
                     item { SectionHeader(stringResource(R.string.section_your_rooms)) }
