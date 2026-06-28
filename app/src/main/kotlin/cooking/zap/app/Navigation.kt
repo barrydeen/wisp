@@ -163,6 +163,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.CompositionLocalProvider
 import cooking.zap.app.ui.util.LocalCanSign
+import cooking.zap.app.ui.component.CookingUtilitiesSheet
+import cooking.zap.app.ui.component.FloatingTimerBar
+import cooking.zap.app.ui.component.TimerCompletionOverlay
+import cooking.zap.app.viewmodel.CookingTimerViewModel
 
 object Routes {
     const val SPLASH = "splash"
@@ -352,6 +356,7 @@ fun WispNavHost(
     val topicOnboardingViewModel: cooking.zap.app.viewmodel.TopicOnboardingViewModel = viewModel()
     val recipeOnboardingViewModel: cooking.zap.app.viewmodel.RecipeOnboardingViewModel = viewModel()
     val splashViewModel: SplashViewModel = viewModel()
+    val cookingTimerViewModel: CookingTimerViewModel = viewModel()
 
     relayViewModel.relayPool = feedViewModel.relayPool
 
@@ -779,6 +784,7 @@ fun WispNavHost(
     val drawerGlobalOnlineCount by feedViewModel.globalOnlineCount.collectAsState()
     var showOnlineNowSheet by remember { mutableStateOf(false) }
     var showFollowRecoverySheet by remember { mutableStateOf(false) }
+    var showCookingUtilitiesSheet by remember { mutableStateOf(false) }
 
     // Active account still needs to back up its key — drives the drawer dot + feed banner.
     val keyBackupNudge by authViewModel.keyBackupNudge.collectAsState()
@@ -834,6 +840,12 @@ fun WispNavHost(
                 onOnlyFood = { closeDrawerAndNavigate(Routes.ONLY_FOOD) },
                 onLists = { closeDrawerAndNavigate(Routes.LISTS_HUB) },
                 onDrafts = { closeDrawerAndNavigate(Routes.DRAFTS) },
+                onKitchenTools = {
+                    drawerScope.launch {
+                        drawerState.close()
+                        showCookingUtilitiesSheet = true
+                    }
+                },
                 onMediaServers = { closeDrawerAndNavigate(Routes.BLOSSOM_SERVERS) },
                 onSocialGraph = { closeDrawerAndNavigate(Routes.SOCIAL_GRAPH) },
                 onSafety = { closeDrawerAndNavigate(Routes.SAFETY) },
@@ -921,10 +933,23 @@ fun WispNavHost(
         )
     }
 
+    if (showCookingUtilitiesSheet) {
+        CookingUtilitiesSheet(
+            timerViewModel = cookingTimerViewModel,
+            onMinimize = { showCookingUtilitiesSheet = false },
+            onDismiss = { showCookingUtilitiesSheet = false }
+        )
+    }
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             Column {
+                FloatingTimerBar(
+                    viewModel = cookingTimerViewModel,
+                    isSheetVisible = showCookingUtilitiesSheet,
+                    onExpand = { showCookingUtilitiesSheet = true }
+                )
                 FloatingAudioPlayer()
                 if (showBottomBar) {
                     WispBottomBar(
@@ -1210,6 +1235,7 @@ fun WispNavHost(
                         restoreState = true
                     }
                 },
+                onKitchenTools = { showCookingUtilitiesSheet = true },
                 onSousChef = { navController.navigate(Routes.SOUS_CHEF) { launchSingleTop = true } },
                 onCheffy = { navController.navigate(Routes.CHEFFY) { launchSingleTop = true } },
                 onNourish = { navController.navigate(Routes.nourish()) { launchSingleTop = true } },
@@ -3021,6 +3047,7 @@ fun WispNavHost(
                         restoreState = true
                     }
                 },
+                onKitchenTools = { showCookingUtilitiesSheet = true },
                 onSousChef = { navController.navigate(Routes.SOUS_CHEF) { launchSingleTop = true } },
                 onCheffy = { navController.navigate(Routes.CHEFFY) { launchSingleTop = true } },
                 onNourish = { navController.navigate(Routes.nourish()) { launchSingleTop = true } },
@@ -4342,6 +4369,12 @@ fun WispNavHost(
     )
 
     NsecPasteWarningOverlay()
+
+    val completionEvent by cookingTimerViewModel.completionEvent.collectAsState()
+    TimerCompletionOverlay(
+        timer = completionEvent,
+        onDismiss = { cookingTimerViewModel.dismissCompletion() }
+    )
     } // CompositionLocalProvider
     } // Box
 

@@ -55,6 +55,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -118,6 +119,7 @@ fun RecipeFeedScreen(
     // mirroring the Feed tab. No content-type filter here.
     onOpenDrawer: () -> Unit = {},
     onSearch: () -> Unit = {},
+    onKitchenTools: () -> Unit = {},
     onSousChef: () -> Unit = {},
     onCheffy: () -> Unit = {},
     onNourish: () -> Unit = {},
@@ -176,6 +178,13 @@ fun RecipeFeedScreen(
                             Icons.Outlined.Search,
                             contentDescription = stringResource(R.string.title_search),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(onClick = onKitchenTools) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_cooking_pot),
+                            contentDescription = stringResource(R.string.drawer_kitchen_tools),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     IntelligenceMenu(
