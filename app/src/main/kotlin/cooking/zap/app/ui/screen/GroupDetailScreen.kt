@@ -633,7 +633,7 @@ private fun GroupHeader(room: GroupRoom?) {
         ProfilePicture(url = metadata?.picture, size = 72)
         Spacer(Modifier.height(12.dp))
         Text(
-            text = metadata?.name ?: room?.groupId ?: "Group",
+            text = metadata?.name ?: room?.groupId ?: stringResource(R.string.group_fallback_title),
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface
         )

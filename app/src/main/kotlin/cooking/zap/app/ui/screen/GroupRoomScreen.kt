@@ -322,7 +322,8 @@ fun GroupRoomScreen(
     }
 
     val isJoined = effectiveRoom != null
-    val title = effectiveRoom?.metadata?.name ?: viewModel.groupId.ifEmpty { "Group" }
+    val title = effectiveRoom?.metadata?.name
+        ?: viewModel.groupId.ifEmpty { stringResource(R.string.group_fallback_title) }
 
     val onlinePubkeys by eventRepo.onlinePubkeys.collectAsState()
     val groupMembersSet = remember(effectiveRoom?.members) {

@@ -1035,4 +1035,21 @@
     <string name="wallet_switch_wallet">Switch Wallet</string>
     <string name="wallet_switch_wallet_body">Disconnect this wallet so you can use your default wallet or restore a different one. Your funds stay safe — you can reconnect this wallet anytime by entering its recovery phrase.</string>
     <string name="wallet_default_seed_info">This wallet is derived from your Nostr key, so the phrase below is just for export to other wallet apps. You don\'t need to back it up — your nsec is the backup.</string>
+
+    <!-- Group fallback title + member summary -->
+    <string name="group_fallback_title">Group</string>
+    <plurals name="group_members_more">
+        <item quantity="one">and %d more in this group</item>
+        <item quantity="other">and %d more in this group</item>
+    </plurals>
+    <plurals name="group_members_count">
+        <item quantity="one">%d in this group</item>
+        <item quantity="other">%d in this group</item>
+    </plurals>
+
+    <!-- Relay authentication dialog -->
+    <string name="auth_dialog_title">Relay Authentication</string>
+    <string name="auth_dialog_body">The relay %1$s is requesting authentication. Authenticating will reveal your identity (pubkey) to the relay operator, which some relays need before serving private DMs or groups. If you allow once, we\'ll remember this choice for this relay.</string>
+    <string name="auth_dialog_allow">Allow</string>
+    <string name="auth_dialog_deny">Deny</string>
 </resources>

@@ -23,8 +23,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import cooking.zap.app.R
 import cooking.zap.app.nostr.Nip29
 import cooking.zap.app.repo.EventRepository
 import cooking.zap.app.repo.GroupPreview
@@ -114,8 +116,10 @@ fun GroupCard(
                     }
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = if (overflow > 0) "and $overflow more in this group"
-                               else "${members.size} in this group",
+                        text = if (overflow > 0)
+                                   pluralStringResource(R.plurals.group_members_more, overflow, overflow)
+                               else
+                                   pluralStringResource(R.plurals.group_members_count, members.size, members.size),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
