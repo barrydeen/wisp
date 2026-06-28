@@ -942,6 +942,15 @@
     <string name="label_notifications_on">On — new messages will be tracked</string>
     <string name="label_notifications_off">Off — tap to enable</string>
 
+    <!-- Create-room access level (public/private) -->
+    <string name="label_room_access">Who can access this room?</string>
+    <string name="room_access_public_label">Public</string>
+    <string name="room_access_public_desc">Anyone can find and read it. New members join by invite or approval.</string>
+    <string name="room_access_private_label">Private</string>
+    <string name="room_access_private_desc">Invite-only. Hidden from discovery and readable by members only.</string>
+    <string name="msg_create_members_only">Creating a chat room requires an active Zap Cooking membership.</string>
+    <string name="title_action_failed">Action failed</string>
+
     <!-- NIP-29 group configuration flags -->
     <string name="group_flag_private_label">Private</string>
     <string name="group_flag_private_desc">Only members can read messages</string>

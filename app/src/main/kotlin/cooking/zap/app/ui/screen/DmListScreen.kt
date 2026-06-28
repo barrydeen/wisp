@@ -36,8 +36,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -70,7 +70,6 @@ import cooking.zap.app.repo.GroupRoom
 import cooking.zap.app.ui.component.GroupCard
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.viewmodel.DmListViewModel
-import cooking.zap.app.ui.theme.wispSwitchColors
 import cooking.zap.app.viewmodel.GroupListViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -220,13 +219,11 @@ fun DmListScreen(
     if (showCreateDialog) {
         CreateGroupDialog(
             onDismiss = { showCreateDialog = false },
-            onCreate = { relayUrl, name, isPrivate, isClosed, isRestricted, isHidden ->
+            onCreate = { relayUrl, name, about, isPrivate ->
                 showCreateDialog = false
                 groupListViewModel.createGroup(relayUrl, name, signer,
-                    isPrivate = isPrivate,
-                    isClosed = isClosed,
-                    isRestricted = isRestricted,
-                    isHidden = isHidden)
+                    about = about,
+                    isPrivate = isPrivate)
             }
         )
     }
@@ -272,22 +269,35 @@ fun DmListScreen(
     }
 
     adminError?.let { err ->
+        // A create rejection citing membership/restriction is the relay's "active members only"
+        // gate — surface a clean, actionable line instead of the raw relay string.
+        val isCreateMembersOnly = err.action.startsWith("createGroup") &&
+            err.message.contains("member", ignoreCase = true)
         AlertDialog(
             onDismissRequest = { adminError = null },
-            title = { Text("Action failed") },
+            title = { Text(stringResource(R.string.title_action_failed)) },
             text = {
                 Column {
-                    Text(
-                        "The relay rejected this action.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = "Step: ${err.action}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (err.message.isNotBlank()) {
+                    if (isCreateMembersOnly) {
+                        Text(
+                            stringResource(R.string.msg_create_members_only),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    } else {
+                        Text(
+                            "The relay rejected this action.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "Step: ${err.action}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    // For the members-only create case the clean message above stands on its own;
+                    // only append the raw relay string for the generic rejection path.
+                    if (!isCreateMembersOnly && err.message.isNotBlank()) {
                         Spacer(Modifier.height(4.dp))
                         Text(
                             text = "Relay said: ${err.message}",
@@ -517,18 +527,16 @@ private fun CreateGroupDialog(
     onCreate: (
         relayUrl: String,
         name: String,
-        isPrivate: Boolean,
-        isClosed: Boolean,
-        isRestricted: Boolean,
-        isHidden: Boolean
+        about: String,
+        isPrivate: Boolean
     ) -> Unit
 ) {
     var groupName by remember { mutableStateOf("") }
+    var about by remember { mutableStateOf("") }
     var relayUrl by remember { mutableStateOf(cooking.zap.app.nostr.Nip29.DEFAULT_GROUP_RELAYS.first()) }
+    // Default to Public. Rooms are always closed (invite/approval join) regardless of this choice;
+    // the toggle only controls discoverability + read access (see createGroup).
     var isPrivate by remember { mutableStateOf(false) }
-    var isClosed by remember { mutableStateOf(false) }
-    var isRestricted by remember { mutableStateOf(false) }
-    var isHidden by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -544,36 +552,39 @@ private fun CreateGroupDialog(
                 )
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
+                    value = about,
+                    onValueChange = { about = it },
+                    label = { Text(stringResource(R.string.label_group_about)) },
+                    minLines = 2,
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
                     value = relayUrl,
                     onValueChange = { relayUrl = it },
                     label = { Text(stringResource(R.string.label_relay_url)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(8.dp))
-                GroupFlagSwitch(
-                    label = stringResource(R.string.group_flag_private_label),
-                    description = stringResource(R.string.group_flag_private_desc),
-                    checked = isPrivate,
-                    onCheckedChange = { isPrivate = it }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    stringResource(R.string.label_room_access),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                GroupFlagSwitch(
-                    label = stringResource(R.string.group_flag_closed_label),
-                    description = stringResource(R.string.group_flag_closed_desc),
-                    checked = isClosed,
-                    onCheckedChange = { isClosed = it }
+                Spacer(Modifier.height(4.dp))
+                AccessLevelOption(
+                    label = stringResource(R.string.room_access_public_label),
+                    description = stringResource(R.string.room_access_public_desc),
+                    selected = !isPrivate,
+                    onSelect = { isPrivate = false }
                 )
-                GroupFlagSwitch(
-                    label = stringResource(R.string.group_flag_restricted_label),
-                    description = stringResource(R.string.group_flag_restricted_desc),
-                    checked = isRestricted,
-                    onCheckedChange = { isRestricted = it }
-                )
-                GroupFlagSwitch(
-                    label = stringResource(R.string.group_flag_hidden_label),
-                    description = stringResource(R.string.group_flag_hidden_desc),
-                    checked = isHidden,
-                    onCheckedChange = { isHidden = it }
+                AccessLevelOption(
+                    label = stringResource(R.string.room_access_private_label),
+                    description = stringResource(R.string.room_access_private_desc),
+                    selected = isPrivate,
+                    onSelect = { isPrivate = true }
                 )
             }
         },
@@ -582,8 +593,7 @@ private fun CreateGroupDialog(
                 onClick = {
                     val url = relayUrl.trim()
                     if (url.isNotEmpty()) onCreate(
-                        url, groupName.trim(),
-                        isPrivate, isClosed, isRestricted, isHidden
+                        url, groupName.trim(), about.trim(), isPrivate
                     )
                 }
             ) {
@@ -599,26 +609,27 @@ private fun CreateGroupDialog(
 }
 
 @Composable
-private fun GroupFlagSwitch(
+private fun AccessLevelOption(
     label: String,
     description: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    selected: Boolean,
+    onSelect: () -> Unit
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
+            .clickable { onSelect() }
             .padding(vertical = 6.dp)
     ) {
+        RadioButton(selected = selected, onClick = onSelect)
+        Spacer(Modifier.width(4.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface)
             Text(description, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange, colors = wispSwitchColors())
     }
 }
 

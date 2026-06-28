@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cooking.zap.app.nostr.ClientMessage
 import cooking.zap.app.nostr.Filter
+import cooking.zap.app.nostr.LocalSigner
 import cooking.zap.app.nostr.Nip29
 import cooking.zap.app.nostr.Nip30
 import cooking.zap.app.nostr.Nip51
@@ -516,21 +517,43 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Create a chat room with a deterministic posture. Rooms are ALWAYS `closed` — joining is
+     * invite/approval-based on this relay (kind 9009 invite codes), never auto-join — so we never
+     * emit an `open` tag. The public/private choice picks between two fixed flag sets:
+     *
+     *  - Public  → `public`, `closed`, `unrestricted`, `visible` (discoverable + readable preview;
+     *              join still requires an invite/approval)
+     *  - Private → `private`, `closed`, `restricted`, `hidden`   (invite-only, unlisted, read-gated)
+     *
+     * The explicit 9002 makes the posture deterministic rather than inherited from the relay default
+     * (which is private + closed). It is sent on every create **for [LocalSigner] only**: a NIP-55
+     * [RemoteSigner] would issue a second create-time signing request, which trips the documented
+     * infinite loop in the signer bridge after "Always allow" is granted. For a remote signer we skip
+     * the forced 9002 and let the room inherit the relay default posture (private + closed); the name
+     * is still stored locally for immediate display.
+     *
+     * A signer is required: READ_ONLY accounts (no [signer]) cannot create and we return early before
+     * mutating any local state, so we never leave a phantom local room the relay doesn't know about.
+     */
     fun createGroup(
         relayUrl: String,
         name: String,
         signer: NostrSigner?,
-        isPrivate: Boolean = false,
-        isClosed: Boolean = false,
-        isRestricted: Boolean = false,
-        isHidden: Boolean = false
+        about: String = "",
+        isPrivate: Boolean = false
     ) {
         val repo = groupRepo ?: return
         val pool = relayPool ?: return
+        val s = signer ?: return
         val relayUrl = relayUrl.lowercase().trimEnd('/')
         val groupId = Nip29.generateGroupId()
-        // Store name locally — avoids a second signing operation at create time which
-        // causes an infinite loop in the remote signer bridge after "Always allow" is granted.
+        // Rooms are never open: closed is always on, restricted/hidden track the private choice.
+        val isClosed = true
+        val isRestricted = isPrivate
+        val isHidden = isPrivate
+        // Store name locally so the room shows its name immediately, before the 39000 metadata
+        // event round-trips back from the relay.
         repo.addGroup(relayUrl, groupId, localName = name.trim().ifEmpty { null })
         // Optimistically record the chosen flags so the UI reflects the intended posture
         // before the 39000 metadata event round-trips back from the relay.
@@ -538,60 +561,59 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
             groupId = groupId,
             name = name.trim().ifEmpty { null },
             picture = null,
-            about = null,
+            about = about.trim().ifEmpty { null },
             isPrivate = isPrivate,
             isClosed = isClosed,
             isRestricted = isRestricted,
             isHidden = isHidden
         ))
         subscribeToGroup(relayUrl, groupId)
-        publishGroupList(signer)
-        val anyFlagSet = isPrivate || isClosed || isRestricted || isHidden
-        signer?.let { s ->
-            viewModelScope.launch(Dispatchers.Default) {
-                val createResult = publishAdminEvent(
-                    pool = pool,
-                    signer = s,
-                    relayUrl = relayUrl,
-                    kind = Nip29.KIND_CREATE_GROUP,
-                    content = "",
-                    tags = listOf(listOf("h", groupId)),
-                    label = "createGroup/9007"
-                )
+        publishGroupList(s)
+        viewModelScope.launch(Dispatchers.Default) {
+            val createResult = publishAdminEvent(
+                pool = pool,
+                signer = s,
+                relayUrl = relayUrl,
+                kind = Nip29.KIND_CREATE_GROUP,
+                content = "",
+                tags = listOf(listOf("h", groupId)),
+                label = "createGroup/9007"
+            )
 
-                // If the relay rejected the create, rolling the local placeholder back avoids
-                // later 9009/9002 calls trying to address a group the relay doesn't know about.
-                if (createResult != null && !createResult.accepted) {
-                    repo.removeGroup(relayUrl, groupId)
-                    return@launch
-                }
-
-                // Only fire the follow-up 9002 if the user actually customized the group's
-                // posture. This keeps default "open" creations to a single signing op (the
-                // original behavior that avoided the remote-signer bridge infinite loop).
-                if (!anyFlagSet) return@launch
-
-                // Give the relay time to process 9007 and mark us as admin before 9002 —
-                // relay29 rejects edit-metadata from non-admins, and back-to-back events
-                // can race against the admin grant.
-                kotlinx.coroutines.delay(1_500)
-
-                val editTags = mutableListOf(listOf("h", groupId))
-                if (name.isNotBlank()) editTags.add(listOf("name", name.trim()))
-                editTags.add(listOf(if (isPrivate) "private" else "public"))
-                editTags.add(listOf(if (isClosed) "closed" else "open"))
-                editTags.add(listOf(if (isRestricted) "restricted" else "unrestricted"))
-                editTags.add(listOf(if (isHidden) "hidden" else "visible"))
-                publishAdminEvent(
-                    pool = pool,
-                    signer = s,
-                    relayUrl = relayUrl,
-                    kind = Nip29.KIND_EDIT_METADATA,
-                    content = "",
-                    tags = editTags,
-                    label = "createGroup/9002"
-                )
+            // If the relay rejected the create, rolling the local placeholder back avoids
+            // later 9009/9002 calls trying to address a group the relay doesn't know about.
+            // (publishAdminEvent already surfaced the relay's reason via adminErrors.)
+            if (createResult != null && !createResult.accepted) {
+                repo.removeGroup(relayUrl, groupId)
+                return@launch
             }
+
+            // Force the deterministic posture only for local signers — a remote signer's second
+            // signing op would trip the bridge infinite-loop, so it falls back to the relay default.
+            if (s !is LocalSigner) return@launch
+
+            // Give the relay time to process 9007 and mark us as admin before 9002 —
+            // the relay rejects edit-metadata from non-admins, and back-to-back events
+            // can race against the admin grant.
+            kotlinx.coroutines.delay(1_500)
+
+            // Set the full posture explicitly. NEVER emit "open" — rooms are closed.
+            val editTags = mutableListOf(listOf("h", groupId))
+            if (name.isNotBlank()) editTags.add(listOf("name", name.trim()))
+            if (about.isNotBlank()) editTags.add(listOf("about", about.trim()))
+            editTags.add(listOf(if (isPrivate) "private" else "public"))
+            editTags.add(listOf("closed"))
+            editTags.add(listOf(if (isRestricted) "restricted" else "unrestricted"))
+            editTags.add(listOf(if (isHidden) "hidden" else "visible"))
+            publishAdminEvent(
+                pool = pool,
+                signer = s,
+                relayUrl = relayUrl,
+                kind = Nip29.KIND_EDIT_METADATA,
+                content = "",
+                tags = editTags,
+                label = "createGroup/9002"
+            )
         }
     }
 
@@ -615,7 +637,9 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
             if (about.isNotBlank()) tags.add(listOf("about", about.trim()))
             if (picture.isNotBlank()) tags.add(listOf("picture", picture.trim()))
             tags.add(listOf(if (existingMeta?.isPrivate == true) "private" else "public"))
-            tags.add(listOf(if (existingMeta?.isClosed == true) "closed" else "open"))
+            // NEVER emit "open" — all rooms are closed/invite-join (mirror createGroup). Republishing
+            // a legacy non-closed room must not re-open it and re-enable auto-join.
+            tags.add(listOf("closed"))
             tags.add(listOf(if (existingMeta?.isRestricted == true) "restricted" else "unrestricted"))
             tags.add(listOf(if (existingMeta?.isHidden == true) "hidden" else "visible"))
             publishAdminEvent(
@@ -635,7 +659,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
                 picture = picture.trim().ifEmpty { existingMeta?.picture },
                 about = about.trim().ifEmpty { existingMeta?.about },
                 isPrivate = existingMeta?.isPrivate ?: false,
-                isClosed = existingMeta?.isClosed ?: false,
+                isClosed = true,
                 isRestricted = existingMeta?.isRestricted ?: false,
                 isHidden = existingMeta?.isHidden ?: false
             ))
