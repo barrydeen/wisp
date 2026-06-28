@@ -500,7 +500,12 @@ fun WispDrawerContent(
             modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(
-            icon = { Text("🍳", style = androidx.compose.material3.MaterialTheme.typography.titleSmall) },
+            icon = {
+                Icon(
+                    painter = painterResource(R.drawable.ic_cooking_pot),
+                    contentDescription = null
+                )
+            },
             label = { Text(stringResource(R.string.drawer_kitchen_tools)) },
             selected = false,
             onClick = onKitchenTools,
