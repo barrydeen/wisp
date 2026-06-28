@@ -965,6 +965,23 @@
     <string name="label_joining_room">Joining…</string>
     <string name="action_share_invite">Share invite link</string>
 
+    <!-- Group moderation: report / mute / remove & ban -->
+    <string name="action_report">Report</string>
+    <string name="action_mute">Mute</string>
+    <string name="action_unmute">Unmute</string>
+    <string name="label_muted_tap_unmute">Muted — tap to unmute</string>
+    <string name="action_remove_ban">Remove &amp; ban</string>
+    <string name="title_report">Report</string>
+    <string name="msg_report_pick_category">Why are you reporting this?</string>
+    <string name="label_report_reason">Add details (optional)</string>
+    <string name="report_cat_child_safety">Child Safety / CSAM</string>
+    <string name="report_cat_spam">Spam</string>
+    <string name="report_cat_harassment">Harassment</string>
+    <string name="report_cat_illegal">Illegal content</string>
+    <string name="report_cat_other">Other</string>
+    <string name="title_remove_ban">Remove &amp; ban</string>
+    <string name="msg_remove_ban_confirm">Remove and ban %s from this room? They won\'t be able to rejoin, even with an invite.</string>
+
     <!-- NIP-29 group configuration flags -->
     <string name="group_flag_private_label">Private</string>
     <string name="group_flag_private_desc">Only members can read messages</string>

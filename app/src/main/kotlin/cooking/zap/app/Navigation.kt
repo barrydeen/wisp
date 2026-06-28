@@ -2044,7 +2044,10 @@ fun WispNavHost(
                         onOpenEmojiLibrary = { showGroupRoomEmojiLibrary = true }
                     )
                 },
-                onEmojiUsed = { feedViewModel.customEmojiRepo.recordEmojiUsage(it) }
+                onEmojiUsed = { feedViewModel.customEmojiRepo.recordEmojiUsage(it) },
+                onRemoveUser = { pubkey ->
+                    groupListViewModel.removeUser(relayUrl, groupId, pubkey, activeSigner)
+                }
             )
             if (showGroupRoomEmojiLibrary) {
                 val groupRoomSheetUnicodeEmojis by feedViewModel.customEmojiRepo.unicodeEmojis.collectAsState()

@@ -62,6 +62,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -73,7 +75,9 @@ import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.FlashOn
+import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MoreHoriz
@@ -85,7 +89,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
@@ -193,15 +201,24 @@ fun GroupRoomScreen(
     onBlockAuthor: ((String) -> Unit)? = null,
     isFollowing: ((String) -> Boolean)? = null,
     noteActions: cooking.zap.app.ui.component.NoteActions? = null,
-    onEmojiUsed: ((String) -> Unit)? = null
+    onEmojiUsed: ((String) -> Unit)? = null,
+    // Admin moderation: remove & ban a user (kind 9001; the relay also records a ban so the user
+    // can't rejoin even with an invite). Wired only for group admins.
+    onRemoveUser: ((pubkey: String) -> Unit)? = null
 ) {
     val textFieldFocus = remember { FocusRequester() }
 
     val messages by viewModel.messages.collectAsState()
+    // visibleMessages = messages minus locally muted authors / hidden messages (room-scoped).
+    val visibleMessages by viewModel.visibleMessages.collectAsState()
+    val mutedPubkeys by viewModel.mutedPubkeys.collectAsState()
     val room by viewModel.room.collectAsState()
     // Use initialRoom as a fallback on the first frame before the ViewModel's LaunchedEffect
     // runs — prevents flashing the join screen for groups the user has already joined.
     val effectiveRoom = room ?: initialRoom
+    // Admin gate for in-context remove & ban — strictly the actual 39001 admins list (no
+    // pre-load fallback, since the action is destructive). The room creator is in that list.
+    val isRoomAdmin = myPubkey != null && effectiveRoom?.admins?.contains(myPubkey) == true
     val messageText by viewModel.messageText.collectAsState()
     val sending by viewModel.sending.collectAsState()
     val sendError by viewModel.sendError.collectAsState()
@@ -606,13 +623,20 @@ fun GroupRoomScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = with(density) { bottomBarHeightPx.toDp() })
                     ) {
-                        items(items = messages, key = { it.id }) { message ->
+                        items(items = visibleMessages, key = { it.id }) { message ->
                             GroupMessageBubble(
                                 message = message,
                                 isSearchHighlighted = message.id == highlightedMessageId,
                                 allMessages = messages,
                                 eventRepo = eventRepo,
                                 myPubkey = myPubkey,
+                                isMuted = message.senderPubkey in mutedPubkeys,
+                                canModerate = isRoomAdmin,
+                                onReport = { category, reason ->
+                                    viewModel.report(signer, message.senderPubkey, category, message.id, reason)
+                                },
+                                onMuteToggle = { viewModel.toggleMute(message.senderPubkey) },
+                                onRemoveUser = if (isRoomAdmin) onRemoveUser else null,
                                 reactionEmojiUrls = effectiveRoom?.reactionEmojiUrls ?: emptyMap(),
                                 resolvedEmojis = resolvedEmojis,
                                 unicodeEmojis = unicodeEmojis,
@@ -627,7 +651,7 @@ fun GroupRoomScreen(
                                     textFieldFocus.requestFocus()
                                 },
                                 onScrollToMessage = { targetId ->
-                                    val index = messages.indexOfFirst { it.id == targetId }
+                                    val index = visibleMessages.indexOfFirst { it.id == targetId }
                                     if (index >= 0) {
                                         scrollScope.launch {
                                             listState.animateScrollToItem(index)
@@ -1217,7 +1241,13 @@ private fun GroupMessageBubble(
     onFollowAuthor: ((String) -> Unit)? = null,
     onBlockAuthor: ((String) -> Unit)? = null,
     isFollowing: ((String) -> Boolean)? = null,
-    noteActions: cooking.zap.app.ui.component.NoteActions? = null
+    noteActions: cooking.zap.app.ui.component.NoteActions? = null,
+    // Moderation: report (everyone) → mute (everyone) → remove & ban (admins only).
+    isMuted: Boolean = false,
+    canModerate: Boolean = false,
+    onReport: ((category: cooking.zap.app.nostr.Nip56.ReportCategory, reason: String) -> Unit)? = null,
+    onMuteToggle: (() -> Unit)? = null,
+    onRemoveUser: ((pubkey: String) -> Unit)? = null
 ) {
     val profile = remember(message.senderPubkey) { eventRepo.getProfileData(message.senderPubkey) }
     val displayName = profile?.displayString ?: message.senderPubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
@@ -1227,6 +1257,8 @@ private fun GroupMessageBubble(
 
     var showEmojiPicker by remember(message.id) { mutableStateOf(false) }
     var showActionsSheet by remember(message.id) { mutableStateOf(false) }
+    var showReportDialog by remember(message.id) { mutableStateOf(false) }
+    var showRemoveConfirm by remember(message.id) { mutableStateOf(false) }
     val actionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val rowTapInteraction = remember { MutableInteractionSource() }
@@ -1278,6 +1310,33 @@ private fun GroupMessageBubble(
     val density = LocalDensity.current
     val swipeThreshold = remember(density) { with(density) { 80.dp.toPx() } }
     val scope = rememberCoroutineScope()
+
+    // Muted author: collapse to a one-line placeholder that still allows unmute, so muting is
+    // reversible from within the room without needing the (now-hidden) full message overflow.
+    if (isMuted && !isOwnMessage) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onMuteToggle?.invoke() }
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            Icon(
+                Icons.AutoMirrored.Outlined.VolumeOff,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                stringResource(R.string.label_muted_tap_unmute),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+            )
+        }
+        return
+    }
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Icon(
@@ -1705,6 +1764,52 @@ private fun GroupMessageBubble(
                             label = stringResource(R.string.btn_block)
                         )
                     }
+                    // Moderation, in order: Report (everyone) → Mute (everyone) → Remove & ban (admin).
+                    if (onReport != null && !isOwnMessage) {
+                        GroupChatCamPanelButton(
+                            modifier = Modifier.width(82.dp),
+                            enabled = true,
+                            onClick = {
+                                showActionsSheet = false
+                                showReportDialog = true
+                            },
+                            icon = {
+                                Icon(Icons.Outlined.Flag, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                            },
+                            label = stringResource(R.string.action_report)
+                        )
+                    }
+                    if (onMuteToggle != null && !isOwnMessage) {
+                        GroupChatCamPanelButton(
+                            modifier = Modifier.width(82.dp),
+                            enabled = true,
+                            onClick = {
+                                showActionsSheet = false
+                                onMuteToggle()
+                            },
+                            icon = {
+                                Icon(
+                                    if (isMuted) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
+                                    null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp)
+                                )
+                            },
+                            label = stringResource(if (isMuted) R.string.action_unmute else R.string.action_mute)
+                        )
+                    }
+                    if (canModerate && onRemoveUser != null && !isOwnMessage) {
+                        GroupChatCamPanelButton(
+                            modifier = Modifier.width(82.dp),
+                            enabled = true,
+                            onClick = {
+                                showActionsSheet = false
+                                showRemoveConfirm = true
+                            },
+                            icon = {
+                                Icon(Icons.Outlined.PersonRemove, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(22.dp))
+                            },
+                            label = stringResource(R.string.action_remove_ban)
+                        )
+                    }
                     GroupChatCamPanelButton(
                         modifier = Modifier.width(82.dp),
                         enabled = true,
@@ -1778,7 +1883,101 @@ private fun GroupMessageBubble(
             }
         }
     }
+
+    if (showReportDialog) {
+        ReportCategoryDialog(
+            onDismiss = { showReportDialog = false },
+            onConfirm = { category, reason ->
+                showReportDialog = false
+                onReport?.invoke(category, reason)
+            }
+        )
+    }
+
+    if (showRemoveConfirm) {
+        val displayName = profile?.displayString ?: message.senderPubkey.take(12)
+        AlertDialog(
+            onDismissRequest = { showRemoveConfirm = false },
+            title = { Text(stringResource(R.string.title_remove_ban)) },
+            text = { Text(stringResource(R.string.msg_remove_ban_confirm, displayName)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRemoveConfirm = false
+                    onRemoveUser?.invoke(message.senderPubkey)
+                }) { Text(stringResource(R.string.action_remove_ban)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRemoveConfirm = false }) {
+                    Text(stringResource(R.string.btn_cancel))
+                }
+            }
+        )
+    }
 }
+
+/** Category picker for a NIP-56 report. Child Safety is listed first and explicit. */
+@Composable
+private fun ReportCategoryDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (category: cooking.zap.app.nostr.Nip56.ReportCategory, reason: String) -> Unit
+) {
+    var category by remember { mutableStateOf(cooking.zap.app.nostr.Nip56.ReportCategory.SPAM) }
+    var reason by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.title_report)) },
+        text = {
+            Column {
+                Text(
+                    stringResource(R.string.msg_report_pick_category),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                cooking.zap.app.nostr.Nip56.ReportCategory.entries.forEach { c ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { category = c }
+                            .padding(vertical = 6.dp)
+                    ) {
+                        RadioButton(selected = category == c, onClick = { category = c })
+                        Spacer(Modifier.width(4.dp))
+                        Text(reportCategoryLabel(c), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = { reason = it },
+                    label = { Text(stringResource(R.string.label_report_reason)) },
+                    minLines = 2,
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(category, reason.trim()) }) {
+                Text(stringResource(R.string.action_report))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.btn_cancel)) }
+        }
+    )
+}
+
+@Composable
+private fun reportCategoryLabel(c: cooking.zap.app.nostr.Nip56.ReportCategory): String = stringResource(
+    when (c) {
+        cooking.zap.app.nostr.Nip56.ReportCategory.CHILD_SAFETY -> R.string.report_cat_child_safety
+        cooking.zap.app.nostr.Nip56.ReportCategory.SPAM -> R.string.report_cat_spam
+        cooking.zap.app.nostr.Nip56.ReportCategory.HARASSMENT -> R.string.report_cat_harassment
+        cooking.zap.app.nostr.Nip56.ReportCategory.ILLEGAL -> R.string.report_cat_illegal
+        cooking.zap.app.nostr.Nip56.ReportCategory.OTHER -> R.string.report_cat_other
+    }
+)
 
 @Composable
 private fun GroupChatCamPanelButton(
