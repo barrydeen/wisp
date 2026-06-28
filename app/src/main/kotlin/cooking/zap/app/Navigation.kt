@@ -2113,8 +2113,20 @@ fun WispNavHost(
             )
             // Admin tools (member list + Remove & ban) gate on room.members; re-pull the latest
             // 39000/39001/39002 on open so a just-joined user appears without re-entering the room.
-            LaunchedEffect(relayUrl, groupId) {
+            val groupAlreadySubscribed = remember(relayUrl, groupId) {
+                groupListViewModel.isGroupSubscribed(relayUrl, groupId)
+            }
+            DisposableEffect(relayUrl, groupId) {
                 groupListViewModel.refreshGroupReplaceableState(relayUrl, groupId)
+                onDispose {
+                    // Only tear down subscriptions this screen opened standalone. When detail sits
+                    // on top of an open room, that room owns the subscription and cleans it up on
+                    // its own dispose — closing it here would kill the room's live updates after
+                    // the user navigates back. (unsubscribeFromGroup no-ops when notifications are on.)
+                    if (!groupAlreadySubscribed) {
+                        groupListViewModel.unsubscribeFromGroup(relayUrl, groupId)
+                    }
+                }
             }
             val groupDetailContext = LocalContext.current
             val groupPictureUploadScope = rememberCoroutineScope()

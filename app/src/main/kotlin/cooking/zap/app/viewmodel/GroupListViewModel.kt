@@ -84,6 +84,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
     /** Clears all refs so init() can run again after an account switch. */
     fun reset() {
         subscribedGroups.clear()
+        replaceableStateAt.clear()
         previewCache.clear()
         groupRepo = null
         relayPool = null
@@ -131,6 +132,11 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
+    /** Whether this group currently has an active session subscription (e.g. an open room beneath
+     *  the detail screen). Lets a caller avoid tearing down a subscription another screen owns. */
+    fun isGroupSubscribed(relayUrl: String, groupId: String): Boolean =
+        subscribedGroups.contains("$relayUrl|$groupId")
 
     fun subscribeToGroup(relayUrl: String, groupId: String) {
         val pool = relayPool ?: return
