@@ -110,6 +110,7 @@ fun WispDrawerContent(
     onOnlyFood: () -> Unit = {},
     onLists: () -> Unit = {},
     onDrafts: () -> Unit = {},
+    onKitchenTools: () -> Unit = {},
     onMediaServers: () -> Unit,
     onKeys: () -> Unit = {},
     keyBackupNeeded: Boolean = false,
@@ -496,6 +497,13 @@ fun WispDrawerContent(
             label = { Text(stringResource(R.string.drawer_drafts)) },
             selected = false,
             onClick = onDrafts,
+            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
+        )
+        NavigationDrawerItem(
+            icon = { Text("🍳", style = androidx.compose.material3.MaterialTheme.typography.titleSmall) },
+            label = { Text(stringResource(R.string.drawer_kitchen_tools)) },
+            selected = false,
+            onClick = onKitchenTools,
             modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         var settingsExpanded by remember { mutableStateOf(false) }
