@@ -1916,6 +1916,10 @@ fun WispNavHost(
             DisposableEffect(relayUrl, groupId) {
                 if (initialRoom != null) {
                     groupListViewModel.subscribeToGroup(relayUrl, groupId)
+                    // Re-pull replaceable state (39000/39001/39002) even if already subscribed this
+                    // session, so the member list + in-context remove/ban reflect users who joined
+                    // since the first subscribe.
+                    groupListViewModel.refreshGroupReplaceableState(relayUrl, groupId)
                 }
                 onDispose {
                     groupListViewModel.markGroupRead(relayUrl, groupId)
@@ -2133,6 +2137,23 @@ fun WispNavHost(
                 android.util.Base64.decode(encodedRelay, android.util.Base64.URL_SAFE),
                 Charsets.UTF_8
             )
+            // Admin tools (member list + Remove & ban) gate on room.members; re-pull the latest
+            // 39000/39001/39002 on open so a just-joined user appears without re-entering the room.
+            val groupAlreadySubscribed = remember(relayUrl, groupId) {
+                groupListViewModel.isGroupSubscribed(relayUrl, groupId)
+            }
+            DisposableEffect(relayUrl, groupId) {
+                groupListViewModel.refreshGroupReplaceableState(relayUrl, groupId)
+                onDispose {
+                    // Only tear down subscriptions this screen opened standalone. When detail sits
+                    // on top of an open room, that room owns the subscription and cleans it up on
+                    // its own dispose — closing it here would kill the room's live updates after
+                    // the user navigates back. (unsubscribeFromGroup no-ops when notifications are on.)
+                    if (!groupAlreadySubscribed) {
+                        groupListViewModel.unsubscribeFromGroup(relayUrl, groupId)
+                    }
+                }
+            }
             val groupDetailContext = LocalContext.current
             val groupPictureUploadScope = rememberCoroutineScope()
             var pendingPictureCallback by remember { mutableStateOf<((String) -> Unit)?>(null) }
