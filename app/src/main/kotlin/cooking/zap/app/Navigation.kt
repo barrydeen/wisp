@@ -165,6 +165,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import cooking.zap.app.ui.util.LocalCanSign
 import cooking.zap.app.ui.component.CookingUtilitiesSheet
 import cooking.zap.app.ui.component.FloatingTimerBar
+import cooking.zap.app.ui.component.TimerCompletionOverlay
 import cooking.zap.app.viewmodel.CookingTimerViewModel
 
 object Routes {
@@ -1234,6 +1235,7 @@ fun WispNavHost(
                         restoreState = true
                     }
                 },
+                onKitchenTools = { showCookingUtilitiesSheet = true },
                 onSousChef = { navController.navigate(Routes.SOUS_CHEF) { launchSingleTop = true } },
                 onCheffy = { navController.navigate(Routes.CHEFFY) { launchSingleTop = true } },
                 onNourish = { navController.navigate(Routes.nourish()) { launchSingleTop = true } },
@@ -3045,6 +3047,7 @@ fun WispNavHost(
                         restoreState = true
                     }
                 },
+                onKitchenTools = { showCookingUtilitiesSheet = true },
                 onSousChef = { navController.navigate(Routes.SOUS_CHEF) { launchSingleTop = true } },
                 onCheffy = { navController.navigate(Routes.CHEFFY) { launchSingleTop = true } },
                 onNourish = { navController.navigate(Routes.nourish()) { launchSingleTop = true } },
@@ -4366,6 +4369,12 @@ fun WispNavHost(
     )
 
     NsecPasteWarningOverlay()
+
+    val completionEvent by cookingTimerViewModel.completionEvent.collectAsState()
+    TimerCompletionOverlay(
+        timer = completionEvent,
+        onDismiss = { cookingTimerViewModel.dismissCompletion() }
+    )
     } // CompositionLocalProvider
     } // Box
 
