@@ -95,7 +95,12 @@ fun RoomsScreen(
         groupListViewModel.adminErrors.collect { adminError = it }
     }
     LaunchedEffect(groupListViewModel) {
-        groupListViewModel.joinErrors.collect { joinError = it }
+        groupListViewModel.joinErrors.collect {
+            joinError = it
+            // A rejection (e.g. consumed/invalid invite code) must clear the redeem dialog's
+            // "Joining…" state — dismiss it so the error shows and the user can retry.
+            showRedeem = false
+        }
     }
 
     // Public browse = visible, non-private rooms we haven't already joined.
@@ -120,11 +125,15 @@ fun RoomsScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showRedeem = true }) {
-                        Icon(Icons.Outlined.Link, contentDescription = stringResource(R.string.action_paste_invite))
-                    }
-                    IconButton(onClick = { showCreate = true }) {
-                        Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.action_create_group))
+                    // Create + invite-redeem both need to sign (9007 / 9021), so they're only
+                    // offered when there's a signing key — READ_ONLY accounts just browse.
+                    if (signer != null) {
+                        IconButton(onClick = { showRedeem = true }) {
+                            Icon(Icons.Outlined.Link, contentDescription = stringResource(R.string.action_paste_invite))
+                        }
+                        IconButton(onClick = { showCreate = true }) {
+                            Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.action_create_group))
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

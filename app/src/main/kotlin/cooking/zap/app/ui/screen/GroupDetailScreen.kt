@@ -378,16 +378,18 @@ fun GroupDetailScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
-                                            val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                                type = "text/plain"
-                                                putExtra(android.content.Intent.EXTRA_TEXT, link)
-                                            }
-                                            context.startActivity(
-                                                android.content.Intent.createChooser(
-                                                    send,
-                                                    context.getString(R.string.action_share_invite)
+                                            try {
+                                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                    type = "text/plain"
+                                                    putExtra(android.content.Intent.EXTRA_TEXT, link)
+                                                }
+                                                context.startActivity(
+                                                    android.content.Intent.createChooser(
+                                                        send,
+                                                        context.getString(R.string.action_share_invite)
+                                                    )
                                                 )
-                                            )
+                                            } catch (_: Exception) {}
                                         }
                                         .padding(horizontal = 16.dp, vertical = 10.dp)
                                 ) {
