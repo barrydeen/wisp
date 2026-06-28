@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -168,6 +170,54 @@ fun WispDrawerContent(
                 }) {
                     ProfilePicture(url = profile?.picture, size = 64)
                 }
+                Spacer(modifier = Modifier.width(8.dp))
+                val otherAccountCount = (accounts.size - 1).coerceAtLeast(0)
+                if (otherAccountCount == 0) {
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { onAddAccount() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.Add,
+                            contentDescription = stringResource(R.string.cd_add_account),
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { accountPickerExpanded = !accountPickerExpanded }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .height(26.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(horizontal = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "+ $otherAccountCount",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Icon(
+                            if (accountPickerExpanded) Icons.Outlined.KeyboardArrowDown
+                            else Icons.Outlined.KeyboardArrowRight,
+                            contentDescription = stringResource(R.string.cd_switch_account),
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.weight(1f))
                 IconButton(onClick = onToggleTheme) {
                     Icon(
@@ -189,7 +239,7 @@ fun WispDrawerContent(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = accounts.size > 1 || accounts.isNotEmpty()) {
+                    .clickable(enabled = accounts.isNotEmpty()) {
                         accountPickerExpanded = !accountPickerExpanded
                     },
                 verticalAlignment = Alignment.CenterVertically
@@ -200,15 +250,6 @@ fun WispDrawerContent(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f, fill = false)
                 )
-                if (accounts.size > 1 || accounts.isNotEmpty()) {
-                        Icon(
-                            if (accountPickerExpanded) Icons.Outlined.KeyboardArrowDown
-                            else Icons.Outlined.KeyboardArrowRight,
-                            contentDescription = stringResource(R.string.cd_switch_account),
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
             Spacer(Modifier.height(2.dp))
             if (!profile?.nip05.isNullOrBlank()) {

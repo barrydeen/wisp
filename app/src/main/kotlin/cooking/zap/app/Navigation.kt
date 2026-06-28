@@ -433,6 +433,7 @@ fun WispNavHost(
     }
 
     val onAddAccount: () -> Unit = {
+        authViewModel.previousAccountPubkey = authViewModel.keyRepo.getPubkeyHex()
         authViewModel.isAddingAccount = true
         feedViewModel.resetForAccountSwitch()
         walletViewModel.suspendForAccountSwitch()  // disconnect only, preserve credentials
@@ -998,6 +999,11 @@ fun WispNavHost(
                 onCancel = if (authViewModel.isAddingAccount) {
                     {
                         authViewModel.isAddingAccount = false
+                        val prev = authViewModel.previousAccountPubkey
+                        authViewModel.previousAccountPubkey = null
+                        if (prev != null) {
+                            authViewModel.switchAccount(prev)
+                        }
                         feedViewModel.reloadForNewAccount()
                         relayViewModel.reload()
                         blossomServersViewModel.reload()
@@ -1023,6 +1029,7 @@ fun WispNavHost(
                 onDone = { isNewAccount ->
                     val wasAddingAccount = authViewModel.isAddingAccount
                     authViewModel.isAddingAccount = false
+                    authViewModel.previousAccountPubkey = null
                     authViewModel.refreshAfterExternalLogin()
 
                     if (isNewAccount) {
@@ -1062,6 +1069,7 @@ fun WispNavHost(
                 onAuthenticated = { isNewAccount ->
                     val wasAddingAccount = authViewModel.isAddingAccount
                     authViewModel.isAddingAccount = false
+                    authViewModel.previousAccountPubkey = null
 
                     if (isNewAccount) {
                         // New key generation: back up the key, then full onboarding.
