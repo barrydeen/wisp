@@ -1890,6 +1890,10 @@ fun WispNavHost(
             DisposableEffect(relayUrl, groupId) {
                 if (initialRoom != null) {
                     groupListViewModel.subscribeToGroup(relayUrl, groupId)
+                    // Re-pull replaceable state (39000/39001/39002) even if already subscribed this
+                    // session, so the member list + in-context remove/ban reflect users who joined
+                    // since the first subscribe.
+                    groupListViewModel.refreshGroupReplaceableState(relayUrl, groupId)
                 }
                 onDispose {
                     groupListViewModel.markGroupRead(relayUrl, groupId)
@@ -2107,6 +2111,11 @@ fun WispNavHost(
                 android.util.Base64.decode(encodedRelay, android.util.Base64.URL_SAFE),
                 Charsets.UTF_8
             )
+            // Admin tools (member list + Remove & ban) gate on room.members; re-pull the latest
+            // 39000/39001/39002 on open so a just-joined user appears without re-entering the room.
+            LaunchedEffect(relayUrl, groupId) {
+                groupListViewModel.refreshGroupReplaceableState(relayUrl, groupId)
+            }
             val groupDetailContext = LocalContext.current
             val groupPictureUploadScope = rememberCoroutineScope()
             var pendingPictureCallback by remember { mutableStateOf<((String) -> Unit)?>(null) }

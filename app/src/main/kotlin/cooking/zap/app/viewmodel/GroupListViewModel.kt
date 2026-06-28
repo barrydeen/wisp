@@ -44,6 +44,11 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
     /** Groups that currently have an open relay connection and active subscriptions. */
     private val subscribedGroups = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
+    /** Newest-wins guard for the replaceable group state (39000/39001/39002). Keyed by
+     *  "relay|group|kind" → created_at of the last applied event, so a delayed/older replay
+     *  can't clobber a fresher members/admins/metadata list. */
+    private val replaceableStateAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     /** Short-lived cache of preview data (metadata + members) for groups not yet joined locally.
      *  Populated by GroupInviteCard fetches on the feed so that tapping through to GroupRoomScreen
      *  gets a cache hit instead of a second relay round-trip (which often times out). */
@@ -186,6 +191,41 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
         ), skipBadCheck = true)
     }
 
+    /**
+     * Force a refresh of the replaceable group state — kind 39000 (metadata), 39001 (admins) and
+     * 39002 (members) — for a room that's being opened. Unlike [subscribeToGroup] this bypasses the
+     * [subscribedGroups] once-per-session guard, so admin tools see users who joined *after* the
+     * first subscribe (the relay regenerates 39002 on every membership change). Re-sending the REQs
+     * under their existing sub ids makes the relay re-deliver the latest events and leaves the
+     * subscriptions open, so further joins/leaves keep updating the list live while the room is open.
+     */
+    fun refreshGroupReplaceableState(relayUrl: String, groupId: String) {
+        val pool = relayPool ?: return
+        pool.ensureGroupRelay(relayUrl)
+        pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(
+            subscriptionId = subId("meta", groupId),
+            filter = Filter(kinds = listOf(Nip29.KIND_GROUP_METADATA), dTags = listOf(groupId))
+        ), skipBadCheck = true)
+        pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(
+            subscriptionId = subId("admins", groupId),
+            filter = Filter(kinds = listOf(Nip29.KIND_GROUP_ADMINS), dTags = listOf(groupId))
+        ), skipBadCheck = true)
+        pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.req(
+            subscriptionId = subId("members", groupId),
+            filter = Filter(kinds = listOf(Nip29.KIND_GROUP_MEMBERS), dTags = listOf(groupId))
+        ), skipBadCheck = true)
+    }
+
+    /** Newest-wins gate for a replaceable group event. Returns false (skip) when [createdAt] is
+     *  older than the last applied event for this (relay, group, kind); equal/newer is applied. */
+    private fun isFreshReplaceable(relayUrl: String, groupId: String, kind: Int, createdAt: Long): Boolean {
+        val k = "$relayUrl|$groupId|$kind"
+        val prev = replaceableStateAt[k]
+        if (prev != null && createdAt < prev) return false
+        replaceableStateAt[k] = maxOf(prev ?: 0L, createdAt)
+        return true
+    }
+
     /** Toggle notification subscription for a group. When enabled, the relay connection stays open. */
     fun setGroupNotified(relayUrl: String, groupId: String, enabled: Boolean) {
         val repo = groupRepo ?: return
@@ -287,6 +327,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
                         Log.d("GroupListVM", "[raw 39000 metadata] relay=$relayUrl ${event.toJson()}")
                         val metadata = Nip29.parseGroupMetadata(event) ?: return@collect
                         repo.getRoom(relayUrl, metadata.groupId) ?: return@collect
+                        if (!isFreshReplaceable(relayUrl, metadata.groupId, event.kind, event.created_at)) return@collect
                         repo.updateMetadata(relayUrl, metadata.groupId, metadata)
                     }
                     Nip29.KIND_GROUP_ADMINS -> {
@@ -294,6 +335,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
                         val groupId = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)
                             ?: return@collect
                         repo.getRoom(relayUrl, groupId) ?: return@collect
+                        if (!isFreshReplaceable(relayUrl, groupId, event.kind, event.created_at)) return@collect
                         repo.updateAdmins(relayUrl, groupId, Nip29.parseGroupAdminPubkeys(event))
                     }
                     Nip29.KIND_GROUP_MEMBERS -> {
@@ -301,6 +343,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
                         val groupId = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)
                             ?: return@collect
                         repo.getRoom(relayUrl, groupId) ?: return@collect
+                        if (!isFreshReplaceable(relayUrl, groupId, event.kind, event.created_at)) return@collect
                         repo.updateMembers(relayUrl, groupId, Nip29.parseGroupMembers(event))
                     }
                     9735 -> {
