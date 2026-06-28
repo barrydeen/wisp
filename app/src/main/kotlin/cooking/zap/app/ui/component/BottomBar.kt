@@ -182,7 +182,7 @@ fun WispBottomBar(
             contentAlignment = Alignment.Center
         ) {
             // Three layers so each part can be tinted independently by state:
-            //  Active   → gradient disc, white bolt, white ring (full brand color)
+            //  Active   → gradient disc, white bolt, ring tinted white (dark) / onSurfaceVariant (light)
             //  Inactive → flat grey disc + grey ring (a flat tint overrides the
             //             gradient), with the bolt as the bar background (cutout) —
             //             a monochrome grey mark matching the other inactive icons.

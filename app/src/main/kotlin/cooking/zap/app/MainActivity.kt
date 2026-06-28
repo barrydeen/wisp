@@ -17,12 +17,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import cooking.zap.app.repo.InterfacePreferences
 import cooking.zap.app.ui.component.NsecPasteGuard
 import cooking.zap.app.repo.LocaleRepository
 import cooking.zap.app.ui.component.LocalMediaSettings
 import cooking.zap.app.ui.component.MediaSettings
 import cooking.zap.app.ui.component.PipController
+import cooking.zap.app.ui.theme.Themes
 import cooking.zap.app.ui.theme.WispTheme
 
 class MainActivity : FragmentActivity() {
@@ -56,7 +58,12 @@ class MainActivity : FragmentActivity() {
                 ))
             }
 
-            LaunchedEffect(isDarkTheme) {
+            val lightNavScrim = if (themeName == "custom") {
+                0xFFF5F5F5.toInt()
+            } else {
+                Themes.getTheme(themeName).light.surface.toArgb()
+            }
+            LaunchedEffect(isDarkTheme, themeName) {
                 enableEdgeToEdge(
                     statusBarStyle = if (isDarkTheme) {
                         SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
@@ -66,7 +73,7 @@ class MainActivity : FragmentActivity() {
                     navigationBarStyle = if (isDarkTheme) {
                         SystemBarStyle.dark(0xFF1F2937.toInt())
                     } else {
-                        SystemBarStyle.light(0xFFF5F5F5.toInt(), 0xFF1F2937.toInt())
+                        SystemBarStyle.light(lightNavScrim, 0xFF1F2937.toInt())
                     }
                 )
             }
