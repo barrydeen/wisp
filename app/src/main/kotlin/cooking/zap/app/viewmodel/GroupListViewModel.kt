@@ -637,7 +637,9 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
             if (about.isNotBlank()) tags.add(listOf("about", about.trim()))
             if (picture.isNotBlank()) tags.add(listOf("picture", picture.trim()))
             tags.add(listOf(if (existingMeta?.isPrivate == true) "private" else "public"))
-            tags.add(listOf(if (existingMeta?.isClosed == true) "closed" else "open"))
+            // NEVER emit "open" — all rooms are closed/invite-join (mirror createGroup). Republishing
+            // a legacy non-closed room must not re-open it and re-enable auto-join.
+            tags.add(listOf("closed"))
             tags.add(listOf(if (existingMeta?.isRestricted == true) "restricted" else "unrestricted"))
             tags.add(listOf(if (existingMeta?.isHidden == true) "hidden" else "visible"))
             publishAdminEvent(
@@ -657,7 +659,7 @@ class GroupListViewModel(app: Application) : AndroidViewModel(app) {
                 picture = picture.trim().ifEmpty { existingMeta?.picture },
                 about = about.trim().ifEmpty { existingMeta?.about },
                 isPrivate = existingMeta?.isPrivate ?: false,
-                isClosed = existingMeta?.isClosed ?: false,
+                isClosed = true,
                 isRestricted = existingMeta?.isRestricted ?: false,
                 isHidden = existingMeta?.isHidden ?: false
             ))
