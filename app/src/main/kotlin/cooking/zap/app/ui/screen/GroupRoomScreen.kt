@@ -225,6 +225,21 @@ fun GroupRoomScreen(
     val relayError by viewModel.relayError.collectAsState()
     val replyTarget by viewModel.replyTarget.collectAsState()
 
+    // An admin removed/banned me while I had the room open (fresh 39002 no longer lists me):
+    // tell me clearly and eject back to the room list so I can't keep composing in a room I left.
+    val removedFromRoom by viewModel.removedFromRoom.collectAsState()
+    val removedContext = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(removedFromRoom) {
+        if (removedFromRoom) {
+            android.widget.Toast.makeText(
+                removedContext,
+                removedContext.getString(R.string.group_removed_from_room),
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            onBack()
+        }
+    }
+
     // In-chat search state
     var searchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }

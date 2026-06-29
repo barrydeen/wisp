@@ -1906,7 +1906,7 @@ fun WispNavHost(
                 feedViewModel.groupRepo.getRoom(relayUrl, groupId)
             }
             LaunchedEffect(relayUrl, groupId) {
-                groupRoomViewModel.init(groupId, relayUrl, feedViewModel.groupRepo, feedViewModel.relayPool)
+                groupRoomViewModel.init(groupId, relayUrl, feedViewModel.groupRepo, feedViewModel.relayPool, feedViewModel.getUserPubkey())
                 feedViewModel.metadataFetcher.queueProfileFetch(feedViewModel.getUserPubkey() ?: "")
                 groupListViewModel.markGroupRead(relayUrl, groupId)
             }
