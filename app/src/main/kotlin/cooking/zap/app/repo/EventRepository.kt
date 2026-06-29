@@ -479,7 +479,9 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 for (coord in Nip09.getDeletedAddresses(event)) {
                     val parts = coord.split(":", limit = 3)
                     if (parts.size == 3 && parts[1] == event.pubkey) {
-                        deletedEventsRepo?.markDeletedAddress(coord)
+                        // Record the deletion's created_at so a newer replaceable
+                        // event for the same address can legitimately revive it.
+                        deletedEventsRepo?.markDeletedAddress(coord, event.created_at)
                     }
                 }
             }
