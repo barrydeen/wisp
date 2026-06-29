@@ -243,7 +243,10 @@ fun GroupRoomScreen(
     // In-chat search state
     var searchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
-    var searchMatches by remember { mutableStateOf<List<Int>>(emptyList()) }
+    // Matches are stored as message IDs (not indices) so they stay correct when
+    // visibleMessages changes after a search — indices would silently point at a
+    // different row. Indices are resolved against the live list when navigating.
+    var searchMatches by remember { mutableStateOf<List<String>>(emptyList()) }
     var searchCurrentIndex by remember { mutableIntStateOf(0) }
 
     // BasicTextField state for GIF keyboard support via contentReceiver
@@ -290,12 +293,15 @@ fun GroupRoomScreen(
     // Track whether we've handled the initial scrollToMessageId target
     var scrollTargetHandled by remember { mutableStateOf(scrollToMessageId == null) }
 
-    LaunchedEffect(messages.size) {
-        if (messages.isEmpty()) return@LaunchedEffect
+    // Scroll/index math must run against `visibleMessages` — the exact list bound to
+    // the LazyColumn below — not `messages`, otherwise indices drift whenever a message
+    // is hidden and we scroll to the wrong row (or past the end).
+    LaunchedEffect(visibleMessages.size) {
+        if (visibleMessages.isEmpty()) return@LaunchedEffect
         if (prevMessageCount == 0) {
             // First load: scroll to target message if provided, otherwise bottom
             if (!scrollTargetHandled && scrollToMessageId != null) {
-                val index = messages.indexOfFirst { it.id == scrollToMessageId }
+                val index = visibleMessages.indexOfFirst { it.id == scrollToMessageId }
                 if (index >= 0) {
                     listState.scrollToItem(index)
                     highlightedMessageId = scrollToMessageId
@@ -305,14 +311,14 @@ fun GroupRoomScreen(
                     highlightedMessageId = null
                     scrollTargetHandled = true
                 } else {
-                    listState.scrollToItem(messages.size - 1)
+                    listState.scrollToItem(visibleMessages.size - 1)
                 }
             } else {
-                listState.scrollToItem(messages.size - 1)
+                listState.scrollToItem(visibleMessages.size - 1)
             }
         } else if (!scrollTargetHandled && scrollToMessageId != null) {
             // Messages arrived after initial load — check if target is now available
-            val index = messages.indexOfFirst { it.id == scrollToMessageId }
+            val index = visibleMessages.indexOfFirst { it.id == scrollToMessageId }
             if (index >= 0) {
                 listState.animateScrollToItem(index)
                 highlightedMessageId = scrollToMessageId
@@ -321,18 +327,18 @@ fun GroupRoomScreen(
                 highlightedMessageId = null
                 scrollTargetHandled = true
             }
-        } else if (messages.size > prevMessageCount) {
-            listState.animateScrollToItem(messages.size - 1)
+        } else if (visibleMessages.size > prevMessageCount) {
+            listState.animateScrollToItem(visibleMessages.size - 1)
         }
-        prevMessageCount = messages.size
+        prevMessageCount = visibleMessages.size
     }
 
     // Snap to newest messages when keyboard opens
     val density = LocalDensity.current
     val imeBottom = WindowInsets.ime.getBottom(density)
     LaunchedEffect(imeBottom) {
-        if (imeBottom > 0 && messages.isNotEmpty()) {
-            listState.scrollToItem(messages.size - 1)
+        if (imeBottom > 0 && visibleMessages.isNotEmpty()) {
+            listState.scrollToItem(visibleMessages.size - 1)
         }
     }
 
@@ -482,13 +488,15 @@ fun GroupRoomScreen(
                                 highlightedMessageId = null
                             } else {
                                 val lowerQuery = query.lowercase()
-                                val matches = messages.indices.filter {
-                                    messages[it].content.lowercase().contains(lowerQuery)
-                                }
+                                // Collect matching message IDs from the rendered list. IDs (not
+                                // indices) keep the result valid if visibleMessages changes later.
+                                val matches = visibleMessages
+                                    .filter { it.content.lowercase().contains(lowerQuery) }
+                                    .map { it.id }
                                 searchMatches = matches
                                 if (matches.isNotEmpty()) {
                                     searchCurrentIndex = 0
-                                    highlightedMessageId = messages[matches[0]].id
+                                    highlightedMessageId = matches[0]
                                 } else {
                                     searchCurrentIndex = 0
                                     highlightedMessageId = null
@@ -535,7 +543,7 @@ fun GroupRoomScreen(
                                     if (searchMatches.isNotEmpty()) {
                                         val prev = (searchCurrentIndex - 1 + searchMatches.size) % searchMatches.size
                                         searchCurrentIndex = prev
-                                        highlightedMessageId = messages[searchMatches[prev]].id
+                                        highlightedMessageId = searchMatches[prev]
                                     }
                                 },
                                 enabled = searchMatches.size > 1,
@@ -548,7 +556,7 @@ fun GroupRoomScreen(
                                     if (searchMatches.isNotEmpty()) {
                                         val next = (searchCurrentIndex + 1) % searchMatches.size
                                         searchCurrentIndex = next
-                                        highlightedMessageId = messages[searchMatches[next]].id
+                                        highlightedMessageId = searchMatches[next]
                                     }
                                 },
                                 enabled = searchMatches.size > 1,
@@ -562,11 +570,15 @@ fun GroupRoomScreen(
                 }
 
                 // Scroll to search result when navigating matches
-                LaunchedEffect(searchCurrentIndex, searchMatches) {
+                LaunchedEffect(searchCurrentIndex, searchMatches, visibleMessages) {
                     if (searchMatches.isEmpty()) return@LaunchedEffect
-                    val msgIndex = searchMatches[searchCurrentIndex]
+                    // Resolve the match ID to its current row in the live list, so the
+                    // scroll stays correct even if visibleMessages changed since the search.
+                    val matchId = searchMatches.getOrNull(searchCurrentIndex) ?: return@LaunchedEffect
+                    val msgIndex = visibleMessages.indexOfFirst { it.id == matchId }
+                    if (msgIndex < 0) return@LaunchedEffect
                     listState.animateScrollToItem(msgIndex)
-                    highlightedMessageId = messages[msgIndex].id
+                    highlightedMessageId = matchId
                     highlightTrigger++
                 }
 

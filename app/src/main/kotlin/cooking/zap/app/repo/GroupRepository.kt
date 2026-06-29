@@ -41,6 +41,17 @@ class GroupRepository(private val context: Context, pubkeyHex: String? = null) {
     private val rooms = ConcurrentHashMap<String, GroupRoom>()
     private val seenMessages = ConcurrentHashMap.newKeySet<String>()
 
+    /**
+     * Guards every compound read-modify-write of [rooms] (messages, reactions,
+     * metadata, admins, members, add/remove, clear). The relay collector
+     * (Dispatchers.Default) and optimistic local sends (also Default / Main) both
+     * mutate `rooms[key]`, so a bare ConcurrentHashMap get-then-put can lose updates
+     * (last-writer-wins) or corrupt ordering. All mutators must hold this lock so they
+     * can't race each other; reads stay lock-free on the ConcurrentHashMap.
+     * Critical sections are short (a list copy + trim at most).
+     */
+    private val roomsLock = Any()
+
     private val _joinedGroups = MutableStateFlow<List<GroupRoom>>(emptyList())
     val joinedGroups: StateFlow<List<GroupRoom>> = _joinedGroups
 
@@ -90,18 +101,20 @@ class GroupRepository(private val context: Context, pubkeyHex: String? = null) {
                     }
                 }
 
-                // Seed dedup set from persisted messages so we don't re-add on relay replay
-                persisted?.messages?.forEach { seenMessages.add(it.id) }
+                synchronized(roomsLock) {
+                    // Seed dedup set from persisted messages so we don't re-add on relay replay
+                    persisted?.messages?.forEach { seenMessages.add(it.id) }
 
-                rooms[key] = GroupRoom(
-                    groupId = groupId,
-                    relayUrl = relayUrl,
-                    metadata = metadata,
-                    messages = persisted?.messages ?: emptyList(),
-                    lastMessageAt = persisted?.lastMessageAt ?: 0L,
-                    admins = persisted?.admins ?: emptyList(),
-                    members = persisted?.members ?: emptyList()
-                )
+                    rooms[key] = GroupRoom(
+                        groupId = groupId,
+                        relayUrl = relayUrl,
+                        metadata = metadata,
+                        messages = persisted?.messages ?: emptyList(),
+                        lastMessageAt = persisted?.lastMessageAt ?: 0L,
+                        admins = persisted?.admins ?: emptyList(),
+                        members = persisted?.members ?: emptyList()
+                    )
+                }
             }
         }
         emit()
@@ -113,19 +126,21 @@ class GroupRepository(private val context: Context, pubkeyHex: String? = null) {
             Nip29.GroupMetadata(groupId, localName, null, null, false, false)
         } else null
         val room = GroupRoom(groupId, relayUrl, metadata, emptyList(), 0L)
-        rooms.putIfAbsent(key, room)
+        val currentRoom = synchronized(roomsLock) {
+            rooms.putIfAbsent(key, room)
+            rooms[key] ?: room
+        }
         persistRooms()
         if (!localName.isNullOrEmpty()) {
             prefs.edit().putString("local_name_$key", localName).apply()
         }
-        val currentRoom = rooms[key] ?: room
         ownerPubkey?.let { persistence?.upsertRoomMeta(it, currentRoom) }
         emit()
     }
 
     fun removeGroup(relayUrl: String, groupId: String) {
         val key = roomKey(relayUrl, groupId)
-        rooms.remove(key)
+        synchronized(roomsLock) { rooms.remove(key) }
         prefs.edit().remove("local_name_$key").apply()
         persistRooms()
         ownerPubkey?.let { persistence?.deleteRoom(it, relayUrl, groupId) }
@@ -134,42 +149,63 @@ class GroupRepository(private val context: Context, pubkeyHex: String? = null) {
 
     fun updateMetadata(relayUrl: String, groupId: String, metadata: Nip29.GroupMetadata) {
         val key = roomKey(relayUrl, groupId)
-        val existing = rooms[key] ?: GroupRoom(groupId, relayUrl, null, emptyList(), 0L)
-        val mergedName = metadata.name?.takeIf { it.isNotEmpty() } ?: existing.metadata?.name
-        val updated = existing.copy(metadata = metadata.copy(name = mergedName))
-        rooms[key] = updated
+        val updated = synchronized(roomsLock) {
+            val existing = rooms[key] ?: GroupRoom(groupId, relayUrl, null, emptyList(), 0L)
+            val mergedName = metadata.name?.takeIf { it.isNotEmpty() } ?: existing.metadata?.name
+            val u = existing.copy(metadata = metadata.copy(name = mergedName))
+            rooms[key] = u
+            u
+        }
         ownerPubkey?.let { persistence?.upsertRoomMeta(it, updated) }
         emit()
     }
 
     fun updateAdmins(relayUrl: String, groupId: String, admins: List<String>) {
         val key = roomKey(relayUrl, groupId)
-        val existing = rooms[key] ?: return
-        val updated = existing.copy(admins = admins)
-        rooms[key] = updated
+        val updated = synchronized(roomsLock) {
+            val existing = rooms[key] ?: return
+            val u = existing.copy(admins = admins)
+            rooms[key] = u
+            u
+        }
         ownerPubkey?.let { persistence?.upsertRoomMeta(it, updated) }
         emit()
     }
 
     fun updateMembers(relayUrl: String, groupId: String, members: List<String>) {
         val key = roomKey(relayUrl, groupId)
-        val existing = rooms[key] ?: return
-        val updated = existing.copy(members = members)
-        rooms[key] = updated
+        val updated = synchronized(roomsLock) {
+            val existing = rooms[key] ?: return
+            val u = existing.copy(members = members)
+            rooms[key] = u
+            u
+        }
         ownerPubkey?.let { persistence?.upsertRoomMeta(it, updated) }
         emit()
     }
 
     fun addMessage(relayUrl: String, groupId: String, message: GroupMessage) {
-        if (!seenMessages.add(message.id)) return
         val key = roomKey(relayUrl, groupId)
-        val existing = rooms[key] ?: return
-        val updated = (existing.messages + message).sortedBy { it.createdAt }
-        val updatedRoom = existing.copy(
-            messages = updated,
-            lastMessageAt = maxOf(existing.lastMessageAt, message.createdAt)
-        )
-        rooms[key] = updatedRoom
+        synchronized(roomsLock) {
+            if (!seenMessages.add(message.id)) return
+            val existing = rooms[key] ?: return
+            val merged = insertByCreatedAt(existing.messages, message)
+            // Bound the in-memory list (newest kept). Full history stays in ObjectBox;
+            // this only caps the Compose-facing list so a high-volume room can't grow
+            // memory without limit.
+            val capped = if (merged.size > MAX_ROOM_MESSAGES) merged.takeLast(MAX_ROOM_MESSAGES) else merged
+            rooms[key] = existing.copy(
+                messages = capped,
+                lastMessageAt = maxOf(existing.lastMessageAt, message.createdAt)
+            )
+            // Bound the dedup set: clear + reseed from the messages still retained so it
+            // can't grow forever. A trimmed-then-replayed old message may re-enter once
+            // before being re-trimmed — rare and harmless.
+            if (seenMessages.size > MAX_SEEN_MESSAGES) {
+                seenMessages.clear()
+                rooms.values.forEach { r -> r.messages.forEach { seenMessages.add(it.id) } }
+            }
+        }
         ownerPubkey?.let { persistence?.queueMessage(it, relayUrl, groupId, message) }
         // Update unread state for notified groups
         if (key in _notifiedGroups.value) {
@@ -183,23 +219,53 @@ class GroupRepository(private val context: Context, pubkeyHex: String? = null) {
 
     fun addReaction(relayUrl: String, groupId: String, messageId: String, reactorPubkey: String, emoji: String, emojiUrl: String? = null) {
         val key = roomKey(relayUrl, groupId)
-        var existing = rooms[key] ?: return
-        if (emojiUrl != null) {
-            val shortcode = emoji.removeSurrounding(":")
-            existing = existing.copy(reactionEmojiUrls = existing.reactionEmojiUrls + (shortcode to emojiUrl))
+        val changed = synchronized(roomsLock) {
+            var existing = rooms[key] ?: return
+            if (emojiUrl != null) {
+                val shortcode = emoji.removeSurrounding(":")
+                existing = existing.copy(reactionEmojiUrls = existing.reactionEmojiUrls + (shortcode to emojiUrl))
+            }
+            val msgIndex = existing.messages.indexOfFirst { it.id == messageId }
+            if (msgIndex < 0) {
+                if (emojiUrl != null) { rooms[key] = existing; true } else false
+            } else {
+                val msg = existing.messages[msgIndex]
+                val current = msg.reactions[emoji] ?: emptyList()
+                if (reactorPubkey in current) {
+                    false
+                } else {
+                    val updatedMsg = msg.copy(reactions = msg.reactions + (emoji to (current + reactorPubkey)))
+                    val updatedMessages = existing.messages.toMutableList().also { it[msgIndex] = updatedMsg }
+                    rooms[key] = existing.copy(messages = updatedMessages)
+                    true
+                }
+            }
         }
-        val msgIndex = existing.messages.indexOfFirst { it.id == messageId }
-        if (msgIndex < 0) {
-            if (emojiUrl != null) { rooms[key] = existing; emit() }
-            return
+        if (changed) emit()
+    }
+
+    /**
+     * Insert [message] into an already-ascending-by-createdAt list, returning a new
+     * list. Replaces a full O(n log n) re-sort on every message: chat messages almost
+     * always arrive newest-last, so the common path is a tail append; only out-of-order
+     * arrivals walk back to find the slot. The O(n) copy is unavoidable — Compose diffs
+     * an immutable snapshot.
+     */
+    private fun insertByCreatedAt(messages: List<GroupMessage>, message: GroupMessage): List<GroupMessage> {
+        if (messages.isEmpty() || message.createdAt >= messages.last().createdAt) {
+            return messages + message
         }
-        val msg = existing.messages[msgIndex]
-        val current = msg.reactions[emoji] ?: emptyList()
-        if (reactorPubkey in current) return
-        val updatedMsg = msg.copy(reactions = msg.reactions + (emoji to (current + reactorPubkey)))
-        val updatedMessages = existing.messages.toMutableList().also { it[msgIndex] = updatedMsg }
-        rooms[key] = existing.copy(messages = updatedMessages)
-        emit()
+        val result = ArrayList<GroupMessage>(messages.size + 1)
+        var inserted = false
+        for (m in messages) {
+            if (!inserted && message.createdAt < m.createdAt) {
+                result.add(message)
+                inserted = true
+            }
+            result.add(m)
+        }
+        if (!inserted) result.add(message)
+        return result
     }
 
     fun getRoom(relayUrl: String, groupId: String): GroupRoom? = rooms[roomKey(relayUrl, groupId)]
@@ -286,8 +352,10 @@ class GroupRepository(private val context: Context, pubkeyHex: String? = null) {
     }
 
     fun clear() {
-        rooms.clear()
-        seenMessages.clear()
+        synchronized(roomsLock) {
+            rooms.clear()
+            seenMessages.clear()
+        }
         _unreadGroups.value = emptySet()
         emit()
     }
@@ -309,5 +377,15 @@ class GroupRepository(private val context: Context, pubkeyHex: String? = null) {
         _joinedGroups.value = rooms.values
             .sortedByDescending { it.lastMessageAt }
             .toList()
+    }
+
+    companion object {
+        /** Max messages retained in memory per room (newest kept). Older history stays
+         *  in ObjectBox and is reloaded on open; this only bounds the live Compose list. */
+        private const val MAX_ROOM_MESSAGES = 1000
+
+        /** Max message IDs in the dedup set before it is cleared and reseeded from the
+         *  currently retained messages. */
+        private const val MAX_SEEN_MESSAGES = 20_000
     }
 }
