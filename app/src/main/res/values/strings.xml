@@ -959,6 +959,7 @@
     <string name="error_no_rooms">No groups yet</string>
     <string name="error_no_rooms_hint">Create a group or paste an invite link to get started.</string>
     <string name="error_no_public_rooms">No public groups found.</string>
+    <string name="group_removed_from_room">You\'ve been removed from this group</string>
     <string name="action_paste_invite">Paste invite link</string>
     <string name="title_redeem_invite">Join with invite</string>
     <string name="action_continue">Continue</string>

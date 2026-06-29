@@ -17,10 +17,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 class GroupRoomViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -51,6 +53,17 @@ class GroupRoomViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _relayError = MutableStateFlow<String?>(null)
     val relayError: StateFlow<String?> = _relayError
+
+    // Set true when a freshly-arrived 39002 no longer lists me while I have the room open — i.e.
+    // an admin removed/banned me. The screen reacts by ejecting me to the room list.
+    private val _removedFromRoom = MutableStateFlow(false)
+    val removedFromRoom: StateFlow<Boolean> = _removedFromRoom
+
+    // My pubkey, for self-removal detection. Null until init() supplies it (READ_ONLY/unknown).
+    private var myPubkey: String? = null
+    // Guards self-removal false positives: only eject once I've actually been seen in a loaded
+    // (non-empty) 39002 member list, so a transient/empty fetch can't kick a valid member.
+    private var sawSelfAsMember = false
 
     // ── Local, room-scoped moderation (client-side only, no relay events) ──────────────────────
     // Pubkeys the current user has muted in this room, and individual messages they've locally
@@ -125,8 +138,10 @@ class GroupRoomViewModel(app: Application) : AndroidViewModel(app) {
         groupId: String,
         relayUrl: String,
         repository: GroupRepository,
-        pool: RelayPool
+        pool: RelayPool,
+        myPubkey: String? = null
     ) {
+        this.myPubkey = myPubkey
         if (this.groupId == groupId && this.relayUrl == relayUrl) return
         this.groupId = groupId
         this.relayUrl = relayUrl
@@ -147,6 +162,7 @@ class GroupRoomViewModel(app: Application) : AndroidViewModel(app) {
                 _messages.value = room?.messages ?: emptyList()
                 // Clear relay error once messages arrive
                 if (room != null && room.messages.isNotEmpty()) _relayError.value = null
+                detectSelfRemoval(room)
             }
         }
 
@@ -165,6 +181,23 @@ class GroupRoomViewModel(app: Application) : AndroidViewModel(app) {
             pool.authCompleted.collect { url ->
                 if (url == relayUrl) _relayError.value = null
             }
+        }
+    }
+
+    /**
+     * Detect that I've been removed/banned from the room. Triggers only on a loaded (non-empty)
+     * 39002 member list that excludes me, *after* I've been confirmed as a member at least once —
+     * so an empty/failed members fetch or a public-room preview can't eject a valid member. The
+     * underlying 39002 is already newest-wins (see GroupListViewModel.isFreshReplaceable).
+     */
+    private fun detectSelfRemoval(room: GroupRoom?) {
+        val me = myPubkey ?: return
+        val members = room?.members ?: return
+        if (members.isEmpty()) return
+        if (members.contains(me)) {
+            sawSelfAsMember = true
+        } else if (sawSelfAsMember) {
+            _removedFromRoom.value = true
         }
     }
 
@@ -249,6 +282,19 @@ class GroupRoomViewModel(app: Application) : AndroidViewModel(app) {
                     content = text,
                     tags = tags
                 )
+                // Watch for the relay's OK before sending, so a rejection (e.g. a kind-9 from a
+                // user the relay no longer considers a member) surfaces to the sender instead of
+                // being silently dropped. Runs independently so it doesn't hold up _sending; the
+                // relay's OK is a network round-trip, so the watcher is collecting well before it.
+                val eventId = event.id
+                val watcher = viewModelScope.launch(Dispatchers.Default) {
+                    val result = withTimeoutOrNull(REJECTION_TIMEOUT_MS) {
+                        relayPool.publishResults.first { it.eventId == eventId && it.relayUrl == relayUrl }
+                    }
+                    if (result != null && !result.accepted) {
+                        _sendError.value = "Couldn't send — you're not a member of this group"
+                    }
+                }
                 val sent = relayPool.sendToRelayOrEphemeral(relayUrl, ClientMessage.event(event), skipBadCheck = true)
                 if (sent) {
                     groupRepo?.addMessage(relayUrl, groupId, GroupMessage(
@@ -261,6 +307,7 @@ class GroupRoomViewModel(app: Application) : AndroidViewModel(app) {
                     _messageText.value = ""
                     _replyTarget.value = null
                 } else {
+                    watcher.cancel()
                     _sendError.value = "Could not connect to relay"
                 }
             } catch (e: Exception) {
@@ -269,5 +316,10 @@ class GroupRoomViewModel(app: Application) : AndroidViewModel(app) {
                 _sending.value = false
             }
         }
+    }
+
+    companion object {
+        // How long to wait for a relay OK before giving up on surfacing a send rejection.
+        private const val REJECTION_TIMEOUT_MS = 8_000L
     }
 }
