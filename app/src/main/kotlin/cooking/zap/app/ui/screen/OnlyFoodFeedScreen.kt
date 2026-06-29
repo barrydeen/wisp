@@ -122,10 +122,17 @@ fun OnlyFoodFeedScreen(
             listState.scrollToItem(0)
         }
     }
-    // Switching Global/Following swaps the cache — land at the top of the new mode.
+    // Switching Global/Following swaps the cache — land at the top of the new mode. Track the
+    // previous mode (mirrors FeedScreen's prev* guards) so we only re-pin on an actual user
+    // toggle, not on first composition or nav re-entry — those must keep the restored
+    // LazyListState instead of being yanked to the top.
+    var prevMode by rememberSaveable { mutableStateOf(mode.name) }
     LaunchedEffect(mode) {
-        autoFollowTop = true
-        listState.scrollToItem(0)
+        if (mode.name != prevMode) {
+            prevMode = mode.name
+            autoFollowTop = true
+            listState.scrollToItem(0)
+        }
     }
 
     Scaffold(
