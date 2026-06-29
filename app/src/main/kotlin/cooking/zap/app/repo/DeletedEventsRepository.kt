@@ -97,40 +97,51 @@ class DeletedEventsRepository(private val context: Context, pubkeyHex: String? =
     }
 
     private fun saveAddressesToPrefs() {
-        // Each entry is "<deletedAt>:<coord>". The timestamp is a decimal Long
-        // (no ':'), so splitting on the first ':' unambiguously recovers the
-        // coord even though the coord itself contains colons.
         prefs.edit()
-            .putStringSet(
-                "deleted_event_address_times",
-                deletedAddresses.entries.map { "${it.value}:${it.key}" }.toSet(),
-            )
+            .putStringSet("deleted_event_address_times", encodeAddressTimes(deletedAddresses))
             .apply()
     }
 
     private fun loadFromPrefs() {
         prefs.getStringSet("deleted_event_ids", null)?.let { deletedIds = HashSet(it) }
         val timed = prefs.getStringSet("deleted_event_address_times", null)
-        if (timed != null) {
-            val map = HashMap<String, Long>()
-            for (entry in timed) {
-                val sep = entry.indexOf(':')
-                if (sep <= 0) continue
-                val ts = entry.substring(0, sep).toLongOrNull() ?: continue
-                map[entry.substring(sep + 1)] = ts
-            }
-            deletedAddresses = map
+        deletedAddresses = if (timed != null) {
+            decodeAddressTimes(timed)
         } else {
             // Legacy migration: the old format was a bare coord set with no
             // timestamp — treat those as permanent tombstones (MAX).
-            prefs.getStringSet("deleted_event_addresses", null)?.let { old ->
-                deletedAddresses = HashMap(old.associateWith { Long.MAX_VALUE })
-            }
+            migrateLegacyAddresses(prefs.getStringSet("deleted_event_addresses", null))
         }
     }
 
     companion object {
         fun addressCoord(kind: Int, pubkey: String, dTag: String): String = "$kind:$pubkey:$dTag"
+
+        /**
+         * Serialize the coord→deletion-time map to a flat string set for
+         * SharedPreferences. Each entry is `"<deletedAt>:<coord>"`; the timestamp
+         * is a decimal Long (never contains ':'), so [decodeAddressTimes] can
+         * recover the coord by splitting on the first ':' even though the coord
+         * itself ("kind:pubkey:dTag") contains colons.
+         */
+        fun encodeAddressTimes(addresses: Map<String, Long>): Set<String> =
+            addresses.entries.mapTo(HashSet()) { "${it.value}:${it.key}" }
+
+        /** Inverse of [encodeAddressTimes]. Malformed entries are skipped. */
+        fun decodeAddressTimes(entries: Set<String>): HashMap<String, Long> {
+            val map = HashMap<String, Long>()
+            for (entry in entries) {
+                val sep = entry.indexOf(':')
+                if (sep <= 0) continue
+                val ts = entry.substring(0, sep).toLongOrNull() ?: continue
+                map[entry.substring(sep + 1)] = ts
+            }
+            return map
+        }
+
+        /** Migrate the legacy bare-coord set (no timestamps) to permanent tombstones. */
+        fun migrateLegacyAddresses(legacy: Set<String>?): HashMap<String, Long> =
+            HashMap(legacy?.associateWith { Long.MAX_VALUE } ?: emptyMap())
 
         private fun prefsName(pubkeyHex: String?): String =
             if (pubkeyHex != null) "wisp_deleted_events_$pubkeyHex" else "wisp_deleted_events"
