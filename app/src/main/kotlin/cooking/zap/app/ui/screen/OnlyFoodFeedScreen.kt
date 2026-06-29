@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -30,7 +31,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,6 +78,11 @@ fun OnlyFoodFeedScreen(
     val emptyFollows by viewModel.emptyFollows.collectAsState()
 
     val listState = rememberLazyListState()
+    // Stick-to-top landing: re-pin to the newest note while the user is following the
+    // head of the feed, so newer posts streaming in (or merged by refresh) don't insert
+    // above the anchored top and force a manual scroll up. Cleared once the user scrolls
+    // down to page older notes. Saved across navigation.
+    var autoFollowTop by rememberSaveable { mutableStateOf(true) }
     // Infinite scroll: page older when the last item nears the viewport. Keyed on
     // totalItemsCount (not a bare boolean) so a page that appends WHILE the user is
     // parked at the bottom re-triggers the next page — a boolean stuck `true` would
@@ -90,6 +99,43 @@ fun OnlyFoodFeedScreen(
             .distinctUntilChanged()
             .filter { it >= 0 }
             .collect { viewModel.loadMore() }
+    }
+
+    // --- Stick-to-top landing (parity with FeedScreen) ---
+    val isAtTop by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+        }
+    }
+    // A user drag means they're taking control (e.g. scrolling down to page older).
+    val isDragged by listState.interactionSource.collectIsDraggedAsState()
+    LaunchedEffect(isDragged) {
+        if (isDragged) autoFollowTop = false
+    }
+    // Resume following only when scrolling settles back at the very top.
+    LaunchedEffect(Unit) {
+        snapshotFlow { listState.isScrollInProgress }
+            .filter { !it }
+            .collect { if (isAtTop) autoFollowTop = true }
+    }
+    // Re-pin to the newest note when the head of the feed changes while following.
+    val topNoteId = notes.firstOrNull()?.id
+    LaunchedEffect(topNoteId, autoFollowTop) {
+        if (autoFollowTop && topNoteId != null && !listState.isScrollInProgress) {
+            listState.scrollToItem(0)
+        }
+    }
+    // Switching Global/Following swaps the cache — land at the top of the new mode. Track the
+    // previous mode (mirrors FeedScreen's prev* guards) so we only re-pin on an actual user
+    // toggle, not on first composition or nav re-entry — those must keep the restored
+    // LazyListState instead of being yanked to the top.
+    var prevMode by rememberSaveable { mutableStateOf(mode.name) }
+    LaunchedEffect(mode) {
+        if (mode.name != prevMode) {
+            prevMode = mode.name
+            autoFollowTop = true
+            listState.scrollToItem(0)
+        }
     }
 
     Scaffold(

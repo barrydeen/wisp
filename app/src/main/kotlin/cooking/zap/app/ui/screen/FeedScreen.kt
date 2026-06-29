@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -148,6 +149,7 @@ import cooking.zap.app.viewmodel.TRENDING_USERS_RELAY_URL
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 
@@ -200,6 +202,13 @@ fun FeedScreen(
     val liveNowStreams by viewModel.liveNowStreams.collectAsState()
     val listState = rememberLazyListState()
 
+    // Stick-to-top landing: while the user is following the head of the feed we re-pin
+    // to index 0 as newer events stream in (they otherwise insert above the anchored
+    // top item, forcing a manual scroll up). Cleared when the user scrolls away, so the
+    // New-notes button takes over. Saved across navigation so returning from a thread
+    // doesn't yank a scrolled-down user back to the top.
+    var autoFollowTop by rememberSaveable { mutableStateOf(true) }
+
     // Viewport-aware engagement: notify ViewModel of visible item range
     LaunchedEffect(listState) {
         snapshotFlow { listState.layoutInfo.visibleItemsInfo }
@@ -217,6 +226,7 @@ fun FeedScreen(
     LaunchedEffect(scrollToTopTrigger) {
         if (scrollToTopTrigger != handledScrollTrigger) {
             handledScrollTrigger = scrollToTopTrigger
+            autoFollowTop = true
             listState.scrollToItem(0)
         }
     }
@@ -254,6 +264,7 @@ fun FeedScreen(
             prevTrendingMetric = trendingMetric.name
             prevTrendingTimeframe = trendingTimeframe.name
             prevTrendingMode = trendingMode.name
+            autoFollowTop = true
             listState.scrollToItem(0)
         }
     }
@@ -374,6 +385,29 @@ fun FeedScreen(
 
     LaunchedEffect(isAtTop) {
         if (isAtTop) viewModel.resetNewNoteCount()
+    }
+
+    // --- Stick-to-top landing (Option 1) ---
+    // A user drag means they're taking control of the scroll position, so stop following.
+    val isDragged by listState.interactionSource.collectIsDraggedAsState()
+    LaunchedEffect(isDragged) {
+        if (isDragged) autoFollowTop = false
+    }
+    // When scrolling settles, resume following only if the user landed at the very top.
+    // We never set false here so our own scrollToItem(0) (which settles at top) keeps
+    // following enabled rather than toggling it off.
+    LaunchedEffect(Unit) {
+        snapshotFlow { listState.isScrollInProgress }
+            .filter { !it }
+            .collect { if (isAtTop) autoFollowTop = true }
+    }
+    // Re-pin to the newest item whenever the head of the feed changes while following.
+    // Covers both the initial streaming fill and live posts arriving after EOSE.
+    val topEventId = feed.firstOrNull()?.id
+    LaunchedEffect(topEventId, autoFollowTop) {
+        if (autoFollowTop && topEventId != null && !listState.isScrollInProgress) {
+            listState.scrollToItem(0)
+        }
     }
 
 
@@ -1043,6 +1077,7 @@ fun FeedScreen(
                             count = newNoteCount,
                             isScrolling = listState.isScrollInProgress,
                             onClick = {
+                                autoFollowTop = true
                                 scope.launch {
                                     listState.scrollToItem(0)
                                     viewModel.resetNewNoteCount()
