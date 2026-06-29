@@ -5,11 +5,15 @@ import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import breez_sdk_spark.CheckLightningAddressRequest
+import breez_sdk_spark.ClaimDepositRequest
 import breez_sdk_spark.ConnectRequest
+import breez_sdk_spark.DepositInfo
 import breez_sdk_spark.EventListener
 import breez_sdk_spark.GetInfoRequest
 import breez_sdk_spark.ListPaymentsRequest
+import breez_sdk_spark.ListUnclaimedDepositsRequest
 import breez_sdk_spark.Network
+import breez_sdk_spark.OnchainConfirmationSpeed
 import breez_sdk_spark.PaymentDetails
 import breez_sdk_spark.PaymentType
 import breez_sdk_spark.PrepareSendPaymentRequest
@@ -18,8 +22,8 @@ import breez_sdk_spark.ReceivePaymentRequest
 import breez_sdk_spark.RegisterLightningAddressRequest
 import breez_sdk_spark.SdkEvent
 import breez_sdk_spark.Seed
-import breez_sdk_spark.SendPaymentOptions
 import breez_sdk_spark.SendPaymentMethod
+import breez_sdk_spark.SendPaymentOptions
 import breez_sdk_spark.SendPaymentRequest
 import breez_sdk_spark.SyncWalletRequest
 import breez_sdk_spark.connect
@@ -106,6 +110,9 @@ class SparkRepository(
     // after connect.
     private val _identityPubkey = MutableStateFlow<String?>(null)
     val identityPubkey: StateFlow<String?> = _identityPubkey
+
+    private val _unclaimedDeposits = MutableStateFlow<List<DepositInfo>>(emptyList())
+    val unclaimedDeposits: StateFlow<List<DepositInfo>> = _unclaimedDeposits
 
     private fun emitStatus(msg: String) {
         Log.d(TAG, msg)
@@ -319,6 +326,15 @@ class SparkRepository(
                             is SdkEvent.PaymentPending -> {
                                 emitStatus("Payment pending")
                             }
+                            is SdkEvent.UnclaimedDeposits -> {
+                                emitStatus("Unclaimed deposits: ${e.unclaimedDeposits.size}")
+                                _unclaimedDeposits.value = e.unclaimedDeposits
+                            }
+                            is SdkEvent.ClaimedDeposits -> {
+                                emitStatus("Deposits claimed")
+                                _unclaimedDeposits.value = emptyList()
+                                refreshBalanceInternal()
+                            }
                             else -> {}
                         }
                     }
@@ -467,7 +483,7 @@ class SparkRepository(
 
     // --- Receive ---
 
-    override suspend fun makeInvoice(amountMsats: Long, description: String): Result<String> =
+    override suspend fun makeInvoice(amountMsats: Long, description: String, expirySecs: Int): Result<String> =
         withContext(Dispatchers.IO) {
             try {
                 val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
@@ -477,7 +493,7 @@ class SparkRepository(
                 val method = ReceivePaymentMethod.Bolt11Invoice(
                     description = description.ifEmpty { "Zap Cooking wallet" },
                     amountSats = amountSats,
-                    expirySecs = 3600u,
+                    expirySecs = expirySecs.toUInt(),
                     paymentHash = null
                 )
                 val response = instance.receivePayment(ReceivePaymentRequest(method))
@@ -545,6 +561,104 @@ class SparkRepository(
                 Result.failure(e)
             }
         }
+
+    // --- On-chain ---
+
+    data class OnchainFeeQuote(
+        val fastFeeSats: Long,
+        val mediumFeeSats: Long,
+        val slowFeeSats: Long
+    )
+
+    /** Generate a Bitcoin address for receiving an on-chain deposit. */
+    suspend fun getDepositAddress(): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
+            val response = instance.receivePayment(
+                ReceivePaymentRequest(ReceivePaymentMethod.BitcoinAddress)
+            )
+            Result.success(response.paymentRequest)
+        } catch (e: Exception) {
+            Log.e(TAG, "getDepositAddress failed", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Prepare an on-chain send and return fee estimates.
+     * Returns (feeQuote, prepareResponse); pass the response to [sendOnchain].
+     */
+    suspend fun prepareOnchainSend(
+        address: String,
+        amountSats: Long
+    ): Result<Pair<OnchainFeeQuote, Any>> = withContext(Dispatchers.IO) {
+        try {
+            val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
+            val prepareReq = PrepareSendPaymentRequest(
+                paymentRequest = address,
+                amount = amountSats.toBigInteger()
+            )
+            val prepareResponse = instance.prepareSendPayment(prepareReq)
+            val method = prepareResponse.paymentMethod as? SendPaymentMethod.BitcoinAddress
+                ?: return@withContext Result.failure(Exception("Unexpected payment method for Bitcoin address"))
+            val feeQuote = method.feeQuote
+            val quote = OnchainFeeQuote(
+                fastFeeSats = (feeQuote.speedFast.userFeeSat + feeQuote.speedFast.l1BroadcastFeeSat).toLong(),
+                mediumFeeSats = (feeQuote.speedMedium.userFeeSat + feeQuote.speedMedium.l1BroadcastFeeSat).toLong(),
+                slowFeeSats = (feeQuote.speedSlow.userFeeSat + feeQuote.speedSlow.l1BroadcastFeeSat).toLong()
+            )
+            Result.success(Pair(quote, prepareResponse as Any))
+        } catch (e: Exception) {
+            Log.e(TAG, "prepareOnchainSend failed", e)
+            Result.failure(e)
+        }
+    }
+
+    /** Execute a previously prepared on-chain send. Returns the payment ID. */
+    suspend fun sendOnchain(
+        prepareData: Any,
+        speed: OnchainConfirmationSpeed = OnchainConfirmationSpeed.MEDIUM
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
+            val prepareResponse = prepareData as breez_sdk_spark.PrepareSendPaymentResponse
+            val options = SendPaymentOptions.BitcoinAddress(confirmationSpeed = speed)
+            val sendResponse = instance.sendPayment(SendPaymentRequest(prepareResponse, options))
+            val paymentId = sendResponse.payment.id
+            emitStatus("On-chain payment sent")
+            refreshBalanceInternal()
+            Result.success(paymentId)
+        } catch (e: Exception) {
+            emitStatus("On-chain send failed: ${e.message}")
+            Log.e(TAG, "sendOnchain failed", e)
+            Result.failure(e)
+        }
+    }
+
+    /** List all deposits waiting to be claimed into the Spark balance. */
+    suspend fun listUnclaimedDeposits(): Result<List<DepositInfo>> = withContext(Dispatchers.IO) {
+        try {
+            val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
+            val response = instance.listUnclaimedDeposits(ListUnclaimedDepositsRequest)
+            _unclaimedDeposits.value = response.deposits
+            Result.success(response.deposits)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /** Claim a confirmed on-chain deposit into the Spark balance. */
+    suspend fun claimDeposit(txid: String, vout: UInt): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
+            instance.claimDeposit(ClaimDepositRequest(txid = txid, vout = vout))
+            refreshBalanceInternal()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "claimDeposit failed", e)
+            Result.failure(e)
+        }
+    }
 
     // --- Lightning Address ---
 

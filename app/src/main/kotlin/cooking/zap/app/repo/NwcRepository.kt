@@ -346,8 +346,8 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         return result.map { (it as Nip47.NwcResponse.PayInvoiceResult).preimage }
     }
 
-    override suspend fun makeInvoice(amountMsats: Long, description: String): Result<String> {
-        val result = sendRequest(Nip47.NwcRequest.MakeInvoice(amountMsats, description))
+    override suspend fun makeInvoice(amountMsats: Long, description: String, expirySecs: Int): Result<String> {
+        val result = sendRequest(Nip47.NwcRequest.MakeInvoice(amountMsats, description, expirySecs))
         return result.map { (it as Nip47.NwcResponse.MakeInvoiceResult).invoice }
     }
 

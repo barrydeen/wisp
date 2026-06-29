@@ -126,6 +126,19 @@ sealed class WalletPage {
     object DeleteWalletConfirm : WalletPage()
     object BackupToRelay : WalletPage()
     object RestoreFromRelay : WalletPage()
+    // On-chain flows (deposit address is shown inline as a Receive tab, not a page)
+    data class OnchainSendAmount(val address: String) : WalletPage()
+    data class OnchainSendConfirm(
+        val address: String,
+        val amountSats: Long,
+        val feeQuote: cooking.zap.app.repo.SparkRepository.OnchainFeeQuote,
+        val prepareData: Any
+    ) : WalletPage()
+    data class OnchainSendResult(
+        val success: Boolean,
+        val paymentId: String?,
+        val message: String
+    ) : WalletPage()
 }
 
 class WalletViewModel(
@@ -204,6 +217,20 @@ class WalletViewModel(
     private val _feeState = MutableStateFlow<FeeState>(FeeState.Idle)
     val feeState: StateFlow<FeeState> = _feeState
     private var _preparedPaymentData: Any? = null
+
+    // On-chain state
+    val unclaimedDeposits: StateFlow<List<breez_sdk_spark.DepositInfo>> = sparkRepo.unclaimedDeposits
+    private val _onchainFeeLoading = MutableStateFlow(false)
+    val onchainFeeLoading: StateFlow<Boolean> = _onchainFeeLoading
+    private val _onchainError = MutableStateFlow<String?>(null)
+    val onchainError: StateFlow<String?> = _onchainError
+    // Bitcoin deposit address shown inline in the Receive screen's Bitcoin tab.
+    private val _depositAddress = MutableStateFlow<String?>(null)
+    val depositAddress: StateFlow<String?> = _depositAddress
+    private val _depositAddressLoading = MutableStateFlow(false)
+    val depositAddressLoading: StateFlow<Boolean> = _depositAddressLoading
+    private val _depositAddressError = MutableStateFlow<String?>(null)
+    val depositAddressError: StateFlow<String?> = _depositAddressError
 
     private val _isLoadingMore = MutableStateFlow(false)
     val isLoadingMore: StateFlow<Boolean> = _isLoadingMore
@@ -1165,11 +1192,27 @@ class WalletViewModel(
         }
     }
 
+    fun setSendAmount(amount: String) {
+        _sendAmount.value = amount.filter { it.isDigit() }.take(12)
+    }
+
     fun processInput(input: String = _sendInput.value) {
-        val trimmed = input.trim().removePrefix("lightning:")
+        val trimmed = input.trim()
+            .removePrefix("lightning:")
+            .removePrefix("bitcoin:")
+            .removePrefix("BITCOIN:")
         _sendError.value = null
 
         when {
+            isBitcoinAddress(trimmed) -> {
+                if (_walletMode.value != WalletMode.SPARK) {
+                    _sendError.value = "On-chain Bitcoin requires a Spark wallet"
+                    return
+                }
+                _sendAmount.value = ""
+                _onchainError.value = null
+                navigateTo(WalletPage.OnchainSendAmount(trimmed))
+            }
             trimmed.lowercase().startsWith("lnbc") -> {
                 val decoded = Bolt11.decode(trimmed)
                 if (decoded == null) {
@@ -1192,9 +1235,20 @@ class WalletViewModel(
                 navigateTo(WalletPage.SendAmount(trimmed))
             }
             else -> {
-                _sendError.value = "Enter a lightning address (user@domain) or BOLT11 invoice"
+                _sendError.value = "Enter a lightning address, BOLT11 invoice, or Bitcoin address"
             }
         }
+    }
+
+    private fun isBitcoinAddress(s: String): Boolean {
+        if (s.length < 26 || s.length > 90) return false
+        // Bech32 (bc1q…) and Bech32m (bc1p…) — segwit/taproot
+        if (s.lowercase().startsWith("bc1")) return true
+        // Legacy (1…) and P2SH (3…)
+        if (s.startsWith("1") || s.startsWith("3")) {
+            return s.matches(Regex("[13][a-km-zA-HJ-NP-Z1-9]{25,34}"))
+        }
+        return false
     }
 
     fun resolveLightningAddress(address: String, amountSats: Long) {
@@ -1291,30 +1345,80 @@ class WalletViewModel(
         }
     }
 
-    // --- Receive flow ---
+    // --- On-chain flow ---
 
-    fun updateReceiveAmount(digit: Char) {
-        val current = _receiveAmount.value
-        if (current.length >= 12) return
-        if (digit == '.') {
-            if (current.contains('.')) return
-            _receiveAmount.value = if (current.isEmpty()) "0." else "$current."
-            return
+    /**
+     * Fetch a Bitcoin deposit address for the Receive screen's Bitcoin tab.
+     * Caches the result; re-selecting the tab won't refetch unless [force] is set.
+     */
+    fun loadDepositAddress(force: Boolean = false) {
+        if (!force && _depositAddress.value != null) return
+        if (_depositAddressLoading.value) return
+        _depositAddressLoading.value = true
+        _depositAddressError.value = null
+        viewModelScope.launch {
+            sparkRepo.getDepositAddress().fold(
+                onSuccess = { address -> _depositAddress.value = address },
+                onFailure = { e -> _depositAddressError.value = e.message ?: "Failed to get deposit address" }
+            )
+            _depositAddressLoading.value = false
         }
-        _receiveAmount.value = current + digit
     }
 
-    fun receiveAmountBackspace() {
-        val current = _receiveAmount.value
-        if (current.isNotEmpty()) {
-            _receiveAmount.value = current.dropLast(1)
+    fun prepareOnchainSend(address: String, amountSats: Long) {
+        _onchainFeeLoading.value = true
+        _onchainError.value = null
+        viewModelScope.launch {
+            sparkRepo.prepareOnchainSend(address, amountSats).fold(
+                onSuccess = { (feeQuote, prepareData) ->
+                    navigateTo(WalletPage.OnchainSendConfirm(address, amountSats, feeQuote, prepareData))
+                },
+                onFailure = { e -> _onchainError.value = e.message ?: "Failed to estimate fee" }
+            )
+            _onchainFeeLoading.value = false
         }
     }
 
-    fun generateInvoice(amountSats: Long) {
+    fun sendOnchain(prepareData: Any, speed: breez_sdk_spark.OnchainConfirmationSpeed) {
         _isLoading.value = true
         viewModelScope.launch {
-            val result = activeProvider.makeInvoice(amountSats * 1000, "")
+            sparkRepo.sendOnchain(prepareData, speed).fold(
+                onSuccess = { paymentId ->
+                    val resultPage = WalletPage.OnchainSendResult(true, paymentId, "Payment sent")
+                    pageStack.removeAt(pageStack.lastIndex)
+                    pageStack.add(resultPage)
+                    _currentPage.value = resultPage
+                },
+                onFailure = { e ->
+                    val resultPage = WalletPage.OnchainSendResult(false, null, e.message ?: "Payment failed")
+                    pageStack.removeAt(pageStack.lastIndex)
+                    pageStack.add(resultPage)
+                    _currentPage.value = resultPage
+                }
+            )
+            _isLoading.value = false
+        }
+    }
+
+    fun claimAllDeposits() {
+        viewModelScope.launch {
+            sparkRepo.unclaimedDeposits.value.forEach { deposit ->
+                sparkRepo.claimDeposit(deposit.txid, deposit.vout)
+            }
+        }
+    }
+
+    // --- Receive flow ---
+
+    /** Set the receive amount directly from the native keyboard input field. */
+    fun setReceiveAmount(value: String) {
+        _receiveAmount.value = value
+    }
+
+    fun generateInvoice(amountSats: Long, description: String = "", expirySecs: Int = 3600) {
+        _isLoading.value = true
+        viewModelScope.launch {
+            val result = activeProvider.makeInvoice(amountSats * 1000, description, expirySecs)
             result.fold(
                 onSuccess = { invoice ->
                     navigateTo(WalletPage.ReceiveInvoice(invoice, amountSats))
