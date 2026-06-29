@@ -11,10 +11,14 @@ import cooking.zap.app.repo.ContactRepository
 import cooking.zap.app.repo.EventRepository
 import cooking.zap.app.repo.MuteRepository
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,11 +52,32 @@ class OnlyFoodFeedViewModel : ViewModel() {
     enum class Mode { GLOBAL, FOLLOWING }
 
     private class ModeState {
+        // Source of truth: every accepted event (dedup by id), insertion-ordered.
         val seen = LinkedHashMap<String, NostrEvent>()
+        // Display-order cache, maintained only for emission via [mergeFeedOrder].
+        // While [settled] is false a flush rebuilds these from `seen` (full sort);
+        // once it flips true at EOSE a flush only appends new arrivals to the tail.
+        val ordered = ArrayList<NostrEvent>()
+        val placedIds = HashSet<String>()
         var loaded = false
         var endReached = false
         var emptyFollows = false
-        fun snapshot(): List<NostrEvent> = seen.values.sortedByDescending { it.created_at }
+        // false = still loading/refreshing → flush rebuilds order from `seen`.
+        // true  = post-EOSE → flush appends, so a late straggler never reorders rows
+        //         already on screen.
+        var settled = false
+
+        /**
+         * Enter the unsettled (rebuild) state. Resets ONLY the display cache so the
+         * next flush rebuilds from `seen` instead of appending onto stale entries —
+         * the mid-build-reconnect invariant (Correction 1). `seen` is untouched, so
+         * no events are lost.
+         */
+        fun unsettle() {
+            settled = false
+            ordered.clear()
+            placedIds.clear()
+        }
     }
 
     private enum class Load { INITIAL, PAGE, REFRESH }
@@ -62,6 +87,14 @@ class OnlyFoodFeedViewModel : ViewModel() {
 
     private val _notes = MutableStateFlow<List<NostrEvent>>(emptyList())
     val notes: StateFlow<List<NostrEvent>> = _notes
+
+    /**
+     * Coalescing signal — inserts call [flushSignal].trySend; one collector started
+     * in [init] debounces a burst into a single emission per [SETTLE_WINDOW_MS]
+     * window. Mirrors EventRepository's `feedInserted`. CONFLATED so rapid signals
+     * collapse to at most one pending item.
+     */
+    private val flushSignal = Channel<Unit>(Channel.CONFLATED)
 
     private val _mode = MutableStateFlow(Mode.GLOBAL)
     val mode: StateFlow<Mode> = _mode
@@ -96,6 +129,11 @@ class OnlyFoodFeedViewModel : ViewModel() {
     ) {
         if (deps != null) return
         deps = Deps(relayPool, eventRepo, muteRepo, contactRepo)
+        // Coalesced emission collector. MUST run on viewModelScope (Main.immediate)
+        // so it shares the event collector's single thread — `seen`/`ordered` are
+        // plain (non-thread-safe) collections and a separate dispatcher would race
+        // them. The settle window batches a burst into one emission.
+        viewModelScope.launchFeedCoalescer(flushSignal, SETTLE_WINDOW_MS) { emitCurrentMode() }
         // Seed GLOBAL from cache so cached food renders before the live query.
         seedGlobalFromCache()
         // Auto-recover: re-issue when the search relay (re)connects while the
@@ -111,7 +149,10 @@ class OnlyFoodFeedViewModel : ViewModel() {
         if (_mode.value == mode) return
         _mode.value = mode
         val st = stateOf(mode)
-        _notes.value = st.snapshot()
+        // Instant cache swap through the shared compute path — no relay query, no
+        // flush signal. A settled target appends-from-its-cache; a never-loaded one
+        // rebuilds-from-(empty)-seen. Either way, the order matches a live flush.
+        emitCurrentMode()
         _emptyFollows.value = st.emptyFollows
         _isPaging.value = false
         _isRefreshing.value = false
@@ -160,6 +201,13 @@ class OnlyFoodFeedViewModel : ViewModel() {
         activeJob = viewModelScope.launch {
             previous?.cancelAndJoin()
             val d = deps ?: return@launch
+
+            // A load that rebuilds the list from scratch must reset the display cache
+            // so the next flush rebuilds from `seen` rather than appending onto stale
+            // order (Correction 1 — the mid-build-reconnect interleave). PAGE is
+            // append-only and keeps the existing settled order. Done after
+            // cancelAndJoin so the previous load can't write into a just-reset cache.
+            if (load == Load.INITIAL || load == Load.REFRESH) state.unsettle()
 
             val follows: Set<String>? = if (mode == Mode.FOLLOWING) {
                 d.contactRepo.getFollowList().map { it.pubkey }.toSet()
@@ -227,7 +275,10 @@ class OnlyFoodFeedViewModel : ViewModel() {
                             state.seen[event.id] = event
                             d.eventRepo.cacheEvent(event)
                             d.eventRepo.requestProfileIfMissing(event.pubkey)
-                            if (_mode.value == mode) _notes.value = state.snapshot()
+                            // Coalesce: signal a flush instead of emitting per event.
+                            // Only for the visible mode — a background load fills its
+                            // `seen` and rebuilds its order lazily on toggle/EOSE.
+                            if (_mode.value == mode) flushSignal.trySend(Unit)
                         }
                 }
                 val eoseReady = CompletableDeferred<Unit>()
@@ -289,8 +340,20 @@ class OnlyFoodFeedViewModel : ViewModel() {
                     // that returned zero strictly-older events has hit the floor.
                     if (load == Load.PAGE && pageEndReached(received)) state.endReached = true
                 }
+                // INITIAL/REFRESH freeze: on a genuine EOSE, rebuild this load's display
+                // cache from `seen` (full sort, unsettled semantics) so it is complete
+                // and correctly ordered — for the visible AND a background mode
+                // (Correction 3) — THEN flip `settled` so later stragglers append
+                // instead of re-sorting rows already on screen.
+                if (eoseFired && (load == Load.INITIAL || load == Load.REFRESH)) {
+                    mergeFeedOrder(state.ordered, state.placedIds, state.seen.values, settled = false)
+                    state.settled = true
+                }
+                // Single compute-display-list path (Correction 2): the direct post-EOSE
+                // emit and the coalescer are both just callers of emitCurrentMode(), so
+                // they can never disagree on order and flicker.
                 if (_mode.value == mode) {
-                    _notes.value = state.snapshot()
+                    emitCurrentMode()
                     clearIndicators()
                 }
                 if (eose != null) delay(6_000) // collect stragglers, then tear down
@@ -324,7 +387,10 @@ class OnlyFoodFeedViewModel : ViewModel() {
                 global.seen[event.id] = event
                 added = true
             }
-            if (added && _mode.value == Mode.GLOBAL) _notes.value = global.snapshot()
+            // GLOBAL is unsettled at seed time, so the flush rebuilds order from
+            // `seen` (seeded cache + anything already streamed). Coalesced like the
+            // live path so the seed + first REQ burst share a settle window.
+            if (added && _mode.value == Mode.GLOBAL) flushSignal.trySend(Unit)
         }
     }
 
@@ -355,6 +421,18 @@ class OnlyFoodFeedViewModel : ViewModel() {
         }
     }
 
+    /**
+     * The single "compute the display list" path (Correction 2). Both the coalesced
+     * flush collector and the direct post-EOSE/toggle emits call this, so they can
+     * never disagree on order. Emits the CURRENT mode's list, computed by
+     * [mergeFeedOrder] from that mode's `settled` flag. StateFlow's value-equality
+     * dedup drops a flush that produced no change.
+     */
+    private fun emitCurrentMode() {
+        val st = stateOf(_mode.value)
+        _notes.value = mergeFeedOrder(st.ordered, st.placedIds, st.seen.values, st.settled)
+    }
+
     private fun clearIndicators() {
         _isLoading.value = false
         _isPaging.value = false
@@ -376,11 +454,69 @@ class OnlyFoodFeedViewModel : ViewModel() {
     companion object {
         /** Process-wide subId sequence — unique across all VM instances. */
         private val SUB_SEQ = java.util.concurrent.atomic.AtomicLong(0)
+        /** Emission settle window — matches EventRepository's `feedInserted`. */
+        private const val SETTLE_WINDOW_MS = 50L
         private const val AUTHOR_CHUNK = 500
         /** Budget to bring the search ephemeral's socket up before sending. */
         private const val CONNECT_TIMEOUT_MS = 8_000L
         /** Budget to await EOSE, measured only AFTER the socket is connected. */
         private const val EOSE_TIMEOUT_MS = 8_000L
+    }
+}
+
+/**
+ * Compute the OnlyFood display order — the single source of truth for "what list
+ * to show", shared by the coalesced flush and the direct post-EOSE/toggle emits.
+ *
+ * - [settled] == false (loading / refreshing): REBUILD [ordered]/[placedIds] from
+ *   [seen] by a full descending-`created_at` sort, discarding any prior contents.
+ *   This enforces the mid-build-reconnect invariant (Correction 1) — an unsettled
+ *   flush never appends onto stale display state, so a reconnect re-submit on the
+ *   same state produces a from-scratch order, not an append onto pre-drop entries.
+ * - [settled] == true (post-EOSE): APPEND only the [seen] events not already in
+ *   [placedIds], sorted within this batch, to the tail of [ordered]. Rows already
+ *   on screen keep their position, so a late straggler can't reorder them.
+ *
+ * Mutates [ordered]/[placedIds] in place and returns a fresh list to emit.
+ */
+internal fun mergeFeedOrder(
+    ordered: MutableList<NostrEvent>,
+    placedIds: MutableSet<String>,
+    seen: Collection<NostrEvent>,
+    settled: Boolean,
+): List<NostrEvent> {
+    if (!settled) {
+        ordered.clear()
+        placedIds.clear()
+        for (event in seen.sortedByDescending { it.created_at }) {
+            ordered.add(event)
+            placedIds.add(event.id)
+        }
+    } else {
+        val fresh = seen.filter { it.id !in placedIds }.sortedByDescending { it.created_at }
+        for (event in fresh) {
+            ordered.add(event)
+            placedIds.add(event.id)
+        }
+    }
+    return ArrayList(ordered)
+}
+
+/**
+ * Launch the coalescing collector that mirrors EventRepository's `feedInserted`
+ * settle window: drain the conflated [signal], wait [settleMs] for the burst to
+ * settle, then [emit] once. A burst of N rapid signals collapses to ~one emission
+ * per window. Extracted top-level so it can be driven by `runTest` virtual time.
+ */
+internal fun CoroutineScope.launchFeedCoalescer(
+    signal: ReceiveChannel<Unit>,
+    settleMs: Long,
+    emit: () -> Unit,
+): Job = launch {
+    // consumeEach drains the channel without binding an (unused) loop variable.
+    signal.consumeEach {
+        delay(settleMs)
+        emit()
     }
 }
 
