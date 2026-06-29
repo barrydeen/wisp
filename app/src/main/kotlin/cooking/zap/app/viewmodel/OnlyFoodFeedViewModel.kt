@@ -185,6 +185,14 @@ class OnlyFoodFeedViewModel : ViewModel() {
         val mode = _mode.value
         val st = stateOf(mode)
         if (_isLoading.value || _isPaging.value || _isRefreshing.value || st.endReached) return
+        // Memory guardrail: stop paging once this mode's cache hits the retention cap so
+        // an unbounded scroll session can't grow seen/ordered/placedIds without limit.
+        // Evicting instead would corrupt the paging cursor (derived from the oldest
+        // retained event) and disturb the viewport, so we cap rather than evict.
+        if (st.seen.size >= MAX_RETAINED_EVENTS) {
+            st.endReached = true
+            return
+        }
         val oldest = st.seen.values.minOfOrNull { it.created_at } ?: return
         val bounds = pageBoundsBehind(oldest)
         submit(mode, st, Load.PAGE, since = bounds.since, until = bounds.until)
@@ -457,6 +465,8 @@ class OnlyFoodFeedViewModel : ViewModel() {
         /** Emission settle window — matches EventRepository's `feedInserted`. */
         private const val SETTLE_WINDOW_MS = 50L
         private const val AUTHOR_CHUNK = 500
+        /** Per-mode in-memory retention cap; paging stops here to bound memory. */
+        private const val MAX_RETAINED_EVENTS = 3000
         /** Budget to bring the search ephemeral's socket up before sending. */
         private const val CONNECT_TIMEOUT_MS = 8_000L
         /** Budget to await EOSE, measured only AFTER the socket is connected. */
