@@ -176,8 +176,11 @@ class RecipeBookmarkRepository(
         val dTag = dTagOf(event) ?: return
         // A collection deleted via NIP-09 must not be resurrected by a stale
         // in-memory cache entry or a relay re-broadcasting the old list event.
-        // Local (re)creation lifts this tombstone first via [applyLocal].
-        if (eventRepo.deletedEventsRepo?.isAddressDeleted(LIST_KIND, event.pubkey, dTag) == true) return
+        // Per NIP-09, only events at-or-before the deletion are voided, so a
+        // genuinely newer republish (e.g. a re-create from the web or another
+        // device) still revives the coordinate. A deliberate local (re)creation
+        // additionally clears the tombstone up front via [applyLocal].
+        if (isTombstoned(event.pubkey, dTag, event.created_at)) return
         val changed = synchronized(listsLock) {
             val current = listsByDTag[dTag]
             if (current != null && event.created_at <= current.created_at) {
@@ -195,19 +198,29 @@ class RecipeBookmarkRepository(
     /**
      * Apply an event WE just signed and published. A fresh local publish for a
      * `d`-tag is a deliberate (re)creation that supersedes any prior deletion, so
-     * lift the NIP-09 tombstone before applying — otherwise [applyEvent]'s guard
-     * would suppress the user's own new list.
+     * clear the address tombstone before applying — otherwise [applyEvent]'s
+     * guard would suppress the user's own new list (e.g. a same-second
+     * delete-then-recreate, where the timestamp check alone wouldn't revive it).
      */
     private fun applyLocal(event: NostrEvent) {
         if (event.kind == LIST_KIND) {
             dTagOf(event)?.let { dTag ->
-                eventRepo.deletedEventsRepo?.let {
-                    it.unmarkDeleted(event.id)
-                    it.unmarkDeletedAddress(LIST_KIND, event.pubkey, dTag)
-                }
+                eventRepo.deletedEventsRepo?.unmarkDeletedAddress(LIST_KIND, event.pubkey, dTag)
             }
         }
         applyEvent(event)
+    }
+
+    /**
+     * True iff the list at ([author], [dTag]) was deleted at-or-after [createdAt]
+     * — i.e. a NIP-09 tombstone exists whose deletion time is >= this event's
+     * created_at, so the event is voided. A newer republish (later created_at)
+     * is not tombstoned and legitimately revives the coordinate.
+     */
+    private fun isTombstoned(author: String, dTag: String, createdAt: Long): Boolean {
+        val deletionTime = eventRepo.deletedEventsRepo
+            ?.deletionTimeForAddress(LIST_KIND, author, dTag) ?: return false
+        return createdAt <= deletionTime
     }
 
     /**
@@ -373,10 +386,12 @@ class RecipeBookmarkRepository(
             // Persist a NIP-09 tombstone locally so the collection can't be
             // resurrected from the in-memory cache or a relay that never honored
             // the kind-5: the deletion may never echo back to us, and
-            // applyEvent()/the cache readers consult this to stay deleted.
+            // applyEvent()/the cache readers consult this to stay deleted. The
+            // deletion's created_at is recorded so a strictly newer republish
+            // (web/other device) still revives the address.
             eventRepo.deletedEventsRepo?.let {
                 it.markDeleted(base.id)
-                it.markDeletedAddress(LIST_KIND, author, dTag)
+                it.markDeletedAddress(LIST_KIND, author, dTag, signed.created_at)
             }
             // Optimistic local removal so the Saved grid updates immediately.
             removeListLocally(dTag)
@@ -610,7 +625,7 @@ class RecipeBookmarkRepository(
             if (event.kind != LIST_KIND || event.pubkey != author) return
             if (!isRecipeList(event)) return
             val dTag = dTagOf(event) ?: return
-            if (eventRepo.deletedEventsRepo?.isAddressDeleted(LIST_KIND, author, dTag) == true) return
+            if (isTombstoned(author, dTag, event.created_at)) return
             val current = byDTag[dTag]
             if (current == null || event.created_at > current.created_at) byDTag[dTag] = event
         }
@@ -622,12 +637,15 @@ class RecipeBookmarkRepository(
     }
 
     private fun cachedListEvent(author: String, dTag: String): NostrEvent? {
-        if (eventRepo.deletedEventsRepo?.isAddressDeleted(LIST_KIND, author, dTag) == true) return null
-        eventRepo.findAddressableEvent(LIST_KIND, author, dTag)?.let { return it }
-        val persistence = eventRepo.eventPersistence ?: return null
-        return persistence.getEventsByAuthorAndKind(author, LIST_KIND, limit = CACHE_LIMIT)
-            .filter { hasDTag(it, dTag) }
-            .maxByOrNull { it.created_at }
+        val candidate = eventRepo.findAddressableEvent(LIST_KIND, author, dTag)
+            ?: eventRepo.eventPersistence
+                ?.getEventsByAuthorAndKind(author, LIST_KIND, limit = CACHE_LIMIT)
+                ?.filter { hasDTag(it, dTag) }
+                ?.maxByOrNull { it.created_at }
+            ?: return null
+        // Don't serve a cached event the deletion already voided; a newer
+        // republish (created_at > deletion) is fine and revives the list.
+        return if (isTombstoned(author, dTag, candidate.created_at)) null else candidate
     }
 
     private fun publishListsState() {
