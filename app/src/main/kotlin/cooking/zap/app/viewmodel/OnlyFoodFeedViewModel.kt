@@ -18,6 +18,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -512,7 +513,8 @@ internal fun CoroutineScope.launchFeedCoalescer(
     settleMs: Long,
     emit: () -> Unit,
 ): Job = launch {
-    for (signalUnit in signal) {
+    // consumeEach drains the channel without binding an (unused) loop variable.
+    signal.consumeEach {
         delay(settleMs)
         emit()
     }
