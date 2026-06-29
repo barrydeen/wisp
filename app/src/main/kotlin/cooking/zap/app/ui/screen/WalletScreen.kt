@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -397,6 +398,7 @@ fun WalletScreen(
                     is WalletPage.SendInput -> SendInputContent(
                         input = viewModel.sendInput.collectAsState().value,
                         error = viewModel.sendError.collectAsState().value,
+                        walletMode = viewModel.walletMode.collectAsState().value,
                         onInputChange = { viewModel.updateSendInput(it) },
                         onNext = { viewModel.processInput() },
                         onScanQR = { viewModel.navigateTo(WalletPage.ScanQR) },
@@ -1562,6 +1564,7 @@ private fun WalletActionButton(
 private fun SendInputContent(
     input: String,
     error: String?,
+    walletMode: WalletMode = WalletMode.NWC,
     onInputChange: (String) -> Unit,
     onNext: () -> Unit,
     onScanQR: () -> Unit,
@@ -1606,39 +1609,61 @@ private fun SendInputContent(
         }
     }
 
+    val accent = WispThemeColors.zapColor
+    val fieldShape = RoundedCornerShape(14.dp)
+    val fieldBg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+    // On-chain Bitcoin is Spark-only; only hint at it when supported.
+    val hint = if (walletMode == WalletMode.SPARK) {
+        stringResource(R.string.wallet_send_input_hint_onchain)
+    } else {
+        stringResource(R.string.wallet_lightning_address_invoice)
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(horizontal = 20.dp)
+            .verticalScroll(rememberScrollState())
     ) {
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(8.dp))
 
         Text(
             stringResource(R.string.wallet_send),
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onSurface
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
 
-        OutlinedTextField(
-            value = input,
-            onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(input, new)) onInputChange(new) },
-            label = { Text(stringResource(R.string.wallet_lightning_address_invoice)) },
-            placeholder = { Text(stringResource(R.string.placeholder_user_domain)) },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = false,
-            maxLines = 4,
-            trailingIcon = {
-                IconButton(onClick = {
-                    clipboardManager.getText()?.text?.let { new -> if (!NsecPasteGuard.blockIfNsec(input, new)) onInputChange(new) }
-                }) {
-                    Icon(Icons.Default.ContentPaste, contentDescription = stringResource(R.string.wallet_paste))
+        // Tall paste/entry field — the descriptive hint lives inside as a
+        // top-aligned placeholder (iOS parity) so longer copy fits.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 120.dp)
+                .background(fieldBg, fieldShape)
+                .padding(16.dp)
+        ) {
+            val entryStyle = MaterialTheme.typography.bodyLarge.copy(
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            BasicTextField(
+                value = input,
+                onValueChange = { new -> if (!NsecPasteGuard.blockIfNsec(input, new)) onInputChange(new) },
+                textStyle = entryStyle,
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(accent),
+                modifier = Modifier.fillMaxWidth(),
+                decorationBox = { inner ->
+                    if (input.isEmpty()) {
+                        Text(hint, style = entryStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant))
+                    }
+                    inner()
                 }
-            }
-        )
+            )
+        }
 
         if (error != null) {
             Spacer(Modifier.height(8.dp))
@@ -1649,48 +1674,77 @@ private fun SendInputContent(
             )
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
 
-        // Scan QR / Import from Gallery buttons
+        // Scan QR · Paste · Gallery action row (iOS parity)
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(fieldBg, fieldShape)
         ) {
-            OutlinedButton(
+            SendInputAction(
+                icon = Icons.Default.QrCode,
+                label = stringResource(R.string.wallet_scan_qr),
                 onClick = onScanQR,
                 modifier = Modifier.weight(1f)
-            ) {
-                Icon(
-                    Icons.Default.QrCode,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.wallet_scan_qr))
-            }
-            OutlinedButton(
+            )
+            VerticalDivider(modifier = Modifier.height(24.dp))
+            SendInputAction(
+                icon = Icons.Default.ContentPaste,
+                label = stringResource(R.string.wallet_paste),
+                onClick = {
+                    clipboardManager.getText()?.text?.let { new ->
+                        if (!NsecPasteGuard.blockIfNsec(input, new)) onInputChange(new)
+                    }
+                },
+                modifier = Modifier.weight(1f)
+            )
+            VerticalDivider(modifier = Modifier.height(24.dp))
+            SendInputAction(
+                icon = Icons.Default.Image,
+                label = stringResource(R.string.wallet_gallery),
                 onClick = { galleryLauncher.launch("image/*") },
                 modifier = Modifier.weight(1f)
-            ) {
-                Icon(
-                    Icons.Default.Image,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.wallet_gallery))
-            }
+            )
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(24.dp))
 
         Button(
             onClick = onNext,
-            modifier = Modifier.fillMaxWidth(),
-            enabled = input.isNotBlank()
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            shape = fieldShape,
+            enabled = input.isNotBlank(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = accent,
+                contentColor = Color.White,
+                disabledContainerColor = fieldBg,
+                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         ) {
-            Text(stringResource(R.string.wallet_next))
+            Text(stringResource(R.string.wallet_next), fontWeight = FontWeight.SemiBold)
         }
+    }
+}
+
+@Composable
+private fun SendInputAction(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    TextButton(
+        onClick = onClick,
+        modifier = modifier,
+        colors = ButtonDefaults.textButtonColors(contentColor = WispThemeColors.zapColor)
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(label, fontWeight = FontWeight.Medium, maxLines = 1)
     }
 }
 

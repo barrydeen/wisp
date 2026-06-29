@@ -871,6 +871,7 @@
     <string name="wallet_receive_expires_custom">Custom</string>
     <string name="wallet_receive_expires_hours">Hours</string>
     <string name="wallet_lightning_address_invoice">Lightning address or invoice</string>
+    <string name="wallet_send_input_hint_onchain">Lightning or Bitcoin address, or invoice</string>
     <string name="wallet_paste">Paste</string>
     <string name="wallet_scan_qr">Scan QR</string>
     <string name="wallet_gallery">Gallery</string>
