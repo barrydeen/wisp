@@ -224,6 +224,11 @@ class WalletViewModel(
     val onchainFeeLoading: StateFlow<Boolean> = _onchainFeeLoading
     private val _onchainError = MutableStateFlow<String?>(null)
     val onchainError: StateFlow<String?> = _onchainError
+    // Fee quote for the on-chain send amount screen, fetched inline (Get Fee
+    // Quote) before navigating to the confirm screen.
+    private val _onchainFeeQuote = MutableStateFlow<SparkRepository.OnchainFeeQuote?>(null)
+    val onchainFeeQuote: StateFlow<SparkRepository.OnchainFeeQuote?> = _onchainFeeQuote
+    private var _onchainPrepareData: Any? = null
     // Bitcoin deposit address shown inline in the Receive screen's Bitcoin tab.
     private val _depositAddress = MutableStateFlow<String?>(null)
     val depositAddress: StateFlow<String?> = _depositAddress
@@ -1211,6 +1216,7 @@ class WalletViewModel(
                 }
                 _sendAmount.value = ""
                 _onchainError.value = null
+                clearOnchainQuote()
                 navigateTo(WalletPage.OnchainSendAmount(trimmed))
             }
             trimmed.lowercase().startsWith("lnbc") -> {
@@ -1365,13 +1371,18 @@ class WalletViewModel(
         }
     }
 
+    /**
+     * Fetch a fee quote for an on-chain send and hold it inline (the amount
+     * screen shows the breakdown + Continue). Does not navigate.
+     */
     fun prepareOnchainSend(address: String, amountSats: Long) {
         _onchainFeeLoading.value = true
         _onchainError.value = null
         viewModelScope.launch {
             sparkRepo.prepareOnchainSend(address, amountSats).fold(
                 onSuccess = { (feeQuote, prepareData) ->
-                    navigateTo(WalletPage.OnchainSendConfirm(address, amountSats, feeQuote, prepareData))
+                    _onchainFeeQuote.value = feeQuote
+                    _onchainPrepareData = prepareData
                 },
                 onFailure = { e -> _onchainError.value = e.message ?: "Failed to estimate fee" }
             )
@@ -1379,7 +1390,20 @@ class WalletViewModel(
         }
     }
 
-    fun sendOnchain(prepareData: Any, speed: breez_sdk_spark.OnchainConfirmationSpeed) {
+    /** Discard a held fee quote (e.g. when the amount changes or on back). */
+    fun clearOnchainQuote() {
+        _onchainFeeQuote.value = null
+        _onchainPrepareData = null
+    }
+
+    /** Advance from the amount screen to the confirm screen using the held quote. */
+    fun continueToOnchainConfirm(address: String, amountSats: Long) {
+        val quote = _onchainFeeQuote.value ?: return
+        val prepareData = _onchainPrepareData ?: return
+        navigateTo(WalletPage.OnchainSendConfirm(address, amountSats, quote, prepareData))
+    }
+
+    fun sendOnchain(prepareData: Any, speed: breez_sdk_spark.OnchainConfirmationSpeed = breez_sdk_spark.OnchainConfirmationSpeed.MEDIUM) {
         _isLoading.value = true
         viewModelScope.launch {
             sparkRepo.sendOnchain(prepareData, speed).fold(
