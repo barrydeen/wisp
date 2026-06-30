@@ -22,9 +22,18 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
     private val _mutedThreads = MutableStateFlow<Set<String>>(emptySet())
     val mutedThreads: StateFlow<Set<String>> = _mutedThreads
 
-    private var blockedSet = HashSet<String>()
-    private var wordSet = HashSet<String>()
-    private var threadSet = HashSet<String>()
+    // Copy-on-write + @Volatile. These are read OFF the main thread — OnlyFood's
+    // confined collector calls isBlocked()/containsMutedWord(), and the main feed's
+    // background processing calls isThreadMuted(). Every mutation assigns a FRESH
+    // set instead of mutating in place, so a reader always iterates an immutable
+    // snapshot: no torn reads, no ConcurrentModificationException. @Volatile
+    // publishes the new reference to those reader threads.
+    @Volatile
+    private var blockedSet: Set<String> = emptySet()
+    @Volatile
+    private var wordSet: Set<String> = emptySet()
+    @Volatile
+    private var threadSet: Set<String> = emptySet()
     private var lastUpdated: Long = 0
 
     init {
@@ -35,10 +44,10 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
         if (event.kind != Nip51.KIND_MUTE_LIST) return
         if (event.created_at <= lastUpdated) return
         val muteList = Nip51.parseMuteList(event)
-        blockedSet = HashSet(muteList.pubkeys)
-        wordSet = HashSet(muteList.words)
-        _blockedPubkeys.value = blockedSet.toSet()
-        _mutedWords.value = wordSet.toSet()
+        blockedSet = muteList.pubkeys.toSet()
+        wordSet = muteList.words.toSet()
+        _blockedPubkeys.value = blockedSet
+        _mutedWords.value = wordSet
         lastUpdated = event.created_at
         saveToPrefs()
     }
@@ -55,55 +64,58 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
                 MuteList()
             }
         } else MuteList()
-        blockedSet = HashSet(publicMutes.pubkeys + privateMutes.pubkeys)
-        wordSet = HashSet(publicMutes.words + privateMutes.words)
-        _blockedPubkeys.value = blockedSet.toSet()
-        _mutedWords.value = wordSet.toSet()
+        blockedSet = (publicMutes.pubkeys + privateMutes.pubkeys).toSet()
+        wordSet = (publicMutes.words + privateMutes.words).toSet()
+        _blockedPubkeys.value = blockedSet
+        _mutedWords.value = wordSet
         lastUpdated = event.created_at
         saveToPrefs()
     }
 
     fun blockUser(pubkey: String) {
-        blockedSet.add(pubkey)
-        _blockedPubkeys.value = blockedSet.toSet()
+        blockedSet = blockedSet + pubkey
+        _blockedPubkeys.value = blockedSet
         saveToPrefs()
     }
 
     fun unblockUser(pubkey: String) {
-        blockedSet.remove(pubkey)
-        _blockedPubkeys.value = blockedSet.toSet()
+        blockedSet = blockedSet - pubkey
+        _blockedPubkeys.value = blockedSet
         saveToPrefs()
     }
 
     fun isBlocked(pubkey: String): Boolean = blockedSet.contains(pubkey)
 
     fun addMutedWord(word: String) {
-        wordSet.add(word.lowercase())
-        _mutedWords.value = wordSet.toSet()
+        wordSet = wordSet + word.lowercase()
+        _mutedWords.value = wordSet
         saveToPrefs()
     }
 
     fun removeMutedWord(word: String) {
-        wordSet.remove(word.lowercase())
-        _mutedWords.value = wordSet.toSet()
+        wordSet = wordSet - word.lowercase()
+        _mutedWords.value = wordSet
         saveToPrefs()
     }
 
     fun containsMutedWord(content: String): Boolean {
-        if (wordSet.isEmpty()) return false
+        // Snapshot the volatile reference once: the set is never mutated in place,
+        // so iterating this local can't observe a concurrent write.
+        val words = wordSet
+        if (words.isEmpty()) return false
         val lower = content.lowercase()
-        return wordSet.any { lower.contains(it) }
+        return words.any { lower.contains(it) }
     }
 
     fun muteThread(rootEventId: String) {
-        threadSet.add(rootEventId)
-        _mutedThreads.value = threadSet.toSet()
+        threadSet = threadSet + rootEventId
+        _mutedThreads.value = threadSet
         saveToPrefs()
     }
 
     fun unmuteThread(rootEventId: String) {
-        threadSet.remove(rootEventId)
-        _mutedThreads.value = threadSet.toSet()
+        threadSet = threadSet - rootEventId
+        _mutedThreads.value = threadSet
         saveToPrefs()
     }
 
@@ -117,9 +129,9 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
         _blockedPubkeys.value = emptySet()
         _mutedWords.value = emptySet()
         _mutedThreads.value = emptySet()
-        blockedSet = HashSet()
-        wordSet = HashSet()
-        threadSet = HashSet()
+        blockedSet = emptySet()
+        wordSet = emptySet()
+        threadSet = emptySet()
         lastUpdated = 0
         prefs.edit().clear().apply()
     }
@@ -143,18 +155,18 @@ class MuteRepository(private val context: Context, pubkeyHex: String? = null) {
         lastUpdated = prefs.getLong("mute_updated", 0)
         val pubkeys = prefs.getStringSet("blocked_pubkeys", null)
         if (pubkeys != null) {
-            blockedSet = HashSet(pubkeys)
-            _blockedPubkeys.value = blockedSet.toSet()
+            blockedSet = pubkeys.toSet()
+            _blockedPubkeys.value = blockedSet
         }
         val words = prefs.getStringSet("muted_words", null)
         if (words != null) {
-            wordSet = HashSet(words)
-            _mutedWords.value = wordSet.toSet()
+            wordSet = words.toSet()
+            _mutedWords.value = wordSet
         }
         val threads = prefs.getStringSet("muted_threads", null)
         if (threads != null) {
-            threadSet = HashSet(threads)
-            _mutedThreads.value = threadSet.toSet()
+            threadSet = threads.toSet()
+            _mutedThreads.value = threadSet
         }
     }
 
