@@ -14,6 +14,7 @@ import cooking.zap.app.repo.OnlyFoodFilter
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -29,6 +30,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * OnlyFood 🍳 — a kind-1 social food feed over the expanded [FoodHashtags] set
@@ -120,7 +123,27 @@ class OnlyFoodFeedViewModel : ViewModel() {
     private val _wotDropped = MutableStateFlow(0)
     val wotDropped: StateFlow<Int> = _wotDropped
 
+    /**
+     * The SINGLE confinement for ALL mutable [ModeState] — `seen`/`ordered`/
+     * `placedIds` AND the non-thread-safe scalars (`loaded`/`endReached`/
+     * `emptyFollows`/`settled`) — plus [activeJob]/[deps]. A serial
+     * (`limitedParallelism(1)`) view of [Dispatchers.Default]: at most one
+     * coroutine runs at a time and they interleave ONLY at suspension points, so
+     * the plain non-thread-safe collections stay effectively single-threaded —
+     * the exact semantics the code had on Main.immediate, minus the UI-thread
+     * cost. Every coroutine that touches [ModeState] runs on this dispatcher;
+     * Corrections 1–3 hold verbatim because only the thread changed. The shared
+     * [OnlyFoodFilter] decision runs INSIDE this confinement (via [accept] →
+     * [ingestEvent]); the confinement wraps the filter, it doesn't bypass it.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val feedDispatcher = Dispatchers.Default.limitedParallelism(1)
+
+    // Written once in [init] (Main) then read-only; read on [feedDispatcher] and
+    // (activeJob) cancelled from [onCleared] on Main — @Volatile for visibility.
+    @Volatile
     private var deps: Deps? = null
+    @Volatile
     private var activeJob: Job? = null
 
     private class Deps(
@@ -138,49 +161,70 @@ class OnlyFoodFeedViewModel : ViewModel() {
     ) {
         if (deps != null) return
         deps = Deps(relayPool, eventRepo, muteRepo, contactRepo)
-        // Coalesced emission collector. MUST run on viewModelScope (Main.immediate)
-        // so it shares the event collector's single thread — `seen`/`ordered` are
-        // plain (non-thread-safe) collections and a separate dispatcher would race
-        // them. The settle window batches a burst into one emission.
-        viewModelScope.launchFeedCoalescer(flushSignal, SETTLE_WINDOW_MS) { emitCurrentMode() }
+        // Coalesced emission collector. Runs on [feedDispatcher] so it shares the
+        // event collector's single (serial) thread — `seen`/`ordered` are plain
+        // (non-thread-safe) collections and any other dispatcher would race them.
+        // The settle window batches a burst into one emission.
+        viewModelScope.launchFeedCoalescer(flushSignal, SETTLE_WINDOW_MS, feedDispatcher) { emitCurrentMode() }
         // Seed GLOBAL from cache so cached food renders before the live query.
         seedGlobalFromCache()
         // Auto-recover: re-issue when the search relay (re)connects while the
         // current mode hasn't reached a genuine EOSE. Started before the initial
         // submit so a connect that lands during the first query is observed.
         observeReconnect()
-        val st = stateOf(_mode.value)
-        if (!st.loaded) submit(_mode.value, st, Load.INITIAL, since = null, until = null)
+        // Confined: reads `loaded` and (via submit) RMWs `activeJob`. Capture the
+        // mode once so the ModeState and the Mode handed to submit can't diverge.
+        viewModelScope.launch(feedDispatcher) {
+            val mode = _mode.value
+            val st = stateOf(mode)
+            if (!st.loaded) submit(mode, st, Load.INITIAL, since = null, until = null)
+        }
     }
 
     /** Instant cache swap. Queries the target mode only if it's never loaded. */
     fun setMode(mode: Mode) {
         if (_mode.value == mode) return
+        // Flip the visible-mode StateFlow on the caller thread for instant chip
+        // feedback; the LIST swap follows on the confined dispatcher once the
+        // ModeState reads/emit complete.
         _mode.value = mode
-        val st = stateOf(mode)
-        // Instant cache swap through the shared compute path — no relay query, no
-        // flush signal. A settled target appends-from-its-cache; a never-loaded one
-        // rebuilds-from-(empty)-seen. Either way, the order matches a live flush.
-        emitCurrentMode()
-        _emptyFollows.value = st.emptyFollows
-        _isPaging.value = false
-        _isRefreshing.value = false
-        if (st.loaded) {
-            _isLoading.value = false
-        } else {
-            submit(mode, st, Load.INITIAL, since = null, until = null)
+        // All `seen`/`ordered`/`placedIds`/`loaded` reads + emit are confined.
+        viewModelScope.launch(feedDispatcher) {
+            val st = stateOf(mode)
+            // A rapid re-toggle may have enqueued a LATER block that now owns the UI:
+            // apply the visible-mode side effects (emit + indicator flags) only while
+            // this is still the visible mode, mirroring submit()'s gating. Otherwise
+            // emitCurrentMode() (which reads _mode.value) would emit the new mode while
+            // the flags below reflect this stale captured one.
+            if (_mode.value == mode) {
+                // Instant cache swap through the shared compute path — no relay query, no
+                // flush signal. A settled target appends-from-its-cache; a never-loaded one
+                // rebuilds-from-(empty)-seen. Either way, the order matches a live flush.
+                emitCurrentMode()
+                _emptyFollows.value = st.emptyFollows
+                _isPaging.value = false
+                _isRefreshing.value = false
+                if (st.loaded) _isLoading.value = false
+            }
+            // Kick the query for a never-loaded mode regardless of visibility so the
+            // per-mode cache fills in the background and a toggle-back is instant;
+            // submit() is itself `_mode.value == mode`-gated for its indicators/emit.
+            if (!st.loaded) submit(mode, st, Load.INITIAL, since = null, until = null)
         }
     }
 
     /** The ONLY path that re-queries a loaded mode. Merges newest into cache. */
     fun refresh() {
         val mode = _mode.value
-        val st = stateOf(mode)
-        // A refresh re-opens paging: a prior `endReached` may have been a quiet
-        // stretch or a throttle, and new posts may have arrived. `endReached` is
-        // per-mode and resettable here; it is NOT the Phase-1 `loaded` latch.
-        st.endReached = false
-        submit(mode, st, Load.REFRESH, since = null, until = null)
+        // Confined: writes `endReached` and (via submit) RMWs `activeJob`.
+        viewModelScope.launch(feedDispatcher) {
+            val st = stateOf(mode)
+            // A refresh re-opens paging: a prior `endReached` may have been a quiet
+            // stretch or a throttle, and new posts may have arrived. `endReached` is
+            // per-mode and resettable here; it is NOT the Phase-1 `loaded` latch.
+            st.endReached = false
+            submit(mode, st, Load.REFRESH, since = null, until = null)
+        }
     }
 
     /**
@@ -192,19 +236,22 @@ class OnlyFoodFeedViewModel : ViewModel() {
      */
     fun loadMore() {
         val mode = _mode.value
-        val st = stateOf(mode)
-        if (_isLoading.value || _isPaging.value || _isRefreshing.value || st.endReached) return
-        // Memory guardrail: stop paging once this mode's cache hits the retention cap so
-        // an unbounded scroll session can't grow seen/ordered/placedIds without limit.
-        // Evicting instead would corrupt the paging cursor (derived from the oldest
-        // retained event) and disturb the viewport, so we cap rather than evict.
-        if (st.seen.size >= MAX_RETAINED_EVENTS) {
-            st.endReached = true
-            return
+        // Confined: the guards read `endReached`/`seen` and the body RMWs `activeJob`.
+        viewModelScope.launch(feedDispatcher) {
+            val st = stateOf(mode)
+            if (_isLoading.value || _isPaging.value || _isRefreshing.value || st.endReached) return@launch
+            // Memory guardrail: stop paging once this mode's cache hits the retention cap so
+            // an unbounded scroll session can't grow seen/ordered/placedIds without limit.
+            // Evicting instead would corrupt the paging cursor (derived from the oldest
+            // retained event) and disturb the viewport, so we cap rather than evict.
+            if (st.seen.size >= MAX_RETAINED_EVENTS) {
+                st.endReached = true
+                return@launch
+            }
+            val oldest = st.seen.values.minOfOrNull { it.created_at } ?: return@launch
+            val bounds = pageBoundsBehind(oldest)
+            submit(mode, st, Load.PAGE, since = bounds.since, until = bounds.until)
         }
-        val oldest = st.seen.values.minOfOrNull { it.created_at } ?: return
-        val bounds = pageBoundsBehind(oldest)
-        submit(mode, st, Load.PAGE, since = bounds.since, until = bounds.until)
     }
 
     /**
@@ -212,10 +259,17 @@ class OnlyFoodFeedViewModel : ViewModel() {
      * a mid-flight mode switch can't mis-route results), `cancelAndJoin`s the
      * previous job before the next REQ, and merges results into [state]'s
      * cache — updating the visible [_notes] only while [mode] is current.
+     *
+     * MUST be called from a [feedDispatcher] coroutine: the `previous`/`activeJob`
+     * read-modify-write below runs on the caller thread, and `activeJob` is part of
+     * the confined state. Every caller (init, setMode, refresh, loadMore,
+     * observeReconnect) marshals onto [feedDispatcher]. The launched job and its
+     * nested `collector`/`eoseAwaiter` inherit [feedDispatcher], so [ingestEvent]
+     * (and the [OnlyFoodFilter] decision inside it) runs confined.
      */
     private fun submit(mode: Mode, state: ModeState, load: Load, since: Long?, until: Long?) {
         val previous = activeJob
-        activeJob = viewModelScope.launch {
+        activeJob = viewModelScope.launch(feedDispatcher) {
             previous?.cancelAndJoin()
             val d = deps ?: return@launch
 
@@ -297,9 +351,10 @@ class OnlyFoodFeedViewModel : ViewModel() {
                             if (event.kind != 1) return@collect
                             // Suspension-free per-event ingest (dedup → accept → insert →
                             // cache/profile → coalesced flush), extracted to the shared
-                            // [ingestEvent] so the path the live feed runs is the one the
-                            // concurrency test hammers. Still on viewModelScope/Main.immediate
-                            // here — the thread move is PR 2 and does not touch this call.
+                            // [ingestEvent]. This nested launch inherits [feedDispatcher]
+                            // from submit's coroutine, so the dedup check, the `seen`
+                            // insert, AND the shared [OnlyFoodFilter] decision inside
+                            // [accept] all run confined to the single serial thread.
                             val inserted = ingestEvent(
                                 event = event,
                                 seen = state.seen,
@@ -411,7 +466,10 @@ class OnlyFoodFeedViewModel : ViewModel() {
      */
     private fun seedGlobalFromCache() {
         val d = deps ?: return
-        viewModelScope.launch {
+        // Confined to [feedDispatcher]: every `global.seen` read/write below is part
+        // of the confined state. Only the blocking cache READ hops to IO; the
+        // merge-into-`seen` (via accept → the shared filter) runs back on [feedDispatcher].
+        viewModelScope.launch(feedDispatcher) {
             val global = stateOf(Mode.GLOBAL)
             if (global.seen.isNotEmpty()) return@launch
             val cached = withContext(Dispatchers.IO) { d.eventRepo.cachedFoodNotes() }
@@ -445,7 +503,9 @@ class OnlyFoodFeedViewModel : ViewModel() {
      */
     private fun observeReconnect() {
         val d = deps ?: return
-        viewModelScope.launch {
+        // Confined to [feedDispatcher]: the collect body reads `loaded`/`activeJob`
+        // and (via submit) RMWs `activeJob` — all confined state.
+        viewModelScope.launch(feedDispatcher) {
             d.relayPool.connectedCount.collect {
                 if (!d.relayPool.isRelayConnected(SearchViewModel.DEFAULT_SEARCH_RELAY)) return@collect
                 val mode = _mode.value
@@ -599,8 +659,9 @@ internal fun mergeFeedOrder(
 internal fun CoroutineScope.launchFeedCoalescer(
     signal: ReceiveChannel<Unit>,
     settleMs: Long,
+    context: CoroutineContext = EmptyCoroutineContext,
     emit: () -> Unit,
-): Job = launch {
+): Job = launch(context) {
     // consumeEach drains the channel without binding an (unused) loop variable.
     signal.consumeEach {
         delay(settleMs)
