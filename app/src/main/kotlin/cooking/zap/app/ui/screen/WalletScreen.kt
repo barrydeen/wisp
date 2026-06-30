@@ -3010,7 +3010,7 @@ private fun TransactionHistoryContent(
                     // both render. The list is deduped by (paymentHash, type)
                     // upstream, so these keys are unique.
                     items(transactions, key = { "${it.paymentHash}|${it.type}" }) { tx ->
-                        TransactionRow(tx, profileLookup, displayMode)
+                        TransactionRow(tx, profileLookup, displayMode, expandable = true)
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp),
                             color = MaterialTheme.colorScheme.outlineVariant
@@ -3047,20 +3047,27 @@ private fun TransactionHistoryContent(
 private fun TransactionRow(
     tx: WalletTransaction,
     profileLookup: (String) -> cooking.zap.app.nostr.ProfileData?,
-    displayMode: WalletBalanceDisplayMode = WalletBalanceDisplayMode.SATS
+    displayMode: WalletBalanceDisplayMode = WalletBalanceDisplayMode.SATS,
+    // When true (full history list), the row taps to expand a detail drawer.
+    // The dashboard preview leaves this off.
+    expandable: Boolean = false
 ) {
     val isIncoming = tx.type == "incoming"
     val amountSats = tx.amountMsats / 1000
     val profile = tx.counterpartyPubkey?.let { profileLookup(it) }
     val ctx = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val fiatMode by FiatPreferences.get(ctx).fiatMode.collectAsState()
     val fiatCurrency by FiatPreferences.get(ctx).currency.collectAsState()
     val isHidden = displayMode == WalletBalanceDisplayMode.HIDDEN
     val isWalletFiat = displayMode == WalletBalanceDisplayMode.FIAT
+    var expanded by remember { mutableStateOf(false) }
 
+  Column(modifier = Modifier.fillMaxWidth()) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (expandable) Modifier.clickable { expanded = !expanded } else Modifier)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -3209,6 +3216,119 @@ private fun TransactionRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
+
+        if (expandable) {
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+
+    if (expandable) {
+        AnimatedVisibility(visible = expanded) {
+            TransactionDetailPanel(
+                tx = tx,
+                onCopy = { clipboardManager.setText(AnnotatedString(it)) }
+            )
+        }
+    }
+  }
+}
+
+@Composable
+private fun TransactionDetailPanel(
+    tx: WalletTransaction,
+    onCopy: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val sats = tx.amountMsats / 1000
+    val feeSats = tx.feeMsats / 1000
+    val fullDate = remember(tx.settledAt, tx.createdAt) {
+        val secs = tx.settledAt ?: tx.createdAt
+        java.text.SimpleDateFormat("MMM d, yyyy · h:mm a", java.util.Locale.getDefault())
+            .format(java.util.Date(secs * 1000))
+    }
+    val note = tx.description?.takeIf {
+        it.isNotBlank() && it != "null" && !it.trimStart().startsWith("{")
+    }
+    val idLabel = if (tx.isOnchain) "Transaction ID" else "Payment hash"
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
+            .background(
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                RoundedCornerShape(12.dp)
+            )
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        TxDetailRow("Status", if (tx.pending) "Pending" else "Completed")
+        TxDetailRow("Type", if (tx.isOnchain) "On-chain" else "Lightning")
+        TxDetailRow("Amount", "%,d sats".format(sats))
+        if (tx.feeMsats > 0) TxDetailRow("Network fee", "%,d sats".format(feeSats))
+        TxDetailRow("Date", fullDate)
+        if (note != null) TxDetailRow("Note", note)
+        TxDetailRow(idLabel, tx.paymentHash, mono = true, onCopy = { onCopy(tx.paymentHash) })
+        if (tx.isOnchain) {
+            TextButton(
+                onClick = {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("https://mempool.space/tx/${tx.paymentHash}"))
+                    )
+                },
+                contentPadding = PaddingValues(0.dp),
+                colors = ButtonDefaults.textButtonColors(contentColor = WispThemeColors.zapColor)
+            ) {
+                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("View on mempool.space", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TxDetailRow(
+    label: String,
+    value: String,
+    mono: Boolean = false,
+    onCopy: (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(110.dp)
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = if (mono) FontFamily.Monospace else null,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        if (onCopy != null) {
+            Spacer(Modifier.width(6.dp))
+            Icon(
+                Icons.Default.ContentCopy,
+                contentDescription = stringResource(R.string.wallet_paste),
+                tint = WispThemeColors.zapColor,
+                modifier = Modifier
+                    .size(18.dp)
+                    .clickable(onClick = onCopy)
+            )
         }
     }
 }
