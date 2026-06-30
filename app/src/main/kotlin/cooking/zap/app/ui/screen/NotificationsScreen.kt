@@ -158,6 +158,7 @@ fun NotificationsScreen(
     onRepost: (NostrEvent) -> Unit = {},
     onQuote: (NostrEvent) -> Unit = {},
     onZap: (NostrEvent) -> Unit = {},
+    onZapInstant: (NostrEvent) -> Unit = {},
     onFollowToggle: (String) -> Unit = {},
     onBlockUser: (String) -> Unit = {},
     onMuteThread: (String) -> Unit = {},

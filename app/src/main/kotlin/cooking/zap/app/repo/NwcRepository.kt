@@ -57,6 +57,12 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
     private val _paymentReceived = MutableSharedFlow<Long>(extraBufferCapacity = 8)
     override val paymentReceived: SharedFlow<Long> = _paymentReceived
 
+    // Placeholder: NWC has no server-push for payment events today. This flow
+    // is wired per WalletProvider so future NIP-47 notification support can
+    // emit here without touching the ViewModel.
+    private val _transactionsChanged = MutableSharedFlow<Unit>(extraBufferCapacity = 8)
+    override val transactionsChanged: SharedFlow<Unit> = _transactionsChanged
+
     private fun emitStatus(msg: String) {
         Log.d(TAG, msg)
         _statusLog.tryEmit(msg)
@@ -346,8 +352,8 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
         return result.map { (it as Nip47.NwcResponse.PayInvoiceResult).preimage }
     }
 
-    override suspend fun makeInvoice(amountMsats: Long, description: String): Result<String> {
-        val result = sendRequest(Nip47.NwcRequest.MakeInvoice(amountMsats, description))
+    override suspend fun makeInvoice(amountMsats: Long, description: String, expirySecs: Int): Result<String> {
+        val result = sendRequest(Nip47.NwcRequest.MakeInvoice(amountMsats, description, expirySecs))
         return result.map { (it as Nip47.NwcResponse.MakeInvoiceResult).invoice }
     }
 
@@ -366,7 +372,9 @@ class NwcRepository(private val context: Context, private val relayPool: RelayPo
                     amountMsats = tx.amount,
                     feeMsats = tx.feesPaid,
                     createdAt = tx.createdAt,
-                    settledAt = tx.settledAt
+                    settledAt = tx.settledAt,
+                    // NIP-47 leaves settled_at null until the payment settles.
+                    pending = tx.settledAt == null
                 )
             }
         }

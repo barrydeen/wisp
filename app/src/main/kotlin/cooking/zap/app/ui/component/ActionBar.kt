@@ -38,7 +38,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import android.content.Context
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -69,6 +75,7 @@ fun ActionBar(
     onQuote: () -> Unit = {},
     hasUserReposted: Boolean = false,
     onZap: () -> Unit = {},
+    onZapLongPress: (() -> Unit)? = null,
     hasUserZapped: Boolean = false,
     onAddToList: () -> Unit = {},
     onAddToListLongPress: (() -> Unit)? = null,
@@ -207,26 +214,42 @@ fun ActionBar(
         Spacer(Modifier.width(8.dp))
         Box {
             val zapClickable = !isZapInProgress
-            IconButton(
-                onClick = { if (zapEnabled) onZap() else onZapDisabledTap() },
-                enabled = zapClickable
+            val longPressFired = remember { mutableStateOf(false) }
+            val view = LocalView.current
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(48.dp)
+                    .combinedClickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = androidx.compose.material3.ripple(bounded = false, radius = 24.dp),
+                        enabled = zapClickable,
+                        onClick = {
+                            if (longPressFired.value) {
+                                longPressFired.value = false
+                            } else if (zapEnabled) {
+                                onZap()
+                            } else {
+                                onZapDisabledTap()
+                            }
+                        },
+                        onLongClick = if (zapEnabled && onZapLongPress != null) {
+                            {
+                                longPressFired.value = true
+                                zapInstantHaptic(view.context)
+                                onZapLongPress()
+                            }
+                        } else null
+                    )
             ) {
                 val zapTint = when {
-                    !zapEnabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    !zapEnabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
                     hasUserZapped -> WispThemeColors.zapColor
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 if (isZapInProgress) {
                     LightningAnimation(modifier = Modifier.size(width = 14.dp, height = 22.dp))
                 } else {
-                    // ⚡ rests in BOTH fiat and sats modes. Currency stays
-                    // unambiguous because the amount label carries the symbol
-                    // (AmountFormatter.renderCurrency → "$1.23"); when there's no
-                    // amount yet (zapSats == 0) there's nothing to disambiguate.
-                    // The coin=fiat indicator is kept on the amount-display
-                    // surfaces (ZapDialog, zap receipts, notifications, etc.).
-                    // The zapped/active state is shown by the zapColor tint
-                    // above; the in-progress state animates.
                     Icon(
                         painter = painterResource(R.drawable.ic_bolt),
                         contentDescription = stringResource(R.string.cd_zaps),
@@ -280,6 +303,22 @@ fun ActionBar(
                 modifier = Modifier.size(22.dp)
             )
         }
+    }
+}
+
+private fun zapInstantHaptic(context: Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val manager = context.getSystemService(VibratorManager::class.java)
+        manager?.defaultVibrator?.vibrate(
+            VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
+        )
+    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        @Suppress("DEPRECATION")
+        (context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
+            ?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK))
+    } else {
+        @Suppress("DEPRECATION")
+        (context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)?.vibrate(50)
     }
 }
 

@@ -11,12 +11,18 @@ interface WalletProvider {
     /** Emits the amount in msats whenever an incoming payment is received. */
     val paymentReceived: SharedFlow<Long>
 
+    /**
+     * Emits whenever the transaction set may have changed (e.g. a payment
+     * went pending or settled, a deposit was claimed) so the UI can reload.
+     */
+    val transactionsChanged: SharedFlow<Unit>
+
     fun hasConnection(): Boolean
     fun connect()
     fun disconnect()
     suspend fun fetchBalance(): Result<Long>
     suspend fun payInvoice(bolt11: String): Result<String>
-    suspend fun makeInvoice(amountMsats: Long, description: String): Result<String>
+    suspend fun makeInvoice(amountMsats: Long, description: String, expirySecs: Int = 3600): Result<String>
     suspend fun listTransactions(limit: Int = 50, offset: Int = 0): Result<List<WalletTransaction>>
 }
 
@@ -29,5 +35,9 @@ data class WalletTransaction(
     val createdAt: Long,
     val settledAt: Long?,
     /** Pubkey of the counterparty (recipient for outgoing, sender for incoming zaps). */
-    val counterpartyPubkey: String? = null
+    val counterpartyPubkey: String? = null,
+    /** True while the payment is unconfirmed/unsettled (e.g. an in-flight Lightning payment). */
+    val pending: Boolean = false,
+    /** True for on-chain Bitcoin deposits/withdrawals (vs Lightning). */
+    val isOnchain: Boolean = false
 )

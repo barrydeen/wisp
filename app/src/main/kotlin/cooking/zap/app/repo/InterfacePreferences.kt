@@ -13,10 +13,6 @@ class InterfacePreferences(context: Context) {
         }
     }
 
-    companion object {
-        val postUndoTimerOptions = listOf(5, 10, 15, 20, 30)
-    }
-
     private val prefs = context.getSharedPreferences("wisp_settings", Context.MODE_PRIVATE)
 
     fun getAccentColor(): Int = prefs.getInt("accent_color", 0xFFFF5722.toInt())
@@ -68,6 +64,53 @@ class InterfacePreferences(context: Context) {
 
     fun isPostUndoTimerForReplies(): Boolean = prefs.getBoolean("post_undo_timer_for_replies", false)
     fun setPostUndoTimerForReplies(enabled: Boolean) = prefs.edit().putBoolean("post_undo_timer_for_replies", enabled).apply()
+
+    // ── Instant (quick) zaps ────────────────────────────────────────────────
+    // Long-press on the zap icon fires immediately at the configured amount
+    // when enabled; tap still opens the composer. Keys are per-account via
+    // activePubkey so switching accounts never inherits another account's values.
+
+    private fun quickZapKey(base: String): String =
+        activePubkey?.let { "${base}_$it" } ?: base
+
+    fun isQuickZapEnabled(): Boolean = prefs.getBoolean(quickZapKey("quick_zap_enabled"), false)
+    fun setQuickZapEnabled(enabled: Boolean) =
+        prefs.edit().putBoolean(quickZapKey("quick_zap_enabled"), enabled).apply()
+
+    fun getQuickZapAmountSats(): Long =
+        prefs.getLong(quickZapKey("quick_zap_amount_sats"), 21L).coerceIn(1L, QUICK_ZAP_MAX_SATS)
+    fun setQuickZapAmountSats(amount: Long) {
+        prefs.edit().putLong(quickZapKey("quick_zap_amount_sats"), amount.coerceIn(1L, QUICK_ZAP_MAX_SATS)).apply()
+    }
+
+    fun getQuickZapMessage(): String = prefs.getString(quickZapKey("quick_zap_message"), "") ?: ""
+    fun setQuickZapMessage(message: String) =
+        prefs.edit().putString(quickZapKey("quick_zap_message"), message).apply()
+
+    fun reload(pubkey: String?) {
+        val wasNull = activePubkey == null
+        activePubkey = pubkey
+        if (wasNull && pubkey != null) migrateGlobalIfNeeded(pubkey)
+    }
+
+    private fun migrateGlobalIfNeeded(pubkey: String) {
+        val migKey = "quick_zap_migrated_v1_$pubkey"
+        if (prefs.getBoolean(migKey, false)) return
+        val edit = prefs.edit().putBoolean(migKey, true)
+        if (!prefs.contains("quick_zap_amount_sats_$pubkey") && prefs.contains("quick_zap_amount_sats"))
+            edit.putLong("quick_zap_amount_sats_$pubkey", prefs.getLong("quick_zap_amount_sats", 21L))
+        if (!prefs.contains("quick_zap_enabled_$pubkey") && prefs.contains("quick_zap_enabled"))
+            edit.putBoolean("quick_zap_enabled_$pubkey", prefs.getBoolean("quick_zap_enabled", false))
+        if (!prefs.contains("quick_zap_message_$pubkey") && prefs.contains("quick_zap_message"))
+            prefs.getString("quick_zap_message", null)?.let { edit.putString("quick_zap_message_$pubkey", it) }
+        edit.apply()
+    }
+
+    companion object {
+        @Volatile var activePubkey: String? = null
+        val postUndoTimerOptions = listOf(5, 10, 15, 20, 30)
+        const val QUICK_ZAP_MAX_SATS = 10_000L
+    }
 
     /** Reset all interface preferences to defaults (called on full logout). */
     fun reset() {
