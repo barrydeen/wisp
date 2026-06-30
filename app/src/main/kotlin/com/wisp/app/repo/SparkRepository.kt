@@ -515,17 +515,25 @@ class SparkRepository(
                 ))
                 val transactions = response.payments.map { payment ->
                     val lightningDetails = payment.details as? PaymentDetails.Lightning
+                    val depositDetails = payment.details as? PaymentDetails.Deposit
+                    val withdrawDetails = payment.details as? PaymentDetails.Withdraw
+                    val onchain = depositDetails != null || withdrawDetails != null
 
-                    // Prefer bolt11-decoded hash (matches ZapSender records), fall back to HTLC hash, then payment ID
-                    val decoded = lightningDetails?.invoice?.let {
-                        com.wisp.app.nostr.Bolt11.decode(it)
+                    val paymentHash = when {
+                        onchain -> depositDetails?.txId ?: withdrawDetails?.txId ?: payment.id
+                        else -> {
+                            // Prefer bolt11-decoded hash (matches ZapSender records), fall back to HTLC hash, then payment ID
+                            val decoded = lightningDetails?.invoice?.let {
+                                com.wisp.app.nostr.Bolt11.decode(it)
+                            }
+                            val htlcHash = lightningDetails?.htlcDetails?.paymentHash?.lowercase()
+                            decoded?.paymentHash ?: htlcHash ?: payment.id
+                        }
                     }
-                    val htlcHash = lightningDetails?.htlcDetails?.paymentHash?.lowercase()
-                    val paymentHash = decoded?.paymentHash ?: htlcHash ?: payment.id
                     // Prefer Spark's description, fall back to bolt11 description
                     // (bolt11 tag 13 may contain the kind 9734 zap request JSON)
                     val description = lightningDetails?.description
-                        ?: decoded?.description
+                        ?: lightningDetails?.invoice?.let { com.wisp.app.nostr.Bolt11.decode(it)?.description }
 
                     WalletTransaction(
                         type = when (payment.paymentType) {
@@ -537,7 +545,9 @@ class SparkRepository(
                         amountMsats = payment.amount.toLong() * 1000,
                         feeMsats = payment.fees.toLong() * 1000,
                         createdAt = payment.timestamp.toLong(),
-                        settledAt = payment.timestamp.toLong()
+                        settledAt = payment.timestamp.toLong(),
+                        pending = payment.status == breez_sdk_spark.PaymentStatus.PENDING,
+                        isOnchain = onchain
                     )
                 }
                 Result.success(transactions)
