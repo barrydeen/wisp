@@ -223,6 +223,7 @@ object Routes {
     const val RECIPES = "recipes"
     const val NOURISH = "nourish?author={author}&dTag={dTag}"
     const val ONLY_FOOD = "onlyfood"
+    const val MEMORIES = "memories"
     const val SOUS_CHEF = "souschef"
     const val RECIPE_COMPOSE = "recipe_compose"
     const val CHEFFY = "cheffy"
@@ -846,6 +847,7 @@ fun WispNavHost(
                 onSousChef = { closeDrawerAndNavigate(Routes.SOUS_CHEF) },
                 onCheffy = { closeDrawerAndNavigate(Routes.CHEFFY) },
                 onOnlyFood = { closeDrawerAndNavigate(Routes.ONLY_FOOD) },
+                onMemories = { closeDrawerAndNavigate(Routes.MEMORIES) },
                 onLists = { closeDrawerAndNavigate(Routes.LISTS_HUB) },
                 onDrafts = { closeDrawerAndNavigate(Routes.DRAFTS) },
                 onKitchenTools = {
@@ -1280,6 +1282,7 @@ fun WispNavHost(
                     }
                     navController.navigate(route)
                 },
+                onMemories = { navController.navigate(Routes.MEMORIES) },
                 fetchGroupPreview = { relayUrl, groupId ->
                     groupListViewModel.fetchGroupPreview(relayUrl, groupId)
                 }
@@ -3556,6 +3559,110 @@ fun WispNavHost(
                 onBack = { navController.popBackStack() },
                 zapAnimatingIds = onlyFoodZapAnimatingIds,
                 zapInProgressIds = onlyFoodZapInProgress
+            )
+        }
+
+        composable(Routes.MEMORIES) {
+            val memoriesViewModel: cooking.zap.app.viewmodel.MemoriesViewModel = viewModel()
+            LaunchedEffect(Unit) {
+                memoriesViewModel.init(feedViewModel.memoriesRepo, feedViewModel.getUserPubkey())
+            }
+
+            var memoriesZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
+            val memoriesZapInProgress by feedViewModel.zapInProgress.collectAsState()
+            var memoriesZapAnimatingIds by remember { mutableStateOf(emptySet<String>()) }
+            val isMemoriesNwcConnected = feedViewModel.activeWalletProvider.hasConnection()
+
+            LaunchedEffect(Unit) {
+                feedViewModel.zapSuccess.collect { eventId ->
+                    memoriesZapAnimatingIds = memoriesZapAnimatingIds + eventId
+                    kotlinx.coroutines.delay(1500)
+                    memoriesZapAnimatingIds = memoriesZapAnimatingIds - eventId
+                }
+            }
+
+            if (memoriesZapTarget != null) {
+                val memoriesZapRecipient = memoriesZapTarget!!.pubkey
+                val memoriesUserHasDmRelays = feedViewModel.relayPool.hasDmRelays()
+                var memoriesRecipientHasDmRelays by remember(memoriesZapRecipient) {
+                    mutableStateOf(feedViewModel.relayListRepo.hasDmRelays(memoriesZapRecipient))
+                }
+                if (memoriesUserHasDmRelays && !memoriesRecipientHasDmRelays) {
+                    LaunchedEffect(memoriesZapRecipient) {
+                        memoriesRecipientHasDmRelays = feedViewModel.fetchDmRelaysIfMissing(memoriesZapRecipient)
+                    }
+                }
+                ZapDialog(
+                    isWalletConnected = isMemoriesNwcConnected,
+                    onDismiss = { memoriesZapTarget = null },
+                    onZap = { amountMsats, message, isAnonymous, isPrivate ->
+                        val event = memoriesZapTarget ?: return@ZapDialog
+                        memoriesZapTarget = null
+                        feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
+                    },
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
+                    zapPrefsRepo = feedViewModel.zapPrefs,
+                    canPrivateZap = feedViewModel.hasLocalKeypair && memoriesUserHasDmRelays && memoriesRecipientHasDmRelays,
+                    recipientPubkey = memoriesZapTarget?.pubkey,
+                    recipientHasLud16 = memoriesZapTarget?.pubkey?.let { zapRecipientHasLud16(feedViewModel, it) } ?: true,
+                    profileLookup = { feedViewModel.profileRepo.get(it) }
+                )
+            }
+
+            val memoriesNoteActions = remember {
+                cooking.zap.app.ui.component.NoteActions(
+                    onReply = { event ->
+                        replyTarget = event
+                        quoteTarget = null
+                        composeViewModel.clear()
+                        navController.navigate(Routes.COMPOSE)
+                    },
+                    onReact = { event, emoji -> feedViewModel.toggleReaction(event, emoji) },
+                    onRepost = { event -> feedViewModel.sendRepost(event) },
+                    onQuote = { event ->
+                        quoteTarget = event
+                        replyTarget = null
+                        composeViewModel.clear()
+                        navController.navigate(Routes.COMPOSE)
+                    },
+                    onZap = { event -> memoriesZapTarget = event },
+                    onZapInstant = { event ->
+                        if (feedViewModel.interfacePrefs.isQuickZapEnabled()) {
+                            val sats = feedViewModel.interfacePrefs.getQuickZapAmountSats()
+                            val msg = feedViewModel.interfacePrefs.getQuickZapMessage()
+                            feedViewModel.sendZap(event, sats * 1000L, msg, false, false)
+                        } else {
+                            memoriesZapTarget = event
+                        }
+                    },
+                    onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
+                    onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
+                    onAddToList = { eventId -> addToListEventId = eventId },
+                    onFollowAuthor = { pubkey -> feedViewModel.toggleFollow(pubkey) },
+                    onBlockAuthor = { pubkey -> feedViewModel.blockUser(pubkey) },
+                    onPin = { eventId -> feedViewModel.togglePin(eventId) },
+                    isFollowing = { pubkey -> feedViewModel.contactRepo.isFollowing(pubkey) },
+                    userPubkey = feedViewModel.getUserPubkey(),
+                    nip05Repo = feedViewModel.nip05Repo,
+                    onHashtagClick = { clickedTag ->
+                        navController.navigate("hashtag/${java.net.URLEncoder.encode(clickedTag, "UTF-8")}")
+                    },
+                    onArticleClick = { kind, author, dTag ->
+                        navController.openArticleOrRecipe(feedViewModel.eventRepo, kind, author, dTag)
+                    },
+                    onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
+                    onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) }
+                )
+            }
+
+            cooking.zap.app.ui.screen.MemoriesScreen(
+                viewModel = memoriesViewModel,
+                eventRepo = feedViewModel.eventRepo,
+                userPubkey = feedViewModel.getUserPubkey(),
+                noteActions = memoriesNoteActions,
+                onBack = { navController.popBackStack() },
+                zapAnimatingIds = memoriesZapAnimatingIds,
+                zapInProgressIds = memoriesZapInProgress
             )
         }
 

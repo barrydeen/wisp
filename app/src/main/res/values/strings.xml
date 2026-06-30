@@ -11,6 +11,7 @@
     <!-- Drawer Menu -->
     <string name="drawer_my_profile">My Profile</string>
     <string name="drawer_feeds">Feeds</string>
+    <string name="drawer_memories">Memories</string>
     <string name="drawer_recipes">Recipes</string>
     <string name="drawer_souschef">Sous Chef</string>
     <string name="drawer_cheffy">Cheffy</string>

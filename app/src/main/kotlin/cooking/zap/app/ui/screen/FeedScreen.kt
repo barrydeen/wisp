@@ -182,6 +182,7 @@ fun FeedScreen(
     onArticleClick: ((Int, String, String) -> Unit)? = null,
     onGroupRoom: ((String, String) -> Unit)? = null,
     onLiveStreamClick: ((String, String, String?) -> Unit)? = null,
+    onMemories: (() -> Unit)? = null,
     fetchGroupPreview: (suspend (String, String) -> cooking.zap.app.repo.GroupPreview?)? = null,
     scrollToTopTrigger: Int = 0,
 ) {
@@ -1008,6 +1009,17 @@ fun FeedScreen(
                                         streams = liveNowStreams,
                                         eventRepo = viewModel.eventRepo,
                                         onStreamClick = onLiveStreamClick
+                                    )
+                                }
+                            }
+                            // Memories ("On this day") teaser — dismissible, read-only, and
+                            // self-hiding (renders nothing when dismissed / no memories today).
+                            if (onMemories != null) {
+                                item(key = "memories-teaser", contentType = "memories-teaser") {
+                                    cooking.zap.app.ui.component.MemoriesCard(
+                                        repo = viewModel.memoriesRepo,
+                                        userPubkey = userPubkey,
+                                        onOpen = onMemories,
                                     )
                                 }
                             }

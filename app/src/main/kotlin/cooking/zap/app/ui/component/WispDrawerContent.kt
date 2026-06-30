@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.ui.res.painterResource
 import cooking.zap.app.R
 import androidx.compose.material.icons.outlined.Edit
@@ -103,6 +104,7 @@ fun WispDrawerContent(
     onProfile: () -> Unit,
     onFeed: () -> Unit,
     onSearch: () -> Unit,
+    onMemories: () -> Unit = {},
     onMessages: () -> Unit,
     onWallet: () -> Unit,
     onRecipes: () -> Unit = {},
@@ -464,6 +466,16 @@ fun WispDrawerContent(
             label = { Text(stringResource(R.string.title_search)) },
             selected = false,
             onClick = onSearch,
+            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
+        )
+        // Memories ("On this day") — personal, like Profile/Feeds/Messages (not a
+        // food-content tab), so it lives in this nav group. Any logged-in account
+        // can view its own past notes (incl. READ_ONLY).
+        NavigationDrawerItem(
+            icon = { Icon(Icons.Outlined.DateRange, contentDescription = null) },
+            label = { Text(stringResource(R.string.drawer_memories)) },
+            selected = false,
+            onClick = onMemories,
             modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         if (canSign) {
