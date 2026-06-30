@@ -23,6 +23,11 @@ class RecipeFormatTest {
         return NostrEvent.fromJson(json)
     }
 
+    // Minimal recipe-template body: kind + `#t zapcooking` alone no longer make a
+    // recipe — the content must pass RecipeParser.validateMarkdownTemplate, so the
+    // stub carries the smallest valid template (one ingredient + one ordered step).
+    private val RECIPE_BODY = "## Ingredients\n\n- flour\n- water\n\n## Directions\n\n1. Mix.\n2. Bake."
+
     private fun stub(id: String, createdAt: Long, author: String = "p".repeat(64), d: String = "x"): NostrEvent =
         NostrEvent(
             id = id,
@@ -30,7 +35,7 @@ class RecipeFormatTest {
             created_at = createdAt,
             kind = RecipeParser.RECIPE_KIND,
             tags = listOf(listOf("d", d), listOf("t", "zapcooking")),
-            content = "",
+            content = RECIPE_BODY,
             sig = "0".repeat(128),
         )
 
