@@ -10,6 +10,7 @@ import cooking.zap.app.relay.RelayPool
 import cooking.zap.app.repo.ContactRepository
 import cooking.zap.app.repo.EventRepository
 import cooking.zap.app.repo.MuteRepository
+import cooking.zap.app.repo.OnlyFoodFilter
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onSubscription
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -110,6 +112,13 @@ class OnlyFoodFeedViewModel : ViewModel() {
 
     private val _emptyFollows = MutableStateFlow(false)
     val emptyFollows: StateFlow<Boolean> = _emptyFollows
+
+    // OnlyFood posts dropped by the WoT filter since the last (re)load — mirrors the
+    // home feed's EventRepository.onlyFoodWotDropped so a sparse feed can later be
+    // explained instead of looking like a silent blank. Reset on INITIAL/REFRESH.
+    // VM-local (per-drawer); WoT is opt-in (default OFF), so this stays 0 by default.
+    private val _wotDropped = MutableStateFlow(0)
+    val wotDropped: StateFlow<Int> = _wotDropped
 
     private var deps: Deps? = null
     private var activeJob: Job? = null
@@ -215,7 +224,10 @@ class OnlyFoodFeedViewModel : ViewModel() {
             // order (Correction 1 — the mid-build-reconnect interleave). PAGE is
             // append-only and keeps the existing settled order. Done after
             // cancelAndJoin so the previous load can't write into a just-reset cache.
-            if (load == Load.INITIAL || load == Load.REFRESH) state.unsettle()
+            if (load == Load.INITIAL || load == Load.REFRESH) {
+                state.unsettle()
+                _wotDropped.value = 0  // mirror the home feed: WoT-drop count is per-load
+            }
 
             val follows: Set<String>? = if (mode == Mode.FOLLOWING) {
                 d.contactRepo.getFollowList().map { it.pubkey }.toSet()
@@ -457,11 +469,25 @@ class OnlyFoodFeedViewModel : ViewModel() {
         _isRefreshing.value = false
     }
 
+    /**
+     * Per-event acceptance for the drawer feed. The FOLLOWING-mode author gate is
+     * drawer-specific (a mode filter, not a food-quality rule) and stays here; the
+     * food-quality decision delegates to the SAME [OnlyFoodFilter] instance the home
+     * feed uses (PR-U2 de-drift), so the two surfaces can't diverge. This gives the
+     * drawer the defenses it was missing: ONLY_FOOD_BLOCKED_PUBKEYS, the structural-
+     * spam caps (hellthread 25 / hashtag-cap 5 via max(content,tags)), and the WoT
+     * toggle (opt-in, default OFF, with its !isNetworkReady() no-op intact).
+     *
+     * A pure predicate swap — still called inside [ingestEvent] on the existing
+     * confined ingest path, so the concurrency/order test is unaffected.
+     */
     private fun accept(event: NostrEvent, d: Deps, follows: Set<String>?): Boolean {
         if (follows != null && event.pubkey !in follows) return false
-        if (d.muteRepo.isBlocked(event.pubkey)) return false
-        if (d.muteRepo.containsMutedWord(event.content)) return false
-        return true
+        return when (d.eventRepo.onlyFoodFilter.decideKind1(event)) {
+            OnlyFoodFilter.Decision.ACCEPT -> true
+            OnlyFoodFilter.Decision.WOT_FILTERED -> { _wotDropped.update { it + 1 }; false }
+            else -> false
+        }
     }
 
     override fun onCleared() {

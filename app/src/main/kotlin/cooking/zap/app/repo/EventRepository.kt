@@ -135,11 +135,12 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val ONLY_FOOD_BLOCKED_PUBKEYS: Set<String> = OnlyFoodFilter.BLOCKED_PUBKEYS
 
     // Shared OnlyFood food-quality filter (PR-U1): the single accept/reject decision
-    // for a kind-1 food note, used by the home feed's [addHashtagFeedEvent] today and
-    // (U2) by the drawer OnlyFood VM. Deps injected (read at call time, so the
-    // lazily-set repos resolve correctly) so the decision is pure and the two
-    // surfaces can't drift. [isOnlyFoodWotFiltered] carries the !networkReady no-op.
-    private val onlyFoodFilter = OnlyFoodFilter(
+    // for a kind-1 food note, used by the home feed's [addHashtagFeedEvent] AND (U2)
+    // by the drawer OnlyFoodFeedViewModel — the SAME instance, so the two surfaces
+    // can't drift. Deps injected (read at call time, so the lazily-set repos resolve
+    // correctly) so the decision is pure. [isOnlyFoodWotFiltered] carries the
+    // !networkReady no-op.
+    val onlyFoodFilter = OnlyFoodFilter(
         isUserBlocked = { muteRepo?.isBlocked(it) == true },
         containsMutedWord = { muteRepo?.containsMutedWord(it) == true },
         isThreadMuted = { muteRepo?.isThreadMuted(it) == true },
