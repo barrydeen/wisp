@@ -2772,7 +2772,7 @@ private fun TransactionHistoryContent(
                     // both render. The list is deduped by (paymentHash, type)
                     // upstream, so these keys are unique.
                     items(transactions, key = { "${it.paymentHash}|${it.type}" }) { tx ->
-                        TransactionRow(tx, profileLookup, displayMode)
+                        TransactionRow(tx, profileLookup, displayMode, expandable = true)
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp),
                             color = MaterialTheme.colorScheme.outlineVariant
@@ -2809,7 +2809,8 @@ private fun TransactionHistoryContent(
 private fun TransactionRow(
     tx: WalletTransaction,
     profileLookup: (String) -> com.wisp.app.nostr.ProfileData?,
-    displayMode: WalletBalanceDisplayMode = WalletBalanceDisplayMode.SATS
+    displayMode: WalletBalanceDisplayMode = WalletBalanceDisplayMode.SATS,
+    expandable: Boolean = false
 ) {
     val isIncoming = tx.type == "incoming"
     val amountSats = tx.amountMsats / 1000
@@ -2819,92 +2820,129 @@ private fun TransactionRow(
     val fiatCurrency by FiatPreferences.get(ctx).currency.collectAsState()
     val isHidden = displayMode == WalletBalanceDisplayMode.HIDDEN
     val isWalletFiat = displayMode == WalletBalanceDisplayMode.FIAT
+    val clipboardManager = LocalClipboardManager.current
+    var expanded by remember { mutableStateOf(false) }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Avatar or direction icon
-        if (profile?.picture != null) {
-            AsyncImage(
-                model = profile.picture,
-                contentDescription = profile.displayString,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(
-                        if (isIncoming) Color(0xFF2E7D32).copy(alpha = 0.1f)
-                        else MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
-                        CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    if (isIncoming) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
-                    contentDescription = if (isIncoming) stringResource(R.string.wallet_received) else stringResource(R.string.wallet_sent),
-                    tint = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(20.dp)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (expandable) Modifier.clickable { expanded = !expanded } else Modifier)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Avatar or direction icon
+            if (profile?.picture != null) {
+                AsyncImage(
+                    model = profile.picture,
+                    contentDescription = profile.displayString,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
                 )
-            }
-        }
-
-        Spacer(Modifier.width(12.dp))
-
-        // Name/description + time
-        Column(modifier = Modifier.weight(1f)) {
-            val displayLabel = if (profile != null) {
-                profile.displayString
             } else {
-                // Try to get a meaningful description; skip raw zap request JSON
-                val desc = tx.description?.takeIf {
-                    it.isNotBlank() && it != "null" && !it.trimStart().startsWith("{")
-                }
-                desc ?: if (isIncoming) stringResource(R.string.wallet_received) else stringResource(R.string.wallet_sent)
-            }
-            Text(
-                displayLabel,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                formatRelativeTime(tx.settledAt ?: tx.createdAt),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        // Amount + fee. In HIDDEN mode every number is masked so a
-        // "show my wallet without showing the numbers" screenshot
-        // works. Wallet-screen FIAT mode renders amounts in the user's
-        // selected fiat currency without flipping the app-wide flag.
-        Column(horizontalAlignment = Alignment.End) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val sign = if (isIncoming) "+" else "-"
-                val signColor = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
-                when {
-                    isHidden -> Text(
-                        "$sign* * *",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = signColor
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(
+                            if (isIncoming) Color(0xFF2E7D32).copy(alpha = 0.1f)
+                            else MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (isIncoming) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
+                        contentDescription = if (isIncoming) stringResource(R.string.wallet_received) else stringResource(R.string.wallet_sent),
+                        tint = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
                     )
-                    isWalletFiat -> {
-                        val fiat = AmountFormatter.formatFiat(amountSats, fiatCurrency)
-                        if (fiat != null) {
-                            Text(
-                                "$sign$fiat",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = signColor
-                            )
-                        } else {
+                }
+            }
+
+            Spacer(Modifier.width(12.dp))
+
+            // Name/description + time
+            Column(modifier = Modifier.weight(1f)) {
+                val displayLabel = if (profile != null) {
+                    profile.displayString
+                } else {
+                    // Try to get a meaningful description; skip raw zap request JSON
+                    val desc = tx.description?.takeIf {
+                        it.isNotBlank() && it != "null" && !it.trimStart().startsWith("{")
+                    }
+                    desc ?: if (isIncoming) stringResource(R.string.wallet_received) else stringResource(R.string.wallet_sent)
+                }
+                Text(
+                    displayLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (tx.pending) {
+                        Text(
+                            "Pending",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            " · ",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        formatRelativeTime(tx.settledAt ?: tx.createdAt),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Amount + fee. In HIDDEN mode every number is masked so a
+            // "show my wallet without showing the numbers" screenshot
+            // works. Wallet-screen FIAT mode renders amounts in the user's
+            // selected fiat currency without flipping the app-wide flag.
+            Column(horizontalAlignment = Alignment.End) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val sign = if (isIncoming) "+" else "-"
+                    val signColor = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                    when {
+                        isHidden -> Text(
+                            "$sign* * *",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = signColor
+                        )
+                        isWalletFiat -> {
+                            val fiat = AmountFormatter.formatFiat(amountSats, fiatCurrency)
+                            if (fiat != null) {
+                                Text(
+                                    "$sign$fiat",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = signColor
+                                )
+                            } else {
+                                Text(
+                                    "$sign%,d".format(amountSats),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = signColor
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    stringResource(R.string.wallet_sats),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        fiatMode -> Text(
+                            "$sign${AmountFormatter.formatFull(amountSats, ctx)}",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = signColor
+                        )
+                        else -> {
                             Text(
                                 "$sign%,d".format(amountSats),
                                 style = MaterialTheme.typography.titleMedium,
@@ -2918,44 +2956,124 @@ private fun TransactionRow(
                             )
                         }
                     }
-                    fiatMode -> Text(
-                        "$sign${AmountFormatter.formatFull(amountSats, ctx)}",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = signColor
-                    )
-                    else -> {
-                        Text(
-                            "$sign%,d".format(amountSats),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = signColor
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            stringResource(R.string.wallet_sats),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                }
+                if (!isIncoming && tx.feeMsats > 0) {
+                    val feeSats = tx.feeMsats / 1000
+                    val feeText = when {
+                        isHidden -> stringResource(R.string.wallet_fee, 0).replace("0", "***")
+                        isWalletFiat -> {
+                            val fiat = AmountFormatter.formatFiat(feeSats, fiatCurrency)
+                            if (fiat != null) stringResource(R.string.wallet_fee_money, fiat)
+                            else stringResource(R.string.wallet_fee, feeSats)
+                        }
+                        fiatMode -> stringResource(R.string.wallet_fee_money, AmountFormatter.formatFull(feeSats, ctx))
+                        else -> stringResource(R.string.wallet_fee, feeSats)
                     }
+                    Text(
+                        feeText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
-            if (!isIncoming && tx.feeMsats > 0) {
-                val feeSats = tx.feeMsats / 1000
-                val feeText = when {
-                    isHidden -> stringResource(R.string.wallet_fee, 0).replace("0", "***")
-                    isWalletFiat -> {
-                        val fiat = AmountFormatter.formatFiat(feeSats, fiatCurrency)
-                        if (fiat != null) stringResource(R.string.wallet_fee_money, fiat)
-                        else stringResource(R.string.wallet_fee, feeSats)
-                    }
-                    fiatMode -> stringResource(R.string.wallet_fee_money, AmountFormatter.formatFull(feeSats, ctx))
-                    else -> stringResource(R.string.wallet_fee, feeSats)
-                }
-                Text(
-                    feeText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+
+            if (expandable) {
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
+
+        if (expandable) {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                TransactionDetailPanel(tx = tx, onCopy = { clipboardManager.setText(AnnotatedString(it)) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun TransactionDetailPanel(tx: WalletTransaction, onCopy: (String) -> Unit) {
+    val ctx = LocalContext.current
+    val amountSats = tx.amountMsats / 1000
+    val feeSats = tx.feeMsats / 1000
+    val dateStr = java.text.SimpleDateFormat("MMM d, yyyy HH:mm", java.util.Locale.US)
+        .format(java.util.Date((tx.settledAt ?: tx.createdAt) * 1000L))
+    val idLabel = if (tx.isOnchain) "Transaction ID" else "Payment hash"
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        Spacer(Modifier.height(2.dp))
+
+        TxDetailRow("Status", if (tx.pending) "Pending" else "Completed")
+        TxDetailRow("Type", if (tx.isOnchain) "On-chain" else "Lightning")
+        TxDetailRow("Amount", "%,d sats".format(amountSats))
+        if (feeSats > 0) TxDetailRow("Network fee", "%,d sats".format(feeSats))
+        TxDetailRow("Date", dateStr)
+        if (!tx.description.isNullOrBlank() && !tx.description.trimStart().startsWith("{")) {
+            TxDetailRow("Note", tx.description)
+        }
+        TxDetailRow(idLabel, tx.paymentHash, mono = true, onCopy = { onCopy(tx.paymentHash) })
+
+        if (tx.isOnchain && tx.paymentHash.length == 64) {
+            val mempoolUrl = "https://mempool.space/tx/${tx.paymentHash}"
+            TextButton(
+                onClick = {
+                    ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(mempoolUrl)))
+                },
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                Text("View on mempool.space", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+
+        Spacer(Modifier.height(4.dp))
+    }
+}
+
+@Composable
+private fun TxDetailRow(
+    label: String,
+    value: String,
+    mono: Boolean = false,
+    onCopy: (() -> Unit)? = null
+) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Text(
+            label,
+            modifier = Modifier.width(110.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            value,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = if (mono) FontFamily.Monospace else null,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        if (onCopy != null) {
+            Icon(
+                Icons.Default.ContentCopy,
+                contentDescription = "Copy",
+                modifier = Modifier
+                    .size(14.dp)
+                    .clickable(onClick = onCopy),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
