@@ -106,11 +106,12 @@ internal fun isReplyNote(event: NostrEvent): Boolean {
 
 /**
  * A result is durably cacheable only when COMPLETE: EVERY window resolved via
- * EOSE (each relay set finished delivering for that window). A window that
- * resolved via TIMEOUT has no evidence the relays finished — its emptiness may be
- * a transient miss (especially the deep 3-year window, whose notes live on
- * slower/fewer archive relays), so a PARTIAL result is not cached; it re-fetches
- * next open and self-heals.
+ * EOSE — i.e. at least one queried relay sent EOSE for that window, so the query
+ * reached a relay that finished its stored-events scan. A window that resolved via
+ * TIMEOUT saw NO EOSE at all, so there's no evidence any relay finished — its
+ * emptiness may be a transient miss (especially the deep 3-year window, whose
+ * notes live on slower/fewer archive relays), so a PARTIAL result is not cached;
+ * it re-fetches next open and self-heals.
  *
  * An EOSE'd window with genuinely zero notes IS cacheable ("nothing that day"); a
  * TIMEOUT window is not — that's the distinction. Stricter than the web's
@@ -279,7 +280,7 @@ class MemoriesRepository(
                 // Deeper windows get more EOSE budget: their notes live on slower/fewer
                 // archive relays (nostr.wine/primal) that take longer to dig out cold
                 // events, so the 3-year window isn't torn down before it can deliver.
-                val eoseTimeoutMs = EOSE_TIMEOUT_MS + (window.yearsAgo - 1) * EOSE_TIMEOUT_PER_YEAR_MS
+                val eoseTimeoutMs = EOSE_TIMEOUT_MS + (window.yearsAgo - 1).toLong() * EOSE_TIMEOUT_PER_YEAR_MS
                 async { fetchWindow(pubkey, window, eoseTimeoutMs) }
             }.awaitAll()
         } finally {

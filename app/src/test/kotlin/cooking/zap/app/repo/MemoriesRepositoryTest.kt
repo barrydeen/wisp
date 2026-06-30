@@ -144,9 +144,11 @@ class MemoriesRepositoryTest {
 
     @Test
     fun cache_cachesOnlyWhenEveryWindowEosed() {
+        // Production always fetches the 1/2/3-year windows, so use three groups.
         // All windows EOSE'd (even empty ones) → complete → cacheable ("nothing that day").
         assertTrue(shouldCacheMemories(listOf(group(MemoryResolved.EOSE), group(MemoryResolved.EOSE), group(MemoryResolved.EOSE))))
-        assertTrue(shouldCacheMemories(listOf(group(MemoryResolved.EOSE, withEvent = true), group(MemoryResolved.EOSE))))
+        // Same, but the 1-year window has notes — still all-EOSE → cacheable.
+        assertTrue(shouldCacheMemories(listOf(group(MemoryResolved.EOSE, withEvent = true), group(MemoryResolved.EOSE), group(MemoryResolved.EOSE))))
     }
 
     @Test
