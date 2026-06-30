@@ -217,7 +217,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val outboxRouter = OutboxRouter(relayPool, relayListRepo, relayHintStore, relayScoreBoard)
     val subManager = SubscriptionManager(relayPool)
     /** Memories ("On this day") service — read-only, shared by the teaser card + screen. */
-    val memoriesRepo = cooking.zap.app.repo.MemoriesRepository(app, relayPool, eventRepo, subManager)
+    val memoriesRepo = cooking.zap.app.repo.MemoriesRepository(app, relayPool, eventRepo)
     val lifecycleManager = RelayLifecycleManager(
         context = app,
         relayPool = relayPool,

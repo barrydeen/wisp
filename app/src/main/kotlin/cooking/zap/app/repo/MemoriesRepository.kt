@@ -6,13 +6,16 @@ import cooking.zap.app.nostr.Filter
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.relay.RelayConfig
 import cooking.zap.app.relay.RelayPool
-import cooking.zap.app.relay.SubscriptionManager
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.onSubscription
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -137,7 +140,6 @@ class MemoriesRepository(
     private val context: Context,
     private val relayPool: RelayPool,
     private val eventRepo: EventRepository,
-    private val subManager: SubscriptionManager,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val subSeq = AtomicInteger(0)
@@ -166,12 +168,12 @@ class MemoriesRepository(
         val subId = "memories-${window.yearsAgo}-${subSeq.incrementAndGet()}"
         val collected = LinkedHashMap<String, NostrEvent>()
 
-        // relayEvents has replay=0 — gate the REQ on the collector being live so
-        // events aren't dropped before subscription (mirrors OnlyFood's gate).
-        val ready = kotlinx.coroutines.CompletableDeferred<Unit>()
+        // relayEvents has replay=0 — gate the REQ on the event collector being live
+        // so events aren't dropped before subscription (mirrors OnlyFood's gate).
+        val collectorReady = CompletableDeferred<Unit>()
         val collector = launch {
             relayPool.relayEvents
-                .onSubscription { ready.complete(Unit) }
+                .onSubscription { collectorReady.complete(Unit) }
                 .collect { relayEvent ->
                     if (relayEvent.subscriptionId != subId) return@collect
                     val ev = relayEvent.event
@@ -181,24 +183,66 @@ class MemoriesRepository(
         }
 
         val resolvedVia = try {
-            ready.await()
-            val filter = Filter(
-                kinds = listOf(1),
-                authors = listOf(pubkey),
-                since = window.since,
-                until = window.until,
-                limit = WINDOW_LIMIT,
-            )
-            val req = ClientMessage.req(subId, filter)
-            var sent = 0
-            for (url in memoryRelays()) {
-                if (relayPool.sendToRelayOrEphemeral(url, req)) sent++
-            }
-            if (sent == 0) {
+            collectorReady.await()
+            // CONNECT FIRST. sendToRelayOrEphemeral returns true on SEND, not on
+            // CONNECT — sending to a still-handshaking relay makes the EOSE wait time
+            // out before slow archive relays (damus/nostr.wine/primal — where old notes
+            // live) deliver. Gate the REQ on a live socket (connect budget is separate
+            // from the EOSE budget); connect in parallel and send only to those.
+            val connected = memoryRelays()
+                .map { url -> async { url to relayPool.awaitRelayConnected(url, CONNECT_TIMEOUT_MS) } }
+                .awaitAll()
+                .filter { it.second }
+                .map { it.first }
+
+            if (connected.isEmpty()) {
                 MemoryResolved.TIMEOUT
             } else {
-                val eoseCount = subManager.awaitEoseCount(subId, expectedCount = sent, timeoutMs = WINDOW_TIMEOUT_MS)
-                if (eoseCount > 0) MemoryResolved.EOSE else MemoryResolved.TIMEOUT
+                // EOSE awaiter, subscribed BEFORE the REQ goes out — eoseSignals is
+                // replay=0, so a not-yet-subscribed awaiter would miss an EOSE emitted
+                // right after send and read a false TIMEOUT (mirrors OnlyFood's gate).
+                // Counts up to one EOSE per connected relay, capped by the EOSE budget.
+                val eoseReady = CompletableDeferred<Unit>()
+                val eoseAwaiter = async {
+                    var count = 0
+                    withTimeoutOrNull(EOSE_TIMEOUT_MS) {
+                        relayPool.eoseSignals
+                            .onSubscription { eoseReady.complete(Unit) }
+                            .filter { it == subId }
+                            .take(connected.size)
+                            .collect { count++ }
+                    }
+                    count
+                }
+                eoseReady.await()
+
+                val filter = Filter(
+                    kinds = listOf(1),
+                    authors = listOf(pubkey),
+                    since = window.since,
+                    until = window.until,
+                    limit = WINDOW_LIMIT,
+                )
+                val req = ClientMessage.req(subId, filter)
+                var sent = 0
+                for (url in connected) {
+                    if (relayPool.sendToRelayOrEphemeral(url, req)) sent++
+                }
+                if (sent == 0) {
+                    eoseAwaiter.cancel()
+                    MemoryResolved.TIMEOUT
+                } else {
+                    val eoseCount = eoseAwaiter.await()
+                    if (eoseCount > 0) {
+                        // Stragglers drip in after EOSE — keep collecting for a grace
+                        // window before teardown. Only after a REAL EOSE: an all-timeout
+                        // window has no evidence anyone will deliver, so don't add the 4s.
+                        delay(EOSE_GRACE_MS)
+                        MemoryResolved.EOSE
+                    } else {
+                        MemoryResolved.TIMEOUT
+                    }
+                }
             }
         } catch (_: Exception) {
             MemoryResolved.TIMEOUT
@@ -220,7 +264,17 @@ class MemoriesRepository(
 
     /** Fetch all three windows in parallel. Empty groups are normal. */
     suspend fun fetchMemories(pubkey: String, now: Calendar): List<MemoryGroup> = coroutineScope {
-        getMemoryWindows(now).map { window -> async { fetchWindow(pubkey, window) } }.awaitAll()
+        val relays = memoryRelays()
+        // Pin ONCE for the whole multi-window fetch. RelayPool pinning is a plain Set
+        // (not ref-counted), so pinning per-window would let the first window to finish
+        // unpin the archive relays while the other two are still mid-fetch — re-opening
+        // the LRU-eviction window this fix closes. Pin here; unpin after all settle.
+        relays.forEach { relayPool.pinEphemeral(it) }
+        try {
+            getMemoryWindows(now).map { window -> async { fetchWindow(pubkey, window) } }.awaitAll()
+        } finally {
+            relays.forEach { relayPool.unpinEphemeral(it) }
+        }
     }
 
     // ─── per-day cache (SharedPreferences, account-scoped) ────────────────
@@ -334,6 +388,11 @@ class MemoriesRepository(
             "wss://relay.primal.net",
         )
         private const val WINDOW_LIMIT = 50
-        private const val WINDOW_TIMEOUT_MS = 10_000L
+        /** Budget to bring an ephemeral archive relay's socket up before the REQ. */
+        private const val CONNECT_TIMEOUT_MS = 8_000L
+        /** Budget to await EOSE, measured only AFTER connect (separate from connect). */
+        private const val EOSE_TIMEOUT_MS = 10_000L
+        /** Straggler window after EOSE/timeout before teardown (archive relays drip late). */
+        private const val EOSE_GRACE_MS = 4_000L
     }
 }
