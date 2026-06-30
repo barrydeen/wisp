@@ -121,8 +121,12 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -214,6 +218,7 @@ fun WalletScreen(
     // render their own top-right Close pill instead of an app bar to match
     // iOS — leaves more headroom for the centered logo + title layout.
     val hideAppBar = currentPage is WalletPage.Home ||
+        currentPage is WalletPage.Transactions ||
         currentPage is WalletPage.ModeSelection ||
         currentPage is WalletPage.NwcSetup ||
         currentPage is WalletPage.SparkSetup ||
@@ -498,17 +503,36 @@ fun WalletScreen(
                         )
                     }
                     is WalletPage.Transactions -> {
-                        // Observe profile refresh key so UI recomposes when new profiles arrive
+                        // Home stays visible behind the transactions bottom sheet.
                         val profileKey = viewModel.profileRefreshKey.collectAsState().value
-                        TransactionHistoryContent(
-                            transactions = viewModel.transactions.collectAsState().value,
-                            error = viewModel.transactionsError.collectAsState().value,
-                            isLoading = viewModel.isLoading.collectAsState().value,
-                            isLoadingMore = viewModel.isLoadingMore.collectAsState().value,
-                            hasMore = viewModel.hasMoreTransactions.collectAsState().value,
-                            onLoadMore = { viewModel.loadMoreTransactions() },
-                            profileLookup = { viewModel.getProfileData(it) },
-                            profileRefreshKey = profileKey,
+                        WalletHomeContent(
+                            balanceMsats = balanceMsats,
+                            walletMode = viewModel.walletMode.collectAsState().value,
+                            balanceUnit = viewModel.balanceUnit.collectAsState().value,
+                            showSettingsAlert = viewModel.walletMode.collectAsState().value == WalletMode.SPARK
+                                    && !viewModel.seedBackupAcked.collectAsState().value
+                                    && !viewModel.isDefaultWallet.collectAsState().value,
+                            seedBackupAcked = viewModel.seedBackupAcked.collectAsState().value,
+                            backupMissing = viewModel.backupMissing.collectAsState().value,
+                            isDefaultWallet = viewModel.isDefaultWallet.collectAsState().value,
+                            onSend = { viewModel.navigateTo(WalletPage.SendInput) },
+                            onReceive = { viewModel.navigateTo(WalletPage.ReceiveAmount) },
+                            onTransactions = {},
+                            onRefresh = { viewModel.refreshBalance() },
+                            onSettings = { viewModel.navigateTo(WalletPage.Settings) },
+                            onBackupToRelay = {
+                                viewModel.resetBackupStatus()
+                                viewModel.navigateTo(WalletPage.BackupToRelay)
+                            },
+                            onViewSeed = { viewModel.showMnemonicBackup() },
+                            lightningAddress = viewModel.lightningAddress.collectAsState().value,
+                            onSetupAddress = {
+                                viewModel.resetAddressSetupState()
+                                viewModel.navigateTo(WalletPage.LightningAddressSetup)
+                            },
+                            recentTransactions = viewModel.transactions.collectAsState().value,
+                            profileLookup = remember(profileKey) { { viewModel.getProfileData(it) } },
+                            nwcNodeAlias = viewModel.nwcNodeAlias.collectAsState().value,
                             pubkey = viewModel.keyRepo.getPubkeyHex(),
                             modifier = Modifier.padding(padding)
                         )
@@ -684,6 +708,28 @@ fun WalletScreen(
                             nwcNodeAlias = viewModel.nwcNodeAlias.collectAsState().value,
                             pubkey = viewModel.keyRepo.getPubkeyHex(),
                             modifier = Modifier.padding(padding)
+                        )
+                    }
+                }
+
+                // Transactions full-screen bottom sheet — swipe down to dismiss
+                if (currentPage is WalletPage.Transactions) {
+                    val txSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                    val txProfileKey = viewModel.profileRefreshKey.collectAsState().value
+                    ModalBottomSheet(
+                        onDismissRequest = { viewModel.navigateBack() },
+                        sheetState = txSheetState,
+                    ) {
+                        TransactionHistoryContent(
+                            transactions = viewModel.transactions.collectAsState().value,
+                            error = viewModel.transactionsError.collectAsState().value,
+                            isLoading = viewModel.isLoading.collectAsState().value,
+                            isLoadingMore = viewModel.isLoadingMore.collectAsState().value,
+                            hasMore = viewModel.hasMoreTransactions.collectAsState().value,
+                            onLoadMore = { viewModel.loadMoreTransactions() },
+                            profileLookup = { viewModel.getProfileData(it) },
+                            profileRefreshKey = txProfileKey,
+                            pubkey = viewModel.keyRepo.getPubkeyHex(),
                         )
                     }
                 }
@@ -1482,7 +1528,24 @@ private fun WalletHomeContent(
 
         // ── Recent transactions inline footer ──────────────────────
         if (recentTransactions.isNotEmpty()) {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+                    .pointerInput(onTransactions) {
+                        var totalDrag = 0f
+                        detectVerticalDragGestures(
+                            onDragStart = { totalDrag = 0f },
+                            onDragEnd = { totalDrag = 0f },
+                            onDragCancel = { totalDrag = 0f }
+                        ) { change, delta ->
+                            totalDrag += delta
+                            if (totalDrag < -40f) {
+                                totalDrag = 0f
+                                change.consume()
+                                onTransactions()
+                            }
+                        }
+                    }
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
