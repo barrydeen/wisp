@@ -34,7 +34,9 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
@@ -52,6 +54,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -93,6 +97,7 @@ import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -5514,7 +5519,14 @@ private fun OnchainSendAmountContent(
     val fieldShape = RoundedCornerShape(14.dp)
     val fieldBg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
     val accent = WispThemeColors.zapColor
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
 
+    // Dismiss keyboard as soon as the fee quote arrives so Continue is always fully visible
+    LaunchedEffect(feeQuote) {
+        if (feeQuote != null) keyboardController?.hide()
+    }
+
+    val buttonShape = fieldShape
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -5523,17 +5535,13 @@ private fun OnchainSendAmountContent(
     ) {
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.btn_back))
-            }
-            Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
+            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
             Text("Send Payment", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         }
 
         Spacer(Modifier.height(20.dp))
 
-        // Recipient address (read-only)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -5560,7 +5568,6 @@ private fun OnchainSendAmountContent(
 
         Spacer(Modifier.height(20.dp))
 
-        // Amount label + Use All
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -5594,7 +5601,14 @@ private fun OnchainSendAmountContent(
                 onValueChange = { input -> onAmountChange(input.filter { it.isDigit() }) },
                 textStyle = amountStyle,
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(onDone = {
+                    keyboardController?.hide()
+                    onGetFeeQuote()
+                }),
                 cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                 modifier = Modifier.fillMaxWidth(),
                 decorationBox = { inner ->
@@ -5613,35 +5627,35 @@ private fun OnchainSendAmountContent(
 
         Spacer(Modifier.height(20.dp))
 
-        if (feeQuote != null) {
-            // Inline breakdown once a quote is fetched.
-            val feeSats = feeQuote.mediumFeeSats
-            val totalSats = amountSats + feeSats
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(fieldBg, fieldShape)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                OnchainAmountRow("Amount", "%,d sats".format(amountSats))
-                OnchainAmountRow("Network Fee", "%,d sats".format(feeSats))
-                HorizontalDivider()
-                OnchainAmountRow("Total", "%,d sats".format(totalSats), emphasize = true)
+        when {
+            feeQuote != null -> {
+                val feeSats = feeQuote.mediumFeeSats
+                val totalSats = amountSats + feeSats
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(fieldBg, fieldShape)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OnchainAmountRow("Amount", "%,d sats".format(amountSats))
+                    OnchainAmountRow("Network Fee", "%,d sats".format(feeSats))
+                    HorizontalDivider()
+                    OnchainAmountRow("Total", "%,d sats".format(totalSats), emphasize = true)
+                }
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = onContinue,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = buttonShape,
+                    colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color.White)
+                ) {
+                    Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Continue", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                }
             }
-            Spacer(Modifier.height(16.dp))
-            Button(
-                onClick = onContinue,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = fieldShape,
-                colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color.White)
-            ) {
-                Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Continue", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            }
-        } else if (isLoading) {
-            Box(
+            isLoading -> Box(
                 modifier = Modifier.fillMaxWidth().background(fieldBg, fieldShape).padding(vertical = 14.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -5651,12 +5665,11 @@ private fun OnchainSendAmountContent(
                     Text("Estimating fee…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-        } else {
-            Button(
+            else -> Button(
                 onClick = onGetFeeQuote,
                 enabled = amountSats > 0L,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = fieldShape,
+                shape = buttonShape,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = accent,
                     contentColor = Color.White,
@@ -5729,10 +5742,7 @@ private fun OnchainSendConfirmContent(
     ) {
         Spacer(Modifier.height(8.dp))
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.btn_back))
-            }
-            Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
+            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
             Text("Send Payment", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         }

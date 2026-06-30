@@ -38,9 +38,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import android.content.Context
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -211,7 +215,7 @@ fun ActionBar(
         Box {
             val zapClickable = !isZapInProgress
             val longPressFired = remember { mutableStateOf(false) }
-            val haptics = LocalHapticFeedback.current
+            val view = LocalView.current
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -232,7 +236,7 @@ fun ActionBar(
                         onLongClick = if (zapEnabled && onZapLongPress != null) {
                             {
                                 longPressFired.value = true
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                zapInstantHaptic(view.context)
                                 onZapLongPress()
                             }
                         } else null
@@ -299,6 +303,22 @@ fun ActionBar(
                 modifier = Modifier.size(22.dp)
             )
         }
+    }
+}
+
+private fun zapInstantHaptic(context: Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val manager = context.getSystemService(VibratorManager::class.java)
+        manager?.defaultVibrator?.vibrate(
+            VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK)
+        )
+    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        @Suppress("DEPRECATION")
+        (context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
+            ?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK))
+    } else {
+        @Suppress("DEPRECATION")
+        (context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)?.vibrate(50)
     }
 }
 
