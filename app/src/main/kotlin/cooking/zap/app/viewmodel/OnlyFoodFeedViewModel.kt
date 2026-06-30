@@ -277,16 +277,26 @@ class OnlyFoodFeedViewModel : ViewModel() {
                         .collect { relayEvent ->
                             if (!relayEvent.subscriptionId.startsWith(base)) return@collect
                             val event = relayEvent.event
-                            if (event.kind != 1 || event.id in state.seen) return@collect
-                            if (!accept(event, d, follows)) return@collect
-                            received++
-                            state.seen[event.id] = event
-                            d.eventRepo.cacheEvent(event)
-                            d.eventRepo.requestProfileIfMissing(event.pubkey)
-                            // Coalesce: signal a flush instead of emitting per event.
-                            // Only for the visible mode — a background load fills its
-                            // `seen` and rebuilds its order lazily on toggle/EOSE.
-                            if (_mode.value == mode) flushSignal.trySend(Unit)
+                            if (event.kind != 1) return@collect
+                            // Suspension-free per-event ingest (dedup → accept → insert →
+                            // cache/profile → coalesced flush), extracted to the shared
+                            // [ingestEvent] so the path the live feed runs is the one the
+                            // concurrency test hammers. Still on viewModelScope/Main.immediate
+                            // here — the thread move is PR 2 and does not touch this call.
+                            val inserted = ingestEvent(
+                                event = event,
+                                seen = state.seen,
+                                accept = { accept(it, d, follows) },
+                                onAccepted = {
+                                    d.eventRepo.cacheEvent(it)
+                                    d.eventRepo.requestProfileIfMissing(it.pubkey)
+                                },
+                                // Coalesce: signal a flush instead of emitting per event.
+                                // Only for the visible mode — a background load fills its
+                                // `seen` and rebuilds its order lazily on toggle/EOSE.
+                                signalFlush = { if (_mode.value == mode) flushSignal.trySend(Unit) },
+                            )
+                            if (inserted) received++
                         }
                 }
                 val eoseReady = CompletableDeferred<Unit>()
@@ -472,6 +482,43 @@ class OnlyFoodFeedViewModel : ViewModel() {
         /** Budget to await EOSE, measured only AFTER the socket is connected. */
         private const val EOSE_TIMEOUT_MS = 8_000L
     }
+}
+
+/**
+ * Ingest one collected event into the OnlyFood source-of-truth [seen] map — the
+ * single, suspension-free per-event path shared by the live collector and the
+ * ingestion test. Behavior-identical extraction of the former inline collector
+ * body: dedup against [seen] → [accept] gate → insert → [onAccepted] side-effects
+ * (cache + profile request) → [signalFlush] coalesced emission. No logic change.
+ *
+ * Suspension-free by construction — every collaborator is a plain, non-suspending
+ * lambda — so under single-thread confinement the `id in seen` check and the
+ * insert can never interleave with another ingest: no dupes, no lost events. This
+ * is the invariant PR 2 relies on when it swaps the confinement thread from
+ * Main.immediate to a serial background dispatcher; this function is unchanged
+ * there.
+ *
+ * @param accept the mute/block/follows predicate ([OnlyFoodFeedViewModel.accept]).
+ * @param onAccepted side-effects for a newly accepted event (cache + profile
+ *   request); runs exactly once per newly inserted event.
+ * @param signalFlush request a coalesced emission (caller gates it to the visible
+ *   mode); runs exactly once per newly inserted event.
+ * @return true iff the event was newly accepted and inserted, so the caller can
+ *   count it toward paging exhaustion ([pageEndReached]).
+ */
+internal inline fun ingestEvent(
+    event: NostrEvent,
+    seen: MutableMap<String, NostrEvent>,
+    accept: (NostrEvent) -> Boolean,
+    onAccepted: (NostrEvent) -> Unit,
+    signalFlush: () -> Unit,
+): Boolean {
+    if (event.id in seen) return false
+    if (!accept(event)) return false
+    seen[event.id] = event
+    onAccepted(event)
+    signalFlush()
+    return true
 }
 
 /**
