@@ -128,20 +128,23 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val _onlyFoodWotDropped = MutableStateFlow(0)
     val onlyFoodWotDropped: StateFlow<Int> = _onlyFoodWotDropped
 
-    // OnlyFood structural spam caps — mirror the web client's FoodstrFeed thresholds.
-    private val HELLTHREAD_P_LIMIT = 25
-    private val MAX_HASHTAGS = 5
-    // Inline content hashtags, mirroring the web's HASHTAG_PATTERN = /(^|\s)#([^\s#]+)/g.
-    private val CONTENT_HASHTAG_REGEX = Regex("""(^|\s)#([^\s#]+)""")
+    // OnlyFood structural-spam caps + the app-level blocklist now live in
+    // [OnlyFoodFilter] (the shared food-quality module, PR-U1) — single source of
+    // truth. This alias keeps the poll/repost branches of [addHashtagFeedEvent] at
+    // their existing call sites; the kind-1 branch goes through [onlyFoodFilter].
+    private val ONLY_FOOD_BLOCKED_PUBKEYS: Set<String> = OnlyFoodFilter.BLOCKED_PUBKEYS
 
-    // App-level OnlyFood blocklist (curation). Applies to ALL users' OnlyFood feed and is
-    // SEPARATE from each user's personal mute list (muteRepo). Add a future spammer's hex
-    // pubkey as a one-line entry, commented with its npub for readability.
-    private val ONLY_FOOD_BLOCKED_PUBKEYS: Set<String> = setOf(
-        // npub1m354es2t3hpx0wslegv7qrrpt4dmjyzh6feazktpuze0vnqw6jcqx5ps3x
-        "dc695cc14b8dc267ba1fca19e00c615d5bb91057d273d15961e0b2f64c0ed4b0",
-        // npub1qvv7xqpkeugn4qsa9lqjuypjttpx6gewk3gzz80mew07lgpw57sq2u5jtf
-    "0319e30036cf113a821d2fc12e10325ac26d232eb450211dfbcb9fefa02ea7a0",
+    // Shared OnlyFood food-quality filter (PR-U1): the single accept/reject decision
+    // for a kind-1 food note, used by the home feed's [addHashtagFeedEvent] today and
+    // (U2) by the drawer OnlyFood VM. Deps injected (read at call time, so the
+    // lazily-set repos resolve correctly) so the decision is pure and the two
+    // surfaces can't drift. [isOnlyFoodWotFiltered] carries the !networkReady no-op.
+    private val onlyFoodFilter = OnlyFoodFilter(
+        isUserBlocked = { muteRepo?.isBlocked(it) == true },
+        containsMutedWord = { muteRepo?.containsMutedWord(it) == true },
+        isThreadMuted = { muteRepo?.isThreadMuted(it) == true },
+        isDeleted = { deletedEventsRepo?.isDeleted(it) == true },
+        isWotFiltered = { isOnlyFoodWotFiltered(it) },
     )
 
     // Author filter: null = show all, non-null = only show events from these pubkeys
@@ -1478,19 +1481,19 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
 
         when (event.kind) {
             1 -> {
-                if (muteRepo?.containsMutedWord(event.content) == true) return
-                val threadRoot = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
-                if (muteRepo?.isThreadMuted(threadRoot) == true) return
-                if (isStructuralSpam(event)) return                  // cheap: hellthread / hashtag cap
-                val isReply = Nip10.isReply(event)
-                if (!isReply) {
-                    if (isOnlyFoodWotFiltered(event.pubkey)) {       // strong: web-of-trust
-                        _onlyFoodWotDropped.update { it + 1 }
-                        return
+                // Single OnlyFood food-quality decision (PR-U1). [decideKind1] is
+                // self-contained — it re-applies the future-dated / blocklist / blocked /
+                // deleted checks already run above so the SAME filter can later (U2) drive
+                // the drawer feed, which has no enclosing pre-checks. For the home feed
+                // those few boolean reads are redundant but the decision is identical.
+                when (onlyFoodFilter.decideKind1(event)) {
+                    OnlyFoodFilter.Decision.ACCEPT -> {
+                        eventCache[event.id] = event
+                        relayHintStore?.extractHintsFromTags(event)
+                        relayFeedBinaryInsert(event)
                     }
-                    eventCache[event.id] = event
-                    relayHintStore?.extractHintsFromTags(event)
-                    relayFeedBinaryInsert(event)
+                    OnlyFoodFilter.Decision.WOT_FILTERED -> _onlyFoodWotDropped.update { it + 1 }
+                    else -> { /* dropped: future / blocked / muted / thread / deleted / structural / reply */ }
                 }
             }
             Nip88.KIND_POLL -> {
@@ -1539,28 +1542,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         }
     }
 
-    // -- OnlyFood spam-defense helpers (used only by addHashtagFeedEvent) --
+    // -- OnlyFood spam-defense helpers (used by addHashtagFeedEvent's poll/repost branches) --
 
-    /** Count inline #hashtags in note content, mirroring the web's countContentHashtags. */
-    private fun countContentHashtags(content: String): Int =
-        CONTENT_HASHTAG_REGEX.findAll(content).count()
-
-    /** Mirror the web client's structural caps: hellthread p-tags and hashtag spam. */
-    private fun isStructuralSpam(event: NostrEvent): Boolean {
-        var pCount = 0
-        var tCount = 0
-        for (tag in event.tags) {
-            if (tag.isEmpty()) continue
-            when (tag[0]) {
-                "p" -> pCount++
-                "t" -> tCount++
-            }
-        }
-        // Mirror the web's getHashtagCount = max(inline content #tags, t-tags), so
-        // inline-hashtag spam is caught even when the author omits #t tags.
-        val hashtagCount = maxOf(countContentHashtags(event.content), tCount)
-        return pCount >= HELLTHREAD_P_LIMIT || hashtagCount > MAX_HASHTAGS
-    }
+    /**
+     * Structural-spam cap — now owned by [OnlyFoodFilter] (single source of truth, PR-U1).
+     * Kept as a thin alias so the poll/repost branches keep their existing call sites; the
+     * kind-1 branch goes through [onlyFoodFilter].decideKind1 directly.
+     */
+    private fun isStructuralSpam(event: NostrEvent): Boolean = OnlyFoodFilter.isStructuralSpam(event)
 
     /**
      * OnlyFood web-of-trust gate. Drops authors outside the trust set
