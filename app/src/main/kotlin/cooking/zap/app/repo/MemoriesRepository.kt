@@ -105,16 +105,20 @@ internal fun isReplyNote(event: NostrEvent): Boolean {
 // ─── CACHE GATING (pure) ──────────────────────────────────────────────────
 
 /**
- * Empty results are only cacheable when at least one window received EOSE — an
- * all-timeout empty result means relays never answered, and caching it would
- * suppress memories for the rest of the day. Non-empty results are always
- * cacheable. Mirrors the web's shouldCacheMemories.
+ * A result is durably cacheable only when COMPLETE: EVERY window resolved via
+ * EOSE (each relay set finished delivering for that window). A window that
+ * resolved via TIMEOUT has no evidence the relays finished — its emptiness may be
+ * a transient miss (especially the deep 3-year window, whose notes live on
+ * slower/fewer archive relays), so a PARTIAL result is not cached; it re-fetches
+ * next open and self-heals.
+ *
+ * An EOSE'd window with genuinely zero notes IS cacheable ("nothing that day"); a
+ * TIMEOUT window is not — that's the distinction. Stricter than the web's
+ * any-EOSE rule on purpose: caching a partial (1-year had notes, 3-year timed
+ * out) froze the 3-year window empty even though those notes exist.
  */
-internal fun shouldCacheMemories(groups: List<MemoryGroup>): Boolean {
-    val hasEvents = groups.any { it.events.isNotEmpty() }
-    val sawEose = groups.any { it.resolvedVia == MemoryResolved.EOSE }
-    return hasEvents || sawEose
-}
+internal fun shouldCacheMemories(groups: List<MemoryGroup>): Boolean =
+    groups.isNotEmpty() && groups.all { it.resolvedVia == MemoryResolved.EOSE }
 
 /** Local-time YYYY-MM-DD key for [now]. */
 internal fun localDateKey(now: Calendar): String {
@@ -164,7 +168,7 @@ class MemoriesRepository(
      * trouble. Excludes replies and empty-content notes; sorts ascending by
      * created_at (oldest first), matching the web.
      */
-    private suspend fun fetchWindow(pubkey: String, window: MemoryWindow): MemoryGroup = coroutineScope {
+    private suspend fun fetchWindow(pubkey: String, window: MemoryWindow, eoseTimeoutMs: Long): MemoryGroup = coroutineScope {
         val subId = "memories-${window.yearsAgo}-${subSeq.incrementAndGet()}"
         val collected = LinkedHashMap<String, NostrEvent>()
 
@@ -205,7 +209,7 @@ class MemoriesRepository(
                 val eoseReady = CompletableDeferred<Unit>()
                 val eoseAwaiter = async {
                     var count = 0
-                    withTimeoutOrNull(EOSE_TIMEOUT_MS) {
+                    withTimeoutOrNull(eoseTimeoutMs) {
                         relayPool.eoseSignals
                             .onSubscription { eoseReady.complete(Unit) }
                             .filter { it == subId }
@@ -271,7 +275,13 @@ class MemoriesRepository(
         // the LRU-eviction window this fix closes. Pin here; unpin after all settle.
         relays.forEach { relayPool.pinEphemeral(it) }
         try {
-            getMemoryWindows(now).map { window -> async { fetchWindow(pubkey, window) } }.awaitAll()
+            getMemoryWindows(now).map { window ->
+                // Deeper windows get more EOSE budget: their notes live on slower/fewer
+                // archive relays (nostr.wine/primal) that take longer to dig out cold
+                // events, so the 3-year window isn't torn down before it can deliver.
+                val eoseTimeoutMs = EOSE_TIMEOUT_MS + (window.yearsAgo - 1) * EOSE_TIMEOUT_PER_YEAR_MS
+                async { fetchWindow(pubkey, window, eoseTimeoutMs) }
+            }.awaitAll()
         } finally {
             relays.forEach { relayPool.unpinEphemeral(it) }
         }
@@ -282,17 +292,22 @@ class MemoriesRepository(
     private fun prefs(pubkey: String) =
         context.getSharedPreferences("wisp_memories_$pubkey", Context.MODE_PRIVATE)
 
-    private fun groupsKey(dateKey: String) = "groups_$dateKey"
+    private fun groupsKey(dateKey: String) = "groups_${CACHE_VERSION}_$dateKey"
 
     private fun readCache(pubkey: String, now: Calendar): List<MemoryGroup>? {
         val raw = prefs(pubkey).getString(groupsKey(localDateKey(now)), null) ?: return null
-        return try {
+        val groups = try {
             json.decodeFromString<List<StoredMemoryGroup>>(raw).map {
                 MemoryGroup(it.yearsAgo, it.dateSec, it.events, it.resolvedVia)
             }
         } catch (_: Exception) {
-            null
+            return null
         }
+        // Treat a cached PARTIAL (any TIMEOUT/incomplete window) as a MISS so it
+        // re-fetches and self-heals — only all-EOSE results are written by the
+        // current code, but this also abandons any pre-fix poisoned partial.
+        if (groups.any { it.resolvedVia != MemoryResolved.EOSE }) return null
+        return groups
     }
 
     /** Write today's groups and prune any prior-day group entries. */
@@ -312,9 +327,12 @@ class MemoriesRepository(
     }
 
     /**
-     * Today's cached memories if present, otherwise fetch from relays and cache
-     * the result. Empty results are cached too (so relays aren't re-queried all
-     * day) — but only when at least one window received EOSE.
+     * Today's cached memories if present AND complete, otherwise fetch from relays
+     * and cache only a COMPLETE result (every window EOSE'd — see
+     * [shouldCacheMemories]). A cached partial reads as a miss ([readCache]) so a
+     * transient single-window timeout self-heals on the next open instead of
+     * freezing that window empty for the rest of the day. The fetched groups are
+     * returned regardless of caching, so the user still sees whatever arrived.
      */
     suspend fun getMemoriesCached(pubkey: String, now: Calendar = Calendar.getInstance()): List<MemoryGroup> {
         readCache(pubkey, now)?.let { cached ->
@@ -390,9 +408,13 @@ class MemoriesRepository(
         private const val WINDOW_LIMIT = 50
         /** Budget to bring an ephemeral archive relay's socket up before the REQ. */
         private const val CONNECT_TIMEOUT_MS = 8_000L
-        /** Budget to await EOSE, measured only AFTER connect (separate from connect). */
+        /** Base EOSE budget for the shallowest (1-year) window, measured AFTER connect. */
         private const val EOSE_TIMEOUT_MS = 10_000L
-        /** Straggler window after EOSE/timeout before teardown (archive relays drip late). */
+        /** Extra EOSE budget per year of depth — the 3-year window gets +2×this. */
+        private const val EOSE_TIMEOUT_PER_YEAR_MS = 2_000L
+        /** Straggler window after a real EOSE before teardown (archive relays drip late). */
         private const val EOSE_GRACE_MS = 4_000L
+        /** Cache schema version — bump to abandon old (e.g. pre-fix poisoned) caches. */
+        private const val CACHE_VERSION = "v2"
     }
 }

@@ -143,17 +143,24 @@ class MemoriesRepositoryTest {
         MemoryGroup(yearsAgo, 0L, if (withEvent) listOf(ev(emptyList())) else emptyList(), resolvedVia)
 
     @Test
-    fun cache_doesNotCacheAllTimeoutEmpty() {
+    fun cache_cachesOnlyWhenEveryWindowEosed() {
+        // All windows EOSE'd (even empty ones) → complete → cacheable ("nothing that day").
+        assertTrue(shouldCacheMemories(listOf(group(MemoryResolved.EOSE), group(MemoryResolved.EOSE), group(MemoryResolved.EOSE))))
+        assertTrue(shouldCacheMemories(listOf(group(MemoryResolved.EOSE, withEvent = true), group(MemoryResolved.EOSE))))
+    }
+
+    @Test
+    fun cache_doesNotCacheAnyTimeoutWindow() {
+        // Any TIMEOUT window = incomplete → NOT cacheable, so a transient miss re-fetches.
         assertFalse(shouldCacheMemories(listOf(group(MemoryResolved.TIMEOUT), group(MemoryResolved.TIMEOUT), group(MemoryResolved.TIMEOUT))))
+        // The frozen-3-year case: 1-year had notes + EOSE, 3-year timed out → not cached.
+        assertFalse(shouldCacheMemories(listOf(group(MemoryResolved.EOSE, withEvent = true), group(MemoryResolved.EOSE), group(MemoryResolved.TIMEOUT))))
+        // A TIMEOUT window with events is still incomplete → not durably cached.
+        assertFalse(shouldCacheMemories(listOf(group(MemoryResolved.TIMEOUT, withEvent = true), group(MemoryResolved.EOSE))))
     }
 
     @Test
-    fun cache_cachesEmptyWhenAnyWindowSawEose() {
-        assertTrue(shouldCacheMemories(listOf(group(MemoryResolved.EOSE), group(MemoryResolved.TIMEOUT), group(MemoryResolved.TIMEOUT))))
-    }
-
-    @Test
-    fun cache_cachesNonEmptyEvenIfAllTimedOut() {
-        assertTrue(shouldCacheMemories(listOf(group(MemoryResolved.TIMEOUT, withEvent = true), group(MemoryResolved.TIMEOUT))))
+    fun cache_doesNotCacheEmptyGroupList() {
+        assertFalse(shouldCacheMemories(emptyList()))
     }
 }
