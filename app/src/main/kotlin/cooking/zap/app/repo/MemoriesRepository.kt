@@ -10,7 +10,7 @@ import cooking.zap.app.relay.SubscriptionManager
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -180,8 +180,25 @@ class MemoriesRepository(
                 }
         }
 
+        val relays = memoryRelays()
+        // Pin for the whole fetch so the LRU cap can't evict an ephemeral archive
+        // relay (damus/nostr.wine/primal — where the user's OLD notes live)
+        // mid-handshake or mid-delivery. Mirrors OnlyFood's pinEphemeral.
+        relays.forEach { relayPool.pinEphemeral(it) }
         val resolvedVia = try {
             ready.await()
+            // CONNECT FIRST. sendToRelayOrEphemeral returns true on SEND, not on
+            // CONNECT — counting still-handshaking relays in `sent` makes
+            // awaitEoseCount wait on EOSEs that never come, so the timeout elapses
+            // and the finally tears down before slow archive relays deliver. Gate
+            // the REQ on an actually-connected socket (connect budget is separate
+            // from the EOSE budget), then send only to those. Connect in parallel.
+            val connected = relays
+                .map { url -> async { url to relayPool.awaitRelayConnected(url, CONNECT_TIMEOUT_MS) } }
+                .awaitAll()
+                .filter { it.second }
+                .map { it.first }
+
             val filter = Filter(
                 kinds = listOf(1),
                 authors = listOf(pubkey),
@@ -191,13 +208,18 @@ class MemoriesRepository(
             )
             val req = ClientMessage.req(subId, filter)
             var sent = 0
-            for (url in memoryRelays()) {
+            for (url in connected) {
                 if (relayPool.sendToRelayOrEphemeral(url, req)) sent++
             }
             if (sent == 0) {
                 MemoryResolved.TIMEOUT
             } else {
-                val eoseCount = subManager.awaitEoseCount(subId, expectedCount = sent, timeoutMs = WINDOW_TIMEOUT_MS)
+                // Wait for EOSE from the connected relays, then keep collecting for a
+                // straggler grace before teardown (archive relays drip old notes in
+                // after EOSE). Don't tear down strictly when a hand-counted total is
+                // hit — give them realistic time, mirroring OnlyFood's post-EOSE grace.
+                val eoseCount = subManager.awaitEoseCount(subId, expectedCount = sent, timeoutMs = EOSE_TIMEOUT_MS)
+                delay(EOSE_GRACE_MS)
                 if (eoseCount > 0) MemoryResolved.EOSE else MemoryResolved.TIMEOUT
             }
         } catch (_: Exception) {
@@ -205,6 +227,7 @@ class MemoriesRepository(
         } finally {
             collector.cancel()
             relayPool.closeOnAllRelays(subId)
+            relays.forEach { relayPool.unpinEphemeral(it) }
         }
 
         val events = collected.values
@@ -334,6 +357,11 @@ class MemoriesRepository(
             "wss://relay.primal.net",
         )
         private const val WINDOW_LIMIT = 50
-        private const val WINDOW_TIMEOUT_MS = 10_000L
+        /** Budget to bring an ephemeral archive relay's socket up before the REQ. */
+        private const val CONNECT_TIMEOUT_MS = 8_000L
+        /** Budget to await EOSE, measured only AFTER connect (separate from connect). */
+        private const val EOSE_TIMEOUT_MS = 10_000L
+        /** Straggler window after EOSE/timeout before teardown (archive relays drip late). */
+        private const val EOSE_GRACE_MS = 4_000L
     }
 }
