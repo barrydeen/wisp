@@ -290,6 +290,13 @@ fun NavController.openArticleOrRecipe(
 }
 
 /**
+ * Returns true when the given pubkey's profile has a non-blank lightning address (lud16).
+ * Falls back to true so the ZapDialog opens and shows the error naturally.
+ */
+private fun zapRecipientHasLud16(vm: cooking.zap.app.viewmodel.FeedViewModel, pubkey: String): Boolean =
+    vm.profileRepo.get(pubkey)?.lud16?.isNotBlank() ?: true
+
+/**
  * Map a decoded NIP-19 entity to a navigation route, or null if there is no
  * route for it (e.g. an addressable event whose kind we don't render).
  */
@@ -1592,7 +1599,11 @@ fun WispNavHost(
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
-                    canPrivateZap = feedViewModel.hasLocalKeypair && userHasDmRelays && recipientHasDmRelays
+                    zapPrefsRepo = feedViewModel.zapPrefs,
+                    canPrivateZap = feedViewModel.hasLocalKeypair && userHasDmRelays && recipientHasDmRelays,
+                    recipientPubkey = searchZapTarget?.pubkey,
+                    recipientHasLud16 = searchZapTarget?.pubkey?.let { zapRecipientHasLud16(feedViewModel, it) } ?: true,
+                    profileLookup = { feedViewModel.profileRepo.get(it) }
                 )
             }
             SearchScreen(
@@ -1634,6 +1645,15 @@ fun WispNavHost(
                 },
                 onZap = { event ->
                     searchZapTarget = event
+                },
+                onZapInstant = { event ->
+                    if (feedViewModel.interfacePrefs.isQuickZapEnabled()) {
+                        val sats = feedViewModel.interfacePrefs.getQuickZapAmountSats()
+                        val msg = feedViewModel.interfacePrefs.getQuickZapMessage()
+                        feedViewModel.sendZap(event, sats * 1000L, msg, false, false)
+                    } else {
+                        searchZapTarget = event
+                    }
                 },
                 zapInProgress = searchZapInProgress,
                 zapAnimatingIds = searchZapAnimatingIds,
@@ -1971,8 +1991,12 @@ fun WispNavHost(
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
+                    zapPrefsRepo = feedViewModel.zapPrefs,
                     canPrivateZap = feedViewModel.hasLocalKeypair && feedViewModel.relayPool.hasDmRelays() && recipientHasDmRelays,
-                    initialSatsHint = groupRoomZapInitialSats
+                    initialSatsHint = groupRoomZapInitialSats,
+                    recipientPubkey = groupRoomZapTarget?.pubkey,
+                    recipientHasLud16 = groupRoomZapTarget?.pubkey?.let { zapRecipientHasLud16(feedViewModel, it) } ?: true,
+                    profileLookup = { feedViewModel.profileRepo.get(it) }
                 )
             }
             val groupRoomMediaLauncher = rememberLauncherForActivityResult(
@@ -2320,8 +2344,12 @@ fun WispNavHost(
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
+                    zapPrefsRepo = feedViewModel.zapPrefs,
                     canPrivateZap = feedViewModel.hasLocalKeypair && threadUserHasDmRelays && threadRecipientHasDmRelays,
-                    forcePrivate = threadZapTarget?.id?.let { feedViewModel.eventRepo.isPrivate(it) } == true
+                    forcePrivate = threadZapTarget?.id?.let { feedViewModel.eventRepo.isPrivate(it) } == true,
+                    recipientPubkey = threadZapTarget?.pubkey,
+                    recipientHasLud16 = threadZapTarget?.pubkey?.let { zapRecipientHasLud16(feedViewModel, it) } ?: true,
+                    profileLookup = { feedViewModel.profileRepo.get(it) }
                 )
             }
             val threadSetListedIds by feedViewModel.bookmarkSetRepo.allListedEventIds.collectAsState()
@@ -2372,6 +2400,15 @@ fun WispNavHost(
                     feedViewModel.blockUser(pubkey)
                 },
                 onZap = { event -> threadZapTarget = event },
+                onZapInstant = { event ->
+                    if (feedViewModel.interfacePrefs.isQuickZapEnabled()) {
+                        val sats = feedViewModel.interfacePrefs.getQuickZapAmountSats()
+                        val msg = feedViewModel.interfacePrefs.getQuickZapMessage()
+                        feedViewModel.sendZap(event, sats * 1000L, msg, false, false)
+                    } else {
+                        threadZapTarget = event
+                    }
+                },
                 zapAnimatingIds = threadZapAnimatingIds,
                 zapInProgressIds = threadZapInProgress,
                 listedIds = threadListedIds,
@@ -2491,7 +2528,11 @@ fun WispNavHost(
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
-                    canPrivateZap = feedViewModel.hasLocalKeypair && hashtagUserHasDmRelays && hashtagRecipientHasDmRelays
+                    zapPrefsRepo = feedViewModel.zapPrefs,
+                    canPrivateZap = feedViewModel.hasLocalKeypair && hashtagUserHasDmRelays && hashtagRecipientHasDmRelays,
+                    recipientPubkey = hashtagZapTarget?.pubkey,
+                    recipientHasLud16 = hashtagZapTarget?.pubkey?.let { zapRecipientHasLud16(feedViewModel, it) } ?: true,
+                    profileLookup = { feedViewModel.profileRepo.get(it) }
                 )
             }
 
@@ -2512,6 +2553,15 @@ fun WispNavHost(
                         navController.navigate(Routes.COMPOSE)
                     },
                     onZap = { event -> hashtagZapTarget = event },
+                    onZapInstant = { event ->
+                        if (feedViewModel.interfacePrefs.isQuickZapEnabled()) {
+                            val sats = feedViewModel.interfacePrefs.getQuickZapAmountSats()
+                            val msg = feedViewModel.interfacePrefs.getQuickZapMessage()
+                            feedViewModel.sendZap(event, sats * 1000L, msg, false, false)
+                        } else {
+                            hashtagZapTarget = event
+                        }
+                    },
                     onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                     onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                     onAddToList = { eventId -> addToListEventId = eventId },
@@ -2643,7 +2693,11 @@ fun WispNavHost(
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
-                    canPrivateZap = feedViewModel.hasLocalKeypair && setFeedUserHasDmRelays && setFeedRecipientHasDmRelays
+                    zapPrefsRepo = feedViewModel.zapPrefs,
+                    canPrivateZap = feedViewModel.hasLocalKeypair && setFeedUserHasDmRelays && setFeedRecipientHasDmRelays,
+                    recipientPubkey = setFeedZapTarget?.pubkey,
+                    recipientHasLud16 = setFeedZapTarget?.pubkey?.let { zapRecipientHasLud16(feedViewModel, it) } ?: true,
+                    profileLookup = { feedViewModel.profileRepo.get(it) }
                 )
             }
 
@@ -2664,6 +2718,15 @@ fun WispNavHost(
                         navController.navigate(Routes.COMPOSE)
                     },
                     onZap = { event -> setFeedZapTarget = event },
+                    onZapInstant = { event ->
+                        if (feedViewModel.interfacePrefs.isQuickZapEnabled()) {
+                            val sats = feedViewModel.interfacePrefs.getQuickZapAmountSats()
+                            val msg = feedViewModel.interfacePrefs.getQuickZapMessage()
+                            feedViewModel.sendZap(event, sats * 1000L, msg, false, false)
+                        } else {
+                            setFeedZapTarget = event
+                        }
+                    },
                     onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                     onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                     onAddToList = { eventId -> addToListEventId = eventId },
@@ -2808,7 +2871,11 @@ fun WispNavHost(
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
-                    canPrivateZap = feedViewModel.hasLocalKeypair && articleUserHasDmRelays && articleRecipientHasDmRelays
+                    zapPrefsRepo = feedViewModel.zapPrefs,
+                    canPrivateZap = feedViewModel.hasLocalKeypair && articleUserHasDmRelays && articleRecipientHasDmRelays,
+                    recipientPubkey = articleZapTarget?.pubkey,
+                    recipientHasLud16 = articleZapTarget?.pubkey?.let { zapRecipientHasLud16(feedViewModel, it) } ?: true,
+                    profileLookup = { feedViewModel.profileRepo.get(it) }
                 )
             }
 
@@ -2829,6 +2896,15 @@ fun WispNavHost(
                         navController.navigate(Routes.COMPOSE)
                     },
                     onZap = { event -> articleZapTarget = event },
+                    onZapInstant = { event ->
+                        if (feedViewModel.interfacePrefs.isQuickZapEnabled()) {
+                            val sats = feedViewModel.interfacePrefs.getQuickZapAmountSats()
+                            val msg = feedViewModel.interfacePrefs.getQuickZapMessage()
+                            feedViewModel.sendZap(event, sats * 1000L, msg, false, false)
+                        } else {
+                            articleZapTarget = event
+                        }
+                    },
                     onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                     onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                     onAddToList = { eventId -> addToListEventId = eventId },
@@ -2890,6 +2966,15 @@ fun WispNavHost(
                     navController.navigate(Routes.COMPOSE)
                 },
                 onZap = { event -> articleZapTarget = event },
+                onZapInstant = { event ->
+                    if (feedViewModel.interfacePrefs.isQuickZapEnabled()) {
+                        val sats = feedViewModel.interfacePrefs.getQuickZapAmountSats()
+                        val msg = feedViewModel.interfacePrefs.getQuickZapMessage()
+                        feedViewModel.sendZap(event, sats * 1000L, msg, false, false)
+                    } else {
+                        articleZapTarget = event
+                    }
+                },
                 onAddToList = { eventId -> addToListEventId = eventId },
                 noteActions = articleNoteActions,
                 zapAnimatingIds = articleZapAnimatingIds,
@@ -2996,7 +3081,11 @@ fun WispNavHost(
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
-                    canPrivateZap = feedViewModel.hasLocalKeypair && recipeUserHasDmRelays && recipeRecipientHasDmRelays
+                    zapPrefsRepo = feedViewModel.zapPrefs,
+                    canPrivateZap = feedViewModel.hasLocalKeypair && recipeUserHasDmRelays && recipeRecipientHasDmRelays,
+                    recipientPubkey = recipeZapTarget?.pubkey,
+                    recipientHasLud16 = recipeZapTarget?.pubkey?.let { zapRecipientHasLud16(feedViewModel, it) } ?: true,
+                    profileLookup = { feedViewModel.profileRepo.get(it) }
                 )
             }
 
@@ -3049,6 +3138,15 @@ fun WispNavHost(
                     navController.navigate(Routes.COMPOSE)
                 },
                 onZap = { event -> recipeZapTarget = event },
+                onZapInstant = { event ->
+                    if (feedViewModel.interfacePrefs.isQuickZapEnabled()) {
+                        val sats = feedViewModel.interfacePrefs.getQuickZapAmountSats()
+                        val msg = feedViewModel.interfacePrefs.getQuickZapMessage()
+                        feedViewModel.sendZap(event, sats * 1000L, msg, false, false)
+                    } else {
+                        recipeZapTarget = event
+                    }
+                },
                 // A14: recipe bookmarks go to the canonical kind-30001 list by
                 // coordinate (web-interop), not the generic note-bookmark dialog.
                 onAddToList = { eventId -> feedViewModel.toggleRecipeBookmark(eventId) },
@@ -3396,7 +3494,11 @@ fun WispNavHost(
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
-                    canPrivateZap = feedViewModel.hasLocalKeypair && onlyFoodUserHasDmRelays && onlyFoodRecipientHasDmRelays
+                    zapPrefsRepo = feedViewModel.zapPrefs,
+                    canPrivateZap = feedViewModel.hasLocalKeypair && onlyFoodUserHasDmRelays && onlyFoodRecipientHasDmRelays,
+                    recipientPubkey = onlyFoodZapTarget?.pubkey,
+                    recipientHasLud16 = onlyFoodZapTarget?.pubkey?.let { zapRecipientHasLud16(feedViewModel, it) } ?: true,
+                    profileLookup = { feedViewModel.profileRepo.get(it) }
                 )
             }
 
@@ -3417,6 +3519,15 @@ fun WispNavHost(
                         navController.navigate(Routes.COMPOSE)
                     },
                     onZap = { event -> onlyFoodZapTarget = event },
+                    onZapInstant = { event ->
+                        if (feedViewModel.interfacePrefs.isQuickZapEnabled()) {
+                            val sats = feedViewModel.interfacePrefs.getQuickZapAmountSats()
+                            val msg = feedViewModel.interfacePrefs.getQuickZapMessage()
+                            feedViewModel.sendZap(event, sats * 1000L, msg, false, false)
+                        } else {
+                            onlyFoodZapTarget = event
+                        }
+                    },
                     onProfileClick = { pubkey -> navController.navigate("profile/$pubkey") },
                     onNoteClick = { eventId -> navController.navigate("thread/$eventId") },
                     onAddToList = { eventId -> addToListEventId = eventId },
@@ -3539,10 +3650,14 @@ fun WispNavHost(
                             eventATag = aTag)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
+                    zapPrefsRepo = feedViewModel.zapPrefs,
                     // DIP-03 needs a concrete note id for the ephemeral key
                     // derivation; live-stream zaps target an addressable event
                     // (a-tag) instead, so private zaps don't apply here.
-                    canPrivateZap = false
+                    canPrivateZap = false,
+                    recipientPubkey = liveZapRecipientOverride ?: liveZapTarget?.pubkey,
+                    recipientHasLud16 = (liveZapRecipientOverride ?: liveZapTarget?.pubkey)?.let { zapRecipientHasLud16(feedViewModel, it) } ?: true,
+                    profileLookup = { feedViewModel.profileRepo.get(it) }
                 )
             }
             val streamActivityEventId = remember(hostPubkey, dTag) {
@@ -4178,8 +4293,12 @@ fun WispNavHost(
                         feedViewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
                     },
                     onGoToWallet = { navController.navigate(Routes.WALLET) },
+                    zapPrefsRepo = feedViewModel.zapPrefs,
                     canPrivateZap = feedViewModel.hasLocalKeypair && notifUserHasDmRelays && notifRecipientHasDmRelays,
-                    forcePrivate = notifZapTarget?.id?.let { feedViewModel.eventRepo.isPrivate(it) } == true
+                    forcePrivate = notifZapTarget?.id?.let { feedViewModel.eventRepo.isPrivate(it) } == true,
+                    recipientPubkey = notifZapTarget?.pubkey,
+                    recipientHasLud16 = notifZapTarget?.pubkey?.let { zapRecipientHasLud16(feedViewModel, it) } ?: true,
+                    profileLookup = { feedViewModel.profileRepo.get(it) }
                 )
             }
 
@@ -4197,7 +4316,11 @@ fun WispNavHost(
                             rumorId = target.rumorId.ifEmpty { null }
                         )
                     },
-                    onGoToWallet = { navController.navigate(Routes.WALLET) }
+                    onGoToWallet = { navController.navigate(Routes.WALLET) },
+                    zapPrefsRepo = feedViewModel.zapPrefs,
+                    recipientPubkey = notifDmZapTarget?.senderPubkey,
+                    recipientHasLud16 = notifDmZapTarget?.senderPubkey?.let { zapRecipientHasLud16(feedViewModel, it) } ?: true,
+                    profileLookup = { feedViewModel.profileRepo.get(it) }
                 )
             }
 
@@ -4298,6 +4421,15 @@ fun WispNavHost(
                     navController.navigate(Routes.COMPOSE)
                 },
                 onZap = { event -> notifZapTarget = event },
+                onZapInstant = { event ->
+                    if (feedViewModel.interfacePrefs.isQuickZapEnabled()) {
+                        val sats = feedViewModel.interfacePrefs.getQuickZapAmountSats()
+                        val msg = feedViewModel.interfacePrefs.getQuickZapMessage()
+                        feedViewModel.sendZap(event, sats * 1000L, msg, false, false)
+                    } else {
+                        notifZapTarget = event
+                    }
+                },
                 onFollowToggle = { pubkey -> feedViewModel.toggleFollow(pubkey) },
                 onBlockUser = { pubkey -> feedViewModel.blockUser(pubkey) },
                 onMuteThread = { rootEventId -> feedViewModel.muteThread(rootEventId) },

@@ -129,6 +129,7 @@ fun PostCard(
     hasUserReposted: Boolean = false,
     repostCount: Int = 0,
     onZap: () -> Unit = {},
+    onZapLongPress: (() -> Unit)? = null,
     onZapDisabledTap: () -> Unit = {},
     zapEnabled: Boolean = true,
     hasUserZapped: Boolean = false,
@@ -822,6 +823,7 @@ fun PostCard(
                     hasUserReposted = hasUserReposted,
                     repostCount = repostCount,
                     onZap = onZap,
+                    onZapLongPress = onZapLongPress ?: noteActions?.onZapInstant?.let { h -> { h(event) } },
                     hasUserZapped = hasUserZapped,
                     onAddToList = onAddToList,
                     isInList = isInList,
@@ -835,7 +837,7 @@ fun PostCard(
                     unicodeEmojis = unicodeEmojis,
                     onOpenEmojiLibrary = onOpenEmojiLibrary,
                     isPrivate = isPrivate,
-                    zapEnabled = zapEnabled,
+                    zapEnabled = zapEnabled && !isOwnEvent,
                     onZapDisabledTap = onZapDisabledTap,
                     modifier = Modifier.weight(1f)
                 )

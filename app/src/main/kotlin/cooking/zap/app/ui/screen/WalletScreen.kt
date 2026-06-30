@@ -2278,7 +2278,7 @@ private fun ReceiveAmountContent(
                         textStyle = amountTextStyle,
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(
-                            keyboardType = if (fiatMode) KeyboardType.Decimal else KeyboardType.NumberPassword
+                            keyboardType = if (fiatMode) KeyboardType.Decimal else KeyboardType.Number
                         ),
                         cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                         modifier = Modifier.weight(1f),
@@ -2396,7 +2396,7 @@ private fun ReceiveAmountContent(
                                 onValueChange = { customHours = it.filter { c -> c.isDigit() }.take(4) },
                                 textStyle = hoursStyle,
                                 singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                                 modifier = Modifier.fillMaxWidth(),
                                 decorationBox = { inner ->
@@ -2589,7 +2589,7 @@ private fun ReceiveBitcoinBlock(
             ) {
                 CircularProgressIndicator()
                 Spacer(Modifier.height(12.dp))
-                Text("Generating address…", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.wallet_onchain_generating), style = MaterialTheme.typography.bodyMedium)
             }
         }
         error != null -> {
@@ -2599,7 +2599,7 @@ private fun ReceiveBitcoinBlock(
             ) {
                 Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(16.dp))
-                OutlinedButton(onClick = onRetry) { Text("Try again") }
+                OutlinedButton(onClick = onRetry) { Text(stringResource(R.string.wallet_onchain_try_again)) }
             }
         }
         address != null -> {
@@ -2660,7 +2660,7 @@ private fun ReceiveBitcoinBlock(
                     ) {
                         Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Copy address", fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.cd_copy_address), fontWeight = FontWeight.Medium)
                     }
                 }
 
@@ -3323,7 +3323,7 @@ private fun TxDetailRow(
             Spacer(Modifier.width(6.dp))
             Icon(
                 Icons.Default.ContentCopy,
-                contentDescription = stringResource(R.string.wallet_paste),
+                contentDescription = stringResource(R.string.action_copy),
                 tint = WispThemeColors.zapColor,
                 modifier = Modifier
                     .size(18.dp)
@@ -5594,7 +5594,7 @@ private fun OnchainSendAmountContent(
                 onValueChange = { input -> onAmountChange(input.filter { it.isDigit() }) },
                 textStyle = amountStyle,
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                 modifier = Modifier.fillMaxWidth(),
                 decorationBox = { inner ->
@@ -5840,7 +5840,7 @@ private fun OnchainSendResultContent(
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            if (success) "Payment Sent" else "Payment Failed",
+            stringResource(if (success) R.string.wallet_onchain_payment_sent else R.string.wallet_onchain_payment_failed),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -5857,12 +5857,12 @@ private fun OnchainSendResultContent(
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://mempool.space/tx/$paymentId"))
                 context.startActivity(intent)
             }) {
-                Text("View on mempool.space")
+                Text(stringResource(R.string.wallet_onchain_view_mempool))
             }
         }
         Spacer(Modifier.height(24.dp))
         FilledTonalButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) {
-            Text("Done")
+            Text(stringResource(R.string.btn_done))
         }
     }
 }

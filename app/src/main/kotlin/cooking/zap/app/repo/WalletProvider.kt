@@ -36,7 +36,7 @@ data class WalletTransaction(
     val settledAt: Long?,
     /** Pubkey of the counterparty (recipient for outgoing, sender for incoming zaps). */
     val counterpartyPubkey: String? = null,
-    /** True while the payment is unconfirmed/unsettled (e.g. a 0-conf on-chain deposit). */
+    /** True while the payment is unconfirmed/unsettled (e.g. an in-flight Lightning payment). */
     val pending: Boolean = false,
     /** True for on-chain Bitcoin deposits/withdrawals (vs Lightning). */
     val isOnchain: Boolean = false

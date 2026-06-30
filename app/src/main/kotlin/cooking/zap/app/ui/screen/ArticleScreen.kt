@@ -79,6 +79,7 @@ fun ArticleScreen(
     onRepost: (NostrEvent) -> Unit = {},
     onQuote: (NostrEvent) -> Unit = {},
     onZap: (NostrEvent) -> Unit = {},
+    onZapInstant: (NostrEvent) -> Unit = {},
     onAddToList: (String) -> Unit = {},
     noteActions: NoteActions? = null,
     zapAnimatingIds: Set<String> = emptySet(),

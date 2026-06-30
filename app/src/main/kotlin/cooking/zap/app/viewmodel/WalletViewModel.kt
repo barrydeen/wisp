@@ -423,9 +423,9 @@ class WalletViewModel(
             }
         }
 
-        // Reload the transaction list when a payment goes pending/settles or a
-        // deposit is claimed, so e.g. an incoming on-chain deposit shows as
-        // pending immediately rather than only after a manual refresh.
+        // Reload the transaction list whenever the provider signals a state change
+        // (payment pending/settled, deposit claimed) so updates appear without a
+        // manual refresh.
         viewModelScope.launch {
             sparkRepo.transactionsChanged.collect { refreshTransactionsQuietly() }
         }
@@ -1258,9 +1258,11 @@ class WalletViewModel(
 
     private fun isBitcoinAddress(s: String): Boolean {
         if (s.length < 26 || s.length > 90) return false
-        // Bech32 (bc1q…) and Bech32m (bc1p…) — segwit/taproot
-        if (s.lowercase().startsWith("bc1")) return true
-        // Legacy (1…) and P2SH (3…)
+        // Bech32 / Bech32m segwit addresses (bc1q… or bc1p…) — enforce valid charset
+        if (s.lowercase().startsWith("bc1")) {
+            return s.matches(Regex("bc1[ac-hj-np-z02-9]{6,87}", RegexOption.IGNORE_CASE))
+        }
+        // Legacy P2PKH (1…) and P2SH (3…)
         if (s.startsWith("1") || s.startsWith("3")) {
             return s.matches(Regex("[13][a-km-zA-HJ-NP-Z1-9]{25,34}"))
         }

@@ -75,6 +75,7 @@ fun RecipeDetailScreen(
     onRepost: (cooking.zap.app.nostr.NostrEvent) -> Unit = {},
     onQuote: (cooking.zap.app.nostr.NostrEvent) -> Unit = {},
     onZap: (cooking.zap.app.nostr.NostrEvent) -> Unit = {},
+    onZapInstant: (cooking.zap.app.nostr.NostrEvent) -> Unit = {},
     onAddToList: (String) -> Unit = {},
     onAddToListLongPress: ((String) -> Unit)? = null,
     zapAnimatingIds: Set<String> = emptySet(),

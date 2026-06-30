@@ -330,8 +330,8 @@ class SparkRepository(
                                 _transactionsChanged.tryEmit(Unit)
                             }
                             is SdkEvent.PaymentPending -> {
-                                // Incoming on-chain deposits land here as a PENDING
-                                // Payment; refresh so they show as pending immediately.
+                                // Some payment types may surface here; refresh so any
+                                // pending state is reflected without a manual reload.
                                 emitStatus("Payment pending")
                                 refreshBalanceInternal()
                                 _transactionsChanged.tryEmit(Unit)
@@ -650,7 +650,9 @@ class SparkRepository(
             val prepareResponse = prepareData as breez_sdk_spark.PrepareSendPaymentResponse
             val options = SendPaymentOptions.BitcoinAddress(confirmationSpeed = speed)
             val sendResponse = instance.sendPayment(SendPaymentRequest(prepareResponse, options))
-            val paymentId = sendResponse.payment.id
+            // Prefer the on-chain txid (correct for mempool links); fall back to payment.id
+            val paymentId = (sendResponse.payment.details as? PaymentDetails.Withdraw)?.txId
+                ?: sendResponse.payment.id
             emitStatus("On-chain payment sent")
             refreshBalanceInternal()
             Result.success(paymentId)

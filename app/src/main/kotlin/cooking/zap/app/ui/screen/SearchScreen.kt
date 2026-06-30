@@ -112,6 +112,7 @@ fun SearchScreen(
     onRepost: (NostrEvent) -> Unit = {},
     onQuote: (NostrEvent) -> Unit = {},
     onZap: (NostrEvent) -> Unit = {},
+    onZapInstant: (NostrEvent) -> Unit = {},
     zapInProgress: Set<String> = emptySet(),
     zapAnimatingIds: Set<String> = emptySet(),
     onToggleFollow: (String) -> Unit = {},

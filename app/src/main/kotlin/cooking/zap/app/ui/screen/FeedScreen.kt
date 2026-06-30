@@ -310,6 +310,15 @@ fun FeedScreen(
             onRepost = onRepost,
             onQuote = onQuote,
             onZap = { event -> zapTargetEvent = event },
+            onZapInstant = { event ->
+                if (viewModel.interfacePrefs.isQuickZapEnabled()) {
+                    val sats = viewModel.interfacePrefs.getQuickZapAmountSats()
+                    val msg = viewModel.interfacePrefs.getQuickZapMessage()
+                    viewModel.sendZap(event, sats * 1000L, msg, false, false)
+                } else {
+                    zapTargetEvent = event
+                }
+            },
             onProfileClick = onProfileClick,
             onNoteClick = { eventId -> onQuotedNoteClick?.invoke(eventId) },
             onAddToList = onAddToList,
