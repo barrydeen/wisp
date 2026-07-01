@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import cooking.zap.app.nostr.ClientMessage
 import cooking.zap.app.nostr.Filter
 import cooking.zap.app.nostr.FoodHashtags
+import cooking.zap.app.nostr.MemoizedFoodContentScorer
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.relay.RelayPool
 import cooking.zap.app.repo.ContactRepository
@@ -139,12 +140,24 @@ class OnlyFoodFeedViewModel : ViewModel() {
     @OptIn(ExperimentalCoroutinesApi::class)
     private val feedDispatcher = Dispatchers.Default.limitedParallelism(1)
 
+    /**
+     * Content-keyword food scorer for keyword-only candidates (the firehose from
+     * [discoverContentOnlyFood]). Bounded-memoized like the web's 1000-entry cache.
+     * Touched ONLY from [accept] on [feedDispatcher] — the same serial confinement
+     * as `seen` — so its non-thread-safe cache can't race.
+     */
+    private val foodContentScorer = MemoizedFoodContentScorer()
+
     // Written once in [init] (Main) then read-only; read on [feedDispatcher] and
     // (activeJob) cancelled from [onCleared] on Main — @Volatile for visibility.
     @Volatile
     private var deps: Deps? = null
     @Volatile
     private var activeJob: Job? = null
+
+    // Guards the one-shot keyword-only firehose ([discoverContentOnlyFood]). Read/written
+    // ONLY on [feedDispatcher], so it needs no synchronization.
+    private var contentDiscoveryStarted = false
 
     private class Deps(
         val relayPool: RelayPool,
@@ -179,6 +192,9 @@ class OnlyFoodFeedViewModel : ViewModel() {
             val st = stateOf(mode)
             if (!st.loaded) submit(mode, st, Load.INITIAL, since = null, until = null)
         }
+        // Broaden GLOBAL with keyword-only food notes (no `#t` tag) alongside the
+        // hashtag REQ. GLOBAL-only, one-shot, fire-and-forget — see the method KDoc.
+        discoverContentOnlyFood()
     }
 
     /** Instant cache swap. Queries the target mode only if it's never loaded. */
@@ -248,7 +264,11 @@ class OnlyFoodFeedViewModel : ViewModel() {
                 st.endReached = true
                 return@launch
             }
-            val oldest = st.seen.values.minOfOrNull { it.created_at } ?: return@launch
+            // Cursor over hashtag-reachable events ONLY — keyword-only firehose
+            // candidates (no `#t`) must not perturb it, or a recent-but-older keyword
+            // note would jump `until` past unfetched hashtag history. See
+            // [oldestPageableCreatedAt].
+            val oldest = oldestPageableCreatedAt(st.seen.values) ?: return@launch
             val bounds = pageBoundsBehind(oldest)
             submit(mode, st, Load.PAGE, since = bounds.since, until = bounds.until)
         }
@@ -488,6 +508,75 @@ class OnlyFoodFeedViewModel : ViewModel() {
     }
 
     /**
+     * Broaden GLOBAL's candidate set with keyword-only food notes — notes that read
+     * as food ([foodContentScorer]) but carry NO food `#t` tag, so the hashtag REQ in
+     * [submit] never sees them. Mirrors the web's `fetchNotesWithoutHashtags`
+     * (`FoodstrFeedOptimized.svelte`): a broad kind-1 firehose with **no `#t`**,
+     * floored to a recent window, fanned across the persistent default relays (NOT
+     * the throttle-prone search relay), scored **strictly** client-side before merge.
+     *
+     * **GLOBAL only** and **fire-and-forget by design**: it feeds candidates into
+     * GLOBAL's `seen` through the SAME [ingestEvent] → [accept] choke-point (so mute /
+     * block / structural-spam / WoT / dedup all still apply, and the content scorer is
+     * a strict gate), but it NEVER touches the `loaded` latch, `settled` ordering,
+     * `endReached`, or the paging cursor — those stay owned entirely by [submit]. The
+     * recent-window floor keeps every discovered note recent, so it can't drag
+     * [loadMore]'s oldest-event cursor back into ancient history.
+     */
+    private fun discoverContentOnlyFood() {
+        val d = deps ?: return
+        // Confined: reads the flag + writes GLOBAL's `seen` (both confined state).
+        viewModelScope.launch(feedDispatcher) {
+            if (contentDiscoveryStarted) return@launch
+            contentDiscoveryStarted = true
+            val global = stateOf(Mode.GLOBAL)
+            val since = System.currentTimeMillis() / 1000 - CONTENT_DISCOVERY_WINDOW_SECONDS
+            val base = "onlyfood-disc-${SUB_SEQ.incrementAndGet()}"
+            val filter = Filter(kinds = listOf(1), since = since, limit = CONTENT_DISCOVERY_LIMIT)
+            var collector: Job? = null
+            // Pin so the LRU cap can't evict a discovery relay mid-read; unpinned in finally.
+            for (url in CONTENT_DISCOVERY_RELAYS) d.relayPool.pinEphemeral(url)
+            try {
+                val collectorReady = CompletableDeferred<Unit>()
+                collector = launch {
+                    d.relayPool.relayEvents
+                        .onSubscription { collectorReady.complete(Unit) }
+                        .collect { relayEvent ->
+                            if (!relayEvent.subscriptionId.startsWith(base)) return@collect
+                            val event = relayEvent.event
+                            if (event.kind != 1) return@collect
+                            // Same confined per-event path as the hashtag collector; [accept]
+                            // applies the STRICT content scorer to these untagged candidates.
+                            ingestEvent(
+                                event = event,
+                                seen = global.seen,
+                                accept = { accept(it, d, follows = null) },
+                                onAccepted = {
+                                    d.eventRepo.cacheEvent(it)
+                                    d.eventRepo.requestProfileIfMissing(it.pubkey)
+                                },
+                                signalFlush = { if (_mode.value == Mode.GLOBAL) flushSignal.trySend(Unit) },
+                            )
+                        }
+                }
+                collectorReady.await()
+                // Best-effort supplementary fetch across the already-connected defaults:
+                // queued sends drain on connect and land within the collect window below.
+                var anySent = false
+                for (url in CONTENT_DISCOVERY_RELAYS) {
+                    if (d.relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(base, filter))) anySent = true
+                }
+                // Give the firehose a window to stream, then tear down (no EOSE latch).
+                if (anySent) delay(CONTENT_DISCOVERY_COLLECT_MS)
+            } finally {
+                collector?.cancel()
+                for (url in CONTENT_DISCOVERY_RELAYS) d.relayPool.unpinEphemeral(url)
+                d.relayPool.closeOnAllRelays(base)
+            }
+        }
+    }
+
+    /**
      * Auto-recover: each [RelayPool.connectedCount] change is a cheap "re-check"
      * tick. Re-derive `isRelayConnected(searchRelay)` fresh each time (the search
      * ephemeral is evicted/recreated, so a held per-URL flow would observe a dead
@@ -548,6 +637,13 @@ class OnlyFoodFeedViewModel : ViewModel() {
      */
     private fun accept(event: NostrEvent, d: Deps, follows: Set<String>?): Boolean {
         if (follows != null && event.pubkey !in follows) return false
+        // Inclusion gate: a food HASHTAG (the relay `#t` REQ / cache seed guarantee this,
+        // so [hasFoodTag] short-circuits with no scorer cost) OR the CONTENT reads as food.
+        // The scorer is the STRICT gate on broadened keyword-only firehose candidates
+        // ([discoverContentOnlyFood]), which carry no `#t` tag; it runs alongside — not
+        // instead of — the [OnlyFoodFilter] mute/block/spam/WoT decision below. Confined:
+        // [foodContentScorer]'s cache is only ever touched here, on [feedDispatcher].
+        if (!FoodHashtags.hasFoodTag(event) && !foodContentScorer.matches(event.content)) return false
         return when (d.eventRepo.onlyFoodFilter.decideKind1(event)) {
             OnlyFoodFilter.Decision.ACCEPT -> true
             OnlyFoodFilter.Decision.WOT_FILTERED -> { _wotDropped.update { it + 1 }; false }
@@ -572,6 +668,23 @@ class OnlyFoodFeedViewModel : ViewModel() {
         private const val CONNECT_TIMEOUT_MS = 8_000L
         /** Budget to await EOSE, measured only AFTER the socket is connected. */
         private const val EOSE_TIMEOUT_MS = 8_000L
+
+        /**
+         * Keyword-only firehose ([discoverContentOnlyFood]) source relays: the
+         * persistent default relays (already connected, no ephemeral churn, and —
+         * unlike the search relay — not rate-limit-prone). Mirrors the web's broad
+         * discovery pools without reusing the throttled `search.nostrarchives.com`.
+         */
+        private val CONTENT_DISCOVERY_RELAYS = listOf(
+            "wss://nos.lol", "wss://relay.damus.io", "wss://relay.primal.net",
+        )
+        /** Recent-window floor for the firehose — keeps discovered notes recent so
+         *  they can't drag [loadMore]'s oldest-event paging cursor into the past. */
+        private const val CONTENT_DISCOVERY_WINDOW_SECONDS = 6L * 60 * 60
+        /** Per-relay event cap for the firehose (mirrors the web's discovery limit). */
+        private const val CONTENT_DISCOVERY_LIMIT = 300
+        /** Window to stream the firehose before teardown (no EOSE latch gates it). */
+        private const val CONTENT_DISCOVERY_COLLECT_MS = 8_000L
     }
 }
 
@@ -702,3 +815,28 @@ internal fun pageBoundsBehind(oldestCreatedAt: Long): PageBounds =
  * window. Always evaluated behind a genuine EOSE (a timeout never end-reaches).
  */
 internal fun pageEndReached(receivedNew: Int): Boolean = receivedNew == 0
+
+/**
+ * The oldest event the backward hashtag PAGE can actually reach: the minimum
+ * `created_at` over [seen] events that carry a food hashtag ([FoodHashtags.hasFoodTag]).
+ * This is the ONLY thing [loadMore] may use as its paging cursor.
+ *
+ * Keyword-only firehose candidates ([OnlyFoodFeedViewModel.discoverContentOnlyFood])
+ * carry NO food `#t` tag, so the hashtag `tTags` PAGE REQ can never return them.
+ * Including them in the cursor would let a recent-but-older keyword note push `until`
+ * (= cursor − 1) *below* a chunk of still-unfetched hashtag history — the deep-paging
+ * hole, where those skipped hashtag notes never load.
+ *
+ * Source-tagging is done by the event's INTRINSIC food tag rather than a maintained
+ * "firehose id" set — and that is deliberately stronger. Every food-TAGGED event stays
+ * counted here, *including any the firehose happened to also grab*, so the cursor is the
+ * min over all hashtag-reachable events. A PAGE then queries strictly below the cursor,
+ * so it can never re-receive a firehose-inserted tagged event and undercount `received`
+ * into a premature [pageEndReached]. An id-set that excluded *all* firehose events would
+ * reintroduce exactly that undercount for tagged events the firehose grabbed.
+ *
+ * Returns null when no hashtag-reachable event exists (nothing for the hashtag REQ to
+ * page), so [loadMore] no-ops rather than paging off keyword-only anchors.
+ */
+internal fun oldestPageableCreatedAt(seen: Collection<NostrEvent>): Long? =
+    seen.asSequence().filter { FoodHashtags.hasFoodTag(it) }.minOfOrNull { it.created_at }

@@ -1,5 +1,6 @@
 package cooking.zap.app.viewmodel
 
+import cooking.zap.app.nostr.NostrEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -67,6 +68,54 @@ class OnlyFoodPagingTest {
         // Any new older event (even one) keeps paging alive.
         assertFalse(pageEndReached(1))
         assertFalse(pageEndReached(42))
+    }
+
+    // ---- cursor isolation: keyword-only firehose events must not move `oldest` ----
+
+    /** [createdAt] with an optional food `#t` tag (tagged = hashtag-reachable). */
+    private fun ev(createdAt: Long, foodTag: Boolean) = NostrEvent(
+        id = "e$createdAt-$foodTag",
+        pubkey = "pk",
+        created_at = createdAt,
+        kind = 1,
+        tags = if (foodTag) listOf(listOf("t", "foodstr")) else emptyList(),
+        content = "",
+        sig = "",
+    )
+
+    @Test
+    fun cursor_ignoresOlderKeywordOnlyFirehoseEvent_theDeepPagingHole() {
+        // Hashtag notes bottom out at t=1000. A keyword-only firehose note (no `#t`)
+        // sits OLDER at t=500. The old `min(seen)` cursor would jump `until` to 499,
+        // skipping every hashtag note in (500, 1000] on the next PAGE — the hole.
+        // The fix pins the cursor to the oldest hashtag-reachable note (1000).
+        val seen = listOf(
+            ev(3_000, foodTag = true),
+            ev(1_000, foodTag = true),
+            ev(500, foodTag = false), // keyword-only firehose candidate, older
+        )
+        assertEquals(1_000L, oldestPageableCreatedAt(seen))
+    }
+
+    @Test
+    fun cursor_countsFirehoseGrabbedTaggedEvent_noPrematureEndReach() {
+        // A firehose note that ALSO carries a food tag IS hashtag-reachable, so it must
+        // stay counted (min over ALL tagged events). Because the cursor is then at or
+        // below it, a PAGE queries strictly below and can't re-receive it → no
+        // `received` undercount. An id-set excluding all firehose events would wrongly
+        // drop it and reopen that gap.
+        val seen = listOf(
+            ev(3_000, foodTag = true),
+            ev(800, foodTag = true), // "grabbed by firehose" but tagged → still the floor
+        )
+        assertEquals(800L, oldestPageableCreatedAt(seen))
+    }
+
+    @Test
+    fun cursor_isNullWhenNoHashtagReachableEvent() {
+        // All keyword-only (no `#t`): the hashtag PAGE has nothing to page → no-op.
+        assertNull(oldestPageableCreatedAt(listOf(ev(900, foodTag = false), ev(400, foodTag = false))))
+        assertNull(oldestPageableCreatedAt(emptyList()))
     }
 
     @Test
