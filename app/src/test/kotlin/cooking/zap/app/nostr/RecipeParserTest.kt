@@ -1,6 +1,7 @@
 package cooking.zap.app.nostr
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -187,5 +188,107 @@ class RecipeParserTest {
         assertTrue(c.ingredients.isEmpty())
         assertTrue(c.directions.isEmpty())
         assertNull(c.additionalMarkdown)
+    }
+
+    // ---- Strict content-shape gate (port of validateMarkdownTemplate) -------
+    //
+    // recipes and articles share kind 30023 + can both carry `#t zapcooking`,
+    // so the recipe feed additionally requires the content to be recipe-shaped.
+    // Ground truth cross-checked against the web validator (`src/lib/parser.ts`).
+
+    private fun event(kind: Int, content: String, tTags: List<String>): NostrEvent =
+        NostrEvent(
+            id = "0".repeat(64),
+            pubkey = "1".repeat(64),
+            created_at = 1_700_000_000L,
+            kind = kind,
+            tags = tTags.map { listOf("t", it) },
+            content = content,
+            sig = "2".repeat(128),
+        )
+
+    @Test
+    fun validate_acceptsRealRecipe() {
+        val result = RecipeParser.validateMarkdownTemplate(loadEvent("tuscan_peposo.json").content)
+        assertTrue(result is RecipeParser.TemplateValidation.Valid)
+        val template = (result as RecipeParser.TemplateValidation.Valid).template
+        assertEquals(7, template.ingredients.size)
+        assertEquals(6, template.directions.size)
+        // Lock in that the LAST real line of each section survives. Kotlin's
+        // stdlib `split("\n")` (string delimiter) KEEPS trailing empty strings —
+        // unlike Java's regex `String.split` — so the `slice(1, -1)` middle-slice
+        // drops only the trailing blank line the section regex captures, never the
+        // last ingredient/step. If split dropped trailing empties this would
+        // under-count (6 ingredients) and fail.
+        assertEquals("1 kg beef for stewing (chuck or similar)", template.ingredients.first())
+        assertEquals("Extra virgin olive oil", template.ingredients.last())
+        assertEquals("Rest 10 minutes, adjust salt, serve hot.", template.directions.last())
+    }
+
+    @Test
+    fun validate_singleIngredientRecipe_accepted() {
+        // Web parity (cross-checked): a one-ingredient recipe is ACCEPTed and the
+        // sole ingredient is retained — proves the middle-slice doesn't eat the
+        // only real line when trailing empties are kept.
+        val md = "## Ingredients\n\n- flour\n\n## Directions\n\n1. Bake."
+        val r = RecipeParser.validateMarkdownTemplate(md)
+        assertTrue(r is RecipeParser.TemplateValidation.Valid)
+        assertEquals(listOf("flour"), (r as RecipeParser.TemplateValidation.Valid).template.ingredients)
+    }
+
+    @Test
+    fun isRecipe_rejectsArticleCarryingRecipeTag() {
+        // A plain long-form ARTICLE that happens to carry `#t zapcooking` but has
+        // no recipe-template body MUST NOT be treated as a recipe.
+        val article = event(
+            kind = RecipeParser.RECIPE_KIND,
+            content = "# My Thoughts on Food\n\nA long essay about the #zapcooking community. " +
+                "No ingredients, no directions — just prose.",
+            tTags = listOf("zapcooking"),
+        )
+        assertFalse(RecipeParser.isRecipe(article))
+    }
+
+    @Test
+    fun isRecipe_stillAcceptsRealRecipeEvent() {
+        // The tightened gate must not regress real recipes.
+        assertTrue(RecipeParser.isRecipe(loadEvent("tuscan_peposo.json")))
+    }
+
+    @Test
+    fun validate_rejectsWhenNoSections() {
+        val r = RecipeParser.validateMarkdownTemplate("Just a paragraph with no headings at all.")
+        assertTrue(r is RecipeParser.TemplateValidation.Invalid)
+    }
+
+    @Test
+    fun validate_rejectsHeadingsThatArentRecipeSections() {
+        // Has `## ` sections, but no Ingredients/Directions → too short.
+        val md = "## Introduction\nHello world here.\n\n## Conclusion\nGoodbye world here."
+        assertFalse(RecipeParser.isRecipeContent(md))
+    }
+
+    @Test
+    fun validate_rejectsProseDirections() {
+        // Ingredients present, but Directions is prose, not a numbered list.
+        val md = "## Ingredients\n\n- flour\n- water\n\n## Directions\n\n" +
+            "First you mix things then bake. This is prose not a numbered list."
+        assertFalse(RecipeParser.isRecipeContent(md))
+    }
+
+    @Test
+    fun validate_rejectsNonSequentialDirections() {
+        val md = "## Ingredients\n\n- flour\n\n## Directions\n\n1. Mix.\n3. Bake."
+        assertFalse(RecipeParser.isRecipeContent(md))
+    }
+
+    @Test
+    fun validate_acceptsMinimalRecipe() {
+        // The web's minimum: at least one ingredient and one ordered direction.
+        // Directions is the trailing section so slice(1) keeps every step; the
+        // Ingredients section is followed by Directions, so its last line is the
+        // blank line slice(1, -1) drops — both ingredients survive.
+        val md = "## Ingredients\n\n- flour\n- water\n\n## Directions\n\n1. Mix.\n2. Bake."
+        assertTrue(RecipeParser.isRecipeContent(md))
     }
 }

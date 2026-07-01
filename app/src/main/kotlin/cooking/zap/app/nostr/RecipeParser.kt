@@ -81,9 +81,31 @@ object RecipeParser {
         val content: RecipeContent,
     )
 
-    /** True when [event] is a long-form recipe (right kind + a recipe root tag). */
+    /**
+     * True when [event] is a long-form recipe. A NIP-23 `kind 30023` is a
+     * recipe ONLY IF it carries a recipe root `#t` tag AND its content has the
+     * recipe-template shape ([isRecipeContent]).
+     *
+     * The tag alone is NOT sufficient: recipes and plain long-form articles
+     * share `kind 30023`, and an article that merely carries `#t zapcooking`
+     * would otherwise leak into the recipe feed. The web drops these by running
+     * the editor's save-time guard `validateMarkdownTemplate` on every event;
+     * mirroring that content gate here is what keeps articles out — see
+     * [validateMarkdownTemplate].
+     */
     fun isRecipe(event: NostrEvent): Boolean =
-        event.kind == RECIPE_KIND && tagValues(event, "t").any { it in RECIPE_HASHTAGS }
+        event.kind == RECIPE_KIND &&
+            tagValues(event, "t").any { it in RECIPE_HASHTAGS } &&
+            isRecipeContent(event.content)
+
+    /**
+     * True when [markdown] has the recipe-template structure — i.e.
+     * [validateMarkdownTemplate] accepts it. This is the content-shape half of
+     * [isRecipe] and the single shared gate every recipe-feed path funnels
+     * through (via `RecipeFormats.forEvent` -> `Nip23RecipeFormat.matches`).
+     */
+    fun isRecipeContent(markdown: String): Boolean =
+        validateMarkdownTemplate(markdown) is TemplateValidation.Valid
 
     /** Resolve a recipe event into [Recipe]. Does not validate it is a recipe. */
     fun parse(event: NostrEvent): Recipe {
@@ -204,4 +226,162 @@ object RecipeParser {
      */
     private fun section(name: String): Regex =
         Regex("## ${Regex.escape(name)}\\s*\\n([\\s\\S]*?)(?=\\n## |$)", RegexOption.IGNORE_CASE)
+
+    // ---- Strict recipe-template validation (port of validateMarkdownTemplate) ----
+
+    /**
+     * Result of [validateMarkdownTemplate]: either the parsed [template] when the
+     * markdown has the recipe-template shape, or a human-readable [reason] string
+     * when it does not. Mirrors the web's `MarkdownTemplate | string` return.
+     */
+    sealed interface TemplateValidation {
+        data class Valid(val template: RecipeContent) : TemplateValidation
+        data class Invalid(val reason: String) : TemplateValidation
+    }
+
+    /**
+     * Section splitter for the STRICT validator: `## <letters/space/apostrophe>`,
+     * a newline, then one-or-more non-`#` characters, scanned globally. This is
+     * the web's `/## [A-Za-z\s']+\n[^#]+/g` verbatim — and is **case-sensitive**
+     * (no `i` flag, unlike the lenient [section] reader). Java's `\s` is ASCII
+     * whitespace, matching the JS engine for these plain-ASCII headings.
+     */
+    private val TEMPLATE_SECTION = Regex("## [A-Za-z\\s']+\\n[^#]+")
+    private val LEADING_STEP_NUMBER = Regex("^\\d+\\.")
+    private val LEADING_DIGITS = Regex("^\\d+")
+
+    // Exact Details field labels the web compares with `===`. The live bytes are
+    // irregular: ⏲️ Prep carries U+FE0F and 🍽️ Servings carries U+FE0F, but
+    // 🍳 Cook is the bare glyph (no selector). Matched verbatim — these gate only
+    // the optional Details block, not the recipe/article decision.
+    private const val PREP_KEY = "- ⏲️ Prep time"
+    private const val COOK_KEY = "- 🍳 Cook time"
+    private const val SERVINGS_KEY = "- 🍽️ Servings"
+
+    /**
+     * Strict recipe-template validator — a byte-faithful port of the web editor's
+     * save-time guard `validateMarkdownTemplate` (`src/lib/parser.ts`). The web
+     * runs this BEFORE publishing, so every real zap.cooking recipe already
+     * satisfies it; porting it (rather than inventing a stricter rule) is what
+     * keeps Android from over-rejecting genuine recipes — if the web shipped it,
+     * this accepts it.
+     *
+     * Acceptance rule, identical to the web:
+     *  - the body must contain at least one `## ` section ([TEMPLATE_SECTION]);
+     *  - any `## Directions` must be a 1-based, strictly +1 incrementing ordered
+     *    list (a prose "Directions" section is rejected);
+     *  - after parsing there must be **at least one ingredient AND at least one
+     *    direction**.
+     *
+     * Unlike the lenient [parseContent], ingredient/direction lines are matched
+     * against the **raw** (un-trimmed) line exactly as the web does, and the
+     * `slice(1, -1)` / `slice(1)` line trimming is reproduced precisely.
+     */
+    fun validateMarkdownTemplate(markdown: String): TemplateValidation {
+        var chefNotes: String? = null
+        var prepTime = ""
+        var cookTime = ""
+        var servings = ""
+        val ingredients = mutableListOf<String>()
+        val directions = mutableListOf<String>()
+        var additionalMarkdown: String? = null
+
+        val sections = TEMPLATE_SECTION.findAll(markdown).map { it.value }.toList()
+        if (sections.isEmpty()) return TemplateValidation.Invalid("Sections are missing.")
+
+        for (section in sections) {
+            when {
+                section.startsWith("## Chef's notes") -> {
+                    val notes = section.substringAfter("## Chef's notes").trim()
+                    if (notes.length > 99999) {
+                        return TemplateValidation.Invalid("Chef's notes exceed character limit.")
+                    }
+                    chefNotes = notes
+                }
+
+                section.startsWith("## Details") -> {
+                    // JS: section.split('\n').slice(1, -1) — drop header + last line.
+                    for (line in section.split("\n").sliceMiddle()) {
+                        // JS destructures `const [key, value] = line.split(': ')` —
+                        // value is the SECOND segment (null when no ": " present).
+                        val parts = line.split(": ")
+                        val key = parts[0]
+                        val value = parts.getOrNull(1) ?: continue
+                        when (key) {
+                            PREP_KEY -> {
+                                if (value.length > 999) return TemplateValidation.Invalid("Prep time exceeds character limit.")
+                                prepTime = value
+                            }
+                            COOK_KEY -> {
+                                if (value.length > 999) return TemplateValidation.Invalid("Cook time exceeds character limit.")
+                                cookTime = value
+                            }
+                            SERVINGS_KEY -> {
+                                if (value.length > 999) return TemplateValidation.Invalid("Servings exceed character limit.")
+                                servings = value
+                            }
+                        }
+                    }
+                }
+
+                section.startsWith("## Ingredients") -> {
+                    // JS: section.split('\n').slice(1, -1). Raw line, not trimmed.
+                    for (line in section.split("\n").sliceMiddle()) {
+                        if (line.startsWith("- ")) {
+                            val ingredient = line.substring(2).trim()
+                            if (ingredient.length > 9999) return TemplateValidation.Invalid("An ingredient exceeds the character limit.")
+                            ingredients.add(ingredient)
+                        }
+                    }
+                }
+
+                section.startsWith("## Directions") -> {
+                    // JS: section.split('\n').slice(1) — drop only the header line.
+                    var prevStepNumber = 0L
+                    for (line in section.split("\n").drop(1)) {
+                        val step = LEADING_STEP_NUMBER.find(line)
+                        if (step != null) {
+                            // parseInt of the leading digits; overflow can't equal
+                            // prev+1, so it falls through to the order-error like JS.
+                            val stepNumber = LEADING_DIGITS.find(line)!!.value.toLongOrNull() ?: Long.MAX_VALUE
+                            if (stepNumber != prevStepNumber + 1) {
+                                return TemplateValidation.Invalid("Directions are not in the correct ordered list format.")
+                            }
+                            val stepDescription = line.substring(step.range.last + 1).trim()
+                            if (stepDescription.length > 9999) return TemplateValidation.Invalid("A step in the directions exceeds the character limit.")
+                            directions.add(stepDescription)
+                            prevStepNumber = stepNumber
+                        } else if (line.trim().isNotEmpty()) {
+                            return TemplateValidation.Invalid("Directions are not in the correct ordered list format.")
+                        }
+                    }
+                }
+
+                section.startsWith("## Additional Resources") -> {
+                    additionalMarkdown = section.substringAfter("## Additional Resources").trim()
+                }
+            }
+        }
+
+        if (directions.size < 1 || ingredients.size < 1) {
+            return TemplateValidation.Invalid("Directions and/or ingredients list too short.")
+        }
+
+        return TemplateValidation.Valid(
+            RecipeContent(
+                chefNotes = chefNotes?.takeIf { it.isNotEmpty() },
+                details = RecipeDetails(
+                    prepTime = prepTime.takeIf { it.isNotEmpty() },
+                    cookTime = cookTime.takeIf { it.isNotEmpty() },
+                    servings = servings.takeIf { it.isNotEmpty() },
+                ),
+                ingredients = ingredients,
+                directions = directions,
+                additionalMarkdown = additionalMarkdown?.takeIf { it.isNotEmpty() },
+            )
+        )
+    }
+
+    /** JS `Array.prototype.slice(1, -1)`: drop the first and last elements. */
+    private fun <T> List<T>.sliceMiddle(): List<T> = if (size <= 2) emptyList() else subList(1, size - 1)
 }
