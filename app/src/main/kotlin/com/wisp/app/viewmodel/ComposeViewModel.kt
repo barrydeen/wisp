@@ -56,7 +56,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 private val NOSTR_URI_REGEX = Regex("nostr:(npub1[a-z0-9]{58}|nprofile1[a-z0-9]+|note1[a-z0-9]{58}|nevent1[a-z0-9]+)")
 // Matches bare bech32 IDs not already preceded by "nostr:" or embedded in a URL
 private val BARE_BECH32_REGEX = Regex("(?<!nostr:)(?<![a-z0-9/.:#])((note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]{10,})")
-private val HASHTAG_REGEX = Regex("(?:^|(?<=\\s))#([a-zA-Z0-9_]+)")
+private val HASHTAG_REGEX = Regex("(?:^|(?<=\\s))#([\\p{L}\\p{M}0-9_]+)")
 
 /** Tracks an inserted @mention as a range in the compose text, mapped to its pubkey. */
 data class Mention(val start: Int, val end: Int, val pubkey: String)
