@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ported from phosphor-svelte's Flame icon (fill weight) — the selected/
+     filled counterpart to ic_flame_outline. Matches the web client's
+     sidebar Feed icon (DesktopSideNav.svelte). Phosphor's native glyph
+     only fills ~85% of its 256 viewport height (real margin baked into
+     the icon design), so it read short of the same top/bottom extent as
+     the fork/knife glyph. Path is uniformly rescaled (height bbox →
+     0..256, width scaled by the same factor and re-centered) so it
+     touches the same vertical extent without stretching the glyph's
+     natural proportions or its stroke weight. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="256"
+    android:viewportHeight="256">
+    <path
+        android:fillColor="@android:color/black"
+        android:pathData="M 182.269006897,42.0528253962 a 262.219,262.219 0 0,0 -49.3860999653,-40.698792244 a 9.48137,9.48137 0 0,0 -9.76581386403,0 A 262.219,262.219 0 0,0 73.7309931027,42.0528253962 C 40.9965539128,76.422801374 23.7049004812,114.336440392 23.7049004812,151.704900481 a 104.295,104.295 0 0,0 208.590199038,0 C 232.295099519,114.336440392 215.003446087,76.422801374 182.269006897,42.0528253962 Z M 90.0745092659,199.111763899 c 0,-32.7936977691 26.70191582,-56.0349125596 37.9254907341,-64.3548170894 c 11.23542663,8.29620109808 37.9254907341,31.5611193203 37.9254907341,64.3548170894 a 37.9255,37.9255 0 0,1 -75.8509814682,0 Z" />
+</vector>
