@@ -5,10 +5,13 @@ import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import breez_sdk_spark.CheckLightningAddressRequest
+import breez_sdk_spark.ClaimDepositRequest
 import breez_sdk_spark.ConnectRequest
+import breez_sdk_spark.DepositInfo
 import breez_sdk_spark.EventListener
 import breez_sdk_spark.GetInfoRequest
 import breez_sdk_spark.ListPaymentsRequest
+import breez_sdk_spark.MaxFee
 import breez_sdk_spark.Network
 import breez_sdk_spark.PaymentDetails
 import breez_sdk_spark.PaymentType
@@ -326,6 +329,9 @@ class SparkRepository(
                                 refreshBalanceInternal()
                                 _transactionsChanged.tryEmit(Unit)
                             }
+                            is SdkEvent.UnclaimedDeposits -> {
+                                claimDeposits(e.unclaimedDeposits)
+                            }
                             else -> {}
                         }
                     }
@@ -336,6 +342,7 @@ class SparkRepository(
                 emitStatus("Connected to Spark")
 
                 refreshBalanceInternal()
+                claimPendingDeposits()
             } catch (e: Exception) {
                 emitStatus("Connection failed: ${e.message}")
                 Log.e(TAG, "Spark connect failed", e)
@@ -509,6 +516,54 @@ class SparkRepository(
         }
     }
 
+    // --- On-chain deposit claiming ---
+
+    /**
+     * On-chain deposits sit unclaimed (and show as "Pending" in history) until
+     * explicitly claimed once they have enough confirmations. The SDK emits
+     * [SdkEvent.UnclaimedDeposits] when deposits become claimable; claim them
+     * automatically so they settle without user action.
+     */
+    private suspend fun claimDeposits(deposits: List<DepositInfo>) {
+        val instance = sdk ?: return
+        var claimedAny = false
+        for (deposit in deposits) {
+            try {
+                instance.claimDeposit(
+                    ClaimDepositRequest(
+                        txid = deposit.txid,
+                        vout = deposit.vout,
+                        maxFee = MaxFee.NetworkRecommended(leewaySatPerVbyte = 5UL)
+                    )
+                )
+                claimedAny = true
+                emitStatus("Claimed on-chain deposit")
+            } catch (e: Exception) {
+                emitStatus("Failed to claim deposit: ${e.message}")
+                Log.e(TAG, "claimDeposit failed for ${deposit.txid}", e)
+            }
+        }
+        if (claimedAny) {
+            refreshBalanceInternal()
+            _transactionsChanged.tryEmit(Unit)
+        }
+    }
+
+    /** Claim any deposits that became claimable while the app was closed. */
+    suspend fun claimPendingDeposits() {
+        withContext(Dispatchers.IO) {
+            try {
+                val instance = sdk ?: return@withContext
+                val response = instance.listUnclaimedDeposits(breez_sdk_spark.ListUnclaimedDepositsRequest)
+                if (response.deposits.isNotEmpty()) {
+                    claimDeposits(response.deposits)
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "listUnclaimedDeposits failed: ${e.message}")
+            }
+        }
+    }
+
     // --- Transactions ---
 
     override suspend fun listTransactions(limit: Int, offset: Int): Result<List<WalletTransaction>> =
@@ -553,7 +608,13 @@ class SparkRepository(
                         feeMsats = payment.fees.toLong() * 1000,
                         createdAt = payment.timestamp.toLong(),
                         settledAt = payment.timestamp.toLong(),
-                        pending = payment.status == breez_sdk_spark.PaymentStatus.PENDING,
+                        // On-chain payments made outside this app instance (another
+                        // wallet on the same seed) aren't tracked by this SDK session,
+                        // so PaymentStatus can stay stuck at PENDING long after the
+                        // underlying transaction is confirmed. Since wisp doesn't
+                        // initiate on-chain send/receive itself, don't trust that flag
+                        // for on-chain rows — the mempool.space link lets users verify.
+                        pending = !onchain && payment.status == breez_sdk_spark.PaymentStatus.PENDING,
                         isOnchain = onchain
                     )
                 }
