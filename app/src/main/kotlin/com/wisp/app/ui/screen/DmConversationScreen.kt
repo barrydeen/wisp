@@ -394,8 +394,8 @@ fun DmConversationScreen(
                 reverseLayout = true,
                 contentPadding = PaddingValues(bottom = with(density) { bottomBarHeightPx.toDp() })
             ) {
-                var lastDateKey = ""
-                for (msg in messages.reversed()) {
+                val ordered = messages.reversed() // newest -> oldest (reverseLayout draws index 0 at bottom)
+                for ((i, msg) in ordered.withIndex()) {
                     item(key = msg.id) {
                         val icons = msg.relayUrls.map { url ->
                             url to relayInfoRepo?.getIconUrl(url)
@@ -422,9 +422,11 @@ fun DmConversationScreen(
                             onOpenEmojiLibrary = onOpenEmojiLibrary
                         )
                     }
+                    // Emit each day's header at the group's older boundary so reverseLayout
+                    // renders it on top of the whole group (not above just the newest message).
+                    val olderMsg = ordered.getOrNull(i + 1)
                     val dateKey = dayKey(msg.createdAt)
-                    if (dateKey != lastDateKey) {
-                        lastDateKey = dateKey
+                    if (olderMsg == null || dayKey(olderMsg.createdAt) != dateKey) {
                         item(key = "date-$dateKey") {
                             DateHeader(formatDateHeader(msg.createdAt))
                         }
