@@ -101,6 +101,9 @@ class SparkRepository(
     private val _paymentReceived = MutableSharedFlow<Long>(extraBufferCapacity = 8)
     override val paymentReceived: SharedFlow<Long> = _paymentReceived
 
+    private val _transactionsChanged = MutableSharedFlow<Unit>(extraBufferCapacity = 8)
+    override val transactionsChanged: SharedFlow<Unit> = _transactionsChanged
+
     // Identity pubkey from the SDK's GetInfoResponse — exposed for the
     // Wallet Info expandable in settings. Populated on first balance fetch
     // after connect.
@@ -309,15 +312,19 @@ class SparkRepository(
                             is SdkEvent.PaymentSucceeded -> {
                                 emitStatus("Payment succeeded")
                                 refreshBalanceInternal()
+                                _transactionsChanged.tryEmit(Unit)
                                 if (e.payment.paymentType == PaymentType.RECEIVE) {
                                     _paymentReceived.tryEmit(e.payment.amount.toLong() * 1000)
                                 }
                             }
                             is SdkEvent.PaymentFailed -> {
                                 emitStatus("Payment failed")
+                                _transactionsChanged.tryEmit(Unit)
                             }
                             is SdkEvent.PaymentPending -> {
                                 emitStatus("Payment pending")
+                                refreshBalanceInternal()
+                                _transactionsChanged.tryEmit(Unit)
                             }
                             else -> {}
                         }
@@ -467,7 +474,7 @@ class SparkRepository(
 
     // --- Receive ---
 
-    override suspend fun makeInvoice(amountMsats: Long, description: String): Result<String> =
+    override suspend fun makeInvoice(amountMsats: Long, description: String, expirySecs: Int): Result<String> =
         withContext(Dispatchers.IO) {
             try {
                 val instance = sdk ?: return@withContext Result.failure(Exception("Not connected"))
@@ -477,7 +484,7 @@ class SparkRepository(
                 val method = ReceivePaymentMethod.Bolt11Invoice(
                     description = description.ifEmpty { "Wisp wallet" },
                     amountSats = amountSats,
-                    expirySecs = 3600u,
+                    expirySecs = expirySecs.toUInt(),
                     paymentHash = null
                 )
                 val response = instance.receivePayment(ReceivePaymentRequest(method))

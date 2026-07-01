@@ -11,12 +11,15 @@ interface WalletProvider {
     /** Emits the amount in msats whenever an incoming payment is received. */
     val paymentReceived: SharedFlow<Long>
 
+    /** Emits Unit whenever the transaction list should be refreshed. */
+    val transactionsChanged: SharedFlow<Unit>
+
     fun hasConnection(): Boolean
     fun connect()
     fun disconnect()
     suspend fun fetchBalance(): Result<Long>
     suspend fun payInvoice(bolt11: String): Result<String>
-    suspend fun makeInvoice(amountMsats: Long, description: String): Result<String>
+    suspend fun makeInvoice(amountMsats: Long, description: String, expirySecs: Int = 3600): Result<String>
     suspend fun listTransactions(limit: Int = 50, offset: Int = 0): Result<List<WalletTransaction>>
 }
 
