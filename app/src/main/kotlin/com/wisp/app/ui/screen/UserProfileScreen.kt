@@ -545,17 +545,25 @@ fun UserProfileScreen(
 
         val listState = rememberLazyListState()
 
-        // Auto-load more media when scrolling near the bottom of the grid
-        if (selectedTabId == 3 && mediaItems.isNotEmpty()) {
-            LaunchedEffect(listState) {
+        // Auto-load more when scrolling near the bottom of the notes/replies/media feeds
+        val autoPaginates = selectedTabId == 0 || selectedTabId == 1 ||
+            (selectedTabId == 3 && mediaItems.isNotEmpty())
+        if (autoPaginates) {
+            LaunchedEffect(listState, selectedTabId) {
                 snapshotFlow {
                     val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
                     val totalItems = listState.layoutInfo.totalItemsCount
                     lastVisible to totalItems
                 }.collect { (lastVisible, totalItems) ->
                     if (totalItems > 0 && lastVisible >= totalItems - 3) {
-                        viewModel.loadMoreNotes()
-                        viewModel.loadMoreReplies()
+                        when (selectedTabId) {
+                            0 -> if (notesSortMode == ProfileSortMode.RECENCY) viewModel.loadMoreNotes()
+                            1 -> if (repliesSortMode == ProfileSortMode.RECENCY) viewModel.loadMoreReplies()
+                            3 -> {
+                                viewModel.loadMoreNotes()
+                                viewModel.loadMoreReplies()
+                            }
+                        }
                     }
                 }
             }
@@ -853,6 +861,52 @@ fun UserProfileScreen(
                             }
                             val rootUserZapPollVote = remember(pollVoteVersion, event.id) {
                                 if (event.kind == 6969) eventRepo?.getUserZapPollVote(event.id) else null
+                            }
+                            if (isGalleryEvent(event)) {
+                                GalleryCard(
+                                    event = event,
+                                    profile = if (repostPubkey != null) eventRepo?.getProfileData(event.pubkey) else profile,
+                                    onReply = { onReply(event) },
+                                    onProfileClick = { onNavigateToProfile?.invoke(event.pubkey) },
+                                    onNavigateToProfile = onNavigateToProfile,
+                                    onNoteClick = { onNoteClick(event) },
+                                    onQuotedNoteClick = onQuotedNoteClick,
+                                    onReact = { emoji -> onReact(event, emoji) },
+                                    onRepost = { onRepost(event) },
+                                    onQuote = { onQuote(event) },
+                                    userReactionEmojis = userEmojis,
+                                    hasUserReposted = hasUserReposted,
+                                    onZap = { zapTargetEvent = event },
+                                    hasUserZapped = hasUserZapped,
+                                    likeCount = likeCount,
+                                    replyCount = replyCount,
+                                    repostCount = repostCount,
+                                    zapSats = zapSats,
+                                    isZapAnimating = event.id in zapAnimatingIds,
+                                    isZapInProgress = event.id in zapInProgressIds,
+                                    eventRepo = eventRepo,
+                                    repostPubkeys = profileRepostPubkeys,
+                                    reactionDetails = reactionDetails,
+                                    zapDetails = zapDetails,
+                                    reactionEmojiUrls = eventReactionEmojiUrls,
+                                    relayIcons = relayIcons,
+                                    onNavigateToProfileFromDetails = onNavigateToProfile,
+                                    onFollowAuthor = { onToggleFollow?.invoke(event.pubkey) },
+                                    onBlockAuthor = { onBlockUser?.invoke() },
+                                    isFollowingAuthor = contactRepo.isFollowing(event.pubkey),
+                                    isOwnEvent = event.pubkey == userPubkey,
+                                    nip05Repo = nip05Repo,
+                                    onAddToList = { onAddNoteToList(event.id) },
+                                    isInList = event.id in listedIds,
+                                    onPin = { onTogglePin(event.id) },
+                                    isPinned = event.id in pinnedIds,
+                                    onDelete = { onDeleteEvent(event.id, event.kind) },
+                                    resolvedEmojis = resolvedEmojis,
+                                    unicodeEmojis = unicodeEmojis,
+                                    onOpenEmojiLibrary = onOpenEmojiLibrary,
+                                    noteActions = invoiceNoteActions
+                                )
+                                return@items
                             }
                             PostCard(
                                 event = event,
