@@ -113,7 +113,7 @@ fun WispDrawerContent(
     onOnlyFood: () -> Unit = {},
     onLists: () -> Unit = {},
     onDrafts: () -> Unit = {},
-    onKitchenTools: () -> Unit = {},
+    onGadgets: () -> Unit = {},
     onMediaServers: () -> Unit,
     onKeys: () -> Unit = {},
     keyBackupNeeded: Boolean = false,
@@ -516,13 +516,13 @@ fun WispDrawerContent(
         NavigationDrawerItem(
             icon = {
                 Icon(
-                    painter = painterResource(R.drawable.ic_cooking_pot),
+                    painter = painterResource(R.drawable.ic_kitchen_gadgets),
                     contentDescription = null
                 )
             },
-            label = { Text(stringResource(R.string.drawer_kitchen_tools)) },
+            label = { Text(stringResource(R.string.drawer_gadgets)) },
             selected = false,
-            onClick = onKitchenTools,
+            onClick = onGadgets,
             modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         var settingsExpanded by remember { mutableStateOf(false) }

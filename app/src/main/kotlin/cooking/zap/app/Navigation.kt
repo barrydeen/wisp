@@ -850,7 +850,7 @@ fun WispNavHost(
                 onMemories = { closeDrawerAndNavigate(Routes.MEMORIES) },
                 onLists = { closeDrawerAndNavigate(Routes.LISTS_HUB) },
                 onDrafts = { closeDrawerAndNavigate(Routes.DRAFTS) },
-                onKitchenTools = {
+                onGadgets = {
                     drawerScope.launch {
                         drawerState.close()
                         showCookingUtilitiesSheet = true
@@ -1246,7 +1246,7 @@ fun WispNavHost(
                         restoreState = true
                     }
                 },
-                onKitchenTools = { showCookingUtilitiesSheet = true },
+                onGadgets = { showCookingUtilitiesSheet = true },
                 onSousChef = { navController.navigate(Routes.SOUS_CHEF) { launchSingleTop = true } },
                 onCheffy = { navController.navigate(Routes.CHEFFY) { launchSingleTop = true } },
                 onNourish = { navController.navigate(Routes.nourish()) { launchSingleTop = true } },
@@ -3223,7 +3223,7 @@ fun WispNavHost(
                         restoreState = true
                     }
                 },
-                onKitchenTools = { showCookingUtilitiesSheet = true },
+                onGadgets = { showCookingUtilitiesSheet = true },
                 onSousChef = { navController.navigate(Routes.SOUS_CHEF) { launchSingleTop = true } },
                 onCheffy = { navController.navigate(Routes.CHEFFY) { launchSingleTop = true } },
                 onNourish = { navController.navigate(Routes.nourish()) { launchSingleTop = true } },

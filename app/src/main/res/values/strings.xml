@@ -32,7 +32,7 @@
     <string name="drawer_console">Console</string>
     <string name="drawer_network_status">Network Status</string>
     <string name="drawer_advanced">Advanced</string>
-    <string name="drawer_kitchen_tools">Kitchen Tools</string>
+    <string name="drawer_gadgets">Gadgets</string>
 
     <!-- Screen Titles -->
     <string name="title_search">Search</string>

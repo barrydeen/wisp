@@ -169,7 +169,7 @@ fun FeedScreen(
     onNoteClick: (NostrEvent) -> Unit = {},
     onQuotedNoteClick: ((String) -> Unit)? = null,
     onSearch: () -> Unit = {},
-    onKitchenTools: () -> Unit = {},
+    onGadgets: () -> Unit = {},
     onSousChef: () -> Unit = {},
     onCheffy: () -> Unit = {},
     onNourish: () -> Unit = {},
@@ -795,10 +795,10 @@ fun FeedScreen(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        IconButton(onClick = onKitchenTools) {
+                        IconButton(onClick = onGadgets) {
                             Icon(
-                                painter = painterResource(R.drawable.ic_cooking_pot),
-                                contentDescription = stringResource(R.string.drawer_kitchen_tools),
+                                painter = painterResource(R.drawable.ic_kitchen_gadgets),
+                                contentDescription = stringResource(R.string.drawer_gadgets),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
