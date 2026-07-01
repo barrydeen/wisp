@@ -31,6 +31,7 @@ class FoodContentScorerTest {
         // ── macro "excluding food and energy" guard ────────────────────────────
         Case("core inflation excluding food and energy rose", false, "macro phrase, only soft food → excludes"),
         Case("cpi excluding food and energy, anyway I love pasta", true, "macro phrase but hard word overrides"),
+        Case("sweet reads, excluding food and energy inflation", true, "macro phrase + 2 soft total (sweet + the phrase's own food) includes"),
         // ── word-boundary correctness (substrings must NOT match) ──────────────
         Case("piecemeal reforms passed today", false, "'meal' inside piecemeal must not match"),
         Case("a tiny kitchenette in the flat", false, "'kitchen' inside kitchenette must not match"),
@@ -87,10 +88,12 @@ class FoodContentScorerTest {
     }
 
     @Test
-    fun memoized_empty_is_not_cached_or_scored() {
+    fun memoized_blank_is_not_cached_or_scored() {
         var calls = 0
         val memo = MemoizedFoodContentScorer(score = { calls++; true })
         assertFalse(memo.matches(""))
-        assertEquals("empty short-circuits before scoring", 0, calls)
+        assertFalse(memo.matches("   "))
+        assertFalse(memo.matches("\n\t "))
+        assertEquals("empty and whitespace-only short-circuit before scoring", 0, calls)
     }
 }

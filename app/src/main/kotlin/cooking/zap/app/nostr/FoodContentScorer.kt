@@ -14,12 +14,15 @@ import java.util.Locale
  * Islands, `ate`→too many non-food uses). Do NOT merge them into [FoodHashtags.ALL].
  *
  * The decision (mirrors the web exactly):
- * 1. empty → no.
+ * 1. blank → no.
  * 2. a standalone `root` (e.g. root-of-trust chatter) → no, unconditionally.
  * 3. a food hashtag appearing *in the text* → yes (strong signal).
  * 4. otherwise include iff **≥1 HARD** word OR **≥2 SOFT** words match.
- * 5. guard: the economics phrase "excluding food and energy" is suppressed unless
- *    a stronger signal exists (≥1 hard or ≥2 soft beyond the phrase's own `food`).
+ * 5. guard: when the economics phrase "excluding food and energy" is present, it is
+ *    suppressed unless the note also clears the normal bar — ≥1 hard or ≥2 soft matches
+ *    *counting the phrase's own `food`* (soft). This mirrors the web's guard verbatim; as
+ *    there, it only ever fires in the no-signal case the fall-through would reject anyway,
+ *    so it changes no outcome and is kept purely for parity with the source of truth.
  *
  * Matching is word-boundary (`\bword\b`), supports multi-word phrases (`olive oil`,
  * `slow cooked` → `\bolive\s+oil\b`), and is locale-invariant: content is lowercased
@@ -109,7 +112,9 @@ object FoodContentScorer {
      * the exact rule; behavior-identical to the web's `contentContainsFoodWords`.
      */
     fun matches(content: String): Boolean {
-        if (content.isEmpty()) return false
+        // Blank (empty or whitespace-only) is non-food; short-circuit before the
+        // lowercase/regex work so firehose whitespace never gets scanned.
+        if (content.isBlank()) return false
         // Lowercase locale-invariantly, then collapse whitespace so multi-word phrases
         // and newlines match (mirrors the web's `replace(/\s+/g, ' ').trim()`).
         val normalized = content.lowercase(Locale.ROOT).replace(WHITESPACE_REGEX, " ").trim()
@@ -121,17 +126,22 @@ object FoodContentScorer {
         // A food hashtag in the text is a strong enough signal on its own.
         if (FOOD_HASHTAG_REGEX.containsMatchIn(normalized)) return true
 
-        val hardCount = HARD_FOOD_REGEX.findAll(normalized).count()
-        val softCount = SOFT_FOOD_REGEX.findAll(normalized).count()
+        // The decision only needs "any hard match" and "≥2 soft matches", so stop
+        // scanning at those thresholds instead of counting every match (findAll is a
+        // lazy sequence, so take(2) short-circuits). Behavior-identical to the web.
+        val hasHard = HARD_FOOD_REGEX.containsMatchIn(normalized)
+        val softMatches = SOFT_FOOD_REGEX.findAll(normalized).take(2).count() // 0, 1, or 2
+        val hasTwoSoft = softMatches >= 2
 
-        // Macro exclusion: "excluding food and energy" is a common economics phrase.
-        // Only allow it through on a stronger signal than the phrase's own `food`.
+        // Macro guard: "excluding food and energy" is a common economics phrase. Mirrors
+        // the web — it only rejects when there's no other signal (which the fall-through
+        // rejects anyway), so it's a no-op kept for parity. See the class KDoc.
         if (MACRO_EXCLUDING_FOOD_ENERGY_REGEX.containsMatchIn(normalized)) {
-            if (hardCount == 0 && softCount < 2) return false
+            if (!hasHard && !hasTwoSoft) return false
         }
 
-        if (hardCount >= 1) return true
-        if (softCount >= 2) return true
+        if (hasHard) return true
+        if (hasTwoSoft) return true
         return false
     }
 }
@@ -157,7 +167,9 @@ internal class MemoizedFoodContentScorer(
     private val cache = LinkedHashMap<String, Boolean>()
 
     fun matches(content: String): Boolean {
-        if (content.isEmpty()) return false
+        // Blank content is non-food (matching [FoodContentScorer.matches]); short-circuit
+        // before touching the cache so whitespace-only firehose notes don't churn it.
+        if (content.isBlank()) return false
         // Evict oldest in a batch when over the cap (before the get/insert, as the web does).
         if (cache.size > maxEntries) {
             val it = cache.keys.iterator()
