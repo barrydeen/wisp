@@ -340,20 +340,27 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         20, 21, 22 -> {
                             eventRepo.cacheEvent(event)
-                            if (event.created_at < oldestNoteTimestamp) oldestNoteTimestamp = event.created_at
-                            // Add to gallery posts
+                            // Add to gallery posts (fed by both the notes stream and the
+                            // dedicated, unbounded usergallery sub)
                             val gallery = _galleryPosts.value.toMutableList()
                             if (gallery.none { it.id == event.id }) {
                                 gallery.add(event)
                                 gallery.sortByDescending { it.created_at }
                                 _galleryPosts.value = gallery
                             }
-                            // Also show in root notes feed
-                            val current = _rootNotes.value.toMutableList()
-                            if (current.none { it.id == event.id }) {
-                                current.add(event)
-                                current.sortByDescending { _repostSortTime[it.id] ?: it.created_at }
-                                _rootNotes.value = current
+                            // Only surface gallery kinds in the chronological notes feed when
+                            // they arrive via the time-bounded, paginated posts stream.
+                            // The usergallery sub has no time bound and reaches arbitrarily far
+                            // back — letting it into rootNotes both collapses the feed into
+                            // gallery-only content and poisons oldestNoteTimestamp pagination.
+                            if (subscriptionId == "userposts" || subscriptionId == "userposts-more") {
+                                if (event.created_at < oldestNoteTimestamp) oldestNoteTimestamp = event.created_at
+                                val current = _rootNotes.value.toMutableList()
+                                if (current.none { it.id == event.id }) {
+                                    current.add(event)
+                                    current.sortByDescending { _repostSortTime[it.id] ?: it.created_at }
+                                    _rootNotes.value = current
+                                }
                             }
                         }
                         6 -> {
