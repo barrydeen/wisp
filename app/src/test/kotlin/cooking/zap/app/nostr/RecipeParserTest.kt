@@ -214,6 +214,26 @@ class RecipeParserTest {
         val template = (result as RecipeParser.TemplateValidation.Valid).template
         assertEquals(7, template.ingredients.size)
         assertEquals(6, template.directions.size)
+        // Lock in that the LAST real line of each section survives. Kotlin's
+        // stdlib `split("\n")` (string delimiter) KEEPS trailing empty strings —
+        // unlike Java's regex `String.split` — so the `slice(1, -1)` middle-slice
+        // drops only the trailing blank line the section regex captures, never the
+        // last ingredient/step. If split dropped trailing empties this would
+        // under-count (6 ingredients) and fail.
+        assertEquals("1 kg beef for stewing (chuck or similar)", template.ingredients.first())
+        assertEquals("Extra virgin olive oil", template.ingredients.last())
+        assertEquals("Rest 10 minutes, adjust salt, serve hot.", template.directions.last())
+    }
+
+    @Test
+    fun validate_singleIngredientRecipe_accepted() {
+        // Web parity (cross-checked): a one-ingredient recipe is ACCEPTed and the
+        // sole ingredient is retained — proves the middle-slice doesn't eat the
+        // only real line when trailing empties are kept.
+        val md = "## Ingredients\n\n- flour\n\n## Directions\n\n1. Bake."
+        val r = RecipeParser.validateMarkdownTemplate(md)
+        assertTrue(r is RecipeParser.TemplateValidation.Valid)
+        assertEquals(listOf("flour"), (r as RecipeParser.TemplateValidation.Valid).template.ingredients)
     }
 
     @Test
