@@ -455,7 +455,12 @@ fun WispDrawerContent(
             modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         NavigationDrawerItem(
-            icon = { Icon(Icons.Outlined.Home, contentDescription = null) },
+            icon = {
+                Icon(
+                    painter = painterResource(R.drawable.ic_flame_outline),
+                    contentDescription = null
+                )
+            },
             label = { Text(stringResource(R.string.drawer_feeds)) },
             selected = false,
             onClick = onFeed,
