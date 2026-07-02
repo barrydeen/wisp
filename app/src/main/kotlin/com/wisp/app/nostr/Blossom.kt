@@ -9,6 +9,9 @@ object Blossom {
     const val DEFAULT_SERVER = "https://blossom.primal.net"
 
     fun parseServerList(event: NostrEvent): List<String> {
+        require(event.kind == KIND_SERVER_LIST) {
+            "Expected kind $KIND_SERVER_LIST event, got kind ${event.kind}"
+        }
         return event.tags.mapNotNull { tag ->
             if (tag.size >= 2 && tag[0] == "server") tag[1] else null
         }
