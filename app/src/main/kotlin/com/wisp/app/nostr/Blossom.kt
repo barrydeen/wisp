@@ -21,7 +21,7 @@ object Blossom {
             else {
                 null
             }
-        }
+        }.distinct()
     }
 
     fun buildServerListTags(urls: List<String>): List<List<String>> {
