@@ -119,7 +119,8 @@ fun SearchScreen(
     onAddEmojiSet: ((String, String) -> Unit)? = null,
     onRemoveEmojiSet: ((String, String) -> Unit)? = null,
     isEmojiSetAdded: ((String, String) -> Boolean)? = null,
-    nip05Repo: com.wisp.app.repo.Nip05Repository? = null
+    nip05Repo: com.wisp.app.repo.Nip05Repository? = null,
+    onPayInvoice: (suspend (String) -> Boolean)? = null
 ) {
     val query by viewModel.query.collectAsState()
     val filter by viewModel.filter.collectAsState()
@@ -151,6 +152,7 @@ fun SearchScreen(
             isEmojiSetAdded = isEmojiSetAdded,
             onPollVote = onPollVote,
             nip05Repo = nip05Repo,
+            onPayInvoice = onPayInvoice,
         )
     }
 
