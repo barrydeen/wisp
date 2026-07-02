@@ -262,11 +262,13 @@ private fun SideNavItem(
                     painter = painterResource(if (selected) tab.selectedIconRes else tab.unselectedIconRes!!),
                     contentDescription = stringResource(tab.labelResId),
                     tint = zapTint,
-                    // The flame reads a touch small next to its siblings at
-                    // its native 24dp — bump it up in this one spot rather
-                    // than inflating the shared drawable (which would also
-                    // blow up the drawer's copy of the same icon).
-                    modifier = if (tab == BottomTab.FEED) Modifier.size(28.dp) else Modifier
+                    // The flame reads a touch small next to its siblings —
+                    // bump it up in this one spot rather than inflating the
+                    // shared drawable (which would also blow up the drawer's
+                    // copy of the same icon). Must be requiredSize: plain
+                    // size() gets clamped back to SIDE_ICON_SIZE by the
+                    // parent box's fixed constraints.
+                    modifier = if (tab == BottomTab.FEED) Modifier.requiredSize(24.dp) else Modifier
                 )
             } else {
                 Icon(
