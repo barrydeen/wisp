@@ -467,16 +467,11 @@ class ThreadViewModel : ViewModel() {
             scoreAuthorsAsync(pubkeysToScore)
         }
 
-        val myPubkey = currentUserPubkey
+        // Chronological reply order (iOS parity). Previously own replies were
+        // hoisted to the top of each sibling group; iOS just sorts by time.
         for (children in parentToChildren.values) {
             children.sortWith(Comparator { a, b ->
-                val aIsOwn = myPubkey != null && a.pubkey == myPubkey
-                val bIsOwn = myPubkey != null && b.pubkey == myPubkey
-                if (aIsOwn != bIsOwn) {
-                    if (aIsOwn) -1 else 1
-                } else {
-                    a.created_at.compareTo(b.created_at)
-                }
+                a.created_at.compareTo(b.created_at)
             })
         }
 

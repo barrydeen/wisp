@@ -1358,7 +1358,9 @@ fun ComposeScreen(
                                 resolvedEmojis = resolvedEmojis
                             )
                         },
-                        enabled = !publishing && !isMiningBusy,
+                        // Publish gating (iOS parity, wisp #567): disabled until the
+                        // post has text or at least one uploaded attachment.
+                        enabled = !publishing && !isMiningBusy && (content.text.isNotBlank() || uploadedUrls.isNotEmpty()),
                         modifier = Modifier.fillMaxWidth().height(44.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) {
