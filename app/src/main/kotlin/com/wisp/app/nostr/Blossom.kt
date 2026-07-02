@@ -1,6 +1,7 @@
 package com.wisp.app.nostr
 
 import android.util.Base64
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.security.MessageDigest
 
 object Blossom {
@@ -13,7 +14,13 @@ object Blossom {
             "Expected kind $KIND_SERVER_LIST event, got kind ${event.kind}"
         }
         return event.tags.mapNotNull { tag ->
-            if (tag.size >= 2 && tag[0] == "server") tag[1] else null
+            if (tag.size >= 2 && tag[0] == "server") {
+                val url = tag[1].toHttpUrlOrNull()
+                url?.toString()
+            }
+            else {
+                null
+            }
         }
     }
 
