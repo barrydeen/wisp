@@ -11,6 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,7 +22,6 @@ import androidx.compose.foundation.content.TransferableContent
 import androidx.compose.foundation.content.consume
 import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.content.hasMediaType
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
@@ -39,7 +39,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -84,7 +83,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -115,6 +113,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -204,8 +203,16 @@ fun ComposeScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
     var pendingDateMillis by remember { mutableStateOf<Long?>(null) }
+    var showGifPicker by remember { mutableStateOf(false) }
 
-    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val density = LocalDensity.current
+    val imeBottomDp = with(density) { WindowInsets.ime.getBottom(density).toDp() }
+    val imeVisible = imeBottomDp > 0.dp
+    // Extra clearance so the Publish button clears the bottom nav's protruding
+    // center FAB when the keyboard is down. Derived from the live IME inset (not a
+    // boolean) so it grows smoothly as the keyboard collapses — otherwise the button
+    // rides down behind the FAB and snaps up only after the close animation ends.
+    val publishBottomClearance = (40.dp - imeBottomDp).coerceIn(12.dp, 40.dp)
 
     // Countdown progress (smooth, ~60fps)
     var countdownProgress by remember { mutableFloatStateOf(0f) }
@@ -277,6 +284,9 @@ fun ComposeScreen(
                     } else if (galleryMode) {
                         OutlinedButton(
                             onClick = { viewModel.toggleGalleryMode() },
+                            shape = RoundedCornerShape(50),
+                            border = BorderStroke(1.dp, WispThemeColors.zapColor),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = WispThemeColors.zapColor),
                             modifier = Modifier.padding(end = 8.dp)
                         ) {
                             Icon(
@@ -290,6 +300,9 @@ fun ComposeScreen(
                     } else {
                         OutlinedButton(
                             onClick = { viewModel.toggleGalleryMode() },
+                            shape = RoundedCornerShape(50),
+                            border = BorderStroke(1.dp, WispThemeColors.zapColor),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = WispThemeColors.zapColor),
                             modifier = Modifier.padding(end = 8.dp)
                         ) {
                             Icon(
@@ -312,7 +325,11 @@ fun ComposeScreen(
             modifier = Modifier
                 .padding(padding)
                 .consumeWindowInsets(WindowInsets.navigationBars)
-                .imePadding()
+                // Drive keyboard avoidance from the same `imeBottomDp` value the Publish
+                // clearance below uses (instead of `.imePadding()`, which reads the inset in
+                // a different phase) so the two never diverge by a frame and the button
+                // floats straight down to its resting spot without overcorrecting.
+                .padding(bottom = imeBottomDp)
         ) {
             if (galleryMode) {
                 // ---- Gallery mode: completely separate layout ----
@@ -699,7 +716,6 @@ fun ComposeScreen(
 
                     // Text field with GIF keyboard support via BasicTextField(TextFieldState)
                     val textFieldState = remember { TextFieldState(content.text) }
-                    val interactionSource = remember { MutableInteractionSource() }
                     val enabled = !publishing && countdownSeconds == null
 
                     // Sync ViewModel -> TextFieldState (for programmatic updates: upload URL, mention select, etc.)
@@ -754,15 +770,19 @@ fun ComposeScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         ),
                         decorator = { innerTextField ->
-                            OutlinedTextFieldDefaults.DecorationBox(
-                                value = textFieldState.text.toString(),
-                                innerTextField = innerTextField,
-                                enabled = enabled,
-                                singleLine = false,
-                                visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
-                                interactionSource = interactionSource,
-                                placeholder = { Text(stringResource(R.string.compose_placeholder)) }
-                            )
+                            // Borderless composer (matches iOS): no outline, no filled
+                            // container — just the field and a muted placeholder overlay.
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                if (content.text.isEmpty()) {
+                                    Text(
+                                        text = stringResource(R.string.compose_placeholder),
+                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        )
+                                    )
+                                }
+                                innerTextField()
+                            }
                         }
                     )
 
@@ -781,6 +801,34 @@ fun ComposeScreen(
                             enabled = uploadProgress == null && countdownSeconds == null
                         ) {
                             Icon(Icons.Outlined.Image, contentDescription = "Attach media")
+                        }
+
+                        // GIF search (Giphy) — not offered in gallery mode, which has its
+                        // own mixing/video-count constraints the GIF pipeline doesn't check.
+                        // Wrapped in a 48dp box so it occupies the same slot as the sibling
+                        // IconButtons and the row stays evenly spaced.
+                        if (!galleryMode) {
+                            Box(
+                                modifier = Modifier.size(48.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .border(1.5.dp, MaterialTheme.colorScheme.onSurfaceVariant, RoundedCornerShape(6.dp))
+                                        .clickable(enabled = uploadProgress == null && countdownSeconds == null) {
+                                            showGifPicker = true
+                                        }
+                                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_gif),
+                                        contentDescription = stringResource(R.string.cd_add_gif),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.height(16.dp)
+                                    )
+                                }
+                            }
                         }
 
                         IconButton(onClick = {
@@ -855,28 +903,50 @@ fun ComposeScreen(
                             )
                         }
 
-                        if (uploadProgress != null) {
-                            Spacer(Modifier.width(8.dp))
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                stringResource(R.string.compose_uploading),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
                         Spacer(Modifier.weight(1f))
 
-                            if (content.text.isNotBlank()) {
-                            TextButton(
-                                onClick = onSaveDraft
+                        if (content.text.isNotBlank()) {
+                            IconButton(onClick = onSaveDraft) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_save_to_folder),
+                                    contentDescription = stringResource(R.string.btn_save_draft),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // Uploading indicator on its own line as a capsule pill, so
+                    // the label never has to wrap inside the crowded icon row.
+                    AnimatedVisibility(
+                        visible = uploadProgress != null,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 4.dp)
+                        ) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(50)
                             ) {
-                                Text(stringResource(R.string.btn_save_draft))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        stringResource(R.string.compose_uploading),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
@@ -1224,8 +1294,14 @@ fun ComposeScreen(
                 }
             }
 
-            // Bottom bar — always visible above keyboard (shared by both modes)
-            Column(modifier = Modifier.padding(horizontal = 16.dp).padding(vertical = 12.dp)) {
+            // Bottom bar — always visible above keyboard (shared by both modes).
+            // When the keyboard is closed, add extra bottom room so the Publish
+            // button clears the bottom nav's protruding center FAB.
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 12.dp, bottom = publishBottomClearance)
+            ) {
                     if (countdownSeconds != null) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1372,6 +1448,16 @@ fun ComposeScreen(
                         if (scheduleTimestamp == null) viewModel.toggleSchedule()
                     }) { Text("Cancel") }
                 }
+            )
+        }
+
+        if (showGifPicker) {
+            cooking.zap.app.ui.component.GifPickerSheet(
+                onSelect = { gif ->
+                    viewModel.uploadGif(gif.downloadUrl, signer)
+                    showGifPicker = false
+                },
+                onDismiss = { showGifPicker = false }
             )
         }
     }

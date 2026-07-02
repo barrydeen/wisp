@@ -498,6 +498,7 @@ private fun RelayUrlChip(url: String) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SeenOnSection(
     relayIcons: List<Pair<String, String?>>,
@@ -516,37 +517,49 @@ fun SeenOnSection(
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.Top
         ) {
             Text(
                 text = stringResource(R.string.cd_seen_on),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 5.dp)
             )
             Spacer(Modifier.width(8.dp))
-            Box {
-                displayed.forEachIndexed { index, (relayUrl, iconUrl) ->
-                    RelayIcon(
-                        iconUrl = iconUrl,
-                        relayUrl = relayUrl,
-                        size = 24.dp,
-                        modifier = Modifier
-                            .zIndex((displayed.size - index).toFloat())
-                            .offset(x = (18 * index).dp)
-                            .clickable { onRelayClick(relayUrl) }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                displayed.forEach { (relayUrl, _) ->
+                    RelayPill(
+                        text = relayUrl.removePrefix("wss://").removePrefix("ws://").removeSuffix("/"),
+                        onClick = { onRelayClick(relayUrl) }
                     )
                 }
-            }
-            Spacer(Modifier.width((18 * (displayed.size - 1) + 24).dp))
-            if (overflow > 0) {
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    text = "+$overflow",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (overflow > 0) {
+                    RelayPill(text = "+$overflow", onClick = null)
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun RelayPill(text: String, onClick: (() -> Unit)?) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+        )
     }
 }
 

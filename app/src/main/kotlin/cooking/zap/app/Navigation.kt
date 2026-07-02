@@ -4354,7 +4354,6 @@ fun WispNavHost(
             }
 
             val notifReplyScope = rememberCoroutineScope()
-            val notifInterfacePrefs = remember { cooking.zap.app.repo.InterfacePreferences(context) }
             var notifZapTarget by remember { mutableStateOf<NostrEvent?>(null) }
             data class NotifDmZapInfo(val peerPubkey: String, val rumorId: String, val senderPubkey: String)
             var notifDmZapTarget by remember { mutableStateOf<NotifDmZapInfo?>(null) }
@@ -4454,64 +4453,6 @@ fun WispNavHost(
                     navController.navigate("profile/$pubkey")
                 },
                 onRefresh = { feedViewModel.refreshDmsAndNotifications() },
-                onSendReply = { replyToEvent, content ->
-                    val signer = activeSigner ?: return@NotificationsScreen
-                    notifReplyScope.launch {
-                        val hint = feedViewModel.outboxRouter?.getRelayHint(replyToEvent.pubkey) ?: ""
-                        val tags = cooking.zap.app.nostr.Nip10.buildReplyTags(replyToEvent, hint) +
-                            cooking.zap.app.nostr.Nip30.buildEmojiTagsForContent(content, notifResolvedEmojis) +
-                            if (notifInterfacePrefs.isClientTagEnabled()) listOf(Nip89.clientTag()) else emptyList()
-
-                        // If the parent is a private reply we received, keep the thread encrypted
-                        // by gift-wrapping this reply too. Otherwise fall through to the public path.
-                        if (feedViewModel.eventRepo.isPrivate(replyToEvent.id)) {
-                            val difficulty = if (feedViewModel.powPrefs.isNotePowEnabled()) feedViewModel.powPrefs.getNoteDifficulty() else 0
-                            cooking.zap.app.repo.PrivateReplyPublisher.send(
-                                signer = signer,
-                                relayPool = feedViewModel.relayPool,
-                                dmRepo = feedViewModel.dmRepo,
-                                relayListRepo = feedViewModel.relayListRepo,
-                                eventRepo = feedViewModel.eventRepo,
-                                replyTo = replyToEvent,
-                                content = content,
-                                baseTags = tags,
-                                targetDifficulty = difficulty
-                            )
-                            return@launch
-                        }
-
-                        if (feedViewModel.powPrefs.isNotePowEnabled()) {
-                            feedViewModel.powManager.submitNote(
-                                signer = signer,
-                                content = content,
-                                tags = tags,
-                                kind = 1,
-                                replyToPubkey = replyToEvent.pubkey,
-                                onPublished = {
-                                    feedViewModel.eventRepo.addReplyCount(replyToEvent.id, "pow-pending")
-                                    val rootId = cooking.zap.app.nostr.Nip10.getRootId(replyToEvent)
-                                    if (rootId != null && rootId != replyToEvent.id) {
-                                        feedViewModel.eventRepo.addReplyCount(rootId, "pow-pending")
-                                    }
-                                }
-                            )
-                        } else {
-                            val event = signer.signEvent(kind = 1, content = content, tags = tags)
-                            val msg = cooking.zap.app.nostr.ClientMessage.event(event)
-                            if (feedViewModel.outboxRouter != null) {
-                                feedViewModel.outboxRouter!!.publishToInbox(msg, replyToEvent.pubkey)
-                            } else {
-                                feedViewModel.relayPool.sendToWriteRelays(msg)
-                            }
-                            feedViewModel.eventRepo.cacheEvent(event)
-                            feedViewModel.eventRepo.addReplyCount(replyToEvent.id, event.id)
-                            val rootId = cooking.zap.app.nostr.Nip10.getRootId(replyToEvent)
-                            if (rootId != null && rootId != replyToEvent.id) {
-                                feedViewModel.eventRepo.addReplyCount(rootId, event.id)
-                            }
-                        }
-                    }
-                },
                 onReply = { event ->
                     replyTarget = event
                     quoteTarget = null

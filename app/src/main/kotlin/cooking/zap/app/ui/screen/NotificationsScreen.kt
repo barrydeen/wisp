@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.outlined.AlternateEmail
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Favorite
@@ -152,7 +153,6 @@ fun NotificationsScreen(
     onNoteClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
     onRefresh: () -> Unit = {},
-    onSendReply: (NostrEvent, String) -> Unit = { _, _ -> },
     onReply: (NostrEvent) -> Unit = {},
     onReact: (NostrEvent, String) -> Unit = { _, _ -> },
     onRepost: (NostrEvent) -> Unit = {},
@@ -231,11 +231,13 @@ fun NotificationsScreen(
     val replyCountVersion = eventRepo?.replyCountVersion?.collectAsState()?.value ?: 0
     val repostVersion = eventRepo?.repostVersion?.collectAsState()?.value ?: 0
     val pollVoteVersion = eventRepo?.pollVoteVersion?.collectAsState()?.value ?: 0
+    val relaySourceVersion = eventRepo?.relaySourceVersion?.collectAsState()?.value ?: 0
     val followListSize = viewModel.contactRepository?.followList?.collectAsState()?.value?.size ?: 0
 
     val postCardParams = remember(
         eventRepo, userPubkey, profileVersion, reactionVersion, zapVersion,
-        replyCountVersion, repostVersion, followListSize, resolvedEmojis, unicodeEmojis, pollVoteVersion
+        replyCountVersion, repostVersion, followListSize, resolvedEmojis, unicodeEmojis, pollVoteVersion,
+        relaySourceVersion
     ) {
         NotifPostCardParams(
             eventRepo = eventRepo,
@@ -245,6 +247,7 @@ fun NotificationsScreen(
             replyCountVersion = replyCountVersion,
             zapVersion = zapVersion,
             repostVersion = repostVersion,
+            relaySourceVersion = relaySourceVersion,
             followListSize = followListSize,
             resolvedEmojis = resolvedEmojis,
             unicodeEmojis = unicodeEmojis,
@@ -410,12 +413,6 @@ fun NotificationsScreen(
                             }
                         },
                         onProfileClick = onProfileClick,
-                        onSendReply = { replyToEvent, content ->
-                            val key = item.replyEventId ?: ""
-                            val existing = inlineReplies[key] ?: emptyList()
-                            inlineReplies = inlineReplies + (key to (existing + content))
-                            onSendReply(replyToEvent, content)
-                        },
                         onSendDm = { peerPubkey, content ->
                             onSendDm(peerPubkey, content)
                             val existing = inlineDmReplies[peerPubkey] ?: emptyList()
@@ -632,7 +629,6 @@ private fun ZenNotificationRow(
     resolvedEmojis: Map<String, String> = emptyMap(),
     onClick: () -> Unit,
     onProfileClick: (String) -> Unit,
-    onSendReply: (NostrEvent, String) -> Unit = { _, _ -> },
     onSendDm: (String, String) -> Unit = { _, _ -> },
     onDmReact: (String, String, String, String) -> Unit = { _, _, _, _ -> },
     onDmZap: (String, String, String) -> Unit = { _, _, _ -> },
@@ -822,16 +818,7 @@ private fun ZenNotificationRow(
                     userPubkey = userPubkey,
                     postCardParams = postCardParams,
                     onProfileClick = onProfileClick,
-                    onSendReply = onSendReply,
-                    onUploadMedia = onUploadMedia,
-                    onReplyFocused = onReplyFocused,
-                    resolvedEmojis = resolvedEmojis,
-                    mentionQuery = mentionQuery,
-                    mentionCandidates = mentionCandidates,
-                    onMentionDetect = onMentionDetect,
-                    onMentionSelect = onMentionSelect,
-                    onMentionClear = onMentionClear,
-                    resolveDisplayName = resolveDisplayName
+                    resolvedEmojis = resolvedEmojis
                 )
             } else if (item.type == NotificationType.DM_ZAP || item.type == NotificationType.PROFILE_ZAP) {
                 ZapMessageExpansion(item = item)
@@ -1179,16 +1166,7 @@ private fun ReplyExpansion(
     userPubkey: String?,
     postCardParams: NotifPostCardParams?,
     onProfileClick: (String) -> Unit,
-    onSendReply: (NostrEvent, String) -> Unit,
-    onUploadMedia: (List<Uri>, onUrl: (String) -> Unit) -> Unit = { _, _ -> },
-    onReplyFocused: () -> Unit = {},
-    resolvedEmojis: Map<String, String> = emptyMap(),
-    mentionQuery: String? = null,
-    mentionCandidates: List<MentionCandidate> = emptyList(),
-    onMentionDetect: ((TextFieldValue) -> Unit)? = null,
-    onMentionSelect: ((MentionCandidate, String, Int) -> TextFieldValue)? = null,
-    onMentionClear: (() -> Unit)? = null,
-    resolveDisplayName: ((String) -> String?)? = null
+    resolvedEmojis: Map<String, String> = emptyMap()
 ) {
     val replyEvent = remember(item.replyEventId) { item.replyEventId?.let { eventRepo?.getEvent(it) } }
 
@@ -1246,22 +1224,35 @@ private fun ReplyExpansion(
             )
         }
 
-        // Inline reply composer
+        // Reply bar — full-width "Reply…" pill under the note (iOS parity),
+        // taps through to the reply flow.
         if (replyEvent != null) {
-            InlineReplyComposer(
-                onSend = { content -> onSendReply(replyEvent, content) },
-                onUploadMedia = onUploadMedia,
-                onFocused = onReplyFocused,
-                placeholder = stringResource(R.string.reply_placeholder),
-                resolvedEmojis = resolvedEmojis,
-                mentionQuery = mentionQuery,
-                mentionCandidates = mentionCandidates,
-                onMentionDetect = onMentionDetect,
-                onMentionSelect = onMentionSelect,
-                onMentionClear = onMentionClear,
-                resolveDisplayName = resolveDisplayName,
-                modifier = Modifier.padding(start = 48.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)
-            )
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)
+                    .clickable { postCardParams?.onReply?.invoke(replyEvent) }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.reply_bar_placeholder),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Icon(
+                        Icons.Outlined.Edit,
+                        contentDescription = stringResource(R.string.cd_reply),
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
     }
 }
@@ -1331,6 +1322,9 @@ private fun ReferencedNotePostCard(
     val eventReactionEmojiUrls = remember(params.reactionVersion, event.id) {
         eventRepo.getReactionEmojiUrls(event.id)
     }
+    val relayIcons = remember(params.relaySourceVersion, event.id) {
+        eventRepo.getEventRelays(event.id).map { url -> url to null }
+    }
     val translationVersion by params.translationRepo?.version?.collectAsState() ?: remember { mutableIntStateOf(0) }
     val translationState = remember(translationVersion, event.id) {
         params.translationRepo?.getState(event.id) ?: cooking.zap.app.repo.TranslationState()
@@ -1358,6 +1352,7 @@ private fun ReferencedNotePostCard(
         GalleryCard(
             event = event,
             profile = profile,
+            relayIcons = relayIcons,
             onReply = { params.onReply(event) },
             onProfileClick = { params.onProfileClick(event.pubkey) },
             onNavigateToProfile = params.onProfileClick,
@@ -1416,6 +1411,7 @@ private fun ReferencedNotePostCard(
         PostCard(
             event = event,
             profile = profile,
+            relayIcons = relayIcons,
             onReply = { params.onReply(event) },
             onProfileClick = { params.onProfileClick(event.pubkey) },
             onNavigateToProfile = params.onProfileClick,
@@ -1515,6 +1511,7 @@ private data class NotifPostCardParams(
     val replyCountVersion: Int,
     val zapVersion: Int,
     val repostVersion: Int,
+    val relaySourceVersion: Int = 0,
     val followListSize: Int = 0,
     val resolvedEmojis: Map<String, String> = emptyMap(),
     val unicodeEmojis: List<String> = emptyList(),

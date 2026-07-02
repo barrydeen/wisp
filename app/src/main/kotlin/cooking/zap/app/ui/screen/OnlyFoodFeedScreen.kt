@@ -262,10 +262,12 @@ private fun OnlyFoodNote(
     val hasUserReposted by remember(event.id) { derivedStateOf { versions.repost.value.let { eventRepo.hasUserReposted(event.id) } } }
     val hasUserZapped by remember(event.id) { derivedStateOf { versions.zap.value.let { eventRepo.hasUserZapped(event.id) } } }
     val reactionEmojiUrls by remember(event.id) { derivedStateOf { versions.reaction.value.let { eventRepo.getReactionEmojiUrls(event.id) } } }
+    val relayIcons by remember(event.id) { derivedStateOf { versions.relaySource.value.let { eventRepo.getEventRelays(event.id).map { url -> url to null } } } }
 
     PostCard(
         event = event,
         profile = profile,
+        relayIcons = relayIcons,
         onReply = { noteActions.onReply(event) },
         onProfileClick = { noteActions.onProfileClick(event.pubkey) },
         onNavigateToProfile = noteActions.onProfileClick,
