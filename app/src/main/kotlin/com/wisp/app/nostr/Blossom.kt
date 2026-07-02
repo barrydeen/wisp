@@ -9,6 +9,15 @@ object Blossom {
     const val KIND_AUTH = 24242
     const val DEFAULT_SERVER = "https://blossom.primal.net"
 
+    /**
+     * Extract Blossom server URLs from the events tags and returns them as a list.
+     *
+     * The event must be a Blossom server list event (BUD-03)(10063). Tags that are not defined by
+     * BUD-03 or are invalid (i.e. invalid URL) are ignored. The returned list is deduplicated and
+     * ordered by first occurrence in the event.
+     *
+     * @throws IllegalArgumentException if [event] is not kind [KIND_SERVER_LIST]
+     */
     fun parseServerList(event: NostrEvent): List<String> {
         require(event.kind == KIND_SERVER_LIST) {
             "Expected kind $KIND_SERVER_LIST event, got kind ${event.kind}"
