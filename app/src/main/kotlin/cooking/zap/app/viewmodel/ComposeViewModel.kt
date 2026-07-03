@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -1233,38 +1234,55 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
         viewModelScope.launch(Dispatchers.Default) {
             var best: Nip37.Draft? = null
-            val req = ClientMessage.req(subId, filter)
-            var reqSent = relayPool.sendToWriteRelays(req)
-            if (reqSent == 0 && relayPool.ensureWriteRelaysConnected(2_000) > 0) {
-                reqSent = relayPool.sendToWriteRelays(req)
-            }
-            if (reqSent == 0) relayPool.sendToAllRelays(req)
-            withTimeoutOrNull(2_000) {
-                relayPool.events.collect { event ->
-                    if (event.kind != Nip37.KIND_DRAFT) return@collect
-                    if (event.pubkey != signer.pubkeyHex) return@collect
-                    try {
-                        val decrypted = signer.nip44Decrypt(event.content, signer.pubkeyHex)
-                        if (decrypted.isBlank()) return@collect
-                        val draft = Nip37.parseDraft(event, decrypted) ?: return@collect
-                        if (draft.content.isBlank()) return@collect
-                        val current = best
-                        if (current == null || draft.createdAt > current.createdAt) {
-                            best = draft
+            var sentToAll = false
+            try {
+                val req = ClientMessage.req(subId, filter)
+                var reqSent = relayPool.sendToWriteRelays(req)
+                if (reqSent == 0 && relayPool.ensureWriteRelaysConnected(2_000) > 0) {
+                    reqSent = relayPool.sendToWriteRelays(req)
+                }
+                if (reqSent == 0) {
+                    relayPool.sendToAllRelays(req)
+                    sentToAll = true
+                }
+                withTimeoutOrNull(2_000) {
+                    relayPool.events.collect { event ->
+                        if (event.kind != Nip37.KIND_DRAFT) return@collect
+                        if (event.pubkey != signer.pubkeyHex) return@collect
+                        try {
+                            val decrypted = signer.nip44Decrypt(event.content, signer.pubkeyHex)
+                            if (decrypted.isBlank()) return@collect
+                            val draft = Nip37.parseDraft(event, decrypted) ?: return@collect
+                            if (draft.content.isBlank()) return@collect
+                            // Skip reply/quote drafts: their context (NIP-10 "e"/NIP-18 "q" tags)
+                            // isn't restored by loadDraft, so loading one into a fresh top-level
+                            // composer would post a reply/quote as a root note.
+                            if (draft.tags.any { it.isNotEmpty() && (it[0] == "e" || it[0] == "q") }) return@collect
+                            val current = best
+                            if (current == null || draft.createdAt > current.createdAt) {
+                                best = draft
+                            }
+                        } catch (_: Exception) {
+                            // Decryption/parse failed — skip
                         }
-                    } catch (_: Exception) {
-                        // Decryption/parse failed — skip
                     }
                 }
-            }
-            relayPool.sendToWriteRelays(ClientMessage.close(subId))
-            val chosen = best
-            withContext(Dispatchers.Main) {
-                // Only load if the user hasn't started a fresh post in the meantime.
-                if (chosen != null && currentDraftId == null && _content.value.text.isBlank()) {
-                    loadDraft(chosen)
-                }
+            } finally {
+                // Close on the same relay set the REQ went to, so a fallback subscription on
+                // non-write relays doesn't keep streaming after we're done.
+                val close = ClientMessage.close(subId)
+                if (sentToAll) relayPool.sendToAllRelays(close) else relayPool.sendToWriteRelays(close)
+                // Always clear the guard — even on cancellation/exception — so future restores
+                // aren't permanently blocked for this ViewModel instance.
                 restoringDraft = false
+                val chosen = best
+                // NonCancellable so the load still runs if the scope is winding down; guarded so
+                // it never clobbers text the user began typing during the fetch window.
+                withContext(NonCancellable + Dispatchers.Main) {
+                    if (chosen != null && currentDraftId == null && _content.value.text.isBlank()) {
+                        loadDraft(chosen)
+                    }
+                }
             }
         }
     }
@@ -1272,7 +1290,8 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     fun saveDraft(
         relayPool: RelayPool,
         replyTo: NostrEvent?,
-        signer: NostrSigner?
+        signer: NostrSigner?,
+        quoteTo: NostrEvent? = null
     ) {
         // Materialize @mentions into nostr:nprofile URIs so the draft is restorable as a standalone text.
         val (materialized, _) = materializeMentions(_content.value.text, _mentions.value)
@@ -1282,11 +1301,16 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         val draftId = currentDraftId ?: Nip37.newDraftId()
         currentDraftId = draftId
 
-        // Stash locally first so a fresh composer restores this draft instantly, and signal the UI.
-        draftPrefs.edit()
-            .putString("content_${signer.pubkeyHex}", text)
-            .putString("id_${signer.pubkeyHex}", draftId)
-            .apply()
+        // The local last-draft cache backs top-level "continue where you left off". Only populate
+        // it for top-level composers — reply/quote drafts carry context that restoreLatestDraft
+        // can't rehydrate, so caching one would let it be restored (and posted) as a root note.
+        val isTopLevel = replyTo == null && quoteTo == null
+        if (isTopLevel) {
+            draftPrefs.edit()
+                .putString("content_${signer.pubkeyHex}", text)
+                .putString("id_${signer.pubkeyHex}", draftId)
+                .apply()
+        }
         _draftSaved.tryEmit(Unit)
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
@@ -1328,11 +1352,15 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         if (signer == null) return
         currentDraftId = null
 
-        // Drop the local last-draft cache so the just-published draft isn't restored next open.
-        draftPrefs.edit()
-            .remove("content_${signer.pubkeyHex}")
-            .remove("id_${signer.pubkeyHex}")
-            .apply()
+        // Drop the local last-draft cache only when it points at the draft we're deleting — an
+        // unrelated top-level draft cached under this account must survive publishing from a
+        // reply/quote (or already-cleared) composer.
+        if (draftPrefs.getString("id_${signer.pubkeyHex}", null) == dTag) {
+            draftPrefs.edit()
+                .remove("content_${signer.pubkeyHex}")
+                .remove("id_${signer.pubkeyHex}")
+                .apply()
+        }
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
             try {
@@ -1343,7 +1371,15 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                     content = encrypted,
                     tags = tags
                 )
-                relayPool.sendToWriteRelays(ClientMessage.event(event))
+                // Mirror saveDraft's relay fallback: the draft may have been persisted via
+                // sendToAllRelays (no reachable write relays), so the empty replacement must be
+                // able to reach those same relays or the deleted draft can reappear.
+                val msg = ClientMessage.event(event)
+                var sent = relayPool.sendToWriteRelays(msg)
+                if (sent == 0 && relayPool.ensureWriteRelaysConnected(2_000) > 0) {
+                    sent = relayPool.sendToWriteRelays(msg)
+                }
+                if (sent == 0) relayPool.sendToAllRelays(msg)
             } catch (_: Exception) {
                 // Best effort
             }

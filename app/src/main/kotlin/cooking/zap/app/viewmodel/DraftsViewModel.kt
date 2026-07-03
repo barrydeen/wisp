@@ -71,7 +71,6 @@ class DraftsViewModel(app: Application) : AndroidViewModel(app) {
 
                 val prev = latestCreatedAt[dTag]
                 if (prev != null && event.created_at < prev) return@collect
-                latestCreatedAt[dTag] = event.created_at
 
                 try {
                     // NIP-37 deletes a draft by publishing an empty replacement — the decrypted
@@ -79,16 +78,23 @@ class DraftsViewModel(app: Application) : AndroidViewModel(app) {
                     // cross-reference the kind-5 deletion registry, which hid drafts iOS still shows.
                     val decrypted = signer.nip44Decrypt(event.content, signer.pubkeyHex)
                     if (decrypted.isBlank()) {
+                        // Empty replacement = deletion; a valid outcome, so advance the marker.
+                        latestCreatedAt[dTag] = event.created_at
                         _drafts.value = _drafts.value.filter { it.dTag != dTag }
                         return@collect
                     }
                     val draft = Nip37.parseDraft(event, decrypted) ?: return@collect
+                    // Only advance the newest-seen marker once the event decrypts and parses
+                    // cleanly, so a malformed/undecryptable newest copy can't poison the
+                    // coordinate and permanently suppress older valid copies from other relays.
+                    latestCreatedAt[dTag] = event.created_at
                     val current = _drafts.value.toMutableList()
                     val idx = current.indexOfFirst { it.dTag == draft.dTag }
                     if (idx >= 0) current[idx] = draft else current.add(draft)
                     _drafts.value = current.sortedByDescending { it.createdAt }
                 } catch (_: Exception) {
-                    // Decryption/parse failed — skip
+                    // Decryption/parse failed — skip without advancing latestCreatedAt so a
+                    // valid older copy from another relay can still win.
                 }
             }
         }

@@ -1320,7 +1320,7 @@ fun WispNavHost(
             DisposableEffect(Unit) {
                 onDispose {
                     if (composeViewModel.content.value.text.isNotBlank()) {
-                        composeViewModel.saveDraft(feedViewModel.relayPool, replyTarget, activeSigner)
+                        composeViewModel.saveDraft(feedViewModel.relayPool, replyTarget, activeSigner, quoteTarget)
                     }
                 }
             }

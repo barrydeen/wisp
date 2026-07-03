@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -85,7 +86,7 @@ fun DraftSavedPill(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "Draft saved",
+                        text = stringResource(cooking.zap.app.R.string.compose_draft_saved),
                         style = MaterialTheme.typography.labelLarge,
                         color = Color.White
                     )
