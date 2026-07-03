@@ -7,7 +7,6 @@ import cooking.zap.app.nostr.Nip19
 import cooking.zap.app.nostr.hexToByteArray
 import cooking.zap.app.nostr.toHex
 import cooking.zap.app.repo.AccountInfo
-import cooking.zap.app.repo.FiatPreferences
 import cooking.zap.app.repo.KeyBackupPreferences
 import cooking.zap.app.repo.KeyRepository
 import cooking.zap.app.repo.SigningMode
@@ -69,12 +68,6 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             _npub.value = Nip19.npubEncode(keypair.pubkey)
             _signingMode.value = SigningMode.LOCAL
             _error.value = null
-            // Brand-new accounts default to Fiat Mode (USD). Existing-account
-            // logins do not touch these prefs, so a returning user's choice is
-            // preserved and unknown-preference logins stay in Bitcoin mode.
-            val fiatPrefs = FiatPreferences.get(getApplication())
-            fiatPrefs.setFiatMode(true)
-            fiatPrefs.setCurrency("USD")
             true
         } catch (e: Exception) {
             _error.value = "Failed to generate keys: ${e.message}"
