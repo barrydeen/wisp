@@ -23,9 +23,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -37,6 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -128,7 +129,7 @@ fun SousChefScreen(
                         // Sous Chef = sparkle in the web's purple accent (#a855f7),
                         // mirroring the web page header's 32px purple sparkle.
                         Icon(
-                            Icons.Outlined.AutoAwesome,
+                            Icons.Filled.AutoAwesome,
                             contentDescription = null,
                             tint = SousChefPurple,
                             modifier = Modifier.size(32.dp),
@@ -151,7 +152,12 @@ fun SousChefScreen(
         Column(Modifier.fillMaxSize().padding(padding)) {
             Column(Modifier.padding(16.dp)) {
                 Text(
-                    text = "Paste a recipe link and Sous Chef pulls out the ingredients and steps.",
+                    text = "Turn photos, links, or pasted text into ready-to-post recipes.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = "A little extra help in the kitchen.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -191,6 +197,9 @@ fun SousChefScreen(
                     minLines = 3,
                     enabled = !loading,
                     modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = SousChefPurple,
+                    ),
                     trailingIcon = {
                         IconButton(
                             onClick = { clipboard.getText()?.text?.let { input = it } },
