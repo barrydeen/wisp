@@ -44,9 +44,6 @@ class InterfacePreferences(context: Context) {
     fun getLanguage(): String = prefs.getString("language", "system") ?: "system"
     fun setLanguage(language: String) = prefs.edit().putString("language", language).apply()
 
-    fun isZapBoltIcon(): Boolean = prefs.getBoolean("zap_bolt_icon", true)
-    fun setZapBoltIcon(enabled: Boolean) = prefs.edit().putBoolean("zap_bolt_icon", enabled).apply()
-
     fun isLiveStreamsHidden(): Boolean = prefs.getBoolean("live_streams_hidden", false)
     fun setLiveStreamsHidden(hidden: Boolean) = prefs.edit().putBoolean("live_streams_hidden", hidden).apply()
 
@@ -119,7 +116,6 @@ class InterfacePreferences(context: Context) {
             .remove("theme")
             .remove("large_text")
             .remove("new_notes_button_hidden")
-            .remove("zap_bolt_icon")
             .remove("dark_theme")
             .remove("balance_hidden")
             .remove("live_streams_hidden")

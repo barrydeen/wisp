@@ -29,9 +29,8 @@ import cooking.zap.app.R
  *
  * When [allowDecimal] is true the "✓" key is replaced with a "." key and
  * [onConfirm] is ignored — callers are expected to render their own confirm
- * button below the pad (see the Fiat Mode receive flow in WalletScreen).
- * The display header (amount / unit label) is also the caller's responsibility
- * in that mode; we only render the keypad.
+ * button below the pad. The display header (amount / unit label) is also the
+ * caller's responsibility in that mode; we only render the keypad.
  */
 @Composable
 fun SatsNumpad(

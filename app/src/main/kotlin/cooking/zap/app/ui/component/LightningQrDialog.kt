@@ -16,7 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,7 +43,6 @@ fun LightningQrDialog(lud16: String, onDismiss: () -> Unit) {
     val qrBitmap = remember(lud16) { generateQrBitmap(lud16) }
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
-    val useZapBolt = cooking.zap.app.ui.util.useBoltIcon()
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -93,21 +91,12 @@ fun LightningQrDialog(lud16: String, onDismiss: () -> Unit) {
                             .background(androidx.compose.ui.graphics.Color.White)
                             .padding(4.dp)
                     ) {
-                        if (useZapBolt) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_bolt),
-                                contentDescription = "Lightning",
-                                tint = WispThemeColors.zapColor,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        } else {
-                            Icon(
-                                Icons.Outlined.CurrencyBitcoin,
-                                contentDescription = "Bitcoin",
-                                tint = WispThemeColors.zapColor,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
+                        Icon(
+                            painter = painterResource(R.drawable.ic_bolt),
+                            contentDescription = "Lightning",
+                            tint = WispThemeColors.zapColor,
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
                 }
 

@@ -4,7 +4,7 @@ import android.content.Context
 
 enum class WalletMode { NONE, NWC, SPARK }
 
-enum class BalanceUnit { BITCOIN, LIGHTNING, SATS }
+enum class BalanceUnit { LIGHTNING, SATS }
 
 class WalletModeRepository(private val context: Context, pubkeyHex: String? = null) {
 

@@ -8,21 +8,17 @@ import android.content.SharedPreferences
  * pubkey under the `walletBalanceDisplay_<pubkey>` key in the
  * `wisp_settings` SharedPreferences file.
  *
- * `FIAT` is scoped to the wallet screen — it renders the balance in
- * the user's currently-selected fiat currency
- * ([FiatPreferences.getCurrency]) but does NOT flip the app-wide
- * [FiatPreferences.isFiatMode] flag, so feed timestamps / sat counts
- * elsewhere in the app still respect that global setting.
+ * `FIAT` renders the balance in the user's selected display currency
+ * ([CurrencyPreferences]). This is a wallet-only convenience — there is
+ * no app-wide "fiat mode"; sats remain the standard everywhere else.
  *
  * `HIDDEN` masks the dashboard balance AND every per-row amount + fee
  * in the transaction history view — useful for screenshots / shoulder-
  * surfing scenarios.
  *
- * Mirrors iOS [feat/wallet-balance-toggle](https://github.com/barrydeen/wisp-ios/pull/166)
- * with the same storage-key format so cross-platform agents stay in
- * lockstep. Legacy Android global `balance_hidden` Bool is read once
- * per pubkey when no per-pubkey entry exists, and the per-pubkey key
- * is written from it (true → HIDDEN, false → SATS).
+ * Legacy Android global `balance_hidden` Bool is read once per pubkey
+ * when no per-pubkey entry exists, and the per-pubkey key is written
+ * from it (true → HIDDEN, false → SATS).
  */
 enum class WalletBalanceDisplayMode {
     SATS, FIAT, HIDDEN;

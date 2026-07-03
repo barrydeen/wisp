@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -101,7 +100,6 @@ fun WispBottomBar(
 
     val leftTabs = listOf(BottomTab.FEED, BottomTab.RECIPES)
     val rightTabs = listOf(BottomTab.MESSAGES, BottomTab.NOTIFICATIONS)
-    val useBolt = cooking.zap.app.ui.util.useBoltIcon()
 
     // Overlay container: the bar + nav-inset spacer in a Column, with the elevated
     // circle drawn on TOP of all of it (so neither its top protrusion nor its
@@ -130,7 +128,6 @@ fun WispBottomBar(
                             isZapAnimating = isZapAnimating,
                             isReplyAnimating = isReplyAnimating,
                             notifSoundEnabled = notifSoundEnabled,
-                            useBolt = useBolt,
                             modifier = Modifier.weight(1f),
                             onTabSelected = onTabSelected
                         )
@@ -149,7 +146,6 @@ fun WispBottomBar(
                             isZapAnimating = isZapAnimating,
                             isReplyAnimating = isReplyAnimating,
                             notifSoundEnabled = notifSoundEnabled,
-                            useBolt = useBolt,
                             modifier = Modifier.weight(1f),
                             onTabSelected = onTabSelected
                         )
@@ -225,7 +221,6 @@ private fun SideNavItem(
     isZapAnimating: Boolean,
     isReplyAnimating: Boolean,
     notifSoundEnabled: Boolean,
-    useBolt: Boolean,
     modifier: Modifier = Modifier,
     onTabSelected: (BottomTab) -> Unit
 ) {
@@ -243,20 +238,12 @@ private fun SideNavItem(
             contentAlignment = Alignment.Center
         ) {
             if (tab == BottomTab.NOTIFICATIONS && isZapAnimating) {
-                // Zap animation overrides the bell — bolt or bitcoin symbol.
-                if (useBolt) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_bolt),
-                        contentDescription = stringResource(tab.labelResId),
-                        tint = zapTint
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Outlined.CurrencyBitcoin,
-                        contentDescription = stringResource(tab.labelResId),
-                        tint = zapTint
-                    )
-                }
+                // Zap animation overrides the bell — lightning bolt.
+                Icon(
+                    painter = painterResource(R.drawable.ic_bolt),
+                    contentDescription = stringResource(tab.labelResId),
+                    tint = zapTint
+                )
             } else if (tab.selectedIconRes != null) {
                 Icon(
                     painter = painterResource(if (selected) tab.selectedIconRes else tab.unselectedIconRes!!),
@@ -328,7 +315,6 @@ private fun ReadOnlyBottomBar(
 ) {
     val navBarColor = if (isDarkTheme) NavBarDark else MaterialTheme.colorScheme.surface
     val visibleTabs = listOf(BottomTab.FEED, BottomTab.RECIPES, BottomTab.NOTIFICATIONS)
-    val useBolt = cooking.zap.app.ui.util.useBoltIcon()
 
     Column {
         NavigationBar(
@@ -361,19 +347,11 @@ private fun ReadOnlyBottomBar(
                             val zapTint = if (selected) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant
                             if (tab == BottomTab.NOTIFICATIONS && isZapAnimating) {
-                                if (useBolt) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_bolt),
-                                        contentDescription = stringResource(tab.labelResId),
-                                        tint = zapTint
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Outlined.CurrencyBitcoin,
-                                        contentDescription = stringResource(tab.labelResId),
-                                        tint = zapTint
-                                    )
-                                }
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_bolt),
+                                    contentDescription = stringResource(tab.labelResId),
+                                    tint = zapTint
+                                )
                             } else if (tab.selectedIconRes != null) {
                                 Icon(
                                     painter = painterResource(if (selected) tab.selectedIconRes else tab.unselectedIconRes!!),

@@ -81,7 +81,6 @@ import cooking.zap.app.nostr.ProfileData
 import cooking.zap.app.nostr.hexToByteArray
 import cooking.zap.app.R
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import cooking.zap.app.nostr.Nip30
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.CircularProgressIndicator
@@ -1227,30 +1226,12 @@ internal fun TopZapperBanner(
             Spacer(Modifier.width(5.dp))
 
             // Zap icon
-            val useZapBolt = cooking.zap.app.ui.util.useBoltIcon()
-            val fiatMode = cooking.zap.app.ui.util.isFiatMode()
-            if (fiatMode) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_coin_stack),
-                    contentDescription = null,
-                    tint = orange,
-                    modifier = Modifier.size(16.dp)
-                )
-            } else if (useZapBolt) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_bolt),
-                    contentDescription = null,
-                    tint = orange,
-                    modifier = Modifier.size(13.dp)
-                )
-            } else {
-                Icon(
-                    Icons.Outlined.CurrencyBitcoin,
-                    contentDescription = null,
-                    tint = orange,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
+            Icon(
+                painter = painterResource(R.drawable.ic_bolt),
+                contentDescription = null,
+                tint = orange,
+                modifier = Modifier.size(13.dp)
+            )
 
             // Amount
             Text(

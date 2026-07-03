@@ -1054,21 +1054,6 @@
     <string name="msg_assign_role">Set roles for %s. Leave empty to revoke admin status.</string>
     <string name="cd_assign_role">Assign role</string>
 
-    <!-- Fiat mode -->
-    <string name="drawer_fiat_mode">Fiat Mode</string>
-    <string name="fiat_settings_title">Fiat Mode</string>
-    <string name="fiat_settings_description">Show zap and wallet amounts in a fiat currency instead of satoshis. Rates are fetched once when the app starts — this is an approximation, not real‑time pricing.</string>
-    <string name="fiat_settings_enable">Enable Fiat Mode</string>
-    <string name="fiat_settings_enable_subtitle">Display amounts in your chosen currency across the app.</string>
-    <string name="fiat_settings_currency">Currency</string>
-    <string name="fiat_settings_rates_updated">Rates updated %1$s</string>
-    <string name="fiat_settings_rates_never">Rates not yet fetched</string>
-    <string name="fiat_settings_refresh">Refresh</string>
-    <string name="fiat_settings_rate_line">1 BTC ≈ %1$s %2$,.2f</string>
-
-    <string name="zap_send_money">Send Money</string>
-    <string name="zap_x_amount">Send %1$s</string>
-
     <string name="amount_sats_format">%1$s sats</string>
     <string name="wallet_fee_money">fee: %1$s</string>
     <string name="wallet_seed_spark_only">This recovery phrase is specific to Spark wallets. It will not work with other wallet apps.</string>
@@ -1076,8 +1061,12 @@
     <string name="wallet_use_default">Use my default wallet</string>
     <string name="wallet_default_subtitle">Derived from your Nostr key — no extra backup needed.</string>
     <string name="wallet_other_options">Other options</string>
-    <string name="wallet_switch_wallet">Switch Wallet</string>
+    <string name="wallet_switch_wallet">Switch to a different wallet</string>
     <string name="wallet_switch_wallet_body">Disconnect this wallet so you can use your default wallet or restore a different one. Your funds stay safe — you can reconnect this wallet anytime by entering its recovery phrase.</string>
+    <string name="wallet_disconnect_section">Disconnect Wallet</string>
+    <string name="wallet_switch_wallet_caption">Your default wallet is linked to your key and can always be restored. Switching connects a different wallet instead.</string>
+    <string name="wallet_disconnect_nwc">Disconnect this wallet</string>
+    <string name="wallet_disconnect_nwc_caption">This removes the connection from this device. You can reconnect anytime with a new connection string.</string>
     <string name="wallet_default_seed_info">This wallet is derived from your Nostr key, so the phrase below is just for export to other wallet apps. You don\'t need to back it up — your nsec is the backup.</string>
 
     <!-- Group fallback title + member summary -->

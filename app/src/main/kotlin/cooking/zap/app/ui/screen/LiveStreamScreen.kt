@@ -553,18 +553,11 @@ private fun StreamInfoBar(
                             )
                         }
                         Spacer(Modifier.width(4.dp))
-                        // In fiat mode the surrounding wallet UX uses
-                        // "Send Money" / "Send $X.XX" wording — match it
-                        // here so the user doesn't see "Zap" / "Zapping…"
-                        // alongside dollar amounts on the same screen.
-                        val ctx = LocalContext.current
-                        val zapFiatPrefs = remember { cooking.zap.app.repo.FiatPreferences.get(ctx) }
-                        val zapFiatMode by zapFiatPrefs.fiatMode.collectAsState()
                         Text(
                             text = when {
                                 isZapAnimating -> "Sent!"
-                                isZapInProgress -> if (zapFiatMode) "Sending..." else "Zapping..."
-                                else -> if (zapFiatMode) "Send" else "Zap"
+                                isZapInProgress -> "Zapping..."
+                                else -> "Zap"
                             },
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,

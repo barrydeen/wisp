@@ -50,7 +50,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import cooking.zap.app.nostr.Nip30
 import cooking.zap.app.nostr.toNpub
 import cooking.zap.app.ui.component.Nip05Badge
@@ -1366,28 +1365,18 @@ private fun ProfileHeader(
                         }
                     }
                     if (profile?.lud16 != null && onZapClick != null) {
-                        val useZapBolt = cooking.zap.app.ui.util.useBoltIcon()
                         Surface(
                             onClick = onZapClick,
                             shape = CircleShape,
                             color = MaterialTheme.colorScheme.surfaceVariant,
                             modifier = Modifier.size(40.dp)
                         ) {
-                            if (useZapBolt) {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_bolt),
-                                    contentDescription = "Zap",
-                                    tint = Color(0xFFFFC107),
-                                    modifier = Modifier.padding(11.dp)
-                                )
-                            } else {
-                                Icon(
-                                    Icons.Outlined.CurrencyBitcoin,
-                                    contentDescription = "Zap",
-                                    tint = Color(0xFFFFC107),
-                                    modifier = Modifier.padding(10.dp)
-                                )
-                            }
+                            Icon(
+                                painter = painterResource(R.drawable.ic_bolt),
+                                contentDescription = "Zap",
+                                tint = Color(0xFFFFC107),
+                                modifier = Modifier.padding(11.dp)
+                            )
                         }
                     }
                     // Follow circle button
@@ -1525,22 +1514,12 @@ private fun ProfileHeader(
                     Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
                 }
             ) {
-                val useBoltIcon = cooking.zap.app.ui.util.useBoltIcon()
-                if (useBoltIcon) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_bolt),
-                        contentDescription = "Lightning address",
-                        tint = Color(0xFFFFC107),
-                        modifier = Modifier.size(16.dp)
-                    )
-                } else {
-                    Icon(
-                        Icons.Outlined.CurrencyBitcoin,
-                        contentDescription = "Lightning address",
-                        tint = Color(0xFFFFC107),
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
+                Icon(
+                    painter = painterResource(R.drawable.ic_bolt),
+                    contentDescription = "Lightning address",
+                    tint = Color(0xFFFFC107),
+                    modifier = Modifier.size(16.dp)
+                )
                 Spacer(Modifier.width(4.dp))
                 Text(
                     text = lightning,
