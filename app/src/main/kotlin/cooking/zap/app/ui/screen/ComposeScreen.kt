@@ -33,14 +33,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -319,10 +317,11 @@ fun ComposeScreen(
         Column(
             modifier = Modifier
                 .padding(padding)
-                // Consume the nav-bar inset (already reserved by the app Scaffold) before
-                // imePadding so the keyboard push doesn't double-count it and leave a gap
-                // between Publish and the keyboard.
-                .consumeWindowInsets(WindowInsets.navigationBars)
+                // Lift the whole column above the keyboard. The app bottom nav is hidden
+                // while the composer keyboard is open (see Navigation.kt), so there's no
+                // reserved nav height to double-count here — imePadding alone is correct.
+                // Consuming the nav-bar inset would subtract it from imePadding and leave
+                // the Publish button partially under the keyboard on 3-button-nav devices.
                 .imePadding()
         ) {
             if (galleryMode) {
@@ -1363,7 +1362,9 @@ fun ComposeScreen(
                                 resolvedEmojis = resolvedEmojis
                             )
                         },
-                        enabled = !publishing && !isMiningBusy,
+                        enabled = !publishing && !isMiningBusy &&
+                            (content.text.isNotBlank() || uploadedUrls.isNotEmpty() ||
+                                (pollEnabled && pollOptions.any { it.isNotBlank() })),
                         modifier = Modifier.fillMaxWidth().height(44.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) {
