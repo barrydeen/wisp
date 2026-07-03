@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 private val NOSTR_URI_REGEX = Regex("nostr:(npub1[a-z0-9]{58}|nprofile1[a-z0-9]+|note1[a-z0-9]{58}|nevent1[a-z0-9]+)")
@@ -328,37 +329,97 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 try {
                     _uploadProgress.value = if (total > 1) "Uploading ${index + 1}/$total..." else "Uploading..."
                     val (rawBytes, rawMime, rawExt) = readFileFromUri(contentResolver, uri)
-                    val (bytes, mime, ext) = when {
-                        rawMime == "image/gif" -> GifToMp4Converter.convert(rawBytes, getApplication())
-                        rawMime.startsWith("image/") -> MediaCompressor.compressForContent(rawBytes, rawMime).asTriple()
-                        else -> Triple(rawBytes, rawMime, rawExt)
-                    }
-                    // Re-extract dimensions from post-pipeline bytes so dim tags match what's uploaded.
-                    val dims = extractDimensionsFromBytes(bytes, mime)
-                    val thumbhash = if (mime.startsWith("image/")) createThumbhash(bytes) else null
-                    val url = blossomRepo.uploadMedia(bytes, mime, ext, signer)
-                    _uploadedUrls.value = _uploadedUrls.value + url
-                    _uploadedMediaMeta[url] = UploadedMediaMeta(
-                        mimeType = mime,
-                        dimensions = dims,
-                        thumbhash = thumbhash
-                    )
-                    if (_galleryMode.value && mime.startsWith("video/")) {
-                        _galleryHasVideo.value = true
-                    }
-                    // In gallery mode, don't insert URLs into the text — they're shown in the pager
-                    if (!_galleryMode.value) {
-                        val current = _content.value.text
-                        val newText = if (current.isBlank()) url else "$current\n$url"
-                        _content.value = TextFieldValue(newText, TextRange(newText.length))
-                        savedStateHandle["draft_content"] = newText
-                    }
+                    processAndUploadBytes(rawBytes, rawMime, rawExt, signer)
                 } catch (e: Exception) {
                     _error.value = "Upload failed: ${e.message}"
                     break
                 }
             }
             _uploadProgress.value = null
+        }
+    }
+
+    /** Downloads a GIF from [url] (e.g. a Giphy search result) and runs it through the
+     * same transcode/upload/insert pipeline as a picked GIF file. */
+    fun uploadGif(url: String, signer: NostrSigner? = null) {
+        viewModelScope.launch {
+            try {
+                _uploadProgress.value = "Uploading..."
+                val (rawBytes, rawMime) = withContext(Dispatchers.IO) {
+                    val request = okhttp3.Request.Builder().url(url).build()
+                    cooking.zap.app.relay.HttpClientFactory.createHttpClient(readTimeoutSeconds = 30)
+                        .newCall(request).execute().use { response ->
+                            if (!response.isSuccessful) throw java.io.IOException("HTTP ${response.code}")
+                            val body = response.body ?: throw java.io.IOException("Empty response")
+                            // Providers may serve WebP/PNG/etc. — trust Content-Type,
+                            // falling back to the URL extension for generic/absent types.
+                            val headerMime = body.contentType()?.let { "${it.type}/${it.subtype}" }
+                            val mime = if (headerMime == null || headerMime == "application/octet-stream") {
+                                mimeFromMediaUrl(url)
+                            } else headerMime
+                            body.bytes() to mime
+                        }
+                }
+                val rawExt = MimeTypeMap.getSingleton().getExtensionFromMimeType(rawMime) ?: "gif"
+                processAndUploadBytes(rawBytes, rawMime, rawExt, signer)
+            } catch (e: Exception) {
+                _error.value = "GIF upload failed: ${e.message}"
+            }
+            _uploadProgress.value = null
+        }
+    }
+
+    private fun mimeFromMediaUrl(url: String): String {
+        val path = url.substringBefore('?').substringBefore('#')
+        return when (path.substringAfterLast('.', "").lowercase()) {
+            "webp" -> "image/webp"
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
+            "mp4" -> "video/mp4"
+            else -> "image/gif"
+        }
+    }
+
+    /** Shared tail of the upload pipeline: transcode/compress, upload to Blossom,
+     * record media metadata, and (outside gallery mode) insert the URL into content. */
+    private suspend fun processAndUploadBytes(
+        rawBytes: ByteArray,
+        rawMime: String,
+        rawExt: String,
+        signer: NostrSigner?
+    ) {
+        // Transcode/compress/hash are CPU-heavy — keep them off viewModelScope's Main dispatcher.
+        val (media, dims, thumbhash) = withContext(Dispatchers.Default) {
+            val processed = when {
+                rawMime == "image/gif" -> GifToMp4Converter.convert(rawBytes, getApplication())
+                rawMime.startsWith("image/") -> MediaCompressor.compressForContent(rawBytes, rawMime).asTriple()
+                else -> Triple(rawBytes, rawMime, rawExt)
+            }
+            val (pBytes, pMime, _) = processed
+            // Re-extract dimensions from post-pipeline bytes so dim tags match what's uploaded.
+            Triple(
+                processed,
+                extractDimensionsFromBytes(pBytes, pMime),
+                if (pMime.startsWith("image/")) createThumbhash(pBytes) else null
+            )
+        }
+        val (bytes, mime, ext) = media
+        val url = blossomRepo.uploadMedia(bytes, mime, ext, signer)
+        _uploadedUrls.value = _uploadedUrls.value + url
+        _uploadedMediaMeta[url] = UploadedMediaMeta(
+            mimeType = mime,
+            dimensions = dims,
+            thumbhash = thumbhash
+        )
+        if (_galleryMode.value && mime.startsWith("video/")) {
+            _galleryHasVideo.value = true
+        }
+        // In gallery mode, don't insert URLs into the text — they're shown in the pager
+        if (!_galleryMode.value) {
+            val current = _content.value.text
+            val newText = if (current.isBlank()) url else "$current\n$url"
+            _content.value = TextFieldValue(newText, TextRange(newText.length))
+            savedStateHandle["draft_content"] = newText
         }
     }
 

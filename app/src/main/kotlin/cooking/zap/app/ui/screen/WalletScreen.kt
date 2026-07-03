@@ -3787,36 +3787,77 @@ private fun SparkSetupContent(
 
         Spacer(Modifier.height(28.dp))
 
-        // Option rows
+        // Primary option — the default wallet when one is available, otherwise
+        // creating a fresh wallet is the main path. Highlighted to match the
+        // Spark-vs-NWC mode picker above (Wisp Android convention).
         if (canUseDefaultWallet) {
-            SparkOptionRow(
-                icon = Icons.Outlined.VpnKey,
+            WalletPrimaryRow(
+                leadingIcon = {
+                    Icon(Icons.Outlined.VpnKey, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
+                },
                 title = stringResource(R.string.wallet_use_default),
                 subtitle = stringResource(R.string.wallet_default_subtitle),
                 onClick = onUseDefaultWallet
             )
-            Spacer(Modifier.height(12.dp))
+        } else {
+            WalletPrimaryRow(
+                leadingIcon = {
+                    Icon(Icons.Outlined.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
+                },
+                title = stringResource(R.string.wallet_create_title),
+                subtitle = stringResource(R.string.wallet_create_subtitle),
+                onClick = onCreateWallet
+            )
         }
-        SparkOptionRow(
-            icon = Icons.Outlined.Add,
-            title = stringResource(R.string.wallet_create_title),
-            subtitle = stringResource(R.string.wallet_create_subtitle),
-            onClick = onCreateWallet
-        )
+
         Spacer(Modifier.height(12.dp))
-        SparkOptionRow(
-            icon = Icons.Outlined.History,
-            title = stringResource(R.string.wallet_restore_seed_title),
-            subtitle = stringResource(R.string.wallet_restore_seed_subtitle),
-            onClick = onRestoreFromSeed
-        )
-        Spacer(Modifier.height(12.dp))
-        SparkOptionRow(
-            icon = Icons.Outlined.CloudDownload,
-            title = stringResource(R.string.wallet_restore_relays_title),
-            subtitle = stringResource(R.string.wallet_restore_relays_subtitle),
-            onClick = onRestoreFromRelay
-        )
+
+        var otherOptionsExpanded by remember { mutableStateOf(false) }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { otherOptionsExpanded = !otherOptionsExpanded }
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                stringResource(R.string.wallet_other_options),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.weight(1f))
+            Icon(
+                if (otherOptionsExpanded) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        AnimatedVisibility(visible = otherOptionsExpanded) {
+            Column {
+                if (canUseDefaultWallet) {
+                    SparkOptionRow(
+                        icon = Icons.Outlined.Add,
+                        title = stringResource(R.string.wallet_create_title),
+                        subtitle = stringResource(R.string.wallet_create_subtitle),
+                        onClick = onCreateWallet
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+                SparkOptionRow(
+                    icon = Icons.Outlined.History,
+                    title = stringResource(R.string.wallet_restore_seed_title),
+                    subtitle = stringResource(R.string.wallet_restore_seed_subtitle),
+                    onClick = onRestoreFromSeed
+                )
+                Spacer(Modifier.height(12.dp))
+                SparkOptionRow(
+                    icon = Icons.Outlined.CloudDownload,
+                    title = stringResource(R.string.wallet_restore_relays_title),
+                    subtitle = stringResource(R.string.wallet_restore_relays_subtitle),
+                    onClick = onRestoreFromRelay
+                )
+            }
+        }
 
         if (walletState is WalletState.Error) {
             Spacer(Modifier.height(16.dp))

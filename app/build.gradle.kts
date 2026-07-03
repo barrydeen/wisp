@@ -29,13 +29,14 @@ android {
         }
 
         val localProps = rootProject.file("local.properties")
-        val breezApiKey = if (localProps.exists()) {
-            val props = Properties()
-            localProps.inputStream().use { props.load(it) }
-            props.getProperty("breez.api.key", "")
-        } else ""
+        val props = if (localProps.exists()) {
+            Properties().apply { localProps.inputStream().use { load(it) } }
+        } else Properties()
+        val breezApiKey = props.getProperty("breez.api.key", "")
+        val giphyApiKey = props.getProperty("giphy.api.key", "")
         buildConfigField("String", "BREEZ_API_KEY", "\"$breezApiKey\"")
         buildConfigField("String", "BREEZ_SDK_VERSION", "\"${libs.versions.breez.sdk.spark.get()}\"")
+        buildConfigField("String", "GIPHY_API_KEY", "\"$giphyApiKey\"")
     }
 
     buildTypes {
