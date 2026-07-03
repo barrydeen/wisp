@@ -1061,8 +1061,10 @@
     <string name="wallet_use_default">Use my default wallet</string>
     <string name="wallet_default_subtitle">Derived from your Nostr key — no extra backup needed.</string>
     <string name="wallet_other_options">Other options</string>
-    <string name="wallet_switch_wallet">Switch Wallet</string>
+    <string name="wallet_switch_wallet">Switch to a different wallet</string>
     <string name="wallet_switch_wallet_body">Disconnect this wallet so you can use your default wallet or restore a different one. Your funds stay safe — you can reconnect this wallet anytime by entering its recovery phrase.</string>
+    <string name="wallet_disconnect_section">Disconnect Wallet</string>
+    <string name="wallet_switch_wallet_caption">Your default wallet is linked to your key and can always be restored. Switching connects a different wallet instead.</string>
     <string name="wallet_default_seed_info">This wallet is derived from your Nostr key, so the phrase below is just for export to other wallet apps. You don\'t need to back it up — your nsec is the backup.</string>
 
     <!-- Group fallback title + member summary -->

@@ -4511,22 +4511,67 @@ private fun WalletSettingsContent(
 
         Spacer(Modifier.height(32.dp))
 
-        Button(
-            onClick = onDeleteWallet,
-            modifier = Modifier.fillMaxWidth(),
-            colors = if (isDefaultWallet) ButtonDefaults.buttonColors()
-                else ButtonDefaults.buttonColors(
+        // Both the default-Spark "Switch" and the NWC "Disconnect" cases are quiet,
+        // recoverable affordances — a card row with red text + swap icon plus a caption.
+        // Only the truly destructive Delete (a non-default Spark wallet whose seed can't
+        // be re-derived from the nsec) keeps the filled-red CTA so the user notices the
+        // irreversibility.
+        val isRecoverable = walletMode == WalletMode.NWC || isDefaultWallet
+        if (isRecoverable) {
+            Text(
+                stringResource(R.string.wallet_disconnect_section),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, bottom = 6.dp)
+            )
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onDeleteWallet),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.SwapHoriz,
+                        contentDescription = null,
+                        tint = Color(0xFFFF3B30),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        stringResource(R.string.wallet_switch_wallet),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color(0xFFFF3B30)
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.wallet_switch_wallet_caption),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        } else {
+            Button(
+                onClick = onDeleteWallet,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFFD32F2F),
                     contentColor = Color.White
                 )
-        ) {
-            Text(
-                when {
-                    walletMode == WalletMode.NWC -> "Disconnect"
-                    isDefaultWallet -> stringResource(R.string.wallet_switch_wallet)
-                    else -> "Delete Wallet"
-                }
-            )
+            ) {
+                Text("Delete Wallet")
+            }
         }
 
         // Footer
