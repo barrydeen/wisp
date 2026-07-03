@@ -7,9 +7,9 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Stores the display currency used for wallet fiat conversions (balance and
- * transaction amounts). This is only a currency selection — there is no
- * app-wide "fiat mode"; sats remain the standard everywhere outside the
- * wallet's optional dollar-balance view.
+ * transaction amounts). Any supported currency may be selected — not just USD.
+ * This is only a currency selection — there is no app-wide "fiat mode"; sats
+ * remain the standard everywhere outside the wallet's optional fiat-balance view.
  */
 class CurrencyPreferences(context: Context) {
     private val prefs = context.getSharedPreferences("wisp_settings", Context.MODE_PRIVATE)

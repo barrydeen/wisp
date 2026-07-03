@@ -1342,14 +1342,15 @@ private fun WalletHomeContent(
         Spacer(Modifier.weight(1f))
 
         // ── Balance ─────────────────────────────────────────────────
-        // Tap to cycle sats → dollars → hidden. Fixed height + centered
-        // content so toggling to a state without a sub-label (dollars)
-        // doesn't shift the layout vertically.
+        // Tap to cycle sats → fiat → hidden. A minimum height + centered
+        // content keeps the layout stable when toggling to a state without a
+        // sub-label (fiat), while still allowing the row to grow at larger
+        // system font scales so the amount isn't clipped.
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
             modifier = Modifier
-                .height(96.dp)
+                .heightIn(min = 96.dp)
                 .clickable {
                 balanceDisplay = balanceDisplay.next()
                 WalletBalanceDisplayMode.write(prefs, pubkey, balanceDisplay)
@@ -3169,14 +3170,15 @@ private fun TransactionRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val sign = if (isIncoming) "+" else "-"
                 val signColor = if (isIncoming) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                val amountFiat = if (isFiat) AmountFormatter.formatFiat(amountSats, displayCurrency) else null
                 when {
                     isHidden -> Text(
                         "$sign* * *",
                         style = MaterialTheme.typography.titleMedium,
                         color = signColor
                     )
-                    isFiat && AmountFormatter.formatFiat(amountSats, displayCurrency) != null -> Text(
-                        "$sign${AmountFormatter.formatFiat(amountSats, displayCurrency)}",
+                    amountFiat != null -> Text(
+                        "$sign$amountFiat",
                         style = MaterialTheme.typography.titleMedium,
                         color = signColor
                     )
@@ -4548,7 +4550,10 @@ private fun WalletSettingsContent(
                     )
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        stringResource(R.string.wallet_switch_wallet),
+                        stringResource(
+                            if (isDefaultWallet) R.string.wallet_switch_wallet
+                            else R.string.wallet_disconnect_nwc
+                        ),
                         style = MaterialTheme.typography.bodyLarge,
                         color = Color(0xFFFF3B30)
                     )
@@ -4556,7 +4561,10 @@ private fun WalletSettingsContent(
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                stringResource(R.string.wallet_switch_wallet_caption),
+                stringResource(
+                    if (isDefaultWallet) R.string.wallet_switch_wallet_caption
+                    else R.string.wallet_disconnect_nwc_caption
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp)
