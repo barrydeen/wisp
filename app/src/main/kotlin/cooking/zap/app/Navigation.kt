@@ -3399,7 +3399,7 @@ fun WispNavHost(
                 // Same flow as the drawer's "add account" — sign in with a
                 // signing-capable account.
                 onSignIn = onAddAccount,
-                membershipLinkoutEnabled = true, // BuildConfig flag lands with the flavor wiring
+                membershipLinkoutEnabled = BuildConfig.MEMBERSHIP_LINKOUT_ENABLED,
                 onSave = {
                     sousChefViewModel.save(
                         publisher = feedViewModel.recipePublisher,

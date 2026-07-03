@@ -53,17 +53,25 @@ android {
     }
 
     // Distribution targets (ZAPCOOKING_ANDROID_BUILD.md §2). Zapstore is
-    // primary, Play secondary. Skeleton only — kept config-free on purpose;
-    // the flavor-gated membership link-out flag rides on these in Phase 3.
-    // applicationId (cooking.zap.app) and the debug suffix are shared.
+    // primary, Play secondary. applicationId (cooking.zap.app) and the
+    // debug suffix are shared.
+    //
+    // MEMBERSHIP_LINKOUT_ENABLED (Sous Chef, Phase 3): whether tapping a
+    // members-only import as a non-member may open the external
+    // zap.cooking/membership page. True for both stores today; the Play
+    // flavor can flip to false without code changes if Play's external-
+    // purchase policy ever requires it (false shows an informational
+    // dialog instead).
     flavorDimensions += "store"
     productFlavors {
         create("zapstore") {
             dimension = "store"
             isDefault = true
+            buildConfigField("boolean", "MEMBERSHIP_LINKOUT_ENABLED", "true")
         }
         create("play") {
             dimension = "store"
+            buildConfigField("boolean", "MEMBERSHIP_LINKOUT_ENABLED", "true")
         }
     }
 
