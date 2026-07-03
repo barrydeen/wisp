@@ -2,6 +2,8 @@ package cooking.zap.app.api
 
 import cooking.zap.app.nostr.Nip98
 import cooking.zap.app.nostr.NostrSigner
+import cooking.zap.app.nostr.SignerCancelledException
+import cooking.zap.app.nostr.SignerRejectedException
 import cooking.zap.app.nostr.NourishParser
 import cooking.zap.app.nostr.NourishScore
 import kotlinx.serialization.json.jsonObject
@@ -70,13 +72,15 @@ class ZapCookingApi(
      * NIP-98-authenticated POST. Signs [bodyString] via [signer] (the exact
      * bytes hashed into the `payload` tag are the bytes sent — single source
      * of truth), then runs the shared execute/error/decode path on
-     * `Dispatchers.IO`.
+     * `Dispatchers.IO`. Pass [httpClient] to override the general client
+     * (e.g. the long-timeout compute client for LLM endpoints).
      */
     private suspend fun <T> authedPost(
         path: String,
         bodyString: String,
         signer: NostrSigner,
         deserializer: DeserializationStrategy<T>,
+        httpClient: OkHttpClient = client,
     ): T = withContext(Dispatchers.IO) {
         val url = "$baseUrl$path"
         val authHeader = Nip98.authHeader(signer, method = "POST", url = url, bodyString = bodyString)
@@ -85,7 +89,7 @@ class ZapCookingApi(
             .header("Authorization", authHeader)
             .post(bodyString.toRequestBody(jsonMediaType))
             .build()
-        execute(request, deserializer)
+        execute(request, deserializer, httpClient)
     }
 
     /** Unauthenticated GET on `Dispatchers.IO`, sharing the execute path. */
@@ -126,6 +130,75 @@ class ZapCookingApi(
             json.encodeToString(ExtractUrlRequest.serializer(), ExtractUrlRequest(url)),
             ExtractRecipeResponse.serializer(),
         )
+
+    /**
+     * `POST /api/extract-recipe` — NIP-98-authenticated image extraction
+     * (Sous Chef, Phase 3). [dataUrl] is the prepared
+     * `data:image/jpeg;base64,…` string, consumed verbatim server-side.
+     * Member-gated: identity comes from the verified header, NOT a body
+     * pubkey. Uses the long-timeout compute client (vision extraction
+     * routinely exceeds the general 15s read timeout).
+     */
+    suspend fun extractRecipeFromImage(dataUrl: String, signer: NostrSigner): ExtractAuthedResult =
+        extractAuthed(
+            json.encodeToString(
+                ExtractImageRequest.serializer(),
+                ExtractImageRequest(type = "image", imageData = dataUrl),
+            ),
+            signer,
+        )
+
+    /** `POST /api/extract-recipe` — NIP-98-authenticated text extraction. */
+    suspend fun extractRecipeFromText(text: String, signer: NostrSigner): ExtractAuthedResult =
+        extractAuthed(
+            json.encodeToString(
+                ExtractTextRequest.serializer(),
+                ExtractTextRequest(type = "text", textData = text),
+            ),
+            signer,
+        )
+
+    /**
+     * Shared image/text extraction call. Maps the member-gate statuses (401 →
+     * [ExtractAuthedResult.SignInRequired], 403 →
+     * [ExtractAuthedResult.MembersOnly]); signer failures
+     * ([cooking.zap.app.nostr.SignerRejectedException] /
+     * [cooking.zap.app.nostr.SignerCancelledException]) and cancellation
+     * propagate to the caller — a declined Amber prompt is not a network
+     * error.
+     */
+    private suspend fun extractAuthed(bodyString: String, signer: NostrSigner): ExtractAuthedResult =
+        try {
+            val resp = authedPost(
+                "/api/extract-recipe",
+                bodyString,
+                signer,
+                ExtractRecipeResponse.serializer(),
+                httpClient = HttpClientFactory.getComputeClient(),
+            )
+            val recipe = resp.recipe
+            if (resp.success && recipe != null) {
+                ExtractAuthedResult.Success(recipe)
+            } else {
+                ExtractAuthedResult.Error(resp.error ?: "Couldn't extract a recipe.")
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: SignerRejectedException) {
+            throw e
+        } catch (e: SignerCancelledException) {
+            throw e
+        } catch (e: ZapCookingApiException) {
+            when (e.code) {
+                401 -> ExtractAuthedResult.SignInRequired
+                403 -> ExtractAuthedResult.MembersOnly
+                else -> ExtractAuthedResult.Error(
+                    parseError(e.body) ?: "Import failed (${e.code})."
+                )
+            }
+        } catch (e: Exception) {
+            ExtractAuthedResult.Error("Network error — check your connection and try again.")
+        }
 
     /** Best-effort extraction of the server's `{ "error": ... }` from a 4xx body. */
     fun parseError(body: String): String? = try {
@@ -217,8 +290,12 @@ class ZapCookingApi(
         }
 
     /** Single error/decode path. Call only from a `Dispatchers.IO` context. */
-    private fun <T> execute(request: Request, deserializer: DeserializationStrategy<T>): T {
-        client.newCall(request).execute().use { resp ->
+    private fun <T> execute(
+        request: Request,
+        deserializer: DeserializationStrategy<T>,
+        httpClient: OkHttpClient = client,
+    ): T {
+        httpClient.newCall(request).execute().use { resp ->
             val body = resp.body?.string().orEmpty()
             if (!resp.isSuccessful) throw ZapCookingApiException(resp.code, body)
             return json.decodeFromString(deserializer, body)
@@ -235,6 +312,27 @@ private data class CheckStatusRequest(val pubkey: String)
 
 @Serializable
 private data class ExtractUrlRequest(val url: String)
+
+// No property defaults: the shared Json has encodeDefaults=false, so a
+// defaulted `type` would be silently dropped from the wire body.
+@Serializable
+private data class ExtractImageRequest(val type: String, val imageData: String)
+
+@Serializable
+private data class ExtractTextRequest(val type: String, val textData: String)
+
+/**
+ * Outcome of the authenticated `/api/extract-recipe` call (image/text).
+ * Mirrors [CheffyResult]/[NourishComputeResult], plus 401 → [SignInRequired]
+ * (NIP-98 rejected — stale/invalid auth) distinct from 403 → [MembersOnly]
+ * (valid auth, no active membership).
+ */
+sealed interface ExtractAuthedResult {
+    data class Success(val recipe: NormalizedRecipe) : ExtractAuthedResult
+    data object SignInRequired : ExtractAuthedResult
+    data object MembersOnly : ExtractAuthedResult
+    data class Error(val message: String) : ExtractAuthedResult
+}
 
 /**
  * `POST /api/nourish` request (concern 2.4b). pubkey is the signed-in user's
