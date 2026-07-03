@@ -102,7 +102,7 @@ fun SousChefScreen(
     var stagedImageUri by rememberSaveable { mutableStateOf<String?>(null) }
     var stagingError by rememberSaveable { mutableStateOf<String?>(null) }
 
-    val loading = state == State.Loading
+    val loading = state is State.Loading
     val mode = detectMode(input, hasImage = stagedImageUri != null)
 
     val photoPicker = rememberLauncherForActivityResult(
@@ -286,7 +286,7 @@ fun SousChefScreen(
 
             when (val s = state) {
                 State.Idle -> Unit
-                State.Loading -> Box(
+                is State.Loading -> Box(
                     Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) { CircularProgressIndicator(color = MaterialTheme.colorScheme.primary) }
