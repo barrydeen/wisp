@@ -53,6 +53,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -292,23 +295,47 @@ fun ThreadScreen(
                         val userZapPollVote = remember(pollVoteVersion, event.id) {
                             if (event.kind == 6969) eventRepo.getUserZapPollVote(event.id) else null
                         }
-                        val indentDp = 12
-                        val clampedDepth = min(depth, 8)
-                        val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                        val indentStepDp = 12.dp
+                        val clampedDepth = min(depth, 5)
+                        val indentPadding = indentStepDp * clampedDepth
+                        val cornerRadiusDp = 8.dp
+                        val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        val showConnector = depth > 0
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .drawBehind {
-                                    val indentPx = indentDp.dp.toPx()
-                                    for (level in 0 until clampedDepth) {
-                                        val x = level * indentPx + indentPx / 2f
-                                        drawLine(
-                                            color = lineColor,
-                                            start = Offset(x, 0f),
-                                            end = Offset(x, size.height),
-                                            strokeWidth = 1.5.dp.toPx()
-                                        )
-                                    }
+                                    // iOS-parity depth connector: a single vertical line into
+                                    // a rounded corner and a short horizontal run to the reply,
+                                    // instead of one straight line per ancestor level.
+                                    if (!showConnector) return@drawBehind
+                                    val r = cornerRadiusDp.toPx()
+                                    val strokePx = 1.dp.toPx()
+                                    // Rail sits one corner radius left of the card's padded edge
+                                    // (plus a stroke width) so the arc lands the horizontal run
+                                    // exactly at the card edge.
+                                    val lineX = indentPadding.toPx() - r + strokePx
+                                    drawLine(
+                                        color = lineColor,
+                                        start = Offset(lineX, 0f),
+                                        end = Offset(lineX, size.height - r),
+                                        strokeWidth = strokePx
+                                    )
+                                    drawArc(
+                                        color = lineColor,
+                                        startAngle = 90f,
+                                        sweepAngle = 90f,
+                                        useCenter = false,
+                                        topLeft = Offset(lineX, size.height - 2f * r),
+                                        size = Size(2f * r, 2f * r),
+                                        style = Stroke(width = strokePx, cap = StrokeCap.Round)
+                                    )
+                                    drawLine(
+                                        color = lineColor,
+                                        start = Offset(lineX + r, size.height),
+                                        end = Offset(size.width, size.height),
+                                        strokeWidth = strokePx
+                                    )
                                 }
                         ) {
                             if (isGalleryEvent(event)) {
@@ -354,7 +381,8 @@ fun ThreadScreen(
                                     nip05Repo = nip05Repo,
                                     onQuotedNoteClick = onQuotedNoteClick,
                                     noteActions = noteActions,
-                                    modifier = Modifier.padding(start = (clampedDepth * indentDp).dp)
+                                    showDivider = !showConnector,
+                                    modifier = Modifier.padding(start = indentPadding)
                                 )
                             } else {
                                 PostCard(
@@ -414,7 +442,8 @@ fun ThreadScreen(
                                     zapPollTotalSats = zapPollTotalSats,
                                     userZapPollVote = userZapPollVote,
                                     onZapPollVote = { idx -> onZapPollVote(event.id, idx) },
-                                    modifier = Modifier.padding(start = (clampedDepth * indentDp).dp)
+                                    showDivider = !showConnector,
+                                    modifier = Modifier.padding(start = indentPadding)
                                 )
                             }
                         }

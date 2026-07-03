@@ -91,6 +91,17 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     private val _publishing = MutableStateFlow(false)
     val publishing: StateFlow<Boolean> = _publishing
 
+    /** Id of the most recently published reply. The thread screen consumes this on
+     *  return to scroll to the new reply, since chronological sibling ordering can
+     *  place it far below the fold. Not set for PoW-mined or private replies. */
+    private var lastPublishedReplyId: String? = null
+
+    fun consumeLastPublishedReplyId(): String? {
+        val id = lastPublishedReplyId
+        lastPublishedReplyId = null
+        return id
+    }
+
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
@@ -967,6 +978,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             if (rootId != null && rootId != replyTo.id) {
                 eventRepo?.addReplyCount(rootId, event.id)
             }
+            lastPublishedReplyId = event.id
         }
         deleteDraftOnPublish(relayPool, signer)
         _content.value = TextFieldValue()
