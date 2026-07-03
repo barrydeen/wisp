@@ -345,19 +345,38 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         viewModelScope.launch {
             try {
                 _uploadProgress.value = "Uploading..."
-                val rawBytes = withContext(Dispatchers.IO) {
+                val (rawBytes, rawMime) = withContext(Dispatchers.IO) {
                     val request = okhttp3.Request.Builder().url(url).build()
                     cooking.zap.app.relay.HttpClientFactory.createHttpClient(readTimeoutSeconds = 30)
                         .newCall(request).execute().use { response ->
                             if (!response.isSuccessful) throw java.io.IOException("HTTP ${response.code}")
-                            response.body?.bytes() ?: throw java.io.IOException("Empty response")
+                            val body = response.body ?: throw java.io.IOException("Empty response")
+                            // Providers may serve WebP/PNG/etc. — trust Content-Type,
+                            // falling back to the URL extension for generic/absent types.
+                            val headerMime = body.contentType()?.let { "${it.type}/${it.subtype}" }
+                            val mime = if (headerMime == null || headerMime == "application/octet-stream") {
+                                mimeFromMediaUrl(url)
+                            } else headerMime
+                            body.bytes() to mime
                         }
                 }
-                processAndUploadBytes(rawBytes, "image/gif", "gif", signer)
+                val rawExt = MimeTypeMap.getSingleton().getExtensionFromMimeType(rawMime) ?: "gif"
+                processAndUploadBytes(rawBytes, rawMime, rawExt, signer)
             } catch (e: Exception) {
                 _error.value = "GIF upload failed: ${e.message}"
             }
             _uploadProgress.value = null
+        }
+    }
+
+    private fun mimeFromMediaUrl(url: String): String {
+        val path = url.substringBefore('?').substringBefore('#')
+        return when (path.substringAfterLast('.', "").lowercase()) {
+            "webp" -> "image/webp"
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
+            "mp4" -> "video/mp4"
+            else -> "image/gif"
         }
     }
 
@@ -369,14 +388,22 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         rawExt: String,
         signer: NostrSigner?
     ) {
-        val (bytes, mime, ext) = when {
-            rawMime == "image/gif" -> GifToMp4Converter.convert(rawBytes, getApplication())
-            rawMime.startsWith("image/") -> MediaCompressor.compressForContent(rawBytes, rawMime).asTriple()
-            else -> Triple(rawBytes, rawMime, rawExt)
+        // Transcode/compress/hash are CPU-heavy — keep them off viewModelScope's Main dispatcher.
+        val (media, dims, thumbhash) = withContext(Dispatchers.Default) {
+            val processed = when {
+                rawMime == "image/gif" -> GifToMp4Converter.convert(rawBytes, getApplication())
+                rawMime.startsWith("image/") -> MediaCompressor.compressForContent(rawBytes, rawMime).asTriple()
+                else -> Triple(rawBytes, rawMime, rawExt)
+            }
+            val (pBytes, pMime, _) = processed
+            // Re-extract dimensions from post-pipeline bytes so dim tags match what's uploaded.
+            Triple(
+                processed,
+                extractDimensionsFromBytes(pBytes, pMime),
+                if (pMime.startsWith("image/")) createThumbhash(pBytes) else null
+            )
         }
-        // Re-extract dimensions from post-pipeline bytes so dim tags match what's uploaded.
-        val dims = extractDimensionsFromBytes(bytes, mime)
-        val thumbhash = if (mime.startsWith("image/")) createThumbhash(bytes) else null
+        val (bytes, mime, ext) = media
         val url = blossomRepo.uploadMedia(bytes, mime, ext, signer)
         _uploadedUrls.value = _uploadedUrls.value + url
         _uploadedMediaMeta[url] = UploadedMediaMeta(

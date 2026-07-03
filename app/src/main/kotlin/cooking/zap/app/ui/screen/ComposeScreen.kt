@@ -773,7 +773,9 @@ fun ComposeScreen(
                             // Borderless composer (matches iOS): no outline, no filled
                             // container — just the field and a muted placeholder overlay.
                             Box(modifier = Modifier.fillMaxWidth()) {
-                                if (content.text.isEmpty()) {
+                                // Keyed to the local TextFieldState (not the collected
+                                // ViewModel flow) so it can't lag what's on screen.
+                                if (textFieldState.text.isEmpty()) {
                                     Text(
                                         text = stringResource(R.string.compose_placeholder),
                                         style = MaterialTheme.typography.bodyLarge.copy(

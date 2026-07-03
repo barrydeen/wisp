@@ -1225,15 +1225,16 @@ private fun ReplyExpansion(
         }
 
         // Reply bar — full-width "Reply…" pill under the note (iOS parity),
-        // taps through to the reply flow.
-        if (replyEvent != null) {
+        // taps through to the reply flow. Only shown when a reply handler exists,
+        // so the tappable control always does something.
+        if (replyEvent != null && postCardParams != null) {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                 shape = RoundedCornerShape(18.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)
-                    .clickable { postCardParams?.onReply?.invoke(replyEvent) }
+                    .clickable { postCardParams.onReply(replyEvent) }
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

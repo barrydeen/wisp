@@ -22,11 +22,12 @@ object GiphyRepository {
     private const val API_BASE = "https://api.giphy.com/v1/gifs"
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val httpClient
-        get() = cooking.zap.app.relay.HttpClientFactory.createHttpClient(
+    private val httpClient by lazy {
+        cooking.zap.app.relay.HttpClientFactory.createHttpClient(
             connectTimeoutSeconds = 10,
             readTimeoutSeconds = 15
         )
+    }
 
     val isConfigured: Boolean get() = BuildConfig.GIPHY_API_KEY.isNotBlank()
 
