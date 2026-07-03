@@ -14,6 +14,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.madebyevan.thumbhash.ThumbHash
 import cooking.zap.app.nostr.ClientMessage
+import cooking.zap.app.nostr.Filter
 import cooking.zap.app.nostr.Keys
 import cooking.zap.app.nostr.Nip10
 import cooking.zap.app.nostr.Nip30
@@ -48,7 +49,9 @@ import cooking.zap.app.ui.util.MediaCompressor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -78,6 +81,15 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     private val keyRepo = KeyRepository(app)
     private val interfacePrefs = InterfacePreferences(app)
     val blossomRepo = BlossomRepository(app, keyRepo.getPubkeyHex())
+
+    // Local, instant last-draft cache so a fresh composer can restore immediately without a
+    // relay round-trip (which is too slow/racy right after saving). Survives clear() and cold
+    // starts; keyed by author pubkey so accounts don't cross-restore each other's drafts.
+    private val draftPrefs = app.getSharedPreferences("compose_last_draft", android.content.Context.MODE_PRIVATE)
+
+    // Emits when a draft is saved so the UI can drop an orange "Draft saved" pill (iOS parity).
+    private val _draftSaved = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
+    val draftSaved: SharedFlow<Unit> = _draftSaved
 
     fun reloadBlossomRepo() {
         blossomRepo.reload(keyRepo.getPubkeyHex())
@@ -1185,6 +1197,78 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         savedStateHandle["draft_content"] = text
     }
 
+    // Guards against firing more than one restore fetch per fresh composer open.
+    private var restoringDraft = false
+
+    /**
+     * iOS-parity "continue where you left off": when a fresh top-level composer opens
+     * (empty editor, no draft already loaded), pull the author's most recent NIP-37 draft
+     * from relays and load it so they can keep writing. Best-effort and time-boxed; a
+     * just-published draft is stored empty on relays, so it is naturally skipped. Never
+     * clobbers text the user has already begun typing during the fetch window.
+     */
+    fun restoreLatestDraft(relayPool: RelayPool, signer: NostrSigner?) {
+        if (signer == null) return
+        if (restoringDraft || currentDraftId != null || _content.value.text.isNotBlank()) return
+        restoringDraft = true
+
+        // Fast path: restore the local last-draft cache instantly (covers the common
+        // close-then-reopen case and cold starts without waiting on relays).
+        val cached = draftPrefs.getString("content_${signer.pubkeyHex}", null)
+        if (!cached.isNullOrBlank()) {
+            currentDraftId = draftPrefs.getString("id_${signer.pubkeyHex}", null)
+            _content.value = TextFieldValue(cached, TextRange(cached.length))
+            savedStateHandle["draft_content"] = cached
+            restoringDraft = false
+            return
+        }
+
+        // Slow path (e.g. draft created on another device): time-boxed relay fetch.
+        val subId = "compose_latest_draft_${System.currentTimeMillis()}"
+        val filter = Filter(
+            kinds = listOf(Nip37.KIND_DRAFT),
+            authors = listOf(signer.pubkeyHex),
+            limit = 20
+        )
+
+        viewModelScope.launch(Dispatchers.Default) {
+            var best: Nip37.Draft? = null
+            val req = ClientMessage.req(subId, filter)
+            var reqSent = relayPool.sendToWriteRelays(req)
+            if (reqSent == 0 && relayPool.ensureWriteRelaysConnected(2_000) > 0) {
+                reqSent = relayPool.sendToWriteRelays(req)
+            }
+            if (reqSent == 0) relayPool.sendToAllRelays(req)
+            withTimeoutOrNull(2_000) {
+                relayPool.events.collect { event ->
+                    if (event.kind != Nip37.KIND_DRAFT) return@collect
+                    if (event.pubkey != signer.pubkeyHex) return@collect
+                    try {
+                        val decrypted = signer.nip44Decrypt(event.content, signer.pubkeyHex)
+                        if (decrypted.isBlank()) return@collect
+                        val draft = Nip37.parseDraft(event, decrypted) ?: return@collect
+                        if (draft.content.isBlank()) return@collect
+                        val current = best
+                        if (current == null || draft.createdAt > current.createdAt) {
+                            best = draft
+                        }
+                    } catch (_: Exception) {
+                        // Decryption/parse failed — skip
+                    }
+                }
+            }
+            relayPool.sendToWriteRelays(ClientMessage.close(subId))
+            val chosen = best
+            withContext(Dispatchers.Main) {
+                // Only load if the user hasn't started a fresh post in the meantime.
+                if (chosen != null && currentDraftId == null && _content.value.text.isBlank()) {
+                    loadDraft(chosen)
+                }
+                restoringDraft = false
+            }
+        }
+    }
+
     fun saveDraft(
         relayPool: RelayPool,
         replyTo: NostrEvent?,
@@ -1197,6 +1281,13 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
         val draftId = currentDraftId ?: Nip37.newDraftId()
         currentDraftId = draftId
+
+        // Stash locally first so a fresh composer restores this draft instantly, and signal the UI.
+        draftPrefs.edit()
+            .putString("content_${signer.pubkeyHex}", text)
+            .putString("id_${signer.pubkeyHex}", draftId)
+            .apply()
+        _draftSaved.tryEmit(Unit)
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
             try {
@@ -1217,7 +1308,15 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                     content = encrypted,
                     tags = wrapperTags
                 )
-                relayPool.sendToWriteRelays(ClientMessage.event(event))
+                val msg = ClientMessage.event(event)
+                // Write relays may not be connected yet (e.g. right after launch); reconnect and retry.
+                var sent = relayPool.sendToWriteRelays(msg)
+                if (sent == 0 && relayPool.ensureWriteRelaysConnected(2_000) > 0) {
+                    sent = relayPool.sendToWriteRelays(msg)
+                }
+                // Some accounts have no reachable write relays; the draft is private (encrypted to
+                // self), so fall back to every connected relay to guarantee it persists somewhere.
+                if (sent == 0) relayPool.sendToAllRelays(msg)
             } catch (_: Exception) {
                 // Best effort
             }
@@ -1228,6 +1327,12 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         val dTag = currentDraftId ?: return
         if (signer == null) return
         currentDraftId = null
+
+        // Drop the local last-draft cache so the just-published draft isn't restored next open.
+        draftPrefs.edit()
+            .remove("content_${signer.pubkeyHex}")
+            .remove("id_${signer.pubkeyHex}")
+            .apply()
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
             try {
@@ -1247,6 +1352,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
     fun clear() {
         currentDraftId = null
+        restoringDraft = false
         _content.value = TextFieldValue()
         _mentions.value = emptyList()
         savedStateHandle.remove<String>("draft_content")
