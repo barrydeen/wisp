@@ -19,8 +19,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -57,6 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cooking.zap.app.souschef.SousChefMode
@@ -181,10 +186,16 @@ fun SousChefScreen(
                             enabled = !loading,
                             modifier = Modifier.align(Alignment.TopEnd),
                         ) {
+                            // White on a scrim — deterministic contrast over any
+                            // photo, unlike theme colors (onPrimary is near-black
+                            // in dark theme).
                             Icon(
                                 Icons.Filled.Close,
                                 contentDescription = "Remove photo",
-                                tint = MaterialTheme.colorScheme.onPrimary,
+                                tint = Color.White,
+                                modifier = Modifier
+                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                    .padding(4.dp),
                             )
                         }
                     }
@@ -197,6 +208,15 @@ fun SousChefScreen(
                     minLines = 3,
                     enabled = !loading,
                     modifier = Modifier.fillMaxWidth(),
+                    // A URL is a single token, so swapping the newline key for Go
+                    // in URL mode costs nothing; other inputs keep multi-line enter.
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = if (mode == SousChefMode.URL) ImeAction.Go else ImeAction.Default,
+                    ),
+                    keyboardActions = KeyboardActions(
+                        // Same guard as the CTA — no duplicate/while-loading imports.
+                        onGo = { if (mode == SousChefMode.URL && !loading) onImport(input.trim()) },
+                    ),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = SousChefPurple,
                     ),
