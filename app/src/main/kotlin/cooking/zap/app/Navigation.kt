@@ -3390,9 +3390,9 @@ fun WispNavHost(
                     sousChefViewModel.importText(text, feedViewModel.zapCookingApi, feedViewModel.signer)
                 },
                 onRefreshMembership = {
+                    // Public read only — no signer interaction before the CTA tap.
                     sousChefViewModel.fetchMembership(
                         api = feedViewModel.zapCookingApi,
-                        signer = feedViewModel.signer,
                         pubkeyHex = feedViewModel.getUserPubkey(),
                     )
                 },

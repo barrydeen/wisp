@@ -64,21 +64,21 @@ class SousChefViewModel : ViewModel() {
     val saveState: StateFlow<SaveState> = _saveState
 
     /**
-     * Fetch membership once per screen entry (once per ViewModel instance).
-     * Signing accounts use the NIP-98 `check-status` owner lookup; READ_ONLY
-     * accounts fall back to the public read. Any failure — including a
-     * declined signer prompt — leaves the state `null` (unknown).
+     * Fetch membership once per screen entry (once per ViewModel instance)
+     * via the public, unauthenticated read for ALL accounts — no signer
+     * interaction may happen before the user taps the CTA (a RemoteSigner
+     * would otherwise prompt just for opening the screen). The banner only
+     * needs `isActive`, which the public shape carries; the server's 403 at
+     * extraction time remains the authoritative correction. Failure leaves
+     * the state `null` (unknown).
      */
-    fun fetchMembership(api: ZapCookingApi, signer: NostrSigner?, pubkeyHex: String?) {
+    fun fetchMembership(api: ZapCookingApi, pubkeyHex: String?) {
         if (membershipFetched) return
         membershipFetched = true
+        if (pubkeyHex.isNullOrBlank()) return
         viewModelScope.launch {
             val status = try {
-                when {
-                    signer != null -> api.checkMembershipStatus(signer)
-                    !pubkeyHex.isNullOrBlank() -> api.getPublicMembership(pubkeyHex)
-                    else -> null
-                }
+                api.getPublicMembership(pubkeyHex)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
