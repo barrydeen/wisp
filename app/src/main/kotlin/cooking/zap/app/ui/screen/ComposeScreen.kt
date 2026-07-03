@@ -33,13 +33,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -206,13 +205,7 @@ fun ComposeScreen(
     var showGifPicker by remember { mutableStateOf(false) }
 
     val density = LocalDensity.current
-    val imeBottomDp = with(density) { WindowInsets.ime.getBottom(density).toDp() }
-    val imeVisible = imeBottomDp > 0.dp
-    // Extra clearance so the Publish button clears the bottom nav's protruding
-    // center FAB when the keyboard is down. Derived from the live IME inset (not a
-    // boolean) so it grows smoothly as the keyboard collapses — otherwise the button
-    // rides down behind the FAB and snaps up only after the close animation ends.
-    val publishBottomClearance = (40.dp - imeBottomDp).coerceIn(12.dp, 40.dp)
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
 
     // Countdown progress (smooth, ~60fps)
     var countdownProgress by remember { mutableFloatStateOf(0f) }
@@ -324,12 +317,12 @@ fun ComposeScreen(
         Column(
             modifier = Modifier
                 .padding(padding)
-                .consumeWindowInsets(WindowInsets.navigationBars)
-                // Drive keyboard avoidance from the same `imeBottomDp` value the Publish
-                // clearance below uses (instead of `.imePadding()`, which reads the inset in
-                // a different phase) so the two never diverge by a frame and the button
-                // floats straight down to its resting spot without overcorrecting.
-                .padding(bottom = imeBottomDp)
+                // Lift the whole column above the keyboard. The app bottom nav is hidden
+                // while the composer keyboard is open (see Navigation.kt), so there's no
+                // reserved nav height to double-count here — imePadding alone is correct.
+                // Consuming the nav-bar inset would subtract it from imePadding and leave
+                // the Publish button partially under the keyboard on 3-button-nav devices.
+                .imePadding()
         ) {
             if (galleryMode) {
                 // ---- Gallery mode: completely separate layout ----
@@ -1198,9 +1191,10 @@ fun ComposeScreen(
                         previewTopOffsetPx = coords.positionInParent().y.toInt()
                     })
 
-                    // Live preview
+                    // Live preview — always rendered (not gated on keyboard state) so the
+                    // user can just scroll the composer down to see it while typing, iOS-style.
                     AnimatedVisibility(
-                        visible = !imeVisible && (content.text.isNotBlank() || (pollEnabled && pollOptions.any { it.isNotBlank() })) && eventRepo != null
+                        visible = (content.text.isNotBlank() || (pollEnabled && pollOptions.any { it.isNotBlank() })) && eventRepo != null
                     ) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
@@ -1218,21 +1212,30 @@ fun ComposeScreen(
                                 val userProfile = userPubkey?.let { profileRepo?.get(it) }
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(bottom = 8.dp)
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                                 ) {
                                     ProfilePicture(url = userProfile?.picture, size = 32)
                                     Spacer(Modifier.width(8.dp))
-                                    Column {
+                                    Text(
+                                        text = userProfile?.displayString ?: "You",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        // Take the remaining width so the Preview tag lands flush
+                                        // against the box's right edge (iOS parity).
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                    ) {
                                         Text(
-                                            text = userProfile?.displayString ?: "You",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Medium,
-                                            maxLines = 1
-                                        )
-                                        Text(
-                                            text = "Preview",
+                                            text = stringResource(R.string.compose_preview_tag),
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                         )
                                     }
                                 }
@@ -1297,12 +1300,13 @@ fun ComposeScreen(
             }
 
             // Bottom bar — always visible above keyboard (shared by both modes).
-            // When the keyboard is closed, add extra bottom room so the Publish
-            // button clears the bottom nav's protruding center FAB.
+            // A small constant bottom pad lifts Publish clear of the bottom nav's
+            // protruding center FAB when the keyboard is down; when it's up, imePadding
+            // (above) already lifts the whole column above the keyboard.
             Column(
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
-                    .padding(top = 12.dp, bottom = publishBottomClearance)
+                    .padding(top = 12.dp, bottom = if (imeVisible) 0.dp else 28.dp)
             ) {
                     if (countdownSeconds != null) {
                     Row(
