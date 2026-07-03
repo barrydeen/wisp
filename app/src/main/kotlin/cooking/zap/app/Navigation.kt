@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.padding
@@ -24,6 +25,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -574,8 +576,20 @@ fun WispNavHost(
         socialGraphDiscoveryState is cooking.zap.app.repo.DiscoveryState.ComputingNetwork ||
         socialGraphDiscoveryState is cooking.zap.app.repo.DiscoveryState.Filtering ||
         socialGraphDiscoveryState is cooking.zap.app.repo.DiscoveryState.FetchingRelayLists)
-    val showBottomBar by remember(currentRoute, socialGraphComputing) {
-        derivedStateOf { currentRoute != null && currentRoute !in hideBottomBarRoutes && !socialGraphComputing }
+    // Hide the bottom nav while the composer's keyboard is open — otherwise its
+    // reserved height sits as dead space between the Publish button and the keyboard.
+    // The `imeOpen` derivedStateOf absorbs per-frame inset changes so only the flip
+    // (open⇄closed) recomposes, and it's scoped to the compose route so no other
+    // screen's footer is affected.
+    val density = LocalDensity.current
+    val imeInsets = WindowInsets.ime
+    val imeOpen by remember(imeInsets, density) { derivedStateOf { imeInsets.getBottom(density) > 0 } }
+    val hideBarForComposerKeyboard = currentRoute == Routes.COMPOSE && imeOpen
+    val showBottomBar by remember(currentRoute, socialGraphComputing, hideBarForComposerKeyboard) {
+        derivedStateOf {
+            currentRoute != null && currentRoute !in hideBottomBarRoutes &&
+                !socialGraphComputing && !hideBarForComposerKeyboard
+        }
     }
 
     // After process death, Navigation restores the last screen but the ViewModel
