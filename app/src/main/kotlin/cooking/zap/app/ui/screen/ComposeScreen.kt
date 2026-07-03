@@ -1306,7 +1306,7 @@ fun ComposeScreen(
             Column(
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
-                    .padding(top = 12.dp, bottom = 28.dp)
+                    .padding(top = 12.dp, bottom = if (imeVisible) 0.dp else 28.dp)
             ) {
                     if (countdownSeconds != null) {
                     Row(
