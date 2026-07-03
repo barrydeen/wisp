@@ -3378,6 +3378,28 @@ fun WispNavHost(
             SousChefScreen(
                 viewModel = sousChefViewModel,
                 onImport = { url -> sousChefViewModel.import(url, feedViewModel.zapCookingApi) },
+                onImportImage = { uri ->
+                    sousChefViewModel.importImage(
+                        resolver = context.contentResolver,
+                        uri = uri,
+                        api = feedViewModel.zapCookingApi,
+                        signer = feedViewModel.signer,
+                    )
+                },
+                onImportText = { text ->
+                    sousChefViewModel.importText(text, feedViewModel.zapCookingApi, feedViewModel.signer)
+                },
+                onRefreshMembership = {
+                    // Public read only — no signer interaction before the CTA tap.
+                    sousChefViewModel.fetchMembership(
+                        api = feedViewModel.zapCookingApi,
+                        pubkeyHex = feedViewModel.getUserPubkey(),
+                    )
+                },
+                // Same flow as the drawer's "add account" — sign in with a
+                // signing-capable account.
+                onSignIn = onAddAccount,
+                membershipLinkoutEnabled = BuildConfig.MEMBERSHIP_LINKOUT_ENABLED,
                 onSave = {
                     sousChefViewModel.save(
                         publisher = feedViewModel.recipePublisher,

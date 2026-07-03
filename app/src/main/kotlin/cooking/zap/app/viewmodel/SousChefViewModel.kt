@@ -1,34 +1,56 @@
 package cooking.zap.app.viewmodel
 
+import android.content.ContentResolver
+import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cooking.zap.app.api.ExtractAuthedResult
+import cooking.zap.app.api.MembershipStatus
 import cooking.zap.app.api.ZapCookingApi
 import cooking.zap.app.api.ZapCookingApiException
 import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.nostr.RecipeParser
+import cooking.zap.app.nostr.SignerCancelledException
+import cooking.zap.app.nostr.SignerRejectedException
 import cooking.zap.app.repo.RecipePublisher
+import cooking.zap.app.souschef.SousChefImagePrep
+import cooking.zap.app.souschef.SousChefMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
- * Sous Chef — AI recipe import (concern 2.1). v1 is **URL import, preview
- * only**: POST the URL to the free, anon `/api/extract-recipe/public`, map the
- * structured response to a [RecipeParser.Recipe], and show a read-only
- * preview. Saving (publish to the user's account) is deferred to concern 2.2 —
- * this mirrors the web's anon "preview until sign-in" path exactly.
+ * Sous Chef — AI recipe import. URL import is free and anonymous
+ * (`/api/extract-recipe/public`); image/text import (Phase 3) is
+ * member-gated behind NIP-98 on `/api/extract-recipe`. All three modes
+ * drive the same State machine and land in the read-only [State.Preview].
+ * Saving (publish to the user's account) mirrors the web's
+ * "preview until sign-in" path.
  */
 class SousChefViewModel : ViewModel() {
 
     sealed interface State {
         data object Idle : State
-        data object Loading : State
+        /** [mode] selects the progress line shown in the CTA (web parity). */
+        data class Loading(val mode: SousChefMode) : State
         data class Preview(val recipe: RecipeParser.Recipe) : State
         data class Error(val message: String) : State
     }
 
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state
+
+    /**
+     * Membership status for the upsell banner. `null` = unknown (not yet
+     * fetched, fetch failed, or signer declined) — the UI treats unknown as
+     * non-member for banner DISPLAY but never blocks a tap on it; the server
+     * check at extraction time is authoritative (web parity).
+     */
+    private val _membership = MutableStateFlow<MembershipStatus?>(null)
+    val membership: StateFlow<MembershipStatus?> = _membership
+
+    private var membershipFetched = false
 
     /** Save (publish) overlay state, distinct from the import [state]. */
     sealed interface SaveState {
@@ -41,10 +63,99 @@ class SousChefViewModel : ViewModel() {
     private val _saveState = MutableStateFlow<SaveState>(SaveState.Idle)
     val saveState: StateFlow<SaveState> = _saveState
 
+    /**
+     * Fetch membership once per screen entry (once per ViewModel instance)
+     * via the public, unauthenticated read for ALL accounts — no signer
+     * interaction may happen before the user taps the CTA (a RemoteSigner
+     * would otherwise prompt just for opening the screen). The banner only
+     * needs `isActive`, which the public shape carries; the server's 403 at
+     * extraction time remains the authoritative correction. Failure leaves
+     * the state `null` (unknown).
+     */
+    fun fetchMembership(api: ZapCookingApi, pubkeyHex: String?) {
+        // No-pubkey calls don't consume the once-flag — a later call (e.g.
+        // after sign-in state changes) can still fetch.
+        if (membershipFetched || pubkeyHex.isNullOrBlank()) return
+        membershipFetched = true
+        viewModelScope.launch {
+            val status = try {
+                api.getPublicMembership(pubkeyHex)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            if (status != null) _membership.value = status
+        }
+    }
+
+    /** Member-gated image extraction: prepare (downsample/encode) then POST. */
+    fun importImage(resolver: ContentResolver, uri: Uri, api: ZapCookingApi, signer: NostrSigner?) {
+        if (_state.value is State.Loading) return
+        if (signer == null) {
+            // Screen gates on canSign; defensive only.
+            _state.value = State.Error("Please sign in again to use Sous Chef.")
+            return
+        }
+        _state.value = State.Loading(SousChefMode.IMAGE)
+        viewModelScope.launch {
+            // Preparation precedes the network phase; its failures are local
+            // (read/oversize copy), not network errors.
+            val prepared = SousChefImagePrep.prepareImageDataUrl(resolver, uri)
+            _state.value = when (prepared) {
+                is SousChefImagePrep.Result.Failed -> State.Error(prepared.message)
+                is SousChefImagePrep.Result.Ready ->
+                    runExtraction { api.extractRecipeFromImage(prepared.dataUrl, signer) }
+            }
+        }
+    }
+
+    /** Member-gated text extraction. */
+    fun importText(rawText: String, api: ZapCookingApi, signer: NostrSigner?) {
+        val text = rawText.trim()
+        if (text.isEmpty() || _state.value is State.Loading) return
+        if (signer == null) {
+            _state.value = State.Error("Please sign in again to use Sous Chef.")
+            return
+        }
+        _state.value = State.Loading(SousChefMode.TEXT)
+        viewModelScope.launch {
+            _state.value = runExtraction { api.extractRecipeFromText(text, signer) }
+        }
+    }
+
+    /**
+     * Shared authed-extraction outcome mapping. A 403 despite local member
+     * state reverts to Idle with the banner forced non-member (web behavior:
+     * show the upsell, open nothing) — one warn line, no error banner. A
+     * declined/cancelled signer prompt is a user choice, not an error →
+     * Idle.
+     */
+    private suspend fun runExtraction(call: suspend () -> ExtractAuthedResult): State =
+        try {
+            when (val result = call()) {
+                is ExtractAuthedResult.Success -> State.Preview(result.recipe.toRecipePreview())
+                ExtractAuthedResult.SignInRequired ->
+                    State.Error("Please sign in again to use Sous Chef.")
+                ExtractAuthedResult.MembersOnly -> {
+                    Log.w(TAG, "Server returned 403 for image/text extraction despite local member state")
+                    _membership.value = MembershipStatus(found = true, isActive = false)
+                    State.Idle
+                }
+                is ExtractAuthedResult.Error -> State.Error(result.message)
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: SignerRejectedException) {
+            State.Idle
+        } catch (e: SignerCancelledException) {
+            State.Idle
+        }
+
     fun import(rawUrl: String, api: ZapCookingApi) {
         val url = rawUrl.trim()
         if (url.isEmpty()) return
-        _state.value = State.Loading
+        _state.value = State.Loading(SousChefMode.URL)
         viewModelScope.launch {
             _state.value = try {
                 val resp = api.extractRecipeFromUrl(url)
@@ -101,5 +212,9 @@ class SousChefViewModel : ViewModel() {
     fun reset() {
         _state.value = State.Idle
         _saveState.value = SaveState.Idle
+    }
+
+    private companion object {
+        const val TAG = "SousChefViewModel"
     }
 }

@@ -1,6 +1,7 @@
 package cooking.zap.app.ui.screen
 
 import android.content.ContentResolver
+import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,12 +40,15 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -61,7 +66,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cooking.zap.app.souschef.SousChefMode
@@ -73,12 +86,12 @@ import cooking.zap.app.viewmodel.SousChefViewModel
 import cooking.zap.app.viewmodel.SousChefViewModel.State
 
 /**
- * Sous Chef import screen — unified input (Phase 2 of web parity): one
- * multi-line field plus a staged-image slot, mode auto-detected live via
- * [detectMode]. URL mode extracts end-to-end as before; IMAGE and TEXT modes
- * are detected and surfaced but their extraction is Phase 3, so the CTA stays
- * disabled with a coming-soon note. Preview renders read-only via the shared
- * [recipeBody].
+ * Sous Chef import screen — unified input, mode auto-detected live via
+ * [detectMode]. URL import is free for everyone; image/text extraction
+ * (Phase 3) is member-gated with the web's upsell behavior: the CTA tap is
+ * the conversion event (sign-in for watch-only accounts, the membership
+ * page for non-members, extraction for members). Preview renders read-only
+ * via the shared [recipeBody].
  *
  * NOTE (pre-ship): the drawer/icon use a placeholder mark — port the real
  * Sous Chef SVG for symbol parity with the web before a user-facing release.
@@ -88,6 +101,11 @@ import cooking.zap.app.viewmodel.SousChefViewModel.State
 fun SousChefScreen(
     viewModel: SousChefViewModel,
     onImport: (String) -> Unit,
+    onImportImage: (Uri) -> Unit,
+    onImportText: (String) -> Unit,
+    onRefreshMembership: () -> Unit,
+    onSignIn: () -> Unit,
+    membershipLinkoutEnabled: Boolean,
     onSave: () -> Unit,
     onSaved: (author: String, dTag: String) -> Unit,
     canSign: Boolean,
@@ -95,15 +113,48 @@ fun SousChefScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val saveState by viewModel.saveState.collectAsState()
+    val membership by viewModel.membership.collectAsState()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var input by rememberSaveable { mutableStateOf("") }
-    // Only the Uri is staged — bytes are read/encoded at extraction time (Phase 3).
+    // Only the Uri is staged — bytes are read/encoded at extraction time.
     var stagedImageUri by rememberSaveable { mutableStateOf<String?>(null) }
     var stagingError by rememberSaveable { mutableStateOf<String?>(null) }
+    var showMembershipDialog by rememberSaveable { mutableStateOf(false) }
 
-    val loading = state == State.Loading
+    val loading = state is State.Loading
     val mode = detectMode(input, hasImage = stagedImageUri != null)
+    // Unknown (null) counts as non-member for banner DISPLAY only. The CTA
+    // tap distinguishes the two: a KNOWN non-member gets the membership
+    // link-out (conversion event), while unknown proceeds to extraction and
+    // lets the server's 403 be the authoritative answer (web parity).
+    val isMember = membership?.isActive == true
+    val knownNonMember = membership != null && !isMember
+
+    // Keyed on canSign so a sign-in state change re-triggers the fetch (the
+    // ViewModel no-ops while the pubkey is unavailable rather than burning
+    // its once-per-entry flag).
+    LaunchedEffect(canSign) { onRefreshMembership() }
+
+    val openMembership: () -> Unit = {
+        if (membershipLinkoutEnabled) {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse("https://zap.cooking/membership"))
+            )
+        } else {
+            showMembershipDialog = true
+        }
+    }
+
+    if (showMembershipDialog) {
+        AlertDialog(
+            onDismissRequest = { showMembershipDialog = false },
+            confirmButton = {
+                TextButton(onClick = { showMembershipDialog = false }) { Text("OK") }
+            },
+            text = { Text("Sous Chef image and text imports are part of Zap Cooking membership.") },
+        )
+    }
 
     val photoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
@@ -167,6 +218,39 @@ fun SousChefScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(12.dp))
+                // Upsell banner (web parity): signed in, not (known to be) a
+                // member, and nothing extracted yet.
+                if (canSign && !isMember && state !is State.Preview) {
+                    Surface(
+                        color = SousChefPurple.copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = buildAnnotatedString {
+                                withStyle(
+                                    SpanStyle(
+                                        color = SousChefPurple,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                ) { append("URL imports are on us.") }
+                                append(" Image and text imports are a Cook+ and above feature. ")
+                                withLink(
+                                    LinkAnnotation.Clickable(
+                                        tag = "view-membership",
+                                        styles = TextLinkStyles(
+                                            style = SpanStyle(textDecoration = TextDecoration.Underline)
+                                        ),
+                                    ) { openMembership() }
+                                ) { append("View membership") }
+                                append(".")
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(12.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
                 stagedImageUri?.let { uriString ->
                     Box(Modifier.fillMaxWidth()) {
                         AsyncImage(
@@ -252,25 +336,47 @@ fun SousChefScreen(
                         Text("Add photo")
                     }
                     Button(
-                        onClick = { onImport(input.trim()) },
-                        enabled = mode == SousChefMode.URL && !loading,
+                        onClick = {
+                            when (mode) {
+                                SousChefMode.URL -> onImport(input.trim())
+                                SousChefMode.IMAGE, SousChefMode.TEXT -> when {
+                                    // The tap is the conversion event (web
+                                    // parity): sign-in for watch-only, the
+                                    // membership page for KNOWN non-members.
+                                    // Unknown status falls through to
+                                    // extraction — the server's 403 is
+                                    // authoritative and repaints the banner.
+                                    !canSign -> onSignIn()
+                                    knownNonMember -> openMembership()
+                                    mode == SousChefMode.IMAGE ->
+                                        stagedImageUri?.let { onImportImage(Uri.parse(it)) }
+                                    else -> onImportText(input.trim())
+                                }
+                                null -> Unit
+                            }
+                        },
+                        enabled = mode != null && !loading,
                         colors = ButtonDefaults.buttonColors(
                             // Web parity: white on the Sous Chef purple — passes
                             // WCAG AA for the button's large/bold label.
                             containerColor = SousChefPurple,
                             contentColor = Color.White,
                         ),
-                    ) { Text(if (mode == null) "Get Recipe" else "🤖 Get Recipe") }
-                }
-                // Phase 3 ships image/text extraction; until then detection is
-                // surfaced but the CTA stays disabled.
-                if (mode == SousChefMode.IMAGE || mode == SousChefMode.TEXT) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = "Image and text imports are coming to Android soon.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    ) {
+                        val loadingMode = (state as? State.Loading)?.mode
+                        if (loadingMode != null) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                // Match the (disabled) button label color.
+                                color = LocalContentColor.current,
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(progressLine(loadingMode))
+                        } else {
+                            Text(if (mode == null) "Get Recipe" else "🤖 Get Recipe")
+                        }
+                    }
                 }
                 stagingError?.let {
                     Spacer(Modifier.height(8.dp))
@@ -286,7 +392,7 @@ fun SousChefScreen(
 
             when (val s = state) {
                 State.Idle -> Unit
-                State.Loading -> Box(
+                is State.Loading -> Box(
                     Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) { CircularProgressIndicator(color = MaterialTheme.colorScheme.primary) }
@@ -309,6 +415,13 @@ fun SousChefScreen(
             }
         }
     }
+}
+
+/** The web's per-mode extraction progress lines, verbatim. */
+private fun progressLine(mode: SousChefMode): String = when (mode) {
+    SousChefMode.IMAGE -> "Extracting recipe from image..."
+    SousChefMode.TEXT -> "Formatting your recipe..."
+    SousChefMode.URL -> "Fetching and extracting recipe from URL..."
 }
 
 /**
