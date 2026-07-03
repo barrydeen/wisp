@@ -48,39 +48,53 @@ class DraftsViewModel(app: Application) : AndroidViewModel(app) {
             authors = listOf(signer.pubkeyHex),
             limit = 50
         )
-        relayPool.sendToWriteRelays(ClientMessage.req(draftsSubId, filter))
-
         viewModelScope.launch(Dispatchers.Default) {
+            // Ensure write relays are connected before querying — they may be idle right after launch,
+            // in which case a bare REQ reaches 0 relays and the drafts list comes back empty.
+            val req = ClientMessage.req(draftsSubId, filter)
+            var reqSent = relayPool.sendToWriteRelays(req)
+            if (reqSent == 0 && relayPool.ensureWriteRelaysConnected(2_000) > 0) {
+                reqSent = relayPool.sendToWriteRelays(req)
+            }
+            // Match the save fallback: drafts may live on read relays for accounts without
+            // reachable write relays, so query every connected relay when write relays yield none.
+            if (reqSent == 0) relayPool.sendToAllRelays(req)
+
+            // Track the newest version seen per draft coordinate so an older copy arriving from
+            // a lagging relay can't resurrect a draft that was superseded or emptied (deleted).
+            val latestCreatedAt = HashMap<String, Long>()
+
             relayPool.events.collect { event ->
                 if (event.kind != Nip37.KIND_DRAFT) return@collect
                 if (event.pubkey != signer.pubkeyHex) return@collect
+                val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: return@collect
 
-                val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)
-                if (dTag != null &&
-                    deletedEventsRepo?.isAddressDeleted(Nip37.KIND_DRAFT, signer.pubkeyHex, dTag) == true) {
-                    _drafts.value = _drafts.value.filter { it.dTag != dTag }
-                    return@collect
-                }
+                val prev = latestCreatedAt[dTag]
+                if (prev != null && event.created_at < prev) return@collect
 
                 try {
+                    // NIP-37 deletes a draft by publishing an empty replacement — the decrypted
+                    // content is then blank. Match iOS Wisp: show every non-empty draft and do not
+                    // cross-reference the kind-5 deletion registry, which hid drafts iOS still shows.
                     val decrypted = signer.nip44Decrypt(event.content, signer.pubkeyHex)
                     if (decrypted.isBlank()) {
-                        if (dTag != null) {
-                            _drafts.value = _drafts.value.filter { it.dTag != dTag }
-                        }
+                        // Empty replacement = deletion; a valid outcome, so advance the marker.
+                        latestCreatedAt[dTag] = event.created_at
+                        _drafts.value = _drafts.value.filter { it.dTag != dTag }
                         return@collect
                     }
                     val draft = Nip37.parseDraft(event, decrypted) ?: return@collect
+                    // Only advance the newest-seen marker once the event decrypts and parses
+                    // cleanly, so a malformed/undecryptable newest copy can't poison the
+                    // coordinate and permanently suppress older valid copies from other relays.
+                    latestCreatedAt[dTag] = event.created_at
                     val current = _drafts.value.toMutableList()
                     val idx = current.indexOfFirst { it.dTag == draft.dTag }
-                    if (idx >= 0) {
-                        current[idx] = draft
-                    } else {
-                        current.add(draft)
-                    }
+                    if (idx >= 0) current[idx] = draft else current.add(draft)
                     _drafts.value = current.sortedByDescending { it.createdAt }
                 } catch (_: Exception) {
-                    // Decryption failed, skip
+                    // Decryption/parse failed — skip without advancing latestCreatedAt so a
+                    // valid older copy from another relay can still win.
                 }
             }
         }

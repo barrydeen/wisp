@@ -158,7 +158,10 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
 
     /** Subscription prefixes that bypass event deduplication. */
     private val dedupBypassPrefixes = java.util.concurrent.CopyOnWriteArrayList(
-        listOf("thread-", "user", "quote-", "editprofile", "notif", "dms", "search-", "hashtag-")
+        // "drafts" and "compose_latest_draft" bypass dedup so draft events aren't suppressed:
+        // otherwise the first relay's copy is marked seen (and can be lost to the subscribe race),
+        // and every other relay's copy is deduped away, leaving the drafts list empty.
+        listOf("thread-", "user", "quote-", "editprofile", "notif", "dms", "search-", "hashtag-", "drafts", "compose_latest_draft")
     )
 
     /** Signing lambda for NIP-42 AUTH — set via [setAuthSigner]. */

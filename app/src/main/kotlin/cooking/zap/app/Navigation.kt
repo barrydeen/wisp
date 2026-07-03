@@ -53,6 +53,7 @@ import cooking.zap.app.repo.SigningMode
 import android.content.Context
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import cooking.zap.app.ui.component.DraftSavedPill
 import cooking.zap.app.ui.component.HapticHelper
 import cooking.zap.app.ui.component.NotifBlipSound
 import cooking.zap.app.ui.component.BottomTab
@@ -1012,6 +1013,8 @@ fun WispNavHost(
     var pipFullScreenAspectRatio by remember { mutableStateOf(16f / 9f) }
 
     Box(modifier = Modifier.padding(innerPadding)) {
+    // Global overlay: orange "Draft saved" pill drops in whenever the composer saves a draft.
+    DraftSavedPill(trigger = composeViewModel.draftSaved)
     CompositionLocalProvider(LocalCanSign provides (signingMode != SigningMode.READ_ONLY)) {
     NavHost(
         navController = navController,
@@ -1307,12 +1310,17 @@ fun WispNavHost(
             // Initialize PoW toggle from persisted preferences
             LaunchedEffect(Unit) {
                 composeViewModel.initPowState(feedViewModel.powPrefs.isNotePowEnabled())
+                // iOS-parity: a fresh top-level composer restores the most recent draft so the
+                // user can continue where they left off. Replies/quotes stay context-specific.
+                if (replyTarget == null && quoteTarget == null) {
+                    composeViewModel.restoreLatestDraft(feedViewModel.relayPool, activeSigner)
+                }
             }
             // Auto-save draft when leaving compose screen (back button, navigation, etc.)
             DisposableEffect(Unit) {
                 onDispose {
                     if (composeViewModel.content.value.text.isNotBlank()) {
-                        composeViewModel.saveDraft(feedViewModel.relayPool, replyTarget, activeSigner)
+                        composeViewModel.saveDraft(feedViewModel.relayPool, replyTarget, activeSigner, quoteTarget)
                     }
                 }
             }
@@ -1322,10 +1330,9 @@ fun WispNavHost(
                 replyTo = replyTarget,
                 quoteTo = quoteTarget,
                 onBack = { navController.popBackStack() },
-                onSaveDraft = {
-                    composeViewModel.saveDraft(feedViewModel.relayPool, replyTarget, activeSigner)
-                    navController.popBackStack()
-                },
+                // Same path as the back button: popping triggers the onDispose auto-save above,
+                // so the explicit save icon and back gesture persist the draft identically.
+                onSaveDraft = { navController.popBackStack() },
                 outboxRouter = feedViewModel.outboxRouter,
                 eventRepo = feedViewModel.eventRepo,
                 profileRepo = feedViewModel.profileRepo,
