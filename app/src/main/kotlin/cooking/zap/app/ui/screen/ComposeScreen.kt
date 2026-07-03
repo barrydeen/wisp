@@ -1358,9 +1358,11 @@ fun ComposeScreen(
                                 resolvedEmojis = resolvedEmojis
                             )
                         },
-                        // Publish gating (iOS parity, wisp #567): disabled until the
-                        // post has text or at least one uploaded attachment.
-                        enabled = !publishing && !isMiningBusy && (content.text.isNotBlank() || uploadedUrls.isNotEmpty()),
+                        // Publish gating (iOS parity, wisp #567): mirrors publish()'s
+                        // validation — gallery posts need an upload (caption optional),
+                        // everything else needs text (uploads insert their URL into it).
+                        enabled = !publishing && !isMiningBusy &&
+                            (if (galleryMode) uploadedUrls.isNotEmpty() else content.text.isNotBlank()),
                         modifier = Modifier.fillMaxWidth().height(44.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) {

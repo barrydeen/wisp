@@ -297,6 +297,7 @@ fun ThreadScreen(
                         }
                         val indentStepDp = 12.dp
                         val clampedDepth = min(depth, 5)
+                        val indentPadding = indentStepDp * clampedDepth
                         val cornerRadiusDp = 8.dp
                         val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         val showConnector = depth > 0
@@ -308,9 +309,12 @@ fun ThreadScreen(
                                     // a rounded corner and a short horizontal run to the reply,
                                     // instead of one straight line per ancestor level.
                                     if (!showConnector) return@drawBehind
-                                    val lineX = (clampedDepth * indentStepDp.toPx()) - 8.dp.toPx() + 1.dp.toPx()
                                     val r = cornerRadiusDp.toPx()
                                     val strokePx = 1.dp.toPx()
+                                    // Rail sits one corner radius left of the card's padded edge
+                                    // (plus a stroke width) so the arc lands the horizontal run
+                                    // exactly at the card edge.
+                                    val lineX = indentPadding.toPx() - r + strokePx
                                     drawLine(
                                         color = lineColor,
                                         start = Offset(lineX, 0f),
@@ -378,7 +382,7 @@ fun ThreadScreen(
                                     onQuotedNoteClick = onQuotedNoteClick,
                                     noteActions = noteActions,
                                     showDivider = !showConnector,
-                                    modifier = Modifier.padding(start = (clampedDepth * indentStepDp.value).dp)
+                                    modifier = Modifier.padding(start = indentPadding)
                                 )
                             } else {
                                 PostCard(
@@ -439,7 +443,7 @@ fun ThreadScreen(
                                     userZapPollVote = userZapPollVote,
                                     onZapPollVote = { idx -> onZapPollVote(event.id, idx) },
                                     showDivider = !showConnector,
-                                    modifier = Modifier.padding(start = (clampedDepth * indentStepDp.value).dp)
+                                    modifier = Modifier.padding(start = indentPadding)
                                 )
                             }
                         }

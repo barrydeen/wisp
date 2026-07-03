@@ -84,6 +84,16 @@ class ThreadViewModel : ViewModel() {
         scrollTargetId = null
     }
 
+    /** Scrolls to [eventId] once it appears in the flattened thread — e.g. a freshly
+     *  published reply, which chronological sibling ordering can place far below
+     *  the fold. Resolves immediately if the event is already in the thread;
+     *  otherwise each rebuild retries until it shows up. */
+    fun requestScrollTo(eventId: String) {
+        scrollTargetId = eventId
+        val index = _flatThread.value.indexOfFirst { it.first.id == eventId }
+        if (index >= 0) _scrollToIndex.value = index
+    }
+
     fun toggleSpamExpanded() {
         _spamExpanded.value = !_spamExpanded.value
     }
@@ -470,9 +480,7 @@ class ThreadViewModel : ViewModel() {
         // Chronological reply order (iOS parity). Previously own replies were
         // hoisted to the top of each sibling group; iOS just sorts by time.
         for (children in parentToChildren.values) {
-            children.sortWith(Comparator { a, b ->
-                a.created_at.compareTo(b.created_at)
-            })
+            children.sortBy { it.created_at }
         }
 
         val result = mutableListOf<Pair<NostrEvent, Int>>()
