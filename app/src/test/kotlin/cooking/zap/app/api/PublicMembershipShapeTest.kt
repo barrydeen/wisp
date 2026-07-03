@@ -76,10 +76,9 @@ class PublicMembershipShapeTest {
 
     @Test
     fun lookupIsLowercased_matchesServerNormalizedKey() {
-        // The server lowercases keys; getPublicMembership lowercases its lookup
-        // to match. Verify the map path finds a lowercased key.
+        // mapBatchMembership normalizes the lookup key; uppercase hex still matches.
         val byPubkey = load("batch_active_member.json")
-        val status = ZapCookingApi.mapBatchMembership(byPubkey, activeHex.uppercase().lowercase())
+        val status = ZapCookingApi.mapBatchMembership(byPubkey, activeHex.uppercase())
         assertTrue(status.isActive)
     }
 }

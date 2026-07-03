@@ -338,7 +338,8 @@ class ZapCookingApi(
          * Project the batch endpoint's per-pubkey entry onto the shared
          * [MembershipStatus] (the badge/banner UI only reads `isActive`). The
          * entry's `active` maps to `isActive`, and its top-level `tier` moves
-         * under `member`. A missing [lookupKey] (empty `{}` response, or the
+         * under `member`. [lookupKey] is normalized to lowercase to match the
+         * server-normalized map keys. A missing key (empty `{}` response, or the
          * pubkey simply absent) → an inactive status. Pure — unit-tested
          * against real-shape fixtures.
          */
@@ -346,7 +347,8 @@ class ZapCookingApi(
             byPubkey: Map<String, PublicMembershipEntry>,
             lookupKey: String,
         ): MembershipStatus {
-            val entry = byPubkey[lookupKey]
+            val key = lookupKey.lowercase()
+            val entry = byPubkey[key]
                 ?: return MembershipStatus(found = false, isActive = false)
             return MembershipStatus(
                 found = true,
