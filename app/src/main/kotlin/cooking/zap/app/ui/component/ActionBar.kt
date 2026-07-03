@@ -55,10 +55,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cooking.zap.app.R
-import cooking.zap.app.repo.FiatPreferences
 import cooking.zap.app.ui.theme.WispThemeColors
 import cooking.zap.app.ui.util.AmountFormatter
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import coil3.compose.AsyncImage
@@ -272,9 +270,6 @@ fun ActionBar(
         }
         if (!isZapInProgress && zapSats > 0) {
             val context = LocalContext.current
-            val fiatPrefs = remember { FiatPreferences.get(context) }
-            fiatPrefs.fiatMode.collectAsState().value
-            fiatPrefs.currency.collectAsState().value
             Text(
                 text = AmountFormatter.formatShort(zapSats, context),
                 style = MaterialTheme.typography.labelSmall,

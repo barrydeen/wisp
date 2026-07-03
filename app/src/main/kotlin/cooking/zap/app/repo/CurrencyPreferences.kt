@@ -5,22 +5,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-class FiatPreferences(context: Context) {
+/**
+ * Stores the display currency used for wallet fiat conversions (balance and
+ * transaction amounts). This is only a currency selection — there is no
+ * app-wide "fiat mode"; sats remain the standard everywhere outside the
+ * wallet's optional dollar-balance view.
+ */
+class CurrencyPreferences(context: Context) {
     private val prefs = context.getSharedPreferences("wisp_settings", Context.MODE_PRIVATE)
-
-    private val _fiatMode = MutableStateFlow(prefs.getBoolean(KEY_FIAT_MODE, false))
-    val fiatMode: StateFlow<Boolean> = _fiatMode.asStateFlow()
 
     private val _currency = MutableStateFlow(prefs.getString(KEY_CURRENCY, "USD") ?: "USD")
     val currency: StateFlow<String> = _currency.asStateFlow()
-
-    fun isFiatMode(): Boolean = _fiatMode.value
-
-    fun setFiatMode(enabled: Boolean) {
-        if (_fiatMode.value == enabled) return
-        prefs.edit().putBoolean(KEY_FIAT_MODE, enabled).apply()
-        _fiatMode.value = enabled
-    }
 
     fun getCurrency(): String = _currency.value
 
@@ -31,15 +26,15 @@ class FiatPreferences(context: Context) {
     }
 
     companion object {
-        private const val KEY_FIAT_MODE = "fiat_mode_enabled"
+        // Preserve the legacy key so a previously-selected currency carries over.
         private const val KEY_CURRENCY = "fiat_currency"
 
         @Volatile
-        private var INSTANCE: FiatPreferences? = null
+        private var INSTANCE: CurrencyPreferences? = null
 
-        fun get(context: Context): FiatPreferences =
+        fun get(context: Context): CurrencyPreferences =
             INSTANCE ?: synchronized(this) {
-                INSTANCE ?: FiatPreferences(context.applicationContext).also { INSTANCE = it }
+                INSTANCE ?: CurrencyPreferences(context.applicationContext).also { INSTANCE = it }
             }
     }
 }

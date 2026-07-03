@@ -1,41 +1,26 @@
 package cooking.zap.app.ui.util
 
-import android.content.Context
 import cooking.zap.app.R
+import android.content.Context
 import cooking.zap.app.repo.ExchangeRateRepository
 import cooking.zap.app.repo.FiatCurrency
-import cooking.zap.app.repo.FiatPreferences
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.util.Locale
 
 /**
- * Centralized formatter for bitcoin amounts. When Fiat Mode is enabled in
- * [FiatPreferences], renders the amount as fiat using the cached rate in
- * [ExchangeRateRepository]. Otherwise falls back to the prior sat formatting.
+ * Centralized formatter for bitcoin amounts. Amounts are rendered in sats
+ * everywhere; the wallet additionally offers an opt-in dollar-balance view via
+ * [formatFiat], which converts sats using the cached rate in [ExchangeRateRepository].
  */
 object AmountFormatter {
 
-    /** Short form used inline (feed zap counts, etc.). Sats: "1.2k"/"3.4M". Fiat: "$0.12". */
-    fun formatShort(sats: Long, context: Context): String {
-        val prefs = FiatPreferences.get(context)
-        return if (prefs.isFiatMode()) {
-            formatFiat(sats, prefs.getCurrency()) ?: formatSatsShort(sats)
-        } else {
-            formatSatsShort(sats)
-        }
-    }
+    /** Short form used inline (feed zap counts, etc.): "1.2k"/"3.4M". */
+    fun formatShort(sats: Long, context: Context): String = formatSatsShort(sats)
 
-    /** Full form used for balances / transactions. Sats: "1,234 sats". Fiat: "$12.34". */
-    fun formatFull(sats: Long, context: Context): String {
-        val prefs = FiatPreferences.get(context)
-        return if (prefs.isFiatMode()) {
-            formatFiat(sats, prefs.getCurrency())
-                ?: context.getString(R.string.amount_sats_format, String.format(Locale.getDefault(), "%,d", sats))
-        } else {
-            context.getString(R.string.amount_sats_format, String.format(Locale.getDefault(), "%,d", sats))
-        }
-    }
+    /** Full form used for balances / transactions: "1,234 sats". */
+    fun formatFull(sats: Long, context: Context): String =
+        context.getString(R.string.amount_sats_format, String.format(Locale.getDefault(), "%,d", sats))
 
     /** Raw sat rendering without the "sats" suffix (e.g. big balance number). */
     fun formatSatsOnly(sats: Long): String = String.format(Locale.getDefault(), "%,d", sats)
@@ -48,8 +33,9 @@ object AmountFormatter {
     }
 
     /**
-     * Returns the fiat-formatted string, or null if the rate is not yet cached.
-     * Picks precision automatically based on magnitude so tiny zaps don't show "$0.00".
+     * Returns the fiat-formatted string for the wallet dollar-balance view, or
+     * null if the exchange rate is not yet cached. Precision scales with
+     * magnitude so tiny amounts don't collapse to "$0.00".
      */
     fun formatFiat(sats: Long, currencyCode: String): String? {
         val fiat = ExchangeRateRepository.satsToFiat(sats, currencyCode) ?: return null
@@ -59,11 +45,6 @@ object AmountFormatter {
 
     private fun renderCurrency(amount: Double, currency: FiatCurrency): String {
         val abs = kotlin.math.abs(amount)
-        // Sub-dollar tiers use `#` (optional) past the decimal so trailing
-        // zeros drop — "$0.84" instead of "$0.840", "$0.8" instead of
-        // "$0.800". The cap grows as the value shrinks so we don't lose
-        // precision on tiny amounts. Whole-dollar amounts keep two decimal
-        // places (the expected retail convention: "$1.00", not "$1").
         val pattern = when {
             abs == 0.0 -> "#,##0.00"
             abs < 0.001 -> "#,##0.######"
@@ -74,7 +55,6 @@ object AmountFormatter {
         }
         val symbols = DecimalFormatSymbols(Locale.getDefault())
         val formatter = DecimalFormat(pattern, symbols)
-        val formatted = formatter.format(amount)
-        return "${currency.symbol}$formatted"
+        return "${currency.symbol}${formatter.format(amount)}"
     }
 }

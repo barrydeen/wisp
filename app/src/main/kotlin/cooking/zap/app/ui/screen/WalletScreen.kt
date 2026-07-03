@@ -116,6 +116,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -177,7 +180,8 @@ import cooking.zap.app.BuildConfig
 import cooking.zap.app.R
 import cooking.zap.app.repo.BalanceUnit
 import cooking.zap.app.repo.WalletBalanceDisplayMode
-import cooking.zap.app.repo.FiatPreferences
+import cooking.zap.app.repo.CurrencyPreferences
+import cooking.zap.app.repo.ExchangeRateRepository
 import cooking.zap.app.repo.WalletMode
 import cooking.zap.app.repo.WalletTransaction
 import cooking.zap.app.ui.component.NsecPasteGuard
@@ -1096,7 +1100,7 @@ private fun WalletConnectionContent(
 private fun WalletHomeContent(
     balanceMsats: Long,
     walletMode: WalletMode = WalletMode.NWC,
-    balanceUnit: BalanceUnit = BalanceUnit.BITCOIN,
+    balanceUnit: BalanceUnit = BalanceUnit.SATS,
     showSettingsAlert: Boolean = false,
     seedBackupAcked: Boolean = true,
     backupMissing: Boolean = false,
@@ -1119,17 +1123,14 @@ private fun WalletHomeContent(
     val balanceSats = balanceMsats / 1000
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("wisp_settings", android.content.Context.MODE_PRIVATE) }
-    // Tri-state balance display (sats / fiat / hidden) — tap the
-    // dashboard balance to cycle. Per-pubkey storage; migrates the
-    // legacy global `balance_hidden` Bool on first read for a given
-    // pubkey. iOS port of feat/wallet-balance-toggle (wisp-ios #166).
+    // Tri-state balance display (sats / dollars / hidden) — tap the dashboard
+    // balance to cycle. Per-pubkey storage; migrates the legacy global
+    // `balance_hidden` Bool on first read for a given pubkey.
     var balanceDisplay by remember(pubkey) {
         mutableStateOf(WalletBalanceDisplayMode.read(prefs, pubkey))
     }
     val balanceHidden = balanceDisplay == WalletBalanceDisplayMode.HIDDEN
-    val fiatPrefs = remember { FiatPreferences.get(context) }
-    val fiatMode by fiatPrefs.fiatMode.collectAsState()
-    val fiatCurrency by fiatPrefs.currency.collectAsState()
+    val displayCurrency by CurrencyPreferences.get(context).currency.collectAsState()
     val clipboard = remember { context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
     val accent = WispThemeColors.zapColor
 
@@ -1341,14 +1342,15 @@ private fun WalletHomeContent(
         Spacer(Modifier.weight(1f))
 
         // ── Balance ─────────────────────────────────────────────────
-        // Tap to cycle sats → fiat → hidden. `fiat` is wallet-screen-
-        // scoped: it renders the balance in the user's currently-set
-        // fiat currency but does NOT flip the app-wide
-        // [FiatPreferences.isFiatMode] flag (still respected by feed
-        // counts / timestamps elsewhere).
+        // Tap to cycle sats → dollars → hidden. Fixed height + centered
+        // content so toggling to a state without a sub-label (dollars)
+        // doesn't shift the layout vertically.
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.clickable {
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .height(96.dp)
+                .clickable {
                 balanceDisplay = balanceDisplay.next()
                 WalletBalanceDisplayMode.write(prefs, pubkey, balanceDisplay)
             }
@@ -1368,7 +1370,7 @@ private fun WalletHomeContent(
                     )
                 }
                 WalletBalanceDisplayMode.FIAT -> {
-                    val fiat = AmountFormatter.formatFiat(balanceSats, fiatCurrency)
+                    val fiat = AmountFormatter.formatFiat(balanceSats, displayCurrency)
                     if (fiat != null) {
                         Text(
                             fiat,
@@ -1376,9 +1378,8 @@ private fun WalletHomeContent(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     } else {
-                        // Exchange-rate cache hasn't loaded yet — fall
-                        // back to the sats display so the dashboard
-                        // doesn't show a blank or a placeholder.
+                        // Exchange-rate cache hasn't loaded yet — fall back to sats
+                        // so the dashboard never shows a blank balance.
                         Text(
                             "%,d".format(balanceSats),
                             style = MaterialTheme.typography.displayLarge.copy(fontWeight = FontWeight.Bold),
@@ -1393,29 +1394,17 @@ private fun WalletHomeContent(
                     }
                 }
                 WalletBalanceDisplayMode.SATS -> {
-                    // App-wide fiat mode still wins when the user has
-                    // it on AND the wallet display is in its default
-                    // (sats) state — same behaviour as before this
-                    // tri-state landed.
-                    if (fiatMode) {
-                        Text(
-                            AmountFormatter.formatShort(balanceSats, context),
-                            style = MaterialTheme.typography.displayLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    } else {
-                        Text(
-                            "%,d".format(balanceSats),
-                            style = MaterialTheme.typography.displayLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            stringResource(R.string.wallet_sats),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        "%,d".format(balanceSats),
+                        style = MaterialTheme.typography.displayLarge.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        stringResource(R.string.wallet_sats),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -2202,18 +2191,7 @@ private fun ReceiveAmountContent(
     onLoadDepositAddress: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val receiveCtx = LocalContext.current
-    val fiatPrefs = remember { FiatPreferences.get(receiveCtx) }
-    val fiatMode by fiatPrefs.fiatMode.collectAsState()
-    val fiatCurrency by fiatPrefs.currency.collectAsState()
-    val currency = remember(fiatCurrency) { cooking.zap.app.repo.ExchangeRateRepository.currencyFor(fiatCurrency) }
-    val btcPrice = cooking.zap.app.repo.ExchangeRateRepository.rates.collectAsState().value[fiatCurrency.uppercase()]
-
-    val fiatValue = if (fiatMode) amount.toDoubleOrNull() ?: 0.0 else 0.0
-    val fiatSats: Long? = if (fiatMode && fiatValue > 0.0 && btcPrice != null && btcPrice > 0.0) {
-        ((fiatValue / btcPrice) * 100_000_000.0).toLong()
-    } else null
-    val satAmount: Long? = if (fiatMode) fiatSats else amount.toLongOrNull()
+    val satAmount: Long? = amount.toLongOrNull()
 
     var description by remember { mutableStateOf("") }
     var expiry by remember { mutableStateOf(InvoiceExpiry.ONE_HOUR) }
@@ -2326,23 +2304,12 @@ private fun ReceiveAmountContent(
                     BasicTextField(
                         value = amount,
                         onValueChange = { input ->
-                            val filtered = if (fiatMode) {
-                                val sb = StringBuilder()
-                                var seenDot = false
-                                for (c in input) {
-                                    if (c.isDigit()) sb.append(c)
-                                    else if (c == '.' && !seenDot) { sb.append(c); seenDot = true }
-                                }
-                                sb.toString()
-                            } else {
-                                input.filter { it.isDigit() }
-                            }
-                            onAmountChange(filtered)
+                            onAmountChange(input.filter { it.isDigit() })
                         },
                         textStyle = amountTextStyle,
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(
-                            keyboardType = if (fiatMode) KeyboardType.Decimal else KeyboardType.Number
+                            keyboardType = KeyboardType.Number
                         ),
                         cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                         modifier = Modifier.weight(1f),
@@ -2360,18 +2327,9 @@ private fun ReceiveAmountContent(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        if (fiatMode) currency.code else stringResource(R.string.wallet_sats),
+                        stringResource(R.string.wallet_sats),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (fiatMode && fiatSats != null && fiatSats > 0L) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "≈ %,d sats".format(fiatSats),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 4.dp)
                     )
                 }
 
@@ -3121,10 +3079,9 @@ private fun TransactionRow(
     val profile = tx.counterpartyPubkey?.let { profileLookup(it) }
     val ctx = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
-    val fiatMode by FiatPreferences.get(ctx).fiatMode.collectAsState()
-    val fiatCurrency by FiatPreferences.get(ctx).currency.collectAsState()
     val isHidden = displayMode == WalletBalanceDisplayMode.HIDDEN
-    val isWalletFiat = displayMode == WalletBalanceDisplayMode.FIAT
+    val isFiat = displayMode == WalletBalanceDisplayMode.FIAT
+    val displayCurrency by CurrencyPreferences.get(ctx).currency.collectAsState()
     var expanded by remember { mutableStateOf(false) }
 
   Column(modifier = Modifier.fillMaxWidth()) {
@@ -3207,9 +3164,7 @@ private fun TransactionRow(
         }
 
         // Amount + fee. In HIDDEN mode every number is masked so a
-        // "show my wallet without showing the numbers" screenshot
-        // works. Wallet-screen FIAT mode renders amounts in the user's
-        // selected fiat currency without flipping the app-wide flag.
+        // "show my wallet without showing the numbers" screenshot works.
         Column(horizontalAlignment = Alignment.End) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val sign = if (isIncoming) "+" else "-"
@@ -3220,30 +3175,8 @@ private fun TransactionRow(
                         style = MaterialTheme.typography.titleMedium,
                         color = signColor
                     )
-                    isWalletFiat -> {
-                        val fiat = AmountFormatter.formatFiat(amountSats, fiatCurrency)
-                        if (fiat != null) {
-                            Text(
-                                "$sign$fiat",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = signColor
-                            )
-                        } else {
-                            Text(
-                                "$sign%,d".format(amountSats),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = signColor
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                stringResource(R.string.wallet_sats),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    fiatMode -> Text(
-                        "$sign${AmountFormatter.formatFull(amountSats, ctx)}",
+                    isFiat && AmountFormatter.formatFiat(amountSats, displayCurrency) != null -> Text(
+                        "$sign${AmountFormatter.formatFiat(amountSats, displayCurrency)}",
                         style = MaterialTheme.typography.titleMedium,
                         color = signColor
                     )
@@ -3264,14 +3197,10 @@ private fun TransactionRow(
             }
             if (!isIncoming && tx.feeMsats > 0) {
                 val feeSats = tx.feeMsats / 1000
+                val feeFiat = if (isFiat) AmountFormatter.formatFiat(feeSats, displayCurrency) else null
                 val feeText = when {
                     isHidden -> stringResource(R.string.wallet_fee, 0).replace("0", "***")
-                    isWalletFiat -> {
-                        val fiat = AmountFormatter.formatFiat(feeSats, fiatCurrency)
-                        if (fiat != null) stringResource(R.string.wallet_fee_money, fiat)
-                        else stringResource(R.string.wallet_fee, feeSats)
-                    }
-                    fiatMode -> stringResource(R.string.wallet_fee_money, AmountFormatter.formatFull(feeSats, ctx))
+                    feeFiat != null -> stringResource(R.string.wallet_fee_money, feeFiat)
                     else -> stringResource(R.string.wallet_fee, feeSats)
                 }
                 Text(
@@ -4139,7 +4068,7 @@ private fun SparkBackupContent(
 @Composable
 private fun WalletSettingsContent(
     walletMode: WalletMode,
-    balanceUnit: BalanceUnit = BalanceUnit.BITCOIN,
+    balanceUnit: BalanceUnit = BalanceUnit.SATS,
     onBalanceUnitChange: (BalanceUnit) -> Unit = {},
     lightningAddress: String?,
     lightningAddressLoading: Boolean = false,
@@ -4163,8 +4092,6 @@ private fun WalletSettingsContent(
     modifier: Modifier = Modifier
 ) {
     val clipboardManager = LocalClipboardManager.current
-    val settingsCtx = LocalContext.current
-    val fiatMode by FiatPreferences.get(settingsCtx).fiatMode.collectAsState()
 
     Column(
         modifier = modifier
@@ -4292,31 +4219,30 @@ private fun WalletSettingsContent(
             }
         )
 
-        // Display section — only relevant when showing sats
-        if (!fiatMode) {
-            Spacer(Modifier.height(24.dp))
+        // Display section
+        Spacer(Modifier.height(24.dp))
 
-            Text(
-                "Display",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+        Text(
+            "Display",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
 
-            Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(12.dp))
 
-            Text(
-                "Balance Unit",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        Text(
+            "Balance Unit",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
-            Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(8.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-            val units = listOf(BalanceUnit.SATS, BalanceUnit.BITCOIN, BalanceUnit.LIGHTNING)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            val units = listOf(BalanceUnit.SATS, BalanceUnit.LIGHTNING)
             units.forEach { unit ->
                 val selected = balanceUnit == unit
                 val tint = if (selected) MaterialTheme.colorScheme.primary
@@ -4337,12 +4263,6 @@ private fun WalletSettingsContent(
                     )
                 ) {
                     when (unit) {
-                        BalanceUnit.BITCOIN -> Text(
-                            "\u20BF 1,000",
-                            color = tint,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1
-                        )
                         BalanceUnit.LIGHTNING -> {
                             Icon(
                                 painter = painterResource(R.drawable.ic_bolt),
@@ -4362,6 +4282,48 @@ private fun WalletSettingsContent(
                     }
                 }
             }
+        }
+
+        // Display currency — used for the wallet's optional dollar-balance view.
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "Display Currency",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+        val currencyCtx = LocalContext.current
+        val currencyPrefs = remember { CurrencyPreferences.get(currencyCtx) }
+        val selectedCurrencyCode by currencyPrefs.currency.collectAsState()
+        var currencyPickerExpanded by remember { mutableStateOf(false) }
+        Box {
+            OutlinedButton(
+                onClick = { currencyPickerExpanded = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                val selected = ExchangeRateRepository.currencyFor(selectedCurrencyCode)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("${selected.symbol}  ${selected.code} — ${selected.name}")
+                    Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                }
+            }
+            DropdownMenu(
+                expanded = currencyPickerExpanded,
+                onDismissRequest = { currencyPickerExpanded = false }
+            ) {
+                ExchangeRateRepository.SUPPORTED.forEach { c ->
+                    DropdownMenuItem(
+                        text = { Text("${c.symbol}  ${c.code} — ${c.name}") },
+                        onClick = {
+                            currencyPrefs.setCurrency(c.code)
+                            currencyPickerExpanded = false
+                        }
+                    )
+                }
             }
         }
 

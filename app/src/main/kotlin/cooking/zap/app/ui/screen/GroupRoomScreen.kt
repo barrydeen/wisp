@@ -74,7 +74,6 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.FlashOn
 import androidx.compose.material.icons.outlined.PersonRemove
@@ -1721,7 +1720,6 @@ private fun GroupMessageBubble(
                 // Actions panel — eyebrow + bare horizontally scrollable row of panel buttons
                 val showFollow = !isOwnMessage && onFollowAuthor != null
                 val showBlock = !isOwnMessage && onBlockAuthor != null
-                val useZapBoltIcon = cooking.zap.app.ui.util.useBoltIcon()
                 Column(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
@@ -1745,21 +1743,12 @@ private fun GroupMessageBubble(
                                 onZap(message.id, message.senderPubkey)
                             },
                             icon = {
-                                if (useZapBoltIcon) {
-                                    Icon(
-                                        Icons.Outlined.FlashOn,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                } else {
-                                    Icon(
-                                        Icons.Outlined.CurrencyBitcoin,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
+                                Icon(
+                                    Icons.Outlined.FlashOn,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp)
+                                )
                             },
                             label = stringResource(R.string.group_room_eyebrow_zap)
                         )

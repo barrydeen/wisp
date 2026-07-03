@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -72,7 +71,6 @@ fun ProfileQrSheet(
     val scope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
-    val useZapBolt = cooking.zap.app.ui.util.useBoltIcon()
 
     val npub = remember(pubkeyHex) { Nip19.npubEncode(pubkeyHex.hexToByteArray()) }
     val npubQr = remember(npub) { generateQrBitmap(npub) }
@@ -114,11 +112,7 @@ fun ProfileQrSheet(
                         onClick = { scope.launch { pagerState.animateScrollToPage(lightningPage) } },
                         text = { Text("Lightning") },
                         icon = {
-                            if (useZapBolt) {
-                                Icon(painterResource(R.drawable.ic_bolt), null, modifier = Modifier.size(18.dp))
-                            } else {
-                                Icon(Icons.Outlined.CurrencyBitcoin, null, modifier = Modifier.size(18.dp))
-                            }
+                            Icon(painterResource(R.drawable.ic_bolt), null, modifier = Modifier.size(18.dp))
                         }
                     )
                 }
@@ -218,21 +212,12 @@ fun ProfileQrSheet(
                                             .background(androidx.compose.ui.graphics.Color.White)
                                             .padding(4.dp)
                                     ) {
-                                        if (useZapBolt) {
-                                            Icon(
-                                                painter = painterResource(R.drawable.ic_bolt),
-                                                contentDescription = "Lightning",
-                                                tint = WispThemeColors.zapColor,
-                                                modifier = Modifier.size(28.dp)
-                                            )
-                                        } else {
-                                            Icon(
-                                                Icons.Outlined.CurrencyBitcoin,
-                                                contentDescription = "Bitcoin",
-                                                tint = WispThemeColors.zapColor,
-                                                modifier = Modifier.size(28.dp)
-                                            )
-                                        }
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_bolt),
+                                            contentDescription = "Lightning",
+                                            tint = WispThemeColors.zapColor,
+                                            modifier = Modifier.size(28.dp)
+                                        )
                                     }
                                 }
 

@@ -536,9 +536,7 @@ private fun LightningInvoiceCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                painter = painterResource(
-                    if (cooking.zap.app.ui.util.isFiatMode()) cooking.zap.app.R.drawable.ic_coin_stack else cooking.zap.app.R.drawable.ic_bolt
-                ),
+                painter = painterResource(cooking.zap.app.R.drawable.ic_bolt),
                 contentDescription = null,
                 tint = primary,
                 modifier = Modifier.size(20.dp)

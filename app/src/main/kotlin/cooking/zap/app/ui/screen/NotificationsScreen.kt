@@ -37,7 +37,7 @@ import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import androidx.compose.material.icons.outlined.FlashOn
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FormatQuote
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -472,7 +472,7 @@ fun NotificationsScreen(
 private fun NotificationFilter.icon(): androidx.compose.ui.graphics.vector.ImageVector = when (this) {
     NotificationFilter.REPLIES -> Icons.Outlined.ChatBubbleOutline
     NotificationFilter.REACTIONS -> Icons.Outlined.FavoriteBorder
-    NotificationFilter.ZAPS -> Icons.Outlined.CurrencyBitcoin
+    NotificationFilter.ZAPS -> Icons.Outlined.FlashOn
     NotificationFilter.REPOSTS -> Icons.Outlined.Repeat
     NotificationFilter.MENTIONS -> Icons.Outlined.AlternateEmail
     NotificationFilter.VOTES -> Icons.Outlined.BarChart
@@ -517,25 +517,12 @@ private fun NotificationFilterSheet(
                     val iconTint = if (enabled) MaterialTheme.colorScheme.primary
                                    else MaterialTheme.colorScheme.outline
                     if (filter == NotificationFilter.ZAPS) {
-                        val useBolt = cooking.zap.app.ui.util.useBoltIcon()
-                        val fiatMode = cooking.zap.app.ui.util.isFiatMode()
-                        if (fiatMode) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_coin_stack),
-                                contentDescription = null,
-                                tint = iconTint,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        } else if (useBolt) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_bolt),
-                                contentDescription = null,
-                                tint = iconTint,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        } else {
-                            Icon(filter.icon(), contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
-                        }
+                        Icon(
+                            painter = painterResource(R.drawable.ic_bolt),
+                            contentDescription = null,
+                            tint = iconTint,
+                            modifier = Modifier.size(22.dp)
+                        )
                     } else {
                         Icon(filter.icon(), contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
                     }
@@ -1071,14 +1058,6 @@ private fun DmExpansion(
                 ) {
                     if (isDmZapInProgress) {
                         LightningAnimation(modifier = Modifier.size(18.dp))
-                    } else if (cooking.zap.app.ui.util.isFiatMode()) {
-                        Icon(
-                            painter = androidx.compose.ui.res.painterResource(cooking.zap.app.R.drawable.ic_coin_stack),
-                            contentDescription = "Zap",
-                            tint = if (dmZapSats > 0) WispThemeColors.zapColor
-                                   else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(15.dp)
-                        )
                     } else {
                         Icon(
                             painter = androidx.compose.ui.res.painterResource(cooking.zap.app.R.drawable.ic_bolt),
@@ -1886,12 +1865,9 @@ private fun MentionCandidateRow(
 private fun NotificationTypeIcon(item: FlatNotificationItem, showSats: Boolean = false) {
     val iconSize = 28.dp
     if (item.type == NotificationType.ZAP || item.type == NotificationType.DM_ZAP || item.type == NotificationType.PROFILE_ZAP) {
-        val fiatMode = cooking.zap.app.ui.util.isFiatMode()
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
-                painter = androidx.compose.ui.res.painterResource(
-                    if (fiatMode) cooking.zap.app.R.drawable.ic_coin_stack else cooking.zap.app.R.drawable.ic_bolt
-                ),
+                painter = androidx.compose.ui.res.painterResource(cooking.zap.app.R.drawable.ic_bolt),
                 contentDescription = stringResource(R.string.cd_send_zap),
                 modifier = Modifier.size(iconSize - 4.dp),
                 tint = WispThemeColors.zapColor
@@ -2056,21 +2032,11 @@ private fun DailySummaryBar(
                 active = isFiltered && NotificationFilter.REACTIONS in enabledTypes,
                 onClick = { onFilterSelect(NotificationFilter.REACTIONS) })
             run {
-                val useZapBolt = cooking.zap.app.ui.util.useBoltIcon()
-                val fiatMode = cooking.zap.app.ui.util.isFiatMode()
                 val zapActive = isFiltered && NotificationFilter.ZAPS in enabledTypes
                 val zapCtx = LocalContext.current
                 val zapLabel = cooking.zap.app.ui.util.AmountFormatter.formatShort(summary.zapSats, zapCtx)
-                if (fiatMode) {
-                    SummaryStatPainter(painterResource(R.drawable.ic_coin_stack), zapLabel,
-                        active = zapActive, onClick = { onFilterSelect(NotificationFilter.ZAPS) })
-                } else if (useZapBolt) {
-                    SummaryStatPainter(painterResource(R.drawable.ic_bolt), zapLabel,
-                        active = zapActive, onClick = { onFilterSelect(NotificationFilter.ZAPS) })
-                } else {
-                    SummaryStat(Icons.Outlined.CurrencyBitcoin, zapLabel,
-                        active = zapActive, onClick = { onFilterSelect(NotificationFilter.ZAPS) })
-                }
+                SummaryStatPainter(painterResource(R.drawable.ic_bolt), zapLabel,
+                    active = zapActive, onClick = { onFilterSelect(NotificationFilter.ZAPS) })
             }
             SummaryStat(Icons.Outlined.Repeat, summary.repostCount.toString(),
                 active = isFiltered && NotificationFilter.REPOSTS in enabledTypes,

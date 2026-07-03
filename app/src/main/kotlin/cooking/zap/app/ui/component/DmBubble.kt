@@ -42,7 +42,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.FlashOn
 import androidx.compose.ui.draw.scale
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -314,7 +313,6 @@ fun DmBubble(
         ) {
             val clipboardManager = LocalClipboardManager.current
             val context = LocalContext.current
-            val useZapBoltIcon = cooking.zap.app.ui.util.useBoltIcon()
             val sheetScroll = rememberScrollState()
             val reactScroll = rememberScrollState()
             val stripBg = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.5f)
@@ -489,21 +487,12 @@ fun DmBubble(
                             modifier = Modifier.width(82.dp),
                             onClick = { showActionsSheet = false; onZap(message) },
                             icon = {
-                                if (useZapBoltIcon) {
-                                    Icon(
-                                        Icons.Outlined.FlashOn,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                } else {
-                                    Icon(
-                                        Icons.Outlined.CurrencyBitcoin,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
+                                Icon(
+                                    Icons.Outlined.FlashOn,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp)
+                                )
                             },
                             label = stringResource(R.string.group_room_eyebrow_zap)
                         )
