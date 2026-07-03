@@ -124,12 +124,17 @@ fun SousChefScreen(
 
     val loading = state is State.Loading
     val mode = detectMode(input, hasImage = stagedImageUri != null)
-    // Unknown (null) counts as non-member for banner DISPLAY only; the tap
-    // is never blocked on it — the server check at click time is
-    // authoritative (web parity).
+    // Unknown (null) counts as non-member for banner DISPLAY only. The CTA
+    // tap distinguishes the two: a KNOWN non-member gets the membership
+    // link-out (conversion event), while unknown proceeds to extraction and
+    // lets the server's 403 be the authoritative answer (web parity).
     val isMember = membership?.isActive == true
+    val knownNonMember = membership != null && !isMember
 
-    LaunchedEffect(Unit) { onRefreshMembership() }
+    // Keyed on canSign so a sign-in state change re-triggers the fetch (the
+    // ViewModel no-ops while the pubkey is unavailable rather than burning
+    // its once-per-entry flag).
+    LaunchedEffect(canSign) { onRefreshMembership() }
 
     val openMembership: () -> Unit = {
         if (membershipLinkoutEnabled) {
@@ -337,9 +342,12 @@ fun SousChefScreen(
                                 SousChefMode.IMAGE, SousChefMode.TEXT -> when {
                                     // The tap is the conversion event (web
                                     // parity): sign-in for watch-only, the
-                                    // membership page for non-members.
+                                    // membership page for KNOWN non-members.
+                                    // Unknown status falls through to
+                                    // extraction — the server's 403 is
+                                    // authoritative and repaints the banner.
                                     !canSign -> onSignIn()
-                                    !isMember -> openMembership()
+                                    knownNonMember -> openMembership()
                                     mode == SousChefMode.IMAGE ->
                                         stagedImageUri?.let { onImportImage(Uri.parse(it)) }
                                     else -> onImportText(input.trim())

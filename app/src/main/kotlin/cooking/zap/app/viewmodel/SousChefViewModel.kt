@@ -73,9 +73,10 @@ class SousChefViewModel : ViewModel() {
      * the state `null` (unknown).
      */
     fun fetchMembership(api: ZapCookingApi, pubkeyHex: String?) {
-        if (membershipFetched) return
+        // No-pubkey calls don't consume the once-flag — a later call (e.g.
+        // after sign-in state changes) can still fetch.
+        if (membershipFetched || pubkeyHex.isNullOrBlank()) return
         membershipFetched = true
-        if (pubkeyHex.isNullOrBlank()) return
         viewModelScope.launch {
             val status = try {
                 api.getPublicMembership(pubkeyHex)
