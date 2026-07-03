@@ -766,7 +766,9 @@ fun ComposeScreen(
                             // Borderless composer (matches iOS): no outline, no filled
                             // container — just the field and a muted placeholder overlay.
                             Box(modifier = Modifier.fillMaxWidth()) {
-                                if (content.text.isEmpty()) {
+                                // Keyed to the local TextFieldState (not the collected
+                                // ViewModel flow) so it can't lag what's on screen.
+                                if (textFieldState.text.isEmpty()) {
                                     Text(
                                         text = stringResource(R.string.compose_placeholder),
                                         style = MaterialTheme.typography.bodyLarge.copy(
@@ -1362,9 +1364,11 @@ fun ComposeScreen(
                                 resolvedEmojis = resolvedEmojis
                             )
                         },
+                        // Publish gating (iOS parity, wisp #567): mirrors publish()'s
+                        // validation — gallery posts need an upload (caption optional),
+                        // everything else needs text (uploads insert their URL into it).
                         enabled = !publishing && !isMiningBusy &&
-                            (content.text.isNotBlank() || uploadedUrls.isNotEmpty() ||
-                                (pollEnabled && pollOptions.any { it.isNotBlank() })),
+                            (if (galleryMode) uploadedUrls.isNotEmpty() else content.text.isNotBlank()),
                         modifier = Modifier.fillMaxWidth().height(44.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) {

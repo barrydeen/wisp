@@ -2323,6 +2323,11 @@ fun WispNavHost(
                     safetyPrefs = feedViewModel.safetyPrefs,
                     contactRepo = feedViewModel.contactRepo
                 )
+                // Returning from the reply composer: scroll to the reply we just
+                // published, since chronological ordering can put it below the fold.
+                composeViewModel.consumeLastPublishedReplyId()?.let { newReplyId ->
+                    threadViewModel.requestScrollTo(newReplyId)
+                }
             }
             androidx.compose.runtime.DisposableEffect(Unit) {
                 onDispose { feedViewModel.resumeEngagement() }

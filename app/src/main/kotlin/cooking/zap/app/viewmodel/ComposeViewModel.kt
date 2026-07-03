@@ -58,7 +58,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 private val NOSTR_URI_REGEX = Regex("nostr:(npub1[a-z0-9]{58}|nprofile1[a-z0-9]+|note1[a-z0-9]{58}|nevent1[a-z0-9]+)")
 // Matches bare bech32 IDs not already preceded by "nostr:" or embedded in a URL
 private val BARE_BECH32_REGEX = Regex("(?<!nostr:)(?<![a-z0-9/.:#])((note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]{10,})")
-private val HASHTAG_REGEX = Regex("(?:^|(?<=\\s))#([a-zA-Z0-9_]+)")
+private val HASHTAG_REGEX = Regex("(?:^|(?<=\\s))#([\\p{L}\\p{M}0-9_]+)")
 
 /** Tracks an inserted @mention as a range in the compose text, mapped to its pubkey. */
 data class Mention(val start: Int, val end: Int, val pubkey: String)
@@ -90,6 +90,17 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
     private val _publishing = MutableStateFlow(false)
     val publishing: StateFlow<Boolean> = _publishing
+
+    /** Id of the most recently published reply. The thread screen consumes this on
+     *  return to scroll to the new reply, since chronological sibling ordering can
+     *  place it far below the fold. Not set for PoW-mined or private replies. */
+    private var lastPublishedReplyId: String? = null
+
+    fun consumeLastPublishedReplyId(): String? {
+        val id = lastPublishedReplyId
+        lastPublishedReplyId = null
+        return id
+    }
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
@@ -345,19 +356,38 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         viewModelScope.launch {
             try {
                 _uploadProgress.value = "Uploading..."
-                val rawBytes = withContext(Dispatchers.IO) {
+                val (rawBytes, rawMime) = withContext(Dispatchers.IO) {
                     val request = okhttp3.Request.Builder().url(url).build()
                     cooking.zap.app.relay.HttpClientFactory.createHttpClient(readTimeoutSeconds = 30)
                         .newCall(request).execute().use { response ->
                             if (!response.isSuccessful) throw java.io.IOException("HTTP ${response.code}")
-                            response.body?.bytes() ?: throw java.io.IOException("Empty response")
+                            val body = response.body ?: throw java.io.IOException("Empty response")
+                            // Providers may serve WebP/PNG/etc. — trust Content-Type,
+                            // falling back to the URL extension for generic/absent types.
+                            val headerMime = body.contentType()?.let { "${it.type}/${it.subtype}" }
+                            val mime = if (headerMime == null || headerMime == "application/octet-stream") {
+                                mimeFromMediaUrl(url)
+                            } else headerMime
+                            body.bytes() to mime
                         }
                 }
-                processAndUploadBytes(rawBytes, "image/gif", "gif", signer)
+                val rawExt = MimeTypeMap.getSingleton().getExtensionFromMimeType(rawMime) ?: "gif"
+                processAndUploadBytes(rawBytes, rawMime, rawExt, signer)
             } catch (e: Exception) {
                 _error.value = "GIF upload failed: ${e.message}"
             }
             _uploadProgress.value = null
+        }
+    }
+
+    private fun mimeFromMediaUrl(url: String): String {
+        val path = url.substringBefore('?').substringBefore('#')
+        return when (path.substringAfterLast('.', "").lowercase()) {
+            "webp" -> "image/webp"
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
+            "mp4" -> "video/mp4"
+            else -> "image/gif"
         }
     }
 
@@ -369,14 +399,22 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         rawExt: String,
         signer: NostrSigner?
     ) {
-        val (bytes, mime, ext) = when {
-            rawMime == "image/gif" -> GifToMp4Converter.convert(rawBytes, getApplication())
-            rawMime.startsWith("image/") -> MediaCompressor.compressForContent(rawBytes, rawMime).asTriple()
-            else -> Triple(rawBytes, rawMime, rawExt)
+        // Transcode/compress/hash are CPU-heavy — keep them off viewModelScope's Main dispatcher.
+        val (media, dims, thumbhash) = withContext(Dispatchers.Default) {
+            val processed = when {
+                rawMime == "image/gif" -> GifToMp4Converter.convert(rawBytes, getApplication())
+                rawMime.startsWith("image/") -> MediaCompressor.compressForContent(rawBytes, rawMime).asTriple()
+                else -> Triple(rawBytes, rawMime, rawExt)
+            }
+            val (pBytes, pMime, _) = processed
+            // Re-extract dimensions from post-pipeline bytes so dim tags match what's uploaded.
+            Triple(
+                processed,
+                extractDimensionsFromBytes(pBytes, pMime),
+                if (pMime.startsWith("image/")) createThumbhash(pBytes) else null
+            )
         }
-        // Re-extract dimensions from post-pipeline bytes so dim tags match what's uploaded.
-        val dims = extractDimensionsFromBytes(bytes, mime)
-        val thumbhash = if (mime.startsWith("image/")) createThumbhash(bytes) else null
+        val (bytes, mime, ext) = media
         val url = blossomRepo.uploadMedia(bytes, mime, ext, signer)
         _uploadedUrls.value = _uploadedUrls.value + url
         _uploadedMediaMeta[url] = UploadedMediaMeta(
@@ -940,6 +978,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
             if (rootId != null && rootId != replyTo.id) {
                 eventRepo?.addReplyCount(rootId, event.id)
             }
+            lastPublishedReplyId = event.id
         }
         deleteDraftOnPublish(relayPool, signer)
         _content.value = TextFieldValue()

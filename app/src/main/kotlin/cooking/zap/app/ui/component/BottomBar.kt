@@ -63,7 +63,7 @@ enum class BottomTab(
     val selectedIconRes: Int? = null,
     val unselectedIconRes: Int? = null
 ) {
-    FEED(Routes.FEED, R.string.nav_feed, null, null, R.drawable.ic_nav_home, R.drawable.ic_nav_home_outline),
+    FEED(Routes.FEED, R.string.nav_feed, null, null, R.drawable.ic_flame, R.drawable.ic_flame_outline),
     RECIPES(Routes.RECIPES, R.string.nav_recipes, null, null, R.drawable.ic_nav_recipes, R.drawable.ic_nav_recipes),
     WALLET(Routes.WALLET, R.string.nav_wallet, null, null, R.drawable.ic_zc_wallet, R.drawable.ic_zc_wallet),
     MESSAGES(Routes.DM_LIST, R.string.nav_messages, null, null, R.drawable.ic_nav_chat, R.drawable.ic_nav_chat_outline),
@@ -261,7 +261,14 @@ private fun SideNavItem(
                 Icon(
                     painter = painterResource(if (selected) tab.selectedIconRes else tab.unselectedIconRes!!),
                     contentDescription = stringResource(tab.labelResId),
-                    tint = zapTint
+                    tint = zapTint,
+                    // The flame reads a touch small next to its siblings —
+                    // bump it up in this one spot rather than inflating the
+                    // shared drawable (which would also blow up the drawer's
+                    // copy of the same icon). Must be requiredSize: plain
+                    // size() gets clamped back to SIDE_ICON_SIZE by the
+                    // parent box's fixed constraints.
+                    modifier = if (tab == BottomTab.FEED) Modifier.requiredSize(24.dp) else Modifier
                 )
             } else {
                 Icon(
