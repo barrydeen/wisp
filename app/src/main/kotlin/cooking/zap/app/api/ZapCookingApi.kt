@@ -13,6 +13,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -38,16 +40,33 @@ class ZapCookingApi(
     private val jsonMediaType = "application/json".toMediaType()
 
     /**
-     * `GET /api/membership?pubkey=<hex>` — public, unauthenticated batch
+     * `GET /api/membership?pubkeys=<hex>` — public, unauthenticated **batch**
      * read of membership status. Use for badge surfaces and for READ_ONLY
-     * accounts (which cannot sign). Returns the public response shape.
+     * accounts (which cannot sign).
+     *
+     * The server (see the frontend `src/routes/api/membership/+server.ts`,
+     * `parsePubkeys` + the `results` map) takes a comma-separated `pubkeys`
+     * query param — NOT a singular `pubkey` — and answers with a JSON object
+     * keyed by the **lowercased** pubkey, each value shaped
+     * `{ active, tier, expiresAt? }` (NOT the `{ found, isActive, member }`
+     * shape of `check-status`). A request with no valid pubkeys yields `{}`.
+     *
+     * We therefore lowercase the pubkey (our pubkeys are lowercase hex, but
+     * the server normalizes with `.toLowerCase()`, so the response key echoes
+     * the lowercased value), send it as `pubkeys`, deserialize the keyed map,
+     * and pull out our entry. A missing key (e.g. the `{}` response) maps to
+     * an inactive [MembershipStatus] — the caller ([SousChefViewModel]) treats
+     * inactive the same as unknown for the banner, and the server's 403 at
+     * extraction time stays authoritative.
      */
     suspend fun getPublicMembership(pubkeyHex: String): MembershipStatus {
+        val lookupKey = pubkeyHex.lowercase()
         val url = baseUrl.toHttpUrl().newBuilder()
             .addPathSegments("api/membership")
-            .addQueryParameter("pubkey", pubkeyHex)
+            .addQueryParameter("pubkeys", lookupKey)
             .build()
-        return getJson(url, MembershipStatus.serializer())
+        val byPubkey = getJson(url, BATCH_MEMBERSHIP_SERIALIZER)
+        return mapBatchMembership(byPubkey, lookupKey)
     }
 
     /**
@@ -111,24 +130,30 @@ class ZapCookingApi(
         path: String,
         bodyString: String,
         deserializer: DeserializationStrategy<T>,
+        httpClient: OkHttpClient = client,
     ): T = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url("$baseUrl$path")
             .post(bodyString.toRequestBody(jsonMediaType))
             .build()
-        execute(request, deserializer)
+        execute(request, deserializer, httpClient)
     }
 
     /**
      * `POST /api/extract-recipe/public` — anon URL-only recipe import (Sous
      * Chef, concern 2.1). Free + per-IP rate-limited; no pubkey, no NIP-98.
      * Returns the structured [NormalizedRecipe], NOT markdown.
+     *
+     * Uses the long-timeout compute client: server-side URL extraction (page
+     * fetch + LLM parse) routinely exceeds the general client's 15s read
+     * timeout, same as the image/text extraction and Nourish/Cheffy paths.
      */
     suspend fun extractRecipeFromUrl(url: String): ExtractRecipeResponse =
         postJson(
             "/api/extract-recipe/public",
             json.encodeToString(ExtractUrlRequest.serializer(), ExtractUrlRequest(url)),
             ExtractRecipeResponse.serializer(),
+            httpClient = HttpClientFactory.getComputeClient(),
         )
 
     /**
@@ -304,8 +329,50 @@ class ZapCookingApi(
 
     companion object {
         const val DEFAULT_BASE_URL = "https://zap.cooking"
+
+        /** Deserializer for the `/api/membership` keyed-map batch response. */
+        internal val BATCH_MEMBERSHIP_SERIALIZER =
+            MapSerializer(String.serializer(), PublicMembershipEntry.serializer())
+
+        /**
+         * Project the batch endpoint's per-pubkey entry onto the shared
+         * [MembershipStatus] (the badge/banner UI only reads `isActive`). The
+         * entry's `active` maps to `isActive`, and its top-level `tier` moves
+         * under `member`. A missing [lookupKey] (empty `{}` response, or the
+         * pubkey simply absent) → an inactive status. Pure — unit-tested
+         * against real-shape fixtures.
+         */
+        internal fun mapBatchMembership(
+            byPubkey: Map<String, PublicMembershipEntry>,
+            lookupKey: String,
+        ): MembershipStatus {
+            val entry = byPubkey[lookupKey]
+                ?: return MembershipStatus(found = false, isActive = false)
+            return MembershipStatus(
+                found = true,
+                isActive = entry.active,
+                member = MembershipStatus.Member(
+                    tier = entry.tier,
+                    subscription_end = entry.expiresAt,
+                ),
+            )
+        }
     }
 }
+
+/**
+ * One entry in the `/api/membership` batch response
+ * (`Record<pubkey, { active, tier, expiresAt? }>`). Distinct from
+ * [MembershipStatus] because the batch endpoint uses `active`/top-level `tier`,
+ * whereas `check-status` uses `isActive`/nested `member.tier`. Lenient defaults
+ * so a partial entry never throws.
+ */
+@Serializable
+internal data class PublicMembershipEntry(
+    val active: Boolean = false,
+    val tier: String? = null,
+    val expiresAt: String? = null,
+)
 
 @Serializable
 private data class CheckStatusRequest(val pubkey: String)

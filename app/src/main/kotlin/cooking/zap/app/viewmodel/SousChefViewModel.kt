@@ -175,6 +175,12 @@ class SousChefViewModel : ViewModel() {
                 )
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e // never swallow cancellation (e.g. leaving the screen)
+            } catch (e: java.io.InterruptedIOException) {
+                // SocketTimeoutException is an InterruptedIOException. Server-side
+                // URL extraction (page fetch + LLM parse) can outlast even the
+                // compute client's read timeout on a slow/heavy site — that's a
+                // "try again" case, not a connectivity failure.
+                State.Error("That site is taking too long — try again in a moment.")
             } catch (e: Exception) {
                 State.Error("Network error — check your connection and try again.")
             }
