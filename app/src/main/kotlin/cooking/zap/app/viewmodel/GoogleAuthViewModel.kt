@@ -13,7 +13,6 @@ import cooking.zap.app.auth.GoogleSignInManager
 import cooking.zap.app.nostr.Keys
 import cooking.zap.app.nostr.Nip19
 import cooking.zap.app.nostr.toHex
-import cooking.zap.app.repo.FiatPreferences
 import cooking.zap.app.repo.KeyBackupPreferences
 import cooking.zap.app.repo.KeyRepository
 import kotlinx.coroutines.Dispatchers
@@ -260,9 +259,6 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
         // Flag the new key as needing backup so the universal nudge fires once
         // AuthViewModel.refreshAfterExternalLogin() reloads this account's prefs.
         KeyBackupPreferences.markBackupNeededFor(getApplication(), keypair.pubkey.toHex())
-        val fiatPrefs = FiatPreferences.get(getApplication())
-        fiatPrefs.setFiatMode(true)
-        fiatPrefs.setCurrency("USD")
         _state.value = State.Done(isNewAccount = true)
     }
 
