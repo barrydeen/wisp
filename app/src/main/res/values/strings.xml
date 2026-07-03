@@ -122,6 +122,7 @@
     <string name="compose_reply">Reply</string>
     <string name="compose_quote">Quote</string>
     <string name="compose_placeholder">What are you eating, cooking, or loving?</string>
+    <string name="compose_preview_tag">Preview</string>
     <string name="compose_gallery_placeholder">Add a description for your gallery post…</string>
     <string name="compose_gallery_mode">Gallery Post</string>
     <string name="compose_gallery_tap_to_add">Tap to add photos or videos</string>

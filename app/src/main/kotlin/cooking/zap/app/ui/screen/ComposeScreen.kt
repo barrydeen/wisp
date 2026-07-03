@@ -1232,7 +1232,7 @@ fun ComposeScreen(
                                         color = MaterialTheme.colorScheme.surfaceVariant
                                     ) {
                                         Text(
-                                            text = "Preview",
+                                            text = stringResource(R.string.compose_preview_tag),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
