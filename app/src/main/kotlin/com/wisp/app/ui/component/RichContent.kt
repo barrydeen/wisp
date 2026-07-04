@@ -134,6 +134,7 @@ private const val INLINE_CONTENT_TAG = "androidx.compose.foundation.text.inlineC
 data class MediaSettings(
     val autoLoadMedia: Boolean = true,
     val videoAutoPlay: Boolean = true,
+    val videoLoop: Boolean = true,
     val mediaLayoutStyle: com.wisp.app.repo.InterfacePreferences.MediaLayoutStyle =
         com.wisp.app.repo.InterfacePreferences.MediaLayoutStyle.GALLERY
 )
@@ -2588,6 +2589,11 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
         exoPlayer?.volume = if (isMuted) 0f else 1f
     }
 
+    LaunchedEffect(mediaSettings.videoLoop) {
+        exoPlayer?.repeatMode =
+            if (mediaSettings.videoLoop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+    }
+
     DisposableEffect(url, playerWanted) {
         if (!playerWanted) return@DisposableEffect onDispose {}
         val player = (PipController.reclaimPlayer(url)
@@ -2597,7 +2603,7 @@ internal fun InlineVideoPlayerWithFullscreen(meta: MediaMeta, onFullScreen: (pos
                 volume = if (globalMuted.value) 0f else 1f
                 playWhenReady = false
             }).apply {
-                repeatMode = Player.REPEAT_MODE_ONE
+                repeatMode = if (mediaSettings.videoLoop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
             }
         if (resumePositionMs > 0) player.seekTo(resumePositionMs)
         val listener = object : Player.Listener {
@@ -2941,6 +2947,11 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
         exoPlayer?.volume = if (isMuted) 0f else 1f
     }
 
+    LaunchedEffect(mediaSettings.videoLoop) {
+        exoPlayer?.repeatMode =
+            if (mediaSettings.videoLoop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+    }
+
     DisposableEffect(url, playerWanted) {
         if (!playerWanted) return@DisposableEffect onDispose {}
         val player = (PipController.reclaimPlayer(url)
@@ -2950,7 +2961,7 @@ private fun InlineVideoPlayer(url: String, modifier: Modifier = Modifier) {
                 volume = if (globalMuted.value) 0f else 1f
                 playWhenReady = false
             }).apply {
-                repeatMode = Player.REPEAT_MODE_ONE
+                repeatMode = if (mediaSettings.videoLoop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
             }
         if (resumePositionMs > 0) player.seekTo(resumePositionMs)
         val listener = object : Player.Listener {
