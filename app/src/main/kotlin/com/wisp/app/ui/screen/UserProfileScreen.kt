@@ -293,7 +293,9 @@ fun UserProfileScreen(
                 onZap(event, amountMsats, message, isAnonymous, isPrivate)
             },
             onGoToWallet = onWallet,
-            canPrivateZap = resolvedCanPrivateZap
+            canPrivateZap = resolvedCanPrivateZap,
+            recipientPubkey = zapTargetEvent?.pubkey,
+            profileLookup = { eventRepo?.getProfileData(it) }
         )
     }
 
@@ -307,7 +309,10 @@ fun UserProfileScreen(
                 onZapProfile?.invoke(amountMsats, message, isAnonymous)
             },
             onGoToWallet = onWallet,
-            canPrivateZap = false
+            canPrivateZap = false,
+            // Profile zap — recipient is the profile being viewed.
+            recipientPubkey = profile?.pubkey,
+            profileLookup = { pk -> profile?.takeIf { it.pubkey == pk } }
         )
     }
 

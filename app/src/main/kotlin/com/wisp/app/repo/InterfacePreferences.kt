@@ -13,10 +13,6 @@ class InterfacePreferences(context: Context) {
         }
     }
 
-    companion object {
-        val postUndoTimerOptions = listOf(5, 10, 15, 20, 30)
-    }
-
     private val prefs = context.getSharedPreferences("wisp_settings", Context.MODE_PRIVATE)
 
     fun getAccentColor(): Int = prefs.getInt("accent_color", 0xFFFF9800.toInt())
@@ -73,6 +69,38 @@ class InterfacePreferences(context: Context) {
 
     fun isPostUndoTimerForReplies(): Boolean = prefs.getBoolean("post_undo_timer_for_replies", false)
     fun setPostUndoTimerForReplies(enabled: Boolean) = prefs.edit().putBoolean("post_undo_timer_for_replies", enabled).apply()
+
+    // ── Instant (a.k.a. quick) zaps ─────────────────────────────────────────
+    // Hold-to-zap on the post-card fires immediately at the configured
+    // amount when enabled; tap still opens the composer.
+
+    fun isQuickZapEnabled(): Boolean = prefs.getBoolean("quick_zap_enabled", false)
+    fun setQuickZapEnabled(enabled: Boolean) = prefs.edit().putBoolean("quick_zap_enabled", enabled).apply()
+
+    fun getQuickZapAmountSats(): Long = prefs.getLong("quick_zap_amount_sats", 100L).coerceIn(1L, QUICK_ZAP_MAX_SATS)
+    fun setQuickZapAmountSats(amount: Long) {
+        // Hard clamp at 10K sats so an instant zap never bypasses the soft
+        // confirmation dialog in the ZapSheet (which fires at >10K).
+        val clamped = amount.coerceIn(1L, QUICK_ZAP_MAX_SATS)
+        prefs.edit().putLong("quick_zap_amount_sats", clamped).apply()
+    }
+
+    fun getQuickZapAmountFiat(): Double =
+        prefs.getString("quick_zap_amount_fiat", "0.10")?.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.10
+    fun setQuickZapAmountFiat(amount: Double) {
+        // Fiat clamp happens at fire time against the cached exchange rate
+        // (callers in ZapSheet do `min(localFiat, sats→fiat(10_000))`).
+        val clamped = amount.coerceAtLeast(0.0)
+        prefs.edit().putString("quick_zap_amount_fiat", clamped.toString()).apply()
+    }
+
+    fun getQuickZapMessage(): String = prefs.getString("quick_zap_message", "") ?: ""
+    fun setQuickZapMessage(message: String) = prefs.edit().putString("quick_zap_message", message).apply()
+
+    companion object {
+        val postUndoTimerOptions = listOf(5, 10, 15, 20, 30)
+        const val QUICK_ZAP_MAX_SATS = 10_000L
+    }
 
     /** Reset all interface preferences to defaults (called on full logout). */
     fun reset() {
