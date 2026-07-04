@@ -547,7 +547,9 @@ fun FeedScreen(
                 viewModel.sendZap(event, amountMsats, message, isAnonymous, isPrivate)
             },
             onGoToWallet = onWallet,
-            canPrivateZap = userHasDmRelays && recipientHasDmRelays
+            canPrivateZap = userHasDmRelays && recipientHasDmRelays,
+            recipientPubkey = zapTargetEvent?.pubkey,
+            profileLookup = { viewModel.profileRepo.get(it) }
         )
     }
 
@@ -575,7 +577,9 @@ fun FeedScreen(
                 zapPollTarget = null
                 viewModel.sendZapPollVote(pollEvent, optionIndex, amountMsats, message, isAnonymous)
             },
-            onGoToWallet = onWallet
+            onGoToWallet = onWallet,
+            recipientPubkey = pollEvent.pubkey,
+            profileLookup = { viewModel.profileRepo.get(it) }
         )
     }
 

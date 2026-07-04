@@ -641,7 +641,9 @@ fun DmConversationScreen(
             onGoToWallet = {
                 zapTargetMessage = null
                 onGoToWallet()
-            }
+            },
+            recipientPubkey = zapTargetMessage?.senderPubkey,
+            profileLookup = { pk -> peerProfile?.takeIf { it.pubkey == pk } }
         )
     }
 }
