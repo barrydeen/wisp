@@ -338,6 +338,7 @@ fun FeedScreen(
             onBlockAuthor = { pubkey -> viewModel.blockUser(pubkey) },
             onPin = { eventId -> viewModel.togglePin(eventId) },
             onDelete = { eventId, kind -> viewModel.deleteEvent(eventId, kind) },
+            onBroadcast = { event -> viewModel.broadcastEvent(event) },
             isFollowing = { pubkey -> viewModel.contactRepo.isFollowing(pubkey) },
             userPubkey = userPubkey,
             nip05Repo = viewModel.nip05Repo,

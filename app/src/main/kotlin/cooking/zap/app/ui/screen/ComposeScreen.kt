@@ -104,6 +104,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -135,6 +136,7 @@ import cooking.zap.app.ui.component.EmojiVisualTransformation
 import cooking.zap.app.ui.component.MentionOutputTransformation
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.RichContent
+import cooking.zap.app.ui.component.parseImetaTags
 import cooking.zap.app.ui.component.detectEmojiAutocomplete
 import cooking.zap.app.ui.component.insertEmojiShortcode
 import cooking.zap.app.ui.theme.WispThemeColors
@@ -146,6 +148,44 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+
+private val QUOTED_URL_REGEX = Regex("""https?://\S+""")
+private val QUOTED_IMAGE_EXTS = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "avif")
+private val QUOTED_VIDEO_EXTS = setOf("mp4", "mov", "webm", "m4v", "avi", "mkv")
+
+private fun mediaExt(url: String): String =
+    url.trimEnd('.', ',', ')', ']', '!', '"')
+        .substringBefore('?').substringBefore('#')
+        .substringAfterLast('/').substringAfterLast('.')
+        .lowercase()
+
+/**
+ * Splits a quoted note into a lead image URL (if any) and its text with media
+ * URLs removed, so the composer preview can render tidy text plus one cropped
+ * thumbnail instead of a full-height image gallery that overflows the card.
+ */
+private fun quotedPreviewParts(event: NostrEvent): Pair<String?, String> {
+    val urls = QUOTED_URL_REGEX.findAll(event.content).map { it.value }.toList()
+    val imageUrls = urls.filter { mediaExt(it) in QUOTED_IMAGE_EXTS }
+    val videoUrls = urls.filter { mediaExt(it) in QUOTED_VIDEO_EXTS }
+    // Pick a still image to show as the thumbnail without accidentally handing a
+    // video (or other non-image) URL to AsyncImage: prefer image-mime imeta URLs,
+    // then a video's poster ("image"), then a bare URL whose extension looks like
+    // an image. Entries with mime == null are only used when they look like images.
+    val imetaThumb = parseImetaTags(event.tags).values.firstNotNullOfOrNull { meta ->
+        when {
+            meta.mime?.startsWith("image") == true -> meta.url
+            meta.mime?.startsWith("video") == true -> meta.image
+            meta.image != null -> meta.image
+            meta.mime == null && mediaExt(meta.url) in QUOTED_IMAGE_EXTS -> meta.url
+            else -> null
+        }
+    }
+    val firstImage = imageUrls.firstOrNull() ?: imetaThumb
+    var text = event.content
+    (imageUrls + videoUrls).forEach { text = text.replace(it, "") }
+    return firstImage to text.trim()
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -635,39 +675,6 @@ fun ComposeScreen(
                         }
                     }
 
-                    // Quote context with resolved display names
-                    quoteTo?.let {
-                        val quoteAuthorName = profileRepo?.get(it.pubkey)?.displayString
-                            ?: it.pubkey.toNpub().let { npub -> "${npub.take(12)}...${npub.takeLast(4)}" }
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 12.dp)
-                                .border(
-                                    width = 1.dp,
-                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text(
-                                    text = quoteAuthorName,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    text = it.content.take(200) + if (it.content.length > 200) "..." else "",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 4
-                                )
-                            }
-                        }
-                    }
-
                     // Mention autocomplete dropdown
                     AnimatedVisibility(
                         visible = mentionQuery != null && mentionCandidates.isNotEmpty(),
@@ -780,6 +787,75 @@ fun ComposeScreen(
                             }
                         }
                     )
+
+                    // Quoted post preview — shown below the comment so the user's
+                    // note sits on top of the quoted note (matches iOS Wisp). Renders
+                    // the quoted note richly (media + hashtags/mentions); the body is
+                    // height-capped and clipped so a long/media-heavy note is cut off
+                    // rather than pushing the composer off screen.
+                    quoteTo?.let {
+                        val quoteProfile = profileRepo?.get(it.pubkey)
+                        val quoteAuthorName = quoteProfile?.displayString
+                            ?: it.pubkey.toNpub().let { npub -> "${npub.take(12)}...${npub.takeLast(4)}" }
+                        Spacer(Modifier.height(12.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                        ) {
+                            val (quoteImage, quoteText) = remember(it.id) { quotedPreviewParts(it) }
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    ProfilePicture(url = quoteProfile?.picture, size = 20)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = stringResource(R.string.compose_quoting, quoteAuthorName),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                // Text (media URLs stripped), height-capped so a long note is
+                                // cut off rather than pushing the composer around.
+                                if (quoteText.isNotBlank()) {
+                                    Spacer(Modifier.height(6.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .heightIn(max = 96.dp)
+                                            .clipToBounds()
+                                    ) {
+                                        RichContent(
+                                            content = quoteText,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            eventRepo = eventRepo,
+                                            imetaMap = emptyMap()
+                                        )
+                                    }
+                                }
+                                // A single cropped thumbnail — fixed height, cropped to fit so
+                                // it never overlaps or stretches the card.
+                                if (quoteImage != null) {
+                                    Spacer(Modifier.height(8.dp))
+                                    AsyncImage(
+                                        model = quoteImage,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(140.dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     // Attach row with preview toggle
                     Spacer(Modifier.height(4.dp))

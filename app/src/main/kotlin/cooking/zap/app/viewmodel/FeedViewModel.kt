@@ -661,6 +661,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     fun unblockUser(pubkey: String) = socialActions.unblockUser(pubkey)
     fun updateMutedWords() = socialActions.updateMutedWords()
     fun sendRepost(event: NostrEvent) = socialActions.sendRepost(event)
+    fun broadcastEvent(event: NostrEvent) = socialActions.broadcastEvent(event)
     fun sendReaction(event: NostrEvent, content: String = "+") = socialActions.toggleReaction(event, content)
     fun toggleReaction(event: NostrEvent, emoji: String) = socialActions.toggleReaction(event, emoji)
     fun sendZap(event: NostrEvent, amountMsats: Long, message: String = "", isAnonymous: Boolean = false, isPrivate: Boolean = false, extraRelayHints: List<String> = emptyList(), recipientOverride: String? = null, eventATag: String? = null) = socialActions.sendZap(event, amountMsats, message, isAnonymous, isPrivate, extraRelayHints, recipientOverride, eventATag)

@@ -29,6 +29,20 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.PersonAddAlt
+import androidx.compose.material.icons.outlined.PersonRemove
+import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.NotificationsOff
+import androidx.compose.material.icons.outlined.IosShare
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Tag
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Badge
+import androidx.compose.material.icons.outlined.Podcasts
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -225,7 +239,8 @@ fun PostCard(
     var showTranslation by remember { mutableStateOf(true) }
 
     LaunchedEffect(event.id, autoTranslate, translationState.status) {
-        if (autoTranslate && translationState.status == TranslationStatus.IDLE) {
+        if (cooking.zap.app.FeatureFlags.TRANSLATION_ENABLED &&
+            autoTranslate && translationState.status == TranslationStatus.IDLE) {
             onTranslate()
         }
     }
@@ -423,9 +438,24 @@ fun PostCard(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false }
                 ) {
+                    // Ordered + iconified to match iOS Wisp's note menu.
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.btn_add_to_list)) },
+                        trailingIcon = { Icon(Icons.Outlined.BookmarkBorder, contentDescription = null) },
+                        onClick = {
+                            menuExpanded = false
+                            onAddToList()
+                        }
+                    )
                     if (!isOwnEvent) {
                         DropdownMenuItem(
                             text = { Text(if (isFollowingAuthor) stringResource(R.string.btn_unfollow) else stringResource(R.string.btn_follow)) },
+                            trailingIcon = {
+                                Icon(
+                                    if (isFollowingAuthor) Icons.Outlined.PersonRemove else Icons.Outlined.PersonAddAlt,
+                                    contentDescription = null
+                                )
+                            },
                             onClick = {
                                 menuExpanded = false
                                 onFollowAuthor()
@@ -433,6 +463,7 @@ fun PostCard(
                         )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.btn_block)) },
+                            trailingIcon = { Icon(Icons.Outlined.Block, contentDescription = null) },
                             onClick = {
                                 menuExpanded = false
                                 onBlockAuthor()
@@ -442,37 +473,16 @@ fun PostCard(
                     if (onMuteThread != null) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.btn_mute_thread)) },
+                            trailingIcon = { Icon(Icons.Outlined.NotificationsOff, contentDescription = null) },
                             onClick = {
                                 menuExpanded = false
                                 onMuteThread()
                             }
                         )
                     }
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.btn_add_to_list)) },
-                        onClick = {
-                            menuExpanded = false
-                            onAddToList()
-                        }
-                    )
-                    if (isOwnEvent) {
-                        DropdownMenuItem(
-                            text = { Text(if (isPinned) stringResource(R.string.btn_unpin_from_profile) else stringResource(R.string.btn_pin_to_profile)) },
-                            onClick = {
-                                menuExpanded = false
-                                onPin()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.btn_delete)) },
-                            onClick = {
-                                menuExpanded = false
-                                showDeleteConfirm = true
-                            }
-                        )
-                    }
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.btn_share)) },
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.btn_share)) },
+                        trailingIcon = { Icon(Icons.Outlined.IosShare, contentDescription = null) },
                         onClick = {
                             menuExpanded = false
                             try {
@@ -486,8 +496,17 @@ fun PostCard(
                             } catch (_: Exception) {}
                         }
                     )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.btn_copy_note_id)) },
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.btn_copy_note_text)) },
+                        trailingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null) },
+                        onClick = {
+                            menuExpanded = false
+                            clipboardManager.setText(AnnotatedString(event.content))
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.btn_copy_note_id)) },
+                        trailingIcon = { Icon(Icons.Outlined.Tag, contentDescription = null) },
                         onClick = {
                             menuExpanded = false
                             try {
@@ -501,37 +520,81 @@ fun PostCard(
                             } catch (_: Exception) {}
                         }
                     )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.btn_copy_note_json)) },
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.btn_copy_note_json)) },
+                        trailingIcon = { Icon(Icons.Outlined.Code, contentDescription = null) },
                         onClick = {
                             menuExpanded = false
                             clipboardManager.setText(AnnotatedString(event.toJson()))
                         }
                     )
-                    val translating = translationState.status == TranslationStatus.IDENTIFYING_LANGUAGE ||
-                        translationState.status == TranslationStatus.DOWNLOADING_MODEL ||
-                        translationState.status == TranslationStatus.TRANSLATING
                     DropdownMenuItem(
-                        text = {
-                            Text(
-                                when {
-                                    translationState.status == TranslationStatus.DONE && showTranslation -> stringResource(R.string.translate_show_original)
-                                    translationState.status == TranslationStatus.DONE && !showTranslation -> stringResource(R.string.translate_show_translation)
-                                    translationState.status == TranslationStatus.SAME_LANGUAGE -> stringResource(R.string.translate_same_language)
-                                    else -> stringResource(R.string.translate_translate)
-                                }
-                            )
-                        },
-                        enabled = !translating && translationState.status != TranslationStatus.SAME_LANGUAGE,
+                        text = { Text(stringResource(R.string.btn_copy_npub)) },
+                        trailingIcon = { Icon(Icons.Outlined.Badge, contentDescription = null) },
                         onClick = {
                             menuExpanded = false
-                            if (translationState.status == TranslationStatus.DONE) {
-                                showTranslation = !showTranslation
-                            } else {
-                                onTranslate()
-                            }
+                            try {
+                                clipboardManager.setText(AnnotatedString(Nip19.npubEncode(event.pubkey.hexToByteArray())))
+                            } catch (_: Exception) {}
                         }
                     )
+                    noteActions?.onBroadcast?.let { broadcast ->
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_broadcast)) },
+                            trailingIcon = { Icon(Icons.Outlined.Podcasts, contentDescription = null) },
+                            onClick = {
+                                menuExpanded = false
+                                broadcast(event)
+                            }
+                        )
+                    }
+                    if (isOwnEvent) {
+                        DropdownMenuItem(
+                            text = { Text(if (isPinned) stringResource(R.string.btn_unpin_from_profile) else stringResource(R.string.btn_pin_to_profile)) },
+                            trailingIcon = { Icon(Icons.Outlined.PushPin, contentDescription = null) },
+                            onClick = {
+                                menuExpanded = false
+                                onPin()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_delete)) },
+                            trailingIcon = { Icon(Icons.Outlined.DeleteOutline, contentDescription = null) },
+                            onClick = {
+                                menuExpanded = false
+                                showDeleteConfirm = true
+                            }
+                        )
+                    }
+                    // Translation is ML Kit-backed (needs Play Services) and not yet
+                    // reliably available on the zapstore build — hidden behind a flag.
+                    if (cooking.zap.app.FeatureFlags.TRANSLATION_ENABLED) {
+                        val translating = translationState.status == TranslationStatus.IDENTIFYING_LANGUAGE ||
+                            translationState.status == TranslationStatus.DOWNLOADING_MODEL ||
+                            translationState.status == TranslationStatus.TRANSLATING
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    when {
+                                        translationState.status == TranslationStatus.DONE && showTranslation -> stringResource(R.string.translate_show_original)
+                                        translationState.status == TranslationStatus.DONE && !showTranslation -> stringResource(R.string.translate_show_translation)
+                                        translationState.status == TranslationStatus.SAME_LANGUAGE -> stringResource(R.string.translate_same_language)
+                                        else -> stringResource(R.string.translate_translate)
+                                    }
+                                )
+                            },
+                            trailingIcon = { Icon(Icons.Outlined.Translate, contentDescription = null) },
+                            enabled = !translating && translationState.status != TranslationStatus.SAME_LANGUAGE,
+                            onClick = {
+                                menuExpanded = false
+                                if (translationState.status == TranslationStatus.DONE) {
+                                    showTranslation = !showTranslation
+                                } else {
+                                    onTranslate()
+                                }
+                            }
+                        )
+                    }
                 }
                 if (showDeleteConfirm) {
                     AlertDialog(
