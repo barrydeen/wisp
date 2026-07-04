@@ -507,36 +507,38 @@ fun InterfaceScreen(
                 )
             }
 
-            Spacer(Modifier.height(24.dp))
+            // Translation section — hidden until translation is reliably enabled.
+            if (cooking.zap.app.FeatureFlags.TRANSLATION_ENABLED) {
+                Spacer(Modifier.height(24.dp))
 
-            // Translation section
-            Text(
-                text = stringResource(R.string.settings_translation),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.settings_auto_translate), style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        stringResource(R.string.settings_auto_translate_description),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Text(
+                    text = stringResource(R.string.settings_translation),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.settings_auto_translate), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            stringResource(R.string.settings_auto_translate_description),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = autoTranslate,
+                        onCheckedChange = {
+                            autoTranslate = it
+                            interfacePrefs.setAutoTranslate(it)
+                            onChanged()
+                        },
+                        colors = wispSwitchColors()
                     )
                 }
-                Switch(
-                    checked = autoTranslate,
-                    onCheckedChange = {
-                        autoTranslate = it
-                        interfacePrefs.setAutoTranslate(it)
-                        onChanged()
-                    },
-                    colors = wispSwitchColors()
-                )
             }
 
             Spacer(Modifier.height(24.dp))

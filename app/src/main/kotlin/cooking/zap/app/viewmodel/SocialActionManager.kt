@@ -235,6 +235,21 @@ class SocialActionManager(
         }
     }
 
+    /** Re-publish an already-signed event to relays so it propagates more widely. */
+    fun broadcastEvent(event: NostrEvent) {
+        scope.launch {
+            try {
+                val msg = ClientMessage.event(event)
+                // sendToAllRelays covers read + write in a single pass, so send
+                // once to avoid delivering the same EVENT to write relays twice.
+                // Only if nothing was connected do we reconnect write relays and retry.
+                if (relayPool.sendToAllRelays(msg) == 0 && relayPool.ensureWriteRelaysConnected() > 0) {
+                    relayPool.sendToAllRelays(msg)
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
     fun sendReaction(event: NostrEvent, content: String = "+") {
         toggleReaction(event, content)
     }
