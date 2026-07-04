@@ -629,10 +629,11 @@ fun WispNavHost(
         }
     }
 
-    val notifPrefs = remember { context.getSharedPreferences("wisp_settings", Context.MODE_PRIVATE) }
-    var notifSoundEnabled by rememberSaveable { mutableStateOf(notifPrefs.getBoolean("notif_sound_enabled", true)) }
-    val notifBlipSound = remember { NotifBlipSound(context) }
-    DisposableEffect(Unit) {
+    val notifSoundPrefs = remember { cooking.zap.app.repo.NotificationSoundPreferences.get(context) }
+    val notifSoundEnabled by notifSoundPrefs.soundsEnabled.collectAsState()
+    val notifSoundName by notifSoundPrefs.activitySound.collectAsState()
+    val notifBlipSound = remember(notifSoundName) { NotifBlipSound(context, notifSoundName) }
+    DisposableEffect(notifSoundName) {
         onDispose { notifBlipSound.release() }
     }
     LaunchedEffect(Unit) { HapticHelper.init(context) }
@@ -4490,8 +4491,7 @@ fun WispNavHost(
                 userPubkey = feedViewModel.getUserPubkey(),
                 notifSoundEnabled = notifSoundEnabled,
                 onToggleNotifSound = {
-                    notifSoundEnabled = !notifSoundEnabled
-                    notifPrefs.edit().putBoolean("notif_sound_enabled", notifSoundEnabled).apply()
+                    notifSoundPrefs.setSoundsEnabled(!notifSoundEnabled)
                 },
                 onBack = { navController.popBackStack() },
                 onNoteClick = { eventId ->
