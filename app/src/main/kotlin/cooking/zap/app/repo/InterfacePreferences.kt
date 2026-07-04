@@ -124,6 +124,8 @@ class InterfacePreferences(context: Context) {
             .remove("post_undo_timer_for_replies")
             .remove("auto_translate")
             .remove("media_layout_style")
+            .remove("sound_reply")
+            .remove("sound_activity")
             .apply()
     }
 }

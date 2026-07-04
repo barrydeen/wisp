@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,9 +40,10 @@ fun IcqFlowerBurstEffect(
     soundEnabled: Boolean = true
 ) {
     val context = LocalContext.current
-    val replySound = remember { ReplySound(context) }
+    val soundName by cooking.zap.app.repo.NotificationSoundPreferences.get(context).replySound.collectAsState()
+    val replySound = remember(soundName) { ReplySound(context, soundName) }
 
-    DisposableEffect(Unit) {
+    DisposableEffect(soundName) {
         onDispose { replySound.release() }
     }
 
@@ -204,13 +206,15 @@ private fun DrawScope.drawPetal(
     )
 }
 
-class ReplySound(context: Context) {
+class ReplySound(context: Context, soundName: String = "oven_ding") {
     private var pool: SoundPool? = null
     private var soundId: Int = 0
     @Volatile private var loaded = false
 
     init {
-        val resId = context.resources.getIdentifier("icq_reply", "raw", context.packageName)
+        // The notification/reply sound is user-selectable (Interface settings);
+        // defaults to the oven ding.
+        val resId = context.resources.getIdentifier(soundName, "raw", context.packageName)
         if (resId != 0) {
             try {
                 val p = SoundPool.Builder()
