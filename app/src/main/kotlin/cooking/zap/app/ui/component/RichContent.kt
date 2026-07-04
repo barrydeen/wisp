@@ -202,6 +202,7 @@ internal sealed interface ContentSegment {
     data class UnknownMediaSegment(val meta: MediaMeta) : ContentSegment
     data class LinkSegment(val url: String) : ContentSegment
     data class InlineLinkSegment(val url: String) : ContentSegment
+    data class YouTubeSegment(val videoId: String, val startSeconds: Int, val url: String) : ContentSegment
     data class NostrNoteSegment(val eventId: String, val relayHints: List<String> = emptyList()) : ContentSegment
     data class NostrProfileSegment(val pubkey: String, val relayHints: List<String> = emptyList()) : ContentSegment
     data class NostrAddressableSegment(val dTag: String, val relays: List<String>, val author: String?, val kind: Int?) : ContentSegment
@@ -278,6 +279,31 @@ private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1|naddr1
 
 private val emojiShortcodeRegex = Regex(""":([a-zA-Z0-9_-]+):""")
 
+// Matches a YouTube watch/short/embed/live URL and captures the 11-char video id.
+private val youTubeUrlRegex = Regex(
+    """(?:https?://)?(?:www\.|m\.)?(?:youtube\.com/(?:watch\?(?:[^\s]*&)?v=|shorts/|embed/|live/|v/)|youtu\.be/)([A-Za-z0-9_-]{11})""",
+    RegexOption.IGNORE_CASE
+)
+// Start-time param: t= or start=, either bare seconds (90) or "1h2m3s" form.
+private val youTubeTimeRegex = Regex("""[?&](?:t|start)=([0-9]+[hms]?(?:[0-9]+[ms]?)*)""", RegexOption.IGNORE_CASE)
+private val youTubeHmsRegex = Regex("""(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?""", RegexOption.IGNORE_CASE)
+
+internal data class YouTubeRef(val videoId: String, val startSeconds: Int)
+
+private fun parseYouTubeStart(raw: String): Int {
+    raw.toIntOrNull()?.let { return it } // bare seconds
+    val m = youTubeHmsRegex.matchEntire(raw) ?: return 0
+    val (h, mn, s) = m.destructured
+    return (h.toIntOrNull() ?: 0) * 3600 + (mn.toIntOrNull() ?: 0) * 60 + (s.toIntOrNull() ?: 0)
+}
+
+/** Detects a YouTube URL and extracts its video id + optional start offset. */
+internal fun parseYouTube(url: String): YouTubeRef? {
+    val id = youTubeUrlRegex.find(url)?.groupValues?.getOrNull(1)?.takeIf { it.isNotEmpty() } ?: return null
+    val start = youTubeTimeRegex.find(url)?.groupValues?.getOrNull(1)?.let { parseYouTubeStart(it) } ?: 0
+    return YouTubeRef(id, start)
+}
+
 private fun isStandaloneUrl(content: String, matchRange: IntRange): Boolean {
     // Look back: only whitespace between previous newline (or start) and match start
     val before = content.substring(0, matchRange.first)
@@ -320,6 +346,10 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
                 ext in videoExtensions -> segments.add(ContentSegment.VideoSegment(meta ?: MediaMeta(url)))
                 ext in audioExtensions -> segments.add(ContentSegment.AudioSegment(meta ?: MediaMeta(url)))
                 isBlossomUrl(url) -> segments.add(ContentSegment.UnknownMediaSegment(meta ?: MediaMeta(url)))
+                parseYouTube(url) != null -> {
+                    val yt = parseYouTube(url)!!
+                    segments.add(ContentSegment.YouTubeSegment(yt.videoId, yt.startSeconds, url))
+                }
                 isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
                 else -> segments.add(ContentSegment.InlineLinkSegment(url))
             }
@@ -361,6 +391,10 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
                 }
                 isWebSocket -> segments.add(ContentSegment.InlineLinkSegment(url))
                 isBlossomUrl(url) -> segments.add(ContentSegment.UnknownMediaSegment(meta ?: MediaMeta(url)))
+                parseYouTube(url) != null -> {
+                    val yt = parseYouTube(url)!!
+                    segments.add(ContentSegment.YouTubeSegment(yt.videoId, yt.startSeconds, url))
+                }
                 isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
                 else -> segments.add(ContentSegment.InlineLinkSegment(url))
             }
@@ -928,6 +962,13 @@ fun RichContent(
                     }
                     is ContentSegment.LinkSegment -> {
                         LinkPreview(url = segment.url)
+                    }
+                    is ContentSegment.YouTubeSegment -> {
+                        YouTubeEmbed(
+                            videoId = segment.videoId,
+                            startSeconds = segment.startSeconds,
+                            url = segment.url
+                        )
                     }
                     is ContentSegment.NostrNoteSegment -> {
                         if (eventRepo != null) {
@@ -3105,6 +3146,124 @@ private fun LinkPreview(url: String) {
                 .padding(vertical = 2.dp)
                 .clickable { uriHandler.openUri(url) }
         )
+    }
+}
+
+private fun youTubeThumbnailUrl(videoId: String) = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+
+/**
+ * Inline YouTube player, mirroring the iOS / web clients. Shows a lightweight
+ * thumbnail facade with a play button and only loads the (heavy) iframe player
+ * once tapped, so a feed with several videos doesn't spin up a WebView per note.
+ * Uses the privacy-friendly youtube-nocookie host. A caption below shows the
+ * title and channel (via oEmbed) and links out to the video.
+ */
+@Composable
+private fun YouTubeEmbed(videoId: String, startSeconds: Int, url: String) {
+    val uriHandler = LocalUriHandler.current
+    var playing by remember(videoId) { mutableStateOf(false) }
+    var meta by remember(url) { mutableStateOf(ogCache.get(url)) }
+
+    LaunchedEffect(url) {
+        if (meta == null) meta = fetchYoutubeOembed(url)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            if (playing) {
+                val embedUrl = buildString {
+                    append("https://www.youtube-nocookie.com/embed/")
+                    append(videoId)
+                    append("?autoplay=1&rel=0&playsinline=1")
+                    if (startSeconds > 0) append("&start=").append(startSeconds)
+                }
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        android.webkit.WebView(ctx).apply {
+                            layoutParams = android.view.ViewGroup.LayoutParams(
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.mediaPlaybackRequiresUserGesture = false
+                            setBackgroundColor(android.graphics.Color.BLACK)
+                            webViewClient = android.webkit.WebViewClient()
+                            webChromeClient = android.webkit.WebChromeClient()
+                            loadUrl(embedUrl)
+                        }
+                    },
+                    onRelease = { it.destroy() }
+                )
+            } else {
+                AsyncImage(
+                    model = youTubeThumbnailUrl(videoId),
+                    contentDescription = meta?.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .clickable { playing = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.PlayArrow,
+                        contentDescription = "Play video",
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                .clickable { uriHandler.openUri(url) }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = meta?.title ?: "YouTube",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = meta?.description?.let { "youtube.com · $it" } ?: "youtube.com",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            Text(
+                text = "›",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 8.dp)
+            )
+        }
     }
 }
 
