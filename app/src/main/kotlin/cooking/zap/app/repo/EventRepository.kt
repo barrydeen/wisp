@@ -166,6 +166,15 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val _quotedEventVersion = MutableStateFlow(0)
     val quotedEventVersion: StateFlow<Int> = _quotedEventVersion
 
+    // eventId → author pubkey for quoted events dropped because the author is
+    // blocked. Lets the quoted-note UI render a "muted user" placeholder instead
+    // of an endless loading spinner (the event is never cached, so getEvent stays
+    // null forever). Cleared on reset().
+    private val blockedQuoteAuthors = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** If a quoted event id was dropped due to a blocked author, returns that pubkey. */
+    fun blockedQuoteAuthor(eventId: String): String? = blockedQuoteAuthors[eventId]
+
     private val _eventCacheVersion = MutableStateFlow(0)
     val eventCacheVersion: StateFlow<Int> = _eventCacheVersion
 
@@ -371,7 +380,13 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         }
         if (!seenEventIds.add(event.id)) return  // atomic dedup across all relay threads
         if (event.created_at > System.currentTimeMillis() / 1000 + 30) return  // reject future-dated notes (30s grace for clock skew)
-        if (muteRepo?.isBlocked(event.pubkey) == true) return
+        if (muteRepo?.isBlocked(event.pubkey) == true) {
+            // Record id→author so quoted-note UI can show a "muted user" placeholder
+            // rather than spin forever on an event we'll never cache. Bump the quoted
+            // version once so a QuotedNote showing the loading state recomposes.
+            if (blockedQuoteAuthors.put(event.id, event.pubkey) == null) _quotedEventVersion.value++
+            return
+        }
         if ((event.kind == 1 || event.kind == 30023 || event.kind == 20 || event.kind == 21 || event.kind == 22 || event.kind == Nip69.KIND_ZAP_POLL) && muteRepo?.containsMutedWord(event.content) == true) return
         if (event.kind == 1) {
             val threadRoot = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
@@ -1729,6 +1744,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         rootReplyIds.clear()
         _profileVersion.value = 0
         _quotedEventVersion.value = 0
+        blockedQuoteAuthors.clear()
         _replyCountVersion.value = 0
         _zapVersion.value = 0
         _relaySourceVersion.value = 0
