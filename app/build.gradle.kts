@@ -84,7 +84,8 @@ android {
 
 dependencies {
     testImplementation(libs.kotlinx.serialization.json)
-    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
