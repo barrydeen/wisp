@@ -2971,9 +2971,15 @@ private suspend fun fetchOgData(url: String): OgData? = withContext(Dispatchers.
             if (!response.isSuccessful) return@withContext null
             val contentType = response.header("Content-Type") ?: ""
             if (!contentType.contains("text/html", ignoreCase = true)) return@withContext null
-            // Read only the first 32KB — OG tags are in <head>
+            // Read up to 1MB before scanning for OG tags. They live in <head>,
+            // but SPA pages (Chrome Web Store, some Google/YouTube docs) push them
+            // behind large inline bootstrap scripts far down the document — a 32KB
+            // window truncated those and degraded the card to a bare link. okio's
+            // request() only buffers what it decodes, so this bounds both download
+            // and regex cost, not full-page bandwidth; 1MB covers real-world SPA
+            // pages while still capping cost on rare multi-megabyte documents.
             val body = response.body?.source()?.let { source ->
-                source.request(32 * 1024)
+                source.request(1024 * 1024)
                 source.buffer.snapshot().utf8()
             } ?: return@withContext null
 
