@@ -1,5 +1,5 @@
 repository: https://github.com/zapcooking/zap_cooking_android
-pubkey: npub1xxdd8eusvdxmaph3fkuu9x2mymhrcc3ghe2l38zv0l4f4nqp659qskkt7a
+pubkey: npub15u3cqhx6vuj3rywg0ph5mfv009lxja6cyvqn2jagaydukq6zmjwqex05rq
 description: Zap Cooking is a food-first Nostr client for Android. Discover, publish, and collect recipes, browse the OnlyFood feed of food content from across the network, and cook together in group chat rooms. Zap your favorite cooks with the built-in self-custodial Spark Lightning wallet or any NWC-compatible wallet, and message privately with encrypted DMs.
 summary: Cook, share, and zap recipes on Nostr
 tags:
