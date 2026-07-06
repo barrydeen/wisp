@@ -234,13 +234,15 @@ private fun DrawScope.drawSparkParticle(
  * SoundPool.load() is async — play() silently fails if called before loading completes.
  * We track the loaded state via setOnLoadCompleteListener.
  */
-class NotifBlipSound(context: Context) {
+class NotifBlipSound(context: Context, soundName: String = "oven_ding") {
     private var pool: SoundPool? = null
     private var soundId: Int = 0
     @Volatile private var loaded = false
 
     init {
-        val resId = context.resources.getIdentifier("notif_blip", "raw", context.packageName)
+        // Plays the user-selected notification sound for incoming reactions/reposts/
+        // mentions/votes; silent when the selection has no raw resource ("none").
+        val resId = context.resources.getIdentifier(soundName, "raw", context.packageName)
         if (resId != 0) {
             try {
                 val p = SoundPool.Builder()
@@ -277,9 +279,15 @@ private class ZapSound(context: Context) {
     private var pool: SoundPool? = null
     private var soundId: Int = 0
     @Volatile private var loaded = false
+    // The zap sound isn't user-selectable, but it still honors the master
+    // "Play notification sounds" switch so muting silences zaps too.
+    private val soundPrefs = cooking.zap.app.repo.NotificationSoundPreferences.get(context)
 
     init {
-        val resId = context.resources.getIdentifier("zap_thunder", "raw", context.packageName)
+        // Zaps have a dedicated, fixed sound (not user-selectable).
+        val resId = context.resources.getIdentifier(
+            cooking.zap.app.repo.NotificationSoundPreferences.ZAP_SOUND, "raw", context.packageName
+        )
         if (resId != 0) {
             try {
                 val p = SoundPool.Builder()
@@ -301,7 +309,7 @@ private class ZapSound(context: Context) {
     }
 
     fun play() {
-        if (loaded) {
+        if (loaded && soundPrefs.soundsEnabled.value) {
             pool?.play(soundId, 0.4f, 0.4f, 1, 0, 1f)
         }
     }

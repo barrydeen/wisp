@@ -26,8 +26,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import android.media.MediaPlayer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -42,6 +48,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -67,6 +75,7 @@ import cooking.zap.app.R
 import cooking.zap.app.repo.DiagnosticLogger
 import cooking.zap.app.repo.InterfacePreferences
 import cooking.zap.app.repo.LocaleRepository
+import cooking.zap.app.repo.NotificationSoundPreferences
 import cooking.zap.app.ui.theme.ThemePreset
 import cooking.zap.app.ui.theme.Themes
 import cooking.zap.app.ui.theme.wispSwitchColors
@@ -74,6 +83,103 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.TextButton
+
+/**
+ * Previews bundled raw sounds for the settings picker. Reuses a single
+ * MediaPlayer — the previous one is released before each play — so repeated
+ * taps don't leak players (which was causing inconsistent / silent playback).
+ */
+private class SoundPreviewPlayer(private val context: android.content.Context) {
+    private var player: MediaPlayer? = null
+
+    fun play(rawName: String) {
+        release()
+        val resId = context.resources.getIdentifier(rawName, "raw", context.packageName)
+        if (resId == 0) return
+        try {
+            player = MediaPlayer.create(context, resId)?.also { mp ->
+                mp.setOnCompletionListener {
+                    it.release()
+                    if (player === it) player = null
+                }
+                mp.start()
+            }
+        } catch (_: Exception) {
+            release()
+        }
+    }
+
+    fun release() {
+        try { player?.release() } catch (_: Exception) {}
+        player = null
+    }
+}
+
+/**
+ * A single notification-sound picker: a labeled dropdown of the selectable
+ * tones plus a ▶ button to replay the current selection. Disabled preview when
+ * "None (silent)" is chosen. Selecting an option previews it and persists via
+ * [onSelect]; the ▶ button re-plays the current [selected] via [onPreview].
+ */
+@Composable
+private fun NotificationSoundPickerRow(
+    label: String,
+    selected: String,
+    onSelect: (String) -> Unit,
+    onPreview: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Text(
+        label,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.height(4.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(modifier = Modifier.weight(1f)) {
+            OutlinedButton(
+                onClick = { expanded = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(NotificationSoundPreferences.labelFor(selected))
+                    Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                }
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                NotificationSoundPreferences.SOUNDS.forEach { sound ->
+                    DropdownMenuItem(
+                        text = { Text(sound.label) },
+                        onClick = {
+                            onSelect(sound.rawName)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+        val canPreview = selected != NotificationSoundPreferences.NONE
+        IconButton(onClick = onPreview, enabled = canPreview) {
+            Icon(
+                Icons.Filled.PlayArrow,
+                contentDescription = "Preview sound",
+                tint = if (canPreview) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -399,6 +505,59 @@ fun InterfaceScreen(
 
             Spacer(Modifier.height(24.dp))
 
+            // Notification Sounds section — separate tones for replies vs. other
+            // activity (zaps use a dedicated sound). Tap a row or its ▶ to preview.
+            Text(
+                text = "Notification Sounds",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            val soundCtx = LocalContext.current
+            val soundPrefs = remember { NotificationSoundPreferences.get(soundCtx) }
+            val soundPreview = remember { SoundPreviewPlayer(soundCtx) }
+            DisposableEffect(Unit) { onDispose { soundPreview.release() } }
+            val soundsEnabled by soundPrefs.soundsEnabled.collectAsState()
+            val replySound by soundPrefs.replySound.collectAsState()
+            val activitySound by soundPrefs.activitySound.collectAsState()
+
+            Spacer(Modifier.height(12.dp))
+            // Master switch — silences all notification sounds (in-app + pushed).
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Play notification sounds", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Turn off to silence every notification sound.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = soundsEnabled,
+                    onCheckedChange = { soundPrefs.setSoundsEnabled(it) },
+                    colors = wispSwitchColors()
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+            NotificationSoundPickerRow(
+                label = "Replies",
+                selected = replySound,
+                onSelect = { soundPrefs.setReplySound(it); soundPreview.play(it) },
+                onPreview = { soundPreview.play(replySound) }
+            )
+            Spacer(Modifier.height(12.dp))
+            NotificationSoundPickerRow(
+                label = "Reactions, mentions & reposts",
+                selected = activitySound,
+                onSelect = { soundPrefs.setActivitySound(it); soundPreview.play(it) },
+                onPreview = { soundPreview.play(activitySound) }
+            )
+
+            Spacer(Modifier.height(24.dp))
+
             // Media section
             Text(
                 text = stringResource(R.string.settings_media),
@@ -507,36 +666,38 @@ fun InterfaceScreen(
                 )
             }
 
-            Spacer(Modifier.height(24.dp))
+            // Translation section — hidden until translation is reliably enabled.
+            if (cooking.zap.app.FeatureFlags.TRANSLATION_ENABLED) {
+                Spacer(Modifier.height(24.dp))
 
-            // Translation section
-            Text(
-                text = stringResource(R.string.settings_translation),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.settings_auto_translate), style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        stringResource(R.string.settings_auto_translate_description),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Text(
+                    text = stringResource(R.string.settings_translation),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.settings_auto_translate), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            stringResource(R.string.settings_auto_translate_description),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = autoTranslate,
+                        onCheckedChange = {
+                            autoTranslate = it
+                            interfacePrefs.setAutoTranslate(it)
+                            onChanged()
+                        },
+                        colors = wispSwitchColors()
                     )
                 }
-                Switch(
-                    checked = autoTranslate,
-                    onCheckedChange = {
-                        autoTranslate = it
-                        interfacePrefs.setAutoTranslate(it)
-                        onChanged()
-                    },
-                    colors = wispSwitchColors()
-                )
             }
 
             Spacer(Modifier.height(24.dp))

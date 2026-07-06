@@ -629,10 +629,11 @@ fun WispNavHost(
         }
     }
 
-    val notifPrefs = remember { context.getSharedPreferences("wisp_settings", Context.MODE_PRIVATE) }
-    var notifSoundEnabled by rememberSaveable { mutableStateOf(notifPrefs.getBoolean("notif_sound_enabled", true)) }
-    val notifBlipSound = remember { NotifBlipSound(context) }
-    DisposableEffect(Unit) {
+    val notifSoundPrefs = remember { cooking.zap.app.repo.NotificationSoundPreferences.get(context) }
+    val notifSoundEnabled by notifSoundPrefs.soundsEnabled.collectAsState()
+    val notifSoundName by notifSoundPrefs.activitySound.collectAsState()
+    val notifBlipSound = remember(notifSoundName) { NotifBlipSound(context, notifSoundName) }
+    DisposableEffect(notifSoundName) {
         onDispose { notifBlipSound.release() }
     }
     LaunchedEffect(Unit) { HapticHelper.init(context) }
@@ -901,10 +902,22 @@ fun WispNavHost(
                 onInterfaceSettings = { closeDrawerAndNavigate(Routes.INTERFACE_SETTINGS) },
                 onLogout = {
                     drawerScope.launch { drawerState.close() }
+                    // Capture the account being removed BEFORE clearSigner()/logOut() switch away,
+                    // so we can drop exactly its draft cache (and never a remaining account's).
+                    val removedPubkey = feedViewModel.getUserPubkey()
                     feedViewModel.clearSigner()
                     feedViewModel.resetForAccountSwitch()
                     walletViewModel.disconnectWallet()  // full clear — intentional logout
                     val hasRemaining = authViewModel.logOut()
+                    // Clear the compose "continue where you left off" cache so a logged-out account's
+                    // draft can't resurrect on next login (it's pubkey-keyed and survives logout).
+                    val lastDraftCache = cooking.zap.app.repo.LastDraftCache(context)
+                    when (cooking.zap.app.repo.LastDraftCache.logoutCacheAction(hasRemaining)) {
+                        cooking.zap.app.repo.LastDraftCache.LogoutCacheAction.CLEAR_REMOVED_ACCOUNT ->
+                            removedPubkey?.let { lastDraftCache.clear(it) }
+                        cooking.zap.app.repo.LastDraftCache.LogoutCacheAction.CLEAR_ALL ->
+                            lastDraftCache.clearAll()
+                    }
                     if (hasRemaining) {
                         // logOut() already switched to the first remaining account
                         feedViewModel.reloadForNewAccount()
@@ -1313,7 +1326,7 @@ fun WispNavHost(
                 // iOS-parity: a fresh top-level composer restores the most recent draft so the
                 // user can continue where they left off. Replies/quotes stay context-specific.
                 if (replyTarget == null && quoteTarget == null) {
-                    composeViewModel.restoreLatestDraft(feedViewModel.relayPool, activeSigner)
+                    composeViewModel.restoreLatestDraft(feedViewModel.relayPool, activeSigner, feedViewModel.deletedEventsRepo)
                 }
             }
             // Auto-save draft when leaving compose screen (back button, navigation, etc.)
@@ -1321,6 +1334,11 @@ fun WispNavHost(
                 onDispose {
                     if (composeViewModel.content.value.text.isNotBlank()) {
                         composeViewModel.saveDraft(feedViewModel.relayPool, replyTarget, activeSigner, quoteTarget)
+                    } else {
+                        // Emptying a restored top-level draft = discard it: clear the fast-path
+                        // cache so it can't resurrect, and best-effort tombstone the relay copy.
+                        // No-op for reply/quote composers or when nothing was restored this session.
+                        composeViewModel.discardRestoredDraftIfEmptied(feedViewModel.relayPool, replyTarget, activeSigner, quoteTarget)
                     }
                 }
             }
@@ -4490,8 +4508,7 @@ fun WispNavHost(
                 userPubkey = feedViewModel.getUserPubkey(),
                 notifSoundEnabled = notifSoundEnabled,
                 onToggleNotifSound = {
-                    notifSoundEnabled = !notifSoundEnabled
-                    notifPrefs.edit().putBoolean("notif_sound_enabled", notifSoundEnabled).apply()
+                    notifSoundPrefs.setSoundsEnabled(!notifSoundEnabled)
                 },
                 // Notifications is a root tab reached only from the bottom bar, so
                 // "back" means "return to the home feed." Pop up to FEED (mirroring

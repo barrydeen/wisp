@@ -123,6 +123,7 @@
     <string name="compose_quote">Quote</string>
     <string name="quote_muted_user">Note from a muted user</string>
     <string name="quote_unavailable">Note unavailable</string>
+    <string name="compose_quoting">Quoting %1$s</string>
     <string name="compose_placeholder">What are you eating, cooking, or loving?</string>
     <string name="compose_draft_saved">Draft saved</string>
     <string name="compose_preview_tag">Preview</string>
@@ -174,8 +175,11 @@
     <string name="btn_pin_to_profile">Pin to Profile</string>
     <string name="btn_unpin_from_profile">Unpin from Profile</string>
     <string name="btn_share">Share</string>
+    <string name="btn_copy_note_text">Copy Note Text</string>
     <string name="btn_copy_note_id">Copy Note ID</string>
     <string name="btn_copy_note_json">Copy Note JSON</string>
+    <string name="btn_copy_npub">Copy npub</string>
+    <string name="btn_broadcast">Broadcast</string>
     <string name="btn_copy_text">Copy Text</string>
     <string name="btn_hide">Hide</string>
     <string name="btn_retweet">Repost</string>
@@ -833,6 +837,7 @@
     <string name="error_poll_options">Poll needs at least 2 options</string>
     <string name="error_scheduler_relay">Could not connect to scheduler relay</string>
     <string name="error_no_relays_connected">No relays connected — note was not published</string>
+    <string name="error_draft_delete_failed">Couldn\'t clear draft</string>
 
     <!-- Logout Warning -->
     <string name="logout_warning">Make sure you\'ve backed up your private key before logging out. You can find it in Keys settings. Without it, you won\'t be able to recover your account.</string>
