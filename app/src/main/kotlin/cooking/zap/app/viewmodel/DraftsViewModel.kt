@@ -190,26 +190,40 @@ class DraftsViewModel(app: Application) : AndroidViewModel(app) {
         // even before the kind 5 deletion propagates.
         deletedEventsRepo?.markDeletedAddress(Nip37.KIND_DRAFT, signer.pubkeyHex, dTag)
 
+        val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.Default) {
-            try {
-                // NIP-09: publish an addressable-delete (kind 5 with "a" tag) so relays drop the draft.
-                val deletionTags = Nip09.buildAddressableDeletionTags(Nip37.KIND_DRAFT, signer.pubkeyHex, dTag)
-                val deleteEvent = signer.signEvent(kind = 5, content = "", tags = deletionTags)
-                sendWithFallback(relayPool, ClientMessage.event(deleteEvent))
+            // NIP-09: publish an addressable-delete (kind 5 with "a" tag) so relays drop the draft.
+            val deletionTags = Nip09.buildAddressableDeletionTags(Nip37.KIND_DRAFT, signer.pubkeyHex, dTag)
+            val deleteEvent = DraftDeleteSigning.signOrNull(
+                label = "draft delete (kind 5)",
+                normal = { signer.signEvent(kind = 5, content = "", tags = deletionTags) },
+                silent = { signer.signEventSilently(kind = 5, content = "", tags = deletionTags) }
+            )
+            if (deleteEvent != null) sendWithFallback(relayPool, ClientMessage.event(deleteEvent))
 
-                // Also publish an empty-content replacement so clients that don't honor NIP-09
-                // (or that use the replace-by-address semantics of NIP-37) still observe deletion.
+            // Also publish an empty-content replacement so clients that don't honor NIP-09 (or that
+            // use the replace-by-address semantics of NIP-37) still observe deletion. Skip it when
+            // the kind-5 sign already failed terminally, so we don't re-launch the signer UI a
+            // second time for the same user action.
+            val replacement = if (deleteEvent == null) null else {
                 val replacementTags = Nip37.buildDraftTags(dTag, 1)
-                val encrypted = signer.nip44Encrypt("", signer.pubkeyHex)
-                val replacement = signer.signEvent(
-                    kind = Nip37.KIND_DRAFT,
-                    content = encrypted,
-                    tags = replacementTags
+                DraftDeleteSigning.signOrNull(
+                    label = "draft delete (empty replacement)",
+                    normal = {
+                        val encrypted = signer.nip44Encrypt("", signer.pubkeyHex)
+                        signer.signEvent(kind = Nip37.KIND_DRAFT, content = encrypted, tags = replacementTags)
+                    },
+                    silent = {
+                        val encrypted = signer.nip44EncryptSilently("", signer.pubkeyHex)
+                        if (encrypted == null) null
+                        else signer.signEventSilently(kind = Nip37.KIND_DRAFT, content = encrypted, tags = replacementTags)
+                    }
                 )
-                sendWithFallback(relayPool, ClientMessage.event(replacement))
-            } catch (_: Exception) {
-                // Best effort
             }
+            if (replacement != null) sendWithFallback(relayPool, ClientMessage.event(replacement))
+
+            // One toast per delete action if either deletion event ultimately failed to sign.
+            if (deleteEvent == null || replacement == null) DraftDeleteSigning.toastFailed(app)
         }
     }
 
