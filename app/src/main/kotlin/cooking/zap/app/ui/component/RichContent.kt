@@ -279,30 +279,8 @@ private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1|naddr1
 
 private val emojiShortcodeRegex = Regex(""":([a-zA-Z0-9_-]+):""")
 
-// Matches a YouTube watch/short/embed/live URL and captures the 11-char video id.
-private val youTubeUrlRegex = Regex(
-    """(?:https?://)?(?:www\.|m\.)?(?:youtube\.com/(?:watch\?(?:[^\s]*&)?v=|shorts/|embed/|live/|v/)|youtu\.be/)([A-Za-z0-9_-]{11})""",
-    RegexOption.IGNORE_CASE
-)
-// Start-time param: t= or start=, either bare seconds (90) or "1h2m3s" form.
-private val youTubeTimeRegex = Regex("""[?&](?:t|start)=([0-9]+[hms]?(?:[0-9]+[ms]?)*)""", RegexOption.IGNORE_CASE)
-private val youTubeHmsRegex = Regex("""(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?""", RegexOption.IGNORE_CASE)
-
-internal data class YouTubeRef(val videoId: String, val startSeconds: Int)
-
-private fun parseYouTubeStart(raw: String): Int {
-    raw.toIntOrNull()?.let { return it } // bare seconds
-    val m = youTubeHmsRegex.matchEntire(raw) ?: return 0
-    val (h, mn, s) = m.destructured
-    return (h.toIntOrNull() ?: 0) * 3600 + (mn.toIntOrNull() ?: 0) * 60 + (s.toIntOrNull() ?: 0)
-}
-
-/** Detects a YouTube URL and extracts its video id + optional start offset. */
-internal fun parseYouTube(url: String): YouTubeRef? {
-    val id = youTubeUrlRegex.find(url)?.groupValues?.getOrNull(1)?.takeIf { it.isNotEmpty() } ?: return null
-    val start = youTubeTimeRegex.find(url)?.groupValues?.getOrNull(1)?.let { parseYouTubeStart(it) } ?: 0
-    return YouTubeRef(id, start)
-}
+// YouTube URL parsing (parseYouTube / YouTubeRef) lives in YouTubeUrl.kt so it stays
+// JVM-unit-testable, free of this file's Android-dependent top-level initializers.
 
 private fun isStandaloneUrl(content: String, matchRange: IntRange): Boolean {
     // Look back: only whitespace between previous newline (or start) and match start
@@ -346,12 +324,15 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
                 ext in videoExtensions -> segments.add(ContentSegment.VideoSegment(meta ?: MediaMeta(url)))
                 ext in audioExtensions -> segments.add(ContentSegment.AudioSegment(meta ?: MediaMeta(url)))
                 isBlossomUrl(url) -> segments.add(ContentSegment.UnknownMediaSegment(meta ?: MediaMeta(url)))
-                parseYouTube(url) != null -> {
-                    val yt = parseYouTube(url)!!
-                    segments.add(ContentSegment.YouTubeSegment(yt.videoId, yt.startSeconds, url))
+                else -> {
+                    // Compute the (regex-heavy) YouTube parse once and branch on the result.
+                    val yt = parseYouTube(url)
+                    when {
+                        yt != null -> segments.add(ContentSegment.YouTubeSegment(yt.videoId, yt.startSeconds, url))
+                        isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
+                        else -> segments.add(ContentSegment.InlineLinkSegment(url))
+                    }
                 }
-                isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
-                else -> segments.add(ContentSegment.InlineLinkSegment(url))
             }
         } else if (token.startsWith("nostr:")) {
             when (val decoded = Nip19.decodeNostrUri(token)) {
@@ -391,12 +372,15 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
                 }
                 isWebSocket -> segments.add(ContentSegment.InlineLinkSegment(url))
                 isBlossomUrl(url) -> segments.add(ContentSegment.UnknownMediaSegment(meta ?: MediaMeta(url)))
-                parseYouTube(url) != null -> {
-                    val yt = parseYouTube(url)!!
-                    segments.add(ContentSegment.YouTubeSegment(yt.videoId, yt.startSeconds, url))
+                else -> {
+                    // Compute the (regex-heavy) YouTube parse once and branch on the result.
+                    val yt = parseYouTube(url)
+                    when {
+                        yt != null -> segments.add(ContentSegment.YouTubeSegment(yt.videoId, yt.startSeconds, url))
+                        isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
+                        else -> segments.add(ContentSegment.InlineLinkSegment(url))
+                    }
                 }
-                isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
-                else -> segments.add(ContentSegment.InlineLinkSegment(url))
             }
         }
         lastEnd = match.range.last + 1
@@ -3165,7 +3149,14 @@ private fun YouTubeEmbed(videoId: String, startSeconds: Int, url: String) {
     var meta by remember(url) { mutableStateOf(ogCache.get(url)) }
 
     LaunchedEffect(url) {
-        if (meta == null) meta = fetchYoutubeOembed(url)
+        if (meta == null) {
+            // Cache the oEmbed result so the same URL isn't refetched for every composition /
+            // feed item (meta is seeded from ogCache above).
+            fetchYoutubeOembed(url)?.let {
+                ogCache.put(url, it)
+                meta = it
+            }
+        }
     }
 
     Column(
@@ -3199,8 +3190,34 @@ private fun YouTubeEmbed(videoId: String, startSeconds: Int, url: String) {
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
                             settings.mediaPlaybackRequiresUserGesture = false
+                            // Harden: no local file/content access, no JS-opened popup windows.
+                            settings.allowFileAccess = false
+                            settings.allowContentAccess = false
+                            settings.setSupportMultipleWindows(false)
+                            settings.javaScriptCanOpenWindowsAutomatically = false
                             setBackgroundColor(android.graphics.Color.BLACK)
-                            webViewClient = android.webkit.WebViewClient()
+                            // Keep only the nocookie embed inside the WebView; route any top-level
+                            // navigation (e.g. "Watch on YouTube" / channel links) to an external app
+                            // instead of letting the WebView browse to arbitrary URLs.
+                            webViewClient = object : android.webkit.WebViewClient() {
+                                override fun shouldOverrideUrlLoading(
+                                    view: android.webkit.WebView,
+                                    request: android.webkit.WebResourceRequest
+                                ): Boolean {
+                                    if (!request.isForMainFrame) return false
+                                    val host = request.url.host ?: ""
+                                    if (host.endsWith("youtube-nocookie.com")) return false
+                                    return try {
+                                        view.context.startActivity(
+                                            android.content.Intent(android.content.Intent.ACTION_VIEW, request.url)
+                                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        )
+                                        true
+                                    } catch (_: Exception) {
+                                        true // swallow rather than navigate to an arbitrary URL in-WebView
+                                    }
+                                }
+                            }
                             webChromeClient = android.webkit.WebChromeClient()
                             loadUrl(embedUrl)
                         }
