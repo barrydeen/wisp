@@ -45,10 +45,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import android.content.Context
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -57,9 +59,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -82,7 +86,19 @@ fun CookingUtilitiesSheet(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var activeTab by rememberSaveable { mutableStateOf(Tab.TIMER) }
+    // Persist the last-viewed tab so reopening the sheet returns to it (the sheet
+    // is torn down on dismiss, so rememberSaveable alone doesn't survive it).
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("wisp_settings", Context.MODE_PRIVATE) }
+    var activeTab by rememberSaveable {
+        mutableStateOf(
+            runCatching { Tab.valueOf(prefs.getString("utilities_tab", null) ?: Tab.TIMER.name) }
+                .getOrDefault(Tab.TIMER)
+        )
+    }
+    LaunchedEffect(activeTab) {
+        prefs.edit().putString("utilities_tab", activeTab.name).apply()
+    }
 
     // Request POST_NOTIFICATIONS on Android 13+ so timer alerts reach the shade.
     val notifPermLauncher = rememberLauncherForActivityResult(
@@ -584,12 +600,54 @@ internal fun formatResult(value: Double): String =
     if (value == value.toLong().toDouble()) value.toLong().toString()
     else "%.4g".format(value).trimEnd('0').trimEnd('.')
 
+private const val CONVERTER_DEFAULT_FROM = "cup"
+private const val CONVERTER_DEFAULT_TO = "mL"
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ConverterTabContent() {
-    var amountText by rememberSaveable { mutableStateOf("") }
-    var fromUnit by remember { mutableStateOf(ALL_UNITS.first { it.abbrev == "cup" }) }
-    var toUnit by remember { mutableStateOf(ALL_UNITS.first { it.abbrev == "mL" }) }
+    // Persist the calculation so it survives closing/reopening the sheet (and
+    // process death). The bottom sheet is torn down on dismiss, so rememberSaveable
+    // alone isn't enough — back it with SharedPreferences.
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("wisp_settings", Context.MODE_PRIVATE) }
+    fun unitByAbbrev(abbrev: String?, fallback: String): MeasUnit =
+        ALL_UNITS.firstOrNull { it.abbrev == abbrev } ?: ALL_UNITS.first { it.abbrev == fallback }
+
+    var amountText by rememberSaveable { mutableStateOf(prefs.getString("converter_amount", "") ?: "") }
+    var fromUnit by remember {
+        mutableStateOf(unitByAbbrev(prefs.getString("converter_from", null), CONVERTER_DEFAULT_FROM))
+    }
+    var toUnit by remember {
+        mutableStateOf(unitByAbbrev(prefs.getString("converter_to", null), CONVERTER_DEFAULT_TO))
+    }
+
+    fun persistConverter() {
+        prefs.edit()
+            .putString("converter_amount", amountText)
+            .putString("converter_from", fromUnit.abbrev)
+            .putString("converter_to", toUnit.abbrev)
+            .apply()
+    }
+
+    // Debounce writes so rapid keystrokes / unit toggles don't churn prefs I/O.
+    LaunchedEffect(amountText, fromUnit, toUnit) {
+        delay(300)
+        persistConverter()
+    }
+    // Flush on dispose: if the sheet is closed within the debounce window the
+    // LaunchedEffect is cancelled before its write, so persist the latest value here.
+    DisposableEffect(Unit) {
+        onDispose { persistConverter() }
+    }
+
+    val isDefaultState = amountText.isEmpty() &&
+        fromUnit.abbrev == CONVERTER_DEFAULT_FROM && toUnit.abbrev == CONVERTER_DEFAULT_TO
+    val clearAll = {
+        amountText = ""
+        fromUnit = ALL_UNITS.first { it.abbrev == CONVERTER_DEFAULT_FROM }
+        toUnit = ALL_UNITS.first { it.abbrev == CONVERTER_DEFAULT_TO }
+    }
 
     val amount = amountText.toDoubleOrNull()
     val result = if (amount != null) convert(amount, fromUnit, toUnit) else null
@@ -601,7 +659,20 @@ private fun ConverterTabContent() {
     ) {
         item {
             Spacer(Modifier.height(20.dp))
-            Text("Amount", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Amount", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(
+                    onClick = clearAll,
+                    enabled = !isDefaultState,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                ) {
+                    Text("Clear", style = MaterialTheme.typography.labelMedium)
+                }
+            }
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = amountText,

@@ -121,6 +121,8 @@
     <string name="cd_new_conversation">New conversation</string>
     <string name="compose_reply">Reply</string>
     <string name="compose_quote">Quote</string>
+    <string name="quote_muted_user">Note from a muted user</string>
+    <string name="quote_unavailable">Note unavailable</string>
     <string name="compose_quoting">Quoting %1$s</string>
     <string name="compose_placeholder">What are you eating, cooking, or loving?</string>
     <string name="compose_draft_saved">Draft saved</string>
@@ -835,6 +837,7 @@
     <string name="error_poll_options">Poll needs at least 2 options</string>
     <string name="error_scheduler_relay">Could not connect to scheduler relay</string>
     <string name="error_no_relays_connected">No relays connected — note was not published</string>
+    <string name="error_draft_delete_failed">Couldn\'t clear draft</string>
 
     <!-- Logout Warning -->
     <string name="logout_warning">Make sure you\'ve backed up your private key before logging out. You can find it in Keys settings. Without it, you won\'t be able to recover your account.</string>

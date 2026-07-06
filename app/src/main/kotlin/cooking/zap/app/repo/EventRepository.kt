@@ -166,6 +166,18 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     private val _quotedEventVersion = MutableStateFlow(0)
     val quotedEventVersion: StateFlow<Int> = _quotedEventVersion
 
+    // eventId → author pubkey for quoted events dropped because the author is
+    // blocked. Lets the quoted-note UI render a "muted user" placeholder instead
+    // of an endless loading spinner (the event is never cached, so getEvent stays
+    // null forever). Bounded LRU; cleared on reset().
+    private val blockedQuoteAuthors = LruCache<String, String>(500)
+    // Quote ids actively being fetched — only bump quotedEventVersion for these
+    // so blocked events from the general feed don't trigger quote recompositions.
+    private val pendingQuoteRequests = LruCache<String, Boolean>(500)
+
+    /** If a quoted event id was dropped due to a blocked author, returns that pubkey. */
+    fun blockedQuoteAuthor(eventId: String): String? = blockedQuoteAuthors[eventId]
+
     private val _eventCacheVersion = MutableStateFlow(0)
     val eventCacheVersion: StateFlow<Int> = _eventCacheVersion
 
@@ -371,7 +383,14 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         }
         if (!seenEventIds.add(event.id)) return  // atomic dedup across all relay threads
         if (event.created_at > System.currentTimeMillis() / 1000 + 30) return  // reject future-dated notes (30s grace for clock skew)
-        if (muteRepo?.isBlocked(event.pubkey) == true) return
+        if (muteRepo?.isBlocked(event.pubkey) == true) {
+            // Record id→author so quoted-note UI can show a "muted user" placeholder
+            // rather than spin forever on an event we'll never cache. Only bump the
+            // quoted version when a QuotedNote is actively waiting on this fetch.
+            blockedQuoteAuthors.put(event.id, event.pubkey)
+            if (pendingQuoteRequests.get(event.id) != null) _quotedEventVersion.value++
+            return
+        }
         if ((event.kind == 1 || event.kind == 30023 || event.kind == 20 || event.kind == 21 || event.kind == 22 || event.kind == Nip69.KIND_ZAP_POLL) && muteRepo?.containsMutedWord(event.content) == true) return
         if (event.kind == 1) {
             val threadRoot = Nip10.getRootId(event) ?: Nip10.getReplyTarget(event) ?: event.id
@@ -810,6 +829,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     }
 
     fun requestQuotedEvent(eventId: String, relayHints: List<String> = emptyList()) {
+        pendingQuoteRequests.put(eventId, true)
         metadataFetcher?.requestQuotedEvent(eventId, relayHints)
     }
 
@@ -1729,6 +1749,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
         rootReplyIds.clear()
         _profileVersion.value = 0
         _quotedEventVersion.value = 0
+        blockedQuoteAuthors.evictAll()
+        pendingQuoteRequests.evictAll()
         _replyCountVersion.value = 0
         _zapVersion.value = 0
         _relaySourceVersion.value = 0

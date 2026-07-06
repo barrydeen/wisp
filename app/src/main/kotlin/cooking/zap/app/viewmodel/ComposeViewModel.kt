@@ -34,6 +34,7 @@ import cooking.zap.app.relay.OutboxRouter
 import cooking.zap.app.relay.RelayPool
 import cooking.zap.app.repo.BlossomRepository
 import cooking.zap.app.repo.ContactRepository
+import cooking.zap.app.repo.DeletedEventsRepository
 import cooking.zap.app.repo.DmRepository
 import cooking.zap.app.repo.KeyRepository
 import cooking.zap.app.repo.PrivateReplyPublisher
@@ -67,6 +68,100 @@ private val HASHTAG_REGEX = Regex("(?:^|(?<=\\s))#([\\p{L}\\p{M}0-9_]+)")
 /** Tracks an inserted @mention as a range in the compose text, mapped to its pubkey. */
 data class Mention(val start: Int, val end: Int, val pubkey: String)
 
+/**
+ * Discard-on-dispose decision for the composer: should emptying the editor and leaving discard
+ * the restored draft (clear the fast-path cache + tombstone the relay copy)?
+ *
+ * True only when the user emptied the exact top-level draft that was restored into this session.
+ * Deliberately narrow so it never destroys a draft the user didn't see:
+ *  - [isTopLevel] false (a reply/quote composer) → never discard; a blank reply composer may sit
+ *    over an unrelated cached top-level draft the user never opened.
+ *  - [currentDraftId] null → nothing was restored this session, so there's nothing to discard.
+ *  - [currentDraftId] != [cachedId] → the editor isn't showing the cached draft; leave the cache.
+ *  - [textIsBlank] false → the user still has content; the non-blank auto-save path owns that.
+ */
+internal fun shouldDiscardOnDispose(
+    isTopLevel: Boolean,
+    currentDraftId: String?,
+    cachedId: String?,
+    textIsBlank: Boolean
+): Boolean =
+    isTopLevel &&
+        textIsBlank &&
+        currentDraftId != null &&
+        currentDraftId == cachedId
+
+/** Per-event outcome for the slow-path draft restore. See [draftRestoreVerdict]. */
+internal sealed class DraftRestoreVerdict {
+    /** An older copy of a coordinate we've already seen a newer version of — ignore. */
+    object SkipStale : DraftRestoreVerdict()
+    /** The deletion registry tombstones this coordinate as of a time >= this copy — deleted. */
+    object RegistryDeleted : DraftRestoreVerdict()
+    /** Empty replacement = a NIP-37 deletion of this coordinate. */
+    object Tombstone : DraftRestoreVerdict()
+    /** Decrypts fine but can't be continued as a fresh top-level note (blank / reply / quote). */
+    object SkipUnrestorable : DraftRestoreVerdict()
+    /** A restorable draft and the newest good copy of its coordinate so far. */
+    object Candidate : DraftRestoreVerdict()
+}
+
+/**
+ * Pre-decrypt gate: the verdict when it's determinable WITHOUT decrypting — an older copy
+ * ([SkipStale]) or a coordinate the deletion registry already tombstones as of a time at or
+ * after this copy ([RegistryDeleted]). Returns null when a decrypt is actually needed.
+ *
+ * Split out from [draftRestoreVerdict] so the collect loop can short-circuit before the signer
+ * call: on RemoteSigner every nip44Decrypt is an Amber IPC round trip, and paying it for a coord
+ * we can already rule out is both slow and a spurious background signer prompt.
+ */
+internal fun draftRestoreSkipsBeforeDecrypt(
+    wrapperCreatedAt: Long,
+    newestSeenForCoord: Long?,
+    registryDeletionTime: Long?
+): DraftRestoreVerdict? = when {
+    newestSeenForCoord != null && wrapperCreatedAt < newestSeenForCoord -> DraftRestoreVerdict.SkipStale
+    registryDeletionTime != null && wrapperCreatedAt <= registryDeletionTime -> DraftRestoreVerdict.RegistryDeleted
+    else -> null
+}
+
+/**
+ * Full per-event verdict for slow-path restore. [wrapperCreatedAt] MUST be the wrapper (kind
+ * 31234) event's created_at — the clock NIP-09 deletion and replaceable "newest wins" both key
+ * on — not [Nip37.Draft.createdAt] (the inner draft's timestamp, which can differ). The pre-decrypt
+ * cases ([draftRestoreSkipsBeforeDecrypt]) still apply; past those, an empty decrypt is a
+ * [Tombstone], a blank/reply/quote draft is [SkipUnrestorable], and anything else is a [Candidate].
+ */
+internal fun draftRestoreVerdict(
+    wrapperCreatedAt: Long,
+    newestSeenForCoord: Long?,
+    registryDeletionTime: Long?,
+    decryptedBlank: Boolean,
+    contentBlank: Boolean,
+    isReplyOrQuote: Boolean
+): DraftRestoreVerdict {
+    draftRestoreSkipsBeforeDecrypt(wrapperCreatedAt, newestSeenForCoord, registryDeletionTime)?.let { return it }
+    if (decryptedBlank) return DraftRestoreVerdict.Tombstone
+    if (contentBlank || isReplyOrQuote) return DraftRestoreVerdict.SkipUnrestorable
+    return DraftRestoreVerdict.Candidate
+}
+
+/**
+ * Fast-path (local cache) drop gate: drop the cached draft and fall through to the slow path when
+ * the deletion registry has ANY tombstone for the cached coordinate.
+ *
+ * Accepted risk — the fast path is deliberately timestamp-blind: it doesn't know the cached
+ * draft's created_at, so it can't distinguish "deleted and still deleted" from "deleted elsewhere,
+ * then re-edited on THIS device to a newer created_at." In the rare cross-device-delete +
+ * continued-same-coord-editing case it drops the instant cache and degrades to a slow-path
+ * restore, which DOES compare created_at against the deletion time and correctly revives the newer
+ * edit (ts > deletionTime). We accept that one slower relay round trip rather than make the fast
+ * path timestamp-aware (which would need the cached copy's created_at persisted and reasoned about
+ * here). Our own deletes tombstone permanently and saveDraft mints a fresh draftId after a delete,
+ * so a cached coord is never legitimately revived under the same id from local actions.
+ */
+internal fun restoreFastPathShouldDrop(cachedId: String?, registryDeletionTime: Long?): Boolean =
+    cachedId != null && registryDeletionTime != null
+
 private fun restoreMentionsFromState(state: SavedStateHandle): List<Mention> {
     val raw = state.get<Array<String>>("draft_mentions") ?: return emptyList()
     return raw.mapNotNull { entry ->
@@ -86,7 +181,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     // Local, instant last-draft cache so a fresh composer can restore immediately without a
     // relay round-trip (which is too slow/racy right after saving). Survives clear() and cold
     // starts; keyed by author pubkey so accounts don't cross-restore each other's drafts.
-    private val draftPrefs = app.getSharedPreferences("compose_last_draft", android.content.Context.MODE_PRIVATE)
+    private val lastDraftCache = cooking.zap.app.repo.LastDraftCache(app)
 
     // Emits when a draft is saved so the UI can drop an orange "Draft saved" pill (iOS parity).
     private val _draftSaved = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
@@ -1208,20 +1303,34 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
      * just-published draft is stored empty on relays, so it is naturally skipped. Never
      * clobbers text the user has already begun typing during the fetch window.
      */
-    fun restoreLatestDraft(relayPool: RelayPool, signer: NostrSigner?) {
+    fun restoreLatestDraft(
+        relayPool: RelayPool,
+        signer: NostrSigner?,
+        deletedEventsRepo: DeletedEventsRepository? = null
+    ) {
         if (signer == null) return
         if (restoringDraft || currentDraftId != null || _content.value.text.isNotBlank()) return
         restoringDraft = true
 
         // Fast path: restore the local last-draft cache instantly (covers the common
         // close-then-reopen case and cold starts without waiting on relays).
-        val cached = draftPrefs.getString("content_${signer.pubkeyHex}", null)
+        val cached = lastDraftCache.getContent(signer.pubkeyHex)
         if (!cached.isNullOrBlank()) {
-            currentDraftId = draftPrefs.getString("id_${signer.pubkeyHex}", null)
-            _content.value = TextFieldValue(cached, TextRange(cached.length))
-            savedStateHandle["draft_content"] = cached
-            restoringDraft = false
-            return
+            val cachedId = lastDraftCache.getId(signer.pubkeyHex)
+            val cachedDeletionTime = cachedId?.let {
+                deletedEventsRepo?.deletionTimeForAddress(Nip37.KIND_DRAFT, signer.pubkeyHex, it)
+            }
+            if (restoreFastPathShouldDrop(cachedId, cachedDeletionTime)) {
+                // The coord was deleted (here or on another device). Drop the stale cache and fall
+                // through to the slow path, which compares created_at against the deletion time.
+                lastDraftCache.clear(signer.pubkeyHex)
+            } else {
+                currentDraftId = cachedId
+                _content.value = TextFieldValue(cached, TextRange(cached.length))
+                savedStateHandle["draft_content"] = cached
+                restoringDraft = false
+                return
+            }
         }
 
         // Slow path (e.g. draft created on another device): time-boxed relay fetch.
@@ -1233,7 +1342,33 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         )
 
         viewModelScope.launch(Dispatchers.Default) {
+            // Newest wrapper created_at seen per coordinate (dTag), so a lagging relay's older copy
+            // can't resurrect a draft that a newer copy superseded or emptied. Parity with
+            // DraftsViewModel.loadDrafts — but, unlike the drafts LIST, this "continue where you
+            // left off" restore ALSO consults the deletion registry: we never auto-load a draft the
+            // user deleted, even though loadDrafts deliberately still lists kind-5-deleted drafts
+            // (iOS-Wisp parity). Recorded, intentional asymmetry between the two draft paths.
+            val newestPerCoord = HashMap<String, Long>()
             var best: Nip37.Draft? = null
+            var bestTs = Long.MIN_VALUE
+            var bestCoord: String? = null
+
+            // Applies a verdict's bookkeeping: advance the per-coord marker (except for a stale
+            // copy) and keep/drop the running best. A newest copy of a coord that isn't a restorable
+            // draft (tombstone / registry-deleted / reply-quote) supersedes a prior candidate for
+            // that same coord.
+            fun applyVerdict(verdict: DraftRestoreVerdict, dTag: String, ts: Long, draft: Nip37.Draft?) {
+                if (verdict is DraftRestoreVerdict.SkipStale) return
+                newestPerCoord[dTag] = maxOf(newestPerCoord[dTag] ?: Long.MIN_VALUE, ts)
+                if (verdict is DraftRestoreVerdict.Candidate && draft != null) {
+                    if (best == null || ts > bestTs) {
+                        best = draft; bestTs = ts; bestCoord = dTag
+                    }
+                } else if (bestCoord == dTag) {
+                    best = null; bestTs = Long.MIN_VALUE; bestCoord = null
+                }
+            }
+
             var sentToAll = false
             try {
                 val req = ClientMessage.req(subId, filter)
@@ -1249,22 +1384,46 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                     relayPool.events.collect { event ->
                         if (event.kind != Nip37.KIND_DRAFT) return@collect
                         if (event.pubkey != signer.pubkeyHex) return@collect
-                        try {
-                            val decrypted = signer.nip44Decrypt(event.content, signer.pubkeyHex)
-                            if (decrypted.isBlank()) return@collect
-                            val draft = Nip37.parseDraft(event, decrypted) ?: return@collect
-                            if (draft.content.isBlank()) return@collect
-                            // Skip reply/quote drafts: their context (NIP-10 "e"/NIP-18 "q" tags)
-                            // isn't restored by loadDraft, so loading one into a fresh top-level
-                            // composer would post a reply/quote as a root note.
-                            if (draft.tags.any { it.isNotEmpty() && (it[0] == "e" || it[0] == "q") }) return@collect
-                            val current = best
-                            if (current == null || draft.createdAt > current.createdAt) {
-                                best = draft
-                            }
-                        } catch (_: Exception) {
-                            // Decryption/parse failed — skip
+                        val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: return@collect
+                        val ts = event.created_at
+                        val newestSeen = newestPerCoord[dTag]
+                        val regTime = deletedEventsRepo?.deletionTimeForAddress(
+                            Nip37.KIND_DRAFT, signer.pubkeyHex, dTag
+                        )
+
+                        // Short-circuit BEFORE decrypting: never pay a nip44Decrypt (an Amber IPC on
+                        // RemoteSigner) for a coord we can already rule out — an older copy, or one
+                        // the registry tombstones as of a time >= this copy.
+                        draftRestoreSkipsBeforeDecrypt(ts, newestSeen, regTime)?.let { verdict ->
+                            applyVerdict(verdict, dTag, ts, null)
+                            return@collect
                         }
+
+                        val decrypted = try {
+                            signer.nip44Decrypt(event.content, signer.pubkeyHex)
+                        } catch (_: Exception) {
+                            // Decrypt failed — skip WITHOUT advancing the marker so a valid older
+                            // copy from another relay can still win (parity with loadDrafts).
+                            return@collect
+                        }
+                        if (decrypted.isBlank()) {
+                            applyVerdict(DraftRestoreVerdict.Tombstone, dTag, ts, null)
+                            return@collect
+                        }
+                        val draft = Nip37.parseDraft(event, decrypted) ?: return@collect
+                        // Skip reply/quote drafts: their context (NIP-10 "e"/NIP-18 "q" tags) isn't
+                        // restored by loadDraft, so loading one into a fresh top-level composer would
+                        // post a reply/quote as a root note.
+                        val isReplyOrQuote = draft.tags.any { it.isNotEmpty() && (it[0] == "e" || it[0] == "q") }
+                        val verdict = draftRestoreVerdict(
+                            wrapperCreatedAt = ts,
+                            newestSeenForCoord = newestSeen,
+                            registryDeletionTime = regTime,
+                            decryptedBlank = false,
+                            contentBlank = draft.content.isBlank(),
+                            isReplyOrQuote = isReplyOrQuote
+                        )
+                        applyVerdict(verdict, dTag, ts, draft)
                     }
                 }
             } finally {
@@ -1276,11 +1435,21 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 // aren't permanently blocked for this ViewModel instance.
                 restoringDraft = false
                 val chosen = best
+                val chosenCoord = bestCoord
+                val chosenTs = bestTs
                 // NonCancellable so the load still runs if the scope is winding down; guarded so
                 // it never clobbers text the user began typing during the fetch window.
                 withContext(NonCancellable + Dispatchers.Main) {
                     if (chosen != null && currentDraftId == null && _content.value.text.isBlank()) {
-                        loadDraft(chosen)
+                        // Defensive final re-check: a kind-5 for this coord may have landed in the
+                        // registry (via EventRepository) during the fetch window. Cheap map lookup,
+                        // no signer IPC.
+                        val regTime = chosenCoord?.let {
+                            deletedEventsRepo?.deletionTimeForAddress(Nip37.KIND_DRAFT, signer.pubkeyHex, it)
+                        }
+                        if (regTime == null || chosenTs > regTime) {
+                            loadDraft(chosen)
+                        }
                     }
                 }
             }
@@ -1306,10 +1475,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         // can't rehydrate, so caching one would let it be restored (and posted) as a root note.
         val isTopLevel = replyTo == null && quoteTo == null
         if (isTopLevel) {
-            draftPrefs.edit()
-                .putString("content_${signer.pubkeyHex}", text)
-                .putString("id_${signer.pubkeyHex}", draftId)
-                .apply()
+            lastDraftCache.save(signer.pubkeyHex, text, draftId)
         }
         _draftSaved.tryEmit(Unit)
 
@@ -1347,6 +1513,29 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         }
     }
 
+    /**
+     * Called from the composer's onDispose when the editor is blank: if the user emptied the
+     * exact top-level draft restored into this session, discard it. Clearing the local fast-path
+     * cache is the required behavior (it's what stops the phantom draft from reappearing); the
+     * relay-side empty NIP-37 replacement is best-effort. Both are handled by delegating to
+     * [deleteDraftOnPublish], which clears the cache synchronously *before* launching the
+     * background replacement publish — so a signer/relay failure on that publish (e.g. Amber
+     * after navigation) can never prevent the cache clear. No-op unless [shouldDiscardOnDispose]
+     * holds, so a blank reply/quote composer or an un-restored composer leaves the cache intact.
+     */
+    fun discardRestoredDraftIfEmptied(
+        relayPool: RelayPool,
+        replyTo: NostrEvent?,
+        signer: NostrSigner?,
+        quoteTo: NostrEvent? = null
+    ) {
+        if (signer == null) return
+        val isTopLevel = replyTo == null && quoteTo == null
+        val cachedId = lastDraftCache.getId(signer.pubkeyHex)
+        if (!shouldDiscardOnDispose(isTopLevel, currentDraftId, cachedId, _content.value.text.isBlank())) return
+        deleteDraftOnPublish(relayPool, signer)
+    }
+
     fun deleteDraftOnPublish(relayPool: RelayPool, signer: NostrSigner?) {
         val dTag = currentDraftId ?: return
         if (signer == null) return
@@ -1355,34 +1544,40 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         // Drop the local last-draft cache only when it points at the draft we're deleting — an
         // unrelated top-level draft cached under this account must survive publishing from a
         // reply/quote (or already-cleared) composer.
-        if (draftPrefs.getString("id_${signer.pubkeyHex}", null) == dTag) {
-            draftPrefs.edit()
-                .remove("content_${signer.pubkeyHex}")
-                .remove("id_${signer.pubkeyHex}")
-                .apply()
-        }
+        lastDraftCache.clearIfId(signer.pubkeyHex, dTag)
 
+        val app = getApplication<Application>()
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
-            try {
-                val tags = Nip37.buildDraftTags(dTag, 1)
-                val encrypted = signer.nip44Encrypt("", signer.pubkeyHex)
-                val event = signer.signEvent(
-                    kind = Nip37.KIND_DRAFT,
-                    content = encrypted,
-                    tags = tags
-                )
-                // Mirror saveDraft's relay fallback: the draft may have been persisted via
-                // sendToAllRelays (no reachable write relays), so the empty replacement must be
-                // able to reach those same relays or the deleted draft can reappear.
-                val msg = ClientMessage.event(event)
-                var sent = relayPool.sendToWriteRelays(msg)
-                if (sent == 0 && relayPool.ensureWriteRelaysConnected(2_000) > 0) {
-                    sent = relayPool.sendToWriteRelays(msg)
+            val tags = Nip37.buildDraftTags(dTag, 1)
+            // Surface signer failures instead of swallowing them: a rejection retries once via the
+            // silent path, a user-dismissed cancel gives up, and either way a final failure toasts
+            // (the relay draft would otherwise survive silently). The cache clear above already
+            // happened, so a failure here never blocks the required local discard.
+            val event = DraftDeleteSigning.signOrNull(
+                label = "draft delete (empty replacement)",
+                normal = {
+                    val encrypted = signer.nip44Encrypt("", signer.pubkeyHex)
+                    signer.signEvent(kind = Nip37.KIND_DRAFT, content = encrypted, tags = tags)
+                },
+                silent = {
+                    val encrypted = signer.nip44EncryptSilently("", signer.pubkeyHex)
+                    if (encrypted == null) null
+                    else signer.signEventSilently(kind = Nip37.KIND_DRAFT, content = encrypted, tags = tags)
                 }
-                if (sent == 0) relayPool.sendToAllRelays(msg)
-            } catch (_: Exception) {
-                // Best effort
+            )
+            if (event == null) {
+                DraftDeleteSigning.toastFailed(app)
+                return@launch
             }
+            // Mirror saveDraft's relay fallback: the draft may have been persisted via
+            // sendToAllRelays (no reachable write relays), so the empty replacement must be
+            // able to reach those same relays or the deleted draft can reappear.
+            val msg = ClientMessage.event(event)
+            var sent = relayPool.sendToWriteRelays(msg)
+            if (sent == 0 && relayPool.ensureWriteRelaysConnected(2_000) > 0) {
+                sent = relayPool.sendToWriteRelays(msg)
+            }
+            if (sent == 0) relayPool.sendToAllRelays(msg)
         }
     }
 

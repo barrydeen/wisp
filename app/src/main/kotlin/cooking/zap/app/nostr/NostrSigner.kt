@@ -16,6 +16,35 @@ interface NostrSigner {
     suspend fun signEvent(kind: Int, content: String, tags: List<List<String>> = emptyList(), createdAt: Long = System.currentTimeMillis() / 1000): NostrEvent
     suspend fun nip44Encrypt(plaintext: String, peerPubkeyHex: String): String
     suspend fun nip44Decrypt(ciphertext: String, peerPubkeyHex: String): String
+
+    /**
+     * Silent-only variants that NEVER launch an approval UI: they return null instead of falling
+     * back to the intent path. Used to retry a background delete-sign once after a rejection
+     * without popping the signer app in the user's face. The default delegates to the normal
+     * method — correct for [LocalSigner], which signs locally and never prompts; [RemoteSigner]
+     * overrides to use only the ContentResolver path.
+     */
+    suspend fun signEventSilently(kind: Int, content: String, tags: List<List<String>> = emptyList(), createdAt: Long = System.currentTimeMillis() / 1000): NostrEvent? =
+        signEvent(kind, content, tags, createdAt)
+    suspend fun nip44EncryptSilently(plaintext: String, peerPubkeyHex: String): String? =
+        nip44Encrypt(plaintext, peerPubkeyHex)
+}
+
+/** Post-failure policy for a background delete-sign. See [signerDeleteFailureAction]. */
+enum class SignerFailureAction { RETRY_SILENT, GIVE_UP }
+
+/**
+ * How a background delete-sign failure should be handled:
+ *  - [SignerCancelledException] (the user actively dismissed the prompt) → [GIVE_UP]. Re-prompting
+ *    a user who just dismissed is exactly the popup behavior we're eliminating.
+ *  - [SignerRejectedException] → [RETRY_SILENT]. A rejection may be an automatic permissions
+ *    auto-reject rather than a human, so retry once via the silent ContentResolver path.
+ *  - anything else → [GIVE_UP].
+ */
+fun signerDeleteFailureAction(error: Throwable): SignerFailureAction = when (error) {
+    is SignerCancelledException -> SignerFailureAction.GIVE_UP
+    is SignerRejectedException -> SignerFailureAction.RETRY_SILENT
+    else -> SignerFailureAction.GIVE_UP
 }
 
 /**
@@ -82,6 +111,25 @@ class RemoteSigner(
     override suspend fun nip44Decrypt(ciphertext: String, peerPubkeyHex: String): String {
         return tryContentResolver("NIP44_DECRYPT", ciphertext, peerPubkeyHex)
             ?: nip44ViaIntent("nip44_decrypt", ciphertext, peerPubkeyHex)
+    }
+
+    // Silent-only: ContentResolver path exclusively, no intent fallback. Returns null on any
+    // failure (unavailable cursor OR an explicit silent rejection) so a retry never pops Amber.
+    override suspend fun signEventSilently(kind: Int, content: String, tags: List<List<String>>, createdAt: Long): NostrEvent? {
+        val unsigned = NostrEvent.createUnsigned(pubkeyHex, kind, content, tags, createdAt)
+        return try {
+            tryContentResolverSign(unsigned.toJson(), unsigned)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    override suspend fun nip44EncryptSilently(plaintext: String, peerPubkeyHex: String): String? {
+        return try {
+            tryContentResolver("NIP44_ENCRYPT", plaintext, peerPubkeyHex)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private suspend fun tryContentResolverSign(

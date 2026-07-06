@@ -799,7 +799,11 @@ fun FeedScreen(
                             Icon(
                                 painter = painterResource(R.drawable.ic_kitchen_gadgets),
                                 contentDescription = stringResource(R.string.drawer_gadgets),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                // Slightly smaller than the default 24.dp so the cup's
+                                // full-bleed artwork matches the visual height of the
+                                // adjacent AI (Intelligence) atom button.
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                         // Intelligence menu — mirrors the web's IntelligenceMenu
