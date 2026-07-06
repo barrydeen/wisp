@@ -202,6 +202,7 @@ internal sealed interface ContentSegment {
     data class UnknownMediaSegment(val meta: MediaMeta) : ContentSegment
     data class LinkSegment(val url: String) : ContentSegment
     data class InlineLinkSegment(val url: String) : ContentSegment
+    data class YouTubeSegment(val videoId: String, val startSeconds: Int, val url: String) : ContentSegment
     data class NostrNoteSegment(val eventId: String, val relayHints: List<String> = emptyList(), val author: String? = null) : ContentSegment
     data class NostrProfileSegment(val pubkey: String, val relayHints: List<String> = emptyList()) : ContentSegment
     data class NostrAddressableSegment(val dTag: String, val relays: List<String>, val author: String?, val kind: Int?) : ContentSegment
@@ -278,6 +279,9 @@ private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1|naddr1
 
 private val emojiShortcodeRegex = Regex(""":([a-zA-Z0-9_-]+):""")
 
+// YouTube URL parsing (parseYouTube / YouTubeRef) lives in YouTubeUrl.kt so it stays
+// JVM-unit-testable, free of this file's Android-dependent top-level initializers.
+
 private fun isStandaloneUrl(content: String, matchRange: IntRange): Boolean {
     // Look back: only whitespace between previous newline (or start) and match start
     val before = content.substring(0, matchRange.first)
@@ -320,8 +324,15 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
                 ext in videoExtensions -> segments.add(ContentSegment.VideoSegment(meta ?: MediaMeta(url)))
                 ext in audioExtensions -> segments.add(ContentSegment.AudioSegment(meta ?: MediaMeta(url)))
                 isBlossomUrl(url) -> segments.add(ContentSegment.UnknownMediaSegment(meta ?: MediaMeta(url)))
-                isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
-                else -> segments.add(ContentSegment.InlineLinkSegment(url))
+                else -> {
+                    // Compute the (regex-heavy) YouTube parse once and branch on the result.
+                    val yt = parseYouTube(url)
+                    when {
+                        yt != null -> segments.add(ContentSegment.YouTubeSegment(yt.videoId, yt.startSeconds, url))
+                        isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
+                        else -> segments.add(ContentSegment.InlineLinkSegment(url))
+                    }
+                }
             }
         } else if (token.startsWith("nostr:")) {
             when (val decoded = Nip19.decodeNostrUri(token)) {
@@ -361,8 +372,15 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
                 }
                 isWebSocket -> segments.add(ContentSegment.InlineLinkSegment(url))
                 isBlossomUrl(url) -> segments.add(ContentSegment.UnknownMediaSegment(meta ?: MediaMeta(url)))
-                isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
-                else -> segments.add(ContentSegment.InlineLinkSegment(url))
+                else -> {
+                    // Compute the (regex-heavy) YouTube parse once and branch on the result.
+                    val yt = parseYouTube(url)
+                    when {
+                        yt != null -> segments.add(ContentSegment.YouTubeSegment(yt.videoId, yt.startSeconds, url))
+                        isStandaloneUrl(content, match.range) -> segments.add(ContentSegment.LinkSegment(url))
+                        else -> segments.add(ContentSegment.InlineLinkSegment(url))
+                    }
+                }
             }
         }
         lastEnd = match.range.last + 1
@@ -928,6 +946,13 @@ fun RichContent(
                     }
                     is ContentSegment.LinkSegment -> {
                         LinkPreview(url = segment.url)
+                    }
+                    is ContentSegment.YouTubeSegment -> {
+                        YouTubeEmbed(
+                            videoId = segment.videoId,
+                            startSeconds = segment.startSeconds,
+                            url = segment.url
+                        )
                     }
                     is ContentSegment.NostrNoteSegment -> {
                         if (eventRepo != null) {
@@ -3196,6 +3221,157 @@ private fun LinkPreview(url: String) {
                 .padding(vertical = 2.dp)
                 .clickable { uriHandler.openUri(url) }
         )
+    }
+}
+
+private fun youTubeThumbnailUrl(videoId: String) = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+
+/**
+ * Inline YouTube player, mirroring the iOS / web clients. Shows a lightweight
+ * thumbnail facade with a play button and only loads the (heavy) iframe player
+ * once tapped, so a feed with several videos doesn't spin up a WebView per note.
+ * Uses the privacy-friendly youtube-nocookie host. A caption below shows the
+ * title and channel (via oEmbed) and links out to the video.
+ */
+@Composable
+private fun YouTubeEmbed(videoId: String, startSeconds: Int, url: String) {
+    val uriHandler = LocalUriHandler.current
+    var playing by remember(videoId) { mutableStateOf(false) }
+    var meta by remember(url) { mutableStateOf(ogCache.get(url)) }
+
+    LaunchedEffect(url) {
+        if (meta == null) {
+            // Cache the oEmbed result so the same URL isn't refetched for every composition /
+            // feed item (meta is seeded from ogCache above).
+            fetchYoutubeOembed(url)?.let {
+                ogCache.put(url, it)
+                meta = it
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            if (playing) {
+                val embedUrl = buildString {
+                    append("https://www.youtube-nocookie.com/embed/")
+                    append(videoId)
+                    append("?autoplay=1&rel=0&playsinline=1")
+                    if (startSeconds > 0) append("&start=").append(startSeconds)
+                }
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        android.webkit.WebView(ctx).apply {
+                            layoutParams = android.view.ViewGroup.LayoutParams(
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.mediaPlaybackRequiresUserGesture = false
+                            // Harden: no local file/content access, no JS-opened popup windows.
+                            settings.allowFileAccess = false
+                            settings.allowContentAccess = false
+                            settings.setSupportMultipleWindows(false)
+                            settings.javaScriptCanOpenWindowsAutomatically = false
+                            setBackgroundColor(android.graphics.Color.BLACK)
+                            // Keep only the nocookie embed inside the WebView; route any top-level
+                            // navigation (e.g. "Watch on YouTube" / channel links) to an external app
+                            // instead of letting the WebView browse to arbitrary URLs.
+                            webViewClient = object : android.webkit.WebViewClient() {
+                                override fun shouldOverrideUrlLoading(
+                                    view: android.webkit.WebView,
+                                    request: android.webkit.WebResourceRequest
+                                ): Boolean {
+                                    if (!request.isForMainFrame) return false
+                                    val host = request.url.host ?: ""
+                                    if (host.endsWith("youtube-nocookie.com")) return false
+                                    return try {
+                                        view.context.startActivity(
+                                            android.content.Intent(android.content.Intent.ACTION_VIEW, request.url)
+                                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        )
+                                        true
+                                    } catch (_: Exception) {
+                                        true // swallow rather than navigate to an arbitrary URL in-WebView
+                                    }
+                                }
+                            }
+                            webChromeClient = android.webkit.WebChromeClient()
+                            loadUrl(embedUrl)
+                        }
+                    },
+                    onRelease = { it.destroy() }
+                )
+            } else {
+                AsyncImage(
+                    model = youTubeThumbnailUrl(videoId),
+                    contentDescription = meta?.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .clickable { playing = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.PlayArrow,
+                        contentDescription = "Play video",
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                .clickable { uriHandler.openUri(url) }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = meta?.title ?: "YouTube",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = meta?.description?.let { "youtube.com · $it" } ?: "youtube.com",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            Text(
+                text = "›",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 8.dp)
+            )
+        }
     }
 }
 
