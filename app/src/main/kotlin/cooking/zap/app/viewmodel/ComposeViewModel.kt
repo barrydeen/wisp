@@ -86,7 +86,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
     // Local, instant last-draft cache so a fresh composer can restore immediately without a
     // relay round-trip (which is too slow/racy right after saving). Survives clear() and cold
     // starts; keyed by author pubkey so accounts don't cross-restore each other's drafts.
-    private val draftPrefs = app.getSharedPreferences("compose_last_draft", android.content.Context.MODE_PRIVATE)
+    private val lastDraftCache = cooking.zap.app.repo.LastDraftCache(app)
 
     // Emits when a draft is saved so the UI can drop an orange "Draft saved" pill (iOS parity).
     private val _draftSaved = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
@@ -1215,9 +1215,9 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
 
         // Fast path: restore the local last-draft cache instantly (covers the common
         // close-then-reopen case and cold starts without waiting on relays).
-        val cached = draftPrefs.getString("content_${signer.pubkeyHex}", null)
+        val cached = lastDraftCache.getContent(signer.pubkeyHex)
         if (!cached.isNullOrBlank()) {
-            currentDraftId = draftPrefs.getString("id_${signer.pubkeyHex}", null)
+            currentDraftId = lastDraftCache.getId(signer.pubkeyHex)
             _content.value = TextFieldValue(cached, TextRange(cached.length))
             savedStateHandle["draft_content"] = cached
             restoringDraft = false
@@ -1306,10 +1306,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         // can't rehydrate, so caching one would let it be restored (and posted) as a root note.
         val isTopLevel = replyTo == null && quoteTo == null
         if (isTopLevel) {
-            draftPrefs.edit()
-                .putString("content_${signer.pubkeyHex}", text)
-                .putString("id_${signer.pubkeyHex}", draftId)
-                .apply()
+            lastDraftCache.save(signer.pubkeyHex, text, draftId)
         }
         _draftSaved.tryEmit(Unit)
 
@@ -1355,12 +1352,7 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         // Drop the local last-draft cache only when it points at the draft we're deleting — an
         // unrelated top-level draft cached under this account must survive publishing from a
         // reply/quote (or already-cleared) composer.
-        if (draftPrefs.getString("id_${signer.pubkeyHex}", null) == dTag) {
-            draftPrefs.edit()
-                .remove("content_${signer.pubkeyHex}")
-                .remove("id_${signer.pubkeyHex}")
-                .apply()
-        }
+        lastDraftCache.clearIfId(signer.pubkeyHex, dTag)
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
             try {

@@ -11,6 +11,7 @@ import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.relay.RelayPool
 import cooking.zap.app.repo.DeletedEventsRepository
+import cooking.zap.app.repo.LastDraftCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -21,6 +22,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 class DraftsViewModel(app: Application) : AndroidViewModel(app) {
+
+    // Shared with ComposeViewModel's "continue where you left off" fast path: deleting a draft
+    // here must also drop the local cache, or the composer silently restores the deleted text.
+    private val lastDraftCache = LastDraftCache(app)
 
     private val _drafts = MutableStateFlow<List<Nip37.Draft>>(emptyList())
     val drafts: StateFlow<List<Nip37.Draft>> = _drafts
@@ -178,6 +183,9 @@ class DraftsViewModel(app: Application) : AndroidViewModel(app) {
     ) {
         if (signer == null) return
         removeDraftLocally(dTag)
+        // Drop the local compose fast-path cache when it points at this draft — otherwise the
+        // composer resurrects the deleted text on next open regardless of relay propagation.
+        lastDraftCache.clearIfId(signer.pubkeyHex, dTag)
         // Persist locally first so any future relay response for this coord is silently dropped,
         // even before the kind 5 deletion propagates.
         deletedEventsRepo?.markDeletedAddress(Nip37.KIND_DRAFT, signer.pubkeyHex, dTag)
@@ -187,7 +195,7 @@ class DraftsViewModel(app: Application) : AndroidViewModel(app) {
                 // NIP-09: publish an addressable-delete (kind 5 with "a" tag) so relays drop the draft.
                 val deletionTags = Nip09.buildAddressableDeletionTags(Nip37.KIND_DRAFT, signer.pubkeyHex, dTag)
                 val deleteEvent = signer.signEvent(kind = 5, content = "", tags = deletionTags)
-                relayPool.sendToWriteRelays(ClientMessage.event(deleteEvent))
+                sendWithFallback(relayPool, ClientMessage.event(deleteEvent))
 
                 // Also publish an empty-content replacement so clients that don't honor NIP-09
                 // (or that use the replace-by-address semantics of NIP-37) still observe deletion.
@@ -198,11 +206,24 @@ class DraftsViewModel(app: Application) : AndroidViewModel(app) {
                     content = encrypted,
                     tags = replacementTags
                 )
-                relayPool.sendToWriteRelays(ClientMessage.event(replacement))
+                sendWithFallback(relayPool, ClientMessage.event(replacement))
             } catch (_: Exception) {
                 // Best effort
             }
         }
+    }
+
+    /**
+     * Mirror ComposeViewModel.saveDraft's relay fallback: a draft may have been persisted via
+     * sendToAllRelays (no reachable write relays), so its deletion must be able to reach those
+     * same relays or the "deleted" draft reappears. Write relays → reconnect+retry → all relays.
+     */
+    private suspend fun sendWithFallback(relayPool: RelayPool, message: String) {
+        var sent = relayPool.sendToWriteRelays(message)
+        if (sent == 0 && relayPool.ensureWriteRelaysConnected(2_000) > 0) {
+            sent = relayPool.sendToWriteRelays(message)
+        }
+        if (sent == 0) relayPool.sendToAllRelays(message)
     }
 
     fun addDraftLocally(draft: Nip37.Draft) {
