@@ -1546,27 +1546,38 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         // reply/quote (or already-cleared) composer.
         lastDraftCache.clearIfId(signer.pubkeyHex, dTag)
 
+        val app = getApplication<Application>()
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
-            try {
-                val tags = Nip37.buildDraftTags(dTag, 1)
-                val encrypted = signer.nip44Encrypt("", signer.pubkeyHex)
-                val event = signer.signEvent(
-                    kind = Nip37.KIND_DRAFT,
-                    content = encrypted,
-                    tags = tags
-                )
-                // Mirror saveDraft's relay fallback: the draft may have been persisted via
-                // sendToAllRelays (no reachable write relays), so the empty replacement must be
-                // able to reach those same relays or the deleted draft can reappear.
-                val msg = ClientMessage.event(event)
-                var sent = relayPool.sendToWriteRelays(msg)
-                if (sent == 0 && relayPool.ensureWriteRelaysConnected(2_000) > 0) {
-                    sent = relayPool.sendToWriteRelays(msg)
+            val tags = Nip37.buildDraftTags(dTag, 1)
+            // Surface signer failures instead of swallowing them: a rejection retries once via the
+            // silent path, a user-dismissed cancel gives up, and either way a final failure toasts
+            // (the relay draft would otherwise survive silently). The cache clear above already
+            // happened, so a failure here never blocks the required local discard.
+            val event = DraftDeleteSigning.signOrNull(
+                label = "draft delete (empty replacement)",
+                normal = {
+                    val encrypted = signer.nip44Encrypt("", signer.pubkeyHex)
+                    signer.signEvent(kind = Nip37.KIND_DRAFT, content = encrypted, tags = tags)
+                },
+                silent = {
+                    val encrypted = signer.nip44EncryptSilently("", signer.pubkeyHex)
+                    if (encrypted == null) null
+                    else signer.signEventSilently(kind = Nip37.KIND_DRAFT, content = encrypted, tags = tags)
                 }
-                if (sent == 0) relayPool.sendToAllRelays(msg)
-            } catch (_: Exception) {
-                // Best effort
+            )
+            if (event == null) {
+                DraftDeleteSigning.toastFailed(app)
+                return@launch
             }
+            // Mirror saveDraft's relay fallback: the draft may have been persisted via
+            // sendToAllRelays (no reachable write relays), so the empty replacement must be
+            // able to reach those same relays or the deleted draft can reappear.
+            val msg = ClientMessage.event(event)
+            var sent = relayPool.sendToWriteRelays(msg)
+            if (sent == 0 && relayPool.ensureWriteRelaysConnected(2_000) > 0) {
+                sent = relayPool.sendToWriteRelays(msg)
+            }
+            if (sent == 0) relayPool.sendToAllRelays(msg)
         }
     }
 
