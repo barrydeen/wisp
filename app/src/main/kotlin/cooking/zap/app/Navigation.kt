@@ -902,10 +902,22 @@ fun WispNavHost(
                 onInterfaceSettings = { closeDrawerAndNavigate(Routes.INTERFACE_SETTINGS) },
                 onLogout = {
                     drawerScope.launch { drawerState.close() }
+                    // Capture the account being removed BEFORE clearSigner()/logOut() switch away,
+                    // so we can drop exactly its draft cache (and never a remaining account's).
+                    val removedPubkey = feedViewModel.getUserPubkey()
                     feedViewModel.clearSigner()
                     feedViewModel.resetForAccountSwitch()
                     walletViewModel.disconnectWallet()  // full clear — intentional logout
                     val hasRemaining = authViewModel.logOut()
+                    // Clear the compose "continue where you left off" cache so a logged-out account's
+                    // draft can't resurrect on next login (it's pubkey-keyed and survives logout).
+                    val lastDraftCache = cooking.zap.app.repo.LastDraftCache(context)
+                    when (cooking.zap.app.repo.LastDraftCache.logoutCacheAction(hasRemaining)) {
+                        cooking.zap.app.repo.LastDraftCache.LogoutCacheAction.CLEAR_REMOVED_ACCOUNT ->
+                            removedPubkey?.let { lastDraftCache.clear(it) }
+                        cooking.zap.app.repo.LastDraftCache.LogoutCacheAction.CLEAR_ALL ->
+                            lastDraftCache.clearAll()
+                    }
                     if (hasRemaining) {
                         // logOut() already switched to the first remaining account
                         feedViewModel.reloadForNewAccount()
