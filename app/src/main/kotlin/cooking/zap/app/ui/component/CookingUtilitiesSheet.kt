@@ -50,6 +50,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -58,6 +59,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -620,13 +622,23 @@ private fun ConverterTabContent() {
         mutableStateOf(unitByAbbrev(prefs.getString("converter_to", null), CONVERTER_DEFAULT_TO))
     }
 
-    // Write the current calculation back to prefs whenever it changes.
-    LaunchedEffect(amountText, fromUnit, toUnit) {
+    fun persistConverter() {
         prefs.edit()
             .putString("converter_amount", amountText)
             .putString("converter_from", fromUnit.abbrev)
             .putString("converter_to", toUnit.abbrev)
             .apply()
+    }
+
+    // Debounce writes so rapid keystrokes / unit toggles don't churn prefs I/O.
+    LaunchedEffect(amountText, fromUnit, toUnit) {
+        delay(300)
+        persistConverter()
+    }
+    // Flush on dispose: if the sheet is closed within the debounce window the
+    // LaunchedEffect is cancelled before its write, so persist the latest value here.
+    DisposableEffect(Unit) {
+        onDispose { persistConverter() }
     }
 
     val isDefaultState = amountText.isEmpty() &&
