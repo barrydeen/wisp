@@ -1314,7 +1314,7 @@ fun WispNavHost(
                 // iOS-parity: a fresh top-level composer restores the most recent draft so the
                 // user can continue where they left off. Replies/quotes stay context-specific.
                 if (replyTarget == null && quoteTarget == null) {
-                    composeViewModel.restoreLatestDraft(feedViewModel.relayPool, activeSigner)
+                    composeViewModel.restoreLatestDraft(feedViewModel.relayPool, activeSigner, feedViewModel.deletedEventsRepo)
                 }
             }
             // Auto-save draft when leaving compose screen (back button, navigation, etc.)

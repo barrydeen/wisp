@@ -34,6 +34,7 @@ import cooking.zap.app.relay.OutboxRouter
 import cooking.zap.app.relay.RelayPool
 import cooking.zap.app.repo.BlossomRepository
 import cooking.zap.app.repo.ContactRepository
+import cooking.zap.app.repo.DeletedEventsRepository
 import cooking.zap.app.repo.DmRepository
 import cooking.zap.app.repo.KeyRepository
 import cooking.zap.app.repo.PrivateReplyPublisher
@@ -89,6 +90,77 @@ internal fun shouldDiscardOnDispose(
         textIsBlank &&
         currentDraftId != null &&
         currentDraftId == cachedId
+
+/** Per-event outcome for the slow-path draft restore. See [draftRestoreVerdict]. */
+internal sealed class DraftRestoreVerdict {
+    /** An older copy of a coordinate we've already seen a newer version of — ignore. */
+    object SkipStale : DraftRestoreVerdict()
+    /** The deletion registry tombstones this coordinate as of a time >= this copy — deleted. */
+    object RegistryDeleted : DraftRestoreVerdict()
+    /** Empty replacement = a NIP-37 deletion of this coordinate. */
+    object Tombstone : DraftRestoreVerdict()
+    /** Decrypts fine but can't be continued as a fresh top-level note (blank / reply / quote). */
+    object SkipUnrestorable : DraftRestoreVerdict()
+    /** A restorable draft and the newest good copy of its coordinate so far. */
+    object Candidate : DraftRestoreVerdict()
+}
+
+/**
+ * Pre-decrypt gate: the verdict when it's determinable WITHOUT decrypting — an older copy
+ * ([SkipStale]) or a coordinate the deletion registry already tombstones as of a time at or
+ * after this copy ([RegistryDeleted]). Returns null when a decrypt is actually needed.
+ *
+ * Split out from [draftRestoreVerdict] so the collect loop can short-circuit before the signer
+ * call: on RemoteSigner every nip44Decrypt is an Amber IPC round trip, and paying it for a coord
+ * we can already rule out is both slow and a spurious background signer prompt.
+ */
+internal fun draftRestoreSkipsBeforeDecrypt(
+    wrapperCreatedAt: Long,
+    newestSeenForCoord: Long?,
+    registryDeletionTime: Long?
+): DraftRestoreVerdict? = when {
+    newestSeenForCoord != null && wrapperCreatedAt < newestSeenForCoord -> DraftRestoreVerdict.SkipStale
+    registryDeletionTime != null && wrapperCreatedAt <= registryDeletionTime -> DraftRestoreVerdict.RegistryDeleted
+    else -> null
+}
+
+/**
+ * Full per-event verdict for slow-path restore. [wrapperCreatedAt] MUST be the wrapper (kind
+ * 31234) event's created_at — the clock NIP-09 deletion and replaceable "newest wins" both key
+ * on — not [Nip37.Draft.createdAt] (the inner draft's timestamp, which can differ). The pre-decrypt
+ * cases ([draftRestoreSkipsBeforeDecrypt]) still apply; past those, an empty decrypt is a
+ * [Tombstone], a blank/reply/quote draft is [SkipUnrestorable], and anything else is a [Candidate].
+ */
+internal fun draftRestoreVerdict(
+    wrapperCreatedAt: Long,
+    newestSeenForCoord: Long?,
+    registryDeletionTime: Long?,
+    decryptedBlank: Boolean,
+    contentBlank: Boolean,
+    isReplyOrQuote: Boolean
+): DraftRestoreVerdict {
+    draftRestoreSkipsBeforeDecrypt(wrapperCreatedAt, newestSeenForCoord, registryDeletionTime)?.let { return it }
+    if (decryptedBlank) return DraftRestoreVerdict.Tombstone
+    if (contentBlank || isReplyOrQuote) return DraftRestoreVerdict.SkipUnrestorable
+    return DraftRestoreVerdict.Candidate
+}
+
+/**
+ * Fast-path (local cache) drop gate: drop the cached draft and fall through to the slow path when
+ * the deletion registry has ANY tombstone for the cached coordinate.
+ *
+ * Accepted risk — the fast path is deliberately timestamp-blind: it doesn't know the cached
+ * draft's created_at, so it can't distinguish "deleted and still deleted" from "deleted elsewhere,
+ * then re-edited on THIS device to a newer created_at." In the rare cross-device-delete +
+ * continued-same-coord-editing case it drops the instant cache and degrades to a slow-path
+ * restore, which DOES compare created_at against the deletion time and correctly revives the newer
+ * edit (ts > deletionTime). We accept that one slower relay round trip rather than make the fast
+ * path timestamp-aware (which would need the cached copy's created_at persisted and reasoned about
+ * here). Our own deletes tombstone permanently and saveDraft mints a fresh draftId after a delete,
+ * so a cached coord is never legitimately revived under the same id from local actions.
+ */
+internal fun restoreFastPathShouldDrop(cachedId: String?, registryDeletionTime: Long?): Boolean =
+    cachedId != null && registryDeletionTime != null
 
 private fun restoreMentionsFromState(state: SavedStateHandle): List<Mention> {
     val raw = state.get<Array<String>>("draft_mentions") ?: return emptyList()
@@ -1231,7 +1303,11 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
      * just-published draft is stored empty on relays, so it is naturally skipped. Never
      * clobbers text the user has already begun typing during the fetch window.
      */
-    fun restoreLatestDraft(relayPool: RelayPool, signer: NostrSigner?) {
+    fun restoreLatestDraft(
+        relayPool: RelayPool,
+        signer: NostrSigner?,
+        deletedEventsRepo: DeletedEventsRepository? = null
+    ) {
         if (signer == null) return
         if (restoringDraft || currentDraftId != null || _content.value.text.isNotBlank()) return
         restoringDraft = true
@@ -1240,11 +1316,21 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         // close-then-reopen case and cold starts without waiting on relays).
         val cached = lastDraftCache.getContent(signer.pubkeyHex)
         if (!cached.isNullOrBlank()) {
-            currentDraftId = lastDraftCache.getId(signer.pubkeyHex)
-            _content.value = TextFieldValue(cached, TextRange(cached.length))
-            savedStateHandle["draft_content"] = cached
-            restoringDraft = false
-            return
+            val cachedId = lastDraftCache.getId(signer.pubkeyHex)
+            val cachedDeletionTime = cachedId?.let {
+                deletedEventsRepo?.deletionTimeForAddress(Nip37.KIND_DRAFT, signer.pubkeyHex, it)
+            }
+            if (restoreFastPathShouldDrop(cachedId, cachedDeletionTime)) {
+                // The coord was deleted (here or on another device). Drop the stale cache and fall
+                // through to the slow path, which compares created_at against the deletion time.
+                lastDraftCache.clear(signer.pubkeyHex)
+            } else {
+                currentDraftId = cachedId
+                _content.value = TextFieldValue(cached, TextRange(cached.length))
+                savedStateHandle["draft_content"] = cached
+                restoringDraft = false
+                return
+            }
         }
 
         // Slow path (e.g. draft created on another device): time-boxed relay fetch.
@@ -1256,7 +1342,33 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
         )
 
         viewModelScope.launch(Dispatchers.Default) {
+            // Newest wrapper created_at seen per coordinate (dTag), so a lagging relay's older copy
+            // can't resurrect a draft that a newer copy superseded or emptied. Parity with
+            // DraftsViewModel.loadDrafts — but, unlike the drafts LIST, this "continue where you
+            // left off" restore ALSO consults the deletion registry: we never auto-load a draft the
+            // user deleted, even though loadDrafts deliberately still lists kind-5-deleted drafts
+            // (iOS-Wisp parity). Recorded, intentional asymmetry between the two draft paths.
+            val newestPerCoord = HashMap<String, Long>()
             var best: Nip37.Draft? = null
+            var bestTs = Long.MIN_VALUE
+            var bestCoord: String? = null
+
+            // Applies a verdict's bookkeeping: advance the per-coord marker (except for a stale
+            // copy) and keep/drop the running best. A newest copy of a coord that isn't a restorable
+            // draft (tombstone / registry-deleted / reply-quote) supersedes a prior candidate for
+            // that same coord.
+            fun applyVerdict(verdict: DraftRestoreVerdict, dTag: String, ts: Long, draft: Nip37.Draft?) {
+                if (verdict is DraftRestoreVerdict.SkipStale) return
+                newestPerCoord[dTag] = maxOf(newestPerCoord[dTag] ?: Long.MIN_VALUE, ts)
+                if (verdict is DraftRestoreVerdict.Candidate && draft != null) {
+                    if (best == null || ts > bestTs) {
+                        best = draft; bestTs = ts; bestCoord = dTag
+                    }
+                } else if (bestCoord == dTag) {
+                    best = null; bestTs = Long.MIN_VALUE; bestCoord = null
+                }
+            }
+
             var sentToAll = false
             try {
                 val req = ClientMessage.req(subId, filter)
@@ -1272,22 +1384,46 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                     relayPool.events.collect { event ->
                         if (event.kind != Nip37.KIND_DRAFT) return@collect
                         if (event.pubkey != signer.pubkeyHex) return@collect
-                        try {
-                            val decrypted = signer.nip44Decrypt(event.content, signer.pubkeyHex)
-                            if (decrypted.isBlank()) return@collect
-                            val draft = Nip37.parseDraft(event, decrypted) ?: return@collect
-                            if (draft.content.isBlank()) return@collect
-                            // Skip reply/quote drafts: their context (NIP-10 "e"/NIP-18 "q" tags)
-                            // isn't restored by loadDraft, so loading one into a fresh top-level
-                            // composer would post a reply/quote as a root note.
-                            if (draft.tags.any { it.isNotEmpty() && (it[0] == "e" || it[0] == "q") }) return@collect
-                            val current = best
-                            if (current == null || draft.createdAt > current.createdAt) {
-                                best = draft
-                            }
-                        } catch (_: Exception) {
-                            // Decryption/parse failed — skip
+                        val dTag = event.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: return@collect
+                        val ts = event.created_at
+                        val newestSeen = newestPerCoord[dTag]
+                        val regTime = deletedEventsRepo?.deletionTimeForAddress(
+                            Nip37.KIND_DRAFT, signer.pubkeyHex, dTag
+                        )
+
+                        // Short-circuit BEFORE decrypting: never pay a nip44Decrypt (an Amber IPC on
+                        // RemoteSigner) for a coord we can already rule out — an older copy, or one
+                        // the registry tombstones as of a time >= this copy.
+                        draftRestoreSkipsBeforeDecrypt(ts, newestSeen, regTime)?.let { verdict ->
+                            applyVerdict(verdict, dTag, ts, null)
+                            return@collect
                         }
+
+                        val decrypted = try {
+                            signer.nip44Decrypt(event.content, signer.pubkeyHex)
+                        } catch (_: Exception) {
+                            // Decrypt failed — skip WITHOUT advancing the marker so a valid older
+                            // copy from another relay can still win (parity with loadDrafts).
+                            return@collect
+                        }
+                        if (decrypted.isBlank()) {
+                            applyVerdict(DraftRestoreVerdict.Tombstone, dTag, ts, null)
+                            return@collect
+                        }
+                        val draft = Nip37.parseDraft(event, decrypted) ?: return@collect
+                        // Skip reply/quote drafts: their context (NIP-10 "e"/NIP-18 "q" tags) isn't
+                        // restored by loadDraft, so loading one into a fresh top-level composer would
+                        // post a reply/quote as a root note.
+                        val isReplyOrQuote = draft.tags.any { it.isNotEmpty() && (it[0] == "e" || it[0] == "q") }
+                        val verdict = draftRestoreVerdict(
+                            wrapperCreatedAt = ts,
+                            newestSeenForCoord = newestSeen,
+                            registryDeletionTime = regTime,
+                            decryptedBlank = false,
+                            contentBlank = draft.content.isBlank(),
+                            isReplyOrQuote = isReplyOrQuote
+                        )
+                        applyVerdict(verdict, dTag, ts, draft)
                     }
                 }
             } finally {
@@ -1299,11 +1435,21 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 // aren't permanently blocked for this ViewModel instance.
                 restoringDraft = false
                 val chosen = best
+                val chosenCoord = bestCoord
+                val chosenTs = bestTs
                 // NonCancellable so the load still runs if the scope is winding down; guarded so
                 // it never clobbers text the user began typing during the fetch window.
                 withContext(NonCancellable + Dispatchers.Main) {
                     if (chosen != null && currentDraftId == null && _content.value.text.isBlank()) {
-                        loadDraft(chosen)
+                        // Defensive final re-check: a kind-5 for this coord may have landed in the
+                        // registry (via EventRepository) during the fetch window. Cheap map lookup,
+                        // no signer IPC.
+                        val regTime = chosenCoord?.let {
+                            deletedEventsRepo?.deletionTimeForAddress(Nip37.KIND_DRAFT, signer.pubkeyHex, it)
+                        }
+                        if (regTime == null || chosenTs > regTime) {
+                            loadDraft(chosen)
+                        }
                     }
                 }
             }
