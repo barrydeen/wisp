@@ -67,6 +67,29 @@ private val HASHTAG_REGEX = Regex("(?:^|(?<=\\s))#([\\p{L}\\p{M}0-9_]+)")
 /** Tracks an inserted @mention as a range in the compose text, mapped to its pubkey. */
 data class Mention(val start: Int, val end: Int, val pubkey: String)
 
+/**
+ * Discard-on-dispose decision for the composer: should emptying the editor and leaving discard
+ * the restored draft (clear the fast-path cache + tombstone the relay copy)?
+ *
+ * True only when the user emptied the exact top-level draft that was restored into this session.
+ * Deliberately narrow so it never destroys a draft the user didn't see:
+ *  - [isTopLevel] false (a reply/quote composer) → never discard; a blank reply composer may sit
+ *    over an unrelated cached top-level draft the user never opened.
+ *  - [currentDraftId] null → nothing was restored this session, so there's nothing to discard.
+ *  - [currentDraftId] != [cachedId] → the editor isn't showing the cached draft; leave the cache.
+ *  - [textIsBlank] false → the user still has content; the non-blank auto-save path owns that.
+ */
+internal fun shouldDiscardOnDispose(
+    isTopLevel: Boolean,
+    currentDraftId: String?,
+    cachedId: String?,
+    textIsBlank: Boolean
+): Boolean =
+    isTopLevel &&
+        textIsBlank &&
+        currentDraftId != null &&
+        currentDraftId == cachedId
+
 private fun restoreMentionsFromState(state: SavedStateHandle): List<Mention> {
     val raw = state.get<Array<String>>("draft_mentions") ?: return emptyList()
     return raw.mapNotNull { entry ->
@@ -1342,6 +1365,29 @@ class ComposeViewModel(app: Application, private val savedStateHandle: SavedStat
                 // Best effort
             }
         }
+    }
+
+    /**
+     * Called from the composer's onDispose when the editor is blank: if the user emptied the
+     * exact top-level draft restored into this session, discard it. Clearing the local fast-path
+     * cache is the required behavior (it's what stops the phantom draft from reappearing); the
+     * relay-side empty NIP-37 replacement is best-effort. Both are handled by delegating to
+     * [deleteDraftOnPublish], which clears the cache synchronously *before* launching the
+     * background replacement publish — so a signer/relay failure on that publish (e.g. Amber
+     * after navigation) can never prevent the cache clear. No-op unless [shouldDiscardOnDispose]
+     * holds, so a blank reply/quote composer or an un-restored composer leaves the cache intact.
+     */
+    fun discardRestoredDraftIfEmptied(
+        relayPool: RelayPool,
+        replyTo: NostrEvent?,
+        signer: NostrSigner?,
+        quoteTo: NostrEvent? = null
+    ) {
+        if (signer == null) return
+        val isTopLevel = replyTo == null && quoteTo == null
+        val cachedId = lastDraftCache.getId(signer.pubkeyHex)
+        if (!shouldDiscardOnDispose(isTopLevel, currentDraftId, cachedId, _content.value.text.isBlank())) return
+        deleteDraftOnPublish(relayPool, signer)
     }
 
     fun deleteDraftOnPublish(relayPool: RelayPool, signer: NostrSigner?) {

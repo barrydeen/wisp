@@ -1322,6 +1322,11 @@ fun WispNavHost(
                 onDispose {
                     if (composeViewModel.content.value.text.isNotBlank()) {
                         composeViewModel.saveDraft(feedViewModel.relayPool, replyTarget, activeSigner, quoteTarget)
+                    } else {
+                        // Emptying a restored top-level draft = discard it: clear the fast-path
+                        // cache so it can't resurrect, and best-effort tombstone the relay copy.
+                        // No-op for reply/quote composers or when nothing was restored this session.
+                        composeViewModel.discardRestoredDraftIfEmptied(feedViewModel.relayPool, replyTarget, activeSigner, quoteTarget)
                     }
                 }
             }
