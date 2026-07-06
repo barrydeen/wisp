@@ -4510,7 +4510,19 @@ fun WispNavHost(
                 onToggleNotifSound = {
                     notifSoundPrefs.setSoundsEnabled(!notifSoundEnabled)
                 },
-                onBack = { navController.popBackStack() },
+                // Notifications is a root tab reached only from the bottom bar, so
+                // "back" means "return to the home feed." Pop up to FEED (mirroring
+                // the app-level BackHandler), falling back to a fresh FEED nav when
+                // the stack has no FEED beneath — e.g. after process-death restore
+                // onto this tab — so the arrow never becomes a dead button.
+                onBack = {
+                    if (!navController.popBackStack(Routes.FEED, inclusive = false)) {
+                        navController.navigate(Routes.FEED) {
+                            popUpTo(0) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                },
                 onNoteClick = { eventId ->
                     navController.navigate("thread/$eventId")
                 },

@@ -202,7 +202,7 @@ internal sealed interface ContentSegment {
     data class UnknownMediaSegment(val meta: MediaMeta) : ContentSegment
     data class LinkSegment(val url: String) : ContentSegment
     data class InlineLinkSegment(val url: String) : ContentSegment
-    data class NostrNoteSegment(val eventId: String, val relayHints: List<String> = emptyList()) : ContentSegment
+    data class NostrNoteSegment(val eventId: String, val relayHints: List<String> = emptyList(), val author: String? = null) : ContentSegment
     data class NostrProfileSegment(val pubkey: String, val relayHints: List<String> = emptyList()) : ContentSegment
     data class NostrAddressableSegment(val dTag: String, val relays: List<String>, val author: String?, val kind: Int?) : ContentSegment
     data class CustomEmojiSegment(val shortcode: String, val url: String) : ContentSegment
@@ -325,7 +325,7 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
             }
         } else if (token.startsWith("nostr:")) {
             when (val decoded = Nip19.decodeNostrUri(token)) {
-                is NostrUriData.NoteRef -> segments.add(ContentSegment.NostrNoteSegment(decoded.eventId, decoded.relays))
+                is NostrUriData.NoteRef -> segments.add(ContentSegment.NostrNoteSegment(decoded.eventId, decoded.relays, decoded.author))
                 is NostrUriData.ProfileRef -> segments.add(ContentSegment.NostrProfileSegment(decoded.pubkey, decoded.relays))
                 is NostrUriData.AddressRef -> segments.add(ContentSegment.NostrAddressableSegment(decoded.dTag, decoded.relays, decoded.author, decoded.kind))
                 null -> segments.add(ContentSegment.TextSegment(token))
@@ -336,7 +336,7 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
                    token.startsWith("nprofile1", ignoreCase = true) ||
                    token.startsWith("naddr1", ignoreCase = true)) {
             when (val decoded = Nip19.decodeNostrUri("nostr:$token")) {
-                is NostrUriData.NoteRef -> segments.add(ContentSegment.NostrNoteSegment(decoded.eventId, decoded.relays))
+                is NostrUriData.NoteRef -> segments.add(ContentSegment.NostrNoteSegment(decoded.eventId, decoded.relays, decoded.author))
                 is NostrUriData.ProfileRef -> segments.add(ContentSegment.NostrProfileSegment(decoded.pubkey, decoded.relays))
                 is NostrUriData.AddressRef -> segments.add(ContentSegment.NostrAddressableSegment(decoded.dTag, decoded.relays, decoded.author, decoded.kind))
                 null -> segments.add(ContentSegment.TextSegment(token))
@@ -935,6 +935,7 @@ fun RichContent(
                                 eventId = segment.eventId,
                                 eventRepo = eventRepo,
                                 relayHints = segment.relayHints,
+                                authorPubkey = segment.author,
                                 onNoteClick = onNoteClick,
                                 noteActions = noteActions,
                                 quoteDepth = quoteDepth
@@ -1051,6 +1052,7 @@ fun QuotedNote(
     eventId: String,
     eventRepo: EventRepository,
     relayHints: List<String> = emptyList(),
+    authorPubkey: String? = null,
     onNoteClick: ((String) -> Unit)? = null,
     noteActions: NoteActions? = null,
     quoteDepth: Int = 0
@@ -1060,11 +1062,34 @@ fun QuotedNote(
     val event = remember(eventId, version) { eventRepo.getEvent(eventId) }
     val profile = remember(event, version) { event?.let { eventRepo.getProfileData(it.pubkey) } }
 
-    // Trigger on-demand fetch if the quoted event isn't cached
-    LaunchedEffect(eventId) {
-        if (eventRepo.getEvent(eventId) == null) {
+    // A blocked author's event is never cached (dropped on ingest), so it would
+    // otherwise spin forever. Resolve the author from the nevent pointer, or —
+    // for a bare note1 — from the id we recorded when the event was dropped.
+    val mutedAuthor = remember(eventId, authorPubkey, version) {
+        (authorPubkey ?: eventRepo.blockedQuoteAuthor(eventId))
+            ?.takeIf { eventRepo.muteRepo?.isBlocked(it) == true }
+    }
+
+    // Trigger on-demand fetch if the quoted event isn't cached (skip if muted).
+    // If it still hasn't resolved after the timeout (the batch fetch waits ~15s
+    // for EOSE), give up and show an "unavailable" card rather than spinning
+    // forever — the note isn't on any relay we can reach.
+    var loadTimedOut by remember(eventId) { mutableStateOf(false) }
+    LaunchedEffect(eventId, mutedAuthor) {
+        if (mutedAuthor == null && eventRepo.getEvent(eventId) == null) {
             eventRepo.requestQuotedEvent(eventId, relayHints)
+            kotlinx.coroutines.delay(QUOTE_LOAD_TIMEOUT_MS)
+            if (eventRepo.getEvent(eventId) == null) loadTimedOut = true
         }
+    }
+
+    if (event == null && mutedAuthor != null) {
+        MutedQuotePlaceholder()
+        return
+    }
+    if (event == null && loadTimedOut) {
+        UnavailableQuotePlaceholder()
+        return
     }
 
     // Cap nesting: depth >= 1 means we're already inside a quoted note,
@@ -1341,11 +1366,26 @@ private fun QuotedAddressableNote(
     val event = remember(kind, author, dTag, version) {
         eventRepo.findAddressableEvent(kind, author, dTag)
     }
+    val isMutedAuthor = remember(author, version) { eventRepo.muteRepo?.isBlocked(author) == true }
 
-    LaunchedEffect(kind, author, dTag) {
-        if (eventRepo.findAddressableEvent(kind, author, dTag) == null) {
+    // Give up after the timeout instead of spinning forever if the addressable
+    // event can't be found on any reachable relay.
+    var loadTimedOut by remember(kind, author, dTag) { mutableStateOf(false) }
+    LaunchedEffect(kind, author, dTag, isMutedAuthor) {
+        if (!isMutedAuthor && eventRepo.findAddressableEvent(kind, author, dTag) == null) {
             eventRepo.requestAddressableEvent(kind, author, dTag, relayHints)
+            kotlinx.coroutines.delay(QUOTE_LOAD_TIMEOUT_MS)
+            if (eventRepo.findAddressableEvent(kind, author, dTag) == null) loadTimedOut = true
         }
+    }
+
+    if (isMutedAuthor) {
+        MutedQuotePlaceholder()
+        return
+    }
+    if (event == null && loadTimedOut) {
+        UnavailableQuotePlaceholder()
+        return
     }
 
     if (event != null) {
@@ -1385,6 +1425,51 @@ private fun QuotedAddressableNote(
                 )
             }
         }
+    }
+}
+
+// How long a quoted note may show the loading spinner before we conclude it
+// can't be found and show the "unavailable" card. Comfortably past the batch
+// fetch's ~15s EOSE window so we never pre-empt an in-flight fetch.
+private const val QUOTE_LOAD_TIMEOUT_MS = 18_000L
+
+/** Shown in place of a quoted note whose author the user has muted/blocked. */
+@Composable
+private fun MutedQuotePlaceholder() {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.quote_muted_user),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(14.dp)
+        )
+    }
+}
+
+/** Shown when a quoted note can't be found on any reachable relay. */
+@Composable
+private fun UnavailableQuotePlaceholder() {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.quote_unavailable),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(14.dp)
+        )
     }
 }
 
