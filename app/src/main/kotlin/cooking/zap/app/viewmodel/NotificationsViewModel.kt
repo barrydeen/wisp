@@ -274,13 +274,6 @@ class NotificationsViewModel(app: Application) : AndroidViewModel(app) {
         settingsPrefs.edit().putBoolean(PREF_CHAT_ROOMS_NOTIF_ENABLED, true).apply()
     }
 
-    fun disableAll() {
-        _enabledTypes.value = emptySet()
-        _chatRoomsEnabled.value = false
-        saveEnabledTypes(emptySet())
-        settingsPrefs.edit().putBoolean(PREF_CHAT_ROOMS_NOTIF_ENABLED, false).apply()
-    }
-
     private fun saveEnabledTypes(types: Set<NotificationFilter>) {
         settingsPrefs.edit().putStringSet(PREF_ENABLED_NOTIF_TYPES, types.map { it.name }.toSet()).apply()
     }

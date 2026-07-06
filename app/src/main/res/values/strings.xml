@@ -345,12 +345,12 @@
     <string name="filter_dms">DMs</string>
     <string name="filter_zen">Zen</string>
     <string name="notif_filtered">Filtered</string>
-    <string name="notif_filter_title">Notification Filters</string>
+    <string name="notif_filter_title">Filter notifications</string>
     <string name="notif_chat_rooms">Groups</string>
     <string name="notif_enable_all">Enable all</string>
-    <string name="notif_disable_all">Disable all</string>
     <string name="cd_mute_notifications">Mute notifications</string>
     <string name="cd_unmute_notifications">Unmute notifications</string>
+    <string name="cd_reset_notification_filters">Reset notification filters — turn all notifications back on</string>
     <string name="cd_reposted">reposted</string>
     <string name="cd_private_zap">Private zap</string>
     <string name="cd_verified">Verified</string>
