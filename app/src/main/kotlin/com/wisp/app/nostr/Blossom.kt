@@ -33,6 +33,7 @@ object Blossom {
     }
 
     fun buildServerListTags(urls: List<String>): List<List<String>> {
+        require(urls.isNotEmpty()) { "Blossom server list must contain at least one server" }
         return urls.map { listOf("server", it) }
     }
 
