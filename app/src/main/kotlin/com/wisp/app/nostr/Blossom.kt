@@ -32,6 +32,12 @@ object Blossom {
         }.distinct()
     }
 
+    /**
+     * Builds BUD-03 server tags from a non-empty list of unique already-valid server URLs.
+     * URL validation is expected to happen when URLs enter repository/viewmodel state.
+     *
+     * @throws IllegalArgumentException if [urls] is empty.
+     */
     fun buildServerListTags(urls: List<String>): List<List<String>> {
         require(urls.isNotEmpty()) { "Blossom server list must contain at least one server" }
         return urls.map { listOf("server", it) }
