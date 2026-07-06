@@ -121,6 +121,8 @@
     <string name="cd_new_conversation">New conversation</string>
     <string name="compose_reply">Reply</string>
     <string name="compose_quote">Quote</string>
+    <string name="quote_muted_user">Note from a muted user</string>
+    <string name="quote_unavailable">Note unavailable</string>
     <string name="compose_placeholder">What are you eating, cooking, or loving?</string>
     <string name="compose_draft_saved">Draft saved</string>
     <string name="compose_preview_tag">Preview</string>

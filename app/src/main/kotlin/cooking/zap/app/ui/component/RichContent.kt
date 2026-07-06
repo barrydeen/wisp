@@ -1444,7 +1444,7 @@ private fun MutedQuotePlaceholder() {
             .padding(vertical = 6.dp)
     ) {
         Text(
-            text = "Note from a muted user",
+            text = stringResource(R.string.quote_muted_user),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(14.dp)
@@ -1464,7 +1464,7 @@ private fun UnavailableQuotePlaceholder() {
             .padding(vertical = 6.dp)
     ) {
         Text(
-            text = "Note unavailable",
+            text = stringResource(R.string.quote_unavailable),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(14.dp)
