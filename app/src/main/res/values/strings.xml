@@ -67,8 +67,13 @@
     <string name="nostr_sheet_creating">Creating…</string>
 
     <!-- Google Sign-In / Drive Backup -->
-    <!-- Replace this empty string with your OAuth 2.0 Web Client ID from Google Cloud Console. -->
-    <string name="google_web_client_id" translatable="false">410412439051-mhcgeuvc2sjp75v8snucstfr5smrg03g.apps.googleusercontent.com</string>
+    <!-- OAuth 2.0 *Web application* client ID from the Zap Cooking Google Cloud
+         project (NOT an Android client ID). Sign-in also requires Android-type
+         OAuth clients registered in the SAME project for each package + signing
+         cert pair; see ZAPCOOKING_ANDROID_BUILD.md §8. The upstream Wisp value
+         that previously lived here belongs to Wisp's Cloud project and can never
+         work for cooking.zap.app. -->
+    <string name="google_web_client_id" translatable="false">1062118623407-ns3j6d3l1atdsdvfoa0vb0r40srk8630.apps.googleusercontent.com</string>
     <string name="google_auth_starting">Starting…</string>
     <string name="google_auth_signing_in">Signing in with Google…</string>
     <string name="google_auth_checking_drive">Checking your Google Drive backup…</string>

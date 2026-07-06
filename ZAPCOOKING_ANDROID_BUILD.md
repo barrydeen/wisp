@@ -665,3 +665,65 @@ One concern per PR; investigate before coding; surgical diffs. New NIPs
 are standalone `nostr/NipXX.kt` objects. Network off-main-thread;
 `StateFlow` for UI, `SharedFlow` for relay events. Any backend-contract
 change lands here before the PR merges. Keep this doc current.
+
+---
+
+## 8. Google Sign-In / Drive backup OAuth (Concern: fork identity)
+
+Upstream Wisp's Google sign-in code is untouched in this fork
+(`GoogleSignInManager`, `GoogleAuthViewModel`, `BackupCrypto`,
+`DriveBackupService` all diff clean vs upstream except package renames).
+What broke at fork time was **identity, not code**: the fork inherited
+Wisp's `google_web_client_id`, but Google validates the *calling app*
+(package name + signing-cert SHA-1) against the Cloud project that owns
+that client ID. Wisp's project only knows `com.wisp.app` + Barry's cert,
+so every `credentialManager.getCredential()` on this fork failed with
+`GetCredentialException` ("cancelled or unavailable").
+
+### Cloud project (owned by Zap Cooking, console.cloud.google.com)
+- Drive API enabled.
+- OAuth consent screen: External, published to **Production**, scope
+  `https://www.googleapis.com/auth/drive.appdata` (non-sensitive, no
+  verification review).
+- **Web application** client → its ID is the value of
+  `google_web_client_id` in `app/src/main/res/values/strings.xml`.
+  This is the only ID referenced in code.
+- **Android** clients (never referenced in code; their existence is what
+  authorizes the calling app):
+
+  | package | signed by | serves |
+  |---|---|---|
+  | `cooking.zap.app.debug` | Android debug keystore | local dev |
+  | `cooking.zap.app` | release keystore (below) | Zapstore + sideload |
+  | `cooking.zap.app` | Play App Signing cert | Play (register from Play Console → App signing when we next ship there; deferred, nothing depends on it) |
+
+- The web frontend shares this project (same Web client, plus
+  authorized JS origins). `drive.appdata` storage is scoped **per
+  project**, so Android and web see the same backup files — required
+  for cross-platform nsec restore. Web implementation must mirror
+  Android's `sub`-claim identity + `BackupCrypto` derivation exactly.
+
+### Release keystore (Zapstore identity — irreplaceable)
+- Canonical file: `~/.zapcooking-keys/zap-cooking-release.jks`.
+  (Older duplicate copies exist in `ZapCooking-mobile/android/` and
+  `Desktop/Zap Cooking/android/`; the canonical SHA-1 was verified
+  against the shipped Zapstore 1.2.0 APK via
+  `keytool -printcert -jarfile`.)
+- **Back this file up off-machine.** Unlike Play there is no
+  Google-held key: losing it permanently orphans the Zapstore listing.
+- Signing is currently Android Studio wizard-based (no `signingConfigs`
+  in Gradle) — future concern: gitignored `keystore.properties` config.
+
+### Contributor note
+Google sign-in only works for builds signed by a cert registered in the
+Cloud project. A fresh clone + your own debug keystore ⇒ sign-in fails
+by design; everything else in the app works. Either request your debug
+SHA-1 be added (`keytool -list -v -keystore ~/.android/debug.keystore
+-alias androiddebugkey -storepass android | grep SHA1`) or skip
+Google-backup flows locally.
+
+### Verifying a signing mismatch (symptom → cause)
+Sign-in fails only on one build type ⇒ almost always SHA-1/package
+mismatch. Ground truth for what actually signed an APK:
+`keytool -printcert -jarfile <apk>`. Newly created Android clients can
+take ~10 min to propagate — wait before debugging.
