@@ -1,8 +1,8 @@
 package com.wisp.app.nostr
 
-import android.util.Base64
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.security.MessageDigest
+import java.util.Base64
 
 object Blossom {
     const val KIND_SERVER_LIST = 10063
@@ -78,7 +78,7 @@ object Blossom {
 
     private fun encodeAuthHeader(event: NostrEvent): String {
         val json = event.toJson()
-        val base64 = Base64.encodeToString(json.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val base64 = Base64.getEncoder().encodeToString(json.toByteArray())
         return "Nostr $base64"
     }
 }
