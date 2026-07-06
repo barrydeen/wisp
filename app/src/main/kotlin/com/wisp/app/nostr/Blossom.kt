@@ -26,8 +26,7 @@ object Blossom {
             if (tag.size >= 2 && tag[0] == "server") {
                 val url = tag[1].toHttpUrlOrNull()
                 url?.toString()
-            }
-            else {
+            } else {
                 null
             }
         }.distinct()
