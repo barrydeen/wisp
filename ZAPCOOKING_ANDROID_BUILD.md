@@ -718,9 +718,8 @@ so every `credentialManager.getCredential()` on this fork failed with
 Google sign-in only works for builds signed by a cert registered in the
 Cloud project. A fresh clone + your own debug keystore ⇒ sign-in fails
 by design; everything else in the app works. Either request your debug
-SHA-1 be added (`keytool -list -v -keystore ~/.android/debug.keystore
--alias androiddebugkey -storepass android | grep SHA1`) or skip
-Google-backup flows locally.
+SHA-1 be added (run `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android | grep SHA1`)
+or skip Google-backup flows locally.
 
 ### Verifying a signing mismatch (symptom → cause)
 Sign-in fails only on one build type ⇒ almost always SHA-1/package
