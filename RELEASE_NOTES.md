@@ -1,6 +1,17 @@
 
 # Changelog
 
+## [1.2.1]
+
+### Google Sign-In & Backup Fix
+
+* Fixed Google sign-in for Zap Cooking Android.
+* Restored Google Drive backup support for keys and app data.
+* Moved Android OAuth configuration from the inherited Wisp project to Zap Cooking’s own Google Cloud project.
+* Registered the Zap Cooking release signing certificate with Google so sign-in works with the published Android app.
+* Added build documentation to help prevent future Google OAuth or signing-certificate mismatches.
+
+
 ## [1.2.0]
 
 ### What’s New
