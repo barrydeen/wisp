@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -754,7 +755,10 @@ fun FeedScreen(
                                 }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background
+                        // Semi-transparent so the top of the scrolling feed shows
+                        // through as it passes underneath (see contentPadding change
+                        // on the main LazyColumn below).
+                        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
                     ),
                     navigationIcon = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -839,10 +843,19 @@ fun FeedScreen(
                 }
             }
         ) { padding ->
+            // RELAY/TRENDING show a fixed, opaque header bar right below the top
+            // app bar — for those, keep the usual layout offset. Otherwise, skip
+            // the top offset here and let the feed list's own contentPadding push
+            // its first item down instead, so scrolled content passes behind the
+            // (semi-transparent) top bar rather than stopping short of it.
+            val hasFixedHeaderBar = feedType == FeedType.RELAY || feedType == FeedType.TRENDING
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
+                    .padding(
+                        top = if (hasFixedHeaderBar) padding.calculateTopPadding() else 0.dp,
+                        bottom = padding.calculateBottomPadding()
+                    )
             ) {
             // Relay feed header bar
             if (feedType == FeedType.RELAY && selectedRelay != null) {
@@ -1005,7 +1018,10 @@ fun FeedScreen(
                     ) {
                         LazyColumn(
                             state = listState,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                top = if (hasFixedHeaderBar) 0.dp else padding.calculateTopPadding()
+                            )
                         ) {
                             if (liveNowStreams.isNotEmpty() && onLiveStreamClick != null && !viewModel.interfacePrefs.isLiveStreamsHidden()) {
                                 item(key = "live-now", contentType = "live-now") {

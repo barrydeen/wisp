@@ -520,7 +520,9 @@ fun UserProfileScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    // Semi-transparent so the top of the scrolling profile content
+                    // (banner/notes) shows through as it passes underneath.
+                    containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
                 )
             )
         }
@@ -564,9 +566,14 @@ fun UserProfileScreen(
 
         LazyColumn(
             state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
+            modifier = Modifier.fillMaxSize(),
+            // Top inset lives in contentPadding rather than a layout offset, so
+            // scrolled content passes behind the (semi-transparent) top bar
+            // instead of stopping short of it.
+            contentPadding = PaddingValues(
+                top = padding.calculateTopPadding(),
+                bottom = padding.calculateBottomPadding()
+            )
         ) {
             val showSort = selectedTabId == 0 || selectedTabId == 1
             val currentSortMode = if (selectedTabId == 0) notesSortMode else repliesSortMode
