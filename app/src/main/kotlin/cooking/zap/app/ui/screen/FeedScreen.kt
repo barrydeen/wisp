@@ -129,10 +129,10 @@ import cooking.zap.app.ui.theme.WispThemeColors
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Dashboard
-import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.HowToVote
-import androidx.compose.material.icons.outlined.Photo
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Hub
@@ -775,11 +775,14 @@ fun FeedScreen(
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 val (icon, tint) = when (contentFilter) {
-                                    // GridView = 2x2 of equal squares (matches iOS).
-                                    // Dashboard was 1 large + 3 small panels.
-                                    FeedContentFilter.ALL -> Icons.Outlined.GridView to MaterialTheme.colorScheme.onSurfaceVariant
+                                    // Apps = 3x3 dot grid — reads as "everything" and stands
+                                    // apart from the more literal Article/PhotoLibrary/HowToVote
+                                    // glyphs, plus the nearby Gadgets icon's rectangular shape.
+                                    FeedContentFilter.ALL -> Icons.Outlined.Apps to MaterialTheme.colorScheme.onSurfaceVariant
                                     FeedContentFilter.TEXT_ONLY -> Icons.AutoMirrored.Outlined.Article to MaterialTheme.colorScheme.primary
-                                    FeedContentFilter.GALLERY_ONLY -> Icons.Outlined.Photo to MaterialTheme.colorScheme.primary
+                                    // PhotoLibrary (stacked photos) reads as "gallery" more
+                                    // clearly than a single Photo glyph.
+                                    FeedContentFilter.GALLERY_ONLY -> Icons.Outlined.PhotoLibrary to MaterialTheme.colorScheme.primary
                                     FeedContentFilter.POLLS_ONLY -> Icons.Outlined.HowToVote to MaterialTheme.colorScheme.primary
                                 }
                                 Icon(icon, contentDescription = "Filter: ${contentFilter.name}", tint = tint, modifier = Modifier.size(22.dp))
