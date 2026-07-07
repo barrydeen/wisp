@@ -26,7 +26,7 @@ import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Restaurant
 import androidx.compose.foundation.layout.Box
-import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.DateRange
@@ -48,6 +48,7 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Flag
+import androidx.compose.material.icons.outlined.FrontHand
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Tune
@@ -522,7 +523,11 @@ fun WispDrawerContent(
             icon = {
                 Icon(
                     painter = painterResource(R.drawable.ic_kitchen_gadgets),
-                    contentDescription = null
+                    contentDescription = null,
+                    // The glyph fills its 24dp viewport edge-to-edge (no built-in
+                    // keyline padding like Material's icons), so it reads larger
+                    // than its neighbors at the same nominal size — scale down to match.
+                    modifier = Modifier.size(20.dp)
                 )
             },
             label = { Text(stringResource(R.string.drawer_gadgets)) },
@@ -589,7 +594,7 @@ fun WispDrawerContent(
                     modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
-                    icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
+                    icon = { Icon(Icons.Outlined.Dns, contentDescription = null) },
                     label = { Text(stringResource(R.string.drawer_relays)) },
                     selected = false,
                     onClick = onRelaySettings,
@@ -604,7 +609,7 @@ fun WispDrawerContent(
                     modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
                 NavigationDrawerItem(
-                    icon = { Icon(Icons.Outlined.Block, contentDescription = null) },
+                    icon = { Icon(Icons.Outlined.FrontHand, contentDescription = null) },
                     label = { Text(stringResource(R.string.drawer_safety)) },
                     selected = false,
                     onClick = onSafety,
