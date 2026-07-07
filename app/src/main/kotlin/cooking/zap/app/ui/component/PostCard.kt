@@ -51,6 +51,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -994,13 +995,26 @@ private fun PollSection(
         } else {
             // Voting mode
             if (pollType == Nip88.PollType.SINGLECHOICE) {
+                // Stage the pick and require a confirming tap on "Vote", same as
+                // multiple-choice below — tapping an option used to cast the vote
+                // immediately, with no way to change your mind first.
+                var pendingSelection by remember { mutableStateOf<String?>(null) }
                 options.forEach { option ->
                     PollOptionRow(
                         label = option.label,
-                        selected = false,
+                        selected = option.id == pendingSelection,
                         isRadio = true,
-                        onClick = { onVote(listOf(option.id)) }
+                        onClick = { pendingSelection = option.id }
                     )
+                }
+                if (pendingSelection != null) {
+                    Button(
+                        onClick = { onVote(listOf(pendingSelection!!)) },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Text(stringResource(R.string.btn_vote))
+                    }
                 }
             } else {
                 // Multiplechoice — track local selection and submit
@@ -1017,8 +1031,10 @@ private fun PollSection(
                     )
                 }
                 if (selected.isNotEmpty()) {
-                    TextButton(
-                        onClick = { onVote(selected.toList()) }
+                    Button(
+                        onClick = { onVote(selected.toList()) },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.padding(top = 4.dp)
                     ) {
                         Text(stringResource(R.string.btn_vote))
                     }
