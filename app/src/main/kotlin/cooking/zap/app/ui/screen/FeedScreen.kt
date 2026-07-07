@@ -131,7 +131,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Dashboard
-import androidx.compose.material.icons.outlined.HowToVote
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -783,7 +783,7 @@ fun FeedScreen(
                                     // PhotoLibrary (stacked photos) reads as "gallery" more
                                     // clearly than a single Photo glyph.
                                     FeedContentFilter.GALLERY_ONLY -> Icons.Outlined.PhotoLibrary to MaterialTheme.colorScheme.primary
-                                    FeedContentFilter.POLLS_ONLY -> Icons.Outlined.HowToVote to MaterialTheme.colorScheme.primary
+                                    FeedContentFilter.POLLS_ONLY -> Icons.Outlined.CheckCircle to MaterialTheme.colorScheme.primary
                                 }
                                 Icon(icon, contentDescription = "Filter: ${contentFilter.name}", tint = tint, modifier = Modifier.size(22.dp))
                             }
