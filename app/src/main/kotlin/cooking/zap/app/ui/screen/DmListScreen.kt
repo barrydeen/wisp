@@ -94,12 +94,12 @@ fun DmListScreen(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background
+                        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
                     )
                 )
                 TabRow(
                     selectedTabIndex = selectedTab,
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
                 ) {
                     Tab(
                         selected = selectedTab == 0,

@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -346,7 +347,10 @@ fun NotificationsScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    // Semi-transparent so the top of the scrolling list shows
+                    // through as it passes underneath (see contentPadding change
+                    // on the LazyColumn below).
+                    containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
                 )
             )
         }
@@ -356,12 +360,13 @@ fun NotificationsScreen(
             onRefresh = { viewModel.refresh(onRefresh) },
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(bottom = padding.calculateBottomPadding())
         ) {
         if (notifications.isEmpty()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .padding(top = padding.calculateTopPadding())
                     .padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -375,7 +380,10 @@ fun NotificationsScreen(
         } else {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                // Top inset lives in contentPadding rather than a layout offset, so
+                // scrolled content passes behind the (semi-transparent) top bar.
+                contentPadding = PaddingValues(top = padding.calculateTopPadding())
             ) {
                 item(key = "summary_24h", contentType = "summary") {
                     DailySummaryBar(

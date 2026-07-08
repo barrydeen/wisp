@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.clickable
@@ -123,6 +124,7 @@ import cooking.zap.app.viewmodel.TrendingTimeframe
 import cooking.zap.app.viewmodel.buildTrendingRelayUrl
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -614,6 +616,17 @@ fun FeedScreen(
         Scaffold(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
+                // The transparent background needs to paint the status-bar strip
+                // too, not just the 48dp bar below it — otherwise the bar's own
+                // windowInsetsPadding carves out an opaque gap above it and the
+                // translucency stops short of the top of the screen. Paint it on
+                // this outer Box (sized to bar + status-bar inset) and make the
+                // bar itself fully transparent so there's only one alpha layer.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.background.copy(alpha = 0.85f))
+                ) {
                 CenterAlignedTopAppBar(
                     // Compact: reserve the status-bar inset via
                     // `windowInsetsPadding` (layout-time, no first-frame
@@ -755,10 +768,9 @@ fun FeedScreen(
                                 }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        // Semi-transparent so the top of the scrolling feed shows
-                        // through as it passes underneath (see contentPadding change
-                        // on the main LazyColumn below).
-                        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
+                        // Transparent — the translucent color lives on the wrapping
+                        // Box above so the status-bar strip shares the same layer.
+                        containerColor = Color.Transparent
                     ),
                     navigationIcon = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -823,6 +835,7 @@ fun FeedScreen(
                         )
                     }
                 )
+                }
             },
             floatingActionButton = {
                 if (onCompose != null) {
