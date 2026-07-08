@@ -30,6 +30,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.outlined.AlternateEmail
@@ -53,8 +54,12 @@ import cooking.zap.app.ui.component.EmojiShortcodePopup
 import cooking.zap.app.ui.component.detectEmojiAutocomplete
 import cooking.zap.app.ui.component.insertEmojiShortcode
 import cooking.zap.app.ui.component.LightningAnimation
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -80,6 +85,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
@@ -329,6 +335,18 @@ fun NotificationsScreen(
                 },
                 actions = {
                     val allEnabled = enabledTypes.size == NotificationFilter.entries.size && chatRoomsEnabled
+                    // Quick reset for when a user has silenced some notification types and can't
+                    // figure out why they're missing others. Always present (rather than
+                    // appearing/disappearing) so it's easy to find; just dims when there's
+                    // nothing to reset.
+                    IconButton(onClick = { viewModel.enableAll() }, enabled = !allEnabled) {
+                        Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = stringResource(R.string.cd_reset_notification_filters),
+                            tint = if (allEnabled) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                   else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     IconButton(onClick = { showFilterSheet = true }) {
                         Icon(
                             Icons.Outlined.Tune,
@@ -461,7 +479,6 @@ fun NotificationsScreen(
             onToggleType = { viewModel.toggleType(it) },
             onToggleChatRooms = { viewModel.toggleChatRooms() },
             onEnableAll = { viewModel.enableAll() },
-            onDisableAll = { viewModel.disableAll() },
             onDismiss = { showFilterSheet = false }
         )
     }
@@ -479,6 +496,53 @@ private fun NotificationFilter.icon(): androidx.compose.ui.graphics.vector.Image
     NotificationFilter.DMS -> Icons.Outlined.MailOutline
 }
 
+/** Reaction hearts get a dedicated red rather than sharing the app's orange accent — mirrors iOS. */
+private val ReactionRed = Color(0xFFEF4444)
+
+/**
+ * Per-filter accent when enabled — reactions/zaps/reposts get a distinct semantic
+ * color (matching iOS) so the list scans faster; everything else shares the app's
+ * primary accent, same as before.
+ */
+@Composable
+private fun NotificationFilter.accentColor(): Color = when (this) {
+    NotificationFilter.REACTIONS -> ReactionRed
+    NotificationFilter.ZAPS -> WispThemeColors.zapColor
+    NotificationFilter.REPOSTS -> WispThemeColors.repostColor
+    else -> MaterialTheme.colorScheme.primary
+}
+
+@Composable
+private fun FilterToggleRow(
+    icon: @Composable () -> Unit,
+    label: String,
+    enabled: Boolean,
+    onToggle: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        icon()
+        Spacer(Modifier.width(14.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (enabled) MaterialTheme.colorScheme.onSurface
+                   else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.weight(1f))
+        androidx.compose.material3.Switch(
+            checked = enabled,
+            onCheckedChange = { onToggle() },
+            colors = wispSwitchColors()
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NotificationFilterSheet(
@@ -487,114 +551,100 @@ private fun NotificationFilterSheet(
     onToggleType: (NotificationFilter) -> Unit,
     onToggleChatRooms: () -> Unit,
     onEnableAll: () -> Unit,
-    onDisableAll: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    androidx.compose.material3.ModalBottomSheet(
+    val allEnabled = enabledTypes.size == NotificationFilter.entries.size && chatRoomsEnabled
+    // Open fully expanded — this sheet has no useful partially-expanded state,
+    // so forcing a manual drag to see the rest of the list was just friction.
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface
     ) {
-        Column(modifier = Modifier.padding(bottom = 32.dp)) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp)
+        ) {
             Text(
                 stringResource(R.string.notif_filter_title),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
             )
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                color = MaterialTheme.colorScheme.outlineVariant
-            )
+            Spacer(Modifier.height(8.dp))
 
-            NotificationFilter.entries.forEach { filter ->
-                val enabled = filter in enabledTypes
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onToggleType(filter) }
-                        .padding(horizontal = 24.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val iconTint = if (enabled) MaterialTheme.colorScheme.primary
-                                   else MaterialTheme.colorScheme.outline
-                    if (filter == NotificationFilter.ZAPS) {
+            Button(
+                onClick = onEnableAll,
+                enabled = !allEnabled,
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp)
+            ) {
+                Text(stringResource(R.string.notif_enable_all))
+            }
+            Spacer(Modifier.height(10.dp))
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            ) {
+                Column {
+                    NotificationFilter.entries.forEachIndexed { index, filter ->
+                        val enabled = filter in enabledTypes
+                        val iconTint = if (enabled) filter.accentColor() else MaterialTheme.colorScheme.outline
+                        FilterToggleRow(
+                            icon = {
+                                if (filter == NotificationFilter.ZAPS) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_bolt),
+                                        contentDescription = null,
+                                        tint = iconTint,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                } else {
+                                    Icon(filter.icon(), contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
+                                }
+                            },
+                            label = stringResource(filter.labelResId),
+                            enabled = enabled,
+                            onToggle = { onToggleType(filter) }
+                        )
+                        if (index < NotificationFilter.entries.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 52.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            ) {
+                FilterToggleRow(
+                    icon = {
                         Icon(
-                            painter = painterResource(R.drawable.ic_bolt),
+                            Icons.Outlined.Forum,
                             contentDescription = null,
-                            tint = iconTint,
+                            tint = if (chatRoomsEnabled) MaterialTheme.colorScheme.primary
+                                   else MaterialTheme.colorScheme.outline,
                             modifier = Modifier.size(22.dp)
                         )
-                    } else {
-                        Icon(filter.icon(), contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    Text(
-                        stringResource(filter.labelResId),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (enabled) MaterialTheme.colorScheme.onSurface
-                               else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.weight(1f))
-                    androidx.compose.material3.Switch(
-                        checked = enabled,
-                        onCheckedChange = { onToggleType(filter) },
-                        colors = wispSwitchColors()
-                    )
-                }
-            }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                color = MaterialTheme.colorScheme.outlineVariant
-            )
-
-            // Chat rooms toggle
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onToggleChatRooms() }
-                    .padding(horizontal = 24.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Outlined.Forum,
-                    contentDescription = null,
-                    tint = if (chatRoomsEnabled) MaterialTheme.colorScheme.primary
-                           else MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.size(22.dp)
+                    },
+                    label = stringResource(R.string.notif_chat_rooms),
+                    enabled = chatRoomsEnabled,
+                    onToggle = onToggleChatRooms
                 )
-                Spacer(Modifier.width(14.dp))
-                Text(
-                    stringResource(R.string.notif_chat_rooms),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (chatRoomsEnabled) MaterialTheme.colorScheme.onSurface
-                           else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.weight(1f))
-                androidx.compose.material3.Switch(
-                    checked = chatRoomsEnabled,
-                    onCheckedChange = { onToggleChatRooms() },
-                    colors = wispSwitchColors()
-                )
-            }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                color = MaterialTheme.colorScheme.outlineVariant
-            )
-
-            // Enable All / Disable All
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                TextButton(onClick = onEnableAll) {
-                    Text(stringResource(R.string.notif_enable_all))
-                }
-                TextButton(onClick = onDisableAll) {
-                    Text(stringResource(R.string.notif_disable_all))
-                }
             }
         }
     }
