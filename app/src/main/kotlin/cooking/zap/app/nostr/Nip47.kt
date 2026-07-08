@@ -3,6 +3,7 @@ package cooking.zap.app.nostr
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -237,13 +238,18 @@ object Nip47 {
                 balanceMsats = result["balance"]?.jsonPrimitive?.long ?: 0
             )
             "get_info" -> NwcResponse.NodeInfo(
-                alias = result["alias"]?.jsonPrimitive?.content,
-                color = result["color"]?.jsonPrimitive?.content,
-                pubkey = result["pubkey"]?.jsonPrimitive?.content,
-                network = result["network"]?.jsonPrimitive?.content,
+                // contentOrNull, not content — a JsonPrimitive backed by an
+                // explicit JSON `null` still satisfies jsonPrimitive (JsonNull is
+                // a JsonPrimitive), and .content on it returns the literal string
+                // "null" rather than Kotlin null. Several wallets emit explicit
+                // nulls for unset fields, which was leaking as visible "null" text.
+                alias = result["alias"]?.jsonPrimitive?.contentOrNull,
+                color = result["color"]?.jsonPrimitive?.contentOrNull,
+                pubkey = result["pubkey"]?.jsonPrimitive?.contentOrNull,
+                network = result["network"]?.jsonPrimitive?.contentOrNull,
                 blockHeight = result["block_height"]?.jsonPrimitive?.longOrNull,
                 methods = result["methods"]?.jsonArray?.mapNotNull {
-                    it.jsonPrimitive.content
+                    it.jsonPrimitive.contentOrNull
                 } ?: emptyList()
             )
             "pay_invoice" -> NwcResponse.PayInvoiceResult(
