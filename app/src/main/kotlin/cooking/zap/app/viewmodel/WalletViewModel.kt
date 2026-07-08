@@ -369,6 +369,9 @@ class WalletViewModel(
     private var statusCollectJob: Job? = null
     private var connectionMonitorJob: Job? = null
     private var syncPollJob: Job? = null
+    private var searchRelayBackupJob: Job? = null
+    private var relayBackupStatusJob: Job? = null
+    private var nwcRestoreJob: Job? = null
     private val httpClient get() = cooking.zap.app.relay.HttpClientFactory.createRelayClient()
 
     init {
@@ -530,8 +533,12 @@ class WalletViewModel(
 
     private fun autoCheckNwcBackup() {
         val signer = buildSigner() ?: return
+        // Cancel any check still in flight from a previous visit to this screen —
+        // otherwise two overlapping checks both write to _nwcRestoreState and
+        // whichever happens to finish last wins, even if it's the stale one.
+        nwcRestoreJob?.cancel()
         _nwcRestoreState.value = NwcRestoreState.Checking
-        viewModelScope.launch {
+        nwcRestoreJob = viewModelScope.launch {
             try {
                 relayPool.ensureWriteRelaysConnected()
                 val pubkey = signer.pubkeyHex
@@ -1775,8 +1782,12 @@ class WalletViewModel(
             return
         }
 
+        // Cancel any search still in flight — otherwise two overlapping
+        // searches both write to _restoreFromRelayStatus and whichever
+        // happens to finish last wins, even if it's the stale one.
+        searchRelayBackupJob?.cancel()
         _restoreFromRelayStatus.value = RestoreFromRelayStatus.Searching
-        viewModelScope.launch {
+        searchRelayBackupJob = viewModelScope.launch {
             try {
                 val t0 = System.currentTimeMillis()
                 relayPool.ensureWriteRelaysConnected()
@@ -1812,24 +1823,32 @@ class WalletViewModel(
                         }
                     }
                 }
-                yield() // ensure collectors are subscribed before sending REQ
-                val allCount = relayPool.getRelayUrls().size
-                val minEose = (allCount * 2 + 2) / 3 // 2/3 majority
-                relayPool.sendToAll(ClientMessage.req(subId, filter))
-                Log.d("WalletBackup", "search: REQ sent to $allCount relays (need $minEose EOSE) +${System.currentTimeMillis() - tConn}ms")
+                val tEose: Long
+                try {
+                    yield() // ensure collectors are subscribed before sending REQ
+                    val allCount = relayPool.getRelayUrls().size
+                    val minEose = (allCount * 2 + 2) / 3 // 2/3 majority
+                    relayPool.sendToAll(ClientMessage.req(subId, filter))
+                    Log.d("WalletBackup", "search: REQ sent to $allCount relays (need $minEose EOSE) +${System.currentTimeMillis() - tConn}ms")
 
-                // Wait for 2/3 of relays, or early-exit if backup found + majority
-                withTimeoutOrNull(10_000) {
-                    while (eoseCount < allCount) {
-                        delay(200)
-                        if (eoseCount >= minEose && (foundSparkBackup || eoseCount >= allCount - 2)) break
+                    // Wait for 2/3 of relays, or early-exit if backup found + majority
+                    withTimeoutOrNull(10_000) {
+                        while (eoseCount < allCount) {
+                            delay(200)
+                            if (eoseCount >= minEose && (foundSparkBackup || eoseCount >= allCount - 2)) break
+                        }
                     }
+                    tEose = System.currentTimeMillis()
+                    Log.d("WalletBackup", "search: EOSE wait done $eoseCount/$allCount events=${events.size} (deduped) took ${tEose - tConn}ms (total ${tEose - t0}ms)")
+                } finally {
+                    // Always clean up, even if this coroutine is cancelled (a
+                    // newer search superseding it) or an exception is thrown —
+                    // otherwise the collectors leak for the rest of the app's
+                    // lifetime and the subscription is never closed.
+                    collectJob.cancel()
+                    eoseJob.cancel()
+                    relayPool.closeOnAllRelays(subId)
                 }
-                val tEose = System.currentTimeMillis()
-                Log.d("WalletBackup", "search: EOSE wait done $eoseCount/$allCount events=${events.size} (deduped) took ${tEose - tConn}ms (total ${tEose - t0}ms)")
-                collectJob.cancel()
-                eoseJob.cancel()
-                relayPool.closeOnAllRelays(subId)
 
                 // Filter to spark-wallet-backup events only, group by d-tag (keep newest per wallet)
                 val sparkEvents = events.filter { event ->
@@ -1923,8 +1942,12 @@ class WalletViewModel(
         val mnemonic = sparkRepo.getMnemonic() ?: return
         val pubkey = keyRepo.getPubkeyHex() ?: return
 
+        // Cancel any check still in flight — otherwise two overlapping checks
+        // both write to _relayBackupStatuses and whichever happens to finish
+        // last wins, even if it's the stale one.
+        relayBackupStatusJob?.cancel()
         _relayBackupCheckLoading.value = true
-        viewModelScope.launch {
+        relayBackupStatusJob = viewModelScope.launch {
             try {
                 val t0 = System.currentTimeMillis()
                 relayPool.ensureWriteRelaysConnected()
@@ -1933,7 +1956,10 @@ class WalletViewModel(
                 val relayUrls = relayPool.getRelayUrls()
                 val filter = Nip78.backupFilterForDTag(pubkey, mnemonic)
                 val ts = System.currentTimeMillis()
-                val subId = "relay-status-$ts"
+                // "relay-backup" prefix matches SubscriptionTracker's priority
+                // list so repeated checks are never silently dropped by the
+                // per-relay subscription soft cap.
+                val subId = "relay-backup-status-$ts"
 
                 // Track which relays returned a valid backup
                 val relaysWithBackup = mutableSetOf<String>()
@@ -1959,22 +1985,27 @@ class WalletViewModel(
                         }
                     }
                 }
-                yield() // ensure both collectors are subscribed before sending REQ
+                try {
+                    yield() // ensure both collectors are subscribed before sending REQ
 
-                relayPool.sendToAll(ClientMessage.req(subId, filter))
-                Log.d("WalletBackup", "statusCheck: REQ sent to $relayCount relays (need $minEose EOSE)")
+                    relayPool.sendToAll(ClientMessage.req(subId, filter))
+                    Log.d("WalletBackup", "statusCheck: REQ sent to $relayCount relays (need $minEose EOSE)")
 
-                // Wait until 2/3 of relays respond or timeout
-                withTimeoutOrNull(8_000) {
-                    while (eoseCount < relayCount) {
-                        delay(200)
-                        if (eoseCount >= minEose) break
+                    // Wait until 2/3 of relays respond or timeout
+                    withTimeoutOrNull(8_000) {
+                        while (eoseCount < relayCount) {
+                            delay(200)
+                            if (eoseCount >= minEose) break
+                        }
                     }
+                    Log.d("WalletBackup", "statusCheck: done EOSE=$eoseCount/$relayCount backupOn=${relaysWithBackup.size} relays (total ${System.currentTimeMillis() - t0}ms)")
+                } finally {
+                    // Always clean up, even if this coroutine is cancelled (a
+                    // newer check superseding it) or an exception is thrown.
+                    collectJob.cancel()
+                    eoseJob.cancel()
+                    relayPool.closeOnAllRelays(subId)
                 }
-                Log.d("WalletBackup", "statusCheck: done EOSE=$eoseCount/$relayCount backupOn=${relaysWithBackup.size} relays (total ${System.currentTimeMillis() - t0}ms)")
-                collectJob.cancel()
-                eoseJob.cancel()
-                relayPool.closeOnAllRelays(subId)
 
                 val statuses = relayUrls.map { url ->
                     RelayBackupInfo(relayUrl = url, hasBackup = url in relaysWithBackup)
@@ -1985,8 +2016,9 @@ class WalletViewModel(
                 _backupMissing.value = eoseCount >= minResponses && statuses.none { it.hasBackup }
             } catch (_: Exception) {
                 // Keep existing statuses on error
+            } finally {
+                _relayBackupCheckLoading.value = false
             }
-            _relayBackupCheckLoading.value = false
         }
     }
 
