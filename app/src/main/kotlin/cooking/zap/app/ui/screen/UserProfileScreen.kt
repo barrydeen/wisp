@@ -78,6 +78,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -88,7 +89,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -564,6 +568,30 @@ fun UserProfileScreen(
             }
         }
 
+        // The tab row used to be a LazyColumn stickyHeader, but stickyHeader pins
+        // flush to the LazyColumn's own top edge — which is now behind the
+        // translucent top bar (contentPadding, not a layout offset, reserves that
+        // space so scrolled content can show through it). That made the tab row
+        // scroll up and disappear behind the bar instead of locking below it.
+        //
+        // Fixed with a continuously-tracked overlay instead of a discrete
+        // show/hide swap (which double-rendered and popped): the overlay always
+        // renders at max(barHeight, tabRow'sNaturalScrollPosition), so it slides
+        // up smoothly with the list and then holds the instant it reaches the
+        // bar — matching a native sticky header's feel. The in-flow copy is
+        // permanently invisible, kept only to reserve scroll layout space.
+        val density = LocalDensity.current
+        val topBarHeightPx = with(density) { padding.calculateTopPadding().toPx() }.toInt()
+        val pinnedTabRowOffsetPx by remember {
+            derivedStateOf {
+                val naturalOffset = listState.layoutInfo.visibleItemsInfo
+                    .find { it.key == "tab_row" }?.offset
+                    ?: Int.MIN_VALUE / 2 // not currently visible == scrolled well past, so clamp to pinned
+                naturalOffset.coerceAtLeast(topBarHeightPx)
+            }
+        }
+
+        Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -651,74 +679,16 @@ fun UserProfileScreen(
                 )
             }
 
-            stickyHeader {
-                // Tab strip uses `background` (true near-black) instead of
-                // `surface` so the chrome reads as part of the body and
-                // doesn't stack two distinct grey tiers — matches iOS.
-                val surfaceColor = MaterialTheme.colorScheme.background
-                Column {
-                    Box(
-                        modifier = Modifier.background(surfaceColor).drawWithContent {
-                            drawContent()
-                            drawRect(
-                                brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                    colors = listOf(
-                                        surfaceColor.copy(alpha = 0f),
-                                        surfaceColor
-                                    ),
-                                    startX = size.width - 48.dp.toPx(),
-                                    endX = size.width
-                                )
-                            )
-                        }
-                    ) {
-                        ScrollableTabRow(
-                            selectedTabIndex = selectedTab,
-                            containerColor = surfaceColor,
-                            edgePadding = 0.dp,
-                            divider = {},
-                            indicator = { tabPositions ->
-                                if (selectedTab < tabPositions.size) {
-                                    val pos = tabPositions[selectedTab]
-                                    Box(modifier = Modifier.fillMaxSize()) {
-                                        Box(
-                                            modifier = Modifier
-                                                .align(Alignment.BottomStart)
-                                                .offset(x = pos.left + 6.dp)
-                                                .width(pos.width - 12.dp)
-                                                .height(2.dp)
-                                                .background(
-                                                    MaterialTheme.colorScheme.primary,
-                                                    RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp)
-                                                )
-                                        )
-                                    }
-                                }
-                            }
-                        ) {
-                            profileTabs.forEachIndexed { index, (_, title) ->
-                                val selected = selectedTab == index
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        // 28dp (was 34) — matches iOS tighter
-                                        // tab row over the profile header.
-                                        .height(28.dp)
-                                        .clickable { selectedTab = index }
-                                        .padding(horizontal = 10.dp)
-                                ) {
-                                    Text(
-                                        text = title,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = if (selected) MaterialTheme.colorScheme.primary
-                                                else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                }
+            item(key = "tab_row") {
+                // Permanently invisible — the overlay below is the only visible
+                // copy. This one exists purely so the list reserves the right
+                // amount of scroll space for it.
+                ProfileTabRow(
+                    profileTabs = profileTabs,
+                    selectedTab = selectedTab,
+                    onSelect = { selectedTab = it },
+                    modifier = Modifier.alpha(0f)
+                )
             }
 
             when (selectedTabId) {
@@ -1262,6 +1232,96 @@ fun UserProfileScreen(
                 }
             }
         }
+
+            // The one visible copy of the tab row — always rendered, positioned
+            // every frame at max(barHeight, naturalScrollPosition) so it slides
+            // with the list and then holds flush under the bar once it gets there.
+            Box(
+                modifier = Modifier.offset { IntOffset(0, pinnedTabRowOffsetPx) }
+            ) {
+                ProfileTabRow(
+                    profileTabs = profileTabs,
+                    selectedTab = selectedTab,
+                    onSelect = { selectedTab = it }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileTabRow(
+    profileTabs: List<Pair<Int, String>>,
+    selectedTab: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // Tab strip uses `background` (true near-black) instead of `surface` so the
+    // chrome reads as part of the body and doesn't stack two distinct grey
+    // tiers — matches iOS.
+    val surfaceColor = MaterialTheme.colorScheme.background
+    Column(modifier = modifier.fillMaxWidth().background(surfaceColor)) {
+        Box(
+            modifier = Modifier.fillMaxWidth().background(surfaceColor).drawWithContent {
+                drawContent()
+                drawRect(
+                    brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                        colors = listOf(
+                            surfaceColor.copy(alpha = 0f),
+                            surfaceColor
+                        ),
+                        startX = size.width - 48.dp.toPx(),
+                        endX = size.width
+                    )
+                )
+            }
+        ) {
+            ScrollableTabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = surfaceColor,
+                edgePadding = 0.dp,
+                divider = {},
+                indicator = { tabPositions ->
+                    if (selectedTab < tabPositions.size) {
+                        val pos = tabPositions[selectedTab]
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .offset(x = pos.left + 6.dp)
+                                    .width(pos.width - 12.dp)
+                                    .height(2.dp)
+                                    .background(
+                                        MaterialTheme.colorScheme.primary,
+                                        RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp)
+                                    )
+                            )
+                        }
+                    }
+                }
+            ) {
+                profileTabs.forEachIndexed { index, (_, title) ->
+                    val selected = selectedTab == index
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            // 28dp (was 34) — matches iOS tighter tab row over
+                            // the profile header.
+                            .height(28.dp)
+                            .clickable { onSelect(index) }
+                            .padding(horizontal = 10.dp)
+                    ) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (selected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
     }
 }
 
