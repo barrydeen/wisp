@@ -329,13 +329,13 @@ fun RecipeFeedScreen(
                 }
             }
 
-            // Pinned header overlay — opaque (not translucent) so it stays fully
-            // legible while content scrolls behind it.
+            // Pinned header overlay — translucent, matching the top bar, so
+            // scrolled recipe cards keep blending through this zone too.
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = padding.calculateTopPadding())
-                    .background(MaterialTheme.colorScheme.background)
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.85f))
                     .onGloballyPositioned { headerHeightPx = it.size.height }
             ) {
                 Row(
