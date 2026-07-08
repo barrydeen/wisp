@@ -1258,11 +1258,15 @@ private fun ProfileTabRow(
 ) {
     // Tab strip uses `background` (true near-black) instead of `surface` so the
     // chrome reads as part of the body and doesn't stack two distinct grey
-    // tiers — matches iOS.
-    val surfaceColor = MaterialTheme.colorScheme.background
+    // tiers — matches iOS. Translucent to match the top bar above it.
+    // Single layer for the translucent fill — ScrollableTabRow and the fade-edge
+    // Box used to each paint their own copy of this same color on top of each
+    // other, compounding three 0.85-alpha layers into ~99.7% opaque and making
+    // this section look far more solid than the (single-layer) top bar above it.
+    val surfaceColor = MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
     Column(modifier = modifier.fillMaxWidth().background(surfaceColor)) {
         Box(
-            modifier = Modifier.fillMaxWidth().background(surfaceColor).drawWithContent {
+            modifier = Modifier.fillMaxWidth().drawWithContent {
                 drawContent()
                 drawRect(
                     brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
@@ -1278,7 +1282,7 @@ private fun ProfileTabRow(
         ) {
             ScrollableTabRow(
                 selectedTabIndex = selectedTab,
-                containerColor = surfaceColor,
+                containerColor = Color.Transparent,
                 edgePadding = 0.dp,
                 divider = {},
                 indicator = { tabPositions ->
