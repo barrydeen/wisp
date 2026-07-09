@@ -154,6 +154,54 @@ class NoteReviewTest {
         assertNotEquals(withoutKind, link)
     }
 
+    // --- Phase 4: disclosure footer ---
+
+    @Test
+    fun disclosureFooterStringIsTheProductSpecVerbatim() {
+        assertEquals("⚡🍳 via Cheffy · zap.cooking", NoteReview.DISCLOSURE_FOOTER)
+    }
+
+    @Test
+    fun withDisclosureFooter_off_returnsTheDraftUntouched() {
+        assertEquals("my words", NoteReview.withDisclosureFooter("my words", on = false))
+        // Even trailing whitespace stays the member's own when off.
+        assertEquals("my words  \n", NoteReview.withDisclosureFooter("my words  \n", on = false))
+    }
+
+    @Test
+    fun withDisclosureFooter_on_appendsAfterExactlyOneBlankLine() {
+        assertEquals(
+            "Lovely crust!\n\n⚡🍳 via Cheffy · zap.cooking",
+            NoteReview.withDisclosureFooter("Lovely crust!", on = true),
+        )
+    }
+
+    @Test
+    fun withDisclosureFooter_normalizesTrailingWhitespaceSoTheFooterNeverDrifts() {
+        // Mixed trailing whitespace/newlines collapse to the single blank
+        // line — the footer never sits more than one blank line away.
+        assertEquals(
+            "draft words\n\n⚡🍳 via Cheffy · zap.cooking",
+            NoteReview.withDisclosureFooter("draft words \n\n\t ", on = true),
+        )
+    }
+
+    @Test
+    fun disclosureDefaultsArePerMode_commentOff_recipeOn() {
+        assertEquals(false, NoteReview.defaultDisclosure(cooking.zap.app.api.NoteReviewMode.COMMENT))
+        assertEquals(true, NoteReview.defaultDisclosure(cooking.zap.app.api.NoteReviewMode.RECIPE))
+    }
+
+    @Test
+    fun disclosureSeedsFromThePrefOnlyInChoose() {
+        for (phase in NoteReview.Phase.entries) {
+            assertEquals(
+                phase == NoteReview.Phase.CHOOSE,
+                NoteReview.shouldSeedDisclosureFromPref(phase),
+            )
+        }
+    }
+
     @Test
     fun noteLinkFor_fallsBackToNote1WhenTheNeventEncodingFails() {
         // Odd-length pubkey hex makes the author hint unencodable; the id

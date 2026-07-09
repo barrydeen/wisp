@@ -9,6 +9,7 @@ import cooking.zap.app.cheffy.Cheffy
 import cooking.zap.app.cheffy.NoteReview
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.NostrSigner
+import cooking.zap.app.repo.DisclosurePreferences
 import cooking.zap.app.repo.NoteReviewReplyPublisher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -59,10 +60,26 @@ class NoteReviewViewModel : ViewModel() {
          * retry re-broadcasts exactly this, same id, no re-sign.
          */
         val timeoutSignedEvent: NostrEvent? = null,
+        /**
+         * "Via Cheffy" disclosure toggle (Phase 4). Applied to the content
+         * string ONLY at the [post] hand-off — never part of [draft].
+         */
+        val disclosureOn: Boolean = false,
         // Session target — set by [open], constant until the next open.
         val parent: NostrEvent? = null,
-        val imageUrl: String = "",
-    )
+        /** All detected images, in note order (the Phase 4 picker strip). */
+        val imageUrls: List<String> = emptyList(),
+        /**
+         * Picker selection. Persists across regenerates and Start over;
+         * only [open] (a fresh sheet) resets it. One imageUrl per request
+         * — selection is purely client-side.
+         */
+        val selectedImageIndex: Int = 0,
+    ) {
+        /** The image the next request sends — the selected one. */
+        val imageUrl: String
+            get() = imageUrls.getOrNull(selectedImageIndex) ?: imageUrls.firstOrNull() ?: ""
+    }
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
@@ -76,18 +93,57 @@ class NoteReviewViewModel : ViewModel() {
     /**
      * Configure the modal for a note and reset to CHOOSE. [parent] is the
      * kind-1 being reviewed — its content/id feed the draft request and it
-     * anchors the Phase 3 reply. [imageUrl] is the note's first detected
-     * image — the Phase 4 picker will widen this to a selection.
+     * anchors the Phase 3 reply. [imageUrls] are the note's detected
+     * images in order; requests use the picker selection (index 0 until
+     * the member picks another).
      */
-    fun open(parent: NostrEvent, imageUrl: String) {
+    fun open(parent: NostrEvent, imageUrls: List<String>) {
         requestJob?.cancel()
         postJob?.cancel()
-        _state.value = UiState(parent = parent, imageUrl = imageUrl)
+        _state.value = UiState(parent = parent, imageUrls = imageUrls)
     }
 
-    /** Initial mode selection from the CHOOSE phase. */
-    fun choose(mode: NoteReviewMode, api: ZapCookingApi, signer: NostrSigner?) =
+    /**
+     * Pick which photo Cheffy looks at (Phase 4). Selection only ARMS the
+     * next request — web parity: CheffyNoteReview.svelte:405 assigns
+     * `selectedImageIndex` without calling `run()`, so an existing draft
+     * stays until the member regenerates.
+     */
+    fun selectImage(index: Int) {
+        _state.update {
+            if (index in it.imageUrls.indices) it.copy(selectedImageIndex = index) else it
+        }
+    }
+
+    /**
+     * Toggle the "via Cheffy" disclosure and persist it immediately for
+     * the current mode (web `toggleDisclosure`).
+     */
+    fun toggleDisclosure(prefs: DisclosurePreferences? = null) {
+        val mode = _state.value.mode ?: return
+        val next = !_state.value.disclosureOn
+        _state.update { it.copy(disclosureOn = next) }
+        prefs?.setDisclosureEnabled(mode, next)
+    }
+
+    /**
+     * Initial mode selection from the CHOOSE phase. Seeds the disclosure
+     * toggle from the stored per-mode preference — ONLY here (web
+     * `shouldSeedDisclosureFromPref`): regenerates and error-retries go
+     * through [regenerate], which preserves the in-session toggle.
+     */
+    fun choose(
+        mode: NoteReviewMode,
+        api: ZapCookingApi,
+        signer: NostrSigner?,
+        prefs: DisclosurePreferences? = null,
+    ) {
+        if (NoteReview.shouldSeedDisclosureFromPref(_state.value.phase)) {
+            val seeded = prefs?.isDisclosureEnabled(mode) ?: NoteReview.defaultDisclosure(mode)
+            _state.update { it.copy(disclosureOn = seeded) }
+        }
         run(mode, api, signer, showSigning = true)
+    }
 
     /**
      * Re-run with the SAME mode and image (draft phase "Regenerate" and
@@ -103,12 +159,21 @@ class NoteReviewViewModel : ViewModel() {
         _state.update { it.copy(draft = text) }
     }
 
-    /** Back to CHOOSE for the same note, dropping the draft (web `reset`). */
+    /**
+     * Back to CHOOSE for the same note, dropping the draft (web `reset`).
+     * The picker selection survives (per the Phase 4 spec, only closing
+     * the sheet — i.e. the next [open] — resets it); the disclosure
+     * toggle re-seeds from the stored preference on the next [choose].
+     */
     fun startOver() {
         requestJob?.cancel()
         postJob?.cancel()
         _state.update {
-            UiState(parent = it.parent, imageUrl = it.imageUrl)
+            UiState(
+                parent = it.parent,
+                imageUrls = it.imageUrls,
+                selectedImageIndex = it.selectedImageIndex,
+            )
         }
     }
 
@@ -128,12 +193,17 @@ class NoteReviewViewModel : ViewModel() {
         val s = _state.value
         if (!NoteReview.canPost(s.phase)) return
         val parent = s.parent ?: return
-        val content = s.draft.trim()
-        if (content.isEmpty()) return
+        val draft = s.draft.trim()
+        if (draft.isEmpty()) return
         if (signer == null) {
             _state.update { it.copy(postError = NoteReview.SIGN_FAILED_LINE) }
             return
         }
+        // The disclosure footer joins the content ONLY here, at the
+        // hand-off to the publisher — never inside the editable draft.
+        // It is thereby baked into the SIGNED event, so the PostTimeout
+        // retry path (publishSigned) never touches it again.
+        val content = NoteReview.withDisclosureFooter(draft, s.disclosureOn)
         _state.update { it.copy(phase = NoteReview.Phase.POSTING, postError = "") }
         postJob?.cancel()
         postJob = viewModelScope.launch {

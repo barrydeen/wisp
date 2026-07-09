@@ -253,6 +253,8 @@ not start until each is answered.
 - Streaming drafts, image upload (the endpoint takes URLs only — OpenAI
   fetches; our infra never does).
 - Changing rate limits, price, or the disclosure string (product spec).
+- Inline ActionBar trigger — requires ActionBar slot rework per finding
+  0.3 / decision 2; tracked in issue #150.
 
 ---
 

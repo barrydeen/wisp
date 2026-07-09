@@ -1,5 +1,6 @@
 package cooking.zap.app.cheffy
 
+import cooking.zap.app.api.NoteReviewMode
 import cooking.zap.app.api.NoteReviewResult
 import cooking.zap.app.nostr.Nip19
 import cooking.zap.app.nostr.NostrEvent
@@ -79,6 +80,44 @@ object NoteReview {
     /** Verbatim from `noteReview.ts` `PUBLISH_FAILED_LINE` (Phase 3). */
     const val PUBLISH_FAILED_LINE =
         "The relays didn't take that one. Your draft is safe — give it another go."
+
+    // --- Disclosure footer (Phase 4, port of the noteReview.ts block) ---
+
+    /**
+     * Appended at publish time when the member's toggle is on — NEVER
+     * embedded in the editable draft (the modal shows it as a separate
+     * non-editable preview). Exact string is part of the product spec.
+     */
+    const val DISCLOSURE_FOOTER = "⚡🍳 via Cheffy · zap.cooking"
+
+    private val TRAILING_WHITESPACE = Regex("""\s+$""")
+
+    /**
+     * Build the publish content: the member's draft, untouched, plus the
+     * footer on its own line after one blank line when the toggle is on.
+     * Trailing whitespace on the draft is normalized so the footer never
+     * drifts more than one blank line away. Verbatim port of
+     * `withDisclosureFooter`.
+     */
+    fun withDisclosureFooter(draft: String, on: Boolean): String {
+        if (!on) return draft
+        return draft.replace(TRAILING_WHITESPACE, "") + "\n\n" + DISCLOSURE_FOOTER
+    }
+
+    /**
+     * Per-mode defaults, deliberate (web `DISCLOSURE_DEFAULTS`): a recipe
+     * is Cheffy's structured work product (attribution on), a comment is
+     * the member's own voice (off).
+     */
+    fun defaultDisclosure(mode: NoteReviewMode): Boolean = mode == NoteReviewMode.RECIPE
+
+    /**
+     * The stored preference seeds the toggle only on the initial mode
+     * selection (from the choose phase). Regenerate / try-again re-runs
+     * must preserve the member's in-session toggle — the live toggle
+     * state is the fresher signal. Port of `shouldSeedDisclosureFromPref`.
+     */
+    fun shouldSeedDisclosureFromPref(phase: Phase): Boolean = phase == Phase.CHOOSE
 
     /**
      * Map a request result to the modal phase and its display message —

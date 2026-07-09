@@ -4724,20 +4724,27 @@ fun WispNavHost(
         val noteReviewViewModel: cooking.zap.app.viewmodel.NoteReviewViewModel = viewModel()
         val noteReviewState by noteReviewViewModel.state.collectAsState()
         val noteReviewContext = LocalContext.current
+        val noteReviewPrefs = remember(noteReviewContext) {
+            cooking.zap.app.repo.NoteReviewPreferences(noteReviewContext)
+        }
         LaunchedEffect(target.id) {
             noteReviewViewModel.open(
                 parent = target,
-                // First detected image; the Phase 4 picker widens this to
-                // a selection.
-                imageUrl = cooking.zap.app.cheffy.ImageUrls.extractImageUrls(target.content)
-                    .firstOrNull() ?: "",
+                // All detected images, in note order — the picker strip
+                // selects among them; requests use the selected one.
+                imageUrls = cooking.zap.app.cheffy.ImageUrls.extractImageUrls(target.content),
             )
         }
         cooking.zap.app.ui.component.NoteReviewSheet(
             state = noteReviewState,
             onDismiss = { noteReviewTarget = null },
             onChoose = { mode ->
-                noteReviewViewModel.choose(mode, feedViewModel.zapCookingApi, feedViewModel.signer)
+                noteReviewViewModel.choose(
+                    mode,
+                    feedViewModel.zapCookingApi,
+                    feedViewModel.signer,
+                    noteReviewPrefs,
+                )
             },
             onRegenerate = {
                 noteReviewViewModel.regenerate(feedViewModel.zapCookingApi, feedViewModel.signer)
@@ -4752,6 +4759,8 @@ fun WispNavHost(
                 )
             },
             onRetryPost = { noteReviewViewModel.retryPost(feedViewModel.noteReviewPublisher) },
+            onToggleDisclosure = { noteReviewViewModel.toggleDisclosure(noteReviewPrefs) },
+            onSelectImage = { noteReviewViewModel.selectImage(it) },
             onViewReply = {
                 noteReviewState.postedEvent?.let { posted ->
                     noteReviewTarget = null
