@@ -13,14 +13,19 @@ import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.repo.DisclosurePreferences
 import cooking.zap.app.repo.NoteReviewReplyPublisher
+import cooking.zap.app.repo.PendingInvoiceStore
+import cooking.zap.app.repo.StoredInvoice
+import cooking.zap.app.repo.WalletProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Cheffy Note Photo Review — modal state (CHEFFY_NOTE_REVIEW_PLAN.md,
@@ -45,6 +50,8 @@ class NoteReviewViewModel @JvmOverloads constructor(
     private val clock: () -> Long = System::currentTimeMillis,
     /** 3s per decision 1 — the 30s NIP-98 header cache makes the cadence signer-independent. */
     private val pollIntervalMs: Long = POLL_INTERVAL_MS,
+    /** How long the in-app wallet may keep us waiting before the fallback shows (web parity). */
+    private val inAppPayTimeoutMs: Long = IN_APP_PAY_TIMEOUT_MS,
 ) : ViewModel() {
 
     data class UiState(
@@ -83,6 +90,21 @@ class NoteReviewViewModel @JvmOverloads constructor(
         val invoice: LiveInvoice? = null,
         /** Upsell-card payment error line (invoice mint failure / expiry). */
         val payError: String = "",
+        /**
+         * An in-app wallet attempt was started for the live invoice
+         * (Phase 5b). While true and not [inAppPayFailed], the PAYING
+         * screen shows the paying-with-wallet state instead of the QR.
+         */
+        val inAppPayAttempted: Boolean = false,
+        /**
+         * The in-app attempt failed or timed out — reveal the external
+         * affordances with the SAME bolt11 (never a second invoice; a
+         * BOLT11 settles exactly once). A late wallet settle is fine:
+         * the poll observes it.
+         */
+        val inAppPayFailed: Boolean = false,
+        /** Resume flow observed a paid invoice — "payment received" banner. */
+        val resumeAck: Boolean = false,
         // Session target — set by [open], constant until the next open.
         val parent: NostrEvent? = null,
         /** All detected images, in note order (the Phase 4 picker strip). */
@@ -109,6 +131,8 @@ class NoteReviewViewModel @JvmOverloads constructor(
     private var postJob: Job? = null
     private var payJob: Job? = null
     private var pollJob: Job? = null
+    private var inAppPayJob: Job? = null
+    private var resumeJob: Job? = null
 
     /** Rotation memory so consecutive dead-ends never repeat verbatim. */
     private var lastDeadEndLine: String? = null
@@ -120,9 +144,49 @@ class NoteReviewViewModel @JvmOverloads constructor(
      * images in order; requests use the picker selection (index 0 until
      * the member picks another).
      */
-    fun open(parent: NostrEvent, imageUrls: List<String>) {
+    /**
+     * [api]/[signer]/[prefs], when provided, arm the one-shot
+     * pending-invoice resume check (Phase 5b). It runs concurrently — it
+     * never delays the sheet for members or imageless paths; it only
+     * feeds the balance/banner and the buy-time invoice reuse.
+     */
+    fun open(
+        parent: NostrEvent,
+        imageUrls: List<String>,
+        api: ZapCookingApi? = null,
+        signer: NostrSigner? = null,
+        prefs: PendingInvoiceStore? = null,
+    ) {
         cancelAllWork()
         _state.value = UiState(parent = parent, imageUrls = imageUrls)
+        if (api != null && signer != null && prefs != null) {
+            resumePendingInvoice(api, signer, prefs)
+        }
+    }
+
+    /**
+     * One-shot resume per sheet open (web `resumePendingInvoice`): a
+     * paid-but-unobserved invoice from an earlier session gets credited
+     * here (server metadata lives 48h). paid → cleared + acknowledged;
+     * expired → cleared silently; pending → kept for the buy-time reuse;
+     * check failure → kept untouched (never destroy a potentially-paid
+     * invoice — invariant 6).
+     */
+    private fun resumePendingInvoice(api: ZapCookingApi, signer: NostrSigner, prefs: PendingInvoiceStore) {
+        resumeJob?.cancel()
+        resumeJob = viewModelScope.launch(Dispatchers.Default) {
+            val stored = prefs.loadPendingInvoice() ?: return@launch
+            val result = api.checkCreditStatus(signer, stored.invoiceId)
+            if (result !is CreditStatusResult.Success) return@launch
+            when (NoteReview.pollActionForStatus(result.status)) {
+                NoteReview.PollAction.CREDITED -> {
+                    prefs.clearPendingInvoice()
+                    _state.update { it.copy(creditsRemaining = result.balance, resumeAck = true) }
+                }
+                NoteReview.PollAction.EXPIRED -> prefs.clearPendingInvoice()
+                NoteReview.PollAction.CONTINUE -> Unit
+            }
+        }
     }
 
     /**
@@ -140,6 +204,8 @@ class NoteReviewViewModel @JvmOverloads constructor(
         postJob?.cancel()
         payJob?.cancel()
         pollJob?.cancel()
+        inAppPayJob?.cancel()
+        resumeJob?.cancel()
     }
 
     /**
@@ -229,23 +295,65 @@ class NoteReviewViewModel @JvmOverloads constructor(
      * (invariant 4: the poll is the sole crediting authority; anything
      * wallet-side is advisory).
      */
-    fun startPayment(api: ZapCookingApi, signer: NostrSigner?) {
+    fun startPayment(
+        api: ZapCookingApi,
+        signer: NostrSigner?,
+        prefs: PendingInvoiceStore? = null,
+        wallet: WalletProvider? = null,
+    ) {
         val s = _state.value
         if (s.phase != NoteReview.Phase.UPSELL) return
         if (signer == null) {
             _state.update { it.copy(payError = NoteReview.SIGN_FAILED_LINE) }
             return
         }
-        _state.update { it.copy(phase = NoteReview.Phase.PAYING, payError = "") }
-
-        val live = s.invoice?.takeIf { it.expiresAtMillis > clock() + REUSE_EXPIRY_MARGIN_MS }
-        if (live != null) {
-            startPoll(api, signer, live.invoiceId)
-            return
+        _state.update {
+            it.copy(
+                phase = NoteReview.Phase.PAYING,
+                payError = "",
+                inAppPayAttempted = false,
+                inAppPayFailed = false,
+            )
         }
 
         payJob?.cancel()
         payJob = viewModelScope.launch {
+            // Resolve any outstanding invoice BEFORE minting (web
+            // `startPayment` parity) — an overwrite would orphan a
+            // just-paid invoice's credit client-side.
+            val prior = _state.value.invoice
+                ?: prefs?.loadPendingInvoice()
+                    ?.let { LiveInvoice(it.invoiceId, it.bolt11, it.expiresAtMillis) }
+            if (prior != null) {
+                val status = api.checkCreditStatus(signer, prior.invoiceId)
+                if (status is CreditStatusResult.Success &&
+                    NoteReview.pollActionForStatus(status.status) == NoteReview.PollAction.CREDITED
+                ) {
+                    // They already paid the earlier invoice — no new
+                    // charge, straight into drafting.
+                    prefs?.clearPendingInvoice()
+                    onCredited(status.balance, api, signer)
+                    return@launch
+                }
+                val expiredByServer = status is CreditStatusResult.Success &&
+                    NoteReview.pollActionForStatus(status.status) == NoteReview.PollAction.EXPIRED
+                // A failed check counts as pending (invariant 6): with a
+                // still-live expiry we reuse rather than risk orphaning.
+                val live = !expiredByServer &&
+                    prior.expiresAtMillis > clock() + REUSE_EXPIRY_MARGIN_MS
+                if (live) {
+                    _state.update { it.copy(invoice = prior) }
+                    prefs?.storePendingInvoice(
+                        StoredInvoice(prior.invoiceId, prior.bolt11, prior.expiresAtMillis),
+                    )
+                    startPoll(api, signer, prior.invoiceId, prefs)
+                    routePayment(prior.bolt11, wallet)
+                    return@launch
+                }
+                if (expiredByServer) prefs?.clearPendingInvoice()
+                // Near-expiry or expired → fall through to a fresh mint.
+            }
+
             when (val result = api.requestCreditInvoice(signer)) {
                 is CreditInvoiceResult.Success -> {
                     _state.update {
@@ -253,9 +361,13 @@ class NoteReviewViewModel @JvmOverloads constructor(
                             invoice = LiveInvoice(result.invoiceId, result.bolt11, result.expiresAtMillis),
                         )
                     }
-                    // Poll first — the QR/copy/intent affordances render
-                    // off this same state, strictly after this call.
-                    startPoll(api, signer, result.invoiceId)
+                    prefs?.storePendingInvoice(
+                        StoredInvoice(result.invoiceId, result.bolt11, result.expiresAtMillis),
+                    )
+                    // Poll first (invariant 4) — payment routing and the
+                    // QR/copy/intent affordances come strictly after.
+                    startPoll(api, signer, result.invoiceId, prefs)
+                    routePayment(result.bolt11, wallet)
                 }
                 CreditInvoiceResult.SignFailed -> _state.update {
                     it.copy(phase = NoteReview.Phase.UPSELL, payError = NoteReview.SIGN_FAILED_LINE)
@@ -272,12 +384,47 @@ class NoteReviewViewModel @JvmOverloads constructor(
         }
     }
 
+    /**
+     * The in-app wallet attempt (Phase 5b, web `executeCreditPayment`
+     * parity). The poll is ALREADY running — a wallet-side result is
+     * advisory only; crediting comes solely from the poll observing
+     * paid. The race deliberately does NOT cancel the payment on
+     * timeout (web `Promise.race` semantics): a late settle is fine,
+     * the poll observes it. Null [wallet] = no in-app wallet → the
+     * external affordances stay (5a behavior).
+     */
+    private fun routePayment(bolt11: String, wallet: WalletProvider?) {
+        if (wallet == null) return
+        _state.update { it.copy(inAppPayAttempted = true, inAppPayFailed = false) }
+        inAppPayJob?.cancel()
+        inAppPayJob = viewModelScope.launch(Dispatchers.Default) {
+            val attempt = async {
+                runCatching { wallet.payInvoice(bolt11).isSuccess }.getOrDefault(false)
+            }
+            // withTimeoutOrNull cancels only the AWAIT, never the attempt.
+            val settled = withTimeoutOrNull(inAppPayTimeoutMs) { attempt.await() }
+            _state.update {
+                // Success here is ADVISORY — stay on the wallet-waiting
+                // view and let the poll credit. Failure/timeout reveals
+                // the fallback with the SAME bolt11.
+                if (it.phase == NoteReview.Phase.PAYING) it.copy(inAppPayFailed = settled != true) else it
+            }
+        }
+    }
+
     /** Back from the PAYING screen: stop polling, keep the invoice (web parity). */
     fun backFromPaying() {
         if (_state.value.phase != NoteReview.Phase.PAYING) return
         pollJob?.cancel()
         payJob?.cancel()
-        _state.update { it.copy(phase = NoteReview.Phase.UPSELL) }
+        inAppPayJob?.cancel()
+        _state.update {
+            it.copy(
+                phase = NoteReview.Phase.UPSELL,
+                inAppPayAttempted = false,
+                inAppPayFailed = false,
+            )
+        }
     }
 
     /**
@@ -287,7 +434,12 @@ class NoteReviewViewModel @JvmOverloads constructor(
      * dispatcher: it belongs to the session (cancelled by [onSheetClosed],
      * [open], [startOver], [backFromPaying]), not to any one composition.
      */
-    private fun startPoll(api: ZapCookingApi, signer: NostrSigner, invoiceId: String) {
+    private fun startPoll(
+        api: ZapCookingApi,
+        signer: NostrSigner,
+        invoiceId: String,
+        prefs: PendingInvoiceStore? = null,
+    ) {
         pollJob?.cancel()
         pollJob = viewModelScope.launch(Dispatchers.Default) {
             while (isActive) {
@@ -296,10 +448,12 @@ class NoteReviewViewModel @JvmOverloads constructor(
                     when (NoteReview.pollActionForStatus(result.status)) {
                         NoteReview.PollAction.CONTINUE -> Unit
                         NoteReview.PollAction.CREDITED -> {
+                            prefs?.clearPendingInvoice()
                             onCredited(result.balance, api, signer)
                             return@launch
                         }
                         NoteReview.PollAction.EXPIRED -> {
+                            prefs?.clearPendingInvoice()
                             onInvoiceExpired()
                             return@launch
                         }
@@ -317,8 +471,15 @@ class NoteReviewViewModel @JvmOverloads constructor(
      */
     private fun onCredited(balance: Int, api: ZapCookingApi, signer: NostrSigner) {
         val mode = _state.value.mode
+        inAppPayJob?.cancel()
         _state.update {
-            it.copy(invoice = null, creditsRemaining = balance, payError = "")
+            it.copy(
+                invoice = null,
+                creditsRemaining = balance,
+                payError = "",
+                inAppPayAttempted = false,
+                inAppPayFailed = false,
+            )
         }
         if (mode != null) {
             run(mode, api, signer, showSigning = false)
@@ -334,7 +495,13 @@ class NoteReviewViewModel @JvmOverloads constructor(
             // fresh. Only flip the visible phase if the member is still
             // looking at the payment screen (web guards `phase === 'paying'`).
             val phase = if (it.phase == NoteReview.Phase.PAYING) NoteReview.Phase.UPSELL else it.phase
-            it.copy(phase = phase, invoice = null, payError = NoteReview.INVOICE_EXPIRED_LINE)
+            it.copy(
+                phase = phase,
+                invoice = null,
+                payError = NoteReview.INVOICE_EXPIRED_LINE,
+                inAppPayAttempted = false,
+                inAppPayFailed = false,
+            )
         }
     }
 
@@ -511,6 +678,9 @@ class NoteReviewViewModel @JvmOverloads constructor(
          * in the web `startPayment`).
          */
         const val REUSE_EXPIRY_MARGIN_MS = 30_000L
+
+        /** Web `IN_APP_PAY_TIMEOUT_MS` — the wallet's answer window. */
+        const val IN_APP_PAY_TIMEOUT_MS = 30_000L
     }
 }
 

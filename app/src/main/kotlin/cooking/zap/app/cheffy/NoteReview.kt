@@ -131,6 +131,13 @@ object NoteReview {
     /** Verbatim from the web `beginPolling` expired branch. */
     const val INVOICE_EXPIRED_LINE = "That invoice expired — grab a fresh one below."
 
+    /** Verbatim from the web paying-phase `hasInAppWallet` branch (Phase 5b). */
+    const val WALLET_PAYING_LINE = "Paying from your wallet — drafting starts the moment it lands."
+
+    /** Verbatim from the web paying-phase `inAppPayFailed` branch (Phase 5b). */
+    const val WALLET_FALLBACK_LINE =
+        "Your wallet didn't answer. The invoice is still good — pay it another way."
+
     /** Verbatim from the web `startPayment` mint-failure branch. */
     const val INVOICE_SETUP_FAILED_LINE = "Could not set up the payment. Please try again."
 

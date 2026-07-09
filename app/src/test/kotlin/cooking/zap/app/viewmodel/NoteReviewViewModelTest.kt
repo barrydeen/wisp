@@ -617,12 +617,21 @@ class NoteReviewViewModelTest {
     private fun statusResponse(status: String, balance: Int = 0) =
         jsonResponse(200, """{"ok":true,"status":"$status","balance":$balance}""")
 
-    private fun landUpsell(pollIntervalMs: Long) {
-        vm = NoteReviewViewModel(pollIntervalMs = pollIntervalMs)
+    private fun landUpsell(pollIntervalMs: Long, inAppPayTimeoutMs: Long = 30_000) {
+        vm = NoteReviewViewModel(pollIntervalMs = pollIntervalMs, inAppPayTimeoutMs = inAppPayTimeoutMs)
         vm.open(parent = parentEvent, imageUrls = listOf(imageUrl))
         server.enqueue(jsonResponse(403, """{"ok":false,"code":"NOT_MEMBER","error":"members or sats"}"""))
         vm.choose(NoteReviewMode.COMMENT, api, signer)
         awaitPhase(NoteReview.Phase.UPSELL)
+    }
+
+    private fun awaitState(predicate: (NoteReviewViewModel.UiState) -> Boolean): NoteReviewViewModel.UiState =
+        runBlocking { withTimeout(10_000) { vm.state.first(predicate) } }
+
+    private fun awaitCondition(check: () -> Boolean) = runBlocking {
+        withTimeout(10_000) {
+            while (!check()) kotlinx.coroutines.delay(20)
+        }
     }
 
     private fun awaitRequests(count: Int) = runBlocking {
@@ -792,6 +801,247 @@ class NoteReviewViewModelTest {
         // returns to the upsell card — the server is authoritative.
         vm.applyResult(NoteReviewResult.NotMember)
         assertEquals(NoteReview.Phase.UPSELL, vm.state.value.phase)
+    }
+
+    // --- Phase 5b: in-app wallet routing ---
+
+    @Test
+    fun inAppSuccess_showsWalletWaiting_andThePollStillDoesTheCrediting() {
+        landUpsell(pollIntervalMs = 50, inAppPayTimeoutMs = 5_000)
+        val wallet = FakeWalletProvider { Result.success("preimage") }
+        server.enqueue(invoiceResponse(bolt11 = "lnbc-wallet"))
+        server.enqueue(statusResponse("pending"))
+        server.enqueue(statusResponse("paid", balance = 1))
+        server.enqueue(jsonResponse(200, """{"ok":true,"output":"Paid draft","mode":"comment"}"""))
+
+        vm.startPayment(api, signer, prefs = null, wallet = wallet)
+
+        // Distinct wallet-waiting state — never the QR view.
+        val paying = awaitState { it.inAppPayAttempted }
+        assertFalse(paying.inAppPayFailed)
+
+        // Advisory success — the credit still arrives via the poll.
+        val s = awaitPhase(NoteReview.Phase.DRAFT)
+        assertEquals(1, s.creditsRemaining)
+        assertEquals(listOf("lnbc-wallet"), wallet.paidInvoices)
+    }
+
+    @Test
+    fun inAppTimeout_revealsTheFallbackWithTheSameBolt11_neverASecondInvoice() {
+        landUpsell(pollIntervalMs = 60_000, inAppPayTimeoutMs = 150)
+        val wallet = FakeWalletProvider {
+            kotlinx.coroutines.delay(5_000) // never answers inside the window
+            Result.success("late")
+        }
+        server.enqueue(invoiceResponse(bolt11 = "lnbc-slow"))
+        server.enqueue(statusResponse("pending"))
+
+        vm.startPayment(api, signer, prefs = null, wallet = wallet)
+        val s = awaitState { it.inAppPayFailed }
+
+        assertEquals(NoteReview.Phase.PAYING, s.phase)
+        assertEquals("lnbc-slow", s.invoice?.bolt11) // SAME invoice for the QR fallback
+        awaitCondition { server.requestCount >= 3 }
+        assertEquals(1, drainRequestPaths().count { it.startsWith("/api/zappy/note-review/credit-invoice") })
+    }
+
+    @Test
+    fun inAppThrow_revealsTheFallback() {
+        landUpsell(pollIntervalMs = 60_000, inAppPayTimeoutMs = 5_000)
+        val wallet = FakeWalletProvider { throw IllegalStateException("wallet exploded") }
+        server.enqueue(invoiceResponse(bolt11 = "lnbc-boom"))
+        server.enqueue(statusResponse("pending"))
+
+        vm.startPayment(api, signer, prefs = null, wallet = wallet)
+        val s = awaitState { it.inAppPayFailed }
+        assertEquals("lnbc-boom", s.invoice?.bolt11)
+    }
+
+    @Test
+    fun noInAppWallet_goesStraightToTheExternalAffordances() {
+        landUpsell(pollIntervalMs = 60_000)
+        server.enqueue(invoiceResponse())
+        server.enqueue(statusResponse("pending"))
+
+        vm.startPayment(api, signer, prefs = null, wallet = null)
+        val s = awaitState { it.phase == NoteReview.Phase.PAYING && it.invoice != null }
+        assertFalse(s.inAppPayAttempted)
+        assertFalse(s.inAppPayFailed)
+    }
+
+    @Test
+    fun advisoryFailure_doesNotBlockTheCredit_thePollIsAuthoritative() {
+        // The wallet says the payment failed, but the server observed it
+        // paid (e.g. it settled through another rail) — crediting comes
+        // solely from the poll.
+        landUpsell(pollIntervalMs = 50, inAppPayTimeoutMs = 5_000)
+        val wallet = FakeWalletProvider { Result.failure(Exception("no route")) }
+        server.enqueue(invoiceResponse())
+        server.enqueue(statusResponse("pending"))
+        server.enqueue(statusResponse("paid", balance = 1))
+        server.enqueue(jsonResponse(200, """{"ok":true,"output":"Paid draft","mode":"comment"}"""))
+
+        vm.startPayment(api, signer, prefs = null, wallet = wallet)
+        val s = awaitPhase(NoteReview.Phase.DRAFT)
+        assertEquals(1, s.creditsRemaining)
+    }
+
+    @Test
+    fun fastSettle_leavesNoTimeoutBehind() {
+        // The 30s race must clean up when the wallet answers fast — no
+        // late flip to the fallback after the window would have elapsed.
+        landUpsell(pollIntervalMs = 60_000, inAppPayTimeoutMs = 150)
+        val wallet = FakeWalletProvider { Result.success("instant") }
+        server.enqueue(invoiceResponse())
+        server.enqueue(statusResponse("pending"))
+
+        vm.startPayment(api, signer, prefs = null, wallet = wallet)
+        awaitState { it.inAppPayAttempted }
+        awaitCondition { wallet.paidInvoices.isNotEmpty() }
+
+        Thread.sleep(400) // well past the 150ms window
+        val s = vm.state.value
+        assertEquals(NoteReview.Phase.PAYING, s.phase)
+        assertFalse("a leaked timeout flipped the state", s.inAppPayFailed)
+        assertTrue(s.inAppPayAttempted)
+    }
+
+    // --- Phase 5b: pending-invoice resume ---
+
+    private val storedInvoice = cooking.zap.app.repo.StoredInvoice(
+        invoiceId = "rr-stored",
+        bolt11 = "lnbc-stored",
+        expiresAtMillis = farFutureMs,
+    )
+
+    @Test
+    fun resume_paid_creditsWithBannerAndClearsTheStore() {
+        val store = FakeInvoiceStore(stored = storedInvoice)
+        server.enqueue(statusResponse("paid", balance = 2))
+
+        vm.open(parent = parentEvent, imageUrls = listOf(imageUrl), api = api, signer = signer, prefs = store)
+        val s = awaitState { it.resumeAck }
+
+        assertEquals(2, s.creditsRemaining)
+        assertEquals(NoteReview.Phase.CHOOSE, s.phase) // never gated the sheet
+        assertNull(store.stored)
+    }
+
+    @Test
+    fun resume_expired_clearsSilently() {
+        val store = FakeInvoiceStore(stored = storedInvoice)
+        server.enqueue(statusResponse("expired"))
+
+        vm.open(parent = parentEvent, imageUrls = listOf(imageUrl), api = api, signer = signer, prefs = store)
+        awaitCondition { store.stored == null }
+
+        val s = vm.state.value
+        assertFalse(s.resumeAck)
+        assertNull(s.creditsRemaining)
+    }
+
+    @Test
+    fun resume_checkFailure_keepsThePotentiallyPaidInvoice() {
+        val store = FakeInvoiceStore(stored = storedInvoice)
+        server.enqueue(jsonResponse(503, """{"ok":false,"error":"Payment check hiccuped — trying again shortly."}"""))
+
+        vm.open(parent = parentEvent, imageUrls = listOf(imageUrl), api = api, signer = signer, prefs = store)
+        awaitCondition { server.requestCount >= 1 }
+        Thread.sleep(150) // let the resume coroutine finish deciding
+
+        assertEquals(storedInvoice, store.stored)
+        assertFalse(vm.state.value.resumeAck)
+    }
+
+    @Test
+    fun resume_pending_isReusedAtBuyTime_neverTwoInvoices() {
+        val store = FakeInvoiceStore(stored = storedInvoice)
+        vm = NoteReviewViewModel(pollIntervalMs = 60_000)
+        server.enqueue(statusResponse("pending")) // resume check keeps it
+
+        vm.open(parent = parentEvent, imageUrls = listOf(imageUrl), api = api, signer = signer, prefs = store)
+        awaitCondition { server.requestCount >= 1 }
+        assertEquals(storedInvoice, store.stored)
+
+        server.enqueue(jsonResponse(403, """{"ok":false,"code":"NOT_MEMBER","error":"members or sats"}"""))
+        vm.choose(NoteReviewMode.COMMENT, api, signer)
+        awaitPhase(NoteReview.Phase.UPSELL)
+
+        // Buy: NO invoice response queued — a second mint would hang. The
+        // buy-time resolution reuses the STORED invoice (with its bolt11).
+        server.enqueue(statusResponse("pending")) // buy-time resolution
+        server.enqueue(statusResponse("pending")) // poll's immediate check
+        vm.startPayment(api, signer, prefs = store, wallet = null)
+        val s = awaitState { it.phase == NoteReview.Phase.PAYING && it.invoice != null }
+
+        assertEquals("lnbc-stored", s.invoice?.bolt11)
+        assertEquals(storedInvoice, store.stored) // still persisted, not overwritten
+        assertEquals(0, drainRequestPaths().count { it.startsWith("/api/zappy/note-review/credit-invoice") })
+    }
+
+    @Test
+    fun mintPersistsTheInvoice_andThePollClearsItOnPaid() {
+        landUpsell(pollIntervalMs = 50)
+        val store = FakeInvoiceStore()
+        server.enqueue(invoiceResponse(bolt11 = "lnbc-mint"))
+        server.enqueue(statusResponse("pending"))
+        server.enqueue(statusResponse("paid", balance = 1))
+        server.enqueue(jsonResponse(200, """{"ok":true,"output":"Paid draft","mode":"comment"}"""))
+
+        vm.startPayment(api, signer, prefs = store, wallet = null)
+        awaitCondition { store.stored?.bolt11 == "lnbc-mint" } // persisted on mint
+
+        awaitPhase(NoteReview.Phase.DRAFT)
+        assertNull(store.stored) // cleared the moment the poll observed paid
+    }
+
+    @Test
+    fun pollObservedExpiry_clearsThePersistedInvoice() {
+        landUpsell(pollIntervalMs = 60_000)
+        val store = FakeInvoiceStore()
+        server.enqueue(invoiceResponse())
+        server.enqueue(statusResponse("expired"))
+
+        vm.startPayment(api, signer, prefs = store, wallet = null)
+        val s = awaitPhase(NoteReview.Phase.UPSELL)
+
+        assertEquals(NoteReview.INVOICE_EXPIRED_LINE, s.payError)
+        assertNull(store.stored)
+    }
+
+    private class FakeWalletProvider(
+        private val payBehavior: suspend (String) -> Result<String>,
+    ) : cooking.zap.app.repo.WalletProvider {
+        val paidInvoices = java.util.concurrent.CopyOnWriteArrayList<String>()
+        override val balance = kotlinx.coroutines.flow.MutableStateFlow<Long?>(null)
+        override val isConnected = kotlinx.coroutines.flow.MutableStateFlow(false)
+        override val statusLog = kotlinx.coroutines.flow.MutableSharedFlow<String>()
+        override val paymentReceived = kotlinx.coroutines.flow.MutableSharedFlow<Long>()
+        override val transactionsChanged = kotlinx.coroutines.flow.MutableSharedFlow<Unit>()
+        override fun hasConnection(): Boolean = true
+        override fun connect() {}
+        override fun disconnect() {}
+        override suspend fun fetchBalance(): Result<Long> = Result.success(0)
+        override suspend fun payInvoice(bolt11: String): Result<String> {
+            paidInvoices.add(bolt11)
+            return payBehavior(bolt11)
+        }
+        override suspend fun makeInvoice(amountMsats: Long, description: String, expirySecs: Int): Result<String> =
+            Result.failure(UnsupportedOperationException())
+        override suspend fun listTransactions(limit: Int, offset: Int): Result<List<cooking.zap.app.repo.WalletTransaction>> =
+            Result.success(emptyList())
+    }
+
+    private class FakeInvoiceStore(
+        var stored: cooking.zap.app.repo.StoredInvoice? = null,
+    ) : cooking.zap.app.repo.PendingInvoiceStore {
+        override fun storePendingInvoice(invoice: cooking.zap.app.repo.StoredInvoice) {
+            stored = invoice
+        }
+        override fun loadPendingInvoice(): cooking.zap.app.repo.StoredInvoice? = stored
+        override fun clearPendingInvoice() {
+            stored = null
+        }
     }
 
     private class FakeDisclosurePrefs : DisclosurePreferences {
