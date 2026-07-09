@@ -4737,7 +4737,12 @@ fun WispNavHost(
         }
         cooking.zap.app.ui.component.NoteReviewSheet(
             state = noteReviewState,
-            onDismiss = { noteReviewTarget = null },
+            onDismiss = {
+                // Stop the credit-status poll and any in-flight work — the
+                // ViewModel is activity-scoped and would otherwise keep it.
+                noteReviewViewModel.onSheetClosed()
+                noteReviewTarget = null
+            },
             onChoose = { mode ->
                 noteReviewViewModel.choose(
                     mode,
@@ -4761,8 +4766,13 @@ fun WispNavHost(
             onRetryPost = { noteReviewViewModel.retryPost(feedViewModel.noteReviewPublisher) },
             onToggleDisclosure = { noteReviewViewModel.toggleDisclosure(noteReviewPrefs) },
             onSelectImage = { noteReviewViewModel.selectImage(it) },
+            onStartPayment = {
+                noteReviewViewModel.startPayment(feedViewModel.zapCookingApi, feedViewModel.signer)
+            },
+            onBackFromPaying = { noteReviewViewModel.backFromPaying() },
             onViewReply = {
                 noteReviewState.postedEvent?.let { posted ->
+                    noteReviewViewModel.onSheetClosed()
                     noteReviewTarget = null
                     navController.navigate("thread/${posted.id}")
                 }

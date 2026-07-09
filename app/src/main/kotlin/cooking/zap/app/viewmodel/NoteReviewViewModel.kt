@@ -2,6 +2,8 @@ package cooking.zap.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cooking.zap.app.api.CreditInvoiceResult
+import cooking.zap.app.api.CreditStatusResult
 import cooking.zap.app.api.NoteReviewMode
 import cooking.zap.app.api.NoteReviewResult
 import cooking.zap.app.api.ZapCookingApi
@@ -11,10 +13,13 @@ import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.repo.DisclosurePreferences
 import cooking.zap.app.repo.NoteReviewReplyPublisher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -35,7 +40,12 @@ import kotlinx.coroutines.launch
  * cache's 30s TTL a regenerate performs no sign at all, and when it does
  * re-sign, an external signer shows its own approval UI anyway.
  */
-class NoteReviewViewModel : ViewModel() {
+class NoteReviewViewModel @JvmOverloads constructor(
+    /** Injectable for expiry tests; production uses wall-clock ms. */
+    private val clock: () -> Long = System::currentTimeMillis,
+    /** 3s per decision 1 — the 30s NIP-98 header cache makes the cadence signer-independent. */
+    private val pollIntervalMs: Long = POLL_INTERVAL_MS,
+) : ViewModel() {
 
     data class UiState(
         val phase: NoteReview.Phase = NoteReview.Phase.CHOOSE,
@@ -65,6 +75,14 @@ class NoteReviewViewModel : ViewModel() {
          * string ONLY at the [post] hand-off — never part of [draft].
          */
         val disclosureOn: Boolean = false,
+        /**
+         * The live 21-sat invoice (Phase 5a). Never minted twice while
+         * unexpired (invariant 5) — Buy re-presents this one. Cleared on
+         * credit, expiry, and [open] (persistence/resume is Phase 5b).
+         */
+        val invoice: LiveInvoice? = null,
+        /** Upsell-card payment error line (invoice mint failure / expiry). */
+        val payError: String = "",
         // Session target — set by [open], constant until the next open.
         val parent: NostrEvent? = null,
         /** All detected images, in note order (the Phase 4 picker strip). */
@@ -81,11 +99,16 @@ class NoteReviewViewModel : ViewModel() {
             get() = imageUrls.getOrNull(selectedImageIndex) ?: imageUrls.firstOrNull() ?: ""
     }
 
+    /** One minted credit invoice ([expiresAtMillis] is ms epoch, server contract). */
+    data class LiveInvoice(val invoiceId: String, val bolt11: String, val expiresAtMillis: Long)
+
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
 
     private var requestJob: Job? = null
     private var postJob: Job? = null
+    private var payJob: Job? = null
+    private var pollJob: Job? = null
 
     /** Rotation memory so consecutive dead-ends never repeat verbatim. */
     private var lastDeadEndLine: String? = null
@@ -98,9 +121,25 @@ class NoteReviewViewModel : ViewModel() {
      * the member picks another).
      */
     fun open(parent: NostrEvent, imageUrls: List<String>) {
+        cancelAllWork()
+        _state.value = UiState(parent = parent, imageUrls = imageUrls)
+    }
+
+    /**
+     * The sheet was dismissed. Stops the credit-status poll and any other
+     * in-flight work so nothing outlives the session (the ViewModel itself
+     * is activity-scoped). A paid-but-unobserved invoice is recovered by
+     * the Phase 5b resume flow.
+     */
+    fun onSheetClosed() {
+        cancelAllWork()
+    }
+
+    private fun cancelAllWork() {
         requestJob?.cancel()
         postJob?.cancel()
-        _state.value = UiState(parent = parent, imageUrls = imageUrls)
+        payJob?.cancel()
+        pollJob?.cancel()
     }
 
     /**
@@ -166,14 +205,136 @@ class NoteReviewViewModel : ViewModel() {
      * toggle re-seeds from the stored preference on the next [choose].
      */
     fun startOver() {
-        requestJob?.cancel()
-        postJob?.cancel()
+        cancelAllWork()
         _state.update {
             UiState(
                 parent = it.parent,
                 imageUrls = it.imageUrls,
                 selectedImageIndex = it.selectedImageIndex,
+                // The live invoice and balance survive (invariant 5 — a
+                // fresh Buy must re-present the same unexpired invoice).
+                invoice = it.invoice,
+                creditsRemaining = it.creditsRemaining,
             )
+        }
+    }
+
+    // --- Credits (Phase 5a): invoice + the sole crediting authority ---
+
+    /**
+     * Buy one draft from the upsell card. Enters PAYING and — invariant
+     * 5 — re-presents a still-live invoice instead of minting another
+     * (web parity: reuse while `expiresAt > now + 30s`). The status poll
+     * starts THE MOMENT the invoice exists, before any payment UI
+     * (invariant 4: the poll is the sole crediting authority; anything
+     * wallet-side is advisory).
+     */
+    fun startPayment(api: ZapCookingApi, signer: NostrSigner?) {
+        val s = _state.value
+        if (s.phase != NoteReview.Phase.UPSELL) return
+        if (signer == null) {
+            _state.update { it.copy(payError = NoteReview.SIGN_FAILED_LINE) }
+            return
+        }
+        _state.update { it.copy(phase = NoteReview.Phase.PAYING, payError = "") }
+
+        val live = s.invoice?.takeIf { it.expiresAtMillis > clock() + REUSE_EXPIRY_MARGIN_MS }
+        if (live != null) {
+            startPoll(api, signer, live.invoiceId)
+            return
+        }
+
+        payJob?.cancel()
+        payJob = viewModelScope.launch {
+            when (val result = api.requestCreditInvoice(signer)) {
+                is CreditInvoiceResult.Success -> {
+                    _state.update {
+                        it.copy(
+                            invoice = LiveInvoice(result.invoiceId, result.bolt11, result.expiresAtMillis),
+                        )
+                    }
+                    // Poll first — the QR/copy/intent affordances render
+                    // off this same state, strictly after this call.
+                    startPoll(api, signer, result.invoiceId)
+                }
+                CreditInvoiceResult.SignFailed -> _state.update {
+                    it.copy(phase = NoteReview.Phase.UPSELL, payError = NoteReview.SIGN_FAILED_LINE)
+                }
+                is CreditInvoiceResult.Error -> _state.update {
+                    // Server lines (e.g. the 429 "Too many invoices…") are
+                    // display copy; fall back to the web's generic line.
+                    it.copy(
+                        phase = NoteReview.Phase.UPSELL,
+                        payError = result.message.ifBlank { NoteReview.INVOICE_SETUP_FAILED_LINE },
+                    )
+                }
+            }
+        }
+    }
+
+    /** Back from the PAYING screen: stop polling, keep the invoice (web parity). */
+    fun backFromPaying() {
+        if (_state.value.phase != NoteReview.Phase.PAYING) return
+        pollJob?.cancel()
+        payJob?.cancel()
+        _state.update { it.copy(phase = NoteReview.Phase.UPSELL) }
+    }
+
+    /**
+     * The 3s credit-status loop (web `beginPolling`). Checks immediately,
+     * then every [pollIntervalMs]; a failed check is transient — keep
+     * polling until the server says paid or expired. Runs on a background
+     * dispatcher: it belongs to the session (cancelled by [onSheetClosed],
+     * [open], [startOver], [backFromPaying]), not to any one composition.
+     */
+    private fun startPoll(api: ZapCookingApi, signer: NostrSigner, invoiceId: String) {
+        pollJob?.cancel()
+        pollJob = viewModelScope.launch(Dispatchers.Default) {
+            while (isActive) {
+                val result = api.checkCreditStatus(signer, invoiceId)
+                if (result is CreditStatusResult.Success) {
+                    when (NoteReview.pollActionForStatus(result.status)) {
+                        NoteReview.PollAction.CONTINUE -> Unit
+                        NoteReview.PollAction.CREDITED -> {
+                            onCredited(result.balance, api, signer)
+                            return@launch
+                        }
+                        NoteReview.PollAction.EXPIRED -> {
+                            onInvoiceExpired()
+                            return@launch
+                        }
+                    }
+                }
+                delay(pollIntervalMs)
+            }
+        }
+    }
+
+    /**
+     * Paid observed — credit acknowledged, then straight into drafting
+     * (web parity: `beginPolling`'s credited branch runs `run(mode)` —
+     * "they paid for this draft").
+     */
+    private fun onCredited(balance: Int, api: ZapCookingApi, signer: NostrSigner) {
+        val mode = _state.value.mode
+        _state.update {
+            it.copy(invoice = null, creditsRemaining = balance, payError = "")
+        }
+        if (mode != null) {
+            run(mode, api, signer, showSigning = false)
+        } else {
+            // Defensive — the upsell is only reachable after a mode pick.
+            _state.update { it.copy(phase = NoteReview.Phase.CHOOSE) }
+        }
+    }
+
+    private fun onInvoiceExpired() {
+        _state.update {
+            // The expired invoice is dead — clear it so the next Buy mints
+            // fresh. Only flip the visible phase if the member is still
+            // looking at the payment screen (web guards `phase === 'paying'`).
+            val phase = if (it.phase == NoteReview.Phase.PAYING) NoteReview.Phase.UPSELL else it.phase
+            it.copy(phase = phase, invoice = null, payError = NoteReview.INVOICE_EXPIRED_LINE)
         }
     }
 
@@ -338,6 +499,18 @@ class NoteReviewViewModel : ViewModel() {
                 else -> s.copy(phase = next.phase, message = next.message, errorLine = errorLine)
             }
         }
+    }
+
+    companion object {
+        /** Web cadence (decision 1: signer-independent under the 30s header cache). */
+        const val POLL_INTERVAL_MS = 3_000L
+
+        /**
+         * Web parity: a stored invoice is only worth re-presenting while
+         * it has at least this long left (`expiresAt > Date.now() + 30_000`
+         * in the web `startPayment`).
+         */
+        const val REUSE_EXPIRY_MARGIN_MS = 30_000L
     }
 }
 
