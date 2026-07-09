@@ -191,6 +191,17 @@ private fun ChooseContent(
         )
     }
     ImagePickerStrip(state, onSelectImage, enabled = true)
+    if (state.resumeAck) {
+        // Resume flow observed a paid invoice from an earlier session
+        // (web `resumeAck` banner).
+        val balance = state.creditsRemaining ?: 0
+        val drafts = if (balance == 1) "1 draft" else "$balance drafts"
+        Text(
+            "⚡ Payment received — you have $drafts. ${NoteReview.CREDITS_CROSS_DEVICE_LINE}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
     Text(
         "What should Cheffy draft? You'll edit it before anything is posted.",
         style = MaterialTheme.typography.bodyMedium,
@@ -457,7 +468,25 @@ private fun PayingContent(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        } else if (state.inAppPayAttempted && !state.inAppPayFailed) {
+            // In-app wallet attempt in flight (or advisorily settled) —
+            // distinct from the QR view; the poll does the crediting.
+            Text(
+                NoteReview.WALLET_PAYING_LINE,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
         } else {
+            if (state.inAppPayFailed) {
+                // Fallback: the SAME bolt11, other rails (web copy).
+                Text(
+                    NoteReview.WALLET_FALLBACK_LINE,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
             val qrBitmap = remember(invoice.bolt11) {
                 generateQrBitmap("lightning:${invoice.bolt11}")
             }

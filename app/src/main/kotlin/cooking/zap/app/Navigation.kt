@@ -4733,6 +4733,11 @@ fun WispNavHost(
                 // All detected images, in note order — the picker strip
                 // selects among them; requests use the selected one.
                 imageUrls = cooking.zap.app.cheffy.ImageUrls.extractImageUrls(target.content),
+                // Arms the one-shot pending-invoice resume check (5b) —
+                // runs concurrently, never delays the sheet.
+                api = feedViewModel.zapCookingApi,
+                signer = feedViewModel.signer,
+                prefs = noteReviewPrefs,
             )
         }
         cooking.zap.app.ui.component.NoteReviewSheet(
@@ -4767,7 +4772,22 @@ fun WispNavHost(
             onToggleDisclosure = { noteReviewViewModel.toggleDisclosure(noteReviewPrefs) },
             onSelectImage = { noteReviewViewModel.selectImage(it) },
             onStartPayment = {
-                noteReviewViewModel.startPayment(feedViewModel.zapCookingApi, feedViewModel.signer)
+                // In-app wallet routing per finding 0.6: the mode check is
+                // mandatory (NONE also maps to the NWC repo, so a stale
+                // nwc_uri could otherwise read as "has wallet"). Null →
+                // straight to the external affordances.
+                val inAppWallet = feedViewModel.activeWalletProvider.takeIf {
+                    cooking.zap.app.repo.hasInAppWallet(
+                        feedViewModel.walletModeRepo.getMode(),
+                        feedViewModel.activeWalletProvider,
+                    )
+                }
+                noteReviewViewModel.startPayment(
+                    api = feedViewModel.zapCookingApi,
+                    signer = feedViewModel.signer,
+                    prefs = noteReviewPrefs,
+                    wallet = inAppWallet,
+                )
             },
             onBackFromPaying = { noteReviewViewModel.backFromPaying() },
             onViewReply = {

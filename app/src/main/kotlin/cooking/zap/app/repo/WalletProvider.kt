@@ -3,6 +3,20 @@ package cooking.zap.app.repo
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
+/**
+ * Whether the account has a usable in-app wallet, per Note Review
+ * finding 0.6 — the exact analog of web's wallet kinds 3 (NWC) /
+ * 4 (Spark) routing. The [mode] check is MANDATORY: FeedViewModel's
+ * `activeWalletProvider` maps [WalletMode.NONE] to the NWC repo too, so
+ * a stale saved `nwc_uri` could otherwise read as "has wallet".
+ * [WalletProvider.hasConnection] is configured-ness (saved URI /
+ * mnemonic), deliberately not the live `isConnected` socket state — a
+ * configured-but-idle wallet still routes in-app; `payInvoice` connects
+ * on demand.
+ */
+fun hasInAppWallet(mode: WalletMode, provider: WalletProvider): Boolean =
+    mode != WalletMode.NONE && provider.hasConnection()
+
 interface WalletProvider {
     val balance: StateFlow<Long?>
     val isConnected: StateFlow<Boolean>
