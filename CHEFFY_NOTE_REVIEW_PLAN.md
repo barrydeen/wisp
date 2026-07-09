@@ -84,8 +84,9 @@ Server-side facts that shape the client:
 - **Reply publishing**: ThreadScreen/ComposeScreen already publish kind-1
   NIP-10 replies with relay routing. (`PrivateReplyPublisher` is the
   private-group variant — the public reply path is what Note Review uses.)
-- **Signer abstraction**: `LocalSigner`, `RemoteSigner` (bunker),
-  `RemoteSignerBridge` (NIP-55/Amber), `SignerRejected/CancelledException`
+- **Signer abstraction**: `LocalSigner`, `RemoteSigner` (NIP-55/Amber;
+  `RemoteSignerBridge` is login-time discovery only — no NIP-46 bunker
+  signer exists, per finding 0.1), `SignerRejected/CancelledException`
   propagation, `LocalCanSign` for gating signing-dependent UI.
 - **Surfaces**: `PostCard` + `ActionBar` on kind-1 notes in FeedScreen /
   OnlyFoodFeedScreen / ThreadScreen — the trigger placements.
@@ -235,7 +236,7 @@ not start until each is answered.
 
 | Axis | Cases |
 |---|---|
-| Signer | LocalSigner, Amber (NIP-55), bunker (NIP-46), READ_ONLY (hidden/nudge) |
+| Signer | LocalSigner, Amber (NIP-55), READ_ONLY (hidden — decision 0.4) |
 | Membership | Pro Kitchen member, non-member 0 credits, non-member with credits, membership service down (fails closed) |
 | Wallet | NWC, Spark, none (external fallback), in-app timeout → fallback same invoice |
 | Image | extension URL, extensionless rescued host, dead link (dead-end, credit NOT spent), multi-image, imageless (no trigger) |
@@ -252,3 +253,325 @@ not start until each is answered.
 - Streaming drafts, image upload (the endpoint takes URLs only — OpenAI
   fetches; our infra never does).
 - Changing rate limits, price, or the disclosure string (product spec).
+
+---
+
+## Phase 0 findings
+
+Investigated 2026-07-09 against `main` (f31c9da) and
+`zapcooking/frontend` master (`src/lib/nip98.server.ts`,
+`src/lib/nip98.ts`, `src/lib/imageUrls.ts` fetched from GitHub raw).
+
+### 0.1 NIP-98 × signers under polling
+
+**Signer inventory correction first.** The codebase has exactly two
+`NostrSigner` implementations: `LocalSigner` and `RemoteSigner`
+(`nostr/NostrSigner.kt:53`, `:92`). **There is no NIP-46 bunker signer
+anywhere in the app** — `RemoteSigner` *is* the NIP-55/Amber signer
+(ContentResolver first, intent fallback, `NostrSigner.kt:100-104`), and
+`RemoteSignerBridge` (`NostrSigner.kt:230`) is only login-time discovery
+helpers. This plan's §2 line "RemoteSigner (bunker), RemoteSignerBridge
+(NIP-55/Amber)" is wrong, and the Phase 6 QA matrix row "bunker (NIP-46)"
+tests a signer that doesn't exist. (Also: the build spec §1 and CLAUDE.md
+say "LocalSigner only / NIP-55 removed" — both wrong; `SigningMode.REMOTE`
+is live, e.g. `Navigation.kt:384-388`.)
+
+**Cost per kind-27235 sign:**
+- `LocalSigner`: in-process Schnorr sign (`NostrSigner.kt:59-68`),
+  sub-millisecond, silent. 3s cadence with a fresh sign per poll is fine.
+- `RemoteSigner` (Amber): one ContentResolver IPC per sign when the kind
+  is auto-approved (`tryContentResolverSign`, `NostrSigner.kt:135-160`) —
+  tens of ms, silent. **But kind 27235 is NOT in
+  `RemoteSignerBridge.DEFAULT_PERMISSIONS`** (`NostrSigner.kt:232` — the
+  list covers 0,1,3,5,6,7,9734,10000,10002,22242,30000,30023 + nip44).
+  Without a grant, the CR query returns no cursor and `signEvent` falls
+  back to `signEventViaIntent` — a full-screen Amber approval activity —
+  **per sign**. At 3s cadence that is an approval prompt every 3 seconds:
+  unusable.
+
+**Is header reuse legal? Yes.** The verifier
+(`nip98.server.ts`, `verifyNip98`) checks, in order: kind == 27235,
+`verifyEvent` signature, then freshness —
+
+```ts
+const DEFAULT_MAX_SKEW_SECONDS = 60;
+if (Math.abs(now - (event.created_at || 0)) > maxSkew) {
+  return { ok: false, reason: 'stale-timestamp' };
+}
+```
+
+— then u-tag/method/payload/expectedPubkey. That is the **only**
+freshness/expiry check. There is no nonce, no jti, no replay cache — the
+verifier is stateless. A signed header is therefore valid for any number
+of requests until `created_at` is >60s old. For the credit-status GET the
+u-tag is constant across polls (`Nip98.normalizeUrl` drops the query,
+`Nip98.kt:49-62`, and the verifier normalizes identically), and GETs carry
+no payload tag, so one signed header legally covers ~15-20 polls.
+
+**Decision: (c) — reuse one signed header across polls within a ~45s TTL**
+(15s safety margin against clock skew; the ±60s window also tolerates
+modest client-clock drift). Implement as a small header cache keyed on
+`(method, normalizedUrl)` inside the credit-status poll loop (or a
+`CachedNip98Header` helper next to `Nip98.authHeader`,
+`Nip98.kt:114-122`) — re-sign only on expiry. This makes poll cadence
+signer-independent: keep 3s for all signer types; Amber users see at most
+one sign per ~45s, via CR if granted, via one intent prompt otherwise.
+
+Secondary: add `{"type":"sign_event","kind":27235}` to
+`DEFAULT_PERMISSIONS` so future Amber logins auto-approve NIP-98 (existing
+sessions can "always allow" on first prompt). This also benefits
+`checkMembershipStatus` and every other `authedPost`
+(`ZapCookingApi.kt:105`).
+
+**Phase impacts:** Phase 1's `checkCreditStatus` should accept the cached
+header (or the cache lives in the poll loop in Phase 5 — either way, sign
+once per TTL window, not per call). Phase 6 QA matrix: delete the
+"bunker (NIP-46)" case, keep LocalSigner / Amber / READ_ONLY. §2's signer
+bullet needs the bunker mention removed.
+
+### 0.2 Reply publisher audit
+
+**Where it lives:** the public kind-1 NIP-10 reply path is
+`ComposeViewModel.publish()` → private `publishNote()`
+(`viewmodel/ComposeViewModel.kt:706`, `:836`). ThreadScreen only surfaces
+`onReply` callbacks that route into the compose flow. Findings:
+
+- **NIP-10 tags:** yes — `Nip10.buildReplyTags(replyTo, hint)` with a
+  relay hint from `outboxRouter.getRelayHint(replyTo.pubkey)`
+  (`ComposeViewModel.kt:851-854`), plus p-tags for content mentions
+  (`:856-862`).
+- **NIP-65 inbox routing:** yes — `outboxRouter.publishToInbox(msg,
+  inboxPubkeys)` where `inboxPubkeys` = parent author + mentioned pubkeys
+  (`:1019-1022`, `:1057-1061`; `OutboxRouter.kt:322`), falling back to
+  `relayPool.sendToWriteRelays`, with one reconnect-and-retry pass
+  (`:1063-1072`).
+- **NIP-89 client tag:** yes — `Nip89.clientTag()` appended when
+  `interfacePrefs.isClientTagEnabled()` (`:977-979`; `Nip89.kt:16`).
+- **Signed event on relay timeout: NO.** `publishNote` signs (`:1054`),
+  fire-and-forgets, and `relayPool.trackPublish(event.id, sentCount)`
+  (`:1078`) only drives a transient `BroadcastState` toast with a 5s OK
+  collector (`RelayPool.kt:701-719`). The signed event never escapes the
+  method; on total send failure it returns 0 and the event is dropped. It
+  is also deeply coupled to composer state (drafts, undo countdown,
+  gallery/poll/schedule modes, PoW handoff) — invariant 2 (retry same
+  event id, no re-sign) cannot be satisfied through it.
+
+**Recommendation:** Phase 3 builds a small dedicated publisher (e.g.
+`NoteReviewReplyPublisher`, ~80 lines) rather than refactoring
+`publishNote`. It reuses the exact same primitives: `Nip10.buildReplyTags`
++ `outboxRouter.getRelayHint` for tags, `Nip89.clientTag()` per the same
+pref, `signer.signEvent(kind=1, …)` **once**, send via
+`outboxRouter.publishToInbox(msg, setOf(parentAuthor))` with
+`sendToWriteRelays` fallback, then await the first accepted
+`PublishResult` on `relayPool.publishResults`
+(`RelayPool.kt:214-215` — a public SharedFlow of per-relay OK results,
+`PublishResult(relayUrl, eventId, accepted, message)`) under
+`withTimeoutOrNull`. Return a sealed result carrying the **signed event**
+on timeout so the ViewModel holds it for retry (re-send the same
+`ClientMessage`, same id — relays dedupe). On success, mirror the local
+bookkeeping so the UI updates immediately: `eventRepo.addEvent(event)` +
+`addReplyCount` on parent and root (`ComposeViewModel.kt:1080-1090`).
+This confirms gap #4: the `explicit-with-timeout` mode is net-new.
+
+### 0.3 Trigger placement
+
+**Measured width constraint — the inline ActionBar does NOT reliably have
+room.** `ActionBar` (`ui/component/ActionBar.kt:68`) is a non-scrolling
+`Row` with five fixed 48dp slots (react `:106`, reply `:157`, repost
+`:181`, zap `:220`, bookmark `:286`) + four 8dp spacers = **272dp fixed**,
+plus up to four inline count labels (like/reply/repost/zapSats, ~12-28dp
+each when present). PostCard gives it `Modifier.weight(1f)` in a row that
+also holds a 20dp expand chevron (`PostCard.kt:878-914`), inside a column
+with 16dp horizontal padding per side (`PostCard.kt:269`). On a 360dp
+screen that leaves ~308dp for the bar — **already over budget today when
+several counts render** (272 + counts > 308; trailing slots get squeezed).
+Adding a sixth 48dp slot (+8dp spacer) guarantees clipping on common
+devices.
+
+**Recommendation:**
+1. **Overflow entry (guaranteed baseline):** a `DropdownMenuItem` with
+   `CheffyIcon(20.dp)` in PostCard's existing MoreVert menu
+   (`PostCard.kt:437-598`), inserted near "Add to list". Gated on
+   `FeatureFlags.NOTE_REVIEW_ENABLED ∧ LocalCanSign ∧
+   ImageUrls.extractImageUrls(event.content).isNotEmpty()` (the menu
+   itself is not canSign-gated, so the gate must be explicit here — see
+   0.4). This mirrors web's `PostActionsMenu` item.
+2. **Inline (discoverability, web parity):** a *compact* trigger — 22dp
+   `CheffyIcon` with a 40dp unbounded-ripple tap target, like the expand
+   chevron's idiom, NOT a sixth 48dp slot — placed at the end of the
+   action row next to the chevron (`PostCard.kt:906`), rendered only when
+   an image is detected. Cost ~28dp. This still eats into the bar's
+   headroom on 360dp devices with count-heavy notes, so treat it as
+   flag-adjacent: ship it in Phase 2 behind the same flag, QA on a 360dp
+   device with all four counts populated, and drop to overflow-only if it
+   squeezes the bookmark slot. (Open question 2 below.)
+
+Note the inline position inherits READ_ONLY invisibility for free because
+PostCard hides the whole action row when `!LocalCanSign`
+(`PostCard.kt:876-877`).
+
+### 0.4 READ_ONLY accounts
+
+Precedents found:
+- **Per-note actions are hidden, not nudged:** PostCard renders the entire
+  ActionBar row only when `LocalCanSign.current` is true
+  (`PostCard.kt:876-877`); `LocalCanSign` is
+  `signingMode != SigningMode.READ_ONLY` (`Navigation.kt:1031`), and
+  READ_ONLY yields a null signer (`Navigation.kt:390`).
+- **Sous Chef** is a drawer *destination*, so it stays reachable and
+  nudges at the CTA instead: `canSign = feedViewModel.signer != null`
+  (`Navigation.kt:3441`), `!canSign -> onSignIn()` on the import CTA
+  (`SousChefScreen.kt:349`), save button
+  `enabled = canSign && hasImage && !saving` with the copy "Sign in to
+  save this recipe to your account." (`SousChefScreen.kt:472,492`). The
+  ViewModel keeps a defensive null-signer guard
+  (`SousChefViewModel.kt:93-96`).
+
+**Recommendation:** Note Review's trigger is a per-note action, so it
+follows the per-note precedent — **invisible for READ_ONLY**, no nudge.
+Inline placement gets this free (0.3); the overflow entry must gate on
+`LocalCanSign` explicitly. Keep the Sous-Chef-style defensive null-signer
+guard in `NoteReviewViewModel`. This matches Phase 2's stated gate
+(flag ∧ canSign ∧ image detected) — no plan change needed, and the Phase 6
+QA row "READ_ONLY (hidden/nudge)" resolves to **hidden**.
+
+### 0.5 RichContent reuse vs. parity port
+
+**Verdict: parity port (`ImageUrls.kt`), do not reuse RichContent.**
+`RichContent.parseContent` (`ui/component/RichContent.kt:301`) is a
+rendering pipeline (segments for text/media/nostr-refs/hashtags/emoji) and
+diverges from web `imageUrls.ts` in ways that would either surface
+triggers the server 400s, or hide triggers the server would accept:
+
+1. **Extension sets differ.** Android:
+   `{jpg, jpeg, png, gif, webp, heic, heif}` (`RichContent.kt:215`). Web:
+   `\.(jpg|jpeg|png|gif|webp|svg|bmp|avif)(\?.*)?$` on the *pathname*.
+   Android-only `heic/heif` → trigger shown, server rejects the URL.
+   Web-only `svg/bmp/avif` → no Android trigger where web shows one.
+2. **Extension derivation differs.** Android takes
+   `url.substringAfterLast('.').substringBefore('?')` over the whole URL
+   string (`RichContent.kt:318,360`) — fragments break it
+   (`photo.jpg#x` → ext `jpg#x`, not an image; web parses the URL and
+   tests the pathname, which excludes the fragment → image). Web also
+   tolerates a query via the regex; both agree on plain `?query` URLs but
+   only by different mechanisms.
+3. **No extensionless-host rescue in Android.** Web rescues
+   `image.nostr.build`, `imgur.com`, `primal.b-cdn.net`,
+   `media.tenor.com`, `i.ibb.co` via exact-or-subdomain `matchesHost`
+   (never substring), plus `nostr.build` with `/i/` paths, plus any host
+   with an `imgproxy` label. Android has none of these; instead it has a
+   web-absent Blossom rule (64-hex path → `UnknownMediaSegment`,
+   `RichContent.kt:227,268-276`) — Blossom URLs must NOT trigger Note
+   Review (extensionless, not on the server's rescue list → server 400).
+4. **Tokenization differs.** Android's `combinedRegex`
+   (`RichContent.kt:278`) also matches scheme-less bare domains and
+   `wss://`; web's `URL_REGEX` is `https?://` only, with trailing
+   `[.,;:!?]+` stripped.
+5. **imeta promotion.** Android promotes any URL whose kind-1 `imeta` tag
+   says `m image/*` (`RichContent.kt:317-323`); web's `extractImageUrls`
+   works on raw content only, and the server validates the URL string with
+   the same module — an imeta-promoted extensionless URL would pass the
+   Android gate and fail server-side. Note Review detection must ignore
+   imeta.
+
+**Recommendation:** port `ImageUrls.kt` (`isImageUrl`, `filterImageUrls`
+with first-occurrence dedup — load-bearing for the Phase 4 thumbnail
+strip — and `extractImageUrls` with the trailing-punctuation strip) as a
+pure, JVM-testable object with unit tests mirroring the web cases,
+including the negative cases: substring-host attacks
+(`notimgur.com`, `imgur.com.evil.example`), fragment URLs, Blossom-hash
+URLs, `heic` exclusion. Leave RichContent untouched — its job is
+rendering, and its `heic/heif`/Blossom behavior is correct for that job.
+Confirms gap #1 as written.
+
+### 0.6 Wallet detection — what "has in-app wallet" means
+
+State inventory:
+- `WalletModeRepository.getMode()` → `NONE | NWC | SPARK`, persisted
+  per-pubkey in SharedPreferences `wisp_wallet_mode_<pubkey>`
+  (`repo/WalletModeRepository.kt:5,20-23`).
+- Provider selection: `FeedViewModel.activeWalletProvider` maps
+  `SPARK -> sparkRepo; else -> nwcRepo` (`FeedViewModel.kt:337-341`).
+  **Footgun: `NONE` also resolves to `nwcRepo`** — so the mode check is
+  mandatory; never infer "has wallet" from `activeWalletProvider` alone
+  (a stale `nwc_uri` could make it look connected).
+- Configured-ness: `NwcRepository.hasConnection()` = saved `nwc_uri` in
+  EncryptedSharedPreferences (`NwcRepository.kt:71`);
+  `SparkRepository.hasConnection()` = mnemonic present
+  (`SparkRepository.kt:130`). `WalletProvider.isConnected` is *live*
+  socket state (`WalletProvider.kt:8`) — do not use it for routing; a
+  configured-but-idle wallet should still route in-app (`payInvoice`
+  establishes the connection on demand, per the existing zap path:
+  `ZapSender.kt:201`, `FeedViewModel.payInvoice` `:484-485`).
+
+**Definition for Phase 5 routing:**
+
+```kotlin
+val hasInAppWallet =
+    walletModeRepo.getMode() != WalletMode.NONE &&
+    activeWalletProvider.hasConnection()
+```
+
+`true` → attempt `activeWalletProvider.payInvoice(bolt11)` raced against
+the 30s timeout, falling back to QR/copy/`lightning:` with the SAME
+bolt11 (invariant 5). `false` → straight to external. This is the exact
+analog of web's wallet kinds 3 (NWC) / 4 (Spark) routing. READ_ONLY
+accounts can still hold a wallet mode, but they never reach the modal
+(0.4), so no extra guard is needed.
+
+### Open questions before Phase 1
+
+1. **0.1 — approve the header-reuse design?** (a) 45s-TTL cached NIP-98
+   header for the credit-status poll (verifier-legal per the ±60s
+   stale-timestamp check, stateless verifier), (b) adding kind 27235 to
+   `RemoteSignerBridge.DEFAULT_PERMISSIONS`, and (c) keeping the 3s poll
+   cadence for all signer types on that basis.
+2. **0.3 — inline trigger: ship the compact adaptive icon in Phase 2, or
+   overflow-only?** Measured math says a sixth 48dp ActionBar slot
+   doesn't fit on 360dp devices; my recommendation is overflow always +
+   compact 22dp inline icon (drop it if 360dp QA shows squeeze), but
+   that's a product call.
+3. **Plan/spec corrections to land:** no NIP-46 bunker signer exists —
+   fix this plan's §2 signer bullet and the Phase 6 QA "Signer" row
+   (LocalSigner / Amber / READ_ONLY), and note that
+   ZAPCOOKING_ANDROID_BUILD.md §1 + CLAUDE.md still claim
+   "LocalSigner-only," which contradicts the live code. Fix in this PR
+   series or separately?
+4. **0.5 — heic/heif parity.** Strict parity excludes `heic/heif` from
+   Note Review triggers even though Android renders them as images and
+   iPhone photos commonly use them; the server (same module) would reject
+   them anyway, so parity is correct today — flagging in case you want a
+   server-side extension addition first (out of scope for this port).
+
+---
+
+## Phase 0 decisions
+
+Decided 2026-07-09 (answers the open questions above; Phase 1 may start):
+
+1. **NIP-98 header caching (0.1).** Cache one signed header per
+   `(method, normalized URL, body-hash)` key with a **30s TTL** (half the
+   verifier's ±60s stale-timestamp window, so a cached header is never
+   presented in its skew-sensitive tail). On a **401 for a request that
+   used a cached header**: invalidate, silently re-sign once, retry once.
+   A 401 on a freshly signed header is NOT retried — re-signing cannot
+   fix it. Kind 27235 is added to
+   `RemoteSignerBridge.DEFAULT_PERMISSIONS` (applies to new NIP-55
+   logins; existing Amber connections keep their stored grants and get
+   one approval prompt, where the user can choose "always allow"). Poll
+   cadence stays 3s for all signer types.
+2. **Trigger placement (0.3): overflow-menu-only.** No inline ActionBar
+   icon — the measured width math (272dp fixed + counts vs ~308dp
+   available on 360dp devices) rules out a sixth slot, and the compact
+   inline variant isn't worth the squeeze risk. The trigger is a
+   `DropdownMenuItem` in PostCard's note menu, gated on
+   flag ∧ `LocalCanSign` ∧ image detected.
+3. **Doc corrections land separately** from the implementation PRs:
+   PR #146 fixes CLAUDE.md, ZAPCOOKING_ANDROID_BUILD.md §1/§6, the stale
+   `Nip98.kt` KDoc ("LocalSigner-only"), this plan's §2 signer bullet,
+   and the Phase 6 QA matrix (bunker row removed).
+4. **Image extension parity (0.5): strict parity with web
+   `imageUrls.ts`.** `heic`/`heif` are **excluded by design** — the
+   server validates with the same module and would reject them. If
+   iPhone-photo coverage is wanted later, that's a server-side extension
+   change first (out of scope for this port).
