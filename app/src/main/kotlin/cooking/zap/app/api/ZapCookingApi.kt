@@ -1,6 +1,7 @@
 package cooking.zap.app.api
 
 import cooking.zap.app.nostr.Nip98
+import cooking.zap.app.nostr.Nip98HeaderCache
 import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.nostr.SignerCancelledException
 import cooking.zap.app.nostr.SignerRejectedException
@@ -35,6 +36,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 class ZapCookingApi(
     private val baseUrl: String = DEFAULT_BASE_URL,
     private val client: OkHttpClient = HttpClientFactory.getGeneralClient(),
+    private val nip98Cache: Nip98HeaderCache = Nip98HeaderCache(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val jsonMediaType = "application/json".toMediaType()
@@ -314,6 +316,157 @@ class ZapCookingApi(
             }
         }
 
+    // --- Cheffy Note Review (CHEFFY_NOTE_REVIEW_PLAN.md, Phase 1) ---
+
+    /**
+     * `POST /api/zappy/note-review` — draft a warm comment or a
+     * reverse-engineered recipe for a food photo in a kind-1 note. NIP-98
+     * with body-hash binding, through [nip98Cache] (30s header reuse +
+     * silent re-sign-and-retry on a 401 against a cached header — Phase 0
+     * decision 1). Long-timeout compute client: vision drafting routinely
+     * exceeds the general client's 15s read timeout.
+     *
+     * [noteText] is trimmed and hard-capped to [NOTE_TEXT_MAX_CHARS]
+     * **before** serializing — the payload hash binds the signature to the
+     * exact bytes sent, so capping after signing would 401. Blank-after-trim
+     * context is omitted entirely. [noteId] is server-side logging only.
+     *
+     * Never auto-publishes anything: the returned draft is input to a
+     * mandatory edit step (invariant D1).
+     */
+    suspend fun requestNoteReview(
+        imageUrl: String,
+        mode: NoteReviewMode,
+        noteText: String? = null,
+        noteId: String? = null,
+        signer: NostrSigner,
+    ): NoteReviewResult {
+        val cappedNote = noteText?.trim()?.take(NOTE_TEXT_MAX_CHARS)?.takeIf { it.isNotEmpty() }
+        val bodyString = json.encodeToString(
+            NoteReviewRequest.serializer(),
+            NoteReviewRequest(
+                imageUrl = imageUrl,
+                mode = mode.wire,
+                noteText = cappedNote,
+                noteId = noteId,
+            ),
+        )
+        return try {
+            val resp = authedRaw(
+                method = "POST",
+                url = "$baseUrl/api/zappy/note-review",
+                bodyString = bodyString,
+                signer = signer,
+                httpClient = HttpClientFactory.getComputeClient(),
+            )
+            mapNoteReviewResponse(resp.code, resp.body)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: SignerRejectedException) {
+            NoteReviewResult.SignFailed
+        } catch (e: SignerCancelledException) {
+            NoteReviewResult.SignFailed
+        } catch (e: Exception) {
+            NoteReviewResult.Error(NETWORK_ERROR_MESSAGE)
+        }
+    }
+
+    /**
+     * `POST /api/zappy/note-review/credit-invoice` — mint a 21-sat credit
+     * invoice for a non-member. The body is exactly `{}` (the NIP-98
+     * identity IS the correlation — the invoice is bound server-side to the
+     * authed pubkey). Success carries the BOLT11 plus [CreditInvoiceResult.Success.expiresAtMillis]
+     * (ms epoch). Callers must never mint a second invoice while one is
+     * live (invariant 5) — that discipline lives in the Phase 5 ViewModel,
+     * not here.
+     */
+    suspend fun requestCreditInvoice(signer: NostrSigner): CreditInvoiceResult = try {
+        val resp = authedRaw(
+            method = "POST",
+            url = "$baseUrl/api/zappy/note-review/credit-invoice",
+            bodyString = EMPTY_JSON_BODY,
+            signer = signer,
+            httpClient = client,
+        )
+        mapCreditInvoiceResponse(resp.code, resp.body)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: SignerRejectedException) {
+        CreditInvoiceResult.SignFailed
+    } catch (e: SignerCancelledException) {
+        CreditInvoiceResult.SignFailed
+    } catch (e: Exception) {
+        CreditInvoiceResult.Error(NETWORK_ERROR_MESSAGE)
+    }
+
+    /**
+     * `GET /api/zappy/note-review/credit-status?id={invoiceId}` — the sole
+     * crediting authority (invariant 4): wallet-side success signals are
+     * advisory, only a `paid` from this endpoint credits. The `id` query
+     * param rides the request URL while the signed `u` tag excludes it
+     * ([Nip98.normalizeUrl] drops queries on both sides) — so under
+     * [nip98Cache] one signed header covers ~10 polls at the 3s cadence,
+     * across differing invoice ids.
+     */
+    suspend fun checkCreditStatus(signer: NostrSigner, invoiceId: String): CreditStatusResult = try {
+        val url = baseUrl.toHttpUrl().newBuilder()
+            .addPathSegments("api/zappy/note-review/credit-status")
+            .addQueryParameter("id", invoiceId)
+            .build()
+        val resp = authedRaw(
+            method = "GET",
+            url = url.toString(),
+            bodyString = null,
+            signer = signer,
+            httpClient = client,
+        )
+        mapCreditStatusResponse(resp.code, resp.body)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: SignerRejectedException) {
+        CreditStatusResult.SignFailed
+    } catch (e: SignerCancelledException) {
+        CreditStatusResult.SignFailed
+    } catch (e: Exception) {
+        CreditStatusResult.Error(NETWORK_ERROR_MESSAGE)
+    }
+
+    /** Raw status + body of an HTTP response, for callers that map codes themselves. */
+    private data class RawResponse(val code: Int, val body: String)
+
+    /**
+     * NIP-98-authenticated request through [nip98Cache]: reuses a cached
+     * header within its TTL; a 401 against a cached header is invalidated,
+     * silently re-signed once, and retried once (Phase 0 decision 1). A
+     * null [bodyString] sends a GET; non-null sends a POST whose exact
+     * bytes are hash-bound into the header.
+     */
+    private suspend fun authedRaw(
+        method: String,
+        url: String,
+        bodyString: String?,
+        signer: NostrSigner,
+        httpClient: OkHttpClient,
+    ): RawResponse = withContext(Dispatchers.IO) {
+        nip98Cache.withAuthHeader(
+            signer = signer,
+            method = method,
+            url = url,
+            bodyString = bodyString,
+            isUnauthorized = { it.code == 401 },
+        ) { authHeader ->
+            val builder = Request.Builder().url(url).header("Authorization", authHeader)
+            if (bodyString != null) {
+                builder.post(bodyString.toRequestBody(jsonMediaType))
+            } else {
+                builder.get()
+            }
+            httpClient.newCall(builder.build()).execute().use { resp ->
+                RawResponse(resp.code, resp.body?.string().orEmpty())
+            }
+        }
+    }
+
     /** Single error/decode path. Call only from a `Dispatchers.IO` context. */
     private fun <T> execute(
         request: Request,
@@ -329,6 +482,104 @@ class ZapCookingApi(
 
     companion object {
         const val DEFAULT_BASE_URL = "https://zap.cooking"
+
+        /** Server-side `NOTE_TEXT_MAX_CHARS` — the client caps to match before signing. */
+        internal const val NOTE_TEXT_MAX_CHARS = 1000
+
+        /** The credit-invoice endpoint expects a body of exactly `{}`. */
+        private const val EMPTY_JSON_BODY = "{}"
+
+        private const val NETWORK_ERROR_MESSAGE =
+            "Network error — check your connection and try again."
+
+        /** Companion-scope decoder for the pure response-mapping helpers below. */
+        private val lenientJson = Json { ignoreUnknownKeys = true }
+
+        private fun <T> decodeOrNull(deserializer: DeserializationStrategy<T>, body: String): T? =
+            try {
+                lenientJson.decodeFromString(deserializer, body)
+            } catch (_: Exception) {
+                null
+            }
+
+        /**
+         * Map a note-review response onto [NoteReviewResult]. Pure —
+         * unit-tested against the server's real shapes. The typed `code`
+         * in the body wins over the HTTP status; the status is the
+         * fallback for bodies that fail to parse. `NOT_FOOD` and
+         * `IMAGE_UNREADABLE` collapse into [NoteReviewResult.DeadEnd],
+         * which deliberately carries no message: the UI must show a local
+         * hedged line, never the server's text (which fires for CDN
+         * fallback images on dead links too).
+         */
+        internal fun mapNoteReviewResponse(code: Int, body: String): NoteReviewResult {
+            val resp = decodeOrNull(NoteReviewResponse.serializer(), body)
+            if (code in 200..299 && resp != null && resp.ok) {
+                val output = resp.output?.trim()
+                if (!output.isNullOrEmpty()) {
+                    return NoteReviewResult.Success(output, resp.creditsRemaining)
+                }
+                return NoteReviewResult.Error("Cheffy went quiet for a second. Please try again.")
+            }
+            return when (resp?.code) {
+                "NOT_MEMBER" -> NoteReviewResult.NotMember
+                "MEMBERSHIP_UNAVAILABLE" -> NoteReviewResult.MembershipUnavailable
+                "RATE_LIMITED" -> NoteReviewResult.RateLimited(resp?.retryAfter)
+                "NOT_FOOD", "IMAGE_UNREADABLE" -> NoteReviewResult.DeadEnd
+                else -> when (code) {
+                    403 -> NoteReviewResult.NotMember
+                    503 -> NoteReviewResult.MembershipUnavailable
+                    429 -> NoteReviewResult.RateLimited(resp?.retryAfter)
+                    422 -> NoteReviewResult.DeadEnd
+                    else -> NoteReviewResult.Error(
+                        resp?.error ?: "Cheffy could not finish that one (HTTP $code)."
+                    )
+                }
+            }
+        }
+
+        /** Map a credit-invoice response onto [CreditInvoiceResult]. Pure. */
+        internal fun mapCreditInvoiceResponse(code: Int, body: String): CreditInvoiceResult {
+            val resp = decodeOrNull(CreditInvoiceResponse.serializer(), body)
+            if (code in 200..299 && resp != null && resp.ok) {
+                val invoiceId = resp.invoiceId
+                val bolt11 = resp.bolt11
+                val expiresAt = resp.expiresAt
+                if (!invoiceId.isNullOrEmpty() && !bolt11.isNullOrEmpty() && expiresAt != null) {
+                    return CreditInvoiceResult.Success(
+                        invoiceId = invoiceId,
+                        bolt11 = bolt11,
+                        expiresAtMillis = expiresAt,
+                    )
+                }
+            }
+            return CreditInvoiceResult.Error(
+                resp?.error ?: "Couldn't create an invoice (HTTP $code)."
+            )
+        }
+
+        /**
+         * Map a credit-status response onto [CreditStatusResult]. Pure. An
+         * unknown `status` string maps to [CreditStatusResult.Error], NOT
+         * to expired — per invariant 6 a check failure must never destroy
+         * a potentially-paid invoice, and only a value the client
+         * understands may drive that state machine.
+         */
+        internal fun mapCreditStatusResponse(code: Int, body: String): CreditStatusResult {
+            val resp = decodeOrNull(CreditStatusResponse.serializer(), body)
+            val status = when (resp?.status) {
+                "paid" -> CreditStatus.PAID
+                "pending" -> CreditStatus.PENDING
+                "expired" -> CreditStatus.EXPIRED
+                else -> null
+            }
+            if (code in 200..299 && resp != null && resp.ok && status != null) {
+                return CreditStatusResult.Success(status, resp.balance ?: 0)
+            }
+            return CreditStatusResult.Error(
+                resp?.error ?: "Couldn't check the invoice (HTTP $code)."
+            )
+        }
 
         /** Deserializer for the `/api/membership` keyed-map batch response. */
         internal val BATCH_MEMBERSHIP_SERIALIZER =
@@ -547,3 +798,120 @@ data class MembershipStatus(
 /** Non-2xx response from the zap.cooking backend. */
 class ZapCookingApiException(val code: Int, val body: String) :
     Exception("zap.cooking API error $code: $body")
+
+// --- Cheffy Note Review types (CHEFFY_NOTE_REVIEW_PLAN.md, Phase 1) ---
+
+/** Note-review draft mode. Wire values match the web contract exactly. */
+enum class NoteReviewMode(val wire: String) { COMMENT("comment"), RECIPE("recipe") }
+
+/**
+ * Outcome of [ZapCookingApi.requestNoteReview]. Mirrors the server's typed
+ * failures; the UI phase machine (Phase 2) maps these onto modal phases.
+ */
+sealed interface NoteReviewResult {
+    /**
+     * A draft was produced. [creditsRemaining] is present only when a
+     * purchased credit was spent (display only — the server is the sole
+     * spend accountant).
+     */
+    data class Success(val output: String, val creditsRemaining: Int? = null) : NoteReviewResult
+
+    /** 403 `NOT_MEMBER` — render the membership/21-sats card. */
+    data object NotMember : NoteReviewResult
+
+    /**
+     * 503 `MEMBERSHIP_UNAVAILABLE` — the endpoint fails CLOSED on a
+     * membership-service outage (deviation D5). Render as a retryable
+     * "try again shortly" state, NEVER as an upsell.
+     */
+    data object MembershipUnavailable : NoteReviewResult
+
+    /** 429 — per-pubkey budget (8/hour, 30/day; regenerates share it). */
+    data class RateLimited(val retryAfterSeconds: Int? = null) : NoteReviewResult
+
+    /**
+     * 422 `NOT_FOOD` / `IMAGE_UNREADABLE`, collapsed: the UI treats them
+     * identically and shows a local hedged line — this type carries no
+     * message by design so the server's text can never leak through.
+     */
+    data object DeadEnd : NoteReviewResult
+
+    /** The signer declined/cancelled — a user choice, not an error. */
+    data object SignFailed : NoteReviewResult
+
+    data class Error(val message: String) : NoteReviewResult
+}
+
+/** Outcome of [ZapCookingApi.requestCreditInvoice]. */
+sealed interface CreditInvoiceResult {
+    /** [expiresAtMillis] is a ms-epoch timestamp (server contract). */
+    data class Success(
+        val invoiceId: String,
+        val bolt11: String,
+        val expiresAtMillis: Long,
+    ) : CreditInvoiceResult
+
+    /** The signer declined/cancelled — a user choice, not an error. */
+    data object SignFailed : CreditInvoiceResult
+
+    data class Error(val message: String) : CreditInvoiceResult
+}
+
+/** Wire status of a credit invoice, per the credit-status endpoint. */
+enum class CreditStatus { PAID, PENDING, EXPIRED }
+
+/**
+ * Outcome of [ZapCookingApi.checkCreditStatus]. Callers must treat
+ * [SignFailed]/[Error] as "check failed → keep the invoice" (invariant 6),
+ * never as expired.
+ */
+sealed interface CreditStatusResult {
+    data class Success(val status: CreditStatus, val balance: Int) : CreditStatusResult
+
+    /** The signer declined/cancelled the poll's auth sign — stop polling, keep the invoice. */
+    data object SignFailed : CreditStatusResult
+
+    data class Error(val message: String) : CreditStatusResult
+}
+
+// No property defaults on required fields: the shared Json has
+// encodeDefaults=false, so optional-null fields are omitted from the wire
+// body exactly like the web client's `noteText?`/`noteId?`.
+@Serializable
+private data class NoteReviewRequest(
+    val imageUrl: String,
+    val mode: String,
+    val noteText: String? = null,
+    val noteId: String? = null,
+)
+
+/** `{ ok, output, creditsRemaining?, error?, code?, retryAfter? }` — lenient. */
+@Serializable
+private data class NoteReviewResponse(
+    val ok: Boolean = false,
+    val output: String? = null,
+    val creditsRemaining: Int? = null,
+    val error: String? = null,
+    val code: String? = null,
+    val retryAfter: Int? = null,
+)
+
+/** `{ ok, invoiceId, bolt11, expiresAt }` — expiresAt is ms epoch. Lenient. */
+@Serializable
+private data class CreditInvoiceResponse(
+    val ok: Boolean = false,
+    val invoiceId: String? = null,
+    val bolt11: String? = null,
+    val expiresAt: Long? = null,
+    val error: String? = null,
+    val code: String? = null,
+)
+
+/** `{ ok, status, balance }` — lenient. */
+@Serializable
+private data class CreditStatusResponse(
+    val ok: Boolean = false,
+    val status: String? = null,
+    val balance: Int? = null,
+    val error: String? = null,
+)
