@@ -1,5 +1,6 @@
 package cooking.zap.app.cheffy
 
+import cooking.zap.app.api.CreditStatus
 import cooking.zap.app.api.NoteReviewMode
 import cooking.zap.app.api.NoteReviewResult
 import cooking.zap.app.nostr.Nip19
@@ -27,7 +28,7 @@ object NoteReview {
      * never [UPSELL] — the endpoint fails closed on a membership-service
      * outage, and an upsell would dun a member over our outage.
      */
-    enum class Phase { CHOOSE, SIGNING, LOADING, DRAFT, POSTING, POST_TIMEOUT, POSTED, DEAD_END, UPSELL, ERROR }
+    enum class Phase { CHOOSE, SIGNING, LOADING, DRAFT, POSTING, POST_TIMEOUT, POSTED, DEAD_END, UPSELL, PAYING, ERROR }
 
     /**
      * The only phase a publish may start from — the double-post guard
@@ -110,6 +111,38 @@ object NoteReview {
      * the member's own voice (off).
      */
     fun defaultDisclosure(mode: NoteReviewMode): Boolean = mode == NoteReviewMode.RECIPE
+
+    // --- Credits (Phase 5a, port of the noteReview.ts credit block) ---
+
+    /** Product spec — 21 sats per draft. */
+    const val CREDIT_PRICE_SATS = 21
+
+    /** Verbatim from `noteReview.ts` `CREDITS_CROSS_DEVICE_LINE`. */
+    const val CREDITS_CROSS_DEVICE_LINE = "Tied to your Nostr key — works on any device."
+
+    /**
+     * Verbatim from `noteReview.ts` `PAYMENT_CARD_EXAMPLE_DRAFT` — the
+     * static example on the payment card so first-timers see output
+     * quality before the 21-sat ask. Comment-mode length, hardcoded.
+     */
+    const val PAYMENT_CARD_EXAMPLE_DRAFT =
+        "That crust has the kind of golden edge you only get from a properly hot pan — and the basil on top says you weren't rushing. Beautiful work."
+
+    /** Verbatim from the web `beginPolling` expired branch. */
+    const val INVOICE_EXPIRED_LINE = "That invoice expired — grab a fresh one below."
+
+    /** Verbatim from the web `startPayment` mint-failure branch. */
+    const val INVOICE_SETUP_FAILED_LINE = "Could not set up the payment. Please try again."
+
+    /** What the 3s poll loop does with each status observation. */
+    enum class PollAction { CREDITED, EXPIRED, CONTINUE }
+
+    /** Port of the web `pollActionForStatus`. Pure — the poll's tested core. */
+    fun pollActionForStatus(status: CreditStatus): PollAction = when (status) {
+        CreditStatus.PAID -> PollAction.CREDITED
+        CreditStatus.EXPIRED -> PollAction.EXPIRED
+        CreditStatus.PENDING -> PollAction.CONTINUE
+    }
 
     /**
      * The stored preference seeds the toggle only on the initial mode

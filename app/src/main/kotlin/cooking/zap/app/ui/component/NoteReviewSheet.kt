@@ -1,8 +1,12 @@
 package cooking.zap.app.ui.component
 
+import android.content.Intent
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,8 +18,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -26,11 +34,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cooking.zap.app.api.NoteReviewMode
@@ -66,6 +81,10 @@ fun NoteReviewSheet(
     onViewReply: () -> Unit,
     onToggleDisclosure: () -> Unit,
     onSelectImage: (Int) -> Unit,
+    /** Buy one draft for 21 sats (Phase 5a — external payment path). */
+    onStartPayment: () -> Unit,
+    /** Leave the payment screen; the invoice stays live for reuse. */
+    onBackFromPaying: () -> Unit,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -133,7 +152,8 @@ fun NoteReviewSheet(
                         modifier = Modifier.align(Alignment.CenterHorizontally),
                     ) { Text("Back") }
                 }
-                NoteReview.Phase.UPSELL -> UpsellContent(onViewMembership)
+                NoteReview.Phase.UPSELL -> UpsellContent(state, onViewMembership, onStartPayment)
+                NoteReview.Phase.PAYING -> PayingContent(state, onBackFromPaying)
                 NoteReview.Phase.ERROR -> {
                     WaitContent(
                         expression = Cheffy.Expression.CONCERNED,
@@ -337,7 +357,11 @@ private fun ImagePickerStrip(
 }
 
 @Composable
-private fun UpsellContent(onViewMembership: (() -> Unit)?) {
+private fun UpsellContent(
+    state: NoteReviewViewModel.UiState,
+    onViewMembership: (() -> Unit)?,
+    onStartPayment: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -357,9 +381,139 @@ private fun UpsellContent(onViewMembership: (() -> Unit)?) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
-        // The 21-sats path joins this card in Phase 5.
+        // Static output sample (web parity) so first-timers see quality
+        // before the 21-sat ask.
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                Text(
+                    "The kind of reply Cheffy drafts:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "“${NoteReview.PAYMENT_CARD_EXAMPLE_DRAFT}”",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        if (state.payError.isNotBlank()) {
+            Text(
+                state.payError,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+            )
+        }
+        // Membership stays visually primary; sats is the impulse lane.
         if (onViewMembership != null) {
             Button(onClick = onViewMembership) { Text("View membership") }
         }
+        OutlinedButton(onClick = onStartPayment) {
+            Text("⚡ ${NoteReview.CREDIT_PRICE_SATS} sats for one draft")
+        }
+        Text(
+            NoteReview.CREDITS_CROSS_DEVICE_LINE,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/**
+ * The PAYING screen (Phase 5a: external path only — QR, copy, and a
+ * `lightning:` intent; in-app wallet routing arrives in 5b and slots in
+ * front of this). The status poll is already running (it started the
+ * moment the invoice existed); everything here is just ways to move sats.
+ */
+@Composable
+private fun PayingContent(
+    state: NoteReviewViewModel.UiState,
+    onBackFromPaying: () -> Unit,
+) {
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        CheffyIcon(size = 64.dp, expression = Cheffy.Expression.EXCITED)
+        Text(
+            "Waiting for your ${NoteReview.CREDIT_PRICE_SATS} sats…",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+        )
+        val invoice = state.invoice
+        if (invoice == null) {
+            Text(
+                "Setting up your invoice…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            val qrBitmap = remember(invoice.bolt11) {
+                generateQrBitmap("lightning:${invoice.bolt11}")
+            }
+            Box(
+                modifier = Modifier
+                    .size(220.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White)
+                    .padding(8.dp),
+            ) {
+                Image(
+                    bitmap = qrBitmap.asImageBitmap(),
+                    contentDescription = "Lightning invoice QR code",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    invoice.bolt11,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = {
+                    clipboardManager.setText(AnnotatedString(invoice.bolt11))
+                }) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "Copy invoice",
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+            Button(onClick = {
+                val intent = Intent(
+                    Intent.ACTION_VIEW,
+                    android.net.Uri.parse("lightning:${invoice.bolt11}"),
+                )
+                try {
+                    context.startActivity(Intent.createChooser(intent, null))
+                } catch (_: Exception) {
+                    // No wallet app — the QR and copy affordances remain.
+                }
+            }) { Text("Open in wallet") }
+            Text(
+                "Pay with any Lightning wallet — drafting starts the moment it lands.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+        TextButton(onClick = onBackFromPaying) { Text("Back") }
     }
 }

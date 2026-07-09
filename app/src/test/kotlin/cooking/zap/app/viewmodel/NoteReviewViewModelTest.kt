@@ -608,6 +608,192 @@ class NoteReviewViewModelTest {
         assertEquals(0, vm.state.value.selectedImageIndex)
     }
 
+    // --- Phase 5a: credit invoice + status poll ---
+
+    private val farFutureMs = 4_102_444_800_000L // 2100 — never expires in a test
+    private fun invoiceResponse(bolt11: String = "lnbc210n1cheffy", expiresAt: Long = farFutureMs) =
+        jsonResponse(200, """{"ok":true,"invoiceId":"rr-1","bolt11":"$bolt11","expiresAt":$expiresAt}""")
+
+    private fun statusResponse(status: String, balance: Int = 0) =
+        jsonResponse(200, """{"ok":true,"status":"$status","balance":$balance}""")
+
+    private fun landUpsell(pollIntervalMs: Long) {
+        vm = NoteReviewViewModel(pollIntervalMs = pollIntervalMs)
+        vm.open(parent = parentEvent, imageUrls = listOf(imageUrl))
+        server.enqueue(jsonResponse(403, """{"ok":false,"code":"NOT_MEMBER","error":"members or sats"}"""))
+        vm.choose(NoteReviewMode.COMMENT, api, signer)
+        awaitPhase(NoteReview.Phase.UPSELL)
+    }
+
+    private fun awaitRequests(count: Int) = runBlocking {
+        withTimeout(10_000) {
+            while (server.requestCount < count) kotlinx.coroutines.delay(20)
+        }
+    }
+
+    private fun drainRequestPaths(): List<String> {
+        val paths = mutableListOf<String>()
+        while (true) {
+            val recorded = server.takeRequest(100, java.util.concurrent.TimeUnit.MILLISECONDS) ?: break
+            paths.add(recorded.path ?: "")
+        }
+        return paths
+    }
+
+    @Test
+    fun buy_startsThePollTheMomentTheInvoiceExists_beforeAnyPaymentAction() {
+        landUpsell(pollIntervalMs = 60_000) // one immediate check, then parked
+        server.enqueue(invoiceResponse())
+        server.enqueue(statusResponse("pending"))
+
+        vm.startPayment(api, signer)
+        awaitPhase(NoteReview.Phase.PAYING)
+
+        // Without ANY payment interaction, the status poll has already
+        // fired: choose + invoice mint + first status check.
+        awaitRequests(3)
+        val paths = drainRequestPaths()
+        assertTrue(paths[1].startsWith("/api/zappy/note-review/credit-invoice"))
+        assertTrue(paths[2].startsWith("/api/zappy/note-review/credit-status"))
+        assertEquals("lnbc210n1cheffy", vm.state.value.invoice?.bolt11)
+    }
+
+    @Test
+    fun buyWhileALiveInvoiceExists_rePresentsIt_neverMintsASecond() {
+        landUpsell(pollIntervalMs = 60_000)
+        server.enqueue(invoiceResponse(bolt11 = "lnbc-first"))
+        server.enqueue(statusResponse("pending"))
+
+        vm.startPayment(api, signer)
+        awaitPhase(NoteReview.Phase.PAYING)
+        awaitRequests(3)
+
+        vm.backFromPaying() // poll stops, invoice stays live
+        assertEquals(NoteReview.Phase.UPSELL, vm.state.value.phase)
+        assertEquals("lnbc-first", vm.state.value.invoice?.bolt11)
+
+        // Buy again: NO invoice response is queued — only a status
+        // response. A second mint would hang; the reuse path polls the
+        // SAME invoice instead (invariant 5).
+        server.enqueue(statusResponse("pending"))
+        vm.startPayment(api, signer)
+        awaitPhase(NoteReview.Phase.PAYING)
+        awaitRequests(4)
+
+        assertEquals("lnbc-first", vm.state.value.invoice?.bolt11)
+        val paths = drainRequestPaths()
+        assertEquals(1, paths.count { it.startsWith("/api/zappy/note-review/credit-invoice") })
+        assertTrue(paths.last().startsWith("/api/zappy/note-review/credit-status"))
+    }
+
+    @Test
+    fun expiredObservation_returnsToUpsell_andTheNextBuyMintsFresh() {
+        landUpsell(pollIntervalMs = 60_000)
+        server.enqueue(invoiceResponse(bolt11 = "lnbc-old"))
+        server.enqueue(statusResponse("expired"))
+
+        vm.startPayment(api, signer)
+        val s = awaitPhase(NoteReview.Phase.UPSELL)
+
+        assertEquals(NoteReview.INVOICE_EXPIRED_LINE, s.payError)
+        assertNull(s.invoice) // dead invoice cleared — fresh mint is legal
+
+        server.enqueue(invoiceResponse(bolt11 = "lnbc-new"))
+        server.enqueue(statusResponse("pending"))
+        vm.startPayment(api, signer)
+        awaitPhase(NoteReview.Phase.PAYING)
+        awaitRequests(5)
+        assertEquals("lnbc-new", vm.state.value.invoice?.bolt11)
+        assertEquals(2, drainRequestPaths().count { it.startsWith("/api/zappy/note-review/credit-invoice") })
+    }
+
+    @Test
+    fun paidObservation_creditsAndAutoRunsThePendingMode() {
+        // Web parity: beginPolling's credited branch runs `run(mode)` —
+        // "Straight into drafting — they paid for this draft."
+        landUpsell(pollIntervalMs = 50)
+        server.enqueue(invoiceResponse())
+        server.enqueue(statusResponse("pending"))
+        server.enqueue(statusResponse("paid", balance = 1))
+        server.enqueue(jsonResponse(200, """{"ok":true,"output":"Paid draft","mode":"comment"}"""))
+
+        vm.startPayment(api, signer)
+        val s = awaitPhase(NoteReview.Phase.DRAFT)
+
+        assertEquals("Paid draft", s.draft)
+        assertEquals(NoteReviewMode.COMMENT, s.mode) // the pending mode ran
+        assertEquals(1, s.creditsRemaining)          // balance acknowledged
+        assertNull(s.invoice)                        // settled invoice cleared
+    }
+
+    @Test
+    fun transientPollFailure_keepsPollingUntilTheServerDecides() {
+        landUpsell(pollIntervalMs = 50)
+        server.enqueue(invoiceResponse())
+        server.enqueue(jsonResponse(503, """{"ok":false,"error":"Payment check hiccuped — trying again shortly."}"""))
+        server.enqueue(statusResponse("pending"))
+        server.enqueue(statusResponse("paid", balance = 1))
+        server.enqueue(jsonResponse(200, """{"ok":true,"output":"Paid draft","mode":"comment"}"""))
+
+        vm.startPayment(api, signer)
+        val s = awaitPhase(NoteReview.Phase.DRAFT)
+        assertEquals(1, s.creditsRemaining)
+    }
+
+    @Test
+    fun sheetClose_cancelsAHangingPoll_withoutLeakingTicks() {
+        landUpsell(pollIntervalMs = 50)
+        server.enqueue(invoiceResponse())
+        // NO status response queued: the poll's first check hangs on the
+        // wire — the worst case for a leak.
+        vm.startPayment(api, signer)
+        awaitPhase(NoteReview.Phase.PAYING)
+        awaitRequests(3) // choose + invoice + the hanging status check
+
+        vm.onSheetClosed()
+
+        // Release the hanging check; a live loop would tick again within
+        // 50ms — a cancelled one processes the response and stops.
+        server.enqueue(statusResponse("pending"))
+        Thread.sleep(400)
+        assertEquals(3, server.requestCount)
+        // And the observed status never mutated the closed session.
+        assertEquals(NoteReview.Phase.PAYING, vm.state.value.phase)
+    }
+
+    @Test
+    fun buy_isANoOpOutsideUpsell() {
+        vm.startPayment(api, signer) // fresh CHOOSE
+        assertEquals(NoteReview.Phase.CHOOSE, vm.state.value.phase)
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun invoiceMintFailure_fallsBackToUpsellWithTheServerLine() {
+        landUpsell(pollIntervalMs = 60_000)
+        server.enqueue(jsonResponse(429, """{"ok":false,"code":"RATE_LIMITED","error":"Too many invoices — give the last one a moment.","retryAfter":60}"""))
+
+        vm.startPayment(api, signer)
+        val s = awaitPhase(NoteReview.Phase.UPSELL)
+        assertEquals("Too many invoices — give the last one a moment.", s.payError)
+        assertNull(s.invoice)
+    }
+
+    @Test
+    fun draftResponsesUpdateTheVisibleBalance_andNotMemberIsAuthoritative() {
+        vm.applyResult(NoteReviewResult.Success("draft one", 4))
+        assertEquals(4, vm.state.value.creditsRemaining)
+
+        // A follow-up without the additive field keeps the last balance…
+        vm.applyResult(NoteReviewResult.Success("draft two", null))
+        assertEquals(4, vm.state.value.creditsRemaining)
+
+        // …and a NotMember while the balance was believed positive still
+        // returns to the upsell card — the server is authoritative.
+        vm.applyResult(NoteReviewResult.NotMember)
+        assertEquals(NoteReview.Phase.UPSELL, vm.state.value.phase)
+    }
+
     private class FakeDisclosurePrefs : DisclosurePreferences {
         private val stored = mutableMapOf<NoteReviewMode, Boolean>()
         val saves = mutableListOf<Pair<NoteReviewMode, Boolean>>()

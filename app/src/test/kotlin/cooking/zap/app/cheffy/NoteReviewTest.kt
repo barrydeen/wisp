@@ -154,6 +154,27 @@ class NoteReviewTest {
         assertNotEquals(withoutKind, link)
     }
 
+    // --- Phase 5a: credits ---
+
+    @Test
+    fun pollActionForStatus_mapsEveryWireStatus() {
+        assertEquals(NoteReview.PollAction.CREDITED, NoteReview.pollActionForStatus(cooking.zap.app.api.CreditStatus.PAID))
+        assertEquals(NoteReview.PollAction.EXPIRED, NoteReview.pollActionForStatus(cooking.zap.app.api.CreditStatus.EXPIRED))
+        assertEquals(NoteReview.PollAction.CONTINUE, NoteReview.pollActionForStatus(cooking.zap.app.api.CreditStatus.PENDING))
+    }
+
+    @Test
+    fun paymentCardCopyIsTheWebCopyVerbatim() {
+        assertEquals(21, NoteReview.CREDIT_PRICE_SATS)
+        assertEquals("Tied to your Nostr key — works on any device.", NoteReview.CREDITS_CROSS_DEVICE_LINE)
+        assertEquals(
+            "That crust has the kind of golden edge you only get from a properly hot pan — and the basil on top says you weren't rushing. Beautiful work.",
+            NoteReview.PAYMENT_CARD_EXAMPLE_DRAFT,
+        )
+        assertEquals("That invoice expired — grab a fresh one below.", NoteReview.INVOICE_EXPIRED_LINE)
+        assertEquals("Could not set up the payment. Please try again.", NoteReview.INVOICE_SETUP_FAILED_LINE)
+    }
+
     // --- Phase 4: disclosure footer ---
 
     @Test
