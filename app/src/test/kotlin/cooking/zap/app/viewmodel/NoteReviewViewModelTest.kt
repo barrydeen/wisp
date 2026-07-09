@@ -10,6 +10,7 @@ import cooking.zap.app.nostr.Nip98HeaderCache
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.nostr.SignerRejectedException
+import cooking.zap.app.repo.DisclosurePreferences
 import cooking.zap.app.repo.NoteReviewReplyPublisher
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -78,7 +79,18 @@ class NoteReviewViewModelTest {
         )
         signer = FakeNip98Signer()
         vm = NoteReviewViewModel()
-        vm.open(parent = parentEvent, imageUrl = imageUrl)
+        vm.open(parent = parentEvent, imageUrls = listOf(imageUrl))
+    }
+
+    private fun landDraftViaChoose(
+        mode: NoteReviewMode,
+        output: String = "my edited reply",
+        prefs: DisclosurePreferences? = null,
+    ): NoteReviewViewModel.UiState {
+        val wire = if (mode == NoteReviewMode.RECIPE) "recipe" else "comment"
+        server.enqueue(jsonResponse(200, """{"ok":true,"output":"$output","mode":"$wire"}"""))
+        vm.choose(mode, api, signer, prefs)
+        return awaitPhase(NoteReview.Phase.DRAFT)
     }
 
     @After
@@ -356,7 +368,7 @@ class NoteReviewViewModelTest {
 
         // POSTING (publish in flight) — the double-post guard proper.
         val hanging = FakePublisher(NoteReviewReplyPublisher.Outcome.Published(signedReply), hang = true)
-        vm.open(parent = parentEvent, imageUrl = imageUrl)
+        vm.open(parent = parentEvent, imageUrls = listOf(imageUrl))
         landDraft()
         vm.post(hanging, signer, clientTagEnabled = true)
         assertEquals(NoteReview.Phase.POSTING, vm.state.value.phase)
@@ -437,6 +449,180 @@ class NoteReviewViewModelTest {
         assertEquals(0, publisher.publishCalls.size)
         assertEquals(NoteReview.Phase.DRAFT, vm.state.value.phase)
         assertEquals(NoteReview.SIGN_FAILED_LINE, vm.state.value.postError)
+    }
+
+    // --- Phase 4: disclosure footer ---
+
+    @Test
+    fun choose_seedsTheToggleFromTheStoredPerModePref() {
+        val prefs = FakeDisclosurePrefs()
+        prefs.store(NoteReviewMode.COMMENT, true) // member opted comment ON
+
+        landDraftViaChoose(NoteReviewMode.COMMENT, prefs = prefs)
+        assertTrue(vm.state.value.disclosureOn)
+    }
+
+    @Test
+    fun choose_withNoStoredPref_usesThePerModeDefaults() {
+        val prefs = FakeDisclosurePrefs()
+        landDraftViaChoose(NoteReviewMode.COMMENT, prefs = prefs)
+        assertFalse("comment defaults OFF — the member's own voice", vm.state.value.disclosureOn)
+
+        vm.startOver()
+        landDraftViaChoose(NoteReviewMode.RECIPE, prefs = prefs)
+        assertTrue("recipe defaults ON — Cheffy's structured work product", vm.state.value.disclosureOn)
+    }
+
+    @Test
+    fun toggle_persistsImmediately_andRegeneratePreservesTheInSessionToggle() {
+        val prefs = FakeDisclosurePrefs()
+        landDraftViaChoose(NoteReviewMode.COMMENT, prefs = prefs)
+        assertFalse(vm.state.value.disclosureOn)
+
+        vm.toggleDisclosure(prefs)
+        assertTrue(vm.state.value.disclosureOn)
+        assertEquals(listOf(NoteReviewMode.COMMENT to true), prefs.saves) // persisted on the spot
+
+        // The stored pref now DISAGREES with the session (someone flipped
+        // it back) — regenerate must keep the in-session toggle, not
+        // re-seed (seed-only-from-Choose).
+        prefs.store(NoteReviewMode.COMMENT, false)
+        server.enqueue(jsonResponse(200, """{"ok":true,"output":"take two","mode":"comment"}"""))
+        vm.regenerate(api, signer)
+        awaitPhase(NoteReview.Phase.DRAFT)
+        assertTrue(vm.state.value.disclosureOn)
+    }
+
+    @Test
+    fun post_appendsTheFooterOnlyAtTheHandoff_neverIntoTheEditableDraft() {
+        landDraftViaChoose(NoteReviewMode.RECIPE) // recipe → disclosure defaults ON
+        assertTrue(vm.state.value.disclosureOn)
+        vm.updateDraft("My take on it  ") // member edit with trailing whitespace
+
+        val publisher = FakePublisher(NoteReviewReplyPublisher.Outcome.Published(signedReply))
+        vm.post(publisher, signer, clientTagEnabled = true)
+        awaitPhase(NoteReview.Phase.POSTED)
+
+        assertEquals(
+            "My take on it\n\n" + NoteReview.DISCLOSURE_FOOTER,
+            publisher.publishCalls[0].first,
+        )
+        // The editable field never contained the footer.
+        assertEquals("My take on it  ", vm.state.value.draft)
+        assertFalse(vm.state.value.draft.contains(NoteReview.DISCLOSURE_FOOTER))
+    }
+
+    @Test
+    fun post_withToggleOff_sendsTheDraftAlone() {
+        landDraftViaChoose(NoteReviewMode.COMMENT) // comment → disclosure defaults OFF
+        assertFalse(vm.state.value.disclosureOn)
+
+        val publisher = FakePublisher(NoteReviewReplyPublisher.Outcome.Published(signedReply))
+        vm.post(publisher, signer, clientTagEnabled = true)
+        awaitPhase(NoteReview.Phase.POSTED)
+
+        assertEquals("my edited reply", publisher.publishCalls[0].first)
+        assertFalse(publisher.publishCalls[0].first.contains(NoteReview.DISCLOSURE_FOOTER))
+    }
+
+    @Test
+    fun postTimeoutRetry_neverReappliesTheFooter() {
+        landDraftViaChoose(NoteReviewMode.RECIPE) // disclosure ON
+        val publisher = FakePublisher(NoteReviewReplyPublisher.Outcome.Timeout(signedReply))
+
+        vm.post(publisher, signer, clientTagEnabled = true)
+        awaitPhase(NoteReview.Phase.POST_TIMEOUT)
+
+        // The footer was baked into the content exactly once at hand-off…
+        val sentContent = publisher.publishCalls[0].first
+        assertEquals(1, Regex(Regex.escape(NoteReview.DISCLOSURE_FOOTER)).findAll(sentContent).count())
+
+        // …and the retry path re-broadcasts the retained SIGNED event as
+        // is: publishSigned takes no content, the signing publish() path
+        // is never re-entered, so the footer function cannot run again.
+        publisher.nextOutcome = NoteReviewReplyPublisher.Outcome.Published(signedReply)
+        vm.retryPost(publisher)
+        awaitPhase(NoteReview.Phase.POSTED)
+        assertEquals(1, publisher.publishCalls.size)
+        assertEquals(listOf(signedReply), publisher.publishSignedCalls)
+    }
+
+    // --- Phase 4: multi-image picker ---
+
+    private val threeImages = listOf(
+        "https://image.nostr.build/one.jpg",
+        "https://image.nostr.build/two.jpg",
+        "https://image.nostr.build/three.jpg",
+    )
+
+    @Test
+    fun picker_defaultsToTheFirstImage_andTheRequestCarriesIt() {
+        vm.open(parent = parentEvent, imageUrls = threeImages)
+        assertEquals(0, vm.state.value.selectedImageIndex)
+
+        landDraftViaChoose(NoteReviewMode.COMMENT)
+        assertEquals(threeImages[0], server.takeRequestBody()["imageUrl"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun selectingAnImageWithADraft_onlyArmsTheNextRequest() {
+        vm.open(parent = parentEvent, imageUrls = threeImages)
+        landDraftViaChoose(NoteReviewMode.COMMENT, output = "first draft")
+        assertEquals(1, server.requestCount)
+
+        // Web parity (CheffyNoteReview.svelte:405 — selection assigns the
+        // index, no run()): no request fires, the draft stays.
+        vm.selectImage(2)
+        assertEquals(1, server.requestCount)
+        assertEquals(NoteReview.Phase.DRAFT, vm.state.value.phase)
+        assertEquals("first draft", vm.state.value.draft)
+
+        // The NEXT regenerate sends exactly the selected URL.
+        server.takeRequestBody() // consume request 1
+        server.enqueue(jsonResponse(200, """{"ok":true,"output":"second draft","mode":"comment"}"""))
+        vm.regenerate(api, signer)
+        awaitPhase(NoteReview.Phase.DRAFT)
+        assertEquals(threeImages[2], server.takeRequestBody()["imageUrl"]!!.jsonPrimitive.content)
+        // Selection persisted across the regenerate.
+        assertEquals(2, vm.state.value.selectedImageIndex)
+    }
+
+    @Test
+    fun pickerSelection_survivesStartOver_andResetsOnOpen() {
+        vm.open(parent = parentEvent, imageUrls = threeImages)
+        vm.selectImage(1)
+
+        vm.startOver()
+        assertEquals(1, vm.state.value.selectedImageIndex)
+
+        vm.open(parent = parentEvent, imageUrls = threeImages)
+        assertEquals(0, vm.state.value.selectedImageIndex)
+    }
+
+    @Test
+    fun selectImage_ignoresOutOfRangeIndices() {
+        vm.open(parent = parentEvent, imageUrls = threeImages)
+        vm.selectImage(9)
+        assertEquals(0, vm.state.value.selectedImageIndex)
+        vm.selectImage(-1)
+        assertEquals(0, vm.state.value.selectedImageIndex)
+    }
+
+    private class FakeDisclosurePrefs : DisclosurePreferences {
+        private val stored = mutableMapOf<NoteReviewMode, Boolean>()
+        val saves = mutableListOf<Pair<NoteReviewMode, Boolean>>()
+
+        fun store(mode: NoteReviewMode, enabled: Boolean) {
+            stored[mode] = enabled
+        }
+
+        override fun isDisclosureEnabled(mode: NoteReviewMode): Boolean =
+            stored[mode] ?: NoteReview.defaultDisclosure(mode)
+
+        override fun setDisclosureEnabled(mode: NoteReviewMode, enabled: Boolean) {
+            saves.add(mode to enabled)
+            stored[mode] = enabled
+        }
     }
 
     private class FakePublisher(

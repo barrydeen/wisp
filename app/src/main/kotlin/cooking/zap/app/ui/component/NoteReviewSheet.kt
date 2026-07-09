@@ -1,5 +1,7 @@
 package cooking.zap.app.ui.component
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,9 +9,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -58,6 +64,8 @@ fun NoteReviewSheet(
     onRetryPost: () -> Unit,
     /** Open ThreadScreen for the published reply. */
     onViewReply: () -> Unit,
+    onToggleDisclosure: () -> Unit,
+    onSelectImage: (Int) -> Unit,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -81,7 +89,7 @@ fun NoteReviewSheet(
             }
 
             when (state.phase) {
-                NoteReview.Phase.CHOOSE -> ChooseContent(state.imageUrl, onChoose)
+                NoteReview.Phase.CHOOSE -> ChooseContent(state, onChoose, onSelectImage)
                 NoteReview.Phase.SIGNING -> WaitContent(
                     expression = Cheffy.Expression.THINKING,
                     line = "Waiting for your signer to approve…",
@@ -94,7 +102,7 @@ fun NoteReviewSheet(
                 // Web renders draft and posting as one layout with the
                 // controls disabled while the publish is in flight.
                 NoteReview.Phase.DRAFT, NoteReview.Phase.POSTING ->
-                    DraftContent(state, onDraftChange, onRegenerate, onStartOver, onPost)
+                    DraftContent(state, onDraftChange, onRegenerate, onStartOver, onPost, onToggleDisclosure, onSelectImage)
                 NoteReview.Phase.POST_TIMEOUT -> {
                     WaitContent(expression = Cheffy.Expression.THINKING, line = state.message)
                     Row(
@@ -146,10 +154,14 @@ fun NoteReviewSheet(
 }
 
 @Composable
-private fun ChooseContent(imageUrl: String, onChoose: (NoteReviewMode) -> Unit) {
-    if (imageUrl.isNotEmpty()) {
+private fun ChooseContent(
+    state: NoteReviewViewModel.UiState,
+    onChoose: (NoteReviewMode) -> Unit,
+    onSelectImage: (Int) -> Unit,
+) {
+    if (state.imageUrl.isNotEmpty()) {
         AsyncImage(
-            model = imageUrl,
+            model = state.imageUrl,
             contentDescription = "Dish from the note",
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -158,6 +170,7 @@ private fun ChooseContent(imageUrl: String, onChoose: (NoteReviewMode) -> Unit) 
                 .clip(RoundedCornerShape(12.dp)),
         )
     }
+    ImagePickerStrip(state, onSelectImage, enabled = true)
     Text(
         "What should Cheffy draft? You'll edit it before anything is posted.",
         style = MaterialTheme.typography.bodyMedium,
@@ -223,6 +236,8 @@ private fun DraftContent(
     onRegenerate: () -> Unit,
     onStartOver: () -> Unit,
     onPost: () -> Unit,
+    onToggleDisclosure: () -> Unit,
+    onSelectImage: (Int) -> Unit,
 ) {
     val posting = state.phase == NoteReview.Phase.POSTING
     Text(
@@ -230,6 +245,9 @@ private fun DraftContent(
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+    // Picking a photo here only ARMS the next Regenerate (web parity —
+    // the current draft stays until the member re-runs).
+    ImagePickerStrip(state, onSelectImage, enabled = !posting)
     OutlinedTextField(
         value = state.draft,
         onValueChange = onDraftChange,
@@ -240,6 +258,33 @@ private fun DraftContent(
         minLines = if (state.mode == NoteReviewMode.RECIPE) 12 else 4,
         supportingText = { Text("${state.draft.length} characters") },
     )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(
+            checked = state.disclosureOn,
+            onCheckedChange = { onToggleDisclosure() },
+            enabled = !posting,
+        )
+        Text("Add a small \"via Cheffy\" note", style = MaterialTheme.typography.bodyMedium)
+    }
+    if (state.disclosureOn) {
+        // Publish-time footer preview — deliberately NOT part of the text
+        // field above. The label makes it read as "will be appended",
+        // so nobody edits their draft trying to remove it.
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Text(
+                    "Added when you post:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(NoteReview.DISCLOSURE_FOOTER, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
     if (state.postError.isNotBlank()) {
         Text(
             state.postError,
@@ -253,6 +298,40 @@ private fun DraftContent(
         Spacer(Modifier.weight(1f))
         Button(onClick = onPost, enabled = !posting && state.draft.isNotBlank()) {
             Text(if (posting) "Posting…" else "Post reply")
+        }
+    }
+}
+
+/**
+ * Multi-image thumbnail strip (Phase 4) — rendered only when the note
+ * carries more than one detected image. Selection is client-side only:
+ * it picks which photo the NEXT request sends (one imageUrl per call).
+ */
+@Composable
+private fun ImagePickerStrip(
+    state: NoteReviewViewModel.UiState,
+    onSelectImage: (Int) -> Unit,
+    enabled: Boolean,
+) {
+    if (state.imageUrls.size <= 1) return
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        itemsIndexed(state.imageUrls) { index, url ->
+            val selected = index == state.selectedImageIndex
+            AsyncImage(
+                model = url,
+                contentDescription = "Photo ${index + 1} of ${state.imageUrls.size}",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .border(
+                        width = if (selected) 2.dp else 1.dp,
+                        color = if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.outlineVariant,
+                        shape = RoundedCornerShape(8.dp),
+                    )
+                    .clickable(enabled = enabled) { onSelectImage(index) },
+            )
         }
     }
 }
