@@ -98,6 +98,7 @@ dependencies {
     testImplementation(libs.kotlinx.serialization.json)
     testImplementation("junit:junit:4.13.2")
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
 
     // Instrumented (connected) tests only — e.g. the live NIP-98 round-trip.
     // Not on the hermetic :app:testDebugUnitTest classpath.
