@@ -4726,10 +4726,9 @@ fun WispNavHost(
         val noteReviewContext = LocalContext.current
         LaunchedEffect(target.id) {
             noteReviewViewModel.open(
-                noteText = target.content,
-                noteId = target.id,
-                // Phase 2 uses the first detected image; the Phase 4 picker
-                // widens this to a selection.
+                parent = target,
+                // First detected image; the Phase 4 picker widens this to
+                // a selection.
                 imageUrl = cooking.zap.app.cheffy.ImageUrls.extractImageUrls(target.content)
                     .firstOrNull() ?: "",
             )
@@ -4745,6 +4744,20 @@ fun WispNavHost(
             },
             onDraftChange = { noteReviewViewModel.updateDraft(it) },
             onStartOver = { noteReviewViewModel.startOver() },
+            onPost = {
+                noteReviewViewModel.post(
+                    publisher = feedViewModel.noteReviewPublisher,
+                    signer = feedViewModel.signer,
+                    clientTagEnabled = feedViewModel.interfacePrefs.isClientTagEnabled(),
+                )
+            },
+            onRetryPost = { noteReviewViewModel.retryPost(feedViewModel.noteReviewPublisher) },
+            onViewReply = {
+                noteReviewState.postedEvent?.let { posted ->
+                    noteReviewTarget = null
+                    navController.navigate("thread/${posted.id}")
+                }
+            },
             // Same linkout posture as Sous Chef's membership entry: the
             // flavor flag decides whether the external purchase page may
             // open; when it can't, the card stays informational.
