@@ -9,6 +9,7 @@ import cooking.zap.app.cheffy.Cheffy
 import cooking.zap.app.cheffy.NoteReview
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.NostrSigner
+import cooking.zap.app.repo.NoteReviewReplyPublisher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,7 +42,7 @@ class NoteReviewViewModel : ViewModel() {
         val mode: NoteReviewMode? = null,
         /** The editable draft. Owned here so edits survive recomposition. */
         val draft: String = "",
-        /** Dead-end line or error sub-message (server/API detail). */
+        /** Dead-end line, error sub-message, or post-timeout line. */
         val message: String = "",
         /** Rotating Cheffy-voice headline for the error phase. */
         val errorLine: String = "",
@@ -49,28 +50,39 @@ class NoteReviewViewModel : ViewModel() {
         val loadingLine: String = "",
         /** Paid-draft balance from spends — display only (Phase 5 uses it). */
         val creditsRemaining: Int? = null,
+        /** Publish failure line shown inside the draft phase (Phase 3). */
+        val postError: String = "",
+        /** The just-published reply — drives the POSTED link (Phase 3). */
+        val postedEvent: NostrEvent? = null,
+        /**
+         * The SIGNED event a timed-out publish retained (invariant 2) —
+         * retry re-broadcasts exactly this, same id, no re-sign.
+         */
+        val timeoutSignedEvent: NostrEvent? = null,
         // Session target — set by [open], constant until the next open.
+        val parent: NostrEvent? = null,
         val imageUrl: String = "",
-        val noteText: String = "",
-        val noteId: String = "",
     )
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
 
     private var requestJob: Job? = null
+    private var postJob: Job? = null
 
     /** Rotation memory so consecutive dead-ends never repeat verbatim. */
     private var lastDeadEndLine: String? = null
 
     /**
-     * Configure the modal for a note and reset to CHOOSE. [imageUrl] is
-     * the note's first detected image — the Phase 4 picker will widen
-     * this to a selection.
+     * Configure the modal for a note and reset to CHOOSE. [parent] is the
+     * kind-1 being reviewed — its content/id feed the draft request and it
+     * anchors the Phase 3 reply. [imageUrl] is the note's first detected
+     * image — the Phase 4 picker will widen this to a selection.
      */
-    fun open(noteText: String, noteId: String, imageUrl: String) {
+    fun open(parent: NostrEvent, imageUrl: String) {
         requestJob?.cancel()
-        _state.value = UiState(imageUrl = imageUrl, noteText = noteText, noteId = noteId)
+        postJob?.cancel()
+        _state.value = UiState(parent = parent, imageUrl = imageUrl)
     }
 
     /** Initial mode selection from the CHOOSE phase. */
@@ -94,8 +106,90 @@ class NoteReviewViewModel : ViewModel() {
     /** Back to CHOOSE for the same note, dropping the draft (web `reset`). */
     fun startOver() {
         requestJob?.cancel()
+        postJob?.cancel()
         _state.update {
-            UiState(imageUrl = it.imageUrl, noteText = it.noteText, noteId = it.noteId)
+            UiState(parent = it.parent, imageUrl = it.imageUrl)
+        }
+    }
+
+    // --- Publish path (Phase 3) ---
+
+    /**
+     * Publish the member-edited draft as a NIP-10 reply to the parent.
+     * Hard-gated on [NoteReview.canPost] — POSTING is entered
+     * synchronously, so a second call (double-tap, re-entry) is a no-op
+     * regardless of button state.
+     */
+    fun post(
+        publisher: NoteReviewReplyPublisher,
+        signer: NostrSigner?,
+        clientTagEnabled: Boolean,
+    ) {
+        val s = _state.value
+        if (!NoteReview.canPost(s.phase)) return
+        val parent = s.parent ?: return
+        val content = s.draft.trim()
+        if (content.isEmpty()) return
+        if (signer == null) {
+            _state.update { it.copy(postError = NoteReview.SIGN_FAILED_LINE) }
+            return
+        }
+        _state.update { it.copy(phase = NoteReview.Phase.POSTING, postError = "") }
+        postJob?.cancel()
+        postJob = viewModelScope.launch {
+            applyPublishOutcome(publisher.publish(content, parent, signer, clientTagEnabled))
+        }
+    }
+
+    /**
+     * Timeout recovery: re-broadcast the retained SIGNED event — same id
+     * (relays dedupe), no second signer round trip (invariant 2). Only
+     * legal from POST_TIMEOUT.
+     */
+    fun retryPost(publisher: NoteReviewReplyPublisher) {
+        val s = _state.value
+        if (s.phase != NoteReview.Phase.POST_TIMEOUT) return
+        val signed = s.timeoutSignedEvent ?: return
+        val parent = s.parent ?: return
+        _state.update { it.copy(phase = NoteReview.Phase.POSTING) }
+        postJob?.cancel()
+        postJob = viewModelScope.launch {
+            applyPublishOutcome(publisher.publishSigned(signed, parent))
+        }
+    }
+
+    /**
+     * Land a publish outcome. Internal so the POSTING → POSTED /
+     * POST_TIMEOUT / back-to-DRAFT mapping is unit-testable without
+     * relays.
+     */
+    internal fun applyPublishOutcome(outcome: NoteReviewReplyPublisher.Outcome) {
+        _state.update { s ->
+            when (outcome) {
+                is NoteReviewReplyPublisher.Outcome.Published -> s.copy(
+                    phase = NoteReview.Phase.POSTED,
+                    postedEvent = outcome.event,
+                    timeoutSignedEvent = null,
+                    postError = "",
+                    message = "",
+                )
+                is NoteReviewReplyPublisher.Outcome.Timeout -> s.copy(
+                    phase = NoteReview.Phase.POST_TIMEOUT,
+                    timeoutSignedEvent = outcome.signedEvent,
+                    message = NoteReview.POST_TIMEOUT_LINE,
+                )
+                // Draft intact on both: publish-failed is a relay problem,
+                // sign-rejected is the member's choice — neither destroys
+                // their edited words.
+                NoteReviewReplyPublisher.Outcome.Failed -> s.copy(
+                    phase = NoteReview.Phase.DRAFT,
+                    postError = NoteReview.PUBLISH_FAILED_LINE,
+                )
+                NoteReviewReplyPublisher.Outcome.SignRejected -> s.copy(
+                    phase = NoteReview.Phase.DRAFT,
+                    postError = NoteReview.SIGN_FAILED_LINE,
+                )
+            }
         }
     }
 
@@ -122,6 +216,7 @@ class NoteReviewViewModel : ViewModel() {
             it.copy(
                 phase = if (showSigning) NoteReview.Phase.SIGNING else NoteReview.Phase.LOADING,
                 mode = mode,
+                postError = "",
                 // Recipe drafts get the "cooking" pool, comments the
                 // "thinking" pool (web parity); avoid the previous line.
                 loadingLine = Cheffy.pickLine(
@@ -144,8 +239,8 @@ class NoteReviewViewModel : ViewModel() {
             val result = api.requestNoteReview(
                 imageUrl = st.imageUrl,
                 mode = mode,
-                noteText = st.noteText.ifBlank { null },
-                noteId = st.noteId.ifBlank { null },
+                noteText = st.parent?.content?.ifBlank { null },
+                noteId = st.parent?.id,
                 signer = notifyingSigner,
             )
             applyResult(result)

@@ -54,6 +54,10 @@ fun NoteReviewSheet(
     onStartOver: () -> Unit,
     /** Null hides the membership button (Play-flavor linkout policy). */
     onViewMembership: (() -> Unit)?,
+    onPost: () -> Unit,
+    onRetryPost: () -> Unit,
+    /** Open ThreadScreen for the published reply. */
+    onViewReply: () -> Unit,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -87,7 +91,33 @@ fun NoteReviewSheet(
                     expression = Cheffy.Expression.COOKING,
                     line = state.loadingLine,
                 )
-                NoteReview.Phase.DRAFT -> DraftContent(state, onDraftChange, onRegenerate, onStartOver)
+                // Web renders draft and posting as one layout with the
+                // controls disabled while the publish is in flight.
+                NoteReview.Phase.DRAFT, NoteReview.Phase.POSTING ->
+                    DraftContent(state, onDraftChange, onRegenerate, onStartOver, onPost)
+                NoteReview.Phase.POST_TIMEOUT -> {
+                    WaitContent(expression = Cheffy.Expression.THINKING, line = state.message)
+                    Row(
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Button(onClick = onRetryPost) { Text("Give it another push") }
+                        TextButton(onClick = onDismiss) { Text("Close") }
+                    }
+                }
+                NoteReview.Phase.POSTED -> {
+                    WaitContent(
+                        expression = Cheffy.Expression.EXCITED,
+                        line = "Posted! Cheffy tips his toque to you.",
+                    )
+                    Row(
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Button(onClick = onViewReply) { Text("View your reply") }
+                        TextButton(onClick = onDismiss) { Text("Done") }
+                    }
+                }
                 NoteReview.Phase.DEAD_END -> {
                     WaitContent(expression = Cheffy.Expression.CONCERNED, line = state.message)
                     TextButton(
@@ -192,7 +222,9 @@ private fun DraftContent(
     onDraftChange: (String) -> Unit,
     onRegenerate: () -> Unit,
     onStartOver: () -> Unit,
+    onPost: () -> Unit,
 ) {
+    val posting = state.phase == NoteReview.Phase.POSTING
     Text(
         "Cheffy's draft — make it yours, then post it as your own reply.",
         style = MaterialTheme.typography.bodyMedium,
@@ -202,14 +234,26 @@ private fun DraftContent(
         value = state.draft,
         onValueChange = onDraftChange,
         modifier = Modifier.fillMaxWidth(),
+        enabled = !posting,
         // Recipes are long structured drafts, comments a few sentences —
         // mirrors the web textarea's rows={16 : 5}.
         minLines = if (state.mode == NoteReviewMode.RECIPE) 12 else 4,
         supportingText = { Text("${state.draft.length} characters") },
     )
+    if (state.postError.isNotBlank()) {
+        Text(
+            state.postError,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onRegenerate) { Text("Regenerate") }
-        TextButton(onClick = onStartOver) { Text("Start over") }
+        OutlinedButton(onClick = onRegenerate, enabled = !posting) { Text("Regenerate") }
+        TextButton(onClick = onStartOver, enabled = !posting) { Text("Start over") }
+        Spacer(Modifier.weight(1f))
+        Button(onClick = onPost, enabled = !posting && state.draft.isNotBlank()) {
+            Text(if (posting) "Posting…" else "Post reply")
+        }
     }
 }
 

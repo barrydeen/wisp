@@ -7,7 +7,11 @@ import cooking.zap.app.cheffy.Cheffy
 import cooking.zap.app.cheffy.NoteReview
 import cooking.zap.app.nostr.FakeNip98Signer
 import cooking.zap.app.nostr.Nip98HeaderCache
+import cooking.zap.app.nostr.NostrEvent
+import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.nostr.SignerRejectedException
+import cooking.zap.app.repo.NoteReviewReplyPublisher
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -51,6 +55,17 @@ class NoteReviewViewModelTest {
 
     private val imageUrl = "https://image.nostr.build/dish.jpg"
 
+    /** The kind-1 note being reviewed — the Phase 3 reply's parent. */
+    private val parentEvent = NostrEvent(
+        id = "ab".repeat(32),
+        pubkey = "cd".repeat(32),
+        created_at = 1_700_000_000L,
+        kind = 1,
+        tags = emptyList(),
+        content = "tonight's plate",
+        sig = "0".repeat(128),
+    )
+
     @Before
     fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -63,7 +78,7 @@ class NoteReviewViewModelTest {
         )
         signer = FakeNip98Signer()
         vm = NoteReviewViewModel()
-        vm.open(noteText = "tonight's plate", noteId = "ab".repeat(32), imageUrl = imageUrl)
+        vm.open(parent = parentEvent, imageUrl = imageUrl)
     }
 
     @After
@@ -258,6 +273,199 @@ class NoteReviewViewModelTest {
         assertEquals(NoteReview.Phase.ERROR, s.phase)
         assertEquals(NoteReview.SIGN_FAILED_LINE, s.message)
         assertEquals(0, server.requestCount)
+    }
+
+    // --- Phase 3: publish state machine ---
+
+    private val signedReply = NostrEvent(
+        id = "ef".repeat(32),
+        pubkey = "12".repeat(32),
+        created_at = 1_700_000_100L,
+        kind = 1,
+        tags = emptyList(),
+        content = "my edited reply",
+        sig = "1".repeat(128),
+    )
+
+    private fun landDraft(text: String = "my edited reply") {
+        vm.applyResult(NoteReviewResult.Success(text, null))
+        assertEquals(NoteReview.Phase.DRAFT, vm.state.value.phase)
+    }
+
+    @Test
+    fun post_fromDraft_publishesTheTrimmedDraft_andLandsPosted() {
+        landDraft()
+        vm.updateDraft("  make it mine  ")
+        val publisher = FakePublisher(NoteReviewReplyPublisher.Outcome.Published(signedReply))
+
+        vm.post(publisher, signer, clientTagEnabled = true)
+        val s = awaitPhase(NoteReview.Phase.POSTED)
+
+        assertEquals(1, publisher.publishCalls.size)
+        assertEquals("make it mine", publisher.publishCalls[0].first)
+        assertEquals(parentEvent.id, publisher.publishCalls[0].second.id)
+        assertEquals(signedReply, s.postedEvent)
+        assertNull(s.timeoutSignedEvent)
+    }
+
+    @Test
+    fun post_isANoOpFromEveryNonDraftPhase() {
+        val publisher = FakePublisher(NoteReviewReplyPublisher.Outcome.Published(signedReply))
+
+        // CHOOSE (fresh open).
+        vm.post(publisher, signer, clientTagEnabled = true)
+        assertEquals(0, publisher.publishCalls.size)
+        assertEquals(NoteReview.Phase.CHOOSE, vm.state.value.phase)
+
+        // DEAD_END, UPSELL, ERROR.
+        for (result in listOf(
+            NoteReviewResult.DeadEnd,
+            NoteReviewResult.NotMember,
+            NoteReviewResult.Error("down"),
+        )) {
+            vm.applyResult(result)
+            val phaseBefore = vm.state.value.phase
+            vm.post(publisher, signer, clientTagEnabled = true)
+            assertEquals(0, publisher.publishCalls.size)
+            assertEquals(phaseBefore, vm.state.value.phase)
+        }
+
+        // POST_TIMEOUT and POSTED.
+        for (outcome in listOf(
+            NoteReviewReplyPublisher.Outcome.Timeout(signedReply),
+            NoteReviewReplyPublisher.Outcome.Published(signedReply),
+        )) {
+            landDraft()
+            vm.applyPublishOutcome(outcome)
+            val phaseBefore = vm.state.value.phase
+            vm.post(publisher, signer, clientTagEnabled = true)
+            assertEquals(0, publisher.publishCalls.size)
+            assertEquals(phaseBefore, vm.state.value.phase)
+        }
+
+        // SIGNING/LOADING (request in flight — no response enqueued, so it hangs).
+        vm.startOver()
+        vm.choose(NoteReviewMode.COMMENT, api, signer)
+        val inFlight = vm.state.value.phase
+        assertTrue(
+            "expected an in-flight phase, got $inFlight",
+            inFlight == NoteReview.Phase.SIGNING || inFlight == NoteReview.Phase.LOADING,
+        )
+        vm.post(publisher, signer, clientTagEnabled = true)
+        assertEquals(0, publisher.publishCalls.size)
+
+        // POSTING (publish in flight) — the double-post guard proper.
+        val hanging = FakePublisher(NoteReviewReplyPublisher.Outcome.Published(signedReply), hang = true)
+        vm.open(parent = parentEvent, imageUrl = imageUrl)
+        landDraft()
+        vm.post(hanging, signer, clientTagEnabled = true)
+        assertEquals(NoteReview.Phase.POSTING, vm.state.value.phase)
+        vm.post(hanging, signer, clientTagEnabled = true)
+        assertEquals(1, hanging.publishCalls.size)
+    }
+
+    @Test
+    fun postTimeout_retainsTheSignedEvent_andRetryRepublishesTheSameIdWithoutResigning() {
+        landDraft()
+        val publisher = FakePublisher(NoteReviewReplyPublisher.Outcome.Timeout(signedReply))
+
+        vm.post(publisher, signer, clientTagEnabled = true)
+        val timedOut = awaitPhase(NoteReview.Phase.POST_TIMEOUT)
+
+        assertEquals(signedReply, timedOut.timeoutSignedEvent) // invariant 2: never discarded
+        assertEquals(NoteReview.POST_TIMEOUT_LINE, timedOut.message)
+
+        publisher.nextOutcome = NoteReviewReplyPublisher.Outcome.Published(signedReply)
+        vm.retryPost(publisher)
+        val posted = awaitPhase(NoteReview.Phase.POSTED)
+
+        // Retry went through publishSigned with the EXACT retained event —
+        // same id, and never through the signing publish() path again.
+        assertEquals(listOf(signedReply), publisher.publishSignedCalls)
+        assertEquals(signedReply.id, publisher.publishSignedCalls[0].id)
+        assertEquals(1, publisher.publishCalls.size)
+        assertEquals(signedReply, posted.postedEvent)
+    }
+
+    @Test
+    fun retryPost_isANoOpOutsidePostTimeout() {
+        landDraft()
+        val publisher = FakePublisher(NoteReviewReplyPublisher.Outcome.Published(signedReply))
+        vm.retryPost(publisher)
+        assertEquals(0, publisher.publishSignedCalls.size)
+        assertEquals(NoteReview.Phase.DRAFT, vm.state.value.phase)
+    }
+
+    @Test
+    fun publishFailed_returnsToDraftWithTheDraftIntact_andTheFailedLine() {
+        landDraft("carefully edited words")
+        val publisher = FakePublisher(NoteReviewReplyPublisher.Outcome.Failed)
+
+        vm.post(publisher, signer, clientTagEnabled = true)
+        val s = awaitPhase(NoteReview.Phase.DRAFT)
+
+        assertEquals("carefully edited words", s.draft)
+        assertEquals(NoteReview.PUBLISH_FAILED_LINE, s.postError)
+        // The draft phase is live again — a fresh post attempt is legal.
+        publisher.nextOutcome = NoteReviewReplyPublisher.Outcome.Published(signedReply)
+        vm.post(publisher, signer, clientTagEnabled = true)
+        assertEquals(NoteReview.Phase.POSTED, awaitPhase(NoteReview.Phase.POSTED).phase)
+    }
+
+    @Test
+    fun signerRejectionDuringPosting_returnsToDraftWithTheSignFailedLine() {
+        landDraft("carefully edited words")
+        val publisher = FakePublisher(NoteReviewReplyPublisher.Outcome.SignRejected)
+
+        vm.post(publisher, signer, clientTagEnabled = true)
+        val s = awaitPhase(NoteReview.Phase.DRAFT)
+
+        assertEquals("carefully edited words", s.draft)
+        assertEquals(NoteReview.SIGN_FAILED_LINE, s.postError)
+    }
+
+    @Test
+    fun post_withBlankDraftOrNullSigner_isANoOp() {
+        landDraft("")
+        val publisher = FakePublisher(NoteReviewReplyPublisher.Outcome.Published(signedReply))
+        vm.post(publisher, signer, clientTagEnabled = true)
+        assertEquals(0, publisher.publishCalls.size)
+        assertEquals(NoteReview.Phase.DRAFT, vm.state.value.phase)
+
+        landDraft("real words")
+        vm.post(publisher, signer = null, clientTagEnabled = true)
+        assertEquals(0, publisher.publishCalls.size)
+        assertEquals(NoteReview.Phase.DRAFT, vm.state.value.phase)
+        assertEquals(NoteReview.SIGN_FAILED_LINE, vm.state.value.postError)
+    }
+
+    private class FakePublisher(
+        var nextOutcome: NoteReviewReplyPublisher.Outcome,
+        private val hang: Boolean = false,
+    ) : NoteReviewReplyPublisher {
+        val publishCalls = mutableListOf<Pair<String, NostrEvent>>()
+        val publishSignedCalls = mutableListOf<NostrEvent>()
+        private val never = CompletableDeferred<Unit>()
+
+        override suspend fun publish(
+            content: String,
+            parent: NostrEvent,
+            signer: NostrSigner,
+            clientTagEnabled: Boolean,
+        ): NoteReviewReplyPublisher.Outcome {
+            publishCalls.add(content to parent)
+            if (hang) never.await()
+            return nextOutcome
+        }
+
+        override suspend fun publishSigned(
+            event: NostrEvent,
+            parent: NostrEvent,
+        ): NoteReviewReplyPublisher.Outcome {
+            publishSignedCalls.add(event)
+            if (hang) never.await()
+            return nextOutcome
+        }
     }
 
     // --- helpers ---

@@ -1,6 +1,9 @@
 package cooking.zap.app.cheffy
 
 import cooking.zap.app.api.NoteReviewResult
+import cooking.zap.app.nostr.Nip19
+import cooking.zap.app.nostr.NostrEvent
+import cooking.zap.app.nostr.hexToByteArray
 import kotlin.random.Random
 
 /**
@@ -18,13 +21,19 @@ import kotlin.random.Random
 object NoteReview {
 
     /**
-     * Modal phases, Phase 2 subset (`posting`/`post-timeout`/`posted` are
-     * Phase 3; `paying` is Phase 5). `MEMBERSHIP_UNAVAILABLE` deliberately
-     * maps into [ERROR] (retryable "try again shortly"), never [UPSELL] —
-     * the endpoint fails closed on a membership-service outage, and an
-     * upsell would dun a member over our outage.
+     * Modal phases (`paying` is Phase 5). `MEMBERSHIP_UNAVAILABLE`
+     * deliberately maps into [ERROR] (retryable "try again shortly"),
+     * never [UPSELL] — the endpoint fails closed on a membership-service
+     * outage, and an upsell would dun a member over our outage.
      */
-    enum class Phase { CHOOSE, SIGNING, LOADING, DRAFT, DEAD_END, UPSELL, ERROR }
+    enum class Phase { CHOOSE, SIGNING, LOADING, DRAFT, POSTING, POST_TIMEOUT, POSTED, DEAD_END, UPSELL, ERROR }
+
+    /**
+     * The only phase a publish may start from — the double-post guard
+     * (invariant D1/web `canPost`). Enforced in the ViewModel, not just
+     * button state.
+     */
+    fun canPost(phase: Phase): Boolean = phase == Phase.DRAFT
 
     data class PhaseAndMessage(val phase: Phase, val message: String)
 
@@ -63,12 +72,37 @@ object NoteReview {
     const val MEMBERSHIP_UNAVAILABLE_LINE =
         "Cheffy can't check your membership right now. Please try again shortly."
 
+    /** Verbatim from `noteReview.ts` `POST_TIMEOUT_LINE` (Phase 3). */
+    const val POST_TIMEOUT_LINE =
+        "The relays are taking their time. Your reply is signed and may already be out there — give it another push, and Cheffy won't ask your signer twice."
+
+    /** Verbatim from `noteReview.ts` `PUBLISH_FAILED_LINE` (Phase 3). */
+    const val PUBLISH_FAILED_LINE =
+        "The relays didn't take that one. Your draft is safe — give it another go."
+
     /**
      * Map a request result to the modal phase and its display message —
      * the tested core of the modal's state machine (web `phaseForResult`).
      * [avoidDeadEndLine] is the previously shown dead-end line, so
      * consecutive dead-ends rotate.
      */
+    /**
+     * Thread-view identifier for a published reply — port of the web
+     * `noteLinkFor`. House pattern: `nevent` with author + kind hints,
+     * falling back to a bare `note1` encoding. (In-app navigation to
+     * ThreadScreen uses the hex id; this is the canonical shareable form
+     * and the Phase 6 share affordance's input.)
+     */
+    fun noteLinkFor(event: NostrEvent): String = try {
+        Nip19.neventEncode(
+            eventId = event.id.hexToByteArray(),
+            author = event.pubkey.hexToByteArray(),
+            kind = event.kind,
+        )
+    } catch (_: Exception) {
+        Nip19.noteEncode(event.id.hexToByteArray())
+    }
+
     fun phaseForResult(
         result: NoteReviewResult,
         avoidDeadEndLine: String? = null,

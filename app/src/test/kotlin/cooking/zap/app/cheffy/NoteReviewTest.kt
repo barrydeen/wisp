@@ -1,6 +1,9 @@
 package cooking.zap.app.cheffy
 
 import cooking.zap.app.api.NoteReviewResult
+import cooking.zap.app.nostr.Nip19
+import cooking.zap.app.nostr.NostrEvent
+import cooking.zap.app.nostr.hexToByteArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -101,5 +104,71 @@ class NoteReviewTest {
             NoteReview.PhaseAndMessage(NoteReview.Phase.ERROR, NoteReview.GENERIC_ERROR_LINE),
             NoteReview.phaseForResult(NoteReviewResult.Error("  ")),
         )
+    }
+
+    // --- Phase 3: publish ---
+
+    @Test
+    fun canPost_isTrueOnlyForDraft() {
+        for (phase in NoteReview.Phase.entries) {
+            assertEquals(phase == NoteReview.Phase.DRAFT, NoteReview.canPost(phase))
+        }
+    }
+
+    @Test
+    fun publishLinesAreTheWebCopyVerbatim() {
+        assertEquals(
+            "The relays are taking their time. Your reply is signed and may already be out there — give it another push, and Cheffy won't ask your signer twice.",
+            NoteReview.POST_TIMEOUT_LINE,
+        )
+        assertEquals(
+            "The relays didn't take that one. Your draft is safe — give it another go.",
+            NoteReview.PUBLISH_FAILED_LINE,
+        )
+    }
+
+    @Test
+    fun noteLinkFor_encodesNeventWithAuthorAndKindHints() {
+        val event = NostrEvent(
+            id = "aa".repeat(32),
+            pubkey = "bb".repeat(32),
+            created_at = 1_700_000_000L,
+            kind = 1,
+            tags = emptyList(),
+            content = "reply",
+            sig = "0".repeat(128),
+        )
+        val link = NoteReview.noteLinkFor(event)
+        assertTrue(link.startsWith("nevent1"))
+
+        // Roundtrip: id + author survive (the decoder skips the kind TLV).
+        val decoded = Nip19.neventDecode(link)
+        assertEquals(event.id, decoded.eventId)
+        assertEquals(event.pubkey, decoded.author)
+
+        // The kind hint is really in there: dropping it changes the encoding.
+        val withoutKind = Nip19.neventEncode(
+            eventId = event.id.hexToByteArray(),
+            author = event.pubkey.hexToByteArray(),
+        )
+        assertNotEquals(withoutKind, link)
+    }
+
+    @Test
+    fun noteLinkFor_fallsBackToNote1WhenTheNeventEncodingFails() {
+        // Odd-length pubkey hex makes the author hint unencodable; the id
+        // is still valid, so the fallback is a bare note1 (web parity).
+        val event = NostrEvent(
+            id = "aa".repeat(32),
+            pubkey = "abc",
+            created_at = 1_700_000_000L,
+            kind = 1,
+            tags = emptyList(),
+            content = "reply",
+            sig = "0".repeat(128),
+        )
+        val link = NoteReview.noteLinkFor(event)
+        assertTrue(link.startsWith("note1"))
+        assertEquals(event.id, Nip19.noteDecode(link))
     }
 }

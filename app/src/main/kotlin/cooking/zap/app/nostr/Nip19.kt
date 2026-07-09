@@ -14,6 +14,7 @@ object Nip19 {
 
     fun npubEncode(pubkey: ByteArray): String = bech32Encode("npub", pubkey)
     fun nsecEncode(privkey: ByteArray): String = bech32Encode("nsec", privkey)
+    fun noteEncode(eventId: ByteArray): String = bech32Encode("note", eventId)
 
     fun nprofileEncode(pubkeyHex: String, relays: List<String> = emptyList()): String {
         val tlv = buildTlv {
@@ -23,11 +24,28 @@ object Nip19 {
         return bech32Encode("nprofile", tlv)
     }
 
-    fun neventEncode(eventId: ByteArray, relays: List<String> = emptyList(), author: ByteArray? = null): String {
+    fun neventEncode(
+        eventId: ByteArray,
+        relays: List<String> = emptyList(),
+        author: ByteArray? = null,
+        kind: Int? = null,
+    ): String {
         val tlv = buildTlv {
             addTlv(0x00, eventId)
             for (relay in relays) addTlv(0x01, relay.toByteArray(Charsets.UTF_8))
             if (author != null) addTlv(0x02, author)
+            // Kind hint — TLV type 3, 32-bit big-endian (NIP-19).
+            if (kind != null) {
+                addTlv(
+                    0x03,
+                    byteArrayOf(
+                        ((kind shr 24) and 0xFF).toByte(),
+                        ((kind shr 16) and 0xFF).toByte(),
+                        ((kind shr 8) and 0xFF).toByte(),
+                        (kind and 0xFF).toByte(),
+                    ),
+                )
+            }
         }
         return bech32Encode("nevent", tlv)
     }

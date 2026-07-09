@@ -325,6 +325,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     /** Recipe create spine — sign + publish kind-30023 (Sous Chef Save, concern 2.2). */
     val recipePublisher = cooking.zap.app.repo.RecipePublisher(relayPool, eventRepo, blossomRepo)
 
+    /** Note Review publish spine — explicit-with-timeout kind-1 reply (Phase 3). */
+    val noteReviewPublisher: cooking.zap.app.repo.NoteReviewReplyPublisher =
+        cooking.zap.app.repo.RelayNoteReviewReplyPublisher(relayPool, outboxRouter, eventRepo)
+
     /** Nourish health scores — auth'd read from the Pantry relay (concern 2.4a). */
     val nourishRepo = cooking.zap.app.repo.NourishRepository(relayPool)
 
