@@ -82,10 +82,10 @@ Membership:
   nothing). The canonical auth-event JSON is key-ordered
   `id,pubkey,created_at,kind,tags,content,sig` with `created_at` as a
   number, base64-encoded behind the `Nostr ` prefix.
-- Sign via the `NostrSigner` abstraction. **This fork is LocalSigner
-  only** — Amber/NIP-55 remote signing was removed (§6). `READ_ONLY`
-  accounts have no key and cannot sign NIP-98; gate member-only AI
-  features behind "account has a signing key."
+- Sign via the `NostrSigner` abstraction — `LocalSigner` or the NIP-55
+  `RemoteSigner` (Amber; see §6). `READ_ONLY` accounts have no key and
+  cannot sign NIP-98; gate member-only AI features behind "account has
+  a signing key."
 
 ### Relays (role-based — mirror the web; do NOT collapse to one)
 - `default` (general): `nos.lol`, `relay.damus.io`, `relay.primal.net`
@@ -651,10 +651,12 @@ cookbook-intro rides with recipe-books if/when that ships.
 ---
 
 ## 6. Known fork deltas from the README
-- **Amber / NIP-55 removed.** `SigningMode` is `LOCAL`/`READ_ONLY` only;
-  `KeyRepository.migrateRemoveRemoteSigner()` purges remote accounts on
-  launch; `NostrSigner` has only `LocalSigner`. README's remote-signing
-  copy is stale — fix in doc cleanup.
+- **Amber / NIP-55 is present** (an earlier revision of this doc said it
+  was removed — wrong): `RemoteSigner` + `SignerIntentBridge` implement
+  NIP-55 (PR #59), and `SigningMode` is `LOCAL`/`REMOTE`/`READ_ONLY`.
+  There is no `KeyRepository.migrateRemoveRemoteSigner()` and no NIP-46
+  bunker signer. Gate signing-dependent features on "account has a
+  signing key," not on signer type.
 - **ObjectBox is in use** (`db/`, `objectbox-models/default.json`).
   CLAUDE.md's "no database" line is wrong; README §Performance is right.
 

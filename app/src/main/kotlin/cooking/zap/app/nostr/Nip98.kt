@@ -30,9 +30,10 @@ import java.util.Base64
  *   - **method**: upper-cased.
  *   - **payload**: lowercase-hex SHA-256 of the exact body bytes sent.
  *
- * Sign via the [NostrSigner] abstraction. This fork is `LocalSigner`-only;
- * `READ_ONLY` accounts have no key and cannot produce a header — callers
- * must gate signing-dependent features on "account has a signing key."
+ * Sign via the [NostrSigner] abstraction ([LocalSigner] or the NIP-55
+ * [RemoteSigner]); `READ_ONLY` accounts have no key and cannot produce a
+ * header — callers must gate signing-dependent features on "account has
+ * a signing key."
  */
 object Nip98 {
     const val KIND = 27235
