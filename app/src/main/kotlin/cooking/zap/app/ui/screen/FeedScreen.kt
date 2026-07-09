@@ -184,6 +184,7 @@ fun FeedScreen(
     onMemories: (() -> Unit)? = null,
     fetchGroupPreview: (suspend (String, String) -> cooking.zap.app.repo.GroupPreview?)? = null,
     scrollToTopTrigger: Int = 0,
+    onAskCheffy: ((NostrEvent) -> Unit)? = null,
 ) {
     val feed by viewModel.feed.collectAsState()
     val feedType by viewModel.feedType.collectAsState()
@@ -362,7 +363,8 @@ fun FeedScreen(
             onPollVote = { pollId, optionIds -> viewModel.publishPollVote(pollId, optionIds) },
             resolvedEmojisProvider = { viewModel.customEmojiRepo.resolvedEmojis.value },
             unicodeEmojisProvider = { viewModel.customEmojiRepo.sortedUnicodeEmojis.value },
-            onOpenEmojiLibrary = { showEmojiLibrary = true }
+            onOpenEmojiLibrary = { showEmojiLibrary = true },
+            onAskCheffy = onAskCheffy
         )
     }
 

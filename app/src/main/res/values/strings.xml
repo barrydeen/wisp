@@ -177,6 +177,7 @@
     <string name="btn_unblock">Unblock</string>
     <string name="btn_mute_thread">Mute Thread</string>
     <string name="btn_add_to_list">Add to List</string>
+    <string name="btn_ask_cheffy">Ask Cheffy about this dish</string>
     <string name="btn_pin_to_profile">Pin to Profile</string>
     <string name="btn_unpin_from_profile">Unpin from Profile</string>
     <string name="btn_share">Share</string>

@@ -1024,6 +1024,9 @@ fun WispNavHost(
     var pipFullScreenStartPosition by remember { mutableLongStateOf(0L) }
     var pipFullScreenPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var pipFullScreenAspectRatio by remember { mutableStateOf(16f / 9f) }
+    // Cheffy Note Photo Review target — one sheet hosted below the NavHost
+    // serves every wired surface (Feed / OnlyFood / Thread). Null = closed.
+    var noteReviewTarget by remember { mutableStateOf<NostrEvent?>(null) }
 
     Box(modifier = Modifier.padding(innerPadding)) {
     // Global overlay: orange "Draft saved" pill drops in whenever the composer saves a draft.
@@ -1231,6 +1234,7 @@ fun WispNavHost(
                 viewModel = feedViewModel,
                 onOpenDrawer = onOpenDrawer,
                 scrollToTopTrigger = scrollToTopTrigger,
+                onAskCheffy = { noteReviewTarget = it },
                 onCompose = if (signingMode == SigningMode.READ_ONLY) null else {
                     {
                         replyTarget = null
@@ -2503,7 +2507,8 @@ fun WispNavHost(
                     feedViewModel.hasLocalKeypair &&
                         feedViewModel.relayPool.hasDmRelays() &&
                         feedViewModel.relayListRepo.hasDmRelays(event.pubkey)
-                }
+                },
+                onAskCheffy = { noteReviewTarget = it }
             )
 
             if (showThreadEmojiLibrary) {
@@ -3613,7 +3618,8 @@ fun WispNavHost(
                         navController.openArticleOrRecipe(feedViewModel.eventRepo, kind, author, dTag)
                     },
                     onPayInvoice = { bolt11 -> feedViewModel.payInvoice(bolt11) },
-                    onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) }
+                    onPollVote = { pollId, optionIds -> feedViewModel.publishPollVote(pollId, optionIds) },
+                    onAskCheffy = { noteReviewTarget = it }
                 )
             }
 
@@ -4710,6 +4716,47 @@ fun WispNavHost(
         timer = completionEvent,
         onDismiss = { cookingTimerViewModel.dismissCompletion() }
     )
+
+    // Cheffy Note Photo Review sheet (CHEFFY_NOTE_REVIEW_PLAN.md, Phase 2).
+    // One host for every wired trigger surface; the ViewModel outlives the
+    // sheet (activity-scoped) and open() resets it per target note.
+    noteReviewTarget?.let { target ->
+        val noteReviewViewModel: cooking.zap.app.viewmodel.NoteReviewViewModel = viewModel()
+        val noteReviewState by noteReviewViewModel.state.collectAsState()
+        val noteReviewContext = LocalContext.current
+        LaunchedEffect(target.id) {
+            noteReviewViewModel.open(
+                noteText = target.content,
+                noteId = target.id,
+                // Phase 2 uses the first detected image; the Phase 4 picker
+                // widens this to a selection.
+                imageUrl = cooking.zap.app.cheffy.ImageUrls.extractImageUrls(target.content)
+                    .firstOrNull() ?: "",
+            )
+        }
+        cooking.zap.app.ui.component.NoteReviewSheet(
+            state = noteReviewState,
+            onDismiss = { noteReviewTarget = null },
+            onChoose = { mode ->
+                noteReviewViewModel.choose(mode, feedViewModel.zapCookingApi, feedViewModel.signer)
+            },
+            onRegenerate = {
+                noteReviewViewModel.regenerate(feedViewModel.zapCookingApi, feedViewModel.signer)
+            },
+            onDraftChange = { noteReviewViewModel.updateDraft(it) },
+            onStartOver = { noteReviewViewModel.startOver() },
+            // Same linkout posture as Sous Chef's membership entry: the
+            // flavor flag decides whether the external purchase page may
+            // open; when it can't, the card stays informational.
+            onViewMembership = if (BuildConfig.MEMBERSHIP_LINKOUT_ENABLED) {
+                {
+                    noteReviewContext.startActivity(
+                        Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://zap.cooking/membership"))
+                    )
+                }
+            } else null,
+        )
+    }
     } // CompositionLocalProvider
     } // Box
 

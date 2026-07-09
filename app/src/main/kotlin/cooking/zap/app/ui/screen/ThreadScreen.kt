@@ -121,7 +121,8 @@ fun ThreadScreen(
     onRemoveEmojiSet: ((String, String) -> Unit)? = null,
     isEmojiSetAdded: ((String, String) -> Boolean)? = null,
     /** Whether the user can private-zap [event]'s author (local keypair + DM relays on both sides). */
-    canPrivateZapFor: (NostrEvent) -> Boolean = { false }
+    canPrivateZapFor: (NostrEvent) -> Boolean = { false },
+    onAskCheffy: ((NostrEvent) -> Unit)? = null
 ) {
     val flatThread by viewModel.flatThread.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -208,7 +209,8 @@ fun ThreadScreen(
             onPollVote = onPollVote,
             resolvedEmojisProvider = { resolvedEmojisState.value },
             unicodeEmojisProvider = { unicodeEmojisState.value },
-            onOpenEmojiLibrary = onOpenEmojiLibrary
+            onOpenEmojiLibrary = onOpenEmojiLibrary,
+            onAskCheffy = onAskCheffy
         )
     }
 
