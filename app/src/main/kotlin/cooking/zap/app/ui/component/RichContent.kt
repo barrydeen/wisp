@@ -183,6 +183,12 @@ data class NoteActions(
     val resolvedEmojisProvider: () -> Map<String, String> = { emptyMap() },
     val unicodeEmojisProvider: () -> List<String> = { emptyList() },
     val onOpenEmojiLibrary: (() -> Unit)? = null,
+    /**
+     * Cheffy Note Photo Review trigger (CHEFFY_NOTE_REVIEW_PLAN.md).
+     * Null hides the PostCard menu entry; wired on the kind-1 note
+     * surfaces (Feed / OnlyFood / Thread).
+     */
+    val onAskCheffy: ((NostrEvent) -> Unit)? = null,
 )
 
 data class MediaMeta(

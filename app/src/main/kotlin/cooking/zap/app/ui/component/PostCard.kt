@@ -447,6 +447,27 @@ fun PostCard(
                             onAddToList()
                         }
                     )
+                    // Cheffy Note Photo Review trigger — overflow-menu-only
+                    // (Phase 0 decision 2: the inline ActionBar has no room on
+                    // 360dp widths). READ_ONLY sees nothing: LocalCanSign gates
+                    // it here explicitly because this menu, unlike the action
+                    // bar, renders for read-only accounts too (finding 0.4).
+                    val onAskCheffy = noteActions?.onAskCheffy
+                    if (cooking.zap.app.FeatureFlags.NOTE_REVIEW_ENABLED &&
+                        onAskCheffy != null && LocalCanSign.current &&
+                        remember(event.id) {
+                            cooking.zap.app.cheffy.ImageUrls.extractImageUrls(event.content).isNotEmpty()
+                        }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.btn_ask_cheffy)) },
+                            trailingIcon = { CheffyIcon(size = 20.dp) },
+                            onClick = {
+                                menuExpanded = false
+                                onAskCheffy(event)
+                            }
+                        )
+                    }
                     if (!isOwnEvent) {
                         DropdownMenuItem(
                             text = { Text(if (isFollowingAuthor) stringResource(R.string.btn_unfollow) else stringResource(R.string.btn_follow)) },
