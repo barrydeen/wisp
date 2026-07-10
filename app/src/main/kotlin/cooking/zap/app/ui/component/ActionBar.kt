@@ -119,6 +119,13 @@ fun ActionBar(
     // in a width measurement ONLY when a trigger is offered — every other
     // card takes the plain path with zero extra layout cost.
     val bar: @Composable (rowModifier: Modifier, inlineCheffy: (() -> Unit)?) -> Unit = { rowModifier, inlineCheffy ->
+    // Inter-slot gap between the five social targets. Compressed 8dp→2dp
+    // ONLY in six-slot mode (inlineCheffy != null, i.e. the Cheffy slot is
+    // actually rendering) so a sixth 48dp target fits at the field-device
+    // width without touching the five-slot bar, which stays byte-identical
+    // (8dp) at every width. See NoteReviewTrigger.INLINE_MIN_BAR_WIDTH_DP
+    // for the full width derivation (issue #150 follow-up).
+    val slotGap = if (inlineCheffy != null) 2.dp else 8.dp
     Row(modifier = rowModifier, verticalAlignment = Alignment.CenterVertically) {
         // React first — mirrors the web action-row order
         // (react · comment · renote · zap).
@@ -176,7 +183,7 @@ fun ActionBar(
                 maxLines = 1
             )
         }
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(slotGap))
         IconButton(onClick = onReply) {
             Icon(
                 Icons.Outlined.ModeComment,
@@ -199,7 +206,7 @@ fun ActionBar(
         // Repost / Quote stay hidden on private replies because those events would
         // publicly attach an e-tag pointing at the encrypted rumor id.
         if (!isPrivate) {
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(slotGap))
             Box {
                 IconButton(onClick = { showRepostMenu = true }) {
                     Icon(
@@ -232,7 +239,7 @@ fun ActionBar(
                 )
             }
         }
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(slotGap))
         Box {
             val zapClickable = !isZapInProgress
             val longPressFired = remember { mutableStateOf(false) }
@@ -301,7 +308,7 @@ fun ActionBar(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(slotGap))
         // Single tap → default Saved toggle; long-press → list chooser (when wired).
         Box(
             contentAlignment = Alignment.Center,

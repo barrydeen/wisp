@@ -25,20 +25,36 @@ class NoteReviewTriggerTest {
     private val imageNote = "made this tonight https://image.nostr.build/dish.jpg"
     private val imagelessNote = "no photo, just vibes and a recipe link https://zap.cooking/recipe/1"
 
-    // --- Threshold boundary (findings: T = 348dp measured bar width) ---
+    // --- Threshold boundary (recalibrated: T = 324dp measured bar width,
+    // issue #150 follow-up — six-slot gaps compress 8dp→2dp) ---
 
     @Test
-    fun thresholdBoundary_347Absent_348Present() {
+    fun thresholdBoundary_323Absent_324Present() {
         assertFalse(
-            NoteReviewTrigger.showInline(imageNote, availableBarWidthDp = 347f, isQuoted = false, flagEnabled = true),
+            NoteReviewTrigger.showInline(imageNote, availableBarWidthDp = 323f, isQuoted = false, flagEnabled = true),
         )
         assertTrue(
-            NoteReviewTrigger.showInline(imageNote, availableBarWidthDp = 348f, isQuoted = false, flagEnabled = true),
+            NoteReviewTrigger.showInline(imageNote, availableBarWidthDp = 324f, isQuoted = false, flagEnabled = true),
         )
         // The width half in isolation — ActionBar's exact gate.
-        assertFalse(NoteReviewTrigger.meetsInlineWidth(347.99f))
-        assertTrue(NoteReviewTrigger.meetsInlineWidth(348f))
-        assertEquals(348, NoteReviewTrigger.INLINE_MIN_BAR_WIDTH_DP)
+        assertFalse(NoteReviewTrigger.meetsInlineWidth(323.99f))
+        assertTrue(NoteReviewTrigger.meetsInlineWidth(324f))
+        assertEquals(324, NoteReviewTrigger.INLINE_MIN_BAR_WIDTH_DP)
+    }
+
+    @Test
+    fun fieldDevice_384dpPortrait_showsTheSlot() {
+        // 1080×2408 @ 450dpi → 384dp portrait window, ~332dp bar (window −
+        // 52dp inset). The primary developer's phone: overflow-only under
+        // the old 348 threshold, now clears with an 8dp margin. This is the
+        // regression this PR exists to fix.
+        assertTrue(
+            NoteReviewTrigger.showInline(imageNote, availableBarWidthDp = 332f, isQuoted = false, flagEnabled = true),
+        )
+        // 393-class (bar 341dp) clears too.
+        assertTrue(
+            NoteReviewTrigger.showInline(imageNote, availableBarWidthDp = 341f, isQuoted = false, flagEnabled = true),
+        )
     }
 
     // --- Eligibility (the single source: flag ∧ image detected) ---
@@ -46,7 +62,7 @@ class NoteReviewTriggerTest {
     @Test
     fun imagelessNote_neverShowsTheSlot_atAnyWidth() {
         assertFalse(NoteReviewTrigger.isEligible(imagelessNote, flagEnabled = true))
-        for (width in listOf(347f, 348f, 720f, 10_000f)) {
+        for (width in listOf(323f, 324f, 720f, 10_000f)) {
             assertFalse(
                 NoteReviewTrigger.showInline(imagelessNote, width, isQuoted = false, flagEnabled = true),
             )
@@ -90,14 +106,19 @@ class NoteReviewTriggerTest {
 
     @Test
     fun narrowWidths_renderTheIdenticalFiveSlotBar() {
+        // Five-slot byte-identical pins: below the 324dp threshold the slot
+        // is absent, so no six-slot gap compression applies and the bar
+        // renders exactly what main renders today.
+        //
         // A 320dp window gives the bar 268dp (window − 52). The slot must
         // be absent there, so this change contributes nothing to the
-        // pre-existing 320dp five-slot clipping (tracked separately) —
-        // the bar renders exactly what main renders today.
+        // pre-existing 320dp five-slot clipping (tracked separately).
         assertFalse(
             NoteReviewTrigger.showInline(imageNote, availableBarWidthDp = 268f, isQuoted = false, flagEnabled = true),
         )
-        // And the modal 360dp phone (bar 308dp) stays overflow-only.
+        // And the modal 360dp phone (bar 308dp) stays overflow-only: only
+        // 12dp count headroom over the six-slot hard minimum, so a wide
+        // count would clip — not forced (issue #150 zero-margin finding).
         assertFalse(
             NoteReviewTrigger.showInline(imageNote, availableBarWidthDp = 308f, isQuoted = false, flagEnabled = true),
         )
@@ -113,7 +134,7 @@ class NoteReviewTriggerTest {
         for (content in listOf(imageNote, imagelessNote)) {
             for (flag in listOf(true, false)) {
                 for (quoted in listOf(true, false)) {
-                    for (width in listOf(200f, 347f, 348f, 800f)) {
+                    for (width in listOf(200f, 323f, 324f, 332f, 800f)) {
                         val expected = NoteReviewTrigger.isEligible(content, flag) &&
                             !quoted &&
                             NoteReviewTrigger.meetsInlineWidth(width)
