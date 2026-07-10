@@ -427,10 +427,18 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     // -- Exposed state --
     val feed: StateFlow<List<NostrEvent>> = combine(
-        feedSub.feedType, eventRepo.feed, eventRepo.relayFeed
-    ) { type, main, relay ->
+        feedSub.feedType, eventRepo.feed, eventRepo.relayFeed, feedSub.feedContentFilter
+    ) { type, main, relay, contentFilter ->
         // ONLY_FOOD is relay-backed (a dedicated #t query), like RELAY/TRENDING.
-        if (type == FeedType.RELAY || type == FeedType.TRENDING || type == FeedType.ONLY_FOOD) relay else main
+        // eventRepo.feed already has the content filter baked in (setKindFilter),
+        // but relayFeed doesn't go through that path, so the type/notes/gallery/
+        // polls toggle silently did nothing on relay-backed feed types — apply
+        // filter.kinds() here only for those, leaving the already-filtered main
+        // path untouched (no redundant per-emission pass).
+        val relayBacked = type == FeedType.RELAY || type == FeedType.TRENDING || type == FeedType.ONLY_FOOD
+        if (!relayBacked) return@combine main
+        val kinds = contentFilter.kinds()
+        if (kinds == null) relay else relay.filter { it.kind in kinds }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** OnlyFood posts hidden by the WoT filter since the last (re)load — for the empty-state notice. */

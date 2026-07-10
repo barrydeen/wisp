@@ -51,6 +51,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -59,6 +60,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
@@ -75,6 +77,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.painterResource
@@ -129,10 +132,10 @@ import cooking.zap.app.ui.theme.WispThemeColors
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Dashboard
-import androidx.compose.material.icons.outlined.GridView
-import androidx.compose.material.icons.outlined.HowToVote
-import androidx.compose.material.icons.outlined.Photo
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Hub
@@ -777,48 +780,57 @@ fun FeedScreen(
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 val (icon, tint) = when (contentFilter) {
-                                    // GridView = 2x2 of equal squares (matches iOS).
-                                    // Dashboard was 1 large + 3 small panels.
-                                    FeedContentFilter.ALL -> Icons.Outlined.GridView to MaterialTheme.colorScheme.onSurfaceVariant
+                                    // Apps = 3x3 dot grid — reads as "everything" and stands
+                                    // apart from the more literal Article/PhotoLibrary/CheckCircle
+                                    // glyphs, plus the nearby Gadgets icon's rectangular shape.
+                                    FeedContentFilter.ALL -> Icons.Outlined.Apps to MaterialTheme.colorScheme.onSurfaceVariant
                                     FeedContentFilter.TEXT_ONLY -> Icons.AutoMirrored.Outlined.Article to MaterialTheme.colorScheme.primary
-                                    FeedContentFilter.GALLERY_ONLY -> Icons.Outlined.Photo to MaterialTheme.colorScheme.primary
-                                    FeedContentFilter.POLLS_ONLY -> Icons.Outlined.HowToVote to MaterialTheme.colorScheme.primary
+                                    // PhotoLibrary (stacked photos) reads as "gallery" more
+                                    // clearly than a single Photo glyph.
+                                    FeedContentFilter.GALLERY_ONLY -> Icons.Outlined.PhotoLibrary to MaterialTheme.colorScheme.primary
+                                    FeedContentFilter.POLLS_ONLY -> Icons.Outlined.CheckCircle to MaterialTheme.colorScheme.primary
                                 }
                                 Icon(icon, contentDescription = "Filter: ${contentFilter.name}", tint = tint, modifier = Modifier.size(22.dp))
                             }
                         }
                     },
                     actions = {
-                        // Persistent search affordance (web-style) — first action.
-                        IconButton(onClick = onSearch) {
-                            Icon(
-                                Icons.Outlined.Search,
-                                contentDescription = stringResource(R.string.title_search),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        // Search/Gadgets/AI sit tighter than the default 48dp-per-icon
+                        // touch targets so the trio reads as one group rather than
+                        // three widely-spaced buttons.
+                        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
+                            // Persistent search affordance (web-style) — first action.
+                            IconButton(onClick = onSearch, modifier = Modifier.size(38.dp)) {
+                                Icon(
+                                    Icons.Outlined.Search,
+                                    contentDescription = stringResource(R.string.title_search),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(onClick = onGadgets, modifier = Modifier.size(38.dp)) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_kitchen_gadgets),
+                                    contentDescription = stringResource(R.string.drawer_gadgets),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    // Slightly smaller than the default 24.dp so the cup's
+                                    // full-bleed artwork matches the visual height of the
+                                    // adjacent AI (Intelligence) atom button.
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            // Intelligence menu — mirrors the web's IntelligenceMenu
+                            // (Sous Chef → Cheffy → Nourish). The relay-count and
+                            // online-count diagnostics chips moved to the drawer's
+                            // Advanced "Network" section; relay switching stays in the
+                            // feed-type Relay picker, online members in the relocated
+                            // "Online Now" sheet.
+                            IntelligenceMenu(
+                                onSousChef = onSousChef,
+                                onCheffy = onCheffy,
+                                onNourish = onNourish,
+                                modifier = Modifier.size(38.dp)
                             )
                         }
-                        IconButton(onClick = onGadgets) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_kitchen_gadgets),
-                                contentDescription = stringResource(R.string.drawer_gadgets),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                // Slightly smaller than the default 24.dp so the cup's
-                                // full-bleed artwork matches the visual height of the
-                                // adjacent AI (Intelligence) atom button.
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        // Intelligence menu — mirrors the web's IntelligenceMenu
-                        // (Sous Chef → Cheffy → Nourish). The relay-count and
-                        // online-count diagnostics chips moved to the drawer's
-                        // Advanced "Network" section; relay switching stays in the
-                        // feed-type Relay picker, online members in the relocated
-                        // "Online Now" sheet.
-                        IntelligenceMenu(
-                            onSousChef = onSousChef,
-                            onCheffy = onCheffy,
-                            onNourish = onNourish,
-                        )
                     }
                 )
             },

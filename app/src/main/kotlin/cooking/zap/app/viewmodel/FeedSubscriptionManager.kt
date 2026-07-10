@@ -42,6 +42,14 @@ import kotlin.coroutines.CoroutineContext
 
 enum class FeedContentFilter { ALL, TEXT_ONLY, GALLERY_ONLY, POLLS_ONLY }
 
+/** Event kinds each content filter admits; null (ALL) means no restriction. */
+internal fun FeedContentFilter.kinds(): Set<Int>? = when (this) {
+    FeedContentFilter.ALL -> null
+    FeedContentFilter.TEXT_ONLY -> setOf(1, 6, 30023)
+    FeedContentFilter.GALLERY_ONLY -> setOf(20, 21, 22)
+    FeedContentFilter.POLLS_ONLY -> setOf(Nip88.KIND_POLL, Nip69.KIND_ZAP_POLL)
+}
+
 /**
  * Manages feed subscription lifecycle, feed type switching, engagement subscriptions,
  * relay feed status monitoring, and load-more pagination.
@@ -130,13 +138,10 @@ class FeedSubscriptionManager(
 
     fun setFeedContentFilter(filter: FeedContentFilter) {
         _feedContentFilter.value = filter
-        // Client-side filter: rebuild the filtered feed view
-        when (filter) {
-            FeedContentFilter.ALL -> eventRepo.setKindFilter(null)
-            FeedContentFilter.TEXT_ONLY -> eventRepo.setKindFilter(setOf(1, 6, 30023))
-            FeedContentFilter.GALLERY_ONLY -> eventRepo.setKindFilter(setOf(20, 21, 22))
-            FeedContentFilter.POLLS_ONLY -> eventRepo.setKindFilter(setOf(Nip88.KIND_POLL, Nip69.KIND_ZAP_POLL))
-        }
+        // Client-side filter: rebuild the filtered feed view. Only covers the
+        // "main" (non-relay-backed) feed types — FeedViewModel.feed applies the
+        // same filter.kinds() to the relay-backed feed (RELAY/TRENDING/ONLY_FOOD).
+        eventRepo.setKindFilter(filter.kinds())
     }
 
     private val _relayFeedStatus = MutableStateFlow<RelayFeedStatus>(RelayFeedStatus.Idle)

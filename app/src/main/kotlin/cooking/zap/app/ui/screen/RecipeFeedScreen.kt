@@ -36,6 +36,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -46,6 +47,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -60,6 +62,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import cooking.zap.app.R
 import cooking.zap.app.nostr.RecipeTag
@@ -174,27 +177,33 @@ fun RecipeFeedScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onSearch) {
-                        Icon(
-                            Icons.Outlined.Search,
-                            contentDescription = stringResource(R.string.title_search),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // Search/Gadgets/AI sit tighter than the default 48dp-per-icon
+                    // touch targets so the trio reads as one group rather than
+                    // three widely-spaced buttons.
+                    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
+                        IconButton(onClick = onSearch, modifier = Modifier.size(38.dp)) {
+                            Icon(
+                                Icons.Outlined.Search,
+                                contentDescription = stringResource(R.string.title_search),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = onGadgets, modifier = Modifier.size(38.dp)) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_kitchen_gadgets),
+                                contentDescription = stringResource(R.string.drawer_gadgets),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                // Match the adjacent AI (Intelligence) atom button's height.
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        IntelligenceMenu(
+                            onSousChef = onSousChef,
+                            onCheffy = onCheffy,
+                            onNourish = onNourish,
+                            modifier = Modifier.size(38.dp)
                         )
                     }
-                    IconButton(onClick = onGadgets) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_kitchen_gadgets),
-                            contentDescription = stringResource(R.string.drawer_gadgets),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            // Match the adjacent AI (Intelligence) atom button's height.
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    IntelligenceMenu(
-                        onSousChef = onSousChef,
-                        onCheffy = onCheffy,
-                        onNourish = onNourish,
-                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
