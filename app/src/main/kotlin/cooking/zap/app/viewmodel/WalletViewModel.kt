@@ -1907,6 +1907,10 @@ class WalletViewModel(
                         _restoreFromRelayStatus.value = RestoreFromRelayStatus.MultipleFound(decrypted)
                     }
                 }
+            } catch (e: CancellationException) {
+                // Superseded by a newer search — leave its status untouched
+                // instead of stomping it with an Error.
+                throw e
             } catch (e: Exception) {
                 Log.e("WalletBackup", "search: error", e)
                 _restoreFromRelayStatus.value = RestoreFromRelayStatus.Error(e.message ?: "Search failed")
@@ -2014,10 +2018,20 @@ class WalletViewModel(
                 // Only flag backup as missing if a majority of relays responded
                 val minResponses = (relayCount + 1) / 2 // at least half
                 _backupMissing.value = eoseCount >= minResponses && statuses.none { it.hasBackup }
+            } catch (e: CancellationException) {
+                // Superseded by a newer check — don't run the error path or
+                // clear the loading flag below (that check owns it now).
+                throw e
             } catch (_: Exception) {
                 // Keep existing statuses on error
             } finally {
-                _relayBackupCheckLoading.value = false
+                // Only clear loading if we're still the active check. A newer
+                // check may have cancelled this one and already set loading=true
+                // for itself; clearing it here would leave that check's UI stuck
+                // in a non-loading state.
+                if (relayBackupStatusJob == coroutineContext[Job]) {
+                    _relayBackupCheckLoading.value = false
+                }
             }
         }
     }
