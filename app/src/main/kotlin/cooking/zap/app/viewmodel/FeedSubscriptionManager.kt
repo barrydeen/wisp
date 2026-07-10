@@ -43,7 +43,7 @@ import kotlin.coroutines.CoroutineContext
 enum class FeedContentFilter { ALL, TEXT_ONLY, GALLERY_ONLY, POLLS_ONLY }
 
 /** Event kinds each content filter admits; null (ALL) means no restriction. */
-fun FeedContentFilter.kinds(): Set<Int>? = when (this) {
+internal fun FeedContentFilter.kinds(): Set<Int>? = when (this) {
     FeedContentFilter.ALL -> null
     FeedContentFilter.TEXT_ONLY -> setOf(1, 6, 30023)
     FeedContentFilter.GALLERY_ONLY -> setOf(20, 21, 22)

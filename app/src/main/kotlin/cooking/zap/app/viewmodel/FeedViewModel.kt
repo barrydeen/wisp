@@ -429,10 +429,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         // eventRepo.feed already has the content filter baked in (setKindFilter),
         // but relayFeed doesn't go through that path, so the type/notes/gallery/
         // polls toggle silently did nothing on relay-backed feed types — apply
-        // the same filter.kinds() here so it covers every feed type.
-        val selected = if (type == FeedType.RELAY || type == FeedType.TRENDING || type == FeedType.ONLY_FOOD) relay else main
+        // filter.kinds() here only for those, leaving the already-filtered main
+        // path untouched (no redundant per-emission pass).
+        val relayBacked = type == FeedType.RELAY || type == FeedType.TRENDING || type == FeedType.ONLY_FOOD
+        if (!relayBacked) return@combine main
         val kinds = contentFilter.kinds()
-        if (kinds == null) selected else selected.filter { it.kind in kinds }
+        if (kinds == null) relay else relay.filter { it.kind in kinds }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** OnlyFood posts hidden by the WoT filter since the last (re)load — for the empty-state notice. */
