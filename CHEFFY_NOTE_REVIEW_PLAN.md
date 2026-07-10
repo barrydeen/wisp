@@ -234,7 +234,7 @@ not start until each is answered.
   mapping, resume outcomes (paid/expired/pending/check-failure), same-bolt11
   fallback.
 
-## Phase 6 — Flag flip + release (PR 6) — 🔄 in review
+## Phase 6 — Flag flip + release (PR 6) — 🔄 in review (PR #154, merges after device QA)
 
 Flip `NOTE_REVIEW_ENABLED` (retained post-launch as the kill switch, web
 precedent), RELEASE_NOTES entry, and the final QA matrix below. The
