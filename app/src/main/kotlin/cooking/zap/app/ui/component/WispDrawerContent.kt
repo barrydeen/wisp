@@ -52,7 +52,7 @@ import androidx.compose.material.icons.outlined.FrontHand
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
@@ -175,10 +175,11 @@ fun WispDrawerContent(
                     ProfilePicture(url = profile?.picture, size = 64)
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                // A single, always-visible affordance for the account switcher
-                // modal: same action (switch or add an account) regardless of
-                // how many accounts are signed in, so there's one obvious
-                // button instead of two different implicit tap targets.
+                // Icon-only affordance that opens the account switcher modal.
+                // Same action (switch or add an account) regardless of how many
+                // accounts are signed in; shows a "+N" badge counting the other
+                // accounts when more than one is signed in.
+                val otherAccountCount = (accounts.size - 1).coerceAtLeast(0)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -188,18 +189,20 @@ fun WispDrawerContent(
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 ) {
                     Icon(
-                        Icons.Outlined.SwapHoriz,
-                        contentDescription = null,
+                        Icons.Outlined.People,
+                        contentDescription = stringResource(R.string.cd_switch_account),
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = stringResource(R.string.switch_account_button),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (otherAccountCount > 0) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "+$otherAccountCount",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.weight(1f))
                 IconButton(onClick = onToggleTheme) {
