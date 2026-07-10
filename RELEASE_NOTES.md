@@ -1,6 +1,12 @@
 
 # Changelog
 
+##[1.3.1]
+
+## Update Post Modal for Cheffy Recipe 
+
+- fix(cheffy): bound Note Review draft field so actions stay reachable
+
 ## [1.3.0]
 
 ### Cheffy Note Review
