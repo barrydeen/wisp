@@ -161,7 +161,17 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         // "drafts" and "compose_latest_draft" bypass dedup so draft events aren't suppressed:
         // otherwise the first relay's copy is marked seen (and can be lost to the subscribe race),
         // and every other relay's copy is deduped away, leaving the drafts list empty.
-        listOf("thread-", "user", "quote-", "editprofile", "notif", "dms", "search-", "hashtag-", "drafts", "compose_latest_draft")
+        //
+        // The wallet-backup-related prefixes need the same treatment: they query the
+        // same addressable NIP-78 event (kind 30078) on every retry — e.g. restoring
+        // an NWC/Spark wallet a second time after disconnecting. Without a bypass,
+        // global dedup silently drops that event on every subscription after the
+        // first, making the search look like "no backup found" until the app
+        // restarts and the in-memory dedup cache clears.
+        listOf(
+            "thread-", "user", "quote-", "editprofile", "notif", "dms", "search-", "hashtag-", "drafts", "compose_latest_draft",
+            "wallet-backup-", "auto-check-", "relay-backup-status-", "nwc-restore-", "delete-backup-"
+        )
     )
 
     /** Signing lambda for NIP-42 AUTH — set via [setAuthSigner]. */

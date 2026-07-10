@@ -1184,17 +1184,15 @@ private fun WalletHomeContent(
                         contentDescription = "NWC",
                         modifier = Modifier.height(22.dp)
                     )
-                    if (!nwcNodeAlias.isNullOrBlank()) {
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            nwcNodeAlias,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        nwcNodeAlias?.takeIf { it.isNotBlank() } ?: stringResource(R.string.wallet_nwc_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
 
@@ -1411,7 +1409,10 @@ private fun WalletHomeContent(
         }
 
         // ── Lightning address pill ─────────────────────────────────
-        if (walletMode == WalletMode.SPARK && lightningAddress != null) {
+        // Reserved for the wallet's lightning address only (Spark or NWC).
+        // NWC wallets that don't supply an address show nothing here — no
+        // redundant NWC branding fallback (that's already shown up top).
+        if (lightningAddress != null) {
             Spacer(Modifier.height(16.dp))
             Surface(
                 modifier = Modifier.clickable {
@@ -1438,7 +1439,7 @@ private fun WalletHomeContent(
                     )
                 }
             }
-        } else if (walletMode == WalletMode.SPARK && lightningAddress == null) {
+        } else if (walletMode == WalletMode.SPARK) {
             Spacer(Modifier.height(16.dp))
             Surface(
                 modifier = Modifier.clickable(onClick = onSetupAddress),
@@ -1463,28 +1464,6 @@ private fun WalletHomeContent(
                         color = accent
                     )
                 }
-            }
-        } else if (walletMode == WalletMode.NWC) {
-            Spacer(Modifier.height(16.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_nwc_logo),
-                    contentDescription = "NWC",
-                    modifier = Modifier.height(16.dp),
-                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    stringResource(R.string.wallet_nwc_title),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
 
@@ -4109,8 +4088,10 @@ private fun WalletSettingsContent(
             color = MaterialTheme.colorScheme.onSurface
         )
 
-        // Lightning Address section (Spark only)
-        if (walletMode == WalletMode.SPARK) {
+        // Lightning Address section — Spark always (it owns address setup),
+        // NWC only when the connected wallet actually supplies one (NWC
+        // addresses are read-only here, so no setup/change/remove actions).
+        if (walletMode == WalletMode.SPARK || (walletMode == WalletMode.NWC && lightningAddress != null)) {
             Spacer(Modifier.height(24.dp))
 
             Text(
@@ -4121,7 +4102,7 @@ private fun WalletSettingsContent(
 
             Spacer(Modifier.height(12.dp))
 
-            if (lightningAddressLoading) {
+            if (walletMode == WalletMode.SPARK && lightningAddressLoading) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center
@@ -4159,35 +4140,37 @@ private fun WalletSettingsContent(
                     }
                 }
 
-                Spacer(Modifier.height(8.dp))
+                if (walletMode == WalletMode.SPARK) {
+                    Spacer(Modifier.height(8.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onShowAddressQR,
-                        modifier = Modifier.weight(1f)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("QR Code")
+                        OutlinedButton(
+                            onClick = onShowAddressQR,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("QR Code")
+                        }
+                        OutlinedButton(
+                            onClick = onSetupAddress,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Change")
+                        }
                     }
-                    OutlinedButton(
-                        onClick = onSetupAddress,
-                        modifier = Modifier.weight(1f)
+
+                    Spacer(Modifier.height(4.dp))
+
+                    TextButton(
+                        onClick = onDeleteAddress,
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFD32F2F))
                     ) {
-                        Text("Change")
+                        Text("Remove Lightning Address")
                     }
-                }
-
-                Spacer(Modifier.height(4.dp))
-
-                TextButton(
-                    onClick = onDeleteAddress,
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFD32F2F))
-                ) {
-                    Text("Remove Lightning Address")
                 }
             } else {
                 OutlinedButton(
@@ -4215,7 +4198,6 @@ private fun WalletSettingsContent(
             nwcNodeAlias = nwcNodeAlias,
             nwcConnectionInfo = nwcConnectionInfo,
             nwcSupportedMethods = nwcSupportedMethods,
-            lightningAddress = lightningAddress,
             onCopy = { value ->
                 clipboardManager.setText(AnnotatedString(value))
             }
@@ -5410,7 +5392,6 @@ private fun WalletInfoCard(
     nwcNodeAlias: String?,
     nwcConnectionInfo: cooking.zap.app.repo.NwcRepository.ConnectionInfo?,
     nwcSupportedMethods: List<String>,
-    lightningAddress: String?,
     onCopy: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -5451,20 +5432,16 @@ private fun WalletInfoCard(
                         contentDescription = "NWC",
                         modifier = Modifier.height(22.dp)
                     )
-                    if (!nwcNodeAlias.isNullOrBlank()) {
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            nwcNodeAlias,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                    } else {
-                        Spacer(Modifier.weight(1f))
-                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        nwcNodeAlias?.takeIf { it.isNotBlank() } ?: stringResource(R.string.wallet_nwc_title),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
                 if (walletMode == WalletMode.SPARK) Spacer(Modifier.weight(1f))
                 Icon(
@@ -5496,10 +5473,6 @@ private fun WalletInfoCard(
                             WalletInfoRow("Relay", info.relayUrl,
                                 onCopy = { onCopy(info.relayUrl) })
                             WalletInfoRow("Encryption", info.encryption)
-                        }
-                        if (!lightningAddress.isNullOrBlank()) {
-                            WalletInfoRow("Lightning address", lightningAddress,
-                                onCopy = { onCopy(lightningAddress) })
                         }
                         if (nwcSupportedMethods.isNotEmpty()) {
                             Spacer(Modifier.height(8.dp))
@@ -5534,28 +5507,36 @@ private fun WalletInfoRow(
             label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f)
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.width(128.dp)
         )
+        Spacer(Modifier.width(8.dp))
         Text(
             value,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(2f)
+            modifier = Modifier.weight(1f)
         )
-        if (onCopy != null) {
-            Spacer(Modifier.width(8.dp))
-            IconButton(
-                onClick = onCopy,
-                modifier = Modifier.size(28.dp)
-            ) {
-                Icon(
-                    Icons.Default.ContentCopy,
-                    contentDescription = "Copy",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
-                )
+        // Reserve the copy button's footprint even when absent (Encryption
+        // has no copy action) so the value column lines up across rows.
+        Spacer(Modifier.width(8.dp))
+        Box(modifier = Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+            if (onCopy != null) {
+                IconButton(
+                    onClick = onCopy,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "Copy",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
     }
