@@ -6,12 +6,14 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -125,6 +127,7 @@ import cooking.zap.app.viewmodel.TrendingTimeframe
 import cooking.zap.app.viewmodel.buildTrendingRelayUrl
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -618,6 +621,17 @@ fun FeedScreen(
         Scaffold(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
+                // The transparent background needs to paint the status-bar strip
+                // too, not just the 48dp bar below it — otherwise the bar's own
+                // windowInsetsPadding carves out an opaque gap above it and the
+                // translucency stops short of the top of the screen. Paint it on
+                // this outer Box (sized to bar + status-bar inset) and make the
+                // bar itself fully transparent so there's only one alpha layer.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.background.copy(alpha = 0.85f))
+                ) {
                 CenterAlignedTopAppBar(
                     // Compact: reserve the status-bar inset via
                     // `windowInsetsPadding` (layout-time, no first-frame
@@ -759,7 +773,9 @@ fun FeedScreen(
                                 }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background
+                        // Transparent — the translucent color lives on the wrapping
+                        // Box above so the status-bar strip shares the same layer.
+                        containerColor = Color.Transparent
                     ),
                     navigationIcon = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -833,6 +849,7 @@ fun FeedScreen(
                         }
                     }
                 )
+                }
             },
             floatingActionButton = {
                 if (onCompose != null) {
@@ -853,10 +870,19 @@ fun FeedScreen(
                 }
             }
         ) { padding ->
+            // RELAY/TRENDING show a fixed, opaque header bar right below the top
+            // app bar — for those, keep the usual layout offset. Otherwise, skip
+            // the top offset here and let the feed list's own contentPadding push
+            // its first item down instead, so scrolled content passes behind the
+            // (semi-transparent) top bar rather than stopping short of it.
+            val hasFixedHeaderBar = feedType == FeedType.RELAY || feedType == FeedType.TRENDING
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
+                    .padding(
+                        top = if (hasFixedHeaderBar) padding.calculateTopPadding() else 0.dp,
+                        bottom = padding.calculateBottomPadding()
+                    )
             ) {
             // Relay feed header bar
             if (feedType == FeedType.RELAY && selectedRelay != null) {
@@ -1019,7 +1045,10 @@ fun FeedScreen(
                     ) {
                         LazyColumn(
                             state = listState,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                top = if (hasFixedHeaderBar) 0.dp else padding.calculateTopPadding()
+                            )
                         ) {
                             if (liveNowStreams.isNotEmpty() && onLiveStreamClick != null && !viewModel.interfacePrefs.isLiveStreamsHidden()) {
                                 item(key = "live-now", contentType = "live-now") {
