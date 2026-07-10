@@ -912,6 +912,7 @@ class NoteReviewViewModelTest {
         invoiceId = "rr-stored",
         bolt11 = "lnbc-stored",
         expiresAtMillis = farFutureMs,
+        ownerPubkey = "ab".repeat(32), // the default FakeNip98Signer identity
     )
 
     @Test
@@ -1032,13 +1033,193 @@ class NoteReviewViewModelTest {
             Result.success(emptyList())
     }
 
+    // --- Identity scoping (audit B1/B2/S1) + S2: mint survives cancellation ---
+
+    /** A different account than the default FakeNip98Signer ("ab"×32). */
+    private val accountA = "cd".repeat(32)
+
+    @Test
+    fun ownedRead_treatsAForeignInvoiceAsAbsent_withoutDeletingIt() {
+        // Defense-in-depth half of B1 (interface contract): even against a
+        // shared store, a record owned by another key reads as absent and
+        // is never deleted — its owner may still resume it.
+        val store = FakeInvoiceStore(stored = storedInvoice.copy(ownerPubkey = accountA))
+
+        assertNull(store.loadPendingInvoice(signer.pubkeyHex))
+        assertEquals(storedInvoice.copy(ownerPubkey = accountA), store.loadPendingInvoice(accountA))
+        assertEquals(storedInvoice.copy(ownerPubkey = accountA), store.stored) // untouched
+    }
+
+    @Test
+    fun anotherAccountsPendingInvoice_neverSurfacesToTheBuyer_bMintsFresh() {
+        // B1 end-to-end: A's invoice sits in the store; the session signer
+        // is B. B's Buy must never see A's bolt11 — it mints fresh, and no
+        // buy-time status check is even issued for the foreign invoice.
+        val store = FakeInvoiceStore(stored = storedInvoice.copy(ownerPubkey = accountA))
+        landUpsell(pollIntervalMs = 60_000)
+        server.enqueue(invoiceResponse(bolt11 = "lnbc-fresh-for-b"))
+        server.enqueue(statusResponse("pending"))
+
+        vm.startPayment(api, signer, prefs = store, wallet = null)
+        val s = awaitState { it.phase == NoteReview.Phase.PAYING && it.invoice != null }
+
+        assertEquals("lnbc-fresh-for-b", s.invoice?.bolt11)
+        val paths = drainRequestPaths()
+        // choose → mint → poll: the request AFTER choose is the mint, not
+        // a status check on A's invoice.
+        assertTrue(paths[1].startsWith("/api/zappy/note-review/credit-invoice"))
+        // B's mint is recorded under B's identity.
+        assertEquals(signer.pubkeyHex, store.stored?.ownerPubkey)
+        assertEquals("lnbc-fresh-for-b", store.stored?.bolt11)
+    }
+
+    @Test
+    fun perAccountStores_bBuysFresh_aInvoiceUntouched_andAStillResumes() {
+        // Production shape (per-pubkey prefs files): A and B each have
+        // their own store. B's purchase leaves A's record byte-identical,
+        // and switching back to A resumes A's invoice normally.
+        val aRecord = storedInvoice.copy(ownerPubkey = accountA)
+        val storeA = FakeInvoiceStore(stored = aRecord)
+        val storeB = FakeInvoiceStore()
+
+        // Session as B.
+        landUpsell(pollIntervalMs = 60_000)
+        server.enqueue(invoiceResponse(bolt11 = "lnbc-b"))
+        server.enqueue(statusResponse("pending"))
+        vm.startPayment(api, signer, prefs = storeB, wallet = null)
+        awaitState { it.phase == NoteReview.Phase.PAYING && it.invoice != null }
+        awaitRequests(3) // B's poll consumed its pending tick — now parked
+        assertEquals("lnbc-b", storeB.stored?.bolt11)
+        assertEquals(aRecord, storeA.stored) // A untouched
+
+        // Switch back to A: fresh session, A's signer, A's store.
+        val signerA = FakeNip98Signer(pubkeyHex = accountA)
+        vm = NoteReviewViewModel(pollIntervalMs = 60_000)
+        server.enqueue(statusResponse("paid", balance = 1))
+        vm.open(parent = parentEvent, imageUrls = listOf(imageUrl), api = api, signer = signerA, prefs = storeA)
+        val resumed = awaitState { it.resumeAck }
+
+        assertEquals(1, resumed.creditsRemaining) // legit resume unbroken
+        assertNull(storeA.stored)                 // cleared by the paid observation
+    }
+
+    @Test
+    fun backDuringMint_stillPersistsTheMintedInvoice_forLaterReuse() {
+        // S2: cancelling payJob mid-mint (Back) must not discard a
+        // server-minted invoice — the NonCancellable window records it.
+        landUpsell(pollIntervalMs = 60_000)
+        val store = FakeInvoiceStore()
+        server.enqueue(
+            invoiceResponse(bolt11 = "lnbc-slow-mint")
+                .setBodyDelay(300, java.util.concurrent.TimeUnit.MILLISECONDS),
+        )
+
+        vm.startPayment(api, signer, prefs = store, wallet = null)
+        vm.backFromPaying() // cancels payJob while the response is on the wire
+        assertEquals(NoteReview.Phase.UPSELL, vm.state.value.phase)
+
+        awaitCondition { store.stored?.bolt11 == "lnbc-slow-mint" } // persisted anyway
+        Thread.sleep(150)
+        assertEquals(2, server.requestCount) // choose + mint — no poll for a left screen
+
+        // And the recorded invoice is REUSED on the next Buy — no second mint.
+        server.enqueue(statusResponse("pending")) // buy-time resolution
+        server.enqueue(statusResponse("pending")) // poll's immediate check
+        vm.startPayment(api, signer, prefs = store, wallet = null)
+        val s = awaitState { it.phase == NoteReview.Phase.PAYING && it.invoice != null }
+        assertEquals("lnbc-slow-mint", s.invoice?.bolt11)
+        assertEquals(1, drainRequestPaths().count { it.startsWith("/api/zappy/note-review/credit-invoice") })
+    }
+
+    @Test
+    fun sheetClose_whilePaying_endsTheSession_noLateStateFlips() {
+        // S1's ViewModel half (the Navigation switch handlers call this):
+        // close cancels the wallet attempt and the poll; nothing flips the
+        // closed session's state afterwards.
+        landUpsell(pollIntervalMs = 60_000, inAppPayTimeoutMs = 150)
+        val wallet = FakeWalletProvider {
+            kotlinx.coroutines.delay(300)
+            Result.success("late")
+        }
+        server.enqueue(invoiceResponse())
+        server.enqueue(statusResponse("pending"))
+
+        vm.startPayment(api, signer, prefs = null, wallet = wallet)
+        awaitState { it.inAppPayAttempted }
+
+        vm.onSheetClosed()
+        Thread.sleep(500) // past the timeout AND the wallet settle
+
+        val s = vm.state.value
+        assertFalse("a cancelled session must not flip to fallback", s.inAppPayFailed)
+        assertEquals(NoteReview.Phase.PAYING, s.phase) // frozen, awaiting the next open()
+    }
+
+    // --- Audit NOTE pins ---
+
+    @Test
+    fun paidAutoRun_carriesTheSelectedImageAndTheInSessionToggle() {
+        // N6: the credited auto-run must reuse the live session state —
+        // the picked photo and the member's toggle, never defaults.
+        vm = NoteReviewViewModel(pollIntervalMs = 50)
+        vm.open(parent = parentEvent, imageUrls = threeImages)
+        vm.selectImage(2)
+
+        val prefs = FakeDisclosurePrefs() // comment defaults OFF
+        server.enqueue(jsonResponse(403, """{"ok":false,"code":"NOT_MEMBER","error":"members or sats"}"""))
+        vm.choose(NoteReviewMode.COMMENT, api, signer, prefs)
+        awaitPhase(NoteReview.Phase.UPSELL)
+
+        vm.toggleDisclosure(prefs) // in-session ON
+        prefs.store(NoteReviewMode.COMMENT, false) // stored now disagrees — only a re-seed would pick it up
+
+        server.enqueue(invoiceResponse())
+        server.enqueue(statusResponse("pending"))
+        server.enqueue(statusResponse("paid", balance = 1))
+        server.enqueue(jsonResponse(200, """{"ok":true,"output":"Paid draft","mode":"comment"}"""))
+        vm.startPayment(api, signer, prefs = null, wallet = null)
+        val s = awaitPhase(NoteReview.Phase.DRAFT)
+
+        assertTrue("in-session toggle survived the payment detour", s.disclosureOn)
+        assertEquals(2, s.selectedImageIndex)
+
+        // The auto-run request carried the SELECTED image.
+        var reviewBody: kotlinx.serialization.json.JsonObject? = null
+        while (true) {
+            val recorded = server.takeRequest(100, java.util.concurrent.TimeUnit.MILLISECONDS) ?: break
+            if (recorded.path == "/api/zappy/note-review") {
+                reviewBody = Json.parseToJsonElement(recorded.body.readUtf8()).jsonObject
+            }
+        }
+        assertEquals(threeImages[2], reviewBody!!["imageUrl"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun buyDoubleTap_whilePaying_isANoOp() {
+        // N7: the phase guard, exercised at the exact spot a double-tap
+        // lands — PAYING itself.
+        landUpsell(pollIntervalMs = 60_000)
+        server.enqueue(invoiceResponse())
+        server.enqueue(statusResponse("pending"))
+
+        vm.startPayment(api, signer)
+        awaitState { it.phase == NoteReview.Phase.PAYING && it.invoice != null }
+        awaitRequests(3)
+
+        vm.startPayment(api, signer) // the double tap
+        Thread.sleep(150)
+
+        assertEquals(3, server.requestCount) // no second mint, no second poll
+        assertEquals(1, drainRequestPaths().count { it.startsWith("/api/zappy/note-review/credit-invoice") })
+    }
+
     private class FakeInvoiceStore(
         var stored: cooking.zap.app.repo.StoredInvoice? = null,
     ) : cooking.zap.app.repo.PendingInvoiceStore {
         override fun storePendingInvoice(invoice: cooking.zap.app.repo.StoredInvoice) {
             stored = invoice
         }
-        override fun loadPendingInvoice(): cooking.zap.app.repo.StoredInvoice? = stored
+        override fun loadPendingInvoiceRecord(): cooking.zap.app.repo.StoredInvoice? = stored
         override fun clearPendingInvoice() {
             stored = null
         }

@@ -431,7 +431,19 @@ fun WispNavHost(
     val accounts by authViewModel.accountsFlow.collectAsState()
     var groupListInitKey by rememberSaveable { mutableStateOf(0) }
 
+    // Cheffy Note Photo Review target — one sheet hosted below the NavHost
+    // serves every wired trigger surface. Null = closed. Declared here so
+    // the account-switch handlers can end the session (audit S1): a
+    // note-review session is identity-bound (its poll, payment, and draft
+    // jobs capture the signer) and must never survive a switch.
+    var noteReviewTarget by remember { mutableStateOf<NostrEvent?>(null) }
+    val noteReviewViewModel: cooking.zap.app.viewmodel.NoteReviewViewModel = viewModel()
+
     val onSwitchAccount: (String) -> Unit = { pubkeyHex ->
+        // End any note-review session BEFORE identity changes — no
+        // mixed-identity poll/payment/draft may survive (audit S1).
+        noteReviewViewModel.onSheetClosed()
+        noteReviewTarget = null
         feedViewModel.clearSigner()
         feedViewModel.resetForAccountSwitch()
         walletViewModel.suspendForAccountSwitch()  // disconnect only, preserve credentials
@@ -450,6 +462,8 @@ fun WispNavHost(
     }
 
     val onAddAccount: () -> Unit = {
+        noteReviewViewModel.onSheetClosed()
+        noteReviewTarget = null
         authViewModel.previousAccountPubkey = authViewModel.keyRepo.getPubkeyHex()
         authViewModel.isAddingAccount = true
         feedViewModel.resetForAccountSwitch()
@@ -1024,9 +1038,6 @@ fun WispNavHost(
     var pipFullScreenStartPosition by remember { mutableLongStateOf(0L) }
     var pipFullScreenPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var pipFullScreenAspectRatio by remember { mutableStateOf(16f / 9f) }
-    // Cheffy Note Photo Review target — one sheet hosted below the NavHost
-    // serves every wired surface (Feed / OnlyFood / Thread). Null = closed.
-    var noteReviewTarget by remember { mutableStateOf<NostrEvent?>(null) }
 
     Box(modifier = Modifier.padding(innerPadding)) {
     // Global overlay: orange "Draft saved" pill drops in whenever the composer saves a draft.
@@ -4721,11 +4732,14 @@ fun WispNavHost(
     // One host for every wired trigger surface; the ViewModel outlives the
     // sheet (activity-scoped) and open() resets it per target note.
     noteReviewTarget?.let { target ->
-        val noteReviewViewModel: cooking.zap.app.viewmodel.NoteReviewViewModel = viewModel()
         val noteReviewState by noteReviewViewModel.state.collectAsState()
         val noteReviewContext = LocalContext.current
-        val noteReviewPrefs = remember(noteReviewContext) {
-            cooking.zap.app.repo.NoteReviewPreferences(noteReviewContext)
+        // Per-account prefs file (audit B1) — keyed on the active pubkey
+        // so a switch can never surface another account's pending invoice
+        // or disclosure choices.
+        val noteReviewOwner = feedViewModel.getUserPubkey()
+        val noteReviewPrefs = remember(noteReviewContext, noteReviewOwner) {
+            cooking.zap.app.repo.NoteReviewPreferences(noteReviewContext, noteReviewOwner)
         }
         LaunchedEffect(target.id) {
             noteReviewViewModel.open(

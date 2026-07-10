@@ -322,6 +322,23 @@ class NoteReviewApiTest {
     }
 
     @Test
+    fun clearAuthCache_forcesAFreshSignOnTheNextRequest() = runBlocking {
+        // Account-switch hook (audit B2): FeedViewModel.reloadForNewAccount
+        // calls this so no cached identity assertion survives a switch.
+        server.enqueue(jsonResponse(200, """{"ok":true,"status":"pending","balance":0}"""))
+        server.enqueue(jsonResponse(200, """{"ok":true,"status":"pending","balance":0}"""))
+        server.enqueue(jsonResponse(200, """{"ok":true,"status":"pending","balance":0}"""))
+
+        api.checkCreditStatus(signer, "invoice-a")
+        api.checkCreditStatus(signer, "invoice-b")
+        assertEquals(1, signer.signCount) // shared header across polls
+
+        api.clearAuthCache()
+        api.checkCreditStatus(signer, "invoice-c")
+        assertEquals(2, signer.signCount) // fresh sign after the switch
+    }
+
+    @Test
     fun http401OnFreshHeader_isNotRetried() = runBlocking {
         server.enqueue(jsonResponse(401, """{"ok":false,"error":"Authentication required"}"""))
 

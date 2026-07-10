@@ -23,8 +23,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -175,7 +177,9 @@ class NoteReviewViewModel @JvmOverloads constructor(
     private fun resumePendingInvoice(api: ZapCookingApi, signer: NostrSigner, prefs: PendingInvoiceStore) {
         resumeJob?.cancel()
         resumeJob = viewModelScope.launch(Dispatchers.Default) {
-            val stored = prefs.loadPendingInvoice() ?: return@launch
+            // Owned read (audit B1): another account's invoice reads as
+            // absent — its owner may still resume it from their session.
+            val stored = prefs.loadPendingInvoice(signer.pubkeyHex) ?: return@launch
             val result = api.checkCreditStatus(signer, stored.invoiceId)
             if (result !is CreditStatusResult.Success) return@launch
             when (NoteReview.pollActionForStatus(result.status)) {
@@ -322,7 +326,7 @@ class NoteReviewViewModel @JvmOverloads constructor(
             // `startPayment` parity) — an overwrite would orphan a
             // just-paid invoice's credit client-side.
             val prior = _state.value.invoice
-                ?: prefs?.loadPendingInvoice()
+                ?: prefs?.loadPendingInvoice(signer.pubkeyHex)
                     ?.let { LiveInvoice(it.invoiceId, it.bolt11, it.expiresAtMillis) }
             if (prior != null) {
                 val status = api.checkCreditStatus(signer, prior.invoiceId)
@@ -344,7 +348,7 @@ class NoteReviewViewModel @JvmOverloads constructor(
                 if (live) {
                     _state.update { it.copy(invoice = prior) }
                     prefs?.storePendingInvoice(
-                        StoredInvoice(prior.invoiceId, prior.bolt11, prior.expiresAtMillis),
+                        StoredInvoice(prior.invoiceId, prior.bolt11, prior.expiresAtMillis, signer.pubkeyHex),
                     )
                     startPoll(api, signer, prior.invoiceId, prefs)
                     routePayment(prior.bolt11, wallet)
@@ -354,20 +358,36 @@ class NoteReviewViewModel @JvmOverloads constructor(
                 // Near-expiry or expired → fall through to a fresh mint.
             }
 
-            when (val result = api.requestCreditInvoice(signer)) {
-                is CreditInvoiceResult.Success -> {
+            // The mint and its persistence run NonCancellable (audit S2):
+            // Back or sheet-close mid-mint must not discard a server-minted
+            // invoice — once the response exists it is ALWAYS recorded, so
+            // the resume/reuse paths can find it. Bounded by the HTTP
+            // client's timeouts.
+            val result = withContext(NonCancellable) {
+                val minted = api.requestCreditInvoice(signer)
+                if (minted is CreditInvoiceResult.Success) {
                     _state.update {
                         it.copy(
-                            invoice = LiveInvoice(result.invoiceId, result.bolt11, result.expiresAtMillis),
+                            invoice = LiveInvoice(minted.invoiceId, minted.bolt11, minted.expiresAtMillis),
                         )
                     }
                     prefs?.storePendingInvoice(
-                        StoredInvoice(result.invoiceId, result.bolt11, result.expiresAtMillis),
+                        StoredInvoice(minted.invoiceId, minted.bolt11, minted.expiresAtMillis, signer.pubkeyHex),
                     )
-                    // Poll first (invariant 4) — payment routing and the
-                    // QR/copy/intent affordances come strictly after.
-                    startPoll(api, signer, result.invoiceId, prefs)
-                    routePayment(result.bolt11, wallet)
+                }
+                minted
+            }
+            when (result) {
+                is CreditInvoiceResult.Success -> {
+                    // Only continue into polling/payment if the member is
+                    // still on the payment screen — a Back during the mint
+                    // leaves the invoice stored for reuse, nothing more.
+                    if (_state.value.phase == NoteReview.Phase.PAYING) {
+                        // Poll first (invariant 4) — payment routing and the
+                        // QR/copy/intent affordances come strictly after.
+                        startPoll(api, signer, result.invoiceId, prefs)
+                        routePayment(result.bolt11, wallet)
+                    }
                 }
                 CreditInvoiceResult.SignFailed -> _state.update {
                     it.copy(phase = NoteReview.Phase.UPSELL, payError = NoteReview.SIGN_FAILED_LINE)
