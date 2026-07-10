@@ -581,6 +581,10 @@ Decided 2026-07-09 (answers the open questions above; Phase 1 may start):
    inline variant isn't worth the squeeze risk. The trigger is a
    `DropdownMenuItem` in PostCard's note menu, gated on
    flag ∧ `LocalCanSign` ∧ image detected.
+   *Superseded 2026-07-09 by issue #150's Phase A findings: adaptive
+   inline (right-aligned 48dp slot, shown only at ≥348dp measured bar
+   width, quoted renders excluded) + the overflow entry retained
+   everywhere — both placements coexist on wide screens, web parity.*
 3. **Doc corrections land separately** from the implementation PRs:
    PR #146 fixes CLAUDE.md, ZAPCOOKING_ANDROID_BUILD.md §1/§6, the stale
    `Nip98.kt` KDoc ("LocalSigner-only"), this plan's §2 signer bullet,

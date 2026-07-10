@@ -245,6 +245,18 @@ fun PostCard(
         }
     }
 
+    // Cheffy Note Review — the SINGLE eligibility source (issue #150):
+    // flag ∧ image detected, computed once per card and consumed by BOTH
+    // placements (the note-menu entry and ActionBar's adaptive inline
+    // slot). READ_ONLY gating stays where it lives today: the action row
+    // is LocalCanSign-gated upstream, and the menu entry re-checks it
+    // because the menu renders for read-only accounts too (finding 0.4).
+    val onAskCheffyAction = noteActions?.onAskCheffy
+    val cheffyEligible = onAskCheffyAction != null &&
+        remember(event.id) {
+            cooking.zap.app.cheffy.NoteReviewTrigger.isEligible(event.content)
+        }
+
     // Wrap content + divider so the divider can run full-width while the
     // content keeps its 16dp horizontal padding. Tap-to-open lives on the
     // content Column so the (tiny) divider area isn't tappable.
@@ -447,24 +459,19 @@ fun PostCard(
                             onAddToList()
                         }
                     )
-                    // Cheffy Note Photo Review trigger — overflow-menu-only
-                    // (Phase 0 decision 2: the inline ActionBar has no room on
-                    // 360dp widths). READ_ONLY sees nothing: LocalCanSign gates
-                    // it here explicitly because this menu, unlike the action
+                    // Cheffy Note Photo Review — the menu placement. Always
+                    // present when eligible (discoverability + the narrow-
+                    // screen fallback for the adaptive inline slot, issue
+                    // #150). READ_ONLY sees nothing: LocalCanSign gates it
+                    // here explicitly because this menu, unlike the action
                     // bar, renders for read-only accounts too (finding 0.4).
-                    val onAskCheffy = noteActions?.onAskCheffy
-                    if (cooking.zap.app.FeatureFlags.NOTE_REVIEW_ENABLED &&
-                        onAskCheffy != null && LocalCanSign.current &&
-                        remember(event.id) {
-                            cooking.zap.app.cheffy.ImageUrls.extractImageUrls(event.content).isNotEmpty()
-                        }
-                    ) {
+                    if (cheffyEligible && onAskCheffyAction != null && LocalCanSign.current) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.btn_ask_cheffy)) },
                             trailingIcon = { CheffyIcon(size = 20.dp) },
                             onClick = {
                                 menuExpanded = false
-                                onAskCheffy(event)
+                                onAskCheffyAction(event)
                             }
                         )
                     }
@@ -922,6 +929,13 @@ fun PostCard(
                     isPrivate = isPrivate,
                     zapEnabled = zapEnabled && !isOwnEvent,
                     onZapDisabledTap = onZapDisabledTap,
+                    // Inline placement (issue #150, option 1): offered only
+                    // for eligible top-level cards — quoted renders are
+                    // narrower than any width heuristic assumes and never
+                    // show the slot. ActionBar itself measures the width.
+                    onAskCheffy = if (cheffyEligible && onAskCheffyAction != null && quoteDepth == 0) {
+                        { onAskCheffyAction(event) }
+                    } else null,
                     modifier = Modifier.weight(1f)
                 )
                 Icon(

@@ -9,11 +9,14 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -52,9 +55,12 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cooking.zap.app.R
+import cooking.zap.app.cheffy.NoteReviewTrigger
 import cooking.zap.app.ui.theme.WispThemeColors
 import cooking.zap.app.ui.util.AmountFormatter
 import androidx.compose.ui.window.Popup
@@ -91,12 +97,29 @@ fun ActionBar(
     isPrivate: Boolean = false,
     zapEnabled: Boolean = true,
     onZapDisabledTap: () -> Unit = {},
+    /**
+     * Adaptive right-aligned Cheffy Note Review trigger (issue #150,
+     * option 1). Null (the default, and what every non-note surface
+     * passes) renders the bar byte-identically to before this slot
+     * existed. Non-null offers the trigger, which renders only when the
+     * bar's MEASURED width clears
+     * [NoteReviewTrigger.INLINE_MIN_BAR_WIDTH_DP] — below that the slot
+     * is absent entirely (no sub-48dp shrink, no Row squeeze).
+     * Eligibility (flag ∧ image detected) and the quoted-context
+     * exclusion are the caller's job; READ_ONLY is gated upstream of the
+     * bar (finding 0.4).
+     */
+    onAskCheffy: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showRepostMenu by remember { mutableStateOf(false) }
 
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+    // The bar body is a local composable so the adaptive slot can wrap it
+    // in a width measurement ONLY when a trigger is offered — every other
+    // card takes the plain path with zero extra layout cost.
+    val bar: @Composable (rowModifier: Modifier, inlineCheffy: (() -> Unit)?) -> Unit = { rowModifier, inlineCheffy ->
+    Row(modifier = rowModifier, verticalAlignment = Alignment.CenterVertically) {
         // React first — mirrors the web action-row order
         // (react · comment · renote · zap).
         Box {
@@ -296,6 +319,42 @@ fun ActionBar(
                 contentDescription = stringResource(R.string.cd_add_to_list),
                 tint = if (isInList) WispThemeColors.bookmarkColor else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(22.dp)
+            )
+        }
+        if (inlineCheffy != null) {
+            // Web ml-auto analog (NoteActionBar.svelte:117): pushed to the
+            // row's end, separated from the five social slots by the
+            // flexible gap — distinct by placement and by the brand icon,
+            // not a sixth uniform slot in the row rhythm.
+            Spacer(Modifier.weight(1f))
+            val cheffyLabel = stringResource(R.string.btn_ask_cheffy)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(48.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = androidx.compose.material3.ripple(bounded = false, radius = 24.dp),
+                        onClick = inlineCheffy,
+                    )
+                    .semantics { contentDescription = cheffyLabel },
+            ) {
+                CheffyIcon(size = 22.dp)
+            }
+        }
+    }
+    }
+
+    if (onAskCheffy == null) {
+        bar(modifier, null)
+    } else {
+        // Explicit measurement (issue #150 Phase A): the slot renders only
+        // when the bar's allotted width clears the threshold — absent
+        // below it, never shrunk, never left to Row squeeze semantics.
+        BoxWithConstraints(modifier = modifier) {
+            bar(
+                Modifier.fillMaxWidth(),
+                onAskCheffy.takeIf { NoteReviewTrigger.meetsInlineWidth(maxWidth.value) },
             )
         }
     }
