@@ -7,16 +7,20 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
@@ -90,82 +94,124 @@ fun NoteReviewSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            val busy = state.phase == NoteReview.Phase.SIGNING || state.phase == NoteReview.Phase.LOADING
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CheffyIcon(
-                    size = 28.dp,
-                    expression = if (busy) Cheffy.Expression.COOKING else Cheffy.Expression.HAPPY,
-                )
-                Spacer(Modifier.width(10.dp))
-                Text("Ask Cheffy about this dish", style = MaterialTheme.typography.titleMedium)
-            }
+        // BoxWithConstraints hands us the sheet's max height so the phase
+        // content can be *bounded* rather than growing unbounded and
+        // clipping its own actions off the bottom (the long-recipe-draft
+        // bug). imePadding keeps the pinned actions above the keyboard.
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val maxSheetHeight = maxHeight
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = maxSheetHeight)
+                    .imePadding()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                val busy = state.phase == NoteReview.Phase.SIGNING || state.phase == NoteReview.Phase.LOADING
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CheffyIcon(
+                        size = 28.dp,
+                        expression = if (busy) Cheffy.Expression.COOKING else Cheffy.Expression.HAPPY,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text("Ask Cheffy about this dish", style = MaterialTheme.typography.titleMedium)
+                }
 
-            when (state.phase) {
-                NoteReview.Phase.CHOOSE -> ChooseContent(state, onChoose, onSelectImage)
-                NoteReview.Phase.SIGNING -> WaitContent(
-                    expression = Cheffy.Expression.THINKING,
-                    line = "Waiting for your signer to approve…",
-                    sub = "Using a remote signer? This can take a few seconds.",
-                )
-                NoteReview.Phase.LOADING -> WaitContent(
-                    expression = Cheffy.Expression.COOKING,
-                    line = state.loadingLine,
-                )
-                // Web renders draft and posting as one layout with the
-                // controls disabled while the publish is in flight.
-                NoteReview.Phase.DRAFT, NoteReview.Phase.POSTING ->
-                    DraftContent(state, onDraftChange, onRegenerate, onStartOver, onPost, onToggleDisclosure, onSelectImage)
-                NoteReview.Phase.POST_TIMEOUT -> {
-                    WaitContent(expression = Cheffy.Expression.THINKING, line = state.message)
-                    Row(
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Button(onClick = onRetryPost) { Text("Give it another push") }
-                        TextButton(onClick = onDismiss) { Text("Close") }
-                    }
-                }
-                NoteReview.Phase.POSTED -> {
-                    WaitContent(
-                        expression = Cheffy.Expression.EXCITED,
-                        line = "Posted! Cheffy tips his toque to you.",
+                // The draft phase manages its own internal layout: the field
+                // flexes into the space left after the pinned toggle/footer/
+                // actions, so those stay reachable at any draft length. Every
+                // other phase is a fixed block of content whose primary action
+                // must stay reachable at small heights / landscape / large
+                // font — so it goes in a bounded, scrollable region.
+                if (state.phase == NoteReview.Phase.DRAFT || state.phase == NoteReview.Phase.POSTING) {
+                    // Web renders draft and posting as one layout with the
+                    // controls disabled while the publish is in flight.
+                    DraftContent(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false),
+                        state = state,
+                        onDraftChange = onDraftChange,
+                        onRegenerate = onRegenerate,
+                        onStartOver = onStartOver,
+                        onPost = onPost,
+                        onToggleDisclosure = onToggleDisclosure,
+                        onSelectImage = onSelectImage,
                     )
-                    Row(
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            // fill = false so short phases still wrap their
+                            // content; taller-than-available content is capped
+                            // and scrolls instead of clipping.
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Button(onClick = onViewReply) { Text("View your reply") }
-                        TextButton(onClick = onDismiss) { Text("Done") }
-                    }
-                }
-                NoteReview.Phase.DEAD_END -> {
-                    WaitContent(expression = Cheffy.Expression.CONCERNED, line = state.message)
-                    TextButton(
-                        onClick = onStartOver,
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                    ) { Text("Back") }
-                }
-                NoteReview.Phase.UPSELL -> UpsellContent(state, onViewMembership, onStartPayment)
-                NoteReview.Phase.PAYING -> PayingContent(state, onBackFromPaying)
-                NoteReview.Phase.ERROR -> {
-                    WaitContent(
-                        expression = Cheffy.Expression.CONCERNED,
-                        line = state.errorLine,
-                        sub = state.message.takeIf { it.isNotBlank() },
-                    )
-                    Row(
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        OutlinedButton(onClick = onRegenerate) { Text("Try again") }
-                        TextButton(onClick = onStartOver) { Text("Back") }
+                        when (state.phase) {
+                            NoteReview.Phase.CHOOSE -> ChooseContent(state, onChoose, onSelectImage)
+                            NoteReview.Phase.SIGNING -> WaitContent(
+                                expression = Cheffy.Expression.THINKING,
+                                line = "Waiting for your signer to approve…",
+                                sub = "Using a remote signer? This can take a few seconds.",
+                            )
+                            NoteReview.Phase.LOADING -> WaitContent(
+                                expression = Cheffy.Expression.COOKING,
+                                line = state.loadingLine,
+                            )
+                            NoteReview.Phase.POST_TIMEOUT -> {
+                                WaitContent(expression = Cheffy.Expression.THINKING, line = state.message)
+                                Row(
+                                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Button(onClick = onRetryPost) { Text("Give it another push") }
+                                    TextButton(onClick = onDismiss) { Text("Close") }
+                                }
+                            }
+                            NoteReview.Phase.POSTED -> {
+                                WaitContent(
+                                    expression = Cheffy.Expression.EXCITED,
+                                    line = "Posted! Cheffy tips his toque to you.",
+                                )
+                                Row(
+                                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Button(onClick = onViewReply) { Text("View your reply") }
+                                    TextButton(onClick = onDismiss) { Text("Done") }
+                                }
+                            }
+                            NoteReview.Phase.DEAD_END -> {
+                                WaitContent(expression = Cheffy.Expression.CONCERNED, line = state.message)
+                                TextButton(
+                                    onClick = onStartOver,
+                                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                                ) { Text("Back") }
+                            }
+                            NoteReview.Phase.UPSELL -> UpsellContent(state, onViewMembership, onStartPayment)
+                            NoteReview.Phase.PAYING -> PayingContent(state, onBackFromPaying)
+                            NoteReview.Phase.ERROR -> {
+                                WaitContent(
+                                    expression = Cheffy.Expression.CONCERNED,
+                                    line = state.errorLine,
+                                    sub = state.message.takeIf { it.isNotBlank() },
+                                )
+                                Row(
+                                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    OutlinedButton(onClick = onRegenerate) { Text("Try again") }
+                                    TextButton(onClick = onStartOver) { Text("Back") }
+                                }
+                            }
+                            // Handled above; the outer branch never routes
+                            // the draft phases here.
+                            NoteReview.Phase.DRAFT, NoteReview.Phase.POSTING -> Unit
+                        }
                     }
                 }
             }
@@ -260,8 +306,22 @@ private fun WaitContent(expression: Cheffy.Expression, line: String, sub: String
     }
 }
 
+/**
+ * Draft phase — the field is the only thing that flexes. It's bounded to
+ * whatever vertical space is left after the fixed instructional text, the
+ * image strip, and the pinned toggle/footer/error/action rows below it,
+ * and scrolls internally for longer content (a recipe draft can be well
+ * over a thousand characters). The controls below the field are laid out
+ * as ordinary siblings — never inside the field's scroll region — so
+ * "Post reply" stays reachable regardless of draft length, keyboard state,
+ * orientation, or font scale.
+ *
+ * [modifier] carries the bounded `weight(1f, fill = false)` from the sheet
+ * body; a bounded height is what makes the field's own weight resolve.
+ */
 @Composable
 private fun DraftContent(
+    modifier: Modifier,
     state: NoteReviewViewModel.UiState,
     onDraftChange: (String) -> Unit,
     onRegenerate: () -> Unit,
@@ -271,64 +331,74 @@ private fun DraftContent(
     onSelectImage: (Int) -> Unit,
 ) {
     val posting = state.phase == NoteReview.Phase.POSTING
-    Text(
-        "Cheffy's draft — make it yours, then post it as your own reply.",
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    // Picking a photo here only ARMS the next Regenerate (web parity —
-    // the current draft stays until the member re-runs).
-    ImagePickerStrip(state, onSelectImage, enabled = !posting)
-    OutlinedTextField(
-        value = state.draft,
-        onValueChange = onDraftChange,
-        modifier = Modifier.fillMaxWidth(),
-        enabled = !posting,
-        // Recipes are long structured drafts, comments a few sentences —
-        // mirrors the web textarea's rows={16 : 5}.
-        minLines = if (state.mode == NoteReviewMode.RECIPE) 12 else 4,
-        supportingText = { Text("${state.draft.length} characters") },
-    )
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(
-            checked = state.disclosureOn,
-            onCheckedChange = { onToggleDisclosure() },
-            enabled = !posting,
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            "Cheffy's draft — make it yours, then post it as your own reply.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text("Add a small \"via Cheffy\" note", style = MaterialTheme.typography.bodyMedium)
-    }
-    if (state.disclosureOn) {
-        // Publish-time footer preview — deliberately NOT part of the text
-        // field above. The label makes it read as "will be appended",
-        // so nobody edits their draft trying to remove it.
-        Surface(
-            shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                Text(
-                    "Added when you post:",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(NoteReview.DISCLOSURE_FOOTER, style = MaterialTheme.typography.bodySmall)
+        // Picking a photo here only ARMS the next Regenerate (web parity —
+        // the current draft stays until the member re-runs).
+        ImagePickerStrip(state, onSelectImage, enabled = !posting)
+        OutlinedTextField(
+            value = state.draft,
+            onValueChange = onDraftChange,
+            // weight(fill = false): the field takes the space left over
+            // after the siblings above and the pinned controls below, up to
+            // that bound, then scrolls internally. Short comment drafts stay
+            // compact; long recipe drafts stop growing instead of shoving
+            // the actions off the sheet.
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false),
+            enabled = !posting,
+            // Recipes are long structured drafts, comments a few sentences —
+            // mirrors the web textarea's rows={16 : 5}.
+            minLines = if (state.mode == NoteReviewMode.RECIPE) 12 else 4,
+            supportingText = { Text("${state.draft.length} characters") },
+        )
+        // --- Pinned below the field: always visible and tappable ---
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = state.disclosureOn,
+                onCheckedChange = { onToggleDisclosure() },
+                enabled = !posting,
+            )
+            Text("Add a small \"via Cheffy\" note", style = MaterialTheme.typography.bodyMedium)
+        }
+        if (state.disclosureOn) {
+            // Publish-time footer preview — deliberately NOT part of the text
+            // field above. The label makes it read as "will be appended",
+            // so nobody edits their draft trying to remove it.
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Text(
+                        "Added when you post:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(NoteReview.DISCLOSURE_FOOTER, style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
-    }
-    if (state.postError.isNotBlank()) {
-        Text(
-            state.postError,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
-        )
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onRegenerate, enabled = !posting) { Text("Regenerate") }
-        TextButton(onClick = onStartOver, enabled = !posting) { Text("Start over") }
-        Spacer(Modifier.weight(1f))
-        Button(onClick = onPost, enabled = !posting && state.draft.isNotBlank()) {
-            Text(if (posting) "Posting…" else "Post reply")
+        if (state.postError.isNotBlank()) {
+            Text(
+                state.postError,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onRegenerate, enabled = !posting) { Text("Regenerate") }
+            TextButton(onClick = onStartOver, enabled = !posting) { Text("Start over") }
+            Spacer(Modifier.weight(1f))
+            Button(onClick = onPost, enabled = !posting && state.draft.isNotBlank()) {
+                Text(if (posting) "Posting…" else "Post reply")
+            }
         }
     }
 }
