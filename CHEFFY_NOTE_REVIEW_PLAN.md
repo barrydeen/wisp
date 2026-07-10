@@ -5,6 +5,10 @@ comment or reverse-engineered recipe) to `zapcooking/zap_cooking_android`.
 Follows house rules: stop-gated phases, one concern per PR, surgical diffs,
 investigation before implementation.
 
+**Status (2026-07-09): Phases 0–5 merged; Phase 6 (flag flip + release
+prep) in review. The flag flip merges only after the device checklist in
+[`QA_NOTE_REVIEW.md`](QA_NOTE_REVIEW.md) passes.**
+
 **Backend-as-API rule holds: zero server work.** All three endpoints already
 exist and are client-agnostic (NIP-98 identity, no cookies, no CORS concern
 for a native client). Android consumes them exactly as web does.
@@ -119,7 +123,7 @@ Server-side facts that shape the client:
 
 ---
 
-## Phase 0 — Investigation (STOP GATE, no code)
+## Phase 0 — Investigation (STOP GATE, no code) — ✅ complete (findings + decisions below; docs PR #146)
 
 Deliverable: findings comment on the tracking issue. Implementation PRs do
 not start until each is answered.
@@ -151,7 +155,7 @@ not start until each is answered.
   `WalletModeRepository` / `WalletProvider` — what states mean "has in-app
   wallet"?
 
-## Phase 1 — API layer (PR 1)
+## Phase 1 — API layer (PR 1) — ✅ merged (PR #147)
 
 `ZapCookingApi` additions, no UI:
 
@@ -169,7 +173,7 @@ not start until each is answered.
 - Unit tests: response-code → sealed-type mapping, noteText capping,
   payload-hash/body-bytes identity, credit-status URL vs u-tag divergence.
 
-## Phase 2 — Draft flow, members only (PR 2, flag `NOTE_REVIEW_ENABLED = false`)
+## Phase 2 — Draft flow, members only (PR 2, flag `NOTE_REVIEW_ENABLED = false`) — ✅ merged (PR #148)
 
 - `ImageUrls.kt` port + tests (or the 0.5 reuse decision).
 - Trigger per 0.3, gated on: flag ∧ canSign ∧ image detected.
@@ -188,7 +192,7 @@ not start until each is answered.
     retryable, NOT as upsell.
 - ViewModel unit tests for the phase machine (`phaseForResult` port).
 
-## Phase 3 — Publish path (PR 3)
+## Phase 3 — Publish path (PR 3) — ✅ merged (PR #149)
 
 - Post button appears (draft phase only, `canPost` guard →
   `Posting → Posted | PostTimeout`).
@@ -199,7 +203,7 @@ not start until each is answered.
 - Posted state: link into ThreadScreen for the new reply (nevent with
   author + kind hints, note1 fallback — port `noteLinkFor`).
 
-## Phase 4 — Disclosure footer + multi-image (PR 4)
+## Phase 4 — Disclosure footer + multi-image (PR 4) — ✅ merged (PR #151)
 
 - Footer toggle on the draft phase, shown as a separate non-editable preview
   line (never concatenated into the edit field). Exact string:
@@ -208,7 +212,7 @@ not start until each is answered.
 - Multi-image notes: thumbnail picker strip, defaults to first image,
   selection survives Regenerate, one imageUrl per request.
 
-## Phase 5 — Non-member credits (PR 5, largest — consider splitting 5a invoice/poll, 5b wallet routing/resume)
+## Phase 5 — Non-member credits (split as decided: 5a invoice/poll, 5b wallet routing/resume) — ✅ merged (PRs #152, #153)
 
 - Upsell card gains the 21-sat path: price, the static example draft
   (`PAYMENT_CARD_EXAMPLE_DRAFT`), and the "Tied to your Nostr key — works on
@@ -230,18 +234,27 @@ not start until each is answered.
   mapping, resume outcomes (paid/expired/pending/check-failure), same-bolt11
   fallback.
 
-## Phase 6 — Flag flip + release (PR 6)
+## Phase 6 — Flag flip + release (PR 6) — 🔄 in review
 
-- Flip `NOTE_REVIEW_ENABLED`, RELEASE_NOTES entry, QA matrix:
+Flip `NOTE_REVIEW_ENABLED` (retained post-launch as the kill switch, web
+precedent), RELEASE_NOTES entry, and the final QA matrix below. The
+remaining rows are expanded into a concrete device checklist in
+[`QA_NOTE_REVIEW.md`](QA_NOTE_REVIEW.md) — **the flag flip merges only
+after that checklist passes.**
+
+Matrix status: bunker (NIP-46) removed as N/A in Phase 0 (no such signer
+exists — finding 0.1). Rows marked *pre-cleared 2026-07-09* passed the
+Phase 3/4 on-device smoke sessions (local key + Amber) — re-verify only
+if the area changed since.
 
 | Axis | Cases |
 |---|---|
-| Signer | LocalSigner, Amber (NIP-55), READ_ONLY (hidden — decision 0.4) |
-| Membership | Pro Kitchen member, non-member 0 credits, non-member with credits, membership service down (fails closed) |
-| Wallet | NWC, Spark, none (external fallback), in-app timeout → fallback same invoice |
-| Image | extension URL, extensionless rescued host, dead link (dead-end, credit NOT spent), multi-image, imageless (no trigger) |
-| Publish | happy path, signer rejects, relay timeout → retry same event, verify no duplicate reply |
-| Edge | rate limited (429 copy), resume flow paid-while-closed, disclosure defaults per mode |
+| Signer | LocalSigner *(pre-cleared 2026-07-09)*, Amber NIP-55 incl. sign + reject *(pre-cleared 2026-07-09)*, READ_ONLY hidden *(pre-cleared 2026-07-09 — trigger gating)* |
+| Membership | Pro Kitchen member happy path, both modes *(pre-cleared 2026-07-09)*; non-member 0 credits → **QA doc**; non-member with credits → **QA doc**; membership service down (fails closed) → **QA doc** (needs backend cooperation) |
+| Wallet | NWC → **QA doc**; Spark → **QA doc**; none (external fallback) → **QA doc**; in-app timeout → fallback SAME invoice → **QA doc** |
+| Image | extension URL *(pre-cleared 2026-07-09)*; regenerate + header-cache behavior *(pre-cleared 2026-07-09)*; dead link → dead-end *(pre-cleared 2026-07-09)*, credit-NOT-spent variant → **QA doc**; extensionless rescued host → **QA doc**; multi-image picker → **QA doc**; imageless = no trigger *(pre-cleared 2026-07-09 — trigger gating)* |
+| Publish | happy path *(pre-cleared 2026-07-09)*; signer rejects → draft intact *(pre-cleared 2026-07-09 — Amber session)*; relay timeout → retry same event, no duplicate reply → **QA doc** |
+| Edge | sheet lifecycle (dismiss/reopen/rotation) *(pre-cleared 2026-07-09)*; disclosure defaults per mode *(pre-cleared 2026-07-09 — footer session)*; rate limited (429 copy) → **QA doc**; resume paid-while-closed → **QA doc**; cross-platform credit ledger (Android ↔ web) → **QA doc** |
 
 ---
 

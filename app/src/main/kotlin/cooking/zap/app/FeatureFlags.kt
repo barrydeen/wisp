@@ -10,9 +10,11 @@ object FeatureFlags {
     const val TRANSLATION_ENABLED = false
 
     /**
-     * Cheffy Note Photo Review (CHEFFY_NOTE_REVIEW_PLAN.md) — dark-shipped
-     * while Phases 2–5 land. Gates the PostCard "Ask Cheffy about this dish"
-     * menu entry and the draft modal. Flip in Phase 6.
+     * Cheffy Note Photo Review (CHEFFY_NOTE_REVIEW_PLAN.md) — gates the
+     * PostCard "Ask Cheffy about this dish" menu entry and the draft
+     * modal. Flipped ON for release in Phase 6; the flag is RETAINED as
+     * the kill switch (web precedent: `NOTE_REVIEW_POST_ENABLED` kept
+     * post-launch) — do not delete it or inline its call sites.
      */
-    const val NOTE_REVIEW_ENABLED = false
+    const val NOTE_REVIEW_ENABLED = true
 }
