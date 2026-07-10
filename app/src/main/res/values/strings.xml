@@ -9,6 +9,9 @@
     <string name="nav_notifications">Notifications</string>
 
     <!-- Drawer Menu -->
+    <string name="switch_account_button">Switch account</string>
+    <string name="account_switcher_title">Accounts</string>
+    <string name="account_switcher_add">Sign in with another account</string>
     <string name="drawer_my_profile">My Profile</string>
     <string name="drawer_feeds">Feeds</string>
     <string name="drawer_memories">Memories</string>
@@ -338,6 +341,7 @@
     <string name="cd_switch_account">Switch account</string>
     <string name="cd_add_account">Add account</string>
     <string name="cd_active">Active</string>
+    <string name="cd_watch_only">Watch-only</string>
     <string name="cd_seen_on">Seen on</string>
     <string name="cd_sent_with">Sent with</string>
     <string name="cd_filter_notifications">Filter notifications</string>
