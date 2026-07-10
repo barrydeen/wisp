@@ -278,3 +278,100 @@ re-run this audit's §1–2 checks and proceed with the QA checklist and
 the #154 merge. The device QA doc should also gain one row: switch
 accounts mid-payment and verify the sheet closes and no cross-account
 invoice appears.
+
+
+---
+
+# Addendum — re-audit after the identity-scoping fixes (2026-07-09)
+
+Re-ran §1 (money paths) and §2 (identity) against the
+`fix/note-review-identity-scoping` branch. Note: #154 merged before this
+fix, so the flag is LIVE on main — this PR is the release blocker now,
+not #154.
+
+## Fix verification
+
+- **B1 — FIXED, both halves.** Storage is a per-pubkey prefs file
+  (`NoteReviewPreferences.kt:77,117` — `note_review_prefs_<pubkey>`,
+  the ZapPreferences pattern), AND every record carries its owner
+  (`StoredInvoice.ownerPubkey`, persisted at `:84`, required at `:91`)
+  with the owned read refusing mismatches as an interface-default
+  contract (`:56` — mismatch reads as absent, never deleted). Both VM
+  read sites use the owned read (`NoteReviewViewModel.kt:182,329`).
+  *Pinned:* `ownedRead_treatsAForeignInvoiceAsAbsent_withoutDeletingIt`,
+  `anotherAccountsPendingInvoice_neverSurfacesToTheBuyer_bMintsFresh`
+  (B never sees A's bolt11; no status check is even issued for the
+  foreign invoice), and
+  `perAccountStores_bBuysFresh_aInvoiceUntouched_andAStillResumes`
+  (legitimate owner resume unbroken).
+- **B2 — FIXED, belt and suspenders.** The signer pubkey is part of the
+  cache key (`Nip98HeaderCache.kt:40,63`), and
+  `FeedViewModel.reloadForNewAccount` clears the cache on switch
+  (`FeedViewModel.kt:514` → `ZapCookingApi.clearAuthCache`,
+  `ZapCookingApi.kt:49` → `Nip98HeaderCache.clear`, `:85`). *Pinned:*
+  `sameRequestShape_underTwoSigners_neverSharesAHeader` (two signs,
+  never a cross-identity hit, per-identity caching intact),
+  `clear_dropsEveryCachedHeader`,
+  `clearAuthCache_forcesAFreshSignOnTheNextRequest` (api-level hook).
+- **S1 — FIXED.** Both account-switch handlers end the note-review
+  session before identity changes: `onSwitchAccount`
+  (`Navigation.kt:445-446`) and `onAddAccount` (`:465-466`) call
+  `onSheetClosed()` and clear `noteReviewTarget`, beside the existing
+  `suspendForAccountSwitch`. The ViewModel half — close cancels every
+  job and nothing flips a closed session's state — is pinned by
+  `sheetClose_whilePaying_endsTheSession_noLateStateFlips` and the
+  existing `sheetClose_cancelsAHangingPoll…`. The two Navigation lines
+  themselves are Compose wiring, verified by inspection (no
+  instrumentation harness in the hermetic suite); the device QA row
+  added below exercises them end-to-end.
+- **S2 — FIXED.** The mint and its persistence run under
+  `NonCancellable` (`NoteReviewViewModel.kt:361-379`), so once the
+  server has minted, the invoice is ALWAYS recorded; continuation into
+  poll/routing is gated on `phase == PAYING` (`:385`), so a Back during
+  the mint leaves a stored, reusable invoice and nothing else. *Pinned:*
+  `backDuringMint_stillPersistsTheMintedInvoice_forLaterReuse`
+  (cancel mid-wire → persisted → no poll for a left screen → next Buy
+  reuses it, exactly one mint).
+
+## §1 money paths, re-walked
+
+Exactly one mint site remains (`startPayment`'s NonCancellable block);
+every entry point (Buy, resume-on-open, buy-time resolution, and their
+interleavings) funnels through the owned-read prior-resolution before
+it. The three crediting sites are unchanged and all server-observation-
+gated. The six `clearPendingInvoice` sites are unchanged and all
+downstream of an observed paid/expired — and now each store instance is
+account-bound, so no path can clear another account's record. The
+wallet attempt remains advisory and session-owned (N2 unchanged:
+sheet-close cancels it; the persisted invoice + resume are the money
+safety net).
+
+## §2 identity, re-walked
+
+A signed header can no longer serve two identities (key + switch-time
+clear); a pending invoice can no longer surface outside its owner
+(per-pubkey file + owner check); an open session can no longer straddle
+a switch (both handlers end it). Disclosure prefs are now also
+per-account (N10 resolved as a side effect). Residual, accepted:
+in-flight jobs capture the signer at start — with S1 ending sessions at
+the only identity-change points, no mixed-identity composition remains
+reachable.
+
+## NOTE pins landed with this PR
+
+- N6 → `paidAutoRun_carriesTheSelectedImageAndTheInSessionToggle`
+  (selected image in the auto-run request body; in-session toggle held
+  against a disagreeing stored pref).
+- N7 → `buyDoubleTap_whilePaying_isANoOp` (no second mint, no second
+  poll).
+- N8 — NOT pinned, deliberately: `NOTE_REVIEW_ENABLED` is a
+  compile-time `const`, so a JVM test cannot toggle it and the hermetic
+  suite has no Compose instrumentation; flag-off invisibility remains
+  inspection-verified (single flag-gated trigger; all three
+  `noteReviewTarget` setters gated; no nav route). Converting the flag
+  to runtime state solely for testability would weaken the kill switch.
+
+**Addendum verdict: B1/B2/S1/S2 resolved and pinned (141 note-review
+tests green). With this PR merged, the release is unblocked from the
+audit's side; the device QA checklist (including the new account-switch
+row) remains the final gate.**

@@ -42,6 +42,13 @@ class ZapCookingApi(
     private val jsonMediaType = "application/json".toMediaType()
 
     /**
+     * Drop every cached NIP-98 header. Called on account switch — the
+     * cache is also identity-keyed (audit B2), so this is defense in
+     * depth, not the primary isolation.
+     */
+    fun clearAuthCache() = nip98Cache.clear()
+
+    /**
      * `GET /api/membership?pubkeys=<hex>` — public, unauthenticated **batch**
      * read of membership status. Use for badge surfaces and for READ_ONLY
      * accounts (which cannot sign).

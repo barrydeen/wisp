@@ -91,11 +91,51 @@ class Nip98HeaderCacheTest {
     fun invalidate_forcesResign() = runBlocking {
         val cache = cache()
         cache.authHeader(signer, "GET", url)
-        cache.invalidate("GET", url)
+        cache.invalidate(signer.pubkeyHex, "GET", url)
         val second = cache.authHeader(signer, "GET", url)
 
         assertEquals(2, signer.signCount)
         assertFalse(second.fromCache)
+    }
+
+    // --- Identity scoping (audit B2) ---
+
+    @Test
+    fun sameRequestShape_underTwoSigners_neverSharesAHeader() = runBlocking {
+        // A cached Authorization header IS an identity assertion — an
+        // account switch inside the TTL must never let one account's
+        // header authenticate another's request.
+        val cache = cache()
+        val signerA = FakeNip98Signer(pubkeyHex = "cd".repeat(32))
+
+        val a = cache.authHeader(signerA, "GET", url)
+        val b = cache.authHeader(signer, "GET", url) // same shape, other pubkey
+
+        assertFalse(a.fromCache)
+        assertFalse(b.fromCache) // B signed fresh — no cross-identity hit
+        assertNotEquals(a.header, b.header)
+        assertEquals(1, signerA.signCount)
+        assertEquals(1, signer.signCount)
+
+        // Each identity still enjoys its own cache.
+        val aAgain = cache.authHeader(signerA, "GET", url)
+        assertTrue(aAgain.fromCache)
+        assertEquals(a.header, aAgain.header)
+        assertEquals(1, signerA.signCount)
+    }
+
+    @Test
+    fun clear_dropsEveryCachedHeader() = runBlocking {
+        // The account-switch belt (FeedViewModel.reloadForNewAccount) to
+        // the per-pubkey key's suspenders.
+        val cache = cache()
+        cache.authHeader(signer, "GET", url)
+
+        cache.clear()
+
+        val again = cache.authHeader(signer, "GET", url)
+        assertFalse(again.fromCache)
+        assertEquals(2, signer.signCount)
     }
 
     // --- 401 retry rule ---

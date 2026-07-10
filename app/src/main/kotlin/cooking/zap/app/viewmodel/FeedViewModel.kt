@@ -509,6 +509,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         recipeBookmarkRepo.reset()
     }
     fun reloadForNewAccount() {
+        // NIP-98 headers are identity assertions — never let a cached one
+        // survive into the next account's session (audit B2).
+        zapCookingApi.clearAuthCache()
         safetyPrefs.reload(getUserPubkey())
         interfacePrefs.reload(getUserPubkey())
         zapPrefs.reload(getUserPubkey())

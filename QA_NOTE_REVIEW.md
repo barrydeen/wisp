@@ -154,6 +154,21 @@ b) **web → Android**: on web, buy exactly one 21-sat credit (pay the
    same signed event), then verify the thread still shows exactly ONE
    reply.
 
+### B4 — Account switch mid-payment (audit B1/B2/S1) `[Key N + a second key, wallet: none]`
+1. As Key N (non-member), trigger a review → upsell → sats button. Note
+   the invoice (copy it), do NOT pay. Leave the payment screen open.
+2. From the drawer, switch to the second account.
+- [ ] The Note Review sheet closes immediately — no payment screen or
+      poll survives the switch.
+3. As the second account (also a non-member, or use its upsell path),
+   trigger a review → upsell → sats button.
+- [ ] A **fresh** invoice appears — compare against the copied one; they
+      must differ (never another account's bolt11).
+4. Switch back to Key N, pay the ORIGINAL copied invoice from an
+   external wallet, then reopen Note Review on any food note.
+- [ ] "⚡ Payment received" banner — Key N's invoice resumed and credited
+      normally; the other account's session never disturbed it.
+
 ## Part C — needs backend cooperation
 
 ### C1 — Membership service down fails CLOSED `[Key M]`

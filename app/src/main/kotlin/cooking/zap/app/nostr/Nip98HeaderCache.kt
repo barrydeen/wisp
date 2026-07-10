@@ -30,16 +30,29 @@ class Nip98HeaderCache(
     /** A header value plus whether it was served from cache (drives the 401 retry rule). */
     data class CachedHeader(val header: String, val fromCache: Boolean)
 
-    private data class Key(val method: String, val normalizedUrl: String, val payloadHash: String?)
+    /**
+     * The signer's pubkey is part of the key (audit finding B2): a header
+     * IS an identity assertion, and this cache can outlive an account
+     * switch — a cache hit must never hand one account's Authorization
+     * header to another.
+     */
+    private data class Key(
+        val pubkey: String,
+        val method: String,
+        val normalizedUrl: String,
+        val payloadHash: String?,
+    )
+
     private data class Entry(val header: String, val signedAtMillis: Long)
 
     private val lock = Any()
     private val entries = HashMap<Key, Entry>()
 
     /**
-     * Return a cached header for this request shape, or sign a fresh one.
-     * Signing happens outside the lock (it may suspend on an external
-     * signer); two concurrent misses may sign twice, which is harmless.
+     * Return a cached header for this request shape AND signer identity,
+     * or sign a fresh one. Signing happens outside the lock (it may
+     * suspend on an external signer); two concurrent misses may sign
+     * twice, which is harmless.
      */
     suspend fun authHeader(
         signer: NostrSigner,
@@ -47,7 +60,7 @@ class Nip98HeaderCache(
         url: String,
         bodyString: String? = null,
     ): CachedHeader {
-        val key = keyFor(method, url, bodyString)
+        val key = keyFor(signer.pubkeyHex, method, url, bodyString)
         synchronized(lock) {
             entries[key]?.takeIf { clock() - it.signedAtMillis < ttlMillis }
         }?.let { return CachedHeader(it.header, fromCache = true) }
@@ -57,10 +70,20 @@ class Nip98HeaderCache(
         return CachedHeader(header, fromCache = false)
     }
 
-    /** Drop the cached header for this request shape (if any). */
-    fun invalidate(method: String, url: String, bodyString: String? = null) {
-        val key = keyFor(method, url, bodyString)
+    /** Drop the cached header for this signer + request shape (if any). */
+    fun invalidate(pubkeyHex: String, method: String, url: String, bodyString: String? = null) {
+        val key = keyFor(pubkeyHex, method, url, bodyString)
         synchronized(lock) { entries.remove(key) }
+    }
+
+    /**
+     * Drop every cached header. Called on account switch
+     * ([cooking.zap.app.viewmodel.FeedViewModel.reloadForNewAccount]) as
+     * the belt to the per-pubkey key's suspenders — it bounds any future
+     * call site that forgets identity.
+     */
+    fun clear() {
+        synchronized(lock) { entries.clear() }
     }
 
     /**
@@ -81,11 +104,12 @@ class Nip98HeaderCache(
         val first = authHeader(signer, method, url, bodyString)
         val result = send(first.header)
         if (!first.fromCache || !isUnauthorized(result)) return result
-        invalidate(method, url, bodyString)
+        invalidate(signer.pubkeyHex, method, url, bodyString)
         return send(authHeader(signer, method, url, bodyString).header)
     }
 
-    private fun keyFor(method: String, url: String, bodyString: String?) = Key(
+    private fun keyFor(pubkeyHex: String, method: String, url: String, bodyString: String?) = Key(
+        pubkey = pubkeyHex,
         method = method.uppercase(),
         normalizedUrl = Nip98.normalizeUrl(url),
         payloadHash = bodyString?.let { Nip98.sha256Hex(it.toByteArray(Charsets.UTF_8)) },
