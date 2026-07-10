@@ -115,7 +115,7 @@
     <string name="auth_or_log_in_with_key">Or log in with your key</string>
     <string name="auth_nsec_or_npub">nsec or npub…</string>
     <string name="auth_wisp">Zap Cooking</string>
-    <string name="auth_tagline">Food. Friends. Freedom.</string>
+    <string name="auth_tagline">Food is Open Source</string>
     <string name="auth_hide_key">Hide key</string>
     <string name="auth_show_key">Show key</string>
 

@@ -8,11 +8,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -23,10 +26,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,15 +59,26 @@ fun AccountSwitcherSheet(
     onAddAccount: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // skipPartiallyExpanded so the sheet opens fully expanded — guarantees
+    // the pinned "Sign in with another account" row is visible above the
+    // bottom nav/gesture chrome on first open, regardless of account count.
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
+        // Cap the account list at ~45% of the screen so the "add account"
+        // row stays pinned below it (and above the gesture/nav bar) even
+        // with many accounts — the list scrolls within the cap instead of
+        // growing the sheet past the viewport.
+        val maxListHeight = LocalConfiguration.current.screenHeightDp.dp * 0.45f
         Column(
             modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp)
-                .navigationBarsPadding(),
+                .padding(bottom = 24.dp),
         ) {
             Text(
                 text = stringResource(R.string.account_switcher_title),
@@ -71,51 +87,57 @@ fun AccountSwitcherSheet(
             )
             Spacer(Modifier.height(8.dp))
 
-            accounts.forEach { account ->
-                val isActive = account.pubkeyHex == activePubkey
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = !isActive) {
-                            onSwitchAccount(account.pubkeyHex)
-                            onDismiss()
+            Column(
+                modifier = Modifier
+                    .heightIn(max = maxListHeight)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                accounts.forEach { account ->
+                    val isActive = account.pubkeyHex == activePubkey
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !isActive) {
+                                onSwitchAccount(account.pubkeyHex)
+                                onDismiss()
+                            }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // For the active account use the live profile picture; for others use cached AccountInfo
+                        val pictureUrl = if (isActive) activeProfile?.picture else account.picture
+                        ProfilePicture(url = pictureUrl, size = 40)
+                        Spacer(Modifier.width(12.dp))
+                        val displayText = if (isActive) {
+                            activeProfile?.displayString ?: account.displayName ?: account.pubkeyHex.toNpub().let { it.take(16) + "..." }
+                        } else {
+                            account.displayName ?: account.pubkeyHex.toNpub().let { it.take(16) + "..." }
                         }
-                        .padding(vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // For the active account use the live profile picture; for others use cached AccountInfo
-                    val pictureUrl = if (isActive) activeProfile?.picture else account.picture
-                    ProfilePicture(url = pictureUrl, size = 40)
-                    Spacer(Modifier.width(12.dp))
-                    val displayText = if (isActive) {
-                        activeProfile?.displayString ?: account.displayName ?: account.pubkeyHex.toNpub().let { it.take(16) + "..." }
-                    } else {
-                        account.displayName ?: account.pubkeyHex.toNpub().let { it.take(16) + "..." }
-                    }
-                    Text(
-                        text = displayText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (account.signingMode == SigningMode.READ_ONLY) {
-                        Icon(
-                            Icons.Outlined.Visibility,
-                            contentDescription = stringResource(R.string.cd_watch_only),
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        Text(
+                            text = displayText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
                         )
-                        Spacer(Modifier.width(4.dp))
-                    }
-                    if (isActive) {
-                        Icon(
-                            Icons.Filled.Check,
-                            contentDescription = stringResource(R.string.cd_active),
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        if (account.signingMode == SigningMode.READ_ONLY) {
+                            Icon(
+                                Icons.Outlined.Visibility,
+                                contentDescription = stringResource(R.string.cd_watch_only),
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.width(4.dp))
+                        }
+                        if (isActive) {
+                            Icon(
+                                Icons.Filled.Check,
+                                contentDescription = stringResource(R.string.cd_active),
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
                 }
             }
