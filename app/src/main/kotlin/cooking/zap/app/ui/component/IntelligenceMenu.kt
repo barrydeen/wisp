@@ -79,7 +79,7 @@ fun IntelligenceMenu(
                 },
             )
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.title_nourish_hub)) },
+                text = { Text(stringResource(R.string.nourish_title)) },
                 leadingIcon = {
                     Icon(Icons.Outlined.Eco, contentDescription = null, tint = NourishGreen)
                 },
