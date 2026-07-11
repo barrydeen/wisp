@@ -750,10 +750,7 @@
     <string name="nourish_hub_explore_action">Open Explore</string>
 
     <string name="nourish_explore_title">Nourish Explore</string>
-    <string name="nourish_explore_subtitle">Browse recipes by what they bring to the table.</string>
-    <string name="nourish_explore_honesty">Profiles are AI-generated estimates — use as guidance, not gospel.</string>
-    <string name="nourish_explore_filters_label">Filters</string>
-    <string name="nourish_explore_sort_label">Sort by</string>
+    <string name="nourish_explore_honesty">AI-generated estimates — guidance, not gospel</string>
     <string name="nourish_explore_sort_overall">Overall</string>
     <string name="nourish_explore_sort_real_food">Real Food</string>
     <string name="nourish_explore_sort_gut">Gut</string>

@@ -3,8 +3,6 @@ package cooking.zap.app.ui.screen
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -23,6 +21,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,8 +41,6 @@ import androidx.compose.ui.unit.dp
 import cooking.zap.app.R
 import cooking.zap.app.nostr.NourishDiscovery
 import cooking.zap.app.ui.component.NourishExploreRecipeCard
-import cooking.zap.app.ui.component.NourishFilterChip
-import cooking.zap.app.ui.component.NourishSortChip
 import cooking.zap.app.viewmodel.NourishExploreViewModel
 
 private val NourishGreen = Color(0xFF22C55E)
@@ -56,10 +54,10 @@ private val SORT_OPTIONS = listOf(
 
 /**
  * Nourish Explore — ranked/filtered discovery of pantry-analyzed recipes.
- * Models web `/nourish/explore`: filter chips (AND), client-side sort, degrade
- * note, honesty subtitle.
+ * Compact header (caption + two chip rows) so the recipe grid starts above
+ * the fold; models web `/nourish/explore` filters/sort/degrade.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NourishExploreScreen(
     viewModel: NourishExploreViewModel,
@@ -72,11 +70,7 @@ fun NourishExploreScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text(stringResource(R.string.nourish_explore_title))
-                    }
-                },
+                title = { Text(stringResource(R.string.nourish_explore_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -96,54 +90,40 @@ fun NourishExploreScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }, key = "header") {
-                Column(Modifier.fillMaxWidth()) {
-                    Text(
-                        text = stringResource(R.string.nourish_explore_subtitle),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(4.dp))
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     Text(
                         text = stringResource(R.string.nourish_explore_honesty),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
                     )
-                }
-            }
-
-            item(span = { GridItemSpan(maxLineSpan) }, key = "filters") {
-                Column(Modifier.fillMaxWidth()) {
-                    Text(
-                        text = stringResource(R.string.nourish_explore_filters_label),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    // Flow-style wrap via LazyRow of chips is less ideal; use
-                    // nested Columns of chip rows via a simple wrap Column.
-                    FilterChipWrap(
-                        activeIds = ui.activeChipIds,
-                        onToggle = { id -> viewModel.toggleChip(id) },
-                    )
-                }
-            }
-
-            item(span = { GridItemSpan(maxLineSpan) }, key = "sort") {
-                Column(Modifier.fillMaxWidth()) {
-                    Text(
-                        text = stringResource(R.string.nourish_explore_sort_label),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Filter chips — one scrollable row (matches Recipes tag bar).
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        contentPadding = PaddingValues(end = 4.dp),
+                    ) {
+                        rowItems(NourishDiscovery.FILTER_CHIPS, key = { it.id }) { chip ->
+                            CompactExploreChip(
+                                label = chip.label,
+                                selected = chip.id in ui.activeChipIds,
+                                onClick = { viewModel.toggleChip(chip.id) },
+                            )
+                        }
+                    }
+                    // Sort chips — tight under filters.
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        contentPadding = PaddingValues(end = 4.dp),
+                    ) {
                         rowItems(SORT_OPTIONS, key = { it.first.name }) { (dim, labelRes) ->
-                            NourishSortChip(
+                            CompactExploreChip(
                                 label = stringResource(labelRes),
                                 selected = ui.sortBy == dim,
                                 onClick = { viewModel.setSort(dim) },
@@ -219,11 +199,9 @@ fun NourishExploreScreen(
                         item(span = { GridItemSpan(maxLineSpan) }, key = "degraded") {
                             Text(
                                 text = stringResource(R.string.nourish_explore_degraded),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
                     }
@@ -258,7 +236,7 @@ fun NourishExploreScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 8.dp),
+                                .padding(vertical = 4.dp),
                         )
                     }
                 }
@@ -267,23 +245,29 @@ fun NourishExploreScreen(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/** Compact Material FilterChip — same pattern as Recipes tag bar / Relay Health. */
 @Composable
-private fun FilterChipWrap(
-    activeIds: Set<String>,
-    onToggle: (String) -> Unit,
+private fun CompactExploreChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        for (chip in NourishDiscovery.FILTER_CHIPS) {
-            NourishFilterChip(
-                label = chip.label,
-                selected = chip.id in activeIds,
-                onClick = { onToggle(chip.id) },
-            )
-        }
-    }
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        enabled = enabled,
+        label = {
+            Text(label, style = MaterialTheme.typography.labelSmall)
+        },
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = NourishGreen.copy(alpha = 0.14f),
+            selectedLabelColor = NourishGreen,
+        ),
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = enabled,
+            selected = selected,
+            selectedBorderColor = NourishGreen.copy(alpha = 0.4f),
+        ),
+    )
 }
