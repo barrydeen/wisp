@@ -19,10 +19,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -57,6 +60,7 @@ fun AccountSwitcherSheet(
     activeProfile: ProfileData?,
     onSwitchAccount: (String) -> Unit,
     onAddAccount: () -> Unit,
+    onMoveAccount: (pubkeyHex: String, offset: Int) -> Unit = { _, _ -> },
     onDismiss: () -> Unit,
 ) {
     // skipPartiallyExpanded so the sheet opens fully expanded — guarantees
@@ -92,7 +96,7 @@ fun AccountSwitcherSheet(
                     .heightIn(max = maxListHeight)
                     .verticalScroll(rememberScrollState())
             ) {
-                accounts.forEach { account ->
+                accounts.forEachIndexed { index, account ->
                     val isActive = account.pubkeyHex == activePubkey
                     Row(
                         modifier = Modifier
@@ -101,7 +105,7 @@ fun AccountSwitcherSheet(
                                 onSwitchAccount(account.pubkeyHex)
                                 onDismiss()
                             }
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         // For the active account use the live profile picture; for others use cached AccountInfo
@@ -137,6 +141,35 @@ fun AccountSwitcherSheet(
                                 modifier = Modifier.size(18.dp),
                                 tint = MaterialTheme.colorScheme.primary,
                             )
+                            Spacer(Modifier.width(4.dp))
+                        }
+                        if (accounts.size > 1) {
+                            IconButton(
+                                onClick = { onMoveAccount(account.pubkeyHex, -1) },
+                                enabled = index > 0,
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    Icons.Filled.KeyboardArrowUp,
+                                    contentDescription = stringResource(R.string.cd_move_account_up),
+                                    modifier = Modifier.size(18.dp),
+                                    tint = if (index > 0) MaterialTheme.colorScheme.onSurfaceVariant
+                                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                                )
+                            }
+                            IconButton(
+                                onClick = { onMoveAccount(account.pubkeyHex, 1) },
+                                enabled = index < accounts.size - 1,
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    Icons.Filled.KeyboardArrowDown,
+                                    contentDescription = stringResource(R.string.cd_move_account_down),
+                                    modifier = Modifier.size(18.dp),
+                                    tint = if (index < accounts.size - 1) MaterialTheme.colorScheme.onSurfaceVariant
+                                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                                )
+                            }
                         }
                     }
                 }

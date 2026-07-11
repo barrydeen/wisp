@@ -100,6 +100,7 @@ fun WispDrawerContent(
     accounts: List<AccountInfo> = emptyList(),
     onSwitchAccount: (String) -> Unit = {},
     onAddAccount: () -> Unit = {},
+    onMoveAccount: (pubkeyHex: String, offset: Int) -> Unit = { _, _ -> },
     onProfile: () -> Unit,
     onFeed: () -> Unit,
     onSearch: () -> Unit,
@@ -334,6 +335,7 @@ fun WispDrawerContent(
                 activeProfile = profile,
                 onSwitchAccount = onSwitchAccount,
                 onAddAccount = onAddAccount,
+                onMoveAccount = onMoveAccount,
                 onDismiss = { showAccountSwitcher = false }
             )
         }

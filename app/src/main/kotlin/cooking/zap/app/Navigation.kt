@@ -846,6 +846,7 @@ fun WispNavHost(
                     drawerScope.launch { drawerState.close() }
                     onAddAccount()
                 },
+                onMoveAccount = { pubkeyHex, offset -> authViewModel.moveAccount(pubkeyHex, offset) },
                 onProfile = {
                     drawerScope.launch { drawerState.close() }
                     drawerPubkey?.let { navController.navigate("profile/$it") }
