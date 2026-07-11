@@ -133,6 +133,17 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         const val COOLDOWN_NETWORK_MS = 5_000L           // 5s — DNS/network failures on persistent relays
         private const val UNSUPPORTED_THRESHOLD = 3      // Disconnect after N "unsupported" notices
         const val PREF_APPROVED_AUTH_RELAYS = "approved_auth_relays"
+
+        /**
+         * Subscription-id prefixes that bypass global event-id dedup.
+         * See field comment on [dedupBypassPrefixes] — `authread-` / `nourish-pub-`
+         * are required for Nourish Explore `#l` after an unfiltered load.
+         */
+        val DEFAULT_DEDUP_BYPASS_PREFIXES: List<String> = listOf(
+            "thread-", "user", "quote-", "editprofile", "notif", "dms", "search-", "hashtag-", "drafts", "compose_latest_draft",
+            "wallet-backup-", "auto-check-", "relay-backup-status-", "nwc-restore-", "delete-backup-",
+            "authread-", "nourish-pub-",
+        )
     }
 
     /** Tracks consecutive "unsupported message" NOTICEs per relay URL. */
@@ -168,10 +179,17 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         // global dedup silently drops that event on every subscription after the
         // first, making the search look like "no backup found" until the app
         // restarts and the in-memory dedup cache clears.
-        listOf(
-            "thread-", "user", "quote-", "editprofile", "notif", "dms", "search-", "hashtag-", "drafts", "compose_latest_draft",
-            "wallet-backup-", "auto-check-", "relay-backup-status-", "nwc-restore-", "delete-backup-"
-        )
+        //
+        // "authread-" is AuthedRelayReader (pantry Nourish score + Explore). Explore
+        // first loads unfiltered 30078s (marking every analysis id seen), then a
+        // `#l`-filtered REQ returns a SUBSET of those same ids — global dedup
+        // dropped them all, so the collector saw EOSE + 0 events while nak showed
+        // the relay was fine. Bypass so each authread subscription receives its
+        // own hits.
+        //
+        // "nourish-pub-" is Explore's public-relay fallback for the same 30078
+        // corpus — same overlapping-id problem after a pantry hit or prior load.
+        DEFAULT_DEDUP_BYPASS_PREFIXES,
     )
 
     /** Signing lambda for NIP-42 AUTH — set via [setAuthSigner]. */
@@ -911,8 +929,14 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
                     }
                     subscriptionTracker.track(url, subId)
                     trackSubscription(url, subId, message)
+                    // Group/persistent path previously skipped SUBLOG — pantry
+                    // Nourish REQs were invisible next to public-fallback frames.
+                    logSubStart(subId, message)
                 }
-                existing.send(message)
+                val sent = existing.send(message)
+                if (subId != null) {
+                    Log.d("SUBLOG", "SEND sub=$subId relay=$url connected=${existing.isConnected} sent=$sent frame=${message.take(400)}")
+                }
                 return true
             }
         }
@@ -968,6 +992,9 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         }
         ephemeralLastUsed[url] = System.currentTimeMillis()
         val sent = ephemeral.send(message)
+        if (subId != null) {
+            Log.d("SUBLOG", "SEND sub=$subId relay=$url connected=${ephemeral.isConnected} sent=$sent frame=${message.take(400)}")
+        }
         return sent || isNew
     }
 
@@ -1198,6 +1225,7 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         val msg = ClientMessage.close(subscriptionId)
         for (relay in relays) relay.send(msg)
         for (relay in dmRelays) relay.send(msg)
+        for (relay in groupRelays.values) relay.send(msg)
         for (relay in ephemeralRelays.values) relay.send(msg)
     }
 

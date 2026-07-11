@@ -171,9 +171,11 @@ class NourishRepository(private val relayPool: RelayPool) {
                 if (remaining.isNotEmpty()) " (intersect ${remaining.joinToString(",")})" else "",
         )
 
-        // Transport miss on the primary `#l` REQ — not a confident filter miss.
+        // Empty primary `#l` set (transport miss OR zero matches): never leave
+        // Explore on a bare empty grid — degrade to the unfiltered ranked view.
         if (nourishEvents.isEmpty()) {
-            return FreshRanked(emptyList(), degraded = false, legitimateEmpty = false)
+            Log.i(TAG, "[nourish.explore.degrade] primary #l=$primary returned 0 — unfiltered fallback")
+            return degradeToUnfiltered(sortBy, limit)
         }
 
         val filteredList =
@@ -186,15 +188,26 @@ class NourishRepository(private val relayPool: RelayPool) {
         val analyses = NourishDiscovery.parseAnalyses(filteredList)
 
         if (NourishDiscovery.shouldDegradeFilteredResults(analyses.size)) {
-            Log.d(TAG, "[Nourish Explore] Filtered set empty — degrading to ranked view")
-            val allEvents = fetchNourishEvents(label = null)
-            val allAnalyses = NourishDiscovery.parseAnalyses(allEvents)
-            val recipes = resolveRecipesFromAnalyses(allAnalyses, sortBy, limit)
-            return FreshRanked(recipes, degraded = true, legitimateEmpty = true)
+            Log.i(TAG, "[nourish.explore.degrade] AND/parse left 0 analyses — unfiltered fallback")
+            return degradeToUnfiltered(sortBy, limit)
         }
 
         val recipes = resolveRecipesFromAnalyses(analyses, sortBy, limit)
+        if (recipes.isEmpty()) {
+            Log.i(TAG, "[nourish.explore.degrade] recipe resolve left 0 — unfiltered fallback")
+            return degradeToUnfiltered(sortBy, limit)
+        }
         return FreshRanked(recipes, degraded = false, legitimateEmpty = false)
+    }
+
+    private suspend fun degradeToUnfiltered(
+        sortBy: NourishDiscovery.SortDimension,
+        limit: Int,
+    ): FreshRanked {
+        val allEvents = fetchNourishEvents(label = null)
+        val allAnalyses = NourishDiscovery.parseAnalyses(allEvents)
+        val recipes = resolveRecipesFromAnalyses(allAnalyses, sortBy, limit)
+        return FreshRanked(recipes, degraded = true, legitimateEmpty = true)
     }
 
     /**
@@ -207,6 +220,7 @@ class NourishRepository(private val relayPool: RelayPool) {
         Log.i(
             TAG,
             "[nourish.explore.req] pantry filter=${filter.toJsonObject()} " +
+                "frame=${ClientMessage.req("nourish-log", filter)} " +
                 "(label=${label ?: "(none)"})",
         )
         ensurePantryConnected()

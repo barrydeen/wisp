@@ -192,6 +192,18 @@ class NourishDiscoveryTest {
     }
 
     @Test
+    fun authreadAndNourishPub_areDedupBypassPrefixes() {
+        // Explore `#l` REQs reuse event ids from the unfiltered load; without
+        // these prefixes the pool dedup empties the collector (PR #161).
+        assertTrue(
+            cooking.zap.app.relay.RelayPool.DEFAULT_DEDUP_BYPASS_PREFIXES.contains("authread-"),
+        )
+        assertTrue(
+            cooking.zap.app.relay.RelayPool.DEFAULT_DEDUP_BYPASS_PREFIXES.contains("nourish-pub-"),
+        )
+    }
+
+    @Test
     fun shouldPreservePreviousOnEmpty_silentRevalidate() {
         assertTrue(
             NourishDiscovery.shouldPreservePreviousOnEmpty(previousCount = 12, freshCount = 0),
