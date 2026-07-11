@@ -128,7 +128,7 @@ fun NourishExploreScreen(
                     // nested Columns of chip rows via a simple wrap Column.
                     FilterChipWrap(
                         activeIds = ui.activeChipIds,
-                        onToggle = viewModel::toggleChip,
+                        onToggle = { id -> viewModel.toggleChip(id) },
                     )
                 }
             }

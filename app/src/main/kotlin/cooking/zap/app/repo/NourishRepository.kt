@@ -79,9 +79,22 @@ class NourishRepository(private val relayPool: RelayPool) {
     ): NourishDiscovery.DiscoveryResult {
         val uniqueFilters = filters.distinct()
         val key = NourishDiscovery.filterCacheKey(uniqueFilters)
+        val primary = uniqueFilters.takeIf { it.isNotEmpty() }
+            ?.let { NourishDiscovery.pickMostSelectiveLabel(it) }
+        Log.i(
+            TAG,
+            "[nourish.explore.fetch] filters=$uniqueFilters key='${key.ifEmpty { "(none)" }}' " +
+                "primary=#l:${primary ?: "(none)"} sort=$sortBy limit=$limit",
+        )
         val previous = NourishDiscovery.getCachedDiscoveryEntry(uniqueFilters)
 
         val fresh = fetchFreshRanked(sortBy, limit, uniqueFilters)
+        Log.i(
+            TAG,
+            "[nourish.explore.result] key='${key.ifEmpty { "(none)" }}' " +
+                "count=${fresh.recipes.size} degraded=${fresh.degraded} " +
+                "legitimateEmpty=${fresh.legitimateEmpty}",
+        )
 
         if (
             NourishDiscovery.shouldPreservePreviousOnEmpty(
@@ -191,12 +204,18 @@ class NourishRepository(private val relayPool: RelayPool) {
      */
     private suspend fun fetchNourishEvents(label: String?): List<NostrEvent> {
         val filter = NourishDiscovery.buildNourishAnalysisFilter(label)
+        Log.i(
+            TAG,
+            "[nourish.explore.req] pantry filter=${filter.toJsonObject()} " +
+                "(label=${label ?: "(none)"})",
+        )
         ensurePantryConnected()
 
         var events = reader.read(RelayConfig.MEMBERS_RELAY, filter, queryTimeoutMs = FETCH_TIMEOUT_MS)
             .filter { it.kind == NourishParser.KIND }
 
         if (events.isEmpty()) {
+            Log.i(TAG, "[nourish.explore.req] pantry empty — retry after ${PANTRY_RETRY_DELAY_MS}ms")
             delay(PANTRY_RETRY_DELAY_MS)
             ensurePantryConnected()
             events = reader.read(RelayConfig.MEMBERS_RELAY, filter, queryTimeoutMs = FETCH_TIMEOUT_MS)
@@ -204,10 +223,11 @@ class NourishRepository(private val relayPool: RelayPool) {
         }
 
         if (events.isEmpty()) {
-            Log.d(TAG, "[Nourish Explore] No events on pantry after retry, trying public relays...")
+            Log.i(TAG, "[nourish.explore.req] pantry empty after retry — public-relay fallback")
             events = fetchFromPublicRelays(filter)
         }
 
+        Log.i(TAG, "[nourish.explore.req] got ${events.size} kind-30078 events (label=${label ?: "(none)"})")
         return events
     }
 

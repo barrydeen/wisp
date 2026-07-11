@@ -1,9 +1,11 @@
 package cooking.zap.app.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cooking.zap.app.nostr.NourishDiscovery
 import cooking.zap.app.repo.NourishRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,8 +17,23 @@ import kotlinx.coroutines.launch
  * Nourish Explore — ranked/filtered discovery of analyzed recipes.
  * Ports web `/nourish/explore` behavior: client-side sort, AND filter chips,
  * SWR cache paint, never-clobber empty revalidate.
+ *
+ * Chip toggles always refetch with the **post-toggle** label set (web's
+ * `toggleChip` → `loadRecipes()`). Sort is the only client-side-only path.
  */
-class NourishExploreViewModel : ViewModel() {
+class NourishExploreViewModel(
+    /**
+     * Optional test seam — when non-null, [init] is unnecessary and loads go
+     * through this fetcher. Production uses the no-arg ctor + [init].
+     */
+    private val fetchRankedOverride: (
+        suspend (
+            sortBy: NourishDiscovery.SortDimension,
+            limit: Int,
+            filters: List<String>,
+        ) -> NourishDiscovery.DiscoveryResult
+    )? = null,
+) : ViewModel() {
 
     data class UiState(
         val recipes: List<NourishDiscovery.RankedRecipe> = emptyList(),
@@ -32,16 +49,45 @@ class NourishExploreViewModel : ViewModel() {
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
-    private var nourishRepo: NourishRepository? = null
+    private var fetchRanked: (
+        suspend (
+            sortBy: NourishDiscovery.SortDimension,
+            limit: Int,
+            filters: List<String>,
+        ) -> NourishDiscovery.DiscoveryResult
+    )? = fetchRankedOverride
+
     private var loadJob: Job? = null
     private var loadGen = 0
     private var started = false
 
     fun init(nourishRepo: NourishRepository) {
-        this.nourishRepo = nourishRepo
+        if (fetchRanked == null) {
+            fetchRanked = { sortBy, limit, filters ->
+                nourishRepo.fetchRankedRecipes(sortBy, limit, filters)
+            }
+        }
         if (!started) {
             started = true
-            loadRecipes()
+            loadRecipes(chipIds = _ui.value.activeChipIds)
+        }
+    }
+
+    /** Test helper — wire a fetcher and mark initialized without a repository. */
+    internal fun initForTest(
+        fetch: suspend (
+            sortBy: NourishDiscovery.SortDimension,
+            limit: Int,
+            filters: List<String>,
+        ) -> NourishDiscovery.DiscoveryResult,
+        autoLoad: Boolean = false,
+    ) {
+        fetchRanked = fetch
+        if (autoLoad && !started) {
+            started = true
+            loadRecipes(chipIds = _ui.value.activeChipIds)
+        } else {
+            started = true
         }
     }
 
@@ -51,21 +97,38 @@ class NourishExploreViewModel : ViewModel() {
     }
 
     fun toggleChip(chipId: String) {
-        val next = _ui.value.activeChipIds.toMutableSet()
-        if (!next.add(chipId)) next.remove(chipId)
+        val current = _ui.value.activeChipIds
+        val next = if (chipId in current) current - chipId else current + chipId
+        // Commit chip state, then refetch with the *same* post-toggle set.
+        // Do not re-derive labels from StateFlow inside the coroutine — that
+        // raced and could send an unfiltered REQ (or skip) while the chips
+        // already looked selected.
         _ui.update { it.copy(activeChipIds = next) }
-        loadRecipes()
+        logD("toggleChip id=$chipId → active=$next")
+        loadRecipes(chipIds = next)
     }
 
-    fun retry() = loadRecipes()
+    fun retry() = loadRecipes(chipIds = _ui.value.activeChipIds)
 
-    fun loadRecipes() {
-        val repo = nourishRepo ?: return
+    /**
+     * @param chipIds post-toggle (or current) chip id set — source of truth
+     *   for the filter labels of this load. Callers that just flipped a chip
+     *   must pass the new set explicitly.
+     */
+    fun loadRecipes(chipIds: Set<String> = _ui.value.activeChipIds) {
+        val fetch = fetchRanked ?: run {
+            logW("loadRecipes skipped — fetcher not initialized")
+            return
+        }
         val gen = ++loadGen
         loadJob?.cancel()
 
-        val labels = NourishDiscovery.labelsFromChipIds(_ui.value.activeChipIds)
+        // Capture labels for THIS generation — immutable snapshot.
+        val labels = NourishDiscovery.labelsFromChipIds(chipIds)
         val cacheKey = NourishDiscovery.filterCacheKey(labels)
+        logD(
+            "loadRecipes gen=$gen chips=$chipIds labels=$labels key='${cacheKey.ifEmpty { "(none)" }}'",
+        )
 
         // SWR: paint cached results for THIS filter set immediately.
         val cached = NourishDiscovery.peekDiscoveryCache(labels)
@@ -96,33 +159,44 @@ class NourishExploreViewModel : ViewModel() {
 
         loadJob = viewModelScope.launch {
             try {
-                // Re-read chips after any await — a newer toggle may have changed them.
-                val latestLabels = NourishDiscovery.labelsFromChipIds(_ui.value.activeChipIds)
-                val result = repo.fetchRankedRecipes(
-                    sortBy = NourishDiscovery.SortDimension.OVERALL,
-                    limit = 40,
-                    filters = latestLabels,
+                val result = fetch(
+                    NourishDiscovery.SortDimension.OVERALL,
+                    40,
+                    labels,
                 )
-                if (gen != loadGen) return@launch
-                val stillSame =
-                    NourishDiscovery.filterCacheKey(latestLabels) ==
-                        NourishDiscovery.filterCacheKey(
-                            NourishDiscovery.labelsFromChipIds(_ui.value.activeChipIds),
-                        )
-                if (!stillSame) return@launch
+                if (gen != loadGen) {
+                    logD("loadRecipes gen=$gen dropped (stale; current=$loadGen)")
+                    return@launch
+                }
+                // Drop if the user toggled chips again to a different set.
+                val stillActive = NourishDiscovery.filterCacheKey(labels) ==
+                    NourishDiscovery.filterCacheKey(
+                        NourishDiscovery.labelsFromChipIds(_ui.value.activeChipIds),
+                    )
+                if (!stillActive) {
+                    logD("loadRecipes gen=$gen dropped (chip set changed)")
+                    return@launch
+                }
 
+                logD(
+                    "loadRecipes gen=$gen done count=${result.recipes.size} " +
+                        "degraded=${result.degraded} refreshMiss=${result.refreshMiss}",
+                )
                 _ui.update {
                     it.copy(
                         recipes = sortRecipes(result.recipes, it.sortBy),
                         degraded = result.degraded,
-                        shownCacheKey = NourishDiscovery.filterCacheKey(latestLabels),
+                        shownCacheKey = cacheKey,
                         loading = false,
                         refreshing = false,
                         error = false,
                     )
                 }
-            } catch (_: Exception) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
                 if (gen != loadGen) return@launch
+                logE("loadRecipes gen=$gen failed labels=$labels", e)
                 _ui.update {
                     it.copy(
                         loading = false,
@@ -143,4 +217,30 @@ class NourishExploreViewModel : ViewModel() {
                 NourishDiscovery.getDimensionScore(it.score, sortBy)
             }.thenByDescending { it.createdAt },
         )
+
+    companion object {
+        private const val TAG = "NourishExplore"
+
+        /** android.util.Log is unmocked on the JVM unit classpath — swallow. */
+        private fun logD(msg: String) {
+            try {
+                Log.d(TAG, msg)
+            } catch (_: RuntimeException) {
+            }
+        }
+
+        private fun logW(msg: String) {
+            try {
+                Log.w(TAG, msg)
+            } catch (_: RuntimeException) {
+            }
+        }
+
+        private fun logE(msg: String, e: Exception) {
+            try {
+                Log.e(TAG, msg, e)
+            } catch (_: RuntimeException) {
+            }
+        }
+    }
 }
