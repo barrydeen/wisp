@@ -168,6 +168,11 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         _signingMode.value = keyRepo.getSigningMode()
     }
 
+    /** Reorder the account list in the switcher — offset -1 moves it up, +1 moves it down. */
+    fun moveAccount(pubkeyHex: String, offset: Int) {
+        keyRepo.moveAccount(pubkeyHex, offset)
+    }
+
     /**
      * Logs out the current account. Returns true if other accounts remain
      * (caller should switch to the next one), false if no accounts left

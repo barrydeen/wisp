@@ -288,6 +288,11 @@
     <string name="cd_switch_account">Switch account</string>
     <string name="cd_add_account">Add account</string>
     <string name="cd_active">Active</string>
+    <string name="cd_watch_only">Watch-only</string>
+    <string name="cd_move_account_up">Move account up</string>
+    <string name="cd_move_account_down">Move account down</string>
+    <string name="account_switcher_title">Accounts</string>
+    <string name="account_switcher_add">Sign in with another account</string>
     <string name="cd_seen_on">Seen on</string>
     <string name="cd_sent_with">Sent with</string>
     <string name="cd_filter_notifications">Filter notifications</string>
