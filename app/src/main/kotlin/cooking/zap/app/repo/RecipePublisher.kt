@@ -126,6 +126,28 @@ class RecipePublisher(
             // Also broadcast to the article relays the Recipes feed reads.
             for (url in RelayConfig.ARTICLES_RELAYS) relayPool.sendToRelayOrEphemeral(url, msg)
 
+            // Mirror kind 30023 to pantry so the live recipe-count dashboard
+            // stays current. Do NOT add MEMBERS_RELAY to ARTICLES_RELAYS —
+            // that set drives recipe reads. Kind-gated: pantry's write policy
+            // exempts only KindRecipe (30023) from NIP-42 auth; kind 35000
+            // (gated) hits auth + membership and would be silently rejected
+            // for most users — follow-up once authed 35000 writes + client
+            // auth during publish are confirmed. Android's publish is
+            // fire-and-forget (no OK wait), so a silently-rejected kind
+            // would be invisible — reinforcing why the kind-gate matters
+            // for that follow-up. Mirrors frontend PR #534
+            // (PANTRY_MIRROR_KINDS).
+            if (event.kind in PANTRY_MIRROR_KINDS) {
+                val pantry = RelayConfig.MEMBERS_RELAY
+                val pantryKey = pantry.trimEnd('/').lowercase()
+                val alreadyTargeted = RelayConfig.ARTICLES_RELAYS.any {
+                    it.trimEnd('/').lowercase() == pantryKey
+                }
+                if (!alreadyTargeted) {
+                    relayPool.sendToRelayOrEphemeral(pantry, msg)
+                }
+            }
+
             Result.Published(author = signer.pubkeyHex, dTag = RecipeFormats.primary.slug(title))
         } catch (e: CancellationException) {
             throw e
@@ -185,5 +207,11 @@ class RecipePublisher(
 
     companion object {
         private const val MAX_IMAGE_BYTES = 10L * 1024 * 1024 // 10 MB
+
+        /**
+         * Kinds mirrored to pantry.zap.cooking on recipe publish.
+         * Only 30023 today — see publishCore pantry-mirror comment.
+         */
+        private val PANTRY_MIRROR_KINDS = setOf(30023)
     }
 }
