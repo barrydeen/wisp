@@ -34,13 +34,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cooking.zap.app.nostr.NourishDimension
+import cooking.zap.app.nostr.MacrosRowView
+import cooking.zap.app.nostr.NourishParser
 import cooking.zap.app.nostr.NourishScore
 import kotlin.math.max
 
 /**
  * Nourish health-score card — a Compose port of the web `NourishResult` (the
  * "green island" styling). Pure visual: renders the existing [NourishScore]
- * (concern 2.4a/b) unchanged.
+ * (concern 2.4a/b) unchanged, plus the Phase 4 macros row when present.
  *
  * Deliberately non-judgmental, mirroring the web: **green only** (never amber /
  * red / letter grade), soft language for low scores, and no per-dimension
@@ -49,6 +51,10 @@ import kotlin.math.max
  * omitted). The Nourish greens are ported constants — a green accent
  * independent of the orange brand theme; only structural/neutral colors come
  * from M3.
+ *
+ * Macros row (prompt v4 / Phase 3a parity): four figures, per-serving,
+ * confidence as a first-class state ("Estimated per serving" vs
+ * "Rough estimate"). Absent macros → today's card exactly.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -101,6 +107,12 @@ fun NourishCard(score: NourishScore) {
             }
         }
 
+        // ── Macros row (v4) — absent block skips entirely (v3 parity).
+        NourishParser.macrosRowView(score.macros)?.let { macros ->
+            Spacer(Modifier.size(14.dp))
+            MacrosRow(macros)
+        }
+
         // ── "Nourish Profile" — 2-column tile grid (8 tiles, 4 rows).
         Spacer(Modifier.size(14.dp))
         SectionLabel("Nourish Profile")
@@ -132,6 +144,57 @@ fun NourishCard(score: NourishScore) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
             modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun MacrosRow(view: MacrosRowView) {
+    val rough = view.tone == "rough"
+    val columnAlpha = if (rough) 0.72f else 1f
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 2.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = if (rough) view.label else view.label.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (rough) FontWeight.Medium else FontWeight.SemiBold,
+            fontStyle = if (rough) FontStyle.Italic else FontStyle.Normal,
+            letterSpacing = if (rough) 0.1.sp else 0.5.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                alpha = if (rough) 0.85f * columnAlpha else 0.6f,
+            ),
+        )
+        Spacer(Modifier.size(6.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            MacroFigure(view.kcal.toString(), "kcal", rough, Modifier.weight(1f))
+            MacroFigure(view.proteinG.toString(), "g protein", rough, Modifier.weight(1f))
+            MacroFigure(view.carbsG.toString(), "g carbs", rough, Modifier.weight(1f))
+            MacroFigure(view.fatG.toString(), "g fat", rough, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun MacroFigure(value: String, unit: String, rough: Boolean, modifier: Modifier) {
+    Column(modifier) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = if (rough) FontWeight.Medium else FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (rough) 0.72f else 1f),
+        )
+        Text(
+            text = unit,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

@@ -10,13 +10,18 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Reads a recipe's Nourish health score (kind 30078) from the Pantry relay
- * (concern 2.4a). Pantry requires **NIP-42 AUTH** on every read, so this needs
- * a signing key (READ_ONLY can't auth → returns null without trying — quiet
- * absence).
+ * (`wss://pantry.zap.cooking` = [RelayConfig.MEMBERS_RELAY]) — primary and
+ * only store for Android's Nourish read path (concern 2.4a).
  *
- * The auth handshake + query + the reconnect/resync race are handled by the
- * reusable [AuthedRelayReader] (which Nourish compute / future member reads
- * reuse). Results are cached per recipe key.
+ * **Fetch-path audit (Phase 4):** Android does **not** hit public relays or
+ * the HTTP API for existing scores; it REQs pantry only. Pantry now serves
+ * service-authored kind-30078 to **anonymous** readers
+ * (`isPublicNourishFilter` on member-relay), so a signing key is no longer
+ * required for the read. [AuthedRelayReader] still handles the reconnect /
+ * AUTH-closed race for signed-in sessions that may still receive AUTH
+ * challenges on the shared socket — unused for pure anonymous success paths.
+ *
+ * Results are cached per recipe key. Discovery-filter `#l` REQs are deferred.
  */
 class NourishRepository(relayPool: RelayPool) {
 
@@ -24,15 +29,16 @@ class NourishRepository(relayPool: RelayPool) {
     private val cache = ConcurrentHashMap<String, NourishScore>()
 
     /**
-     * @param hasSigningKey false for READ_ONLY accounts — they can't NIP-42
-     *   auth to Pantry, so we don't even try.
+     * @param hasSigningKey retained for call-site compatibility; no longer
+     *   gates the pantry read (anonymous service-key 30078 REQs are public).
+     *   Compute remains signing-key gated in the ViewModel.
      */
     suspend fun fetchScore(
         recipeAuthor: String,
         recipeDTag: String,
-        hasSigningKey: Boolean,
+        @Suppress("UNUSED_PARAMETER") hasSigningKey: Boolean = true,
     ): NourishScore? {
-        if (!hasSigningKey || recipeAuthor.isBlank() || recipeDTag.isBlank()) return null
+        if (recipeAuthor.isBlank() || recipeDTag.isBlank()) return null
         val key = "$recipeAuthor:$recipeDTag"
         cache[key]?.let { return it }
 

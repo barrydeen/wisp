@@ -269,6 +269,7 @@ class ZapCookingApi(
                     val scores = obj["scores"]?.jsonObject
                         ?: return@withContext NourishComputeResult.Error("No score in the response.")
                     val score = NourishParser.parseScores(scores, NourishParser.extractImprovements(obj))
+                        ?.copy(macros = NourishParser.parseMacros(obj["macros"]))
                         ?: return@withContext NourishComputeResult.Error("Couldn't read the Nourish score.")
                     NourishComputeResult.Success(score)
                 }

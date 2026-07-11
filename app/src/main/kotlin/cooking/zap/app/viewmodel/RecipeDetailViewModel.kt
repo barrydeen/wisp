@@ -36,11 +36,12 @@ class RecipeDetailViewModel : ViewModel() {
     val isLoading: StateFlow<Boolean> = _isLoading
 
     /**
-     * Nourish section state (concern 2.4a read + 2.4b compute). READ_ONLY ⇒
-     * always [NourishUi.Hidden] (no key to auth-read or compute).
+     * Nourish section state (concern 2.4a read + 2.4b compute). Pantry scores
+     * are readable anonymously; compute still needs a signing key.
+     * READ_ONLY with no score ⇒ [NourishUi.Hidden] (can't offer compute).
      */
     sealed interface NourishUi {
-        data object Hidden : NourishUi          // READ_ONLY, or nothing to show
+        data object Hidden : NourishUi          // nothing to show (e.g. READ_ONLY, no score)
         data object Loading : NourishUi         // 2.4a read in flight
         data class Scored(val score: NourishScore) : NourishUi
         data object NotScored : NourishUi       // read done, no score, signing account
@@ -65,7 +66,7 @@ class RecipeDetailViewModel : ViewModel() {
         if (loadedKey == key && _recipe.value != null) return
         loadedKey = key
         _isLoading.value = true
-        _nourishUi.value = if (hasSigningKey) NourishUi.Loading else NourishUi.Hidden
+        _nourishUi.value = NourishUi.Loading
         viewModelScope.launch {
             val resolved = recipeRepo.requestRecipe(author, dTag)
             if (loadedKey != key) return@launch // a newer recipe was requested — drop stale result
@@ -75,15 +76,15 @@ class RecipeDetailViewModel : ViewModel() {
             _event.value = recipeRepo.findRecipeEvent(author, dTag)
             _isLoading.value = false
         }
-        // Nourish read runs independently (auth'd Pantry round-trip) — never
+        // Nourish read runs independently (pantry REQ; anonymous OK) — never
         // blocks the recipe, never surfaces an error.
         viewModelScope.launch {
             val score = runCatching { nourishRepo.fetchScore(author, dTag, hasSigningKey) }.getOrNull()
             if (loadedKey != key) return@launch // drop stale result on fast navigation
             _nourishUi.value = when {
-                !hasSigningKey -> NourishUi.Hidden
                 score != null -> NourishUi.Scored(score)
-                else -> NourishUi.NotScored // signing account, no score → offer compute
+                hasSigningKey -> NourishUi.NotScored // signing account, no score → offer compute
+                else -> NourishUi.Hidden // READ_ONLY / no key, and no published score
             }
         }
     }
