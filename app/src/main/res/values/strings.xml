@@ -738,7 +738,7 @@
     <string name="nourish_hub_open_action">Open in Nourish hub</string>
     <string name="nourish_hub_hero_title">See the Nourish profile of a recipe</string>
     <string name="nourish_hub_hero_body">Nourish gives a gentle, non-judgmental snapshot of a recipe using our green-island profile card.</string>
-    <string name="nourish_hub_deferred_hint">Scanner inputs and ranked Nourish discovery are coming in a later update.</string>
+    <string name="nourish_hub_deferred_hint">Scanner inputs are coming in a later update.</string>
     <string name="nourish_hub_pick_title">Pick a recipe</string>
     <string name="nourish_hub_pick_body">Open a recipe from the Recipes tab, then return here to see its Nourish profile.</string>
     <string name="nourish_hub_pick_action">Browse recipes</string>
@@ -746,8 +746,27 @@
     <string name="nourish_hub_selected_body">Using your selected recipe to fetch or compute its Nourish profile.</string>
     <string name="nourish_hub_open_recipe">Open recipe details</string>
     <string name="nourish_hub_explore_title">Explore analyzed recipes</string>
-    <string name="nourish_hub_explore_body">For now, browse the Recipes feed while we prepare a dedicated Nourish explore surface.</string>
-    <string name="nourish_hub_explore_action">Go to Recipes</string>
+    <string name="nourish_hub_explore_body">Browse recipes ranked by their Nourish profile — filter by protein, calories, and more.</string>
+    <string name="nourish_hub_explore_action">Open Explore</string>
+
+    <string name="nourish_explore_title">Nourish Explore</string>
+    <string name="nourish_explore_subtitle">Browse recipes by what they bring to the table.</string>
+    <string name="nourish_explore_honesty">Profiles are AI-generated estimates — use as guidance, not gospel.</string>
+    <string name="nourish_explore_filters_label">Filters</string>
+    <string name="nourish_explore_sort_label">Sort by</string>
+    <string name="nourish_explore_sort_overall">Overall</string>
+    <string name="nourish_explore_sort_real_food">Real Food</string>
+    <string name="nourish_explore_sort_gut">Gut</string>
+    <string name="nourish_explore_sort_protein">Protein</string>
+    <string name="nourish_explore_loading">Finding analyzed recipes…</string>
+    <string name="nourish_explore_error">Something went wrong. Please try again.</string>
+    <string name="nourish_explore_retry">Retry</string>
+    <string name="nourish_explore_empty">No analyzed recipes yet.</string>
+    <string name="nourish_explore_empty_sub">Once recipes are analyzed with Nourish, they\'ll appear here ranked by their nutrition profile.</string>
+    <string name="nourish_explore_degraded">More recipes being analyzed — showing the full ranked list for now.</string>
+    <string name="nourish_explore_updating">Updating…</string>
+    <string name="nourish_explore_footer_filtered">%d recipes matching your filters</string>
+    <string name="nourish_explore_footer_all">%d recipes with Nourish profiles</string>
 
     <!-- Dropdown / Menu Options -->
     <string name="menu_add_to_relay_set">Add to Relay Set</string>

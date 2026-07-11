@@ -94,6 +94,7 @@ import cooking.zap.app.ui.screen.RecipePackDetailScreen
 import cooking.zap.app.ui.screen.RecipeTagFeedScreen
 import cooking.zap.app.ui.screen.OnlyFoodFeedScreen
 import cooking.zap.app.ui.screen.CheffyScreen
+import cooking.zap.app.ui.screen.NourishExploreScreen
 import cooking.zap.app.ui.screen.NourishHubScreen
 import cooking.zap.app.ui.screen.SousChefScreen
 import cooking.zap.app.ui.screen.BookmarksScreen
@@ -128,6 +129,7 @@ import cooking.zap.app.ui.screen.WalletScreen
 import cooking.zap.app.viewmodel.BlossomServersViewModel
 import cooking.zap.app.viewmodel.ArticleViewModel
 import cooking.zap.app.viewmodel.RecipeDetailViewModel
+import cooking.zap.app.viewmodel.NourishExploreViewModel
 import cooking.zap.app.viewmodel.RecipeComposeViewModel
 import cooking.zap.app.viewmodel.RecipeFeedViewModel
 import cooking.zap.app.viewmodel.CookbookViewModel
@@ -225,6 +227,7 @@ object Routes {
     const val RECIPE_TAG_FEED = "recipe_tag/{tag}"
     const val RECIPES = "recipes"
     const val NOURISH = "nourish?author={author}&dTag={dTag}"
+    const val NOURISH_EXPLORE = "nourish/explore"
     const val ONLY_FOOD = "onlyfood"
     const val MEMORIES = "memories"
     const val SOUS_CHEF = "souschef"
@@ -3532,7 +3535,21 @@ fun WispNavHost(
                 onOpenSelectedRecipe = { authorHex, recipeDTag ->
                     navController.navigate(Routes.recipe(authorHex, recipeDTag))
                 },
-                onExploreRecipes = { navController.navigate(Routes.RECIPES) },
+                onExploreRecipes = { navController.navigate(Routes.NOURISH_EXPLORE) },
+            )
+        }
+
+        composable(Routes.NOURISH_EXPLORE) {
+            val exploreViewModel: NourishExploreViewModel = viewModel()
+            LaunchedEffect(Unit) {
+                exploreViewModel.init(feedViewModel.nourishRepo)
+            }
+            NourishExploreScreen(
+                viewModel = exploreViewModel,
+                onBack = { navController.popBackStack() },
+                onRecipeClick = { authorHex, recipeDTag ->
+                    navController.navigate(Routes.recipe(authorHex, recipeDTag))
+                },
             )
         }
 
