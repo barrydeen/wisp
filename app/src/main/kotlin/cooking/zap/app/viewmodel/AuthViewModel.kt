@@ -196,6 +196,11 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         _signingMode.value = keyRepo.getSigningMode()
     }
 
+    /** Reorder the account list in the switcher — offset -1 moves it up, +1 moves it down. */
+    fun moveAccount(pubkeyHex: String, offset: Int) {
+        keyRepo.moveAccount(pubkeyHex, offset)
+    }
+
     // --- Key-backup nudge control (used by Navigation) ---
 
     /** "I've saved it" — confirms backup and stops nudging this account. */

@@ -573,7 +573,11 @@ private fun NostrLoginSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp),
-                shape = RoundedCornerShape(24.dp)
+                shape = RoundedCornerShape(24.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFF7A3D),
+                    contentColor = Color.White
+                )
             ) {
                 Text(stringResource(R.string.auth_log_in))
             }
@@ -586,7 +590,11 @@ private fun NostrLoginSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
-                    shape = RoundedCornerShape(24.dp)
+                    shape = RoundedCornerShape(24.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color(0xFFFF7A3D)
+                    ),
+                    border = BorderStroke(1.dp, Color(0xFFFF7A3D))
                 ) {
                     Text(stringResource(R.string.auth_login_with_signer))
                 }
@@ -620,7 +628,11 @@ private fun NostrLoginSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp),
-                shape = RoundedCornerShape(24.dp)
+                shape = RoundedCornerShape(24.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color(0xFFB98CFF)
+                ),
+                border = BorderStroke(1.dp, Color(0xFF8E30EB))
             ) {
                 Text(
                     if (isCreating) stringResource(R.string.nostr_sheet_creating)
