@@ -579,11 +579,12 @@ private fun RecipePacksSection(
 }
 
 /**
- * Cookbook tab. Two sub-tabs reusing the Packs `TabRow` pattern:
+ * My Recipes tab (product name; formerly Cookbook). Two sub-tabs reusing the
+ * Packs `TabRow` pattern:
  *  - **Saved** (PR 3b-i) — the user's kind-30001 recipe collections (PR 3a):
  *    default Saved list first, named collections after, each a cover card that
  *    drills into the shared pack-detail grid.
- *  - **My Recipes** (PR 3b-ii) — the user's OWN published recipes via the live
+ *  - **Published** (PR 3b-ii) — the user's OWN published recipes via the live
  *    author query, rendered in the same `RecipeCard` poster grid. Distinct from
  *    Saved (authored, not bookmarked). Loaded lazily when first shown.
  *

@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
  * (`/api/extract-recipe/public`); image/text import (Phase 3) is
  * member-gated behind NIP-98 on `/api/extract-recipe`. All three modes
  * drive the same State machine and land in the read-only [State.Preview].
- * From preview the user can Publish, Save to Cookbook (publish + Saved list),
+ * From preview the user can Publish, Save to My Recipes (publish + Saved list),
  * Edit (Cheffy [pendingComposeMarkdown] hand-off), or Discard.
  */
 class SousChefViewModel : ViewModel() {
@@ -234,7 +234,7 @@ class SousChefViewModel : ViewModel() {
         if (_publishState.value == PublishState.Publishing) return
         if (signer == null) {
             _publishState.value = PublishState.Error(
-                if (saveToCookbook != null) "Sign in to save recipes to your Cookbook."
+                if (saveToCookbook != null) "Sign in to save recipes to My Recipes."
                 else "Sign in to publish recipes.",
             )
             return

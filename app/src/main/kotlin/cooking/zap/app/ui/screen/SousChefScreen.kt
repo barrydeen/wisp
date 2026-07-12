@@ -475,7 +475,7 @@ private fun RecipePreview(
                 Text(
                     when (action) {
                         ConfirmAction.Publish -> "Publish recipe?"
-                        ConfirmAction.SaveToCookbook -> "Save to Cookbook?"
+                        ConfirmAction.SaveToCookbook -> "Save to My Recipes?"
                     },
                 )
             },

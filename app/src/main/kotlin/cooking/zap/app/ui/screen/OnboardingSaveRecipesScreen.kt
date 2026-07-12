@@ -38,9 +38,9 @@ import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.ui.component.RecipeCard
 
 /**
- * Onboarding "Save a few recipes to your Cookbook" step. Doubles as the
+ * Onboarding "Save a few recipes" step. Doubles as the
  * save/bookmark tutorial: tapping a recipe's bookmark saves it to the canonical
- * kind-30001 "Saved" Cookbook. Additive/skippable — onboarding was already
+ * kind-30001 "Saved" list (My Recipes → Saved). Additive/skippable — onboarding was already
  * completed at the Creators step.
  */
 @Composable
@@ -77,7 +77,7 @@ fun OnboardingSaveRecipesScreen(
             }
             Spacer(Modifier.height(8.dp))
 
-            // Coachmark — the tutorial. Tapping the bookmark saves to the Cookbook.
+            // Coachmark — the tutorial. Tapping the bookmark saves to My Recipes.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Filled.Bookmark,
@@ -87,7 +87,7 @@ fun OnboardingSaveRecipesScreen(
                 )
                 Spacer(Modifier.size(6.dp))
                 Text(
-                    text = "Tap the bookmark to save it to your Cookbook.",
+                    text = "Tap the bookmark to save it to My Recipes.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -101,7 +101,7 @@ fun OnboardingSaveRecipesScreen(
                 }
             } else if (recipes.isEmpty()) {
                 Text(
-                    text = "Couldn't load recipes right now — you can save some from the Cookbook later.",
+                    text = "Couldn't load recipes right now — you can save some from My Recipes later.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -181,7 +181,7 @@ private fun SaveableRecipeTile(
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = if (isSaved) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-                    contentDescription = if (isSaved) "Saved to Cookbook" else "Save to Cookbook",
+                    contentDescription = if (isSaved) "Saved to My Recipes" else "Save to My Recipes",
                     tint = if (isSaved) MaterialTheme.colorScheme.primary else Color.White,
                     modifier = Modifier.size(20.dp)
                 )

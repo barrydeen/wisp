@@ -3453,7 +3453,7 @@ fun WispNavHost(
                     if (savedToCookbook) {
                         android.widget.Toast.makeText(
                             context,
-                            "Saved to Cookbook",
+                            cooking.zap.app.souschef.SousChefPublishConfirm.SAVED_TOAST,
                             android.widget.Toast.LENGTH_SHORT,
                         ).show()
                     }
