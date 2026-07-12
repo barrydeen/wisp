@@ -25,8 +25,8 @@ import kotlinx.coroutines.launch
  * (`/api/extract-recipe/public`); image/text import (Phase 3) is
  * member-gated behind NIP-98 on `/api/extract-recipe`. All three modes
  * drive the same State machine and land in the read-only [State.Preview].
- * Saving (publish to the user's account) mirrors the web's
- * "preview until sign-in" path.
+ * From preview the user can Publish (signed kind-30023), hand off to the
+ * recipe composer (Cheffy [pendingComposeMarkdown] path), or Discard.
  */
 class SousChefViewModel : ViewModel() {
 
@@ -52,16 +52,16 @@ class SousChefViewModel : ViewModel() {
 
     private var membershipFetched = false
 
-    /** Save (publish) overlay state, distinct from the import [state]. */
-    sealed interface SaveState {
-        data object Idle : SaveState
-        data object Saving : SaveState
-        data class Saved(val author: String, val dTag: String) : SaveState
-        data class Error(val message: String) : SaveState
+    /** Publish overlay state, distinct from the import [state]. */
+    sealed interface PublishState {
+        data object Idle : PublishState
+        data object Publishing : PublishState
+        data class Published(val author: String, val dTag: String) : PublishState
+        data class Error(val message: String) : PublishState
     }
 
-    private val _saveState = MutableStateFlow<SaveState>(SaveState.Idle)
-    val saveState: StateFlow<SaveState> = _saveState
+    private val _publishState = MutableStateFlow<PublishState>(PublishState.Idle)
+    val publishState: StateFlow<PublishState> = _publishState
 
     /**
      * Fetch membership once per screen entry (once per ViewModel instance)
@@ -188,20 +188,21 @@ class SousChefViewModel : ViewModel() {
     }
 
     /**
-     * Publish the previewed recipe to the user's account (Sous Chef Save).
-     * Categories come from the imported recipe's tags (mapped into
+     * Publish the previewed recipe as a signed kind-30023 to the user's
+     * account. Categories come from the imported recipe's tags (mapped into
      * `recipe.hashtags` by `toRecipePreview`). Requires a signing key.
+     * The UI confirms before calling this.
      */
-    fun save(publisher: RecipePublisher, signer: NostrSigner?, clientTagEnabled: Boolean) {
+    fun publish(publisher: RecipePublisher, signer: NostrSigner?, clientTagEnabled: Boolean) {
         val preview = _state.value as? State.Preview ?: return
-        if (_saveState.value == SaveState.Saving) return
+        if (_publishState.value == PublishState.Publishing) return
         if (signer == null) {
-            _saveState.value = SaveState.Error("Sign in to save recipes.")
+            _publishState.value = PublishState.Error("Sign in to publish recipes.")
             return
         }
-        _saveState.value = SaveState.Saving
+        _publishState.value = PublishState.Publishing
         viewModelScope.launch {
-            _saveState.value = when (
+            _publishState.value = when (
                 val r = publisher.publish(
                     recipe = preview.recipe,
                     categories = preview.recipe.hashtags,
@@ -209,15 +210,15 @@ class SousChefViewModel : ViewModel() {
                     includeClientTag = clientTagEnabled,
                 )
             ) {
-                is RecipePublisher.Result.Published -> SaveState.Saved(r.author, r.dTag)
-                is RecipePublisher.Result.Error -> SaveState.Error(r.message)
+                is RecipePublisher.Result.Published -> PublishState.Published(r.author, r.dTag)
+                is RecipePublisher.Result.Error -> PublishState.Error(r.message)
             }
         }
     }
 
     fun reset() {
         _state.value = State.Idle
-        _saveState.value = SaveState.Idle
+        _publishState.value = PublishState.Idle
     }
 
     private companion object {

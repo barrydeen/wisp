@@ -322,7 +322,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     /** zap.cooking backend client (membership today; Phase 2 AI endpoints). */
     val zapCookingApi = cooking.zap.app.api.ZapCookingApi()
 
-    /** Recipe create spine — sign + publish kind-30023 (Sous Chef Save, concern 2.2). */
+    /** Recipe create spine — sign + publish kind-30023 (Sous Chef Publish, concern 2.2). */
     val recipePublisher = cooking.zap.app.repo.RecipePublisher(relayPool, eventRepo, blossomRepo)
 
     /** Note Review publish spine — explicit-with-timeout kind-1 reply (Phase 3). */

@@ -18,7 +18,7 @@ import okhttp3.Request
  * Publishes a recipe as a signed event in the primary [RecipeFormat]
  * ([RecipeFormats.primary] — NIP-23 `kind 30023` today; the seam lets a future
  * format become primary without touching this class) — the shared create spine
- * (Sous Chef "Save" today; the manual recipe-create modal later).
+ * (Sous Chef Publish today; the manual recipe-create modal later).
  *
  * Mirrors the web create flow: serialize via the primary [RecipeFormat]
  * ([RecipeFormats.primary] — NIP-23 today), **re-host the
@@ -43,7 +43,7 @@ class RecipePublisher(
     }
 
     /**
-     * Sous Chef "Save" path: the recipe carries a single **source image URL**
+     * Sous Chef Publish path: the recipe carries a single **source image URL**
      * (from the imported recipe) that we re-host through Blossom so the recipe
      * owns its image. Re-host failure falls back to the source URL (Save never
      * blocks on it). Unchanged — this is the original 2.2 entry point.
