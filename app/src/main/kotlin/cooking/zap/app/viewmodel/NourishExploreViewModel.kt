@@ -19,7 +19,9 @@ import kotlinx.coroutines.launch
  * SWR cache paint, never-clobber empty revalidate.
  *
  * Chip toggles always refetch with the **post-toggle** label set (web's
- * `toggleChip` → `loadRecipes()`). Sort is the only client-side-only path.
+ * `toggleChip` → `loadRecipes()`). [setSort] only reorders the already-
+ * fetched list; chip/retry loads pass the active [UiState.sortBy] so the
+ * repository's top-N ranking matches the selected dimension.
  */
 class NourishExploreViewModel(
     /**
@@ -159,8 +161,11 @@ class NourishExploreViewModel(
 
         loadJob = viewModelScope.launch {
             try {
+                // Pass the active sort so chip/retry refetches rank the top-N
+                // analyses by that dimension (not always Overall). setSort still
+                // only reorders the already-fetched list (no refetch).
                 val result = fetch(
-                    NourishDiscovery.SortDimension.OVERALL,
+                    _ui.value.sortBy,
                     40,
                     labels,
                 )

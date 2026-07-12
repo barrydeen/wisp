@@ -137,12 +137,12 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         /**
          * Subscription-id prefixes that bypass global event-id dedup.
          * See field comment on [dedupBypassPrefixes] — `authread-` / `nourish-pub-`
-         * are required for Nourish Explore `#l` after an unfiltered load.
+         * / `nourish-recipes-` are required for Nourish Explore after prior loads.
          */
         val DEFAULT_DEDUP_BYPASS_PREFIXES: List<String> = listOf(
             "thread-", "user", "quote-", "editprofile", "notif", "dms", "search-", "hashtag-", "drafts", "compose_latest_draft",
             "wallet-backup-", "auto-check-", "relay-backup-status-", "nwc-restore-", "delete-backup-",
-            "authread-", "nourish-pub-",
+            "authread-", "nourish-pub-", "nourish-recipes-",
         )
     }
 
@@ -189,6 +189,12 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         //
         // "nourish-pub-" is Explore's public-relay fallback for the same 30078
         // corpus — same overlapping-id problem after a pantry hit or prior load.
+        //
+        // "nourish-recipes-" is Explore's kind-30023 batch resolve against
+        // ARTICLES_RELAYS. Those recipe ids are often already in seenEvents from
+        // the Recipes feed / detail / cache paint — without a bypass the
+        // collector gets EOSE + 0 and the grid stays sparse or spuriously
+        // degrades to unfiltered.
         DEFAULT_DEDUP_BYPASS_PREFIXES,
     )
 

@@ -19,8 +19,8 @@ android {
         applicationId = baseApplicationId
         minSdk = 26
         targetSdk = 35
-        versionCode = 85
-        versionName = "1.3.1"
+        versionCode = 86
+        versionName = "1.3.2"
         resValue("string", "app_name", "Zap Cooking")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

@@ -104,9 +104,11 @@ class NourishExploreViewModelTest {
     @Test
     fun setSort_doesNotRefetch() {
         val seenFilters = mutableListOf<List<String>>()
+        val seenSorts = mutableListOf<NourishDiscovery.SortDimension>()
         val vm = NourishExploreViewModel()
         vm.initForTest(
-            fetch = { _, _, filters ->
+            fetch = { sortBy, _, filters ->
+                seenSorts.add(sortBy)
                 seenFilters.add(filters)
                 resultWithScores()
             },
@@ -122,6 +124,28 @@ class NourishExploreViewModelTest {
             seenFilters.size,
         )
         assertEquals(NourishDiscovery.SortDimension.PROTEIN, vm.ui.value.sortBy)
+    }
+
+    @Test
+    fun loadRecipes_passesActiveSortDimension() {
+        val seenSorts = mutableListOf<NourishDiscovery.SortDimension>()
+        val vm = NourishExploreViewModel()
+        vm.initForTest(
+            fetch = { sortBy, _, _ ->
+                seenSorts.add(sortBy)
+                resultWithScores()
+            },
+            autoLoad = true,
+        )
+        assertEquals(
+            listOf(NourishDiscovery.SortDimension.OVERALL),
+            seenSorts,
+        )
+
+        vm.setSort(NourishDiscovery.SortDimension.PROTEIN)
+        vm.retry()
+
+        assertEquals(NourishDiscovery.SortDimension.PROTEIN, seenSorts.last())
     }
 
     private fun emptyResult() = NourishDiscovery.DiscoveryResult(
