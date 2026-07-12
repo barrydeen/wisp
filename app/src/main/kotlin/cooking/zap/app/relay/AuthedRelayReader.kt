@@ -1,5 +1,6 @@
 package cooking.zap.app.relay
 
+import android.util.Log
 import cooking.zap.app.nostr.ClientMessage
 import cooking.zap.app.nostr.Filter
 import cooking.zap.app.nostr.NostrEvent
@@ -34,6 +35,11 @@ import java.util.concurrent.atomic.AtomicLong
  * The relay is pinned against ephemeral eviction for the read. Returns the
  * collected events (empty on exhausted retries / can't-auth / timeout). The
  * caller gates on a signing key — READ_ONLY can't auth.
+ *
+ * Subscription ids use the `authread-` prefix, which is on the pool's dedup
+ * bypass list — required so a second REQ for overlapping event ids (e.g.
+ * Nourish Explore `#l` after an unfiltered load) is not silently emptied by
+ * global seen-event dedup.
  */
 class AuthedRelayReader(private val relayPool: RelayPool) {
 
@@ -58,10 +64,16 @@ class AuthedRelayReader(private val relayPool: RelayPool) {
                         val collector = launch {
                             relayPool.relayEvents.collect { if (it.subscriptionId == sub) events.add(it.event) }
                         }
+                        // Wait for the socket before REQ so we don't race connect/AUTH
+                        // and spend the query timeout on a queued-but-undrained frame.
+                        relayPool.awaitRelayConnected(url, timeoutMs = authTimeoutMs)
+
+                        val frame = ClientMessage.req(sub, filter)
+                        Log.d(TAG, "REQ frame relay=$url sub=$sub frame=$frame")
                         // autoReconnect=true: the read must survive a transient drop of the
                         // ephemeral socket (the whole point) — without it the socket would
                         // never come back and retries would stall.
-                        relayPool.sendToRelayOrEphemeral(url, ClientMessage.req(sub, filter), autoReconnect = true)
+                        relayPool.sendToRelayOrEphemeral(url, frame, autoReconnect = true)
                         outcome = withTimeoutOrNull(queryTimeoutMs) {
                             merge(
                                 relayPool.eoseSignals.filter { it == sub }.map { Outcome.EOSE },
@@ -80,7 +92,10 @@ class AuthedRelayReader(private val relayPool: RelayPool) {
                 }
 
                 when (outcome) {
-                    Outcome.EOSE -> return events
+                    Outcome.EOSE -> {
+                        Log.d(TAG, "EOSE relay=$url sub events=${events.size}")
+                        return events
+                    }
                     Outcome.AUTH_CLOSED -> {
                         // Wait for the (async) auto-AUTH on the live socket, then retry.
                         withTimeoutOrNull(authTimeoutMs) {
@@ -89,7 +104,10 @@ class AuthedRelayReader(private val relayPool: RelayPool) {
                     }
                     null -> {
                         // Genuine timeout vs a reconnect that raced the query.
-                        if (relayPool.reconnectGeneration == gen) return events
+                        if (relayPool.reconnectGeneration == gen) {
+                            Log.d(TAG, "timeout relay=$url events=${events.size}")
+                            return events
+                        }
                         // else: socket reconnected mid-query → retry on the fresh one.
                     }
                 }
@@ -107,6 +125,7 @@ class AuthedRelayReader(private val relayPool: RelayPool) {
     private enum class Outcome { EOSE, AUTH_CLOSED }
 
     companion object {
+        private const val TAG = "AuthedRelayReader"
         private const val POLL_MS = 100L
         private const val STRAGGLER_MS = 300L
         /** Process-wide subId sequence — unique across all reader instances. */

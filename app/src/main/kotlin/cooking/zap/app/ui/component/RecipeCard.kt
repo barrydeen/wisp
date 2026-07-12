@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -54,6 +55,8 @@ fun RecipeCard(
     recipe: RecipeParser.Recipe,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Optional mark aligned to the bottom-end of the title block (e.g. Nourish leaf). */
+    titleAccessory: (@Composable () -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
@@ -85,16 +88,27 @@ fun RecipeCard(
             }
         }
         Spacer(Modifier.height(8.dp))
-        Text(
-            text = recipe.title?.takeIf { it.isNotBlank() } ?: recipe.dTag,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = TITLE_MIN_HEIGHT),
-        )
+        ) {
+            Text(
+                text = recipe.title?.takeIf { it.isNotBlank() } ?: recipe.dTag,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(end = if (titleAccessory != null) 18.dp else 0.dp),
+            )
+            if (titleAccessory != null) {
+                Box(modifier = Modifier.align(Alignment.BottomEnd)) {
+                    titleAccessory()
+                }
+            }
+        }
     }
 }
 

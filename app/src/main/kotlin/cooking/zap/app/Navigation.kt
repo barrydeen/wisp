@@ -94,7 +94,7 @@ import cooking.zap.app.ui.screen.RecipePackDetailScreen
 import cooking.zap.app.ui.screen.RecipeTagFeedScreen
 import cooking.zap.app.ui.screen.OnlyFoodFeedScreen
 import cooking.zap.app.ui.screen.CheffyScreen
-import cooking.zap.app.ui.screen.NourishHubScreen
+import cooking.zap.app.ui.screen.NourishExploreScreen
 import cooking.zap.app.ui.screen.SousChefScreen
 import cooking.zap.app.ui.screen.BookmarksScreen
 import cooking.zap.app.ui.screen.HashtagFeedScreen
@@ -128,6 +128,7 @@ import cooking.zap.app.ui.screen.WalletScreen
 import cooking.zap.app.viewmodel.BlossomServersViewModel
 import cooking.zap.app.viewmodel.ArticleViewModel
 import cooking.zap.app.viewmodel.RecipeDetailViewModel
+import cooking.zap.app.viewmodel.NourishExploreViewModel
 import cooking.zap.app.viewmodel.RecipeComposeViewModel
 import cooking.zap.app.viewmodel.RecipeFeedViewModel
 import cooking.zap.app.viewmodel.CookbookViewModel
@@ -224,7 +225,7 @@ object Routes {
     const val RECIPE_COLLECTION = "recipe_collection/{dTag}"
     const val RECIPE_TAG_FEED = "recipe_tag/{tag}"
     const val RECIPES = "recipes"
-    const val NOURISH = "nourish?author={author}&dTag={dTag}"
+    const val NOURISH = "nourish"
     const val ONLY_FOOD = "onlyfood"
     const val MEMORIES = "memories"
     const val SOUS_CHEF = "souschef"
@@ -252,12 +253,6 @@ object Routes {
     /** Build a recipe-by-tag feed route, URL-encoding the slug-like tag. */
     fun recipeTag(tag: String): String =
         "recipe_tag/${java.net.URLEncoder.encode(tag.trim().lowercase(), "UTF-8")}"
-
-    /** Build the Nourish hub route (optionally preloading a selected recipe). */
-    fun nourish(author: String? = null, dTag: String? = null): String {
-        if (author.isNullOrBlank() || dTag.isNullOrBlank()) return "nourish"
-        return "nourish?author=$author&dTag=${java.net.URLEncoder.encode(dTag, "UTF-8")}"
-    }
 
     /** The plain article route (kind 30023 long-form that isn't a recipe). */
     fun article(kind: Int, author: String, dTag: String): String =
@@ -1295,7 +1290,7 @@ fun WispNavHost(
                 onGadgets = { showCookingUtilitiesSheet = true },
                 onSousChef = { navController.navigate(Routes.SOUS_CHEF) { launchSingleTop = true } },
                 onCheffy = { navController.navigate(Routes.CHEFFY) { launchSingleTop = true } },
-                onNourish = { navController.navigate(Routes.nourish()) { launchSingleTop = true } },
+                onNourish = { navController.navigate(Routes.NOURISH) { launchSingleTop = true } },
                 onSocialGraph = {
                     navController.navigate(Routes.SOCIAL_GRAPH)
                 },
@@ -3161,9 +3156,6 @@ fun WispNavHost(
                 onComputeNourish = {
                     recipeDetailViewModel.computeNourish(feedViewModel.zapCookingApi, feedViewModel.signer)
                 },
-                onOpenNourishHub = { recipe ->
-                    navController.navigate(Routes.nourish(recipe.author, recipe.dTag))
-                },
                 onBack = { navController.popBackStack() },
                 onShare = {
                     val event = recipeDetailEvent ?: return@RecipeDetailScreen
@@ -3287,7 +3279,7 @@ fun WispNavHost(
                 onGadgets = { showCookingUtilitiesSheet = true },
                 onSousChef = { navController.navigate(Routes.SOUS_CHEF) { launchSingleTop = true } },
                 onCheffy = { navController.navigate(Routes.CHEFFY) { launchSingleTop = true } },
-                onNourish = { navController.navigate(Routes.nourish()) { launchSingleTop = true } },
+                onNourish = { navController.navigate(Routes.NOURISH) { launchSingleTop = true } },
                 userAvatarUrl = recipesAvatarUrl,
                 // READ_ONLY can't sign → no compose entry point.
                 onCreateRecipe = if (signingMode == SigningMode.READ_ONLY) null else {
@@ -3486,53 +3478,17 @@ fun WispNavHost(
             )
         }
 
-        composable(
-            route = Routes.NOURISH,
-            arguments = listOf(
-                navArgument("author") {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
-                },
-                navArgument("dTag") {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
-                },
-            ),
-        ) { backStackEntry ->
-            val author = backStackEntry.arguments?.getString("author")?.trim().orEmpty()
-            val dTag = java.net.URLDecoder.decode(
-                backStackEntry.arguments?.getString("dTag")?.trim().orEmpty(), "UTF-8"
-            )
-            val selectedAuthor = author.takeIf { it.isNotBlank() }
-            val selectedDTag = dTag.takeIf { it.isNotBlank() }
-            val recipeDetailViewModel: RecipeDetailViewModel = viewModel()
-            LaunchedEffect(selectedAuthor, selectedDTag) {
-                if (!selectedAuthor.isNullOrBlank() && !selectedDTag.isNullOrBlank()) {
-                    recipeDetailViewModel.load(
-                        author = selectedAuthor,
-                        dTag = selectedDTag,
-                        recipeRepo = feedViewModel.recipeRepo,
-                        nourishRepo = feedViewModel.nourishRepo,
-                        hasSigningKey = feedViewModel.signer != null,
-                    )
-                }
+        composable(Routes.NOURISH) {
+            val exploreViewModel: NourishExploreViewModel = viewModel()
+            LaunchedEffect(Unit) {
+                exploreViewModel.init(feedViewModel.nourishRepo)
             }
-            NourishHubScreen(
-                viewModel = recipeDetailViewModel,
-                selectedAuthor = selectedAuthor,
-                selectedDTag = selectedDTag,
-                canSign = feedViewModel.signer != null,
-                onComputeNourish = {
-                    recipeDetailViewModel.computeNourish(feedViewModel.zapCookingApi, feedViewModel.signer)
-                },
+            NourishExploreScreen(
+                viewModel = exploreViewModel,
                 onBack = { navController.popBackStack() },
-                onBrowseRecipes = { navController.navigate(Routes.RECIPES) },
-                onOpenSelectedRecipe = { authorHex, recipeDTag ->
+                onRecipeClick = { authorHex, recipeDTag ->
                     navController.navigate(Routes.recipe(authorHex, recipeDTag))
                 },
-                onExploreRecipes = { navController.navigate(Routes.RECIPES) },
             )
         }
 

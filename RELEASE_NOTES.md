@@ -1,6 +1,15 @@
 
 # Changelog
 
+
+##[1.3.2]
+
+🥦 Nourish Explore — Browse pantry-analyzed recipes ranked by Nourish score. Filter by high protein, under 600 kcal, low carb, no seed oils, no added sugar, or no red meat — and stack filters to find exactly what you're after.
+
+📊 Nutrition estimates on Explore cards — Calories and protein per serving when available; rough estimates are labeled honestly.
+
+Plus: Intelligence → Nourish opens Explore directly (no placeholder hub).
+
 ##[1.3.1]
 
 ## Update Post Modal for Cheffy Recipe 

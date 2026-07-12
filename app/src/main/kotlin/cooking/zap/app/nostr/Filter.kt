@@ -18,6 +18,8 @@ data class Filter(
     val aTags: List<String>? = null,
     /** Uppercase P tags — used for zap receipt sender queries (#P). */
     val bigPTags: List<String>? = null,
+    /** NIP-32 self-labels — used by Nourish discovery (#l). */
+    val lTags: List<String>? = null,
     val since: Long? = null,
     val until: Long? = null,
     val limit: Int? = null,
@@ -35,6 +37,7 @@ data class Filter(
         qTags?.let { put("#q", buildJsonArray { it.forEach { q -> add(JsonPrimitive(q)) } }) }
         aTags?.let { put("#a", buildJsonArray { it.forEach { a -> add(JsonPrimitive(a)) } }) }
         bigPTags?.let { put("#P", buildJsonArray { it.forEach { p -> add(JsonPrimitive(p)) } }) }
+        lTags?.let { put("#l", buildJsonArray { it.forEach { l -> add(JsonPrimitive(l)) } }) }
         since?.let { put("since", JsonPrimitive(it)) }
         until?.let { put("until", JsonPrimitive(it)) }
         limit?.let { put("limit", JsonPrimitive(it)) }
