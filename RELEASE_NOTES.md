@@ -1,6 +1,13 @@
 
 # Changelog
 
+##[1.3.3]
+
+🍳 Sous Chef publish flow — Publish, Edit in composer, and Discard now do exactly what they say. Save to My Recipes publishes and bookmarks in one honest step, with a clear heads-up that it posts publicly.
+
+📛 Cookbook is now My Recipes — same tab, clearer name. The authored sub-tab is now "Published."
+
+👤 Fixed account switcher sometimes showing a bare npub instead of your name/photo after importing a key.
 
 ##[1.3.2]
 
