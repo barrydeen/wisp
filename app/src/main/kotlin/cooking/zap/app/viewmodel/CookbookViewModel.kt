@@ -16,11 +16,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Backs the **Cookbook** tab's two sub-tabs:
- *  - **Saved** (PR 3b-i) — re-exposes the user's kind-30001 recipe lists from
+ * Backs the **My Recipes** tab's two sub-tabs (product name; formerly Cookbook):
+ *  - **Saved** (PR 3b-i) — the user's kind-30001 recipe collections from
  *    [RecipeBookmarkRepository] (PR 3a, already loaded at login) and lazily
  *    resolves a cover image per list via [CookbookCovers].
- *  - **My Recipes** (PR 3b-ii) — the user's OWN published recipes via the LIVE
+ *  - **Published** (PR 3b-ii) — the user's OWN published recipes via the LIVE
  *    author query ([RecipeRepository.loadAuthoredRecipes]); kicked off lazily the
  *    first time the sub-tab is shown.
  *

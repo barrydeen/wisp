@@ -3434,19 +3434,41 @@ fun WispNavHost(
                 // signing-capable account.
                 onSignIn = onAddAccount,
                 membershipLinkoutEnabled = BuildConfig.MEMBERSHIP_LINKOUT_ENABLED,
-                onSave = {
-                    sousChefViewModel.save(
+                onPublish = {
+                    sousChefViewModel.publish(
                         publisher = feedViewModel.recipePublisher,
                         signer = feedViewModel.signer,
                         clientTagEnabled = feedViewModel.interfacePrefs.isClientTagEnabled(),
                     )
                 },
-                onSaved = { author, dTag ->
+                onSaveToCookbook = {
+                    sousChefViewModel.saveToCookbook(
+                        publisher = feedViewModel.recipePublisher,
+                        bookmarkRepo = feedViewModel.recipeBookmarkRepo,
+                        signer = feedViewModel.signer,
+                        clientTagEnabled = feedViewModel.interfacePrefs.isClientTagEnabled(),
+                    )
+                },
+                onPublished = { author, dTag, savedToCookbook ->
+                    if (savedToCookbook) {
+                        android.widget.Toast.makeText(
+                            context,
+                            cooking.zap.app.souschef.SousChefPublishConfirm.SAVED_TOAST,
+                            android.widget.Toast.LENGTH_SHORT,
+                        ).show()
+                    }
                     navController.navigate(Routes.recipe(author, dTag)) {
                         // Replace the importer in the back stack — back returns to the feed.
                         popUpTo(Routes.SOUS_CHEF) { inclusive = true }
                     }
                 },
+                onEdit = { markdown ->
+                    // Same transient hand-off Cheffy uses (2.3c): set once, compose
+                    // route consumes via prefillFromMarkdown.
+                    feedViewModel.pendingComposeMarkdown = markdown
+                    navController.navigate(Routes.RECIPE_COMPOSE)
+                },
+                onDiscard = { sousChefViewModel.reset() },
                 canSign = feedViewModel.signer != null,
                 onBack = { navController.popBackStack() },
             )

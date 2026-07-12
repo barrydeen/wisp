@@ -14,7 +14,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 
 /**
- * UI state for the onboarding "Save a few recipes to your Cookbook" step.
+ * UI state for the onboarding "Save a few recipes" step (My Recipes / Saved list).
  *
  * Sources featured recipes via [RecipeRepository] (the newest recipe window),
  * then curates a small, image-first, author-diverse set biased toward the web's

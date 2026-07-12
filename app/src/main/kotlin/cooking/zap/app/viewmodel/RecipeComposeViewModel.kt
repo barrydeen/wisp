@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 /**
  * Backs [cooking.zap.app.ui.screen.RecipeComposeScreen] — authoring a recipe
  * from scratch and publishing it as a kind-30023 event via the proven 2.2
- * spine ([RecipePublisher]), the same path Sous Chef "Save" uses (concern:
+ * spine ([RecipePublisher]), the same path Sous Chef Publish uses (concern:
  * recipe-compose).
  *
  * Form fields mirror the web `/create` order: title, categories, summary,
