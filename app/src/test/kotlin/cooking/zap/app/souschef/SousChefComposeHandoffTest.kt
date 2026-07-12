@@ -104,4 +104,16 @@ class SousChefComposeHandoffTest {
             SousChefPublishConfirm.MESSAGE,
         )
     }
+
+    @Test
+    fun cookbookSaveConfirm_mentionsPublishAndCookbook() {
+        assertEquals(
+            "Save to your Cookbook? This publishes the recipe publicly under your account and adds it to your Saved list.",
+            SousChefPublishConfirm.COOKBOOK_SAVE_MESSAGE,
+        )
+        assertEquals(
+            "30023:abcd:garlic-pasta",
+            SousChefPublishConfirm.cookbookCoordinate(30023, "abcd", "garlic-pasta"),
+        )
+    }
 }

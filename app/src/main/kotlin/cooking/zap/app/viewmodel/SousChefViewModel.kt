@@ -10,12 +10,15 @@ import cooking.zap.app.api.MembershipStatus
 import cooking.zap.app.api.ZapCookingApi
 import cooking.zap.app.api.ZapCookingApiException
 import cooking.zap.app.nostr.NostrSigner
+import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.nostr.SignerCancelledException
 import cooking.zap.app.nostr.SignerRejectedException
+import cooking.zap.app.repo.RecipeBookmarkRepository
 import cooking.zap.app.repo.RecipePublisher
 import cooking.zap.app.souschef.SousChefImagePrep
 import cooking.zap.app.souschef.SousChefMode
+import cooking.zap.app.souschef.SousChefPublishConfirm
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -25,8 +28,8 @@ import kotlinx.coroutines.launch
  * (`/api/extract-recipe/public`); image/text import (Phase 3) is
  * member-gated behind NIP-98 on `/api/extract-recipe`. All three modes
  * drive the same State machine and land in the read-only [State.Preview].
- * From preview the user can Publish (signed kind-30023), hand off to the
- * recipe composer (Cheffy [pendingComposeMarkdown] path), or Discard.
+ * From preview the user can Publish, Save to Cookbook (publish + Saved list),
+ * Edit (Cheffy [pendingComposeMarkdown] hand-off), or Discard.
  */
 class SousChefViewModel : ViewModel() {
 
@@ -56,7 +59,15 @@ class SousChefViewModel : ViewModel() {
     sealed interface PublishState {
         data object Idle : PublishState
         data object Publishing : PublishState
-        data class Published(val author: String, val dTag: String) : PublishState
+        /**
+         * @param savedToCookbook true when this publish was the Cookbook-save
+         * path (publish + default Saved list), so the UI can toast accordingly.
+         */
+        data class Published(
+            val author: String,
+            val dTag: String,
+            val savedToCookbook: Boolean = false,
+        ) : PublishState
         data class Error(val message: String) : PublishState
     }
 
@@ -194,15 +205,43 @@ class SousChefViewModel : ViewModel() {
      * The UI confirms before calling this.
      */
     fun publish(publisher: RecipePublisher, signer: NostrSigner?, clientTagEnabled: Boolean) {
+        runPublish(publisher, signer, clientTagEnabled, saveToCookbook = null)
+    }
+
+    /**
+     * Publish then add the recipe's a-coordinate to the canonical Cookbook
+     * **Saved** list ([RecipeBookmarkRepository.addCoordinates]). Cookbook
+     * membership requires a published event — there is no local-only bookmark
+     * for an unpublished extraction. The UI confirms with
+     * [cooking.zap.app.souschef.SousChefPublishConfirm.COOKBOOK_SAVE_MESSAGE].
+     */
+    fun saveToCookbook(
+        publisher: RecipePublisher,
+        bookmarkRepo: RecipeBookmarkRepository,
+        signer: NostrSigner?,
+        clientTagEnabled: Boolean,
+    ) {
+        runPublish(publisher, signer, clientTagEnabled, saveToCookbook = bookmarkRepo)
+    }
+
+    private fun runPublish(
+        publisher: RecipePublisher,
+        signer: NostrSigner?,
+        clientTagEnabled: Boolean,
+        saveToCookbook: RecipeBookmarkRepository?,
+    ) {
         val preview = _state.value as? State.Preview ?: return
         if (_publishState.value == PublishState.Publishing) return
         if (signer == null) {
-            _publishState.value = PublishState.Error("Sign in to publish recipes.")
+            _publishState.value = PublishState.Error(
+                if (saveToCookbook != null) "Sign in to save recipes to your Cookbook."
+                else "Sign in to publish recipes.",
+            )
             return
         }
         _publishState.value = PublishState.Publishing
         viewModelScope.launch {
-            _publishState.value = when (
+            when (
                 val r = publisher.publish(
                     recipe = preview.recipe,
                     categories = preview.recipe.hashtags,
@@ -210,8 +249,32 @@ class SousChefViewModel : ViewModel() {
                     includeClientTag = clientTagEnabled,
                 )
             ) {
-                is RecipePublisher.Result.Published -> PublishState.Published(r.author, r.dTag)
-                is RecipePublisher.Result.Error -> PublishState.Error(r.message)
+                is RecipePublisher.Result.Error ->
+                    _publishState.value = PublishState.Error(r.message)
+                is RecipePublisher.Result.Published -> {
+                    if (saveToCookbook != null) {
+                        val coord = SousChefPublishConfirm.cookbookCoordinate(
+                            kind = RecipeFormats.primary.kind,
+                            author = r.author,
+                            dTag = r.dTag,
+                        )
+                        try {
+                            saveToCookbook.addCoordinates(listOf(coord))
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            // Publish succeeded; Cookbook write is best-effort —
+                            // still land on the published recipe.
+                        }
+                        _publishState.value = PublishState.Published(
+                            author = r.author,
+                            dTag = r.dTag,
+                            savedToCookbook = true,
+                        )
+                    } else {
+                        _publishState.value = PublishState.Published(r.author, r.dTag)
+                    }
+                }
             }
         }
     }

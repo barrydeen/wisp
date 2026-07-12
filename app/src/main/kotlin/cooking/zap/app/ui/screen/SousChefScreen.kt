@@ -37,6 +37,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -109,8 +110,9 @@ fun SousChefScreen(
     onSignIn: () -> Unit,
     membershipLinkoutEnabled: Boolean,
     onPublish: () -> Unit,
-    onPublished: (author: String, dTag: String) -> Unit,
-    onEditInComposer: (markdown: String) -> Unit,
+    onSaveToCookbook: () -> Unit,
+    onPublished: (author: String, dTag: String, savedToCookbook: Boolean) -> Unit,
+    onEdit: (markdown: String) -> Unit,
     onDiscard: () -> Unit,
     canSign: Boolean,
     onBack: () -> Unit,
@@ -178,7 +180,7 @@ fun SousChefScreen(
     // Optimistic: navigate to the just-published (locally-cached) recipe.
     LaunchedEffect(publishState) {
         (publishState as? SousChefViewModel.PublishState.Published)?.let {
-            onPublished(it.author, it.dTag)
+            onPublished(it.author, it.dTag, it.savedToCookbook)
         }
     }
 
@@ -417,7 +419,8 @@ fun SousChefScreen(
                     canSign = canSign,
                     publishState = publishState,
                     onPublish = onPublish,
-                    onEditInComposer = onEditInComposer,
+                    onSaveToCookbook = onSaveToCookbook,
+                    onEdit = onEdit,
                     onDiscard = onDiscard,
                 )
             }
@@ -455,31 +458,55 @@ private fun RecipePreview(
     canSign: Boolean,
     publishState: SousChefViewModel.PublishState,
     onPublish: () -> Unit,
-    onEditInComposer: (markdown: String) -> Unit,
+    onSaveToCookbook: () -> Unit,
+    onEdit: (markdown: String) -> Unit,
     onDiscard: () -> Unit,
 ) {
     var multiplier by remember(preview.recipe) { mutableStateOf(1.0) }
-    var showPublishConfirm by remember { mutableStateOf(false) }
+    var confirmAction by remember { mutableStateOf<ConfirmAction?>(null) }
     val hasImage = preview.recipe.image?.isNotBlank() == true
     val publishing = publishState is SousChefViewModel.PublishState.Publishing
+    val actionsEnabled = SousChefPublishConfirm.shouldOpenConfirm(canSign, hasImage, publishing)
 
-    if (showPublishConfirm) {
+    confirmAction?.let { action ->
         AlertDialog(
-            onDismissRequest = { showPublishConfirm = false },
-            title = { Text("Publish recipe?") },
+            onDismissRequest = { confirmAction = null },
+            title = {
+                Text(
+                    when (action) {
+                        ConfirmAction.Publish -> "Publish recipe?"
+                        ConfirmAction.SaveToCookbook -> "Save to Cookbook?"
+                    },
+                )
+            },
             text = {
-                Text(SousChefPublishConfirm.MESSAGE)
+                Text(
+                    when (action) {
+                        ConfirmAction.Publish -> SousChefPublishConfirm.MESSAGE
+                        ConfirmAction.SaveToCookbook -> SousChefPublishConfirm.COOKBOOK_SAVE_MESSAGE
+                    },
+                )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        showPublishConfirm = false
-                        onPublish()
+                        confirmAction = null
+                        when (action) {
+                            ConfirmAction.Publish -> onPublish()
+                            ConfirmAction.SaveToCookbook -> onSaveToCookbook()
+                        }
                     },
-                ) { Text("Publish") }
+                ) {
+                    Text(
+                        when (action) {
+                            ConfirmAction.Publish -> "Publish"
+                            ConfirmAction.SaveToCookbook -> "Save"
+                        },
+                    )
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showPublishConfirm = false }) { Text("Cancel") }
+                TextButton(onClick = { confirmAction = null }) { Text("Cancel") }
             },
         )
     }
@@ -501,8 +528,8 @@ private fun RecipePreview(
                 Spacer(Modifier.height(4.dp))
                 // Block reasons surfaced explicitly (not a silent disabled button).
                 val reason = when {
-                    !canSign -> "Sign in to publish this recipe to your account."
-                    !hasImage -> "Add an image to publish this recipe — or edit in the composer to attach one."
+                    !canSign -> "Sign in to publish or save this recipe."
+                    !hasImage -> "Add an image to publish — or Edit to attach one."
                     else -> null
                 }
                 reason?.let {
@@ -521,8 +548,8 @@ private fun RecipePreview(
                 }
                 // Primary: Publish (confirm before signing/sending).
                 Button(
-                    onClick = { showPublishConfirm = true },
-                    enabled = SousChefPublishConfirm.shouldOpenConfirm(canSign, hasImage, publishing),
+                    onClick = { confirmAction = ConfirmAction.Publish },
+                    enabled = actionsEnabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     if (publishing) {
@@ -535,15 +562,23 @@ private fun RecipePreview(
                         Text("Publish")
                     }
                 }
+                // Secondary: publish + Cookbook Saved list (honest confirm).
+                FilledTonalButton(
+                    onClick = { confirmAction = ConfirmAction.SaveToCookbook },
+                    enabled = actionsEnabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Save to my recipes")
+                }
                 // Secondary: hand off to RecipeCompose (Cheffy pendingComposeMarkdown path).
                 OutlinedButton(
                     onClick = {
-                        onEditInComposer(preview.recipe.toComposeHandoffMarkdown(multiplier))
+                        onEdit(preview.recipe.toComposeHandoffMarkdown(multiplier))
                     },
                     enabled = !publishing,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Edit in composer")
+                    Text("Edit")
                 }
                 // Text: dismiss the result immediately (preview is read-only).
                 TextButton(
@@ -557,3 +592,5 @@ private fun RecipePreview(
         item(key = "footer") { Spacer(Modifier.height(32.dp)) }
     }
 }
+
+private enum class ConfirmAction { Publish, SaveToCookbook }
