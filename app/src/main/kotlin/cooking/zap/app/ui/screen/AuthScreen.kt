@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material.icons.outlined.QrCode
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
@@ -212,7 +212,7 @@ fun AuthScreen(
                     }
                     IconButton(onClick = { showQrScanner = true }) {
                         Icon(
-                            imageVector = Icons.Outlined.QrCodeScanner,
+                            imageVector = Icons.Outlined.QrCode,
                             contentDescription = "Scan QR code"
                         )
                     }

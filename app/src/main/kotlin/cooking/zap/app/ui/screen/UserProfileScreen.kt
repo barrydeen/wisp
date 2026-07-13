@@ -47,7 +47,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Surface
 
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import cooking.zap.app.nostr.Nip30
@@ -465,7 +465,9 @@ fun UserProfileScreen(
                         }
                     }
                     IconButton(onClick = { showQrDialog = true }) {
-                        Icon(Icons.Default.QrCodeScanner, stringResource(R.string.cd_show_qr_code))
+                        // Plain QrCode glyph — this displays the profile's own QR, it
+                        // doesn't scan one, so the scanner-viewfinder icon was a mismatch.
+                        Icon(Icons.Default.QrCode, stringResource(R.string.cd_show_qr_code))
                     }
                     var menuExpanded by remember { mutableStateOf(false) }
                     IconButton(onClick = { menuExpanded = true }) {
