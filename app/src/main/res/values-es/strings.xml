@@ -401,10 +401,10 @@
     <string name="onboarding_mapping_graph">Mapeando tu grafo social…</string>
     <string name="onboarding_finding_relays">Buscando los relays de tus amigos…</string>
     <string name="onboarding_connecting_network">Conectando a tu red…</string>
-    <string name="onboarding_locating_gm">Buscando notas de gm…</string>
-    <string name="onboarding_cheering_fiatjaf">Animando a fiatjaf…</string>
-    <string name="onboarding_fun_bitcoins">Diviértete jugando con tus bitcoins…</string>
-    <string name="onboarding_one_time_setup">Esta es una configuración única, baja tu preferencia temporal…</string>
+    <string name="onboarding_locating_gm">Hora de hacer los donuts…</string>
+    <string name="onboarding_cheering_fiatjaf">Moliendo el café…</string>
+    <string name="onboarding_fun_bitcoins">Encendiendo la parrilla…</string>
+    <string name="onboarding_one_time_setup">Olla vigilada nunca hierve…</string>
     <string name="onboarding_almost_there">Ya casi…</string>
     <string name="onboarding_please_wait">Por favor espera…</string>
     <string name="onboarding_publishing">Publicando…</string>

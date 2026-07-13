@@ -401,10 +401,10 @@
     <string name="onboarding_mapping_graph">ソーシャルグラフをマッピング中…</string>
     <string name="onboarding_finding_relays">友達のリレーを検索中…</string>
     <string name="onboarding_connecting_network">ネットワークに接続中…</string>
-    <string name="onboarding_locating_gm">gmノートを検索中…</string>
-    <string name="onboarding_cheering_fiatjaf">fiatjafに応援中…</string>
-    <string name="onboarding_fun_bitcoins">ビットコイントイを楽しもう…</string>
-    <string name="onboarding_one_time_setup">これは一回限りの設定です、時間選好を下げましょう…</string>
+    <string name="onboarding_locating_gm">ドーナツを作る時間…</string>
+    <string name="onboarding_cheering_fiatjaf">コーヒーを挽いています…</string>
+    <string name="onboarding_fun_bitcoins">グリルに火をつけています…</string>
+    <string name="onboarding_one_time_setup">見つめる鍋は煮えない…</string>
     <string name="onboarding_almost_there">もう少しで完了…</string>
     <string name="onboarding_please_wait">お待ちください…</string>
     <string name="onboarding_publishing">公開中…</string>

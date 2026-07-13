@@ -401,10 +401,10 @@
     <string name="onboarding_mapping_graph">Je sociaal graaf in kaart brengen…</string>
     <string name="onboarding_finding_relays">De relays van je vrienden zoeken…</string>
     <string name="onboarding_connecting_network">Verbinden met je netwerk…</string>
-    <string name="onboarding_locating_gm">gm notities zoeken…</string>
-    <string name="onboarding_cheering_fiatjaf">fiatjaf aan het aanmoedigen…</string>
-    <string name="onboarding_fun_bitcoins">Plezier hebben met je bitcoins…</string>
-    <string name="onboarding_one_time_setup">Dit is een eenmalige instelling, verlaag je tijdvoorkeur…</string>
+    <string name="onboarding_locating_gm">Tijd om donuts te maken…</string>
+    <string name="onboarding_cheering_fiatjaf">Koffie aan het malen…</string>
+    <string name="onboarding_fun_bitcoins">De grill wordt aangestoken…</string>
+    <string name="onboarding_one_time_setup">Een bewaakte pot kookt nooit…</string>
     <string name="onboarding_almost_there">Bijna klaar…</string>
     <string name="onboarding_please_wait">Even geduld…</string>
     <string name="onboarding_publishing">Publiceren…</string>

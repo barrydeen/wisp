@@ -382,10 +382,10 @@
     <string name="onboarding_mapping_graph">Составление социального графа…</string>
     <string name="onboarding_finding_relays">Поиск рилэев друзей…</string>
     <string name="onboarding_connecting_network">Подключение к сети…</string>
-    <string name="onboarding_locating_gm">Поиск gm-заметок…</string>
-    <string name="onboarding_cheering_fiatjaf">Поддержка fiatjaf…</string>
-    <string name="onboarding_fun_bitcoins">Развлекайтесь с вашими биткоинами…</string>
-    <string name="onboarding_one_time_setup">Это разовая настройка, понизьте временные предпочтения…</string>
+    <string name="onboarding_locating_gm">Пора печь пончики…</string>
+    <string name="onboarding_cheering_fiatjaf">Мелем кофе…</string>
+    <string name="onboarding_fun_bitcoins">Разжигаем гриль…</string>
+    <string name="onboarding_one_time_setup">Вода не закипает, пока на неё смотришь…</string>
     <string name="onboarding_almost_there">Почти готово…</string>
     <string name="onboarding_please_wait">Подождите…</string>
     <string name="onboarding_publishing">Публикация…</string>

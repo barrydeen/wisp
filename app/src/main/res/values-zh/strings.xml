@@ -401,10 +401,10 @@
     <string name="onboarding_mapping_graph">正在绘制你的社交图谱…</string>
     <string name="onboarding_finding_relays">正在查找你朋友的 relay…</string>
     <string name="onboarding_connecting_network">正在连接到你的网络…</string>
-    <string name="onboarding_locating_gm">正在定位 gm 帖子…</string>
-    <string name="onboarding_cheering_fiatjaf">正在为 fiatjaf 加油…</string>
-    <string name="onboarding_fun_bitcoins">尽情玩弄你的比特币吧…</string>
-    <string name="onboarding_one_time_setup">这是一次性设置，降低你的时间偏好…</string>
+    <string name="onboarding_locating_gm">该做甜甜圈了…</string>
+    <string name="onboarding_cheering_fiatjaf">正在研磨咖啡…</string>
+    <string name="onboarding_fun_bitcoins">正在点燃烤架…</string>
+    <string name="onboarding_one_time_setup">盯着看的锅永远不会开…</string>
     <string name="onboarding_almost_there">快完成了…</string>
     <string name="onboarding_please_wait">请稍候…</string>
     <string name="onboarding_publishing">正在发布…</string>

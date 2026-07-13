@@ -522,10 +522,10 @@
     <string name="onboarding_mapping_graph">Mapping your social graph…</string>
     <string name="onboarding_finding_relays">Finding your friends\' relays…</string>
     <string name="onboarding_connecting_network">Connecting to your network…</string>
-    <string name="onboarding_locating_gm">Locating gm notes…</string>
-    <string name="onboarding_cheering_fiatjaf">Cheering up fiatjaf…</string>
-    <string name="onboarding_fun_bitcoins">Have fun playing with your bitcoins…</string>
-    <string name="onboarding_one_time_setup">This is a one time setup, lower your time preference…</string>
+    <string name="onboarding_locating_gm">Time to make the donuts…</string>
+    <string name="onboarding_cheering_fiatjaf">Grinding the coffee…</string>
+    <string name="onboarding_fun_bitcoins">Firing up the grill…</string>
+    <string name="onboarding_one_time_setup">A watched pot never boils…</string>
     <string name="onboarding_almost_there">Almost there…</string>
     <string name="onboarding_please_wait">Please wait…</string>
     <string name="onboarding_publishing">Publishing…</string>
