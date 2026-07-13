@@ -13,9 +13,9 @@ object SousChefPublishConfirm {
 
     /** Honest copy: Saved-list membership requires a published a-coordinate. */
     const val COOKBOOK_SAVE_MESSAGE =
-        "Save to My Recipes? This publishes the recipe publicly under your account and adds it to your Saved list."
+        "Save to My Kitchen? This publishes the recipe publicly under your account and adds it to your Saved list."
 
-    const val SAVED_TOAST = "Saved to My Recipes"
+    const val SAVED_TOAST = "Saved to My Kitchen"
 
     fun shouldOpenConfirm(canSign: Boolean, hasImage: Boolean, publishing: Boolean): Boolean =
         canSign && hasImage && !publishing

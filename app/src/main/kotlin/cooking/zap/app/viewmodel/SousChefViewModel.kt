@@ -234,7 +234,7 @@ class SousChefViewModel : ViewModel() {
         if (_publishState.value == PublishState.Publishing) return
         if (signer == null) {
             _publishState.value = PublishState.Error(
-                if (saveToCookbook != null) "Sign in to save recipes to My Recipes."
+                if (saveToCookbook != null) "Sign in to save recipes to My Kitchen."
                 else "Sign in to publish recipes.",
             )
             return

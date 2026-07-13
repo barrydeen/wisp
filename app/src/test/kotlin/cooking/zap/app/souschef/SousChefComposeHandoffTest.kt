@@ -106,12 +106,12 @@ class SousChefComposeHandoffTest {
     }
 
     @Test
-    fun cookbookSaveConfirm_mentionsPublishAndMyRecipes() {
+    fun cookbookSaveConfirm_mentionsPublishAndMyKitchen() {
         assertEquals(
-            "Save to My Recipes? This publishes the recipe publicly under your account and adds it to your Saved list.",
+            "Save to My Kitchen? This publishes the recipe publicly under your account and adds it to your Saved list.",
             SousChefPublishConfirm.COOKBOOK_SAVE_MESSAGE,
         )
-        assertEquals("Saved to My Recipes", SousChefPublishConfirm.SAVED_TOAST)
+        assertEquals("Saved to My Kitchen", SousChefPublishConfirm.SAVED_TOAST)
         assertEquals(
             "30023:abcd:garlic-pasta",
             SousChefPublishConfirm.cookbookCoordinate(30023, "abcd", "garlic-pasta"),
