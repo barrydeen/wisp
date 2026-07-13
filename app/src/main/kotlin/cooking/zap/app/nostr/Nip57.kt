@@ -116,6 +116,35 @@ object Nip57 {
         }
     }
 
+    /**
+     * Decode a bech32 `lnurl1…` string to its HTTPS callback URL, fetch the
+     * LNURL-pay endpoint, and return the pay info. Returns null on any error.
+     */
+    suspend fun resolveLnurl1(encoded: String, httpClient: OkHttpClient): LnurlPayInfo? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val (hrp, data) = Nip19.bech32Decode(encoded.lowercase())
+                if (hrp != "lnurl") return@withContext null
+                val url = data.toString(Charsets.UTF_8)
+                val request = Request.Builder().url(url).build()
+                val response = httpClient.newCall(request).execute()
+                if (!response.isSuccessful) return@withContext null
+                val body = response.body?.string() ?: return@withContext null
+                val obj = json.parseToJsonElement(body).jsonObject
+                val allowsNostr = obj["allowsNostr"]?.jsonPrimitive?.boolean ?: false
+                LnurlPayInfo(
+                    callback = obj["callback"]?.jsonPrimitive?.content ?: return@withContext null,
+                    minSendable = obj["minSendable"]?.jsonPrimitive?.long ?: 1000,
+                    maxSendable = obj["maxSendable"]?.jsonPrimitive?.long ?: 100_000_000_000,
+                    allowsNostr = allowsNostr,
+                    nostrPubkey = obj["nostrPubkey"]?.jsonPrimitive?.content
+                )
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
     fun buildZapRequest(
         senderPrivkey: ByteArray,
         senderPubkey: ByteArray,
