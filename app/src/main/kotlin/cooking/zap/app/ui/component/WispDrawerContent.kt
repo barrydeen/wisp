@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.DateRange
+import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.ui.res.painterResource
 import cooking.zap.app.R
 import androidx.compose.material.icons.outlined.Edit
@@ -105,6 +106,7 @@ fun WispDrawerContent(
     onFeed: () -> Unit,
     onSearch: () -> Unit,
     onMemories: () -> Unit = {},
+    onMyKitchen: () -> Unit = {},
     onMessages: () -> Unit,
     onWallet: () -> Unit,
     onRecipes: () -> Unit = {},
@@ -389,6 +391,16 @@ fun WispDrawerContent(
             label = { Text(stringResource(R.string.drawer_memories)) },
             selected = false,
             onClick = onMemories,
+            modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
+        )
+        // My Kitchen — the personal hub (Saved/Published/Grocery/Planner/Nourish)
+        // inside the Recipes tab; this deep-links straight to it. Not sign-gated:
+        // signed-out lands on the hub's sign-in prompt / teasers.
+        NavigationDrawerItem(
+            icon = { Icon(Icons.Outlined.MenuBook, contentDescription = null) },
+            label = { Text(stringResource(R.string.drawer_my_kitchen)) },
+            selected = false,
+            onClick = onMyKitchen,
             modifier = Modifier.height(48.dp).padding(horizontal = 12.dp)
         )
         if (canSign) {

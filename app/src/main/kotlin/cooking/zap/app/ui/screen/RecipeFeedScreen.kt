@@ -40,6 +40,8 @@ import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Button
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -53,6 +55,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -100,7 +103,20 @@ private const val LOAD_MORE_PREFETCH = 6
 
 private enum class RecipesMainTab { RECIPES, PACKS, COOKBOOK }
 
-private enum class CookbookSubTab { SAVED, MY_RECIPES }
+/**
+ * The My Kitchen hub sections (arc PR 2). Saved/Published are the original
+ * personal sub-tabs; Grocery/Planner are teaser-only until their PRs land
+ * (arc PRs 5 and 8); Nourish is an entry card into the existing explore route.
+ * [requiresAccount] gates the sign-in prompt — teasers and the Nourish entry
+ * render signed-out (nothing account-bound to show).
+ */
+private enum class CookbookSubTab(val requiresAccount: Boolean) {
+    SAVED(true),
+    MY_RECIPES(true),
+    GROCERY(false),
+    PLANNER(false),
+    NOURISH(false),
+}
 
 /**
  * The Recipes feed — recipe cards only (concern 1.6 un-merge), rendered as a
@@ -132,6 +148,10 @@ fun RecipeFeedScreen(
     userAvatarUrl: String? = null,
     // Null for READ_ONLY accounts (no signing key) — the FAB is then hidden.
     onCreateRecipe: (() -> Unit)? = null,
+    // One-shot deep-link (drawer "My Kitchen"): when true, snap to the My
+    // Kitchen pill with the Saved section and consume via the callback.
+    openMyKitchenRequest: Boolean = false,
+    onOpenMyKitchenConsumed: () -> Unit = {},
 ) {
     val recipes by viewModel.recipes.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -140,6 +160,18 @@ fun RecipeFeedScreen(
     val gridState = rememberLazyGridState()
     var showMoreTagsSheet by remember { mutableStateOf(false) }
     var mainTab by remember { mutableStateOf(RecipesMainTab.RECIPES) }
+    // Hoisted from CookbookSection so the drawer deep-link can address it, and
+    // saveable so the selected hub section survives config changes and process
+    // recreation (the DmListScreen selectedTab idiom).
+    var cookbookSubTab by rememberSaveable { mutableStateOf(CookbookSubTab.SAVED) }
+
+    LaunchedEffect(openMyKitchenRequest) {
+        if (openMyKitchenRequest) {
+            mainTab = RecipesMainTab.COOKBOOK
+            cookbookSubTab = CookbookSubTab.SAVED
+            onOpenMyKitchenConsumed()
+        }
+    }
 
     // Scroll-end pagination: when the last visible tile nears the end of the
     // grid, fetch the next (older) page. distinctUntilChanged debounces repeat
@@ -259,8 +291,11 @@ fun RecipeFeedScreen(
                     CookbookSection(
                         viewModel = cookbookViewModel,
                         userPubkey = userPubkey,
+                        subTab = cookbookSubTab,
+                        onSubTabChange = { cookbookSubTab = it },
                         onCollectionClick = onCollectionClick,
                         onRecipeClick = onRecipeClick,
+                        onNourish = onNourish,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(top = topInset),
@@ -579,50 +614,68 @@ private fun RecipePacksSection(
 }
 
 /**
- * My Recipes tab (product name; formerly Cookbook). Two sub-tabs reusing the
- * Packs `TabRow` pattern:
+ * The My Kitchen hub (arc PR 2 widened this from two sub-tabs to the five hub
+ * sections in a scrollable `TabRow`):
  *  - **Saved** (PR 3b-i) — the user's kind-30001 recipe collections (PR 3a):
  *    default Saved list first, named collections after, each a cover card that
  *    drills into the shared pack-detail grid.
  *  - **Published** (PR 3b-ii) — the user's OWN published recipes via the live
  *    author query, rendered in the same `RecipeCard` poster grid. Distinct from
  *    Saved (authored, not bookmarked). Loaded lazily when first shown.
+ *  - **Grocery / Planner** — teaser empty states only (no affordances) until
+ *    arc PRs 5 and 8 land their real sections.
+ *  - **Nourish** — entry card into the existing Nourish explore route.
  *
- * Both sub-tabs are personal: signed-out shows a sign-in prompt. READ_ONLY still
- * renders (the account's own lists and authored recipes are fetchable); management
- * affordances are PR 3b-iii.
+ * Saved/Published are personal: signed-out shows a sign-in prompt (unchanged).
+ * READ_ONLY still renders (the account's own lists and authored recipes are
+ * fetchable); management affordances are PR 3b-iii. [subTab] is hoisted so the
+ * drawer deep-link can address the section and the selection can be saved.
  */
 @Composable
 private fun CookbookSection(
     viewModel: CookbookViewModel,
     userPubkey: String?,
+    subTab: CookbookSubTab,
+    onSubTabChange: (CookbookSubTab) -> Unit,
     onCollectionClick: (dTag: String) -> Unit,
     onRecipeClick: (author: String, dTag: String) -> Unit,
+    onNourish: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val lists by viewModel.lists.collectAsState()
     val covers by viewModel.covers.collectAsState()
-    var subTab by remember { mutableStateOf(CookbookSubTab.SAVED) }
     // Management (PR 3b-iii) is owner-only — a signing key is required.
     val canManage = LocalCanSign.current
     var manage by remember { mutableStateOf<CookbookManageState?>(null) }
 
     Column(modifier = modifier) {
-        TabRow(selectedTabIndex = subTab.ordinal) {
-            Tab(
-                selected = subTab == CookbookSubTab.SAVED,
-                onClick = { subTab = CookbookSubTab.SAVED },
-                text = { Text(stringResource(R.string.tab_saved)) }
-            )
-            Tab(
-                selected = subTab == CookbookSubTab.MY_RECIPES,
-                onClick = { subTab = CookbookSubTab.MY_RECIPES },
-                text = { Text(stringResource(R.string.cookbook_tab_my_recipes)) }
-            )
+        // Five labels don't fit a fixed TabRow at phone width — scrollable, with
+        // no leading edge padding so Saved stays flush with the content margin.
+        ScrollableTabRow(selectedTabIndex = subTab.ordinal, edgePadding = 0.dp) {
+            CookbookSubTab.entries.forEach { tab ->
+                Tab(
+                    selected = subTab == tab,
+                    onClick = { onSubTabChange(tab) },
+                    text = {
+                        Text(
+                            stringResource(
+                                when (tab) {
+                                    CookbookSubTab.SAVED -> R.string.tab_saved
+                                    CookbookSubTab.MY_RECIPES -> R.string.cookbook_tab_my_recipes
+                                    CookbookSubTab.GROCERY -> R.string.cookbook_tab_grocery
+                                    CookbookSubTab.PLANNER -> R.string.cookbook_tab_planner
+                                    CookbookSubTab.NOURISH -> R.string.cookbook_tab_nourish
+                                }
+                            )
+                        )
+                    }
+                )
+            }
         }
 
-        // Both sub-tabs are personal — gate on having an account at all.
-        if (userPubkey.isNullOrBlank()) {
+        // Saved/Published are personal — gate on having an account (unchanged
+        // for those sections; teasers and the Nourish entry render signed-out).
+        if (userPubkey.isNullOrBlank() && subTab.requiresAccount) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     text = stringResource(R.string.cookbook_sign_in),
@@ -739,6 +792,22 @@ private fun CookbookSection(
                     }
                 }
             }
+
+            // Teaser-only until arc PR 5 (grocery) / PR 8 (planner) — deliberately
+            // no buttons: a teaser must not ship an affordance that does nothing.
+            CookbookSubTab.GROCERY -> ComingSoonSection(
+                emoji = "🛒",
+                title = stringResource(R.string.cookbook_grocery_teaser_title),
+                body = stringResource(R.string.cookbook_grocery_teaser_body),
+            )
+            CookbookSubTab.PLANNER -> ComingSoonSection(
+                emoji = "📅",
+                title = stringResource(R.string.cookbook_planner_teaser_title),
+                body = stringResource(R.string.cookbook_planner_teaser_body),
+            )
+
+            // Entry card only — the explore UI stays on its own route.
+            CookbookSubTab.NOURISH -> NourishEntrySection(onNourish = onNourish)
         }
     }
 
@@ -748,6 +817,68 @@ private fun CookbookSection(
         viewModel = viewModel,
         onDismiss = { manage = null },
     )
+}
+
+/**
+ * Centered teaser for a hub section that isn't built yet — mirrors the Saved
+ * empty-state layout (emoji / title / body) and the web hub's teaser tone.
+ * Intentionally has no tap affordance.
+ */
+@Composable
+private fun ComingSoonSection(emoji: String, title: String, body: String) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 32.dp),
+        ) {
+            Text(text = emoji, style = MaterialTheme.typography.displaySmall)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        }
+    }
+}
+
+/** Entry card into the existing Nourish explore route (navigation only). */
+@Composable
+private fun NourishEntrySection(onNourish: () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 32.dp),
+        ) {
+            Text(text = "🥦", style = MaterialTheme.typography.displaySmall)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.cookbook_nourish_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.cookbook_nourish_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = onNourish) {
+                Text(stringResource(R.string.cookbook_nourish_cta))
+            }
+        }
+    }
 }
 
 /** The active management dialog/sheet for a Saved collection (PR 3b-iii). */

@@ -15,6 +15,7 @@
     <string name="drawer_my_profile">My Profile</string>
     <string name="drawer_feeds">Feeds</string>
     <string name="drawer_memories">Memories</string>
+    <string name="drawer_my_kitchen">My Kitchen</string>
     <string name="drawer_recipes">Recipes</string>
     <string name="drawer_souschef">Sous Chef</string>
     <string name="drawer_cheffy">Cheffy</string>
@@ -274,6 +275,9 @@
     <string name="tab_packs">Packs</string>
     <string name="tab_cookbook">My Kitchen</string>
     <string name="cookbook_tab_my_recipes">Published</string>
+    <string name="cookbook_tab_grocery">Grocery</string>
+    <string name="cookbook_tab_planner">Planner</string>
+    <string name="cookbook_tab_nourish">Nourish</string>
     <string name="tab_discover">Discover</string>
     <string name="tab_mine">Mine</string>
     <string name="tab_saved">Saved</string>
@@ -698,6 +702,13 @@
     <string name="cookbook_saved_empty_title">Start saving recipes</string>
     <string name="cookbook_saved_empty_body">Save recipes you love and organize them into collections.</string>
     <string name="cookbook_my_recipes_empty">No published recipes yet</string>
+    <string name="cookbook_grocery_teaser_title">Grocery lists are coming</string>
+    <string name="cookbook_grocery_teaser_body">Your shopping lists, generated from your recipes — add a recipe\'s ingredients in a tap and shop from your phone.</string>
+    <string name="cookbook_planner_teaser_title">The meal planner is coming</string>
+    <string name="cookbook_planner_teaser_body">Plan your week from your saved recipes, then turn the whole week into a grocery list.</string>
+    <string name="cookbook_nourish_title">Nourish</string>
+    <string name="cookbook_nourish_body">See how recipes nourish you — explore the catalog by gut health, protein, heart health, and more.</string>
+    <string name="cookbook_nourish_cta">Explore Nourish</string>
     <string name="cookbook_manage_menu">Manage collection</string>
     <string name="cookbook_action_rename">Rename</string>
     <string name="cookbook_action_edit_description">Edit description</string>
