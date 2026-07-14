@@ -649,11 +649,21 @@ class RelayPool(private val prefs: SharedPreferences? = null) {
         return urls
     }
 
-    fun sendToWriteRelays(message: String): Int {
+    fun sendToWriteRelays(message: String): Int = sendToWriteRelaysExcluding(message, emptySet())
+
+    /**
+     * Like [sendToWriteRelays] but skips any relay whose URL is in [exclude].
+     * Used for personal encrypted kinds (grocery/planner 30078) that must never
+     * be published to the members relay ([RelayConfig.MEMBERS_RELAY]) — it gates
+     * 30078 behind NIP-42 membership and personal data doesn't belong on the
+     * shared recipe relay. Returns the number of relays the message was sent to
+     * (0 = nothing delivered, a visible failure for the caller to surface).
+     */
+    fun sendToWriteRelaysExcluding(message: String, exclude: Set<String>): Int {
         val isEvent = message.startsWith("[\"EVENT\"")
         var sentCount = 0
         for (relay in relays) {
-            if (relay.config.write) {
+            if (relay.config.write && relay.config.url !in exclude) {
                 if (relay.send(message)) sentCount++
                 if (isEvent && appIsActive) healthTracker?.onEventSent(relay.config.url, message.length)
             }
