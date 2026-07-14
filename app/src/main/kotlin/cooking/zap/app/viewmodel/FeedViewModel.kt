@@ -152,6 +152,25 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
      */
     var pendingComposeMarkdown: String? = null
 
+    /**
+     * One-shot deep-link request: drawer "My Kitchen" → Recipes tab with the My
+     * Kitchen pill (Saved section) selected. Same transient hand-off idiom as
+     * [pendingComposeMarkdown], but observable so an already-visible Recipes
+     * screen reacts too (the pill lives in RecipeFeedScreen local state, and
+     * navigate() to the current destination triggers no recomposition).
+     * RecipeFeedScreen consumes it via [consumeOpenMyKitchen].
+     */
+    private val _openMyKitchenRequest = MutableStateFlow(false)
+    val openMyKitchenRequest: StateFlow<Boolean> = _openMyKitchenRequest
+
+    fun requestOpenMyKitchen() {
+        _openMyKitchenRequest.value = true
+    }
+
+    fun consumeOpenMyKitchen() {
+        _openMyKitchenRequest.value = false
+    }
+
     fun setSigner(s: NostrSigner) {
         signer = s
         zapSender.signer = s

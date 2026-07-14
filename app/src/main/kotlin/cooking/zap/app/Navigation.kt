@@ -863,6 +863,18 @@ fun WispNavHost(
                 },
                 onMessages = { closeDrawerAndNavigate(Routes.DM_LIST) },
                 onWallet = { closeDrawerAndNavigate(Routes.WALLET) },
+                onMyKitchen = {
+                    drawerScope.launch { drawerState.close() }
+                    // One-shot hand-off consumed by RecipeFeedScreen: selects the
+                    // My Kitchen pill (Saved section). Observable, so it works
+                    // whether or not the Recipes destination gets recomposed by
+                    // this navigate (e.g. drawer opened from Recipes itself).
+                    feedViewModel.requestOpenMyKitchen()
+                    navController.navigate(Routes.RECIPES) {
+                        popUpTo(Routes.FEED) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
                 onRecipes = {
                     drawerScope.launch { drawerState.close() }
                     navController.navigate(Routes.RECIPES) {
@@ -3268,6 +3280,7 @@ fun WispNavHost(
             val recipesAvatarUrl = recipesProfileVersion.let {
                 feedViewModel.getUserPubkey()?.let { pk -> feedViewModel.eventRepo.getProfileData(pk)?.picture }
             }
+            val openMyKitchen by feedViewModel.openMyKitchenRequest.collectAsState()
             RecipeFeedScreen(
                 viewModel = recipeFeedViewModel,
                 packsViewModel = recipePacksViewModel,
@@ -3295,6 +3308,8 @@ fun WispNavHost(
                 onCreateRecipe = if (signingMode == SigningMode.READ_ONLY) null else {
                     { navController.navigate(Routes.RECIPE_COMPOSE) }
                 },
+                openMyKitchenRequest = openMyKitchen,
+                onOpenMyKitchenConsumed = { feedViewModel.consumeOpenMyKitchen() },
             )
         }
 
