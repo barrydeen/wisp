@@ -990,6 +990,16 @@ fun WispNavHost(
         )
     }
 
+    // Global surface for rejected recipe-bookmark writes (cold-cache relay check
+    // inconclusive — nothing was published). One collector covers every save
+    // entry point: feed grids, recipe detail, the list chooser, and onboarding's
+    // save-recipes step.
+    LaunchedEffect(feedViewModel) {
+        feedViewModel.recipeBookmarkWriteErrors.collect { message ->
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
@@ -4356,6 +4366,9 @@ fun WispNavHost(
                     // Browse happens AFTER the Profile-step reloadForNewAccount()/clearAll(),
                     // so this fresh load isn't wiped. loadRecipeBookmarks() keys the
                     // bookmark repo to the new pubkey for correct saved-state + carry-forward.
+                    // Toggles render before this load completes — that's safe: a save on a
+                    // still-cold cache queues behind the repo's write mutex and runs its own
+                    // relay-confirmed base check before any publish (mutateList's guard).
                     recipeOnboardingViewModel.load(feedViewModel.recipeRepo)
                     feedViewModel.loadRecipeBookmarks()
                 }

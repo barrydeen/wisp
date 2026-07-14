@@ -14,7 +14,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -80,6 +82,170 @@ class RecipeBookmarkRepository(
         private const val EOSE_GRACE_MS = 2_000L
         private const val CACHE_LIMIT = 2_000
         private const val QUERY_LIMIT = 256
+        /** First-write relay confirmation: EOSE wait bound (same as [queryRecipeLists]). */
+        private const val CONFIRM_TIMEOUT_MS = 8_000L
+        /**
+         * After an [RelayListCheck.Unconfirmed] verdict, fail fast for this long
+         * instead of re-fetching — queued taps while offline would otherwise each
+         * burn the full [CONFIRM_TIMEOUT_MS] serialized behind the write mutex.
+         */
+        private const val CONFIRM_RETRY_COOLDOWN_MS = 15_000L
+        /** User-facing message for a rejected cold-cache write (see [writeErrors]). */
+        internal const val WRITE_UNCONFIRMED_MESSAGE =
+            "Couldn't reach your relays to check your saved list — nothing was saved. Try again in a moment."
+
+        private fun parseCoordinates(event: NostrEvent): Set<String> {
+            return event.tags
+                .asSequence()
+                .filter { it.size >= 2 && it[0] == "a" }
+                .map { it[1].trim() }
+                .filter { it.isNotBlank() }
+                .toCollection(LinkedHashSet())
+        }
+
+        /**
+         * A single-value metadata-tag edit applied on republish (PR 3b-iii). A
+         * non-blank [value] sets the tag; a blank/null [value] removes it. Passing
+         * the edit as `null` to [buildListTags] leaves the existing tag untouched
+         * (carried forward) — distinct from `MetaEdit(null)` which removes it.
+         */
+        private class MetaEdit(val value: String?)
+
+        /**
+         * Rebuild list tags from [existing], preserving everything except the `a`
+         * tags (rewritten to [nextCoords]) and the misattributing `client` tag.
+         * Guarantees a `d` tag of [dTag] and a `title` (seeding [seedTitleIfNew] /
+         * "Saved" / the slug when fresh). Named collections ([isDefault] false) are
+         * stamped with the recipe [COLLECTION_TAG] `t` tag when they lack one; the
+         * default list is never given a `t` tag.
+         */
+        private fun buildListTags(
+            existing: NostrEvent?,
+            dTag: String,
+            isDefault: Boolean,
+            seedTitleIfNew: String?,
+            nextCoords: Set<String>,
+            // PR 3b-iii metadata edits: null = carry the existing tag forward unchanged.
+            newTitle: String? = null,
+            summaryEdit: MetaEdit? = null,
+            coverEdit: MetaEdit? = null,
+        ): List<List<String>> {
+            val tags = mutableListOf<List<String>>()
+            var hasD = false
+            var hasTitle = false
+            var hasRecipeT = false
+            existing?.tags?.forEach { tag ->
+                if (tag.isEmpty()) return@forEach
+                when (tag[0]) {
+                    "a" -> Unit // dropped; the full coordinate set is re-added below
+                    "client" -> Unit // dropped to avoid misattribution on republish
+                    "d" -> {
+                        if (!hasD) {
+                            tags.add(listOf("d", dTag))
+                            hasD = true
+                        }
+                    }
+                    "title" -> {
+                        if (!hasTitle) {
+                            // A rename replaces the title; otherwise carry it forward.
+                            tags.add(if (newTitle != null) listOf("title", newTitle) else tag.toList())
+                            hasTitle = true
+                        }
+                    }
+                    // summary/cover are carried forward in place UNLESS an edit is
+                    // pending — then the in-loop tag is dropped and the new value
+                    // (or nothing, when removed) is appended below.
+                    "summary" -> { if (summaryEdit == null) tags.add(tag.toList()) }
+                    "cover" -> { if (coverEdit == null) tags.add(tag.toList()) }
+                    "t" -> {
+                        // The default Saved list must never carry a recipe `t` tag — the
+                        // web enumerates collections by `#t` and reads Saved by `#d`.
+                        if (!isDefault) {
+                            tags.add(tag.toList())
+                            if (tag.size >= 2 && tag[1].trim() in RECIPE_T_TAGS) hasRecipeT = true
+                        }
+                    }
+                    else -> tags.add(tag.toList()) // carry forward image/unknown
+                }
+            }
+            if (!hasD) tags.add(0, listOf("d", dTag))
+            if (!hasTitle) {
+                tags.add(listOf("title", newTitle ?: seedTitleIfNew ?: if (isDefault) DEFAULT_LIST_TITLE else dTag))
+            }
+            // Apply pending summary/cover edits (a blank value clears the tag).
+            summaryEdit?.value?.trim()?.takeIf { it.isNotBlank() }?.let { tags.add(listOf("summary", it)) }
+            coverEdit?.value?.trim()?.takeIf { it.isNotBlank() }?.let { tags.add(listOf("cover", it)) }
+            if (!isDefault && !hasRecipeT) tags.add(listOf("t", COLLECTION_TAG))
+            nextCoords.forEach { tags.add(listOf("a", it)) }
+            return tags
+        }
+
+        /**
+         * Classify a first-write relay check: a streamed [newest] event wins
+         * regardless of EOSE (data is data, even from a relay that never got to
+         * EOSE); absence is only *confirmed* when at least one targeted relay
+         * EOSE'd — the same "fair shot at the network" bar as
+         * [resolveEventsByIds]. No event and no EOSE means the network never
+         * answered, and a replaceable-event create MUST NOT proceed on that.
+         */
+        internal fun classifyRelayListCheck(newest: NostrEvent?, eoseCount: Int): RelayListCheck = when {
+            newest != null -> RelayListCheck.Found(newest)
+            eoseCount > 0 -> RelayListCheck.ConfirmedAbsent
+            else -> RelayListCheck.Unconfirmed
+        }
+
+        /**
+         * Pure planner for a list mutation (the testable core of [mutateList]).
+         *
+         * [base] is the resolved carry-forward event (memory, cache, or a
+         * relay-fetched copy). When [base] is null, [absenceConfirmed] says
+         * whether that null is relay-confirmed (create allowed) or merely
+         * unfetched — in which case the plan is [MutationPlan.RejectedUnconfirmed]
+         * and nothing may be signed or published: publishing a fresh replaceable
+         * kind-30001 over an unfetched copy is how a one-item list supersedes the
+         * user's real Saved list (the cold-cache overwrite hazard).
+         */
+        internal fun planMutation(
+            base: NostrEvent?,
+            absenceConfirmed: Boolean,
+            dTag: String,
+            coord: String,
+            desired: Boolean?,
+            seedTitleIfNew: String?,
+        ): MutationPlan {
+            if (base == null && !absenceConfirmed) return MutationPlan.RejectedUnconfirmed
+            val nextCoords = LinkedHashSet(base?.let { parseCoordinates(it) } ?: emptySet())
+            val add = desired ?: !nextCoords.contains(coord)
+            val changed = if (add) nextCoords.add(coord) else nextCoords.remove(coord)
+            if (!changed) return MutationPlan.NoOp(add)
+            val isDefault = dTag == DEFAULT_LIST_DTAG
+            val tags = buildListTags(base, dTag, isDefault, seedTitleIfNew, nextCoords)
+            return MutationPlan.Publish(tags = tags, content = base?.content.orEmpty(), membership = add)
+        }
+    }
+
+    /** Outcome of the first-write relay confirmation (see [confirmListOnRelays]). */
+    internal sealed interface RelayListCheck {
+        /** The newest kind-30001 for the d-tag found on relays — the carry-forward base. */
+        data class Found(val event: NostrEvent) : RelayListCheck
+        /** At least one relay answered (EOSE) and none had the list — safe to create. */
+        data object ConfirmedAbsent : RelayListCheck
+        /** No relay answered — creating could overwrite an unfetched copy; must fail. */
+        data object Unconfirmed : RelayListCheck
+    }
+
+    /** What [planMutation] decided (see there for the rules). */
+    internal sealed interface MutationPlan {
+        /** Sign + publish [tags]/[content]; [membership] is the resulting state. */
+        data class Publish(
+            val tags: List<List<String>>,
+            val content: String,
+            val membership: Boolean,
+        ) : MutationPlan
+        /** The list already holds the desired state — publish nothing. */
+        data class NoOp(val membership: Boolean) : MutationPlan
+        /** Cold cache and the relay check was inconclusive — publish nothing, surface an error. */
+        data object RejectedUnconfirmed : MutationPlan
     }
 
     /**
@@ -109,6 +275,14 @@ class RecipeBookmarkRepository(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _writeErrors = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    /**
+     * User-visible write rejections. Emitted when a cold-cache mutation is
+     * refused because the relay check for the list's existence was inconclusive
+     * ([RelayListCheck.Unconfirmed]) — nothing was signed or published.
+     */
+    val writeErrors: SharedFlow<String> = _writeErrors
+
     // Newest known event per list `d`-tag — the carry-forward source on republish.
     private val listsLock = Any()
     private val listsByDTag = HashMap<String, NostrEvent>()
@@ -116,6 +290,10 @@ class RecipeBookmarkRepository(
     private val subCounter = AtomicInteger(0)
     private var loadJob: Job? = null
     private val writeMutex = Mutex()
+
+    // Per-d-tag timestamp of the last Unconfirmed relay check (fail-fast window;
+    // written only under [writeMutex], cleared by [reset] without it).
+    private val lastUnconfirmedCheckMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     /**
      * Build the format-agnostic addressable coordinate (`kind:pubkey:dTag`) for a
@@ -229,7 +407,8 @@ class RecipeBookmarkRepository(
      * forward the existing list's title/summary/image/cover and ALL unknown tags
      * so web-set cookbook metadata is never clobbered. Returns the new bookmarked
      * state (true = now saved), or the current state unchanged when the event
-     * isn't a recipe or there's no signing key.
+     * isn't a recipe, there's no signing key, or a cold-cache relay check was
+     * inconclusive (rejected write — see [mutateList] and [writeErrors]).
      */
     suspend fun toggle(event: NostrEvent): Boolean {
         val coord = coordinateForEvent(event) ?: return isRecipeBookmarked(event)
@@ -465,6 +644,7 @@ class RecipeBookmarkRepository(
         loadJob?.cancel()
         loadJob = null
         synchronized(listsLock) { listsByDTag.clear() }
+        lastUnconfirmedCheckMs.clear()
         _isLoading.value = false
         _lists.value = emptyList()
         _bookmarkedCoordinates.value = emptySet()
@@ -474,6 +654,17 @@ class RecipeBookmarkRepository(
      * Add/remove [coord] in recipe list [dTag] and publish. [desired] forces
      * presence (true) / absence (false); null toggles based on the current
      * (cache-refreshed) membership. Returns the resulting membership.
+     *
+     * **Cold-cache guard**: when the list is unknown locally (memory AND the
+     * on-device cache), the user's real list may still exist on relays — a
+     * fresh install / new login hits exactly this. Publishing a fresh
+     * replaceable event here would supersede that unfetched copy everywhere
+     * (newest-wins), so the mutation first runs a bounded relay check
+     * ([confirmListOnRelays]): found → that event is the carry-forward base;
+     * confirmed absent → create; inconclusive → the mutation is REJECTED
+     * (nothing signed or published) and [writeErrors] gets a message. Same
+     * class of guard as SocialActionManager's first-follow check and the web's
+     * ensureDefaultList fix.
      */
     private suspend fun mutateList(
         dTag: String,
@@ -485,21 +676,97 @@ class RecipeBookmarkRepository(
         if (signer == null) return isCoordInList(dTag, coord)
         return writeMutex.withLock {
             val author = signer.pubkeyHex
-            val isDefault = dTag == DEFAULT_LIST_DTAG
             // Refresh the carry-forward base from the newest we know (cache included).
-            val base = listEventFor(dTag) ?: cachedListEvent(author, dTag)
-            val nextCoords = LinkedHashSet(base?.let { parseCoordinates(it) } ?: emptySet())
-            val add = desired ?: !nextCoords.contains(coord)
-            val changed = if (add) nextCoords.add(coord) else nextCoords.remove(coord)
-            if (!changed) return@withLock add
-            val tags = buildListTags(base, dTag, isDefault, seedTitleIfNew, nextCoords)
-            val content = base?.content.orEmpty()
-            val signed = signer.signEvent(kind = LIST_KIND, content = content, tags = tags)
-            // Optimistic local apply (created_at is now, so it wins).
-            applyLocal(signed)
-            relayPool.sendToWriteRelays(ClientMessage.event(signed))
-            add
+            var base = listEventFor(dTag) ?: cachedListEvent(author, dTag)
+            var absenceConfirmed = false
+            if (base == null) {
+                when (val check = confirmListOnRelays(author, dTag)) {
+                    is RelayListCheck.Found -> base = check.event
+                    RelayListCheck.ConfirmedAbsent -> absenceConfirmed = true
+                    RelayListCheck.Unconfirmed -> Unit // planMutation rejects below
+                }
+            }
+            when (val plan = planMutation(base, absenceConfirmed, dTag, coord, desired, seedTitleIfNew)) {
+                is MutationPlan.NoOp -> plan.membership
+                MutationPlan.RejectedUnconfirmed -> {
+                    _writeErrors.tryEmit(WRITE_UNCONFIRMED_MESSAGE)
+                    isCoordInList(dTag, coord)
+                }
+                is MutationPlan.Publish -> {
+                    val signed = signer.signEvent(kind = LIST_KIND, content = plan.content, tags = plan.tags)
+                    // Optimistic local apply (created_at is now, so it wins).
+                    applyLocal(signed)
+                    relayPool.sendToWriteRelays(ClientMessage.event(signed))
+                    plan.membership
+                }
+            }
         }
+    }
+
+    /**
+     * Bounded relay lookup of the newest kind-30001 at ([author], [dTag]) — the
+     * first-write guard behind [mutateList]'s cold-cache path. Sends one exact
+     * `#d` REQ to the broadened read union + the user's write relays (the same
+     * targets [queryRecipeLists] trusts), applies streamed recipe lists into
+     * local state, and classifies via [classifyRelayListCheck].
+     *
+     * The newest matching event is tracked even when it isn't a recognized
+     * recipe list: carrying a foreign kind-30001's tags forward preserves them,
+     * where treating it as absent would clobber the event outright. Locally
+     * tombstoned (NIP-09-deleted) versions are skipped so a deleted list isn't
+     * resurrected as a carry-forward base.
+     *
+     * After an Unconfirmed verdict, re-checks within [CONFIRM_RETRY_COOLDOWN_MS]
+     * fail fast — taps queued behind the write mutex while offline shouldn't
+     * each wait out the full timeout.
+     */
+    private suspend fun confirmListOnRelays(author: String, dTag: String): RelayListCheck = withContext(processingContext) {
+        lastUnconfirmedCheckMs[dTag]?.let { last ->
+            if (System.currentTimeMillis() - last < CONFIRM_RETRY_COOLDOWN_MS) {
+                return@withContext RelayListCheck.Unconfirmed
+            }
+        }
+        val subId = "recipe-bm-confirm-${subCounter.getAndIncrement()}"
+        var newest: NostrEvent? = null
+        val collector = scope.launch(processingContext) {
+            relayPool.relayEvents.collect { relayEvent ->
+                if (relayEvent.subscriptionId != subId) return@collect
+                val event = relayEvent.event
+                if (event.kind != LIST_KIND || event.pubkey != author) return@collect
+                if (!hasDTag(event, dTag)) return@collect
+                if (isTombstoned(author, dTag, event.created_at)) return@collect
+                val current = newest
+                if (current == null || event.created_at > current.created_at) newest = event
+                applyEvent(event)
+            }
+        }
+        val filter = Filter(kinds = listOf(LIST_KIND), authors = listOf(author), dTags = listOf(dTag))
+        val req = ClientMessage.req(subId, filter)
+        val targetedRelays = mutableSetOf<String>()
+        for (url in readRelays()) {
+            if (relayPool.sendToRelayOrEphemeral(url, req)) targetedRelays.add(url)
+        }
+        targetedRelays.addAll(outboxRouter.subscribeToUserWriteRelays(subId, author, filter))
+        val expectedEose = targetedRelays.count { relayPool.healthTracker?.isBad(it) != true }
+        var eoseCount = 0
+        try {
+            if (expectedEose > 0) {
+                eoseCount = subManager.awaitEoseCount(subId, expectedCount = expectedEose, timeoutMs = CONFIRM_TIMEOUT_MS)
+                // Grace only after a real EOSE — with none, the timeout already
+                // waited out; more delay can't make the verdict trustworthy.
+                if (eoseCount > 0) delay(EOSE_GRACE_MS)
+            }
+        } finally {
+            collector.cancelAndJoin()
+            subManager.closeSubscription(subId)
+        }
+        val check = classifyRelayListCheck(newest, eoseCount)
+        if (check is RelayListCheck.Unconfirmed) {
+            lastUnconfirmedCheckMs[dTag] = System.currentTimeMillis()
+        } else {
+            lastUnconfirmedCheckMs.remove(dTag)
+        }
+        check
     }
 
     /** Result of [migrateLegacyBookmarks]: coordinates added + whether the run was exhaustive. */
@@ -683,92 +950,6 @@ class RecipeBookmarkRepository(
         if (event.kind != LIST_KIND) return false
         if (hasDTag(event, DEFAULT_LIST_DTAG)) return true
         return event.tags.any { it.size >= 2 && it[0] == "t" && it[1].trim() in RECIPE_T_TAGS }
-    }
-
-    private fun parseCoordinates(event: NostrEvent): Set<String> {
-        return event.tags
-            .asSequence()
-            .filter { it.size >= 2 && it[0] == "a" }
-            .map { it[1].trim() }
-            .filter { it.isNotBlank() }
-            .toCollection(LinkedHashSet())
-    }
-
-    /**
-     * Rebuild list tags from [existing], preserving everything except the `a`
-     * tags (rewritten to [nextCoords]) and the misattributing `client` tag.
-     * Guarantees a `d` tag of [dTag] and a `title` (seeding [seedTitleIfNew] /
-     * "Saved" / the slug when fresh). Named collections ([isDefault] false) are
-     * stamped with the recipe [COLLECTION_TAG] `t` tag when they lack one; the
-     * default list is never given a `t` tag.
-     */
-    /**
-     * A single-value metadata-tag edit applied on republish (PR 3b-iii). A
-     * non-blank [value] sets the tag; a blank/null [value] removes it. Passing
-     * the edit as `null` to [buildListTags] leaves the existing tag untouched
-     * (carried forward) — distinct from `MetaEdit(null)` which removes it.
-     */
-    private class MetaEdit(val value: String?)
-
-    private fun buildListTags(
-        existing: NostrEvent?,
-        dTag: String,
-        isDefault: Boolean,
-        seedTitleIfNew: String?,
-        nextCoords: Set<String>,
-        // PR 3b-iii metadata edits: null = carry the existing tag forward unchanged.
-        newTitle: String? = null,
-        summaryEdit: MetaEdit? = null,
-        coverEdit: MetaEdit? = null,
-    ): List<List<String>> {
-        val tags = mutableListOf<List<String>>()
-        var hasD = false
-        var hasTitle = false
-        var hasRecipeT = false
-        existing?.tags?.forEach { tag ->
-            if (tag.isEmpty()) return@forEach
-            when (tag[0]) {
-                "a" -> Unit // dropped; the full coordinate set is re-added below
-                "client" -> Unit // dropped to avoid misattribution on republish
-                "d" -> {
-                    if (!hasD) {
-                        tags.add(listOf("d", dTag))
-                        hasD = true
-                    }
-                }
-                "title" -> {
-                    if (!hasTitle) {
-                        // A rename replaces the title; otherwise carry it forward.
-                        tags.add(if (newTitle != null) listOf("title", newTitle) else tag.toList())
-                        hasTitle = true
-                    }
-                }
-                // summary/cover are carried forward in place UNLESS an edit is
-                // pending — then the in-loop tag is dropped and the new value
-                // (or nothing, when removed) is appended below.
-                "summary" -> { if (summaryEdit == null) tags.add(tag.toList()) }
-                "cover" -> { if (coverEdit == null) tags.add(tag.toList()) }
-                "t" -> {
-                    // The default Saved list must never carry a recipe `t` tag — the
-                    // web enumerates collections by `#t` and reads Saved by `#d`.
-                    if (!isDefault) {
-                        tags.add(tag.toList())
-                        if (tag.size >= 2 && tag[1].trim() in RECIPE_T_TAGS) hasRecipeT = true
-                    }
-                }
-                else -> tags.add(tag.toList()) // carry forward image/unknown
-            }
-        }
-        if (!hasD) tags.add(0, listOf("d", dTag))
-        if (!hasTitle) {
-            tags.add(listOf("title", newTitle ?: seedTitleIfNew ?: if (isDefault) DEFAULT_LIST_TITLE else dTag))
-        }
-        // Apply pending summary/cover edits (a blank value clears the tag).
-        summaryEdit?.value?.trim()?.takeIf { it.isNotBlank() }?.let { tags.add(listOf("summary", it)) }
-        coverEdit?.value?.trim()?.takeIf { it.isNotBlank() }?.let { tags.add(listOf("cover", it)) }
-        if (!isDefault && !hasRecipeT) tags.add(listOf("t", COLLECTION_TAG))
-        nextCoords.forEach { tags.add(listOf("a", it)) }
-        return tags
     }
 
     private fun listEventFor(dTag: String): NostrEvent? =

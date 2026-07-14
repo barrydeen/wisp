@@ -492,6 +492,8 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     val zapSuccess: SharedFlow<String> = socialActions.zapSuccess
     val zapError: SharedFlow<String> = socialActions.zapError
     val reactionSent: SharedFlow<Unit> = socialActions.reactionSent
+    /** Rejected cold-cache bookmark writes (relay check inconclusive — nothing published). */
+    val recipeBookmarkWriteErrors: SharedFlow<String> = recipeBookmarkRepo.writeErrors
 
     suspend fun payInvoice(bolt11: String): Boolean =
         activeWalletProvider.payInvoice(bolt11).isSuccess
