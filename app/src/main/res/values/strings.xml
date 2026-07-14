@@ -551,8 +551,8 @@
     <string name="lightning_invoice_btn_pay">Pay</string>
     <string name="lightning_invoice_paid">Paid</string>
     <string name="lightning_payment_failed">Payment Failed</string>
-    <string name="lnurl_pay_dialog_title">Pay</string>
     <string name="lnurl_pay_confirm_amount">Pay %d sats?</string>
+    <string name="lnurl_pay_amount_range">Enter an amount between %1$d and %2$d sats</string>
     <string name="lnurl_type_lnurl">LNURL Payment</string>
     <string name="lnurl_type_address">Lightning Address</string>
     <string name="wallet_connect_lightning">Connect a Lightning wallet to send and receive sats. Paste a NWC connection string from your wallet provider.</string>

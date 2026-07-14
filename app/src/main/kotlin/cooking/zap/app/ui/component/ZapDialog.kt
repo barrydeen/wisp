@@ -686,7 +686,7 @@ fun ZapDialog(
 private const val ZAP_SOFT_CONFIRM_SATS = 10_000L
 private const val ZAP_HARD_CAP_SATS = 1_000_000L
 
-private val ThousandsSeparatorTransformation: VisualTransformation = VisualTransformation { text ->
+internal val ThousandsSeparatorTransformation: VisualTransformation = VisualTransformation { text ->
     val raw = text.text
     if (raw.isEmpty()) return@VisualTransformation TransformedText(text, OffsetMapping.Identity)
     val formatted = try { "%,d".format(raw.toLong()) } catch (_: NumberFormatException) { raw }
@@ -711,7 +711,7 @@ private val ThousandsSeparatorTransformation: VisualTransformation = VisualTrans
     TransformedText(AnnotatedString(formatted), mapping)
 }
 
-private fun seedCustomAmount(text: String, set: (TextFieldValue) -> Unit) {
+internal fun seedCustomAmount(text: String, set: (TextFieldValue) -> Unit) {
     set(TextFieldValue(text = text, selection = TextRange(0, text.length)))
 }
 
@@ -738,7 +738,7 @@ private fun PillButton(
 }
 
 @Composable
-private fun PresetPill(
+internal fun PresetPill(
     label: String,
     selected: Boolean,
     accent: Color,
