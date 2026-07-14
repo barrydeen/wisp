@@ -18,6 +18,15 @@ interface NostrSigner {
     suspend fun nip44Decrypt(ciphertext: String, peerPubkeyHex: String): String
 
     /**
+     * NIP-04 decrypt — LEGACY read path only (e.g. web grocery lists written
+     * before nip44 became the write default; detected by the `?iv=` envelope).
+     * The app never nip04-encrypts. Defaults to unsupported so special-purpose
+     * signers don't silently pretend to handle it.
+     */
+    suspend fun nip04Decrypt(ciphertext: String, peerPubkeyHex: String): String =
+        throw UnsupportedOperationException("nip04Decrypt not supported by this signer")
+
+    /**
      * Silent-only variants that NEVER launch an approval UI: they return null instead of falling
      * back to the intent path. Used to retry a background delete-sign once after a rejection
      * without popping the signer app in the user's face. The default delegates to the normal
@@ -76,6 +85,11 @@ class LocalSigner(
         val convKey = Nip44.getConversationKey(privkey, peerPubkeyHex.hexToByteArray())
         return Nip44.decrypt(ciphertext, convKey)
     }
+
+    override suspend fun nip04Decrypt(ciphertext: String, peerPubkeyHex: String): String {
+        val sharedSecret = Nip04.computeSharedSecret(privkey, peerPubkeyHex.hexToByteArray())
+        return Nip04.decrypt(ciphertext, sharedSecret)
+    }
 }
 
 // --- NIP-55 Remote Signer (ContentResolver + Intent fallback) ---
@@ -111,6 +125,11 @@ class RemoteSigner(
     override suspend fun nip44Decrypt(ciphertext: String, peerPubkeyHex: String): String {
         return tryContentResolver("NIP44_DECRYPT", ciphertext, peerPubkeyHex)
             ?: nip44ViaIntent("nip44_decrypt", ciphertext, peerPubkeyHex)
+    }
+
+    override suspend fun nip04Decrypt(ciphertext: String, peerPubkeyHex: String): String {
+        return tryContentResolver("NIP04_DECRYPT", ciphertext, peerPubkeyHex)
+            ?: nip04ViaIntent(ciphertext, peerPubkeyHex)
     }
 
     // Silent-only: ContentResolver path exclusively, no intent fallback. Returns null on any
@@ -196,6 +215,20 @@ class RemoteSigner(
         }
     }
 
+    private suspend fun nip04ViaIntent(data: String, peerPubkeyHex: String): String {
+        val intent = buildSignerIntent("nostrsigner:$data", "nip04_decrypt") {
+            putExtra("pubkey", peerPubkeyHex)
+        }
+        val result = SignerIntentBridge.requestSignWithRetry(intent) {
+            tryContentResolver("NIP04_DECRYPT", data, peerPubkeyHex)
+        }
+        return when (result) {
+            is SignResult.Success -> result.result
+            is SignResult.Rejected -> throw SignerRejectedException("Signer rejected nip04_decrypt")
+            is SignResult.Cancelled -> throw SignerCancelledException("nip04_decrypt cancelled by user")
+        }
+    }
+
     private suspend fun nip44ViaIntent(type: String, data: String, peerPubkeyHex: String): String {
         val crMethod = if (type == "nip44_encrypt") "NIP44_ENCRYPT" else "NIP44_DECRYPT"
         val intent = buildSignerIntent("nostrsigner:$data", type) {
@@ -228,8 +261,14 @@ class RemoteSigner(
  * Helpers for NIP-55 signer discovery and login (intent-based, only used once at login time).
  */
 object RemoteSignerBridge {
-    /** NIP-55 permissions requested at login time for all signing operations used by this app. */
-    const val DEFAULT_PERMISSIONS = """[{"type":"sign_event","kind":0},{"type":"sign_event","kind":1},{"type":"sign_event","kind":3},{"type":"sign_event","kind":5},{"type":"sign_event","kind":6},{"type":"sign_event","kind":7},{"type":"sign_event","kind":9734},{"type":"sign_event","kind":10000},{"type":"sign_event","kind":10002},{"type":"sign_event","kind":22242},{"type":"sign_event","kind":27235},{"type":"sign_event","kind":30000},{"type":"sign_event","kind":30023},{"type":"nip44_encrypt"},{"type":"nip44_decrypt"}]"""
+    /**
+     * NIP-55 permissions requested at login time for all signing operations used by this app.
+     * Kind 30078 (grocery — arc PR 3) and nip04_decrypt (legacy grocery reads) only apply to
+     * NEW pairings — an existing Amber pairing keeps its original grant and prompts on first
+     * use (or the user re-pairs). NOTE (pre-existing gap, not fixed here): kind 30001 (recipe
+     * lists) has never been in this list, so bookmark saves via Amber already prompt today.
+     */
+    const val DEFAULT_PERMISSIONS = """[{"type":"sign_event","kind":0},{"type":"sign_event","kind":1},{"type":"sign_event","kind":3},{"type":"sign_event","kind":5},{"type":"sign_event","kind":6},{"type":"sign_event","kind":7},{"type":"sign_event","kind":9734},{"type":"sign_event","kind":10000},{"type":"sign_event","kind":10002},{"type":"sign_event","kind":22242},{"type":"sign_event","kind":27235},{"type":"sign_event","kind":30000},{"type":"sign_event","kind":30023},{"type":"sign_event","kind":30078},{"type":"nip44_encrypt"},{"type":"nip44_decrypt"},{"type":"nip04_decrypt"}]"""
 
     fun isSignerAvailable(context: Context): Boolean {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse("nostrsigner:"))
