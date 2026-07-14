@@ -87,7 +87,7 @@ fun OnboardingSaveRecipesScreen(
                 )
                 Spacer(Modifier.size(6.dp))
                 Text(
-                    text = "Tap the bookmark to save it to My Recipes.",
+                    text = "Tap the bookmark to save it to My Kitchen.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -101,7 +101,7 @@ fun OnboardingSaveRecipesScreen(
                 }
             } else if (recipes.isEmpty()) {
                 Text(
-                    text = "Couldn't load recipes right now — you can save some from My Recipes later.",
+                    text = "Couldn't load recipes right now — you can save some from My Kitchen later.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -181,7 +181,7 @@ private fun SaveableRecipeTile(
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = if (isSaved) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-                    contentDescription = if (isSaved) "Saved to My Recipes" else "Save to My Recipes",
+                    contentDescription = if (isSaved) "Saved to My Kitchen" else "Save to My Kitchen",
                     tint = if (isSaved) MaterialTheme.colorScheme.primary else Color.White,
                     modifier = Modifier.size(20.dp)
                 )

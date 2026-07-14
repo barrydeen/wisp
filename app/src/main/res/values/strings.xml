@@ -272,7 +272,7 @@
     <string name="tab_bad">Bad</string>
     <string name="tab_recipes">Recipes</string>
     <string name="tab_packs">Packs</string>
-    <string name="tab_cookbook">My Recipes</string>
+    <string name="tab_cookbook">My Kitchen</string>
     <string name="cookbook_tab_my_recipes">Published</string>
     <string name="tab_discover">Discover</string>
     <string name="tab_mine">Mine</string>
