@@ -132,6 +132,33 @@ class GroceryRepositoryLogicTest {
         assertEquals(setOf("wss://pantry.zap.cooking"), GroceryRepository.WRITE_EXCLUDE)
     }
 
+    @Test
+    fun writeTargets_excludeMatchesUrlVariants_caseAndTrailingSlash() {
+        // A pool entry stored with different casing or a trailing slash must not
+        // dodge the exclusion — a member's personal event WOULD be accepted by
+        // pantry, so a variant slipping through is a real leak, not a no-op.
+        val pool = listOf(
+            "wss://nos.lol",
+            "wss://PANTRY.zap.cooking",
+            "wss://pantry.zap.cooking/",
+            " wss://pantry.zap.cooking ",
+        )
+        val targets = GroceryRepository.writeTargets(pool, GroceryRepository.WRITE_EXCLUDE)
+        assertEquals(listOf("wss://nos.lol"), targets)
+    }
+
+    @Test
+    fun supersedes_matchesNip01ReplaceableRules() {
+        // Newer created_at always wins, regardless of id ordering.
+        assertTrue(GroceryRepository.supersedes(200, "ff", 100, "00"))
+        assertFalse(GroceryRepository.supersedes(100, "00", 200, "ff"))
+        // Same created_at: LOWEST id wins (NIP-01 tie-break) — the version the
+        // relay retains must be the version we keep locally.
+        assertTrue(GroceryRepository.supersedes(100, "0a", 100, "0b"))
+        assertFalse(GroceryRepository.supersedes(100, "0b", 100, "0a"))
+        assertFalse(GroceryRepository.supersedes(100, "0a", 100, "0a"))
+    }
+
     // ---- debounce coalescing (virtual time) --------------------------------
 
     @Test

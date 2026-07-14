@@ -83,6 +83,13 @@ data class RelayConfig(
         private val IP_HOST_REGEX = Regex("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$")
 
         /**
+         * Canonical form for URL EQUALITY checks (exclusion sets, dedupe): trims,
+         * drops trailing slashes, lowercases. Comparison only — don't store or
+         * connect with this (it also lowercases any path segment).
+         */
+        fun normalizeForCompare(url: String): String = url.trim().trimEnd('/').lowercase()
+
+        /**
          * Structural URL validation — can this URL be stored in a relay list?
          * Rejects: non-wss schemes, localhost, IP addresses, URLs with ports.
          */

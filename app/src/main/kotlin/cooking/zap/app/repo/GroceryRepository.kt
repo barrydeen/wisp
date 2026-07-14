@@ -80,11 +80,24 @@ class GroceryRepository(
 
         /**
          * Pure write-target computation (tested): the pool's write relays minus
-         * [exclude]. Returned for visibility/tests; the actual send filters the
-         * live pool the same way inside [RelayPool.sendToWriteRelaysExcluding].
+         * [exclude], compared via [RelayConfig.normalizeForCompare] so casing /
+         * trailing-slash variants can't dodge the filter. Returned for
+         * visibility/tests; the actual send filters the live pool the same way
+         * inside [RelayPool.sendToWriteRelaysExcluding].
          */
-        fun writeTargets(poolWriteUrls: List<String>, exclude: Set<String>): List<String> =
-            poolWriteUrls.filterNot { it in exclude }
+        fun writeTargets(poolWriteUrls: List<String>, exclude: Set<String>): List<String> {
+            val excludeNormalized = exclude.mapTo(HashSet()) { RelayConfig.normalizeForCompare(it) }
+            return poolWriteUrls.filterNot { RelayConfig.normalizeForCompare(it) in excludeNormalized }
+        }
+
+        /**
+         * NIP-01 replaceable supersession (tested): newer `created_at` wins;
+         * same-`created_at` ties keep the LOWEST event id — matching what
+         * relays retain, so local state can't diverge from relay state.
+         */
+        fun supersedes(candidateCreatedAt: Long, candidateId: String, incumbentCreatedAt: Long, incumbentId: String): Boolean =
+            candidateCreatedAt > incumbentCreatedAt ||
+                (candidateCreatedAt == incumbentCreatedAt && candidateId < incumbentId)
     }
 
     /** Outcome of a publish attempt, surfaced for the UI (investigation gap 4). */
@@ -187,7 +200,7 @@ class GroceryRepository(
         for (url in readRelays()) {
             if (relayPool.sendToRelayOrEphemeral(url, req)) targeted.add(url)
         }
-        targeted.addAll(outboxRouter.subscribeToUserWriteRelays(subId, author, filter))
+        targeted.addAll(outboxRouter.subscribeToUserWriteRelays(subId, author, filter, exclude = WRITE_EXCLUDE))
         val expectedEose = targeted.count { relayPool.healthTracker?.isBad(it) != true }
         try {
             if (expectedEose > 0) {
@@ -207,7 +220,11 @@ class GroceryRepository(
     /**
      * Decrypt a batch, keeping the newest event per d-tag first (replaceable —
      * relays may return several versions), skipping per-list failures. Routes
-     * through the session decrypt gate.
+     * through the session decrypt gate. Same-`created_at` ties break to the
+     * LOWEST event id — the NIP-01 supersession rule — so the version we keep
+     * matches the one relays retain (our own writes can't tie thanks to
+     * [GroceryMutations.stampForPublish], but older clients / cross-device
+     * races can).
      */
     private suspend fun decryptNewestPerDTag(
         events: Collection<NostrEvent>,
@@ -217,7 +234,9 @@ class GroceryRepository(
         for (event in events) {
             val id = GroceryEvents.listIdFrom(event) ?: continue
             val existing = newestByDTag[id]
-            if (existing == null || event.created_at > existing.created_at) newestByDTag[id] = event
+            if (existing == null || supersedes(event.created_at, event.id, existing.created_at, existing.id)) {
+                newestByDTag[id] = event
+            }
         }
         return newestByDTag.values.mapNotNull { event ->
             GroceryEvents.decryptListEvent(event, signer, decryptGate)
@@ -339,12 +358,13 @@ class GroceryRepository(
 
     private fun readRelays(): List<String> {
         val bad = relayPool.healthTracker?.getBadRelays().orEmpty()
+        val excludeNormalized = WRITE_EXCLUDE.mapTo(HashSet()) { RelayConfig.normalizeForCompare(it) }
         val union = LinkedHashSet<String>()
         fun add(url: String) {
             val normalized = url.trim().trimEnd('/')
             if (normalized.isBlank() || normalized in bad) return
             // Never read grocery from the members relay (symmetry with the write exclusion).
-            if (normalized in WRITE_EXCLUDE) return
+            if (RelayConfig.normalizeForCompare(normalized) in excludeNormalized) return
             union.add(normalized)
         }
         RelayConfig.DEFAULTS.filter { it.read }.forEach { add(it.url) }

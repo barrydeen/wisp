@@ -51,8 +51,12 @@ class GroceryListViewModel : ViewModel() {
 
     /**
      * Wire this VM to [repo]. [canWriteProvider] reports whether the active
-     * account can sign (false for READ_ONLY) — read live so an account switch is
-     * reflected. Collectors are wired exactly once; re-binding refreshes refs.
+     * account can sign (false for READ_ONLY); it is re-read on [bind] and
+     * [load] — the UI calls [load] when the section opens, which is also when
+     * an account switch becomes visible. Collectors are wired exactly once, to
+     * the FIRST-bound repo: the app has a single [GroceryRepository] instance
+     * (owned by FeedViewModel), so later binds only refresh the mutation
+     * target/provider refs and must pass that same instance.
      */
     fun bind(repo: GroceryRepository, canWriteProvider: () -> Boolean) {
         this.repo = repo

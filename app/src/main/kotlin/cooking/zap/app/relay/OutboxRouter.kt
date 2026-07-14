@@ -257,13 +257,27 @@ class OutboxRouter(
      * Subscribe to a specific user's content via their write relays.
      * Falls back to general relays when no write relays are known.
      */
-    fun subscribeToUserWriteRelays(subId: String, pubkey: String, filter: Filter): Set<String> {
+    /**
+     * [exclude] skips relays (compared via [RelayConfig.normalizeForCompare]) in
+     * both the targeted and fallback paths — e.g. grocery/planner reads must not
+     * REQ the members relay: those kinds are never written there and pantry
+     * answers with a NIP-42 CLOSED instead of an EOSE, stalling EOSE-counted waits.
+     */
+    fun subscribeToUserWriteRelays(
+        subId: String,
+        pubkey: String,
+        filter: Filter,
+        exclude: Set<String> = emptySet(),
+    ): Set<String> {
+        val excludeNormalized = exclude.mapTo(HashSet()) { RelayConfig.normalizeForCompare(it) }
+        fun excluded(url: String) = RelayConfig.normalizeForCompare(url) in excludeNormalized
         val targetedRelays = mutableSetOf<String>()
         val writeRelays = relayListRepo.getWriteRelays(pubkey)
 
         if (writeRelays != null) {
             val msg = ClientMessage.req(subId, filter)
             for (url in writeRelays) {
+                if (excluded(url)) continue
                 if (relayPool.sendToRelayOrEphemeral(url, msg)) {
                     targetedRelays.add(url)
                 }
@@ -273,8 +287,15 @@ class OutboxRouter(
         // Fallback: if still no targeted relays found, send to all general relays
         if (targetedRelays.isEmpty()) {
             val msg = ClientMessage.req(subId, filter)
-            relayPool.sendToAll(msg)
-            targetedRelays.addAll(relayPool.getRelayUrls())
+            if (excludeNormalized.isEmpty()) {
+                relayPool.sendToAll(msg)
+                targetedRelays.addAll(relayPool.getRelayUrls())
+            } else {
+                for (url in relayPool.getRelayUrls()) {
+                    if (excluded(url)) continue
+                    if (relayPool.sendToRelayOrEphemeral(url, msg)) targetedRelays.add(url)
+                }
+            }
         }
 
         return targetedRelays
