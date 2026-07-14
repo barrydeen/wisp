@@ -145,11 +145,15 @@ object GroceryEvents {
     /**
      * Build + sign a grocery-list event: NIP-44 self-encrypt the payload, then
      * sign with the contract tag set. Always writes nip44 (web parity — nip04 is
-     * a legacy read path only). Timestamps in [list] are the caller's concern.
+     * a legacy read path only). Timestamps in [list] are the caller's concern;
+     * the event's `created_at` is pinned to `list.updatedAt` so replaceable
+     * supersession on relays follows the caller's (monotonic) stamp rather than
+     * wall-clock ties (NIP-01 same-second tie-break keeps the LOWEST id — two
+     * same-second publishes would otherwise coin-flip which version survives).
      */
     suspend fun createListEvent(signer: NostrSigner, list: GroceryList): NostrEvent {
         val encrypted = signer.nip44Encrypt(encodePayload(list), signer.pubkeyHex)
-        return signer.signEvent(kind = KIND, content = encrypted, tags = buildTags(list))
+        return signer.signEvent(kind = KIND, content = encrypted, tags = buildTags(list), createdAt = list.updatedAt)
     }
 
     // ---- read side ----------------------------------------------------------
@@ -236,11 +240,12 @@ object GroceryEvents {
         signer: NostrSigner,
         listId: String,
         eventId: String? = null,
+        createdAt: Long = System.currentTimeMillis() / 1000,
     ): NostrEvent {
         val tags = Nip09
             .buildAddressableDeletionTags(KIND, signer.pubkeyHex, dTagFor(listId))
             .toMutableList()
         if (eventId != null) tags.add(listOf("e", eventId))
-        return signer.signEvent(kind = 5, content = "Deleted grocery list", tags = tags)
+        return signer.signEvent(kind = 5, content = "Deleted grocery list", tags = tags, createdAt = createdAt)
     }
 }

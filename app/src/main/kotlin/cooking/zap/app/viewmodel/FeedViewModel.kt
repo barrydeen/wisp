@@ -338,6 +338,22 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         signerProvider = { signer },
     )
 
+    /**
+     * Encrypted grocery lists (kind 30078, NIP-44 self-encrypted) — My Kitchen
+     * hub Grocery section. Writes exclude the members relay (see the repo doc).
+     */
+    val groceryRepo = cooking.zap.app.repo.GroceryRepository(
+        relayPool = relayPool,
+        outboxRouter = outboxRouter,
+        eventRepo = eventRepo,
+        subManager = subManager,
+        scope = viewModelScope,
+        processingContext = processingDispatcher,
+        userReadRelaysProvider = { pubkeyHex?.let { relayListRepo.getReadRelays(it) } ?: emptyList() },
+        userPubkeyProvider = { getUserPubkey() },
+        signerProvider = { signer },
+    )
+
     /** zap.cooking backend client (membership today; Phase 2 AI endpoints). */
     val zapCookingApi = cooking.zap.app.api.ZapCookingApi()
 
@@ -536,6 +552,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         groupRepo.clear()
         liveStreamRepo.clear()
         recipeBookmarkRepo.reset()
+        groceryRepo.reset()
     }
     fun reloadForNewAccount() {
         // NIP-98 headers are identity assertions — never let a cached one
