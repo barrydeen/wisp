@@ -117,7 +117,7 @@ private enum class CookbookSubTab(val requiresAccount: Boolean) {
     SAVED(true),
     MY_RECIPES(true),
     GROCERY(true), // real since PR 5 — lists are personal + encrypted
-    PLANNER(false),
+    PLANNER(true), // real since PR 8 — plans are personal + encrypted
     NOURISH(false),
 }
 
@@ -134,6 +134,8 @@ fun RecipeFeedScreen(
     packsViewModel: RecipePacksViewModel,
     cookbookViewModel: CookbookViewModel,
     groceryViewModel: GroceryListViewModel,
+    plannerViewModel: cooking.zap.app.viewmodel.PlannerViewModel,
+    recipeRepo: cooking.zap.app.repo.RecipeRepository,
     eventRepo: EventRepository,
     userPubkey: String?,
     onRecipeClick: (author: String, dTag: String) -> Unit,
@@ -157,9 +159,13 @@ fun RecipeFeedScreen(
     // Kitchen pill with the Saved section and consume via the callback.
     openMyKitchenRequest: Boolean = false,
     onOpenMyKitchenConsumed: () -> Unit = {},
-    // DEBUG-only PR 7 planner stop-gate (long-press Planner teaser).
+    // DEBUG-only PR 7 planner stop-gate (long-press Planner week header).
     debugSigner: cooking.zap.app.nostr.NostrSigner? = null,
     debugPlannerVm: cooking.zap.app.viewmodel.PlannerViewModel? = null,
+    // DEBUG-only (PR 8): plant / clean up an undecryptable meal-plan event to
+    // exercise the DecryptFailed week state.
+    debugPlantPlan: (() -> Unit)? = null,
+    debugCleanupPlan: (() -> Unit)? = null,
 ) {
     val recipes by viewModel.recipes.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -299,6 +305,8 @@ fun RecipeFeedScreen(
                     CookbookSection(
                         viewModel = cookbookViewModel,
                         groceryViewModel = groceryViewModel,
+                        plannerViewModel = plannerViewModel,
+                        recipeRepo = recipeRepo,
                         userPubkey = userPubkey,
                         subTab = cookbookSubTab,
                         onSubTabChange = { cookbookSubTab = it },
@@ -308,6 +316,8 @@ fun RecipeFeedScreen(
                         onNourish = onNourish,
                         debugSigner = debugSigner,
                         debugPlannerVm = debugPlannerVm,
+                        debugPlantPlan = debugPlantPlan,
+                        debugCleanupPlan = debugCleanupPlan,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(top = topInset),
@@ -647,6 +657,8 @@ private fun RecipePacksSection(
 private fun CookbookSection(
     viewModel: CookbookViewModel,
     groceryViewModel: GroceryListViewModel,
+    plannerViewModel: cooking.zap.app.viewmodel.PlannerViewModel,
+    recipeRepo: cooking.zap.app.repo.RecipeRepository,
     userPubkey: String?,
     subTab: CookbookSubTab,
     onSubTabChange: (CookbookSubTab) -> Unit,
@@ -656,6 +668,8 @@ private fun CookbookSection(
     onNourish: () -> Unit,
     debugSigner: cooking.zap.app.nostr.NostrSigner? = null,
     debugPlannerVm: cooking.zap.app.viewmodel.PlannerViewModel? = null,
+    debugPlantPlan: (() -> Unit)? = null,
+    debugCleanupPlan: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val lists by viewModel.lists.collectAsState()
@@ -831,16 +845,31 @@ private fun CookbookSection(
                     )
                 }
             }
-            // Teaser-only until arc PR 8 — deliberately no buttons: a teaser
-            // must not ship an affordance that does nothing.
-            CookbookSubTab.PLANNER -> ComingSoonSection(
-                emoji = "📅",
-                title = stringResource(R.string.cookbook_planner_teaser_title),
-                body = stringResource(R.string.cookbook_planner_teaser_body),
-                onLongPress = if (cooking.zap.app.BuildConfig.DEBUG) {
-                    { showPlannerStopGate = true }
-                } else null,
-            )
+            CookbookSubTab.PLANNER -> {
+                // Personal + NIP-44 encrypted — same account/READ_ONLY gate as
+                // grocery: signed-out and read-only-account both get the notice.
+                if (!canManage) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = stringResource(R.string.cookbook_sign_in),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    LaunchedEffect(userPubkey) { plannerViewModel.load() }
+                    PlannerSection(
+                        viewModel = plannerViewModel,
+                        recipeRepo = recipeRepo,
+                        // DEBUG stop-gate harness moves from the (now-gone) teaser
+                        // long-press to the week-range header long-press.
+                        onDebugLongPress = if (cooking.zap.app.BuildConfig.DEBUG) {
+                            { showPlannerStopGate = true }
+                        } else null,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
 
             // Entry card only — the explore UI stays on its own route.
             CookbookSubTab.NOURISH -> NourishEntrySection(onNourish = onNourish)
@@ -858,6 +887,8 @@ private fun CookbookSection(
         cooking.zap.app.debug.PlannerStopGateDialog(
             signer = debugSigner,
             plannerVm = debugPlannerVm,
+            onPlantUndecryptable = debugPlantPlan,
+            onCleanupPlanted = debugCleanupPlan,
             onDismiss = { showPlannerStopGate = false },
         )
     }

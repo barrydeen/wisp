@@ -1038,6 +1038,26 @@ fun WispNavHost(
         }
     }
 
+    // Global surface for meal-plan publish failures — same discipline as grocery
+    // ("sent to 0 relays" is visible; the debounced save may land after the user
+    // has navigated away from the planner section).
+    LaunchedEffect(feedViewModel) {
+        feedViewModel.plannerRepo.writeResults.collect { result ->
+            val message = when (result) {
+                is cooking.zap.app.repo.PlannerRepository.WriteResult.NoRelays ->
+                    context.getString(R.string.planner_error_no_relays)
+                is cooking.zap.app.repo.PlannerRepository.WriteResult.SignerMissing ->
+                    context.getString(R.string.planner_error_signer_missing)
+                is cooking.zap.app.repo.PlannerRepository.WriteResult.SignerError ->
+                    context.getString(R.string.planner_error_signer, result.message)
+                is cooking.zap.app.repo.PlannerRepository.WriteResult.Ok -> null
+            }
+            if (message != null) {
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
@@ -3293,6 +3313,27 @@ fun WispNavHost(
             val cookbookViewModel: CookbookViewModel = viewModel()
             val plannerViewModel: cooking.zap.app.viewmodel.PlannerViewModel = viewModel()
             val plannerPubkey = feedViewModel.getUserPubkey()
+            // DEBUG-only: plant / clean up an undecryptable meal-plan event so
+            // the PR 8 DecryptFailed week state can be exercised on-device.
+            val plannerDebugScope = rememberCoroutineScope()
+            val debugPlantPlan: (() -> Unit)? = if (cooking.zap.app.BuildConfig.DEBUG) {
+                {
+                    feedViewModel.signer?.let { s ->
+                        cooking.zap.app.debug.PlannerStopGateHarness.plantUndecryptable(
+                            s, feedViewModel.relayPool, feedViewModel.eventRepo, plannerViewModel, plannerDebugScope,
+                        )
+                    }
+                }
+            } else null
+            val debugCleanupPlan: (() -> Unit)? = if (cooking.zap.app.BuildConfig.DEBUG) {
+                {
+                    feedViewModel.signer?.let { s ->
+                        cooking.zap.app.debug.PlannerStopGateHarness.cleanupPlanted(
+                            s, feedViewModel.relayPool, feedViewModel.eventRepo, plannerViewModel, plannerDebugScope,
+                        )
+                    }
+                }
+            } else null
             LaunchedEffect(Unit) { recipeFeedViewModel.load(feedViewModel.recipeRepo) }
             LaunchedEffect(Unit) {
                 recipePacksViewModel.load(feedViewModel.recipePackRepo) { feedViewModel.getUserPubkey() }
@@ -3327,6 +3368,8 @@ fun WispNavHost(
                 packsViewModel = recipePacksViewModel,
                 cookbookViewModel = cookbookViewModel,
                 groceryViewModel = groceryListViewModel,
+                plannerViewModel = plannerViewModel,
+                recipeRepo = feedViewModel.recipeRepo,
                 eventRepo = feedViewModel.eventRepo,
                 userPubkey = plannerPubkey,
                 onRecipeClick = { author, dTag -> navController.navigate(Routes.recipe(author, dTag)) },
@@ -3355,6 +3398,8 @@ fun WispNavHost(
                 onOpenMyKitchenConsumed = { feedViewModel.consumeOpenMyKitchen() },
                 debugSigner = if (cooking.zap.app.BuildConfig.DEBUG) activeSigner else null,
                 debugPlannerVm = if (cooking.zap.app.BuildConfig.DEBUG) plannerViewModel else null,
+                debugPlantPlan = debugPlantPlan,
+                debugCleanupPlan = debugCleanupPlan,
             )
         }
 

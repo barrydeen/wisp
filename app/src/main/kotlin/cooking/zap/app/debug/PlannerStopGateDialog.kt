@@ -22,6 +22,8 @@ import cooking.zap.app.viewmodel.PlannerViewModel
 fun PlannerStopGateDialog(
     signer: NostrSigner?,
     plannerVm: PlannerViewModel?,
+    onPlantUndecryptable: (() -> Unit)? = null,
+    onCleanupPlanted: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -53,6 +55,16 @@ fun PlannerStopGateDialog(
                     enabled = plannerVm != null,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 ) { Text("3. Save week + reload smoke") }
+                Button(
+                    onClick = { onPlantUndecryptable?.invoke() },
+                    enabled = onPlantUndecryptable != null,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                ) { Text("4. Plant undecryptable (current week)") }
+                Button(
+                    onClick = { onCleanupPlanted?.invoke() },
+                    enabled = onCleanupPlanted != null,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                ) { Text("5. Clean up planted event") }
             }
         },
         confirmButton = {
