@@ -165,6 +165,7 @@ fun RecipeFeedScreen(
     // DEBUG-only (PR 8): plant / clean up an undecryptable meal-plan event to
     // exercise the DecryptFailed week state.
     debugPlantPlan: (() -> Unit)? = null,
+    debugPlantReadOnlyPlan: (() -> Unit)? = null,
     debugCleanupPlan: (() -> Unit)? = null,
 ) {
     val recipes by viewModel.recipes.collectAsState()
@@ -317,6 +318,7 @@ fun RecipeFeedScreen(
                         debugSigner = debugSigner,
                         debugPlannerVm = debugPlannerVm,
                         debugPlantPlan = debugPlantPlan,
+                        debugPlantReadOnlyPlan = debugPlantReadOnlyPlan,
                         debugCleanupPlan = debugCleanupPlan,
                         modifier = Modifier
                             .fillMaxSize()
@@ -669,6 +671,7 @@ private fun CookbookSection(
     debugSigner: cooking.zap.app.nostr.NostrSigner? = null,
     debugPlannerVm: cooking.zap.app.viewmodel.PlannerViewModel? = null,
     debugPlantPlan: (() -> Unit)? = null,
+    debugPlantReadOnlyPlan: (() -> Unit)? = null,
     debugCleanupPlan: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -888,6 +891,7 @@ private fun CookbookSection(
             signer = debugSigner,
             plannerVm = debugPlannerVm,
             onPlantUndecryptable = debugPlantPlan,
+            onPlantReadOnly = debugPlantReadOnlyPlan,
             onCleanupPlanted = debugCleanupPlan,
             onDismiss = { showPlannerStopGate = false },
         )

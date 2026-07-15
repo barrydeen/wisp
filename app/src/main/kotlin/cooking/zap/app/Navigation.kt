@@ -3325,6 +3325,15 @@ fun WispNavHost(
                     }
                 }
             } else null
+            val debugPlantReadOnlyPlan: (() -> Unit)? = if (cooking.zap.app.BuildConfig.DEBUG) {
+                {
+                    feedViewModel.signer?.let { s ->
+                        cooking.zap.app.debug.PlannerStopGateHarness.plantReadOnly(
+                            s, feedViewModel.relayPool, feedViewModel.eventRepo, plannerViewModel, plannerDebugScope,
+                        )
+                    }
+                }
+            } else null
             val debugCleanupPlan: (() -> Unit)? = if (cooking.zap.app.BuildConfig.DEBUG) {
                 {
                     feedViewModel.signer?.let { s ->
@@ -3399,6 +3408,7 @@ fun WispNavHost(
                 debugSigner = if (cooking.zap.app.BuildConfig.DEBUG) activeSigner else null,
                 debugPlannerVm = if (cooking.zap.app.BuildConfig.DEBUG) plannerViewModel else null,
                 debugPlantPlan = debugPlantPlan,
+                debugPlantReadOnlyPlan = debugPlantReadOnlyPlan,
                 debugCleanupPlan = debugCleanupPlan,
             )
         }

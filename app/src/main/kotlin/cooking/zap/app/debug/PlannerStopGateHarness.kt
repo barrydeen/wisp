@@ -148,7 +148,49 @@ object PlannerStopGateHarness {
         }
     }
 
-    /** Undo [plantUndecryptable]: NIP-09 delete stamped past the planted event, then refresh. */
+    /**
+     * Plant a VALID but schemaVersion-2 plan for the current week so the week
+     * view renders Loaded(readOnly=true) — banner + disabled editing. Encrypted
+     * to self (decrypts fine), so the read-only comes from the schema version,
+     * not a crypto failure. Reversible via [cleanupPlanted].
+     */
+    fun plantReadOnly(
+        signer: NostrSigner,
+        relayPool: RelayPool,
+        eventRepo: EventRepository,
+        vm: PlannerViewModel,
+        scope: CoroutineScope,
+    ) {
+        scope.launch(Dispatchers.Default) {
+            try {
+                val week = vm.currentWeekId.value
+                val stamp = System.currentTimeMillis() / 1000 + 300
+                val payload = """{"schemaVersion":2,"week":"$week","days":{"mon":{"slots":{"dinner":{"type":"text","text":"From a newer app"}}}},"createdAt":$stamp,"updatedAt":$stamp}"""
+                val content = signer.nip44Encrypt(payload, signer.pubkeyHex)
+                val event = signer.signEvent(
+                    kind = MealPlanEvents.KIND,
+                    content = content,
+                    tags = MealPlanEvents.buildTags(week),
+                    createdAt = stamp,
+                )
+                eventRepo.cacheEvent(event)
+                val count = relayPool.sendToWriteRelaysExcluding(
+                    ClientMessage.event(event), PlannerRepository.WRITE_EXCLUDE,
+                )
+                plantedWeek = week
+                plantedEventId = event.id
+                plantedStamp = stamp
+                Log.i(TAG, "planted read-only(v2) week=$week id=${event.id.take(8)} relays=$count")
+                vm.refresh()
+                delay(4_000)
+                Log.i(TAG, "after read-only plant, state=${vm.weeks.value[week]} (expect Loaded readOnly=true)")
+            } catch (e: Exception) {
+                Log.e(TAG, "plant read-only FAILED: ${e.message}", e)
+            }
+        }
+    }
+
+    /** Undo [plantUndecryptable]/[plantReadOnly]: NIP-09 delete stamped past the planted event, then refresh. */
     fun cleanupPlanted(
         signer: NostrSigner,
         relayPool: RelayPool,
