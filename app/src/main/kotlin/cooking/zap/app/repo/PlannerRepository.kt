@@ -25,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.CoroutineContext
 
@@ -87,7 +88,7 @@ class PlannerRepository(
     private val writeMutex = Mutex()
 
     /** Last monotonic publish stamp per weekId — deletions must exceed this. */
-    private val lastPublishStamp = HashMap<String, Long>()
+    private val lastPublishStamp = ConcurrentHashMap<String, Long>()
 
     @Volatile private var decryptGate = SignerDecryptGate()
 
@@ -222,9 +223,9 @@ class PlannerRepository(
     suspend fun deleteMealPlan(weekId: String, lastKnownUpdatedAt: Long = 0L): WriteResult {
         val signer = signerProvider() ?: return WriteResult.SignerMissing(weekId)
         val eventId = latestEventIdFor(signer.pubkeyHex, weekId)
-        val prior = maxOf(lastKnownUpdatedAt, lastPublishStamp[weekId] ?: 0L)
-        val deleteStamp = maxOf(nowSeconds(), prior + 1)
         return writeMutex.withLock {
+            val prior = maxOf(lastKnownUpdatedAt, lastPublishStamp[weekId] ?: 0L)
+            val deleteStamp = maxOf(nowSeconds(), prior + 1)
             try {
                 val deletion = MealPlanEvents.createDeletionEvent(
                     signer, weekId, eventId, createdAt = deleteStamp,
@@ -256,7 +257,7 @@ class PlannerRepository(
     /** Logout / account switch: reset the decrypt gate and publish stamps. */
     fun reset() {
         decryptGate = SignerDecryptGate()
-        synchronized(lastPublishStamp) { lastPublishStamp.clear() }
+        lastPublishStamp.clear()
     }
 
     private fun nowSeconds(): Long = System.currentTimeMillis() / 1000

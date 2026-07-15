@@ -89,6 +89,7 @@ import cooking.zap.app.ui.screen.BookmarkSetScreen
 import cooking.zap.app.ui.screen.ArticleScreen
 import cooking.zap.app.ui.screen.RecipeDetailScreen
 import cooking.zap.app.ui.screen.RecipeComposeScreen
+import cooking.zap.app.ui.screen.GroceryListDetailScreen
 import cooking.zap.app.ui.screen.RecipeFeedScreen
 import cooking.zap.app.ui.screen.RecipePackDetailScreen
 import cooking.zap.app.ui.screen.RecipeTagFeedScreen
@@ -223,6 +224,7 @@ object Routes {
     const val RECIPE_DETAIL = "recipe/{author}/{dTag}"
     const val RECIPE_PACK_DETAIL = "recipe_pack/{author}/{dTag}"
     const val RECIPE_COLLECTION = "recipe_collection/{dTag}"
+    const val GROCERY_LIST = "grocery_list/{listId}"
     const val RECIPE_TAG_FEED = "recipe_tag/{tag}"
     const val RECIPES = "recipes"
     const val NOURISH = "nourish"
@@ -249,6 +251,10 @@ object Routes {
     /** Build a cookbook-collection detail route (the user's own kind-30001 list). */
     fun recipeCollection(dTag: String): String =
         "recipe_collection/${java.net.URLEncoder.encode(dTag, "UTF-8")}"
+
+    /** Build a grocery-list detail route (the user's own encrypted 30078 list). */
+    fun groceryList(listId: String): String =
+        "grocery_list/${java.net.URLEncoder.encode(listId, "UTF-8")}"
 
     /** Build a recipe-by-tag feed route, URL-encoding the slug-like tag. */
     fun recipeTag(tag: String): String =
@@ -1009,6 +1015,26 @@ fun WispNavHost(
     LaunchedEffect(feedViewModel) {
         feedViewModel.recipeBookmarkWriteErrors.collect { message ->
             android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Global surface for grocery publish failures (arc discipline: "sent to 0
+    // relays" is a visible state, never silence). Global because the debounced
+    // save can complete after the user has already left the grocery screens.
+    LaunchedEffect(feedViewModel) {
+        feedViewModel.groceryRepo.writeResults.collect { result ->
+            val message = when (result) {
+                is cooking.zap.app.repo.GroceryRepository.WriteResult.NoRelays ->
+                    context.getString(R.string.grocery_error_no_relays)
+                is cooking.zap.app.repo.GroceryRepository.WriteResult.SignerMissing ->
+                    context.getString(R.string.grocery_error_signer_missing)
+                is cooking.zap.app.repo.GroceryRepository.WriteResult.SignerError ->
+                    context.getString(R.string.grocery_error_signer, result.message)
+                is cooking.zap.app.repo.GroceryRepository.WriteResult.Ok -> null
+            }
+            if (message != null) {
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -3284,6 +3310,12 @@ fun WispNavHost(
                     accountKey = plannerPubkey,
                 )
             }
+            val groceryListViewModel: cooking.zap.app.viewmodel.GroceryListViewModel = viewModel()
+            // Bound in composition (remember, not LaunchedEffect) so the VM is
+            // wired before GrocerySection first collects from it.
+            remember(groceryListViewModel) {
+                groceryListViewModel.bind(feedViewModel.groceryRepo) { feedViewModel.signer != null }
+            }
             // Avatar for the nav icon — mirrors the Feed tab's avatar→drawer button.
             val recipesProfileVersion by feedViewModel.eventRepo.profileVersion.collectAsState()
             val recipesAvatarUrl = recipesProfileVersion.let {
@@ -3294,11 +3326,13 @@ fun WispNavHost(
                 viewModel = recipeFeedViewModel,
                 packsViewModel = recipePacksViewModel,
                 cookbookViewModel = cookbookViewModel,
+                groceryViewModel = groceryListViewModel,
                 eventRepo = feedViewModel.eventRepo,
                 userPubkey = plannerPubkey,
                 onRecipeClick = { author, dTag -> navController.navigate(Routes.recipe(author, dTag)) },
                 onPackClick = { author, dTag -> navController.navigate(Routes.recipePack(author, dTag)) },
                 onCollectionClick = { dTag -> navController.navigate(Routes.recipeCollection(dTag)) },
+                onGroceryListClick = { listId -> navController.navigate(Routes.groceryList(listId)) },
                 onTagClick = { tag -> navController.navigate(Routes.recipeTag(tag)) },
                 onOpenDrawer = onOpenDrawer,
                 onSearch = {
@@ -3382,6 +3416,34 @@ fun WispNavHost(
                 onRecipeClick = { recipeAuthor, recipeDTag ->
                     navController.navigate(Routes.recipe(recipeAuthor, recipeDTag))
                 }
+            )
+        }
+
+        composable(
+            Routes.GROCERY_LIST,
+            arguments = listOf(navArgument("listId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val encodedListId = backStackEntry.arguments?.getString("listId") ?: return@composable
+            val listId = java.net.URLDecoder.decode(encodedListId, "UTF-8")
+            val groceryDetailViewModel: cooking.zap.app.viewmodel.GroceryListViewModel = viewModel()
+            remember(groceryDetailViewModel) {
+                groceryDetailViewModel.bind(feedViewModel.groceryRepo) { feedViewModel.signer != null }
+                groceryDetailViewModel.openList(listId)
+            }
+            LaunchedEffect(listId) {
+                // Cold entry (process-death restore straight into this route):
+                // the repo hasn't loaded yet — cache-paint + relay fill. Warm
+                // entry from the section skips this; reloading would be wasted.
+                if (feedViewModel.groceryRepo.lists.value.isEmpty()) groceryDetailViewModel.load()
+            }
+            GroceryListDetailScreen(
+                viewModel = groceryDetailViewModel,
+                recipeRepo = feedViewModel.recipeRepo,
+                writeResults = feedViewModel.groceryRepo.writeResults,
+                onBack = { navController.popBackStack() },
+                onRecipeClick = { recipeAuthor, recipeDTag ->
+                    navController.navigate(Routes.recipe(recipeAuthor, recipeDTag))
+                },
             )
         }
 

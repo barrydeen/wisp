@@ -6,6 +6,7 @@ import cooking.zap.app.nostr.GroceryEvents.GroceryItem
 import cooking.zap.app.nostr.GroceryEvents.GroceryList
 import cooking.zap.app.repo.GroceryRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -96,6 +97,17 @@ class GroceryListViewModel : ViewModel() {
     // ---- mutations (thin pass-throughs; repo is optimistic + debounced) -----
 
     fun createList(title: String) = launchWrite { it.createList(title) }
+
+    /**
+     * PR 5 accommodation: create and return the new list's id so the UI can
+     * navigate into it. `createList` signs + publishes under a mutex, so run it
+     * on the background dispatcher (matching [launchWrite]) — the caller awaits
+     * from a Main-dispatcher scope and must not block the UI thread.
+     */
+    suspend fun createListReturningId(title: String): String? {
+        val r = repo ?: return null
+        return withContext(Dispatchers.Default) { r.createList(title) }
+    }
     fun renameList(id: String, title: String) = launchSync { it.renameList(id, title) }
     fun setNotes(id: String, notes: String) = launchSync { it.setNotes(id, notes) }
     fun addItem(id: String, item: GroceryItem) = launchSync { it.addItem(id, item) }

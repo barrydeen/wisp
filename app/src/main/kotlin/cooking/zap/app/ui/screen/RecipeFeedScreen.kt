@@ -90,6 +90,7 @@ import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.RecipeCard
 import cooking.zap.app.ui.component.RecipePosterSkeleton
 import cooking.zap.app.viewmodel.CookbookViewModel
+import cooking.zap.app.viewmodel.GroceryListViewModel
 import cooking.zap.app.viewmodel.RecipeFeedViewModel
 import cooking.zap.app.viewmodel.RecipePacksTab
 import cooking.zap.app.viewmodel.RecipePacksViewModel
@@ -115,7 +116,7 @@ private enum class RecipesMainTab { RECIPES, PACKS, COOKBOOK }
 private enum class CookbookSubTab(val requiresAccount: Boolean) {
     SAVED(true),
     MY_RECIPES(true),
-    GROCERY(false),
+    GROCERY(true), // real since PR 5 — lists are personal + encrypted
     PLANNER(false),
     NOURISH(false),
 }
@@ -132,11 +133,13 @@ fun RecipeFeedScreen(
     viewModel: RecipeFeedViewModel,
     packsViewModel: RecipePacksViewModel,
     cookbookViewModel: CookbookViewModel,
+    groceryViewModel: GroceryListViewModel,
     eventRepo: EventRepository,
     userPubkey: String?,
     onRecipeClick: (author: String, dTag: String) -> Unit,
     onPackClick: (author: String, dTag: String) -> Unit,
     onCollectionClick: (dTag: String) -> Unit = {},
+    onGroceryListClick: (listId: String) -> Unit = {},
     onTagClick: (tag: String) -> Unit = {},
     // Recipes is a root tab: no back arrow. The nav icon opens the shared
     // drawer (hoisted to WispNavHost) and the top bar carries a search icon,
@@ -295,10 +298,12 @@ fun RecipeFeedScreen(
                 RecipesMainTab.COOKBOOK -> {
                     CookbookSection(
                         viewModel = cookbookViewModel,
+                        groceryViewModel = groceryViewModel,
                         userPubkey = userPubkey,
                         subTab = cookbookSubTab,
                         onSubTabChange = { cookbookSubTab = it },
                         onCollectionClick = onCollectionClick,
+                        onGroceryListClick = onGroceryListClick,
                         onRecipeClick = onRecipeClick,
                         onNourish = onNourish,
                         debugSigner = debugSigner,
@@ -641,10 +646,12 @@ private fun RecipePacksSection(
 @Composable
 private fun CookbookSection(
     viewModel: CookbookViewModel,
+    groceryViewModel: GroceryListViewModel,
     userPubkey: String?,
     subTab: CookbookSubTab,
     onSubTabChange: (CookbookSubTab) -> Unit,
     onCollectionClick: (dTag: String) -> Unit,
+    onGroceryListClick: (listId: String) -> Unit,
     onRecipeClick: (author: String, dTag: String) -> Unit,
     onNourish: () -> Unit,
     debugSigner: cooking.zap.app.nostr.NostrSigner? = null,
@@ -803,13 +810,29 @@ private fun CookbookSection(
                 }
             }
 
-            // Teaser-only until arc PR 5 (grocery) / PR 8 (planner) — deliberately
-            // no buttons: a teaser must not ship an affordance that does nothing.
-            CookbookSubTab.GROCERY -> ComingSoonSection(
-                emoji = "🛒",
-                title = stringResource(R.string.cookbook_grocery_teaser_title),
-                body = stringResource(R.string.cookbook_grocery_teaser_body),
-            )
+            CookbookSubTab.GROCERY -> {
+                // Personal + NIP-44 encrypted: the account gate above covers
+                // signed-out; READ_ONLY (pubkey but no signer) can neither
+                // decrypt nor write, so it gets the same sign-in notice.
+                if (!canManage) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = stringResource(R.string.cookbook_sign_in),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    LaunchedEffect(userPubkey) { groceryViewModel.load() }
+                    GrocerySection(
+                        viewModel = groceryViewModel,
+                        onOpenList = onGroceryListClick,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+            // Teaser-only until arc PR 8 — deliberately no buttons: a teaser
+            // must not ship an affordance that does nothing.
             CookbookSubTab.PLANNER -> ComingSoonSection(
                 emoji = "📅",
                 title = stringResource(R.string.cookbook_planner_teaser_title),

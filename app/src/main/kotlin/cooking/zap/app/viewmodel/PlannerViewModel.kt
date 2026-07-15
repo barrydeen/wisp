@@ -65,7 +65,9 @@ class PlannerViewModel : ViewModel() {
     private var bound = false
     /** Last [bind] account key — identity change clears timers + sealed weeks. */
     private var boundAccountKey: String? = null
-    private var hasBoundAccountKey = false
+    /** Last [bind] write capability — READ_ONLY→signing must refetch/decrypt. */
+    private var boundCanWrite: Boolean? = null
+    private var hasBoundIdentity = false
 
     private var loadJob: Job? = null
     private val saveJobs = HashMap<String, Job>()
@@ -79,21 +81,27 @@ class PlannerViewModel : ViewModel() {
     /**
      * Bind the active [PlannerRepository]. Pass [accountKey] (active pubkey or
      * null when logged out) so logout / account switch clears state without
-     * wiping on every Recipes-tab re-entry.
+     * wiping on every Recipes-tab re-entry. Write-capability flips (e.g.
+     * READ_ONLY → signing) also clear so [load] refetches instead of treating
+     * prior Empty/Loaded weeks as already loaded.
      */
     fun bind(
         repo: PlannerRepository,
         canWriteProvider: () -> Boolean,
         accountKey: String? = null,
     ) {
-        if (hasBoundAccountKey && boundAccountKey != accountKey) {
+        val canWriteNow = canWriteProvider()
+        val identityChanged = hasBoundIdentity &&
+            (boundAccountKey != accountKey || boundCanWrite != canWriteNow)
+        if (identityChanged) {
             clear()
         }
-        hasBoundAccountKey = true
+        hasBoundIdentity = true
         boundAccountKey = accountKey
+        boundCanWrite = canWriteNow
         this.repo = repo
         this.canWriteProvider = canWriteProvider
-        _canWrite.value = canWriteProvider()
+        _canWrite.value = canWriteNow
         bound = true
     }
 
@@ -200,6 +208,12 @@ class PlannerViewModel : ViewModel() {
         cancelSave(weekId)
         val priorUpdated = PlannerLogic.planOf(_weeks.value[weekId])?.updatedAt ?: 0L
         viewModelScope.launch(Dispatchers.Default) {
+            // Drain any in-flight performSave for this week before delete —
+            // otherwise delete can win the repo writeMutex and the later save
+            // republishes, resurrecting the plan on relays.
+            while (synchronized(saveLock) { weekId in pendingSaves }) {
+                delay(25)
+            }
             val r = repo ?: return@launch
             when (val result = r.deleteMealPlan(weekId, lastKnownUpdatedAt = priorUpdated)) {
                 is PlannerRepository.WriteResult.Ok,
@@ -317,7 +331,7 @@ class PlannerViewModel : ViewModel() {
         _saving.value = false
         _lastSaved.value = null
         _canWrite.value = canWriteProvider()
-        // Keep hasBoundAccountKey / boundAccountKey — bind() owns identity tracking.
+        // Keep hasBoundIdentity / boundAccountKey / boundCanWrite — bind() owns identity tracking.
     }
 
     private fun patchWeeks(transform: (Map<String, PlannerWeekState>) -> Map<String, PlannerWeekState>) {
