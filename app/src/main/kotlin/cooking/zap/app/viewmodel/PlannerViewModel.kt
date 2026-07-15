@@ -64,6 +64,7 @@ class PlannerViewModel : ViewModel() {
     private var canWriteProvider: () -> Boolean = { false }
     private var bound = false
 
+    private var loadJob: Job? = null
     private val saveJobs = HashMap<String, Job>()
     private val pendingSaves = HashSet<String>()
     private val saveLock = Any()
@@ -84,14 +85,14 @@ class PlannerViewModel : ViewModel() {
     /** Load current week + neighbors (one multi-#d fetch). */
     fun load() {
         _canWrite.value = canWriteProvider()
-        viewModelScope.launch(Dispatchers.Default) {
+        launchLoad {
             loadWeeks(PlannerLogic.neighborhood(_currentWeekId.value))
         }
     }
 
     /** Force-refetch neighborhood — flushes pending saves first (dirty-week). */
     fun refresh() {
-        viewModelScope.launch(Dispatchers.Default) {
+        launchLoad {
             flushPendingSaves()
             loadWeeks(PlannerLogic.neighborhood(_currentWeekId.value), force = true)
         }
@@ -100,7 +101,7 @@ class PlannerViewModel : ViewModel() {
     fun goToWeek(weekId: String) {
         if (!Week.isValidWeekId(weekId)) return
         _currentWeekId.value = weekId
-        viewModelScope.launch(Dispatchers.Default) {
+        launchLoad {
             loadWeeks(PlannerLogic.neighborhood(weekId))
         }
     }
@@ -245,11 +246,14 @@ class PlannerViewModel : ViewModel() {
                 val r = repo ?: return
                 when (val result = r.saveMealPlan(state.plan)) {
                     is PlannerRepository.WriteResult.Ok -> {
+                        patchSavedPlan(weekId, result.plan)
                         _lastSaved.value = System.currentTimeMillis()
                         _error.value = null
                     }
-                    is PlannerRepository.WriteResult.NoRelays ->
+                    is PlannerRepository.WriteResult.NoRelays -> {
+                        patchSavedPlan(weekId, result.plan)
                         _error.value = "Meal plan save reached 0 relays"
+                    }
                     is PlannerRepository.WriteResult.SignerMissing ->
                         _error.value = "Cannot save — no signer"
                     is PlannerRepository.WriteResult.SignerError ->
@@ -284,6 +288,8 @@ class PlannerViewModel : ViewModel() {
     // ---- logout -------------------------------------------------------------
 
     fun clear() {
+        loadJob?.cancel()
+        loadJob = null
         clearAllTimers()
         repo?.reset()
         _weeks.value = emptyMap()
@@ -298,5 +304,20 @@ class PlannerViewModel : ViewModel() {
 
     private fun patchWeeks(transform: (Map<String, PlannerWeekState>) -> Map<String, PlannerWeekState>) {
         _weeks.value = transform(_weeks.value)
+    }
+
+    private fun launchLoad(block: suspend () -> Unit) {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch(Dispatchers.Default) { block() }
+    }
+
+    private fun patchSavedPlan(weekId: String, plan: Schema.MealPlan) {
+        patchWeeks { weeks ->
+            when (val state = weeks[weekId]) {
+                is PlannerWeekState.Loaded -> weeks + (weekId to state.copy(plan = plan))
+                is PlannerWeekState.Empty -> weeks + (weekId to PlannerWeekState.Loaded(plan, readOnly = false))
+                else -> weeks
+            }
+        }
     }
 }

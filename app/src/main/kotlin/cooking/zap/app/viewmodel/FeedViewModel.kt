@@ -365,7 +365,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         subManager = subManager,
         scope = viewModelScope,
         processingContext = processingDispatcher,
-        userReadRelaysProvider = { pubkeyHex?.let { relayListRepo.getReadRelays(it) } ?: emptyList() },
+        userReadRelaysProvider = { getUserPubkey()?.let { relayListRepo.getReadRelays(it) } ?: emptyList() },
         userPubkeyProvider = { getUserPubkey() },
         signerProvider = { signer },
     )

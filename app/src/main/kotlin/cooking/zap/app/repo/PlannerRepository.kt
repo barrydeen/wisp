@@ -67,8 +67,15 @@ class PlannerRepository(
     /** Outcome of a publish attempt — sent-relay count surfaced for UI. */
     sealed interface WriteResult {
         val weekId: String
-        data class Ok(override val weekId: String, val relayCount: Int) : WriteResult
-        data class NoRelays(override val weekId: String) : WriteResult
+        data class Ok(
+            override val weekId: String,
+            val relayCount: Int,
+            val plan: Schema.MealPlan,
+        ) : WriteResult
+        data class NoRelays(
+            override val weekId: String,
+            val plan: Schema.MealPlan,
+        ) : WriteResult
         data class SignerMissing(override val weekId: String) : WriteResult
         data class SignerError(override val weekId: String, val message: String) : WriteResult
     }
@@ -115,6 +122,7 @@ class PlannerRepository(
         val wanted = weekIds.toSet()
         val cached = eventRepo.eventPersistence
             ?.getEventsByAuthorAndKind(author, KIND, limit = CACHE_LIMIT)
+            ?.filter { eventRepo.deletedEventsRepo?.isEventDeleted(it) != true }
             ?.filter { MealPlanEvents.weekIdFrom(it) in wanted }
             ?: return emptyMap()
         return decryptNewest(cached, signer)
@@ -187,15 +195,19 @@ class PlannerRepository(
     /** Sign + cache + publish [plan] (monotonic stamp), pantry-excluded. */
     suspend fun saveMealPlan(plan: Schema.MealPlan): WriteResult {
         val signer = signerProvider() ?: return WriteResult.SignerMissing(plan.week)
-        val stamped = PlannerMutations.stampForPublish(plan, nowSeconds())
         return writeMutex.withLock {
+            val stamped = PlannerMutations.stampForPublish(
+                plan,
+                nowSeconds = nowSeconds(),
+                floorSeconds = lastPublishStamp[plan.week] ?: 0L,
+            )
             try {
                 val event = MealPlanEvents.createPlanEvent(signer, stamped)
                 eventRepo.cacheEvent(event)
                 lastPublishStamp[stamped.week] = stamped.updatedAt
                 val count = relayPool.sendToWriteRelaysExcluding(ClientMessage.event(event), WRITE_EXCLUDE)
-                if (count > 0) WriteResult.Ok(stamped.week, count)
-                else WriteResult.NoRelays(stamped.week)
+                if (count > 0) WriteResult.Ok(stamped.week, count, stamped)
+                else WriteResult.NoRelays(stamped.week, stamped)
             } catch (e: Exception) {
                 WriteResult.SignerError(stamped.week, e.message ?: e.javaClass.simpleName)
             }
@@ -217,10 +229,16 @@ class PlannerRepository(
                 val deletion = MealPlanEvents.createDeletionEvent(
                     signer, weekId, eventId, createdAt = deleteStamp,
                 )
-                lastPublishStamp.remove(weekId)
+                eventRepo.deletedEventsRepo?.markDeletedAddress(
+                    KIND,
+                    signer.pubkeyHex,
+                    Week.dTagForWeek(weekId),
+                    deleteStamp,
+                )
+                lastPublishStamp[weekId] = deleteStamp
                 val count = relayPool.sendToWriteRelaysExcluding(ClientMessage.event(deletion), WRITE_EXCLUDE)
-                if (count > 0) WriteResult.Ok(weekId, count)
-                else WriteResult.NoRelays(weekId)
+                if (count > 0) WriteResult.Ok(weekId, count, Schema.createEmptyMealPlan(weekId))
+                else WriteResult.NoRelays(weekId, Schema.createEmptyMealPlan(weekId))
             } catch (e: Exception) {
                 WriteResult.SignerError(weekId, e.message ?: e.javaClass.simpleName)
             }
@@ -230,6 +248,7 @@ class PlannerRepository(
     private fun latestEventIdFor(author: String, weekId: String): String? =
         eventRepo.eventPersistence
             ?.getEventsByAuthorAndKind(author, KIND, limit = CACHE_LIMIT)
+            ?.filter { eventRepo.deletedEventsRepo?.isEventDeleted(it) != true }
             ?.filter { MealPlanEvents.weekIdFrom(it) == weekId }
             ?.maxByOrNull { it.created_at }
             ?.id

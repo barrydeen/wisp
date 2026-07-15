@@ -71,11 +71,15 @@ object PlannerMutations {
      * tie-break can then keep the OLDER version. Deterministic weekly d-tags
      * make this MORE likely than grocery — treat as release-blocking.
      */
-    fun stampForPublish(plan: Schema.MealPlan, nowSeconds: Long): Schema.MealPlan {
+    fun stampForPublish(
+        plan: Schema.MealPlan,
+        nowSeconds: Long,
+        floorSeconds: Long = 0L,
+    ): Schema.MealPlan {
         val root = linkedMapOf<String, JsonElement>()
         plan.json.forEach { (k, v) -> root[k] = v }
         val created = plan.createdAt.takeIf { it > 0 } ?: nowSeconds
-        val updated = maxOf(nowSeconds, plan.updatedAt + 1)
+        val updated = maxOf(nowSeconds, plan.updatedAt + 1, floorSeconds + 1)
         root["createdAt"] = JsonPrimitive(created)
         root["updatedAt"] = JsonPrimitive(updated)
         return Schema.MealPlan(JsonObject(root))

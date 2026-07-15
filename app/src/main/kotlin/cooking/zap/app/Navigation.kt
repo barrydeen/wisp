@@ -3266,6 +3266,7 @@ fun WispNavHost(
             val recipePacksViewModel: RecipePacksViewModel = viewModel()
             val cookbookViewModel: CookbookViewModel = viewModel()
             val plannerViewModel: cooking.zap.app.viewmodel.PlannerViewModel = viewModel()
+            val plannerPubkey = feedViewModel.getUserPubkey()
             LaunchedEffect(Unit) { recipeFeedViewModel.load(feedViewModel.recipeRepo) }
             LaunchedEffect(Unit) {
                 recipePacksViewModel.load(feedViewModel.recipePackRepo) { feedViewModel.getUserPubkey() }
@@ -3276,15 +3277,15 @@ fun WispNavHost(
                     feedViewModel.recipeRepo,
                 ) { feedViewModel.getUserPubkey() }
             }
-            LaunchedEffect(Unit) {
+            LaunchedEffect(signingMode, plannerPubkey) {
                 plannerViewModel.bind(
                     feedViewModel.plannerRepo,
                     canWriteProvider = { signingMode != SigningMode.READ_ONLY && feedViewModel.getUserPubkey() != null },
                 )
             }
             // Logout / account switch: clear planner timers + sealed week state.
-            LaunchedEffect(feedViewModel.getUserPubkey()) {
-                if (feedViewModel.getUserPubkey() == null) plannerViewModel.clear()
+            LaunchedEffect(plannerPubkey) {
+                plannerViewModel.clear()
             }
             // Avatar for the nav icon — mirrors the Feed tab's avatar→drawer button.
             val recipesProfileVersion by feedViewModel.eventRepo.profileVersion.collectAsState()
@@ -3297,7 +3298,7 @@ fun WispNavHost(
                 packsViewModel = recipePacksViewModel,
                 cookbookViewModel = cookbookViewModel,
                 eventRepo = feedViewModel.eventRepo,
-                userPubkey = feedViewModel.getUserPubkey(),
+                userPubkey = plannerPubkey,
                 onRecipeClick = { author, dTag -> navController.navigate(Routes.recipe(author, dTag)) },
                 onPackClick = { author, dTag -> navController.navigate(Routes.recipePack(author, dTag)) },
                 onCollectionClick = { dTag -> navController.navigate(Routes.recipeCollection(dTag)) },

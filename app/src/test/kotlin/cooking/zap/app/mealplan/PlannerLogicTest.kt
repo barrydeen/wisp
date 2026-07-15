@@ -210,6 +210,19 @@ class PlannerLogicTest {
         assertEquals(50, PlannerMutations.stampForPublish(plan, 100).createdAt)
     }
 
+    @Test
+    fun stampForPublish_bumpsPastLastWriteStamp() {
+        val plan = Schema.createEmptyMealPlan(W29)
+        assertEquals(
+            102,
+            PlannerMutations.stampForPublish(plan, nowSeconds = 101, floorSeconds = 101).updatedAt,
+        )
+        assertEquals(
+            202,
+            PlannerMutations.stampForPublish(plan, nowSeconds = 150, floorSeconds = 201).updatedAt,
+        )
+    }
+
     // ---- tag-array structural parity ----------------------------------------
 
     @Test
