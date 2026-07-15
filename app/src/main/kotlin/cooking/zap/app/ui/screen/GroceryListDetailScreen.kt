@@ -49,11 +49,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cooking.zap.app.R
+import cooking.zap.app.nostr.GroceryEvents
 import cooking.zap.app.nostr.GroceryEvents.GroceryItem
 import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.repo.GroceryRepository
@@ -65,8 +68,12 @@ import cooking.zap.app.viewmodel.GroceryListViewModel
 import kotlinx.coroutines.flow.SharedFlow
 import java.util.UUID
 
-/** Web groceryStore's fixed category iteration order — mirrored for parity. */
-val GROCERY_CATEGORY_ORDER = listOf("produce", "protein", "dairy", "pantry", "frozen", "other")
+/**
+ * Fixed category iteration order for the detail grouping — the contract list
+ * from [GroceryEvents] (single source of truth; web's groceryStore uses the
+ * same ordering). Internal: only the grocery UI needs it.
+ */
+internal val GROCERY_CATEGORY_ORDER = GroceryEvents.CATEGORIES
 
 internal fun groceryCategoryEmoji(category: String): String = when (category) {
     "produce" -> "🥬"; "protein" -> "🥩"; "dairy" -> "🧀"
@@ -111,7 +118,13 @@ fun GroceryListDetailScreen(
     val canWrite by viewModel.canWrite.collectAsState()
 
     var saving by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { writeResults.collect { saving = false } }
+    LaunchedEffect(Unit) {
+        // Clear only for THIS list's publish — another list's debounced save
+        // finishing while this screen is open must not flip our indicator.
+        writeResults.collect { result ->
+            if (result.listId == viewModel.selectedListId.value) saving = false
+        }
+    }
 
     var showRename by rememberSaveable { mutableStateOf(false) }
     var showDelete by rememberSaveable { mutableStateOf(false) }
@@ -506,13 +519,15 @@ private fun NotesSection(
 
 /**
  * Rapid-entry bar (web AddItemForm parity): submit adds the item, clears the
- * fields, and KEEPS focus in the name field for the next item. Text survives
- * config change / process death via rememberSaveable.
+ * fields, and returns focus to the name field for the next item (via
+ * [FocusRequester], so submitting from the quantity field still lands back on
+ * name). Text survives config change / process death via rememberSaveable.
  */
 @Composable
 private fun QuickAddBar(onAdd: (name: String, quantity: String) -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
     var quantity by rememberSaveable { mutableStateOf("") }
+    val nameFocus = remember { FocusRequester() }
 
     fun submit() {
         val trimmed = name.trim()
@@ -520,7 +535,9 @@ private fun QuickAddBar(onAdd: (name: String, quantity: String) -> Unit) {
         onAdd(trimmed, quantity.trim())
         name = ""
         quantity = ""
-        // Focus is deliberately NOT cleared — grocery entry is rapid-fire.
+        // Return focus to the name field — grocery entry is rapid-fire, and the
+        // user may have submitted from the quantity field.
+        nameFocus.requestFocus()
     }
 
     Surface(tonalElevation = 3.dp) {
@@ -542,7 +559,9 @@ private fun QuickAddBar(onAdd: (name: String, quantity: String) -> Unit) {
                     imeAction = androidx.compose.ui.text.input.ImeAction.Done,
                 ),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { submit() }),
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(nameFocus),
             )
             OutlinedTextField(
                 value = quantity,

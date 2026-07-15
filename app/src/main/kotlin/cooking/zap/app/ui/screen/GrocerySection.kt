@@ -74,8 +74,12 @@ fun GrocerySection(
         if (isCreating) return
         isCreating = true
         scope.launch {
-            val id = viewModel.createListReturningId(defaultTitle)
-            isCreating = false
+            val id = try {
+                viewModel.createListReturningId(defaultTitle)
+            } finally {
+                // Always clear the guard — a throw/cancel must not wedge the button.
+                isCreating = false
+            }
             if (id != null) onOpenList(id)
         }
     }
