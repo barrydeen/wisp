@@ -3281,11 +3281,8 @@ fun WispNavHost(
                 plannerViewModel.bind(
                     feedViewModel.plannerRepo,
                     canWriteProvider = { signingMode != SigningMode.READ_ONLY && feedViewModel.getUserPubkey() != null },
+                    accountKey = plannerPubkey,
                 )
-            }
-            // Logout / account switch: clear planner timers + sealed week state.
-            LaunchedEffect(plannerPubkey) {
-                plannerViewModel.clear()
             }
             // Avatar for the nav icon — mirrors the Feed tab's avatar→drawer button.
             val recipesProfileVersion by feedViewModel.eventRepo.profileVersion.collectAsState()

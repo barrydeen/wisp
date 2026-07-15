@@ -63,6 +63,9 @@ class PlannerViewModel : ViewModel() {
     private var repo: PlannerRepository? = null
     private var canWriteProvider: () -> Boolean = { false }
     private var bound = false
+    /** Last [bind] account key — identity change clears timers + sealed weeks. */
+    private var boundAccountKey: String? = null
+    private var hasBoundAccountKey = false
 
     private var loadJob: Job? = null
     private val saveJobs = HashMap<String, Job>()
@@ -73,7 +76,21 @@ class PlannerViewModel : ViewModel() {
     val writeResults: SharedFlow<PlannerRepository.WriteResult>
         get() = requireNotNull(repo).writeResults
 
-    fun bind(repo: PlannerRepository, canWriteProvider: () -> Boolean) {
+    /**
+     * Bind the active [PlannerRepository]. Pass [accountKey] (active pubkey or
+     * null when logged out) so logout / account switch clears state without
+     * wiping on every Recipes-tab re-entry.
+     */
+    fun bind(
+        repo: PlannerRepository,
+        canWriteProvider: () -> Boolean,
+        accountKey: String? = null,
+    ) {
+        if (hasBoundAccountKey && boundAccountKey != accountKey) {
+            clear()
+        }
+        hasBoundAccountKey = true
+        boundAccountKey = accountKey
         this.repo = repo
         this.canWriteProvider = canWriteProvider
         _canWrite.value = canWriteProvider()
@@ -300,6 +317,7 @@ class PlannerViewModel : ViewModel() {
         _saving.value = false
         _lastSaved.value = null
         _canWrite.value = canWriteProvider()
+        // Keep hasBoundAccountKey / boundAccountKey — bind() owns identity tracking.
     }
 
     private fun patchWeeks(transform: (Map<String, PlannerWeekState>) -> Map<String, PlannerWeekState>) {

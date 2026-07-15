@@ -212,7 +212,15 @@ class PlannerLogicTest {
 
     @Test
     fun stampForPublish_bumpsPastLastWriteStamp() {
-        val plan = Schema.createEmptyMealPlan(W29)
+        // Pin timestamps — createEmptyMealPlan uses wall-clock updatedAt.
+        val plan = Schema.createEmptyMealPlan(W29).let {
+            Schema.MealPlan(
+                JsonObject(it.json.toMutableMap().apply {
+                    put("updatedAt", JsonPrimitive(50L))
+                    put("createdAt", JsonPrimitive(50L))
+                }),
+            )
+        }
         assertEquals(
             102,
             PlannerMutations.stampForPublish(plan, nowSeconds = 101, floorSeconds = 101).updatedAt,
