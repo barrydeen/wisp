@@ -876,6 +876,7 @@ fun WispNavHost(
                 accounts = accounts,
                 onSwitchAccount = onSwitchAccount,
                 onAddAccount = onAddAccount,
+                onMoveAccount = { pubkeyHex, offset -> authViewModel.moveAccount(pubkeyHex, offset) },
                 hasEmbeddedWallet = walletViewModel.walletMode.collectAsState().value == com.wisp.app.repo.WalletMode.SPARK,
                 onLogout = {
                     feedViewModel.clearSigner()

@@ -43,10 +43,8 @@ import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Visibility
-import com.wisp.app.repo.SigningMode
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -89,6 +87,7 @@ fun WispDrawerContent(
     accounts: List<AccountInfo> = emptyList(),
     onSwitchAccount: (String) -> Unit = {},
     onAddAccount: () -> Unit = {},
+    onMoveAccount: (pubkeyHex: String, offset: Int) -> Unit = { _, _ -> },
     onProfile: () -> Unit,
     onFeed: () -> Unit,
     onSearch: () -> Unit,
@@ -125,7 +124,7 @@ fun WispDrawerContent(
             .verticalScroll(scrollState)
         ) {
         var showProfileQr by remember { mutableStateOf(false) }
-        var accountPickerExpanded by remember { mutableStateOf(false) }
+        var showAccountSwitcher by remember { mutableStateOf(false) }
 
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -150,50 +149,32 @@ fun WispDrawerContent(
                     ProfilePicture(url = profile?.picture, size = 64)
                 }
                 Spacer(modifier = Modifier.width(8.dp))
+                // Icon-only affordance that opens the account switcher modal.
+                // Same action (switch or add an account) regardless of how many
+                // accounts are signed in; shows a "+N" badge counting the other
+                // accounts when more than one is signed in.
                 val otherAccountCount = (accounts.size - 1).coerceAtLeast(0)
-                if (otherAccountCount == 0) {
-                    Box(
-                        modifier = Modifier
-                            .size(26.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .clickable { onAddAccount() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Filled.Add,
-                            contentDescription = "Add account",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { accountPickerExpanded = !accountPickerExpanded }
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .height(26.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .padding(horizontal = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "+ $otherAccountCount",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Icon(
-                            if (accountPickerExpanded) Icons.Outlined.KeyboardArrowDown
-                            else Icons.Outlined.KeyboardArrowRight,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { showAccountSwitcher = true }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.People,
+                        contentDescription = stringResource(R.string.cd_switch_account),
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (otherAccountCount > 0) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "+$otherAccountCount",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -216,11 +197,7 @@ fun WispDrawerContent(
                 }
             }
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = accounts.isNotEmpty()) {
-                        accountPickerExpanded = !accountPickerExpanded
-                    },
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -322,88 +299,18 @@ fun WispDrawerContent(
                 }
             }
 
-            // Account picker dropdown
-            AnimatedVisibility(visible = accountPickerExpanded) {
-                Column(modifier = Modifier.padding(top = 8.dp)) {
-                    accounts.forEach { account ->
-                        val isActive = account.pubkeyHex == pubkey
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(enabled = !isActive) {
-                                    accountPickerExpanded = false
-                                    onSwitchAccount(account.pubkeyHex)
-                                }
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // For the active account use the live profile picture; for others use cached AccountInfo
-                            val pictureUrl = if (isActive) profile?.picture else account.picture
-                            ProfilePicture(url = pictureUrl, size = 36)
-                            Spacer(modifier = Modifier.width(12.dp))
-                            val displayText = if (isActive) {
-                                profile?.displayString ?: account.displayName ?: account.pubkeyHex.toNpub().let { it.take(16) + "..." }
-                            } else {
-                                account.displayName ?: account.pubkeyHex.toNpub().let { it.take(16) + "..." }
-                            }
-                            Text(
-                                text = displayText,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            if (account.signingMode == SigningMode.READ_ONLY) {
-                                Icon(
-                                    Icons.Outlined.Visibility,
-                                    contentDescription = "Watch-only",
-                                    modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                            }
-                            if (isActive) {
-                                Icon(
-                                    Icons.Filled.Check,
-                                    contentDescription = stringResource(R.string.cd_active),
-                                    modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                    }
-                    // Add account row
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                accountPickerExpanded = false
-                                onAddAccount()
-                            }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier.size(36.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Filled.Add,
-                                contentDescription = stringResource(R.string.cd_add_account),
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = stringResource(R.string.cd_add_account),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
+        }
+
+        if (showAccountSwitcher) {
+            AccountSwitcherSheet(
+                accounts = accounts,
+                activePubkey = pubkey,
+                activeProfile = profile,
+                onSwitchAccount = onSwitchAccount,
+                onAddAccount = onAddAccount,
+                onMoveAccount = onMoveAccount,
+                onDismiss = { showAccountSwitcher = false }
+            )
         }
 
         if (showProfileQr && pubkey != null) {

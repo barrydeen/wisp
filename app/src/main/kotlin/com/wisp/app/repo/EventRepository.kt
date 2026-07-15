@@ -358,6 +358,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
                 if (updated != null) {
                     profileDirty = true
                     markVersionDirty()
+                    updateAccountRegistryIfKnownAccount(event.pubkey, updated)
                 }
             }
             1 -> {
@@ -771,6 +772,7 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             if (updated != null) {
                 profileDirty = true
                 markVersionDirty()
+                updateAccountRegistryIfKnownAccount(event.pubkey, updated)
             }
         }
         // NIP-38: process user status in cacheEvent path too (addEvent dedup may skip it)
@@ -876,7 +878,8 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
             if (!seenEventIds.add(event.id)) continue
             eventCache[event.id] = event
             if (event.kind == 0) {
-                profileRepo?.updateFromEvent(event)
+                val updated = profileRepo?.updateFromEvent(event)
+                if (updated != null) updateAccountRegistryIfKnownAccount(event.pubkey, updated)
             }
         }
     }
@@ -886,6 +889,21 @@ class EventRepository(val profileRepo: ProfileRepository? = null, val muteRepo: 
     fun bumpEventCacheVersion() { _eventCacheVersion.value++ }
 
     fun getProfileData(pubkey: String): ProfileData? = profileRepo?.get(pubkey)
+
+    /**
+     * Keep the drawer's account switcher in sync with the newest kind 0 for
+     * every signed-in account, not just the active one. Previously only a
+     * one-shot check during startup wrote into the account registry, so a
+     * newly imported key whose kind 0 hadn't arrived yet by that moment
+     * would show a bare npub in the switcher forever — this fires whenever
+     * a fresh kind 0 for ANY account in the registry lands, from any of the
+     * three ingestion paths (live subscription, direct cache, ObjectBox seed).
+     */
+    private fun updateAccountRegistryIfKnownAccount(pubkey: String, profile: ProfileData) {
+        val repo = keyRepo ?: return
+        if (repo.getAccountList().none { it.pubkeyHex == pubkey }) return
+        repo.updateAccountMetadata(pubkey, profile.displayString, profile.picture)
+    }
 
     /**
      * Build maps of bolt11 payment hash → counterparty pubkey from persisted zap receipts (kind 9735).
