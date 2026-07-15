@@ -354,6 +354,22 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         signerProvider = { signer },
     )
 
+    /**
+     * Meal planner (arc PR 7) — kind 30078 `mealplan-{week}` events. Pantry
+     * excluded on write (see [cooking.zap.app.repo.PlannerRepository.WRITE_EXCLUDE]).
+     */
+    val plannerRepo = cooking.zap.app.repo.PlannerRepository(
+        relayPool = relayPool,
+        outboxRouter = outboxRouter,
+        eventRepo = eventRepo,
+        subManager = subManager,
+        scope = viewModelScope,
+        processingContext = processingDispatcher,
+        userReadRelaysProvider = { getUserPubkey()?.let { relayListRepo.getReadRelays(it) } ?: emptyList() },
+        userPubkeyProvider = { getUserPubkey() },
+        signerProvider = { signer },
+    )
+
     /** zap.cooking backend client (membership today; Phase 2 AI endpoints). */
     val zapCookingApi = cooking.zap.app.api.ZapCookingApi()
 
@@ -553,6 +569,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         liveStreamRepo.clear()
         recipeBookmarkRepo.reset()
         groceryRepo.reset()
+        plannerRepo.reset()
     }
     fun reloadForNewAccount() {
         // NIP-98 headers are identity assertions — never let a cached one

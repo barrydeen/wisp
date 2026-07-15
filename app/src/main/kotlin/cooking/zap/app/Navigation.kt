@@ -3291,6 +3291,8 @@ fun WispNavHost(
             val recipeFeedViewModel: RecipeFeedViewModel = viewModel()
             val recipePacksViewModel: RecipePacksViewModel = viewModel()
             val cookbookViewModel: CookbookViewModel = viewModel()
+            val plannerViewModel: cooking.zap.app.viewmodel.PlannerViewModel = viewModel()
+            val plannerPubkey = feedViewModel.getUserPubkey()
             LaunchedEffect(Unit) { recipeFeedViewModel.load(feedViewModel.recipeRepo) }
             LaunchedEffect(Unit) {
                 recipePacksViewModel.load(feedViewModel.recipePackRepo) { feedViewModel.getUserPubkey() }
@@ -3300,6 +3302,13 @@ fun WispNavHost(
                     feedViewModel.recipeBookmarkRepo,
                     feedViewModel.recipeRepo,
                 ) { feedViewModel.getUserPubkey() }
+            }
+            LaunchedEffect(signingMode, plannerPubkey) {
+                plannerViewModel.bind(
+                    feedViewModel.plannerRepo,
+                    canWriteProvider = { signingMode != SigningMode.READ_ONLY && feedViewModel.getUserPubkey() != null },
+                    accountKey = plannerPubkey,
+                )
             }
             val groceryListViewModel: cooking.zap.app.viewmodel.GroceryListViewModel = viewModel()
             // Bound in composition (remember, not LaunchedEffect) so the VM is
@@ -3319,7 +3328,7 @@ fun WispNavHost(
                 cookbookViewModel = cookbookViewModel,
                 groceryViewModel = groceryListViewModel,
                 eventRepo = feedViewModel.eventRepo,
-                userPubkey = feedViewModel.getUserPubkey(),
+                userPubkey = plannerPubkey,
                 onRecipeClick = { author, dTag -> navController.navigate(Routes.recipe(author, dTag)) },
                 onPackClick = { author, dTag -> navController.navigate(Routes.recipePack(author, dTag)) },
                 onCollectionClick = { dTag -> navController.navigate(Routes.recipeCollection(dTag)) },
@@ -3344,6 +3353,8 @@ fun WispNavHost(
                 },
                 openMyKitchenRequest = openMyKitchen,
                 onOpenMyKitchenConsumed = { feedViewModel.consumeOpenMyKitchen() },
+                debugSigner = if (cooking.zap.app.BuildConfig.DEBUG) activeSigner else null,
+                debugPlannerVm = if (cooking.zap.app.BuildConfig.DEBUG) plannerViewModel else null,
             )
         }
 
