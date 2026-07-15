@@ -96,6 +96,9 @@ class GroceryListViewModel : ViewModel() {
     // ---- mutations (thin pass-throughs; repo is optimistic + debounced) -----
 
     fun createList(title: String) = launchWrite { it.createList(title) }
+
+    /** PR 5 accommodation: create and return the new list's id so the UI can navigate into it. */
+    suspend fun createListReturningId(title: String): String? = repo?.createList(title)
     fun renameList(id: String, title: String) = launchSync { it.renameList(id, title) }
     fun setNotes(id: String, notes: String) = launchSync { it.setNotes(id, notes) }
     fun addItem(id: String, item: GroceryItem) = launchSync { it.addItem(id, item) }
