@@ -3265,6 +3265,7 @@ fun WispNavHost(
             val recipeFeedViewModel: RecipeFeedViewModel = viewModel()
             val recipePacksViewModel: RecipePacksViewModel = viewModel()
             val cookbookViewModel: CookbookViewModel = viewModel()
+            val plannerViewModel: cooking.zap.app.viewmodel.PlannerViewModel = viewModel()
             LaunchedEffect(Unit) { recipeFeedViewModel.load(feedViewModel.recipeRepo) }
             LaunchedEffect(Unit) {
                 recipePacksViewModel.load(feedViewModel.recipePackRepo) { feedViewModel.getUserPubkey() }
@@ -3274,6 +3275,16 @@ fun WispNavHost(
                     feedViewModel.recipeBookmarkRepo,
                     feedViewModel.recipeRepo,
                 ) { feedViewModel.getUserPubkey() }
+            }
+            LaunchedEffect(Unit) {
+                plannerViewModel.bind(
+                    feedViewModel.plannerRepo,
+                    canWriteProvider = { signingMode != SigningMode.READ_ONLY && feedViewModel.getUserPubkey() != null },
+                )
+            }
+            // Logout / account switch: clear planner timers + sealed week state.
+            LaunchedEffect(feedViewModel.getUserPubkey()) {
+                if (feedViewModel.getUserPubkey() == null) plannerViewModel.clear()
             }
             // Avatar for the nav icon — mirrors the Feed tab's avatar→drawer button.
             val recipesProfileVersion by feedViewModel.eventRepo.profileVersion.collectAsState()
@@ -3310,6 +3321,8 @@ fun WispNavHost(
                 },
                 openMyKitchenRequest = openMyKitchen,
                 onOpenMyKitchenConsumed = { feedViewModel.consumeOpenMyKitchen() },
+                debugSigner = if (cooking.zap.app.BuildConfig.DEBUG) activeSigner else null,
+                debugPlannerVm = if (cooking.zap.app.BuildConfig.DEBUG) plannerViewModel else null,
             )
         }
 

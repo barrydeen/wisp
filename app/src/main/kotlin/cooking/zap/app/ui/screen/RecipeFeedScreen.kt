@@ -1,5 +1,6 @@
 package cooking.zap.app.ui.screen
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items as rowItems
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -124,7 +126,7 @@ private enum class CookbookSubTab(val requiresAccount: Boolean) {
  * opens the recipe-detail route. Social `#foodstr` notes moved to the OnlyFood
  * feed, so a post never appears in two feeds.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun RecipeFeedScreen(
     viewModel: RecipeFeedViewModel,
@@ -152,6 +154,9 @@ fun RecipeFeedScreen(
     // Kitchen pill with the Saved section and consume via the callback.
     openMyKitchenRequest: Boolean = false,
     onOpenMyKitchenConsumed: () -> Unit = {},
+    // DEBUG-only PR 7 planner stop-gate (long-press Planner teaser).
+    debugSigner: cooking.zap.app.nostr.NostrSigner? = null,
+    debugPlannerVm: cooking.zap.app.viewmodel.PlannerViewModel? = null,
 ) {
     val recipes by viewModel.recipes.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -296,6 +301,8 @@ fun RecipeFeedScreen(
                         onCollectionClick = onCollectionClick,
                         onRecipeClick = onRecipeClick,
                         onNourish = onNourish,
+                        debugSigner = debugSigner,
+                        debugPlannerVm = debugPlannerVm,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(top = topInset),
@@ -640,6 +647,8 @@ private fun CookbookSection(
     onCollectionClick: (dTag: String) -> Unit,
     onRecipeClick: (author: String, dTag: String) -> Unit,
     onNourish: () -> Unit,
+    debugSigner: cooking.zap.app.nostr.NostrSigner? = null,
+    debugPlannerVm: cooking.zap.app.viewmodel.PlannerViewModel? = null,
     modifier: Modifier = Modifier,
 ) {
     val lists by viewModel.lists.collectAsState()
@@ -647,6 +656,7 @@ private fun CookbookSection(
     // Management (PR 3b-iii) is owner-only — a signing key is required.
     val canManage = LocalCanSign.current
     var manage by remember { mutableStateOf<CookbookManageState?>(null) }
+    var showPlannerStopGate by remember { mutableStateOf(false) }
 
     Column(modifier = modifier) {
         // Five labels don't fit a fixed TabRow at phone width — scrollable, with
@@ -804,6 +814,9 @@ private fun CookbookSection(
                 emoji = "📅",
                 title = stringResource(R.string.cookbook_planner_teaser_title),
                 body = stringResource(R.string.cookbook_planner_teaser_body),
+                onLongPress = if (cooking.zap.app.BuildConfig.DEBUG) {
+                    { showPlannerStopGate = true }
+                } else null,
             )
 
             // Entry card only — the explore UI stays on its own route.
@@ -817,6 +830,14 @@ private fun CookbookSection(
         viewModel = viewModel,
         onDismiss = { manage = null },
     )
+
+    if (cooking.zap.app.BuildConfig.DEBUG && showPlannerStopGate) {
+        cooking.zap.app.debug.PlannerStopGateDialog(
+            signer = debugSigner,
+            plannerVm = debugPlannerVm,
+            onDismiss = { showPlannerStopGate = false },
+        )
+    }
 }
 
 /**
@@ -824,9 +845,24 @@ private fun CookbookSection(
  * empty-state layout (emoji / title / body) and the web hub's teaser tone.
  * Intentionally has no tap affordance.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ComingSoonSection(emoji: String, title: String, body: String) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+private fun ComingSoonSection(
+    emoji: String,
+    title: String,
+    body: String,
+    onLongPress: (() -> Unit)? = null,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .then(
+                if (onLongPress != null) {
+                    Modifier.combinedClickable(onClick = {}, onLongClick = onLongPress)
+                } else Modifier
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(horizontal = 32.dp),
