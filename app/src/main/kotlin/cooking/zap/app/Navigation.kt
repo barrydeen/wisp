@@ -3316,33 +3316,32 @@ fun WispNavHost(
             // DEBUG-only: plant / clean up an undecryptable meal-plan event so
             // the PR 8 DecryptFailed week state can be exercised on-device.
             val plannerDebugScope = rememberCoroutineScope()
-            val debugPlantPlan: (() -> Unit)? = if (cooking.zap.app.BuildConfig.DEBUG) {
+            // Null (→ button disabled) unless there's a signer, so the debug
+            // buttons reflect availability instead of no-op'ing on click. (In
+            // practice the planner tab gates on having an account, so a signer
+            // is present whenever these are reachable — this is belt-and-suspenders.)
+            val debugSignerForPlant = if (cooking.zap.app.BuildConfig.DEBUG) feedViewModel.signer else null
+            val debugPlantPlan: (() -> Unit)? = debugSignerForPlant?.let { s ->
                 {
-                    feedViewModel.signer?.let { s ->
-                        cooking.zap.app.debug.PlannerStopGateHarness.plantUndecryptable(
-                            s, feedViewModel.relayPool, feedViewModel.eventRepo, plannerViewModel, plannerDebugScope,
-                        )
-                    }
+                    cooking.zap.app.debug.PlannerStopGateHarness.plantUndecryptable(
+                        s, feedViewModel.relayPool, feedViewModel.eventRepo, plannerViewModel, plannerDebugScope,
+                    )
                 }
-            } else null
-            val debugPlantReadOnlyPlan: (() -> Unit)? = if (cooking.zap.app.BuildConfig.DEBUG) {
+            }
+            val debugPlantReadOnlyPlan: (() -> Unit)? = debugSignerForPlant?.let { s ->
                 {
-                    feedViewModel.signer?.let { s ->
-                        cooking.zap.app.debug.PlannerStopGateHarness.plantReadOnly(
-                            s, feedViewModel.relayPool, feedViewModel.eventRepo, plannerViewModel, plannerDebugScope,
-                        )
-                    }
+                    cooking.zap.app.debug.PlannerStopGateHarness.plantReadOnly(
+                        s, feedViewModel.relayPool, feedViewModel.eventRepo, plannerViewModel, plannerDebugScope,
+                    )
                 }
-            } else null
-            val debugCleanupPlan: (() -> Unit)? = if (cooking.zap.app.BuildConfig.DEBUG) {
+            }
+            val debugCleanupPlan: (() -> Unit)? = debugSignerForPlant?.let { s ->
                 {
-                    feedViewModel.signer?.let { s ->
-                        cooking.zap.app.debug.PlannerStopGateHarness.cleanupPlanted(
-                            s, feedViewModel.relayPool, feedViewModel.eventRepo, plannerViewModel, plannerDebugScope,
-                        )
-                    }
+                    cooking.zap.app.debug.PlannerStopGateHarness.cleanupPlanted(
+                        s, feedViewModel.relayPool, feedViewModel.eventRepo, plannerViewModel, plannerDebugScope,
+                    )
                 }
-            } else null
+            }
             LaunchedEffect(Unit) { recipeFeedViewModel.load(feedViewModel.recipeRepo) }
             LaunchedEffect(Unit) {
                 recipePacksViewModel.load(feedViewModel.recipePackRepo) { feedViewModel.getUserPubkey() }

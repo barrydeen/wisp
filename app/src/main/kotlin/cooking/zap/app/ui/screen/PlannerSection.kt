@@ -62,6 +62,8 @@ import cooking.zap.app.repo.RecipeRepository
 import cooking.zap.app.ui.component.PlannerNotesDialog
 import cooking.zap.app.ui.component.SlotEditorDialog
 import cooking.zap.app.viewmodel.PlannerViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -497,7 +499,9 @@ private fun SlotRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = slotLabel(slotKey).uppercase(Locale.US),
+            // Device locale, not US — the label is localized; forcing US casing
+            // mis-cases some languages (e.g. Turkish i→İ).
+            text = slotLabel(slotKey).uppercase(Locale.getDefault()),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(72.dp),
@@ -559,9 +563,13 @@ private fun RecipeSlotContent(
         val parts = coordinate?.split(":", limit = 3)
         if (parts == null || parts.size < 3 || parts[0] != "30023") return@LaunchedEffect
         val (_, author, dTag) = parts
-        val event = recipeRepo.findRecipeEventByCoordinate(30023, author, dTag)
-            ?: recipeRepo.requestRecipeEventByCoordinate(30023, author, dTag)
-        val recipe = event?.let { RecipeFormats.forEvent(it)?.parse(it) }
+        // Off the main dispatcher: the cache lookup is an ObjectBox scan and the
+        // fallback hits the network — a week can have up to 28 recipe slots.
+        val recipe = withContext(Dispatchers.Default) {
+            val event = recipeRepo.findRecipeEventByCoordinate(30023, author, dTag)
+                ?: recipeRepo.requestRecipeEventByCoordinate(30023, author, dTag)
+            event?.let { RecipeFormats.forEvent(it)?.parse(it) }
+        }
         resolvedTitle = recipe?.title
         resolvedImage = recipe?.image
     }
