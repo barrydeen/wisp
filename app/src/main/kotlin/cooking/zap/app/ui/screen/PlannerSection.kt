@@ -311,11 +311,15 @@ private fun WeekBody(
         if (isCurrentWeek) Schema.DAY_KEYS[LocalDate.now().dayOfWeek.value - 1] else null
     }
     val listState = rememberLazyListState()
-    // Scroll today's card into view once the current week is showing.
+    // Current week: scroll today's card into view. Any other week: reset to the
+    // top (the header/empty banner) — the shared list state would otherwise
+    // carry today's offset from the current week into the week you navigate to.
     LaunchedEffect(weekId, todayKey) {
         if (todayKey != null) {
             val idx = 1 + Schema.DAY_KEYS.indexOf(todayKey) // item 0 = header block
             listState.animateScrollToItem(idx.coerceAtLeast(0))
+        } else {
+            listState.scrollToItem(0)
         }
     }
 
