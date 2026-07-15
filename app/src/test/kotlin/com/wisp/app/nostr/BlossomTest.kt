@@ -128,4 +128,30 @@ class BlossomTest {
             result
         )
     }
+
+    @Test
+    fun `buildServerListTags throws IllegalArgumentException when urls are empty`() {
+        val emptyUrls = emptyList<String>()
+        assertFailsWith<IllegalArgumentException> { Blossom.buildServerListTags(emptyUrls) }
+    }
+
+    @Test
+    fun `buildServerListTags builds server tags preserving order`() {
+        val valid1 = "http://example.com"
+        val valid2 = "https://example.com/"
+        val singleServerTags = Blossom.buildServerListTags(listOf(valid1))
+        assertEquals(
+            listOf(
+                listOf("server", valid1)
+            ), singleServerTags
+        )
+
+        val manyServerTags = Blossom.buildServerListTags(listOf(valid2, valid1))
+        assertEquals(
+            listOf(
+                listOf("server", valid2),
+                listOf("server", valid1)
+            ), manyServerTags
+        )
+    }
 }
