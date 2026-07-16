@@ -1,0 +1,130 @@
+{
+  "description": "Cross-platform meal-plan schema contract vectors. Source: src/lib/mealplan/schema.test.ts. WEEK is always 2026-W29 unless noted.",
+  "week": "2026-W29",
+  "validPayload": {
+    "schemaVersion": 1,
+    "week": "2026-W29",
+    "days": {
+      "mon": {
+        "slots": {
+          "breakfast": { "type": "recipe", "a": "30023:abc:shakshuka", "title": "Shakshuka" },
+          "lunch": { "type": "text", "text": "Leftovers" }
+        },
+        "notes": "prep the night before"
+      }
+    },
+    "notes": "light week",
+    "createdAt": 1789000000,
+    "updatedAt": 1789000123
+  },
+  "cases": [
+    {
+      "id": "accept-union-branches",
+      "kind": "validate",
+      "payload": "$validPayload",
+      "expected": {
+        "readOnly": false,
+        "breakfast": { "type": "recipe", "a": "30023:abc:shakshuka", "title": "Shakshuka" },
+        "lunch": { "type": "text", "text": "Leftovers" },
+        "dayNotes": "prep the night before",
+        "weekNotes": "light week",
+        "createdAt": 1789000000
+      }
+    },
+    {
+      "id": "round-trip",
+      "kind": "roundTrip",
+      "payload": "$validPayload"
+    },
+    {
+      "id": "preserve-unknown-fields",
+      "kind": "unknownFields",
+      "payload": "$validPayload",
+      "inject": {
+        "top": { "futureFeature": { "some": "data" } },
+        "day": { "dayLevelExtra": 42 },
+        "slot": { "servings": 3 }
+      },
+      "expected": {
+        "futureFeature": { "some": "data" },
+        "dayLevelExtra": 42,
+        "servings": 3
+      }
+    },
+    {
+      "id": "schema-v2-readonly",
+      "kind": "validate",
+      "payload": "$validPayload",
+      "overrides": { "schemaVersion": 2 },
+      "expected": {
+        "readOnly": true,
+        "schemaVersion": 2,
+        "breakfastPresent": true
+      }
+    },
+    {
+      "id": "dtag-week-wins",
+      "kind": "validate",
+      "payload": "$validPayload",
+      "overrides": { "week": "2020-W01" },
+      "expected": { "week": "2026-W29" }
+    },
+    {
+      "id": "drop-invalid-slots",
+      "kind": "dropInvalidSlots",
+      "payload": "$validPayload",
+      "injectSlots": {
+        "dinner": { "type": "recipe" },
+        "snack": { "type": "mystery", "x": 1 }
+      },
+      "expected": {
+        "dinnerAbsent": true,
+        "snackAbsent": true,
+        "breakfastPresent": true,
+        "dayNotes": "prep the night before"
+      }
+    },
+    {
+      "id": "ignore-unknown-day-keys",
+      "kind": "ignoreUnknownDays",
+      "payload": "$validPayload",
+      "injectDays": {
+        "funday": { "slots": {} },
+        "tue": "not a day"
+      },
+      "expected": {
+        "fundayAbsent": true,
+        "tueAbsent": true
+      }
+    },
+    {
+      "id": "default-missing-fields",
+      "kind": "defaults",
+      "payload": {},
+      "expected": {
+        "readOnly": false,
+        "schemaVersion": 1,
+        "week": "2026-W29",
+        "days": {},
+        "createdAtPositive": true
+      },
+      "notes": "createdAt is wall-clock; assert presence/positivity, not a fixed value"
+    },
+    {
+      "id": "reject-unusable",
+      "kind": "reject",
+      "payloads": [null, "a string", [1, 2]]
+    },
+    {
+      "id": "create-empty-skeleton",
+      "kind": "createEmpty",
+      "expected": {
+        "schemaVersion": 1,
+        "week": "2026-W29",
+        "days": {},
+        "readOnly": false
+      }
+    }
+  ],
+  "notRepresentableAsData": []
+}
