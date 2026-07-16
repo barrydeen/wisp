@@ -140,7 +140,12 @@ class PlannerViewModel : ViewModel() {
         val dirty = synchronized(saveLock) {
             saveJobs.keys.toSet() + pendingSaves
         }
-        val loaded = _weeks.value.keys
+        // PR 8 one-line accommodation (callout): a week left in Loading by a
+        // load that was cancelled mid-fetch (rapid prev/next navigation) must
+        // NOT count as loaded, or fetchTargets skips it and it hangs on the
+        // spinner forever. Loads are serialized (loadMutex) + the prior job is
+        // cancelled, so re-fetching a stale-Loading week can't double-fetch.
+        val loaded = _weeks.value.filterValues { it !is PlannerWeekState.Loading }.keys
         val targets = PlannerLogic.fetchTargets(weekIds, loaded, dirty, force)
         if (targets.isEmpty()) {
             _initialized.value = true
