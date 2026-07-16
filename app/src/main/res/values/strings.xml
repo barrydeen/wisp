@@ -741,6 +741,23 @@
     <string name="grocery_error_no_relays">Sent to 0 relays — your grocery change isn\'t published yet</string>
     <string name="grocery_error_signer_missing">Can\'t save — this account has no signing key</string>
     <string name="grocery_error_signer">Grocery save failed: %1$s</string>
+    <string name="grocery_add_to_list_title">Add to grocery list</string>
+    <string name="grocery_add_from_recipe">From: %1$s</string>
+    <plurals name="grocery_add_ingredients_found">
+        <item quantity="one">%1$d ingredient found</item>
+        <item quantity="other">%1$d ingredients found</item>
+    </plurals>
+    <string name="grocery_add_no_ingredients">Couldn\'t find ingredients to add</string>
+    <string name="grocery_add_choose_list">Choose a list</string>
+    <string name="grocery_add_new_list_hint">List name</string>
+    <plurals name="grocery_add_confirm">
+        <item quantity="one">Add %1$d item</item>
+        <item quantity="other">Add %1$d items</item>
+    </plurals>
+    <plurals name="grocery_item_count_label">
+        <item quantity="one">%1$d item</item>
+        <item quantity="other">%1$d items</item>
+    </plurals>
     <string name="grocery_category_produce">Produce</string>
     <string name="grocery_category_protein">Protein</string>
     <string name="grocery_category_dairy">Dairy</string>

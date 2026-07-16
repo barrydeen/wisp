@@ -26,6 +26,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.AddShoppingCart
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -87,6 +88,7 @@ fun RecipeDetailScreen(
     onOpenEmojiLibrary: (() -> Unit)? = null,
     onStartCooking: ((RecipeParser.Recipe) -> Unit)? = null,
     onComputeNourish: () -> Unit = {},
+    onAddToGrocery: (() -> Unit)? = null,
 ) {
     val recipe by viewModel.recipe.collectAsState()
     val event by viewModel.event.collectAsState()
@@ -120,6 +122,17 @@ fun RecipeDetailScreen(
                     }
                 },
                 actions = {
+                    // Add-to-grocery (arc PR 10) — null when the account can't
+                    // write (signed-out / READ_ONLY) or the event hasn't resolved,
+                    // matching the onShare null-hides-icon idiom.
+                    if (onAddToGrocery != null) {
+                        IconButton(onClick = onAddToGrocery) {
+                            Icon(
+                                Icons.Outlined.AddShoppingCart,
+                                contentDescription = stringResource(R.string.grocery_add_to_list_title),
+                            )
+                        }
+                    }
                     if (onShare != null) {
                         IconButton(onClick = onShare) {
                             Icon(

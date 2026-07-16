@@ -272,6 +272,7 @@ class GroceryRepository(
     fun setChecked(id: String, itemId: String, checked: Boolean) =
         mutate(id) { GroceryMutations.setChecked(it, itemId, checked) }
     fun removeItem(id: String, itemId: String) = mutate(id) { GroceryMutations.removeItem(it, itemId) }
+    fun addRecipeLink(id: String, recipeATag: String) = mutate(id) { GroceryMutations.addRecipeLink(it, recipeATag) }
 
     /** Apply a pure transform optimistically, then schedule a debounced save. */
     private inline fun mutate(id: String, transform: (GroceryList) -> GroceryList) {

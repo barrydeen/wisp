@@ -66,6 +66,20 @@ class GroceryRepositoryLogicTest {
     }
 
     @Test
+    fun addRecipeLink_appendsOnceAndDedupes_webParity() {
+        var l = list()
+        l = GroceryMutations.addRecipeLink(l, "30023:pk:pasta")
+        assertEquals(listOf("30023:pk:pasta"), l.recipeLinks)
+        // Re-adding the same recipe (web's duplicate guard) is a no-op.
+        l = GroceryMutations.addRecipeLink(l, "30023:pk:pasta")
+        assertEquals(listOf("30023:pk:pasta"), l.recipeLinks)
+        // A second recipe appends after the first.
+        l = GroceryMutations.addRecipeLink(l, "30023:pk:salad")
+        assertEquals(listOf("30023:pk:pasta", "30023:pk:salad"), l.recipeLinks)
+        assertEquals(100, l.updatedAt) // repo stamps at save time, like every mutator
+    }
+
+    @Test
     fun mutations_doNotBumpUpdatedAt_repoStampsAtSaveTime() {
         val l = list(updatedAt = 100)
         val after = GroceryMutations.addItem(l, item("x"))
