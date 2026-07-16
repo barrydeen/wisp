@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -100,14 +101,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import cooking.zap.app.R
+import cooking.zap.app.ui.theme.WispThemeColors
 import cooking.zap.app.nostr.Bolt11
 import cooking.zap.app.nostr.toNpub
 import cooking.zap.app.nostr.Nip19
+import cooking.zap.app.nostr.Nip57
 import cooking.zap.app.nostr.Nip30
 import cooking.zap.app.nostr.toHex
 import cooking.zap.app.nostr.NostrEvent
@@ -216,6 +220,8 @@ internal sealed interface ContentSegment {
     data class HashtagSegment(val tag: String) : ContentSegment
     data class LightningInvoiceSegment(val invoice: String, val decoded: Bolt11.DecodedInvoice) : ContentSegment
     data class GroupInviteSegment(val relayUrl: String, val groupId: String) : ContentSegment
+    data class LnurlPayableSegment(val encoded: String) : ContentSegment
+    data class LightningAddressSegment(val address: String) : ContentSegment
 }
 
 private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp", "heic", "heif")
@@ -281,7 +287,7 @@ private fun isBlossomUrl(url: String): Boolean {
     }
 }
 
-private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w|\.[a-zA-Z])|(?:https?|wss?)://\S+|(?<!\w)((?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+(?:com|net|org|io|dev|app|pro|ai|co|me|info|xyz|cc|tv|to|gg|sh|im|is|it|rs|ly|site|online|store|tech|cloud|social|world|earth|space|lol|wtf|family|life|art|design|blog|news|live|video|media|chat|games|money|finance|agency|studio|build|run|codes|systems|network|zone|pub|blue|limo|fyi|wiki|page|link|click|exchange|markets|fun|club|today)(?:/\S*)?)(?!\w)|(?<!\w)#([\p{L}0-9_][\p{L}\p{M}0-9_-]*)|(?<!\w)((?:note1|nevent1|nprofile1|naddr1)[a-z0-9]{10,})(?!\w)""", RegexOption.IGNORE_CASE)
+private val combinedRegex = Regex("""nostr:(note1|nevent1|npub1|nprofile1|naddr1)[a-z0-9]+|(?<!\w)(npub1[a-z0-9]{58})(?!\w|\.[a-zA-Z])|(?:https?|wss?)://\S+|(?<![\w@])((?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+(?:com|net|org|io|dev|app|pro|ai|co|me|info|xyz|cc|tv|to|gg|sh|im|is|it|rs|ly|site|online|store|tech|cloud|social|world|earth|space|lol|wtf|family|life|art|design|blog|news|live|video|media|chat|games|money|finance|agency|studio|build|run|codes|systems|network|zone|pub|blue|limo|fyi|wiki|page|link|click|exchange|markets|fun|club|today)(?:/\S*)?)(?!\w)|(?<!\w)#([\p{L}0-9_][\p{L}\p{M}0-9_-]*)|(?<!\w)((?:note1|nevent1|nprofile1|naddr1)[a-z0-9]{10,})(?!\w)""", RegexOption.IGNORE_CASE)
 
 private val emojiShortcodeRegex = Regex(""":([a-zA-Z0-9_-]+):""")
 
@@ -412,10 +418,30 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
     }
 
     // Third pass: detect lightning invoices in text segments
-    val finalResult = mutableListOf<ContentSegment>()
+    val afterInvoices = mutableListOf<ContentSegment>()
     for (segment in afterEmoji) {
         if (segment is ContentSegment.TextSegment) {
-            finalResult.addAll(splitTextForInvoices(segment.text))
+            afterInvoices.addAll(splitTextForInvoices(segment.text))
+        } else {
+            afterInvoices.add(segment)
+        }
+    }
+
+    // Fourth pass: detect LNURL bech32 strings in text segments
+    val afterLnurl = mutableListOf<ContentSegment>()
+    for (segment in afterInvoices) {
+        if (segment is ContentSegment.TextSegment) {
+            afterLnurl.addAll(splitTextForLnurls(segment.text))
+        } else {
+            afterLnurl.add(segment)
+        }
+    }
+
+    // Fifth pass: detect Lightning addresses (user@domain.tld) in text segments
+    val finalResult = mutableListOf<ContentSegment>()
+    for (segment in afterLnurl) {
+        if (segment is ContentSegment.TextSegment) {
+            finalResult.addAll(splitTextForLightningAddresses(segment.text))
         } else {
             finalResult.add(segment)
         }
@@ -438,6 +464,8 @@ internal fun parseContent(content: String, emojiMap: Map<String, String> = empty
 }
 
 private val bolt11Regex = Regex("""(?i)(lightning:)?(lnbc|lntb|lnbcrt)[0-9a-z]{50,}""")
+private val lnurlRegex = Regex("""(?i)(?<!\w)(lnurl1[a-z0-9]{30,})(?!\w)""")
+private val lnAddrRegex = Regex("""(?<![/@\w])([\w.+\-]+@[\w.\-]+\.[a-z]{2,})(?![\w.])""")
 
 private fun splitTextForInvoices(text: String): List<ContentSegment> {
     val matches = bolt11Regex.findAll(text).toList()
@@ -460,6 +488,51 @@ private fun splitTextForInvoices(text: String): List<ContentSegment> {
     if (lastEnd < text.length) {
         result.add(ContentSegment.TextSegment(text.substring(lastEnd)))
     }
+    return result
+}
+
+private fun splitTextForLnurls(text: String): List<ContentSegment> {
+    val matches = lnurlRegex.findAll(text).toList()
+    if (matches.isEmpty()) return listOf(ContentSegment.TextSegment(text))
+    val result = mutableListOf<ContentSegment>()
+    var lastEnd = 0
+    var anyFound = false
+    for (match in matches) {
+        val encoded = match.value.lowercase()
+        val valid = runCatching {
+            val (hrp, _) = Nip19.bech32Decode(encoded)
+            hrp == "lnurl"
+        }.getOrDefault(false)
+        if (!valid) continue
+        anyFound = true
+        if (match.range.first > lastEnd) {
+            result.add(ContentSegment.TextSegment(text.substring(lastEnd, match.range.first)))
+        }
+        result.add(ContentSegment.LnurlPayableSegment(encoded))
+        lastEnd = match.range.last + 1
+    }
+    if (!anyFound) return listOf(ContentSegment.TextSegment(text))
+    if (lastEnd < text.length) result.add(ContentSegment.TextSegment(text.substring(lastEnd)))
+    return result
+}
+
+private fun splitTextForLightningAddresses(text: String): List<ContentSegment> {
+    val matches = lnAddrRegex.findAll(text).toList()
+    if (matches.isEmpty()) return listOf(ContentSegment.TextSegment(text))
+    val result = mutableListOf<ContentSegment>()
+    var lastEnd = 0
+    var anyFound = false
+    for (match in matches) {
+        val address = match.groupValues[1]
+        anyFound = true
+        if (match.range.first > lastEnd) {
+            result.add(ContentSegment.TextSegment(text.substring(lastEnd, match.range.first)))
+        }
+        result.add(ContentSegment.LightningAddressSegment(address))
+        lastEnd = match.range.last + 1
+    }
+    if (!anyFound) return listOf(ContentSegment.TextSegment(text))
+    if (lastEnd < text.length) result.add(ContentSegment.TextSegment(text.substring(lastEnd)))
     return result
 }
 
@@ -494,55 +567,27 @@ private fun LightningInvoiceCard(
     val primary = MaterialTheme.colorScheme.primary
     val onPrimary = MaterialTheme.colorScheme.onPrimary
     val isExpired = decoded.isExpired()
-    var showConfirm by remember { mutableStateOf(false) }
+    var showPaySheet by remember { mutableStateOf(false) }
     var payState by remember { mutableStateOf(InvoicePayState.Idle) }
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
 
-    if (showConfirm) {
-        AlertDialog(
-            onDismissRequest = { showConfirm = false },
-            title = { Text(stringResource(cooking.zap.app.R.string.lightning_invoice_dialog_title)) },
-            text = {
-                Column {
-                    if (decoded.amountSats != null) {
-                        Text(cooking.zap.app.ui.util.AmountFormatter.formatFull(decoded.amountSats, ctx))
-                    } else {
-                        Text(stringResource(cooking.zap.app.R.string.lightning_invoice_any_amount))
+    if (showPaySheet) {
+        LightningPaySheet(
+            recipientLabel = stringResource(cooking.zap.app.R.string.lightning_invoice_dialog_title),
+            amount = decoded.amountSats?.let { LightningPayAmount.Fixed(it) } ?: LightningPayAmount.AnyAmount,
+            description = decoded.description,
+            onDismiss = { showPaySheet = false },
+            onPay = {
+                showPaySheet = false
+                if (onPayInvoice != null) {
+                    scope.launch {
+                        payState = InvoicePayState.Paying
+                        val success = onPayInvoice(invoice)
+                        payState = if (success) InvoicePayState.Success else InvoicePayState.Failed
+                        delay(3000)
+                        payState = InvoicePayState.Idle
                     }
-                    if (!decoded.description.isNullOrBlank()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = decoded.description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showConfirm = false
-                        if (onPayInvoice != null) {
-                            scope.launch {
-                                payState = InvoicePayState.Paying
-                                val success = onPayInvoice(invoice)
-                                payState = if (success) InvoicePayState.Success else InvoicePayState.Failed
-                                delay(3000)
-                                payState = InvoicePayState.Idle
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = primary,
-                        contentColor = onPrimary
-                    )
-                ) { Text(stringResource(cooking.zap.app.R.string.lightning_invoice_btn_pay)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showConfirm = false }) {
-                    Text(stringResource(cooking.zap.app.R.string.btn_cancel))
                 }
             }
         )
@@ -599,18 +644,27 @@ private fun LightningInvoiceCard(
                         color = primary,
                         strokeWidth = 2.dp
                     )
-                    InvoicePayState.Success -> Text(
-                        text = "✓ ${stringResource(cooking.zap.app.R.string.lightning_invoice_paid)}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = primary
-                    )
+                    InvoicePayState.Success -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.Check,
+                            contentDescription = null,
+                            tint = WispThemeColors.repostColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = stringResource(cooking.zap.app.R.string.lightning_invoice_paid),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = WispThemeColors.repostColor
+                        )
+                    }
                     InvoicePayState.Failed -> Text(
                         text = "✗ ${stringResource(cooking.zap.app.R.string.lightning_payment_failed)}",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.error
                     )
                     InvoicePayState.Idle -> Button(
-                        onClick = { if (!isExpired) showConfirm = true },
+                        onClick = { if (!isExpired) showPaySheet = true },
                         enabled = !isExpired,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = primary,
@@ -623,6 +677,217 @@ private fun LightningInvoiceCard(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+private enum class LnurlPayState { Idle, Resolving, Paying, Success, Failed }
+
+@Composable
+private fun LnurlPayableCard(
+    value: String,
+    onPayInvoice: (suspend (String) -> Boolean)?
+) {
+    val isLnurl = value.startsWith("lnurl1", ignoreCase = true)
+    val primary = MaterialTheme.colorScheme.primary
+    val onPrimary = MaterialTheme.colorScheme.onPrimary
+    val scope = rememberCoroutineScope()
+
+    var payState by remember { mutableStateOf(LnurlPayState.Idle) }
+    var showPaySheet by remember { mutableStateOf(false) }
+    var sheetAmount by remember { mutableStateOf<LightningPayAmount>(LightningPayAmount.AnyAmount) }
+    var pendingCallback by remember { mutableStateOf<String?>(null) }
+    var showQrDialog by remember { mutableStateOf(false) }
+
+    val displayLabel = remember(value) {
+        if (isLnurl) {
+            runCatching {
+                val (_, data) = Nip19.bech32Decode(value.lowercase())
+                val url = data.toString(Charsets.UTF_8)
+                android.net.Uri.parse(url).host ?: "Lightning"
+            }.getOrDefault("Lightning")
+        } else {
+            value
+        }
+    }
+
+    if (showPaySheet) {
+        val callback = pendingCallback
+        if (callback != null) {
+            LightningPaySheet(
+                recipientLabel = displayLabel,
+                amount = sheetAmount,
+                onDismiss = { showPaySheet = false },
+                onPay = { amountSats ->
+                    showPaySheet = false
+                    scope.launch {
+                        payState = LnurlPayState.Paying
+                        val bolt11 = Nip57.fetchSimpleInvoice(callback, amountSats * 1000, httpClient)
+                        val success = if (bolt11 != null && onPayInvoice != null) onPayInvoice(bolt11) else false
+                        payState = if (success) LnurlPayState.Success else LnurlPayState.Failed
+                        delay(3000)
+                        payState = LnurlPayState.Idle
+                    }
+                }
+            )
+        }
+    }
+
+    // No wallet connected — encode the raw lnurl/address itself rather than
+    // fetching a fixed-amount invoice on the user's behalf, so any external
+    // LNURL- or lud16-aware wallet can scan it and pick its own amount.
+    if (showQrDialog) {
+        val qrBitmap = remember(value) { generateQrBitmap(value) }
+        Dialog(
+            onDismissRequest = { showQrDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp)
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(24.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(256.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(androidx.compose.ui.graphics.Color.White)
+                            .padding(8.dp)
+                    ) {
+                        Image(
+                            bitmap = qrBitmap.asImageBitmap(),
+                            contentDescription = stringResource(R.string.cd_qr_code),
+                            modifier = Modifier.matchParentSize()
+                        )
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = displayLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    TextButton(onClick = { showQrDialog = false }) {
+                        Text(stringResource(R.string.btn_cancel))
+                    }
+                }
+            }
+        }
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, primary.copy(alpha = 0.4f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_bolt),
+                contentDescription = null,
+                tint = primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = displayLabel,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = if (isLnurl) stringResource(R.string.lnurl_type_lnurl)
+                           else stringResource(R.string.lnurl_type_address),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            when (payState) {
+                LnurlPayState.Resolving, LnurlPayState.Paying ->
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = primary,
+                        strokeWidth = 2.dp
+                    )
+                LnurlPayState.Success ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.Check,
+                            contentDescription = null,
+                            tint = WispThemeColors.repostColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = stringResource(R.string.lightning_invoice_paid),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = WispThemeColors.repostColor
+                        )
+                    }
+                LnurlPayState.Failed ->
+                    Text(
+                        text = "✗ ${stringResource(R.string.lightning_payment_failed)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                LnurlPayState.Idle ->
+                    if (onPayInvoice != null) {
+                        Button(
+                            onClick = {
+                                payState = LnurlPayState.Resolving
+                                scope.launch {
+                                    val info = if (isLnurl) {
+                                        Nip57.resolveLnurl1(value, httpClient)
+                                    } else {
+                                        Nip57.resolveLud16(value, httpClient)
+                                    }
+                                    payState = LnurlPayState.Idle
+                                    if (info == null) {
+                                        payState = LnurlPayState.Failed
+                                        delay(3000)
+                                        payState = LnurlPayState.Idle
+                                        return@launch
+                                    }
+                                    pendingCallback = info.callback
+                                    sheetAmount = if (info.minSendable >= info.maxSendable) {
+                                        LightningPayAmount.Fixed(info.minSendable / 1000)
+                                    } else {
+                                        LightningPayAmount.Range(info.minSendable / 1000, info.maxSendable / 1000)
+                                    }
+                                    showPaySheet = true
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = primary,
+                                contentColor = onPrimary
+                            )
+                        ) { Text(stringResource(R.string.lightning_invoice_pay_now)) }
+                    } else {
+                        Button(
+                            onClick = { showQrDialog = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = primary,
+                                contentColor = onPrimary
+                            )
+                        ) { Text(stringResource(R.string.cd_show_qr_code)) }
+                    }
             }
         }
     }
@@ -1056,6 +1321,18 @@ fun RichContent(
                         LightningInvoiceCard(
                             invoice = segment.invoice,
                             decoded = segment.decoded,
+                            onPayInvoice = noteActions?.onPayInvoice
+                        )
+                    }
+                    is ContentSegment.LnurlPayableSegment -> {
+                        LnurlPayableCard(
+                            value = segment.encoded,
+                            onPayInvoice = noteActions?.onPayInvoice
+                        )
+                    }
+                    is ContentSegment.LightningAddressSegment -> {
+                        LnurlPayableCard(
+                            value = segment.address,
                             onPayInvoice = noteActions?.onPayInvoice
                         )
                     }
@@ -3448,3 +3725,6 @@ private fun LoadingAsyncImage(
         }
     }
 }
+
+
+
