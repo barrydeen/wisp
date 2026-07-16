@@ -1,0 +1,77 @@
+{
+  "description": "Cross-platform grocery-generation contract vectors. Source: src/lib/mealplan/groceryGeneration.test.ts.",
+  "collectWeekRecipeSlots": [
+    {
+      "id": "unique-coords-day-slot-order",
+      "days": {
+        "mon": {
+          "slots": {
+            "breakfast": { "type": "text", "text": "Coffee" },
+            "dinner": { "type": "recipe", "a": "30023:pk:curry" }
+          }
+        },
+        "wed": {
+          "slots": {
+            "lunch": { "type": "recipe", "a": "30023:pk:salad" },
+            "dinner": { "type": "recipe", "a": "30023:pk:curry" }
+          }
+        },
+        "sun": {
+          "slots": {
+            "lunch": { "type": "text", "text": "Eating out" }
+          }
+        }
+      },
+      "expected": {
+        "aTags": ["30023:pk:curry", "30023:pk:salad"],
+        "textCount": 2,
+        "recipeSlotCount": 3
+      }
+    },
+    {
+      "id": "empty-week",
+      "days": {},
+      "expected": {
+        "aTags": [],
+        "textCount": 0,
+        "recipeSlotCount": 0
+      }
+    }
+  ],
+  "dedupeIngredients": [
+    {
+      "id": "exact-dup-first-recipeId-wins",
+      "rows": [
+        { "name": "olive oil", "quantity": "2 tbsp", "recipeId": "r1" },
+        { "name": "rice", "quantity": "1 cup", "recipeId": "r1" },
+        { "name": "olive oil", "quantity": "2 tbsp", "recipeId": "r2" }
+      ],
+      "expectedLength": 2,
+      "expectedFirstRecipeId": "r1"
+    },
+    {
+      "id": "no-merge-different-quantities",
+      "rows": [
+        { "name": "rice", "quantity": "1 cup", "recipeId": "r1" },
+        { "name": "rice", "quantity": "2 cup", "recipeId": "r2" }
+      ],
+      "expectedLength": 2
+    },
+    {
+      "id": "case-insensitive-name-verbatim-quantity",
+      "rows": [
+        { "name": "Olive Oil", "quantity": "2 tbsp", "recipeId": "r1" },
+        { "name": "olive oil", "quantity": "2 tbsp", "recipeId": "r2" },
+        { "name": "olive oil", "quantity": "2 Tbsp", "recipeId": "r3" }
+      ],
+      "expectedLength": 2
+    }
+  ],
+  "groceryListTitle": [
+    {
+      "id": "week-29",
+      "weekId": "2026-W29",
+      "expected": "Groceries — Week 29 (Jul 13–19)"
+    }
+  ]
+}

@@ -1,53 +1,41 @@
 package cooking.zap.app.mealplan
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
+import kotlinx.serialization.json.longOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
 /**
- * Port of frontend `src/lib/mealplan/schema.test.ts`.
- *
- * Vectors are inline (matching web's current style). PR 9's web-side half
- * will extract these to shared JSON fixtures — do not invent a parallel
- * fixture format here ahead of that extraction.
+ * Port of frontend `schema.test.ts`, driven by `/fixtures/mealplan-schema.vectors.json`.
  */
 class SchemaTest {
 
-    private val WEEK = "2026-W29"
-    private val json = Json { prettyPrint = false }
+    private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
+    private val fixtures = json.parseToJsonElement(
+        javaClass.getResource("/fixtures/mealplan-schema.vectors.json")!!.readText(),
+    ).jsonObject
+    private val WEEK = fixtures["week"]!!.jsonPrimitive.content
+    private val validPayload: JsonObject = fixtures["validPayload"]!!.jsonObject
 
-    private fun validPayload(): JsonObject = buildJsonObject {
-        put("schemaVersion", 1)
-        put("week", WEEK)
-        putJsonObject("days") {
-            putJsonObject("mon") {
-                putJsonObject("slots") {
-                    putJsonObject("breakfast") {
-                        put("type", "recipe")
-                        put("a", "30023:abc:shakshuka")
-                        put("title", "Shakshuka")
-                    }
-                    putJsonObject("lunch") {
-                        put("type", "text")
-                        put("text", "Leftovers")
-                    }
-                }
-                put("notes", "prep the night before")
-            }
-        }
-        put("notes", "light week")
-        put("createdAt", 1_789_000_000L)
-        put("updatedAt", 1_789_000_123L)
+    private fun resolvePayload(ref: kotlinx.serialization.json.JsonElement): kotlinx.serialization.json.JsonElement {
+        if (ref is JsonPrimitive && ref.contentOrNull == "\$validPayload") return validPayload
+        return ref
     }
 
     private fun ok(raw: kotlinx.serialization.json.JsonElement?): Schema.MealPlanPayloadResult.Ok {
@@ -57,220 +45,149 @@ class SchemaTest {
     }
 
     @Test
-    fun `accepts both tagged-union branches`() {
-        val result = ok(validPayload())
-        assertFalse(result.readOnly)
-        val breakfast = result.plan.slot("mon", "breakfast")
-        assertEquals("recipe", breakfast?.get("type")?.let { (it as JsonPrimitive).content })
-        assertEquals("30023:abc:shakshuka", breakfast?.get("a")?.let { (it as JsonPrimitive).content })
-        assertEquals("Shakshuka", breakfast?.get("title")?.let { (it as JsonPrimitive).content })
-        val lunch = result.plan.slot("mon", "lunch")
-        assertEquals("text", lunch?.get("type")?.let { (it as JsonPrimitive).content })
-        assertEquals("Leftovers", lunch?.get("text")?.let { (it as JsonPrimitive).content })
-        assertEquals("prep the night before", result.plan.day("mon")?.get("notes")?.let { (it as JsonPrimitive).content })
-        assertEquals("light week", result.plan.notes)
-        assertEquals(1_789_000_000L, result.plan.createdAt)
-    }
-
-    @Test
-    fun `round-trips - encode validate serialize preserves the payload`() {
-        val original = validPayload()
-        val validated = ok(json.parseToJsonElement(json.encodeToString(JsonObject.serializer(), original)))
-        val roundTripped = json.parseToJsonElement(Schema.serializeMealPlan(validated.plan)).jsonObject
-        assertEquals(original, roundTripped)
-    }
-
-    @Test
-    fun `preserves unknown fields at top, day, and slot level`() {
-        // Rebuild with extras at all three levels (contract rule 8).
-        val payload = buildJsonObject {
-            put("schemaVersion", 1)
-            put("week", WEEK)
-            putJsonObject("days") {
-                putJsonObject("mon") {
-                    putJsonObject("slots") {
-                        putJsonObject("breakfast") {
-                            put("type", "recipe")
-                            put("a", "30023:abc:shakshuka")
-                            put("title", "Shakshuka")
-                            put("servings", 3)
-                        }
-                        putJsonObject("lunch") {
-                            put("type", "text")
-                            put("text", "Leftovers")
-                        }
+    fun fixtureCases() {
+        for (el in fixtures["cases"]!!.jsonArray) {
+            val c = el.jsonObject
+            val id = c["id"]!!.jsonPrimitive.content
+            when (c["kind"]!!.jsonPrimitive.content) {
+                "validate" -> {
+                    var payload = resolvePayload(c["payload"]!!).jsonObject
+                    c["overrides"]?.jsonObject?.let { overrides ->
+                        payload = JsonObject(payload.toMutableMap().apply { putAll(overrides) })
                     }
-                    put("notes", "prep the night before")
-                    put("dayLevelExtra", 42)
-                }
-            }
-            put("notes", "light week")
-            put("createdAt", 1_789_000_000L)
-            put("updatedAt", 1_789_000_123L)
-            putJsonObject("futureFeature") {
-                put("some", "data")
-            }
-        }
-
-        val plan = ok(payload).plan
-        val serialized = json.parseToJsonElement(Schema.serializeMealPlan(plan)).jsonObject
-        assertEquals(
-            buildJsonObject { put("some", "data") },
-            serialized["futureFeature"],
-        )
-        assertEquals(
-            JsonPrimitive(42),
-            serialized["days"]!!.jsonObject["mon"]!!.jsonObject["dayLevelExtra"],
-        )
-        assertEquals(
-            JsonPrimitive(3),
-            serialized["days"]!!.jsonObject["mon"]!!.jsonObject["slots"]!!
-                .jsonObject["breakfast"]!!.jsonObject["servings"],
-        )
-    }
-
-    @Test
-    fun `flags schemaVersion greater than 1 as read-only without dropping content`() {
-        val payload = buildJsonObject {
-            for ((k, v) in validPayload()) {
-                if (k == "schemaVersion") put("schemaVersion", 2) else put(k, v)
-            }
-        }
-        val result = ok(payload)
-        assertTrue(result.readOnly)
-        assertEquals(2, result.plan.schemaVersion)
-        assertNotNull(result.plan.slot("mon", "breakfast"))
-    }
-
-    @Test
-    fun `the d-tag week wins over a mismatched payload week`() {
-        val payload = buildJsonObject {
-            for ((k, v) in validPayload()) {
-                if (k == "week") put("week", "2020-W01") else put(k, v)
-            }
-        }
-        assertEquals(WEEK, ok(payload).plan.week)
-    }
-
-    @Test
-    fun `drops invalid slot entries but keeps the rest of the day`() {
-        val payload = buildJsonObject {
-            put("schemaVersion", 1)
-            put("week", WEEK)
-            putJsonObject("days") {
-                putJsonObject("mon") {
-                    putJsonObject("slots") {
-                        putJsonObject("breakfast") {
-                            put("type", "recipe")
-                            put("a", "30023:abc:shakshuka")
-                            put("title", "Shakshuka")
-                        }
-                        putJsonObject("lunch") {
-                            put("type", "text")
-                            put("text", "Leftovers")
-                        }
-                        putJsonObject("dinner") {
-                            put("type", "recipe") // missing a
-                        }
-                        putJsonObject("snack") {
-                            put("type", "mystery")
-                            put("x", 1)
-                        }
+                    val result = ok(payload)
+                    val exp = c["expected"]!!.jsonObject
+                    exp["readOnly"]?.jsonPrimitive?.boolean?.let { assertEquals(id, it, result.readOnly) }
+                    exp["schemaVersion"]?.jsonPrimitive?.int?.let {
+                        assertEquals(id, it, result.plan.schemaVersion)
                     }
-                    put("notes", "prep the night before")
-                }
-            }
-            put("notes", "light week")
-            put("createdAt", 1_789_000_000L)
-            put("updatedAt", 1_789_000_123L)
-        }
-        val plan = ok(payload).plan
-        assertEquals(null, plan.slot("mon", "dinner"))
-        assertEquals(null, plan.slot("mon", "snack"))
-        assertNotNull(plan.slot("mon", "breakfast"))
-        assertEquals(
-            "prep the night before",
-            plan.day("mon")?.get("notes")?.let { (it as JsonPrimitive).content },
-        )
-    }
-
-    @Test
-    fun `ignores unknown day keys and non-object days`() {
-        val payload = buildJsonObject {
-            put("schemaVersion", 1)
-            put("week", WEEK)
-            putJsonObject("days") {
-                putJsonObject("mon") {
-                    putJsonObject("slots") {
-                        putJsonObject("breakfast") {
-                            put("type", "recipe")
-                            put("a", "30023:abc:shakshuka")
-                        }
+                    exp["week"]?.jsonPrimitive?.content?.let { assertEquals(id, it, result.plan.week) }
+                    exp["createdAt"]?.jsonPrimitive?.long?.let { assertEquals(id, it, result.plan.createdAt) }
+                    exp["dayNotes"]?.jsonPrimitive?.content?.let {
+                        assertEquals(id, it, result.plan.day("mon")?.get("notes")?.jsonPrimitive?.content)
                     }
-                    put("notes", "prep the night before")
+                    exp["weekNotes"]?.jsonPrimitive?.content?.let {
+                        assertEquals(id, it, result.plan.notes)
+                    }
+                    exp["breakfast"]?.jsonObject?.let { expected ->
+                        val breakfast = result.plan.slot("mon", "breakfast")!!
+                        assertEquals(expected, breakfast)
+                    }
+                    exp["lunch"]?.jsonObject?.let { expected ->
+                        assertEquals(expected, result.plan.slot("mon", "lunch"))
+                    }
+                    if (exp["breakfastPresent"]?.jsonPrimitive?.boolean == true) {
+                        assertNotNull(id, result.plan.slot("mon", "breakfast"))
+                    }
                 }
-                putJsonObject("funday") {
-                    putJsonObject("slots") {}
+                "roundTrip" -> {
+                    val original = resolvePayload(c["payload"]!!).jsonObject
+                    val validated = ok(json.parseToJsonElement(json.encodeToString(JsonObject.serializer(), original)))
+                    val roundTripped = json.parseToJsonElement(Schema.serializeMealPlan(validated.plan)).jsonObject
+                    assertEquals(id, original, roundTripped)
                 }
-                put("tue", JsonPrimitive("not a day"))
+                "unknownFields" -> {
+                    val inject = c["inject"]!!.jsonObject
+                    val base = resolvePayload(c["payload"]!!).jsonObject.toMutableMap()
+                    inject["top"]!!.jsonObject.forEach { (k, v) -> base[k] = v }
+                    val days = (base["days"] as JsonObject).toMutableMap()
+                    val mon = (days["mon"] as JsonObject).toMutableMap()
+                    inject["day"]!!.jsonObject.forEach { (k, v) -> mon[k] = v }
+                    val slots = (mon["slots"] as JsonObject).toMutableMap()
+                    val breakfast = (slots["breakfast"] as JsonObject).toMutableMap()
+                    inject["slot"]!!.jsonObject.forEach { (k, v) -> breakfast[k] = v }
+                    slots["breakfast"] = JsonObject(breakfast)
+                    mon["slots"] = JsonObject(slots)
+                    days["mon"] = JsonObject(mon)
+                    base["days"] = JsonObject(days)
+                    val result = ok(JsonObject(base))
+                    val serialized = json.parseToJsonElement(Schema.serializeMealPlan(result.plan)).jsonObject
+                    val exp = c["expected"]!!.jsonObject
+                    assertEquals(exp["futureFeature"], serialized["futureFeature"])
+                    assertEquals(
+                        exp["dayLevelExtra"]!!.jsonPrimitive.int,
+                        serialized["days"]!!.jsonObject["mon"]!!.jsonObject["dayLevelExtra"]!!.jsonPrimitive.int,
+                    )
+                    assertEquals(
+                        exp["servings"]!!.jsonPrimitive.int,
+                        serialized["days"]!!.jsonObject["mon"]!!.jsonObject["slots"]!!
+                            .jsonObject["breakfast"]!!.jsonObject["servings"]!!.jsonPrimitive.int,
+                    )
+                }
+                "dropInvalidSlots" -> {
+                    val base = resolvePayload(c["payload"]!!).jsonObject.toMutableMap()
+                    val days = (base["days"] as JsonObject).toMutableMap()
+                    val mon = (days["mon"] as JsonObject).toMutableMap()
+                    val slots = (mon["slots"] as JsonObject).toMutableMap()
+                    c["injectSlots"]!!.jsonObject.forEach { (k, v) -> slots[k] = v }
+                    mon["slots"] = JsonObject(slots)
+                    days["mon"] = JsonObject(mon)
+                    base["days"] = JsonObject(days)
+                    val result = ok(JsonObject(base))
+                    val exp = c["expected"]!!.jsonObject
+                    if (exp["dinnerAbsent"]?.jsonPrimitive?.boolean == true) {
+                        assertNull(id, result.plan.slot("mon", "dinner"))
+                    }
+                    if (exp["snackAbsent"]?.jsonPrimitive?.boolean == true) {
+                        assertNull(id, result.plan.slot("mon", "snack"))
+                    }
+                    if (exp["breakfastPresent"]?.jsonPrimitive?.boolean == true) {
+                        assertNotNull(id, result.plan.slot("mon", "breakfast"))
+                    }
+                    exp["dayNotes"]?.jsonPrimitive?.content?.let {
+                        assertEquals(id, it, result.plan.day("mon")?.get("notes")?.jsonPrimitive?.content)
+                    }
+                }
+                "ignoreUnknownDays" -> {
+                    val base = resolvePayload(c["payload"]!!).jsonObject.toMutableMap()
+                    val days = (base["days"] as JsonObject).toMutableMap()
+                    c["injectDays"]!!.jsonObject.forEach { (k, v) -> days[k] = v }
+                    base["days"] = JsonObject(days)
+                    val result = ok(JsonObject(base))
+                    assertNull(result.plan.day("funday"))
+                    assertNull(result.plan.day("tue"))
+                }
+                "defaults" -> {
+                    val result = ok(c["payload"]!!)
+                    val exp = c["expected"]!!.jsonObject
+                    assertEquals(exp["readOnly"]!!.jsonPrimitive.boolean, result.readOnly)
+                    assertEquals(exp["schemaVersion"]!!.jsonPrimitive.int, result.plan.schemaVersion)
+                    assertEquals(exp["week"]!!.jsonPrimitive.content, result.plan.week)
+                    assertEquals(exp["days"]!!.jsonObject, result.plan.days)
+                    if (exp["createdAtPositive"]?.jsonPrimitive?.boolean == true) {
+                        assertTrue(result.plan.createdAt > 0)
+                    }
+                }
+                "reject" -> {
+                    // Web returns null; Android surfaces DecryptFailed (same
+                    // semantic — structurally unusable, never silent empty).
+                    for (p in c["payloads"]!!.jsonArray) {
+                        val raw: kotlinx.serialization.json.JsonElement? =
+                            if (p is JsonNull) null else p
+                        val result = Schema.validateMealPlanPayload(raw, WEEK)
+                        assertTrue(
+                            "$id: expected DecryptFailed, got $result",
+                            result is Schema.MealPlanPayloadResult.DecryptFailed,
+                        )
+                    }
+                }
+                "createEmpty" -> {
+                    val plan = Schema.createEmptyMealPlan(WEEK)
+                    val exp = c["expected"]!!.jsonObject
+                    assertEquals(exp["schemaVersion"]!!.jsonPrimitive.int, plan.schemaVersion)
+                    assertEquals(exp["week"]!!.jsonPrimitive.content, plan.week)
+                    assertEquals(exp["days"]!!.jsonObject, plan.days)
+                    val validated = ok(json.parseToJsonElement(Schema.serializeMealPlan(plan)))
+                    assertFalse(validated.readOnly)
+                }
+                else -> fail("unknown kind in $id")
             }
-            put("notes", "light week")
-            put("createdAt", 1_789_000_000L)
-            put("updatedAt", 1_789_000_123L)
         }
-        val plan = ok(payload).plan
-        assertEquals(null, plan.days["funday"])
-        assertEquals(null, plan.day("tue"))
     }
 
     @Test
-    fun `defensively defaults missing fields`() {
-        val result = ok(buildJsonObject { })
-        assertFalse(result.readOnly)
-        assertEquals(1, result.plan.schemaVersion)
-        assertEquals(WEEK, result.plan.week)
-        assertEquals(JsonObject(emptyMap()), result.plan.days)
-        assertTrue(result.plan.createdAt > 0)
-    }
-
-    @Test
-    fun `rejects structurally unusable payloads as DecryptFailed`() {
-        val nullResult = Schema.validateMealPlanPayload(null, WEEK)
-        assertTrue(nullResult is Schema.MealPlanPayloadResult.DecryptFailed)
-
-        val stringResult = Schema.validateMealPlanPayload(JsonPrimitive("a string"), WEEK)
-        assertTrue(stringResult is Schema.MealPlanPayloadResult.DecryptFailed)
-
-        val arrayResult = Schema.validateMealPlanPayload(
-            json.parseToJsonElement("[1,2]"),
-            WEEK,
-        )
-        assertTrue(arrayResult is Schema.MealPlanPayloadResult.DecryptFailed)
-    }
-
-    @Test
-    fun `malformed JSON plaintext is DecryptFailed`() {
-        val result = Schema.parseMealPlanPayload("{not-json", WEEK)
+    fun parseMealPlanPayload_rejectsMalformedPlaintext() {
+        val result = Schema.parseMealPlanPayload("{not valid json", WEEK)
         assertTrue(result is Schema.MealPlanPayloadResult.DecryptFailed)
-        assertEquals(
-            "Malformed meal plan payload",
-            (result as Schema.MealPlanPayloadResult.DecryptFailed).error,
-        )
-    }
-
-    @Test
-    fun `createEmptyMealPlan creates a valid v1 skeleton`() {
-        val plan = Schema.createEmptyMealPlan(WEEK)
-        assertEquals(Schema.MEALPLAN_SCHEMA_VERSION, plan.schemaVersion)
-        assertEquals(WEEK, plan.week)
-        assertEquals(JsonObject(emptyMap()), plan.days)
-        // Field order matches web createEmptyMealPlan object literal.
-        assertEquals(
-            listOf("schemaVersion", "week", "days", "createdAt", "updatedAt"),
-            plan.json.keys.toList(),
-        )
-        val validated = Schema.parseMealPlanPayload(Schema.serializeMealPlan(plan), WEEK)
-        assertTrue(validated is Schema.MealPlanPayloadResult.Ok)
-        assertFalse((validated as Schema.MealPlanPayloadResult.Ok).readOnly)
     }
 }

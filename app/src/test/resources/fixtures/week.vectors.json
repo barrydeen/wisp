@@ -1,0 +1,61 @@
+{
+  "description": "Cross-platform ISO-week contract vectors. Source: src/lib/mealplan/week.test.ts. Dates use calendar {y,m,d} with m 1-indexed.",
+  "weeksInISOYear": [
+    { "id": "2026-is-53", "year": 2026, "expected": 53 },
+    { "id": "2025-is-52", "year": 2025, "expected": 52 }
+  ],
+  "weekIdForDate": [
+    { "id": "jan1-2027", "date": { "y": 2027, "m": 1, "d": 1 }, "expected": "2026-W53" },
+    { "id": "jan2-2027", "date": { "y": 2027, "m": 1, "d": 2 }, "expected": "2026-W53" },
+    { "id": "jan3-2027", "date": { "y": 2027, "m": 1, "d": 3 }, "expected": "2026-W53" },
+    { "id": "jan4-2027", "date": { "y": 2027, "m": 1, "d": 4 }, "expected": "2027-W01" },
+    { "id": "dec29-2025", "date": { "y": 2025, "m": 12, "d": 29 }, "expected": "2026-W01" },
+    { "id": "dec28-2025", "date": { "y": 2025, "m": 12, "d": 28 }, "expected": "2025-W52" },
+    { "id": "zero-pad", "date": { "y": 2026, "m": 2, "d": 2 }, "expected": "2026-W06" }
+  ],
+  "nextWeekId": [
+    { "id": "w53-to-w01", "input": "2026-W53", "expected": "2027-W01" },
+    { "id": "w52-to-w01", "input": "2025-W52", "expected": "2026-W01" },
+    { "id": "ordinary", "input": "2026-W29", "expected": "2026-W30" }
+  ],
+  "prevWeekId": [
+    { "id": "w01-to-w53", "input": "2027-W01", "expected": "2026-W53" },
+    { "id": "w01-to-w52", "input": "2026-W01", "expected": "2025-W52" },
+    { "id": "ordinary", "input": "2026-W29", "expected": "2026-W28" }
+  ],
+  "mondayOfWeek": [
+    {
+      "id": "w29-monday",
+      "input": "2026-W29",
+      "expectedDayOfWeek": 1,
+      "expectedWeekId": "2026-W29"
+    }
+  ],
+  "dTagRoundTrip": [
+    {
+      "id": "encode-decode",
+      "weekId": "2026-W29",
+      "dTag": "mealplan-2026-W29"
+    }
+  ],
+  "weekIdFromDTagReject": [
+    { "id": "foreign-prefix", "input": "grocery-abc123", "expected": null },
+    { "id": "missing-W", "input": "mealplan-2026-29", "expected": null },
+    { "id": "invalid-week", "input": "mealplan-2026-W99", "expected": null }
+  ],
+  "isValidWeekId": [
+    { "id": "real-w53", "input": "2026-W53", "expected": true },
+    { "id": "invalid-w53-on-52-year", "input": "2025-W53", "expected": false },
+    { "id": "w00", "input": "2026-W00", "expected": false },
+    { "id": "w54", "input": "2026-W54", "expected": false },
+    { "id": "short-year", "input": "26-W05", "expected": false },
+    { "id": "garbage", "input": "garbage", "expected": false }
+  ],
+  "parseWeekId": [
+    { "id": "w29", "input": "2026-W29", "expected": { "year": 2026, "week": 29 } }
+  ],
+  "weekDisplayRange": [
+    { "id": "same-month", "input": "2026-W29", "expected": "Week 29 (Jul 13–19)" },
+    { "id": "cross-month", "input": "2026-W27", "expected": "Week 27 (Jun 29–Jul 5)" }
+  ]
+}

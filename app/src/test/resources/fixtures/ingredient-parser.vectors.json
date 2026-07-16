@@ -1,0 +1,163 @@
+{
+  "description": "Cross-platform ingredient-parser contract vectors. Source: src/lib/utils/ingredientParser.test.ts. Quirks (plural singularization, comma-suffix retention) ARE the contract — do not \"fix\" them unilaterally.",
+  "parseIngredient": [
+    {
+      "id": "number-unit-name",
+      "input": "2 cups flour",
+      "expected": {
+        "quantity": "2 cup",
+        "name": "flour",
+        "category": "pantry",
+        "originalText": "2 cups flour"
+      },
+      "notes": "quirk: unit alternation matches singular first; s? eats the plural"
+    },
+    {
+      "id": "ascii-fraction",
+      "input": "1/2 teaspoon salt",
+      "expected": {
+        "quantity": "1/2 teaspoon",
+        "name": "salt",
+        "category": "pantry",
+        "originalText": "1/2 teaspoon salt"
+      }
+    },
+    {
+      "id": "mixed-number",
+      "input": "1 1/2 cups sugar",
+      "expected": {
+        "quantity": "1 1/2 cup",
+        "name": "sugar",
+        "category": "pantry",
+        "originalText": "1 1/2 cups sugar"
+      }
+    },
+    {
+      "id": "unicode-fraction",
+      "input": "½ cup sugar",
+      "expected": {
+        "quantity": "½ cup",
+        "name": "sugar",
+        "category": "pantry",
+        "originalText": "½ cup sugar"
+      }
+    },
+    {
+      "id": "unitless-quantity",
+      "input": "2 onions, diced",
+      "expected": {
+        "quantity": "2",
+        "name": "onions",
+        "category": "produce",
+        "originalText": "2 onions, diced"
+      }
+    },
+    {
+      "id": "unquantified",
+      "input": "salt and pepper to taste",
+      "expected": {
+        "quantity": "",
+        "name": "salt and pepper to taste",
+        "category": "produce",
+        "originalText": "salt and pepper to taste"
+      },
+      "notes": "category quirks with keyword order: 'pepper' hits produce before pantry 'salt'"
+    },
+    {
+      "id": "size-word-unit",
+      "input": "3 large eggs",
+      "expected": {
+        "quantity": "3 large",
+        "name": "eggs",
+        "category": "protein",
+        "originalText": "3 large eggs"
+      }
+    },
+    {
+      "id": "strip-parenthetical",
+      "input": "2 cups flour (sifted)",
+      "expected": {
+        "quantity": "2 cup",
+        "name": "flour",
+        "category": "pantry",
+        "originalText": "2 cups flour (sifted)"
+      }
+    },
+    {
+      "id": "comma-prep-known",
+      "input": "2 carrots, chopped",
+      "expected": {
+        "quantity": "2",
+        "name": "carrots",
+        "category": "produce",
+        "originalText": "2 carrots, chopped"
+      }
+    },
+    {
+      "id": "comma-prep-unknown-retained",
+      "input": "3 large eggs, beaten",
+      "expected": {
+        "quantity": "3 large",
+        "name": "eggs, beaten",
+        "category": "protein",
+        "originalText": "3 large eggs, beaten"
+      },
+      "notes": "quirk: 'beaten' is not in the prep-word list — suffix stays"
+    },
+    {
+      "id": "drop-leading-article",
+      "input": "1 an onion",
+      "expected": {
+        "quantity": "1",
+        "name": "onion",
+        "category": "produce",
+        "originalText": "1 an onion"
+      }
+    }
+  ],
+  "extractIngredientsFromRecipe": [
+    {
+      "id": "extract-bullets-stars-numbered-plain",
+      "input": "## Chef's notes\n\nGreat dish.\n\n## Ingredients\n\n- 2 cups flour\n* 1 cup milk\n1. 3 eggs\n\n**For the sauce**\n\n- 1 jar tomato sauce\nplain line ingredient\n\n## Directions\n\n1. Mix.\n",
+      "expected": [
+        "2 cups flour",
+        "1 cup milk",
+        "3 eggs",
+        "1 jar tomato sauce",
+        "plain line ingredient"
+      ]
+    },
+    {
+      "id": "extract-no-section",
+      "input": "## Directions\n\n1. Cook.",
+      "expected": []
+    }
+  ],
+  "parseIngredientsFromRecipe": [
+    {
+      "id": "extract-and-parse",
+      "input": "## Ingredients\n\n- 2 cups flour\n- 1/2 tsp salt\n",
+      "expected": [
+        {
+          "quantity": "2 cup",
+          "name": "flour",
+          "category": "pantry",
+          "originalText": "2 cups flour"
+        },
+        {
+          "quantity": "1/2 tsp",
+          "name": "salt",
+          "category": "pantry",
+          "originalText": "1/2 tsp salt"
+        }
+      ]
+    }
+  ],
+  "normalizeFraction": [
+    {
+      "id": "unicode-to-ascii",
+      "input": "½ cup and ¾ tsp",
+      "expected": "1/2 cup and 3/4 tsp"
+    }
+  ]
+}
