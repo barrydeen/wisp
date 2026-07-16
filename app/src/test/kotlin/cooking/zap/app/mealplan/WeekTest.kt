@@ -91,7 +91,7 @@ class WeekTest {
                 Week.weekIdForDate(monday),
             )
             // Fixture uses JS getDay() where Monday=1.
-            assertEquals(1, v["expectedDayOfWeek"]!!.jsonPrimitive.int)
+            assertEquals(v["expectedDayOfWeek"]!!.jsonPrimitive.int, monday.dayOfWeek.value)
         }
     }
 

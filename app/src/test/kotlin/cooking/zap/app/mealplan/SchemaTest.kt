@@ -124,9 +124,19 @@ class SchemaTest {
                     days["mon"] = JsonObject(mon)
                     base["days"] = JsonObject(days)
                     val result = ok(JsonObject(base))
-                    assertNull(result.plan.slot("mon", "dinner"))
-                    assertNull(result.plan.slot("mon", "snack"))
-                    assertNotNull(result.plan.slot("mon", "breakfast"))
+                    val exp = c["expected"]!!.jsonObject
+                    if (exp["dinnerAbsent"]?.jsonPrimitive?.boolean == true) {
+                        assertNull(id, result.plan.slot("mon", "dinner"))
+                    }
+                    if (exp["snackAbsent"]?.jsonPrimitive?.boolean == true) {
+                        assertNull(id, result.plan.slot("mon", "snack"))
+                    }
+                    if (exp["breakfastPresent"]?.jsonPrimitive?.boolean == true) {
+                        assertNotNull(id, result.plan.slot("mon", "breakfast"))
+                    }
+                    exp["dayNotes"]?.jsonPrimitive?.content?.let {
+                        assertEquals(id, it, result.plan.day("mon")?.get("notes")?.jsonPrimitive?.content)
+                    }
                 }
                 "ignoreUnknownDays" -> {
                     val base = resolvePayload(c["payload"]!!).jsonObject.toMutableMap()
@@ -173,5 +183,11 @@ class SchemaTest {
                 else -> fail("unknown kind in $id")
             }
         }
+    }
+
+    @Test
+    fun parseMealPlanPayload_rejectsMalformedPlaintext() {
+        val result = Schema.parseMealPlanPayload("{not valid json", WEEK)
+        assertTrue(result is Schema.MealPlanPayloadResult.DecryptFailed)
     }
 }
