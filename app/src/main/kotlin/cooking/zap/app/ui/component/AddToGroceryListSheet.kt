@@ -127,13 +127,23 @@ fun AddToGroceryListSheet(
             Spacer(Modifier.height(8.dp))
 
             if (ingredients.isEmpty()) {
-                // Zero-parse path: explain, never silently no-op.
+                // Zero-parse path: explain, never silently no-op. Keep an
+                // explicit dismissal (review: swipe/scrim alone is not the
+                // sheet's footer idiom); list selection/confirm stay hidden.
                 Text(
                     text = stringResource(R.string.grocery_add_no_ingredients),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 12.dp),
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
                 return@Column
             }
 
