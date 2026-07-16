@@ -315,6 +315,8 @@ fun RecipeFeedScreen(
                         onGroceryListClick = onGroceryListClick,
                         onRecipeClick = onRecipeClick,
                         onNourish = onNourish,
+                        onBrowseRecipes = { mainTab = RecipesMainTab.RECIPES },
+                        onCreateRecipe = onCreateRecipe,
                         debugSigner = debugSigner,
                         debugPlannerVm = debugPlannerVm,
                         debugPlantPlan = debugPlantPlan,
@@ -668,6 +670,8 @@ private fun CookbookSection(
     onGroceryListClick: (listId: String) -> Unit,
     onRecipeClick: (author: String, dTag: String) -> Unit,
     onNourish: () -> Unit,
+    onBrowseRecipes: () -> Unit,
+    onCreateRecipe: (() -> Unit)?,
     debugSigner: cooking.zap.app.nostr.NostrSigner? = null,
     debugPlannerVm: cooking.zap.app.viewmodel.PlannerViewModel? = null,
     debugPlantPlan: (() -> Unit)? = null,
@@ -864,6 +868,10 @@ private fun CookbookSection(
                     PlannerSection(
                         viewModel = plannerViewModel,
                         recipeRepo = recipeRepo,
+                        cookbookViewModel = viewModel,
+                        userPubkey = userPubkey,
+                        onBrowseRecipes = onBrowseRecipes,
+                        onCreateRecipe = onCreateRecipe,
                         // DEBUG stop-gate harness moves from the (now-gone) teaser
                         // long-press to the week-range header long-press.
                         onDebugLongPress = if (cooking.zap.app.BuildConfig.DEBUG) {
