@@ -55,12 +55,15 @@ import cooking.zap.app.R
 import cooking.zap.app.mealplan.PlannerLogic
 import cooking.zap.app.mealplan.PlannerMutations
 import cooking.zap.app.mealplan.PlannerWeekState
+import cooking.zap.app.mealplan.RecipePickerLogic
 import cooking.zap.app.mealplan.Schema
 import cooking.zap.app.mealplan.Week
 import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.repo.RecipeRepository
 import cooking.zap.app.ui.component.PlannerNotesDialog
+import cooking.zap.app.ui.component.RecipePickerSheet
 import cooking.zap.app.ui.component.SlotEditorDialog
+import cooking.zap.app.viewmodel.CookbookViewModel
 import cooking.zap.app.viewmodel.PlannerViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -74,16 +77,16 @@ import java.util.Locale
 private val DAY_DATE_FMT = DateTimeFormatter.ofPattern("MMM d", Locale.US)
 
 /**
- * The Planner section of the My Kitchen hub (arc PR 8) — the whole week view
- * in-place (web `/my-kitchen/planner` is a single page, not a section→detail
- * split like grocery). Header with the week display range + prev/next + today;
- * vertically stacked day cards (today marked and scrolled into view), each with
- * the four meal slots; week + day notes.
+ * The Planner section of the My Kitchen hub (arc PR 8 week view + PR 8.5
+ * recipe picker) — the whole week view in-place (web `/my-kitchen/planner` is
+ * a single page, not a section→detail split like grocery). Header with the week
+ * display range + prev/next + today; vertically stacked day cards (today marked
+ * and scrolled into view), each with the four meal slots; week + day notes.
  *
- * TEXT-ONLY slot editing this PR — recipe entries still RENDER (title +
- * thumbnail, resolved from the recipe cache with the payload's denormalized
- * title as the offline fallback), but adding a recipe is the next PR. See
- * [SlotEditorDialog] for the recipe-picker seam.
+ * Slot editing: text via [SlotEditorDialog]; recipes via [RecipePickerSheet]
+ * (Saved / Published tabs) wired through the dialog's `onPickRecipe` seam.
+ * Recipe cells RENDER with title + thumbnail (cache + denormalized title
+ * snapshot for offline).
  *
  * The four sealed [PlannerWeekState]s render distinctly (acceptance criteria):
  * Loading, Empty (banner + editable grid), Loaded (grid; read-only variant
@@ -94,6 +97,10 @@ private val DAY_DATE_FMT = DateTimeFormatter.ofPattern("MMM d", Locale.US)
 fun PlannerSection(
     viewModel: PlannerViewModel,
     recipeRepo: RecipeRepository,
+    cookbookViewModel: CookbookViewModel,
+    userPubkey: String?,
+    onBrowseRecipes: () -> Unit,
+    onCreateRecipe: (() -> Unit)?,
     modifier: Modifier = Modifier,
     onDebugLongPress: (() -> Unit)? = null,
 ) {
@@ -111,7 +118,17 @@ fun PlannerSection(
     // Editing targets survive rotation / process death; the in-progress text
     // lives in the dialogs (rememberSaveable there).
     var slotTarget by rememberSaveable { mutableStateOf<String?>(null) } // "day|slot"
+    var pickerTarget by rememberSaveable { mutableStateOf<String?>(null) } // "day|slot"
     var notesTarget by rememberSaveable { mutableStateOf<String?>(null) } // "week" or "day|mon"
+
+    // Mid-session logout / store-clear: dismiss open editors gracefully.
+    LaunchedEffect(userPubkey) {
+        if (userPubkey.isNullOrBlank()) {
+            slotTarget = null
+            pickerTarget = null
+            notesTarget = null
+        }
+    }
 
     Column(modifier.fillMaxSize()) {
         PlannerHeader(
@@ -157,7 +174,9 @@ fun PlannerSection(
 
     // ---- dialogs ----
     slotTarget?.let { target ->
-        val (day, slot) = target.split("|").let { it[0] to it[1] }
+        val parts = target.split("|", limit = 2)
+        if (parts.size < 2) { slotTarget = null; return@let }
+        val (day, slot) = parts[0] to parts[1]
         val entry = plan?.slot(day, slot)
         val existingText = entry?.takeIf { it.stringField("type") == "text" }?.stringField("text")
         val recipeTitle = entry?.takeIf { it.stringField("type") == "recipe" }?.stringField("title")
@@ -176,6 +195,33 @@ fun PlannerSection(
                 viewModel.clearSlot(currentWeekId, day, slot)
             },
             onDismiss = { slotTarget = null },
+            onPickRecipe = {
+                pickerTarget = target
+                slotTarget = null
+            },
+        )
+    }
+
+    pickerTarget?.let { target ->
+        val parts = target.split("|", limit = 2)
+        if (parts.size < 2) { pickerTarget = null; return@let }
+        val (day, slot) = parts[0] to parts[1]
+        RecipePickerSheet(
+            cookbookViewModel = cookbookViewModel,
+            recipeRepo = recipeRepo,
+            userPubkey = userPubkey,
+            onSelect = { a, title ->
+                pickerTarget = null
+                viewModel.setSlot(
+                    currentWeekId,
+                    day,
+                    slot,
+                    RecipePickerLogic.recipeEntry(a, title),
+                )
+            },
+            onDismiss = { pickerTarget = null },
+            onBrowseRecipes = onBrowseRecipes,
+            onCreateRecipe = onCreateRecipe,
         )
     }
 
