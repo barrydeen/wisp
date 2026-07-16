@@ -40,7 +40,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.LightMode
-import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material.icons.outlined.QrCode
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Person
@@ -218,7 +218,9 @@ fun WispDrawerContent(
                 }
                 IconButton(onClick = { showProfileQr = true }) {
                     Icon(
-                        Icons.Outlined.QrCodeScanner,
+                        // Plain QrCode glyph — this displays your own QR, it doesn't
+                        // scan one, so the scanner-viewfinder icon was a mismatch.
+                        Icons.Outlined.QrCode,
                         contentDescription = stringResource(R.string.cd_show_qr_code),
                         modifier = Modifier.size(24.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant

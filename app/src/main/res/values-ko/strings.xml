@@ -401,10 +401,10 @@
     <string name="onboarding_mapping_graph">소셜 그래프 매핑 중…</string>
     <string name="onboarding_finding_relays">친구의 릴레이 찾는 중…</string>
     <string name="onboarding_connecting_network">네트워크 연결 중…</string>
-    <string name="onboarding_locating_gm">gm 노트 찾는 중…</string>
-    <string name="onboarding_cheering_fiatjaf">fiatjaf 응원 중…</string>
-    <string name="onboarding_fun_bitcoins">비트코인과 놀아보세요…</string>
-    <string name="onboarding_one_time_setup">일회성 설정입니다, 시간 선호도를 낮추세요…</string>
+    <string name="onboarding_locating_gm">도넛 만들 시간…</string>
+    <string name="onboarding_cheering_fiatjaf">커피 갈고 있어요…</string>
+    <string name="onboarding_fun_bitcoins">그릴 예열 중…</string>
+    <string name="onboarding_one_time_setup">지켜보는 냄비는 끓지 않아요…</string>
     <string name="onboarding_almost_there">거의 완료…</string>
     <string name="onboarding_please_wait">잠시만 기다려주세요…</string>
     <string name="onboarding_publishing">게시 중…</string>

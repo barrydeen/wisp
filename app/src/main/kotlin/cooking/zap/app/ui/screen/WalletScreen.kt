@@ -93,7 +93,6 @@ import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CurrencyBitcoin
-import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.CloudUpload
@@ -2527,7 +2526,7 @@ private fun LightningAddressReceiveRow(
             )
             IconButton(onClick = onShowQR) {
                 Icon(
-                    Icons.Default.QrCode2,
+                    Icons.Default.QrCode,
                     contentDescription = stringResource(R.string.wallet_receive_address_tab),
                     modifier = Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant

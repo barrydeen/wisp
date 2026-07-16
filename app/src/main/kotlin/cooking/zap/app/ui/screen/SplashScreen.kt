@@ -32,10 +32,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material.icons.outlined.QrCode
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
@@ -399,21 +397,6 @@ fun SplashScreen(
 
         }
 
-        if (onCancel != null) {
-            IconButton(
-                onClick = onCancel,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .statusBarsPadding()
-                    .padding(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Close,
-                    contentDescription = stringResource(R.string.btn_cancel),
-                    tint = Color.White
-                )
-            }
-        }
     }
 
     if (showNostrSheet) {
@@ -539,7 +522,7 @@ private fun NostrLoginSheet(
                         }
                         IconButton(onClick = onScanQr) {
                             Icon(
-                                imageVector = Icons.Outlined.QrCodeScanner,
+                                imageVector = Icons.Outlined.QrCode,
                                 contentDescription = "Scan QR code"
                             )
                         }
