@@ -174,7 +174,9 @@ fun PlannerSection(
 
     // ---- dialogs ----
     slotTarget?.let { target ->
-        val (day, slot) = target.split("|").let { it[0] to it[1] }
+        val parts = target.split("|", limit = 2)
+        if (parts.size < 2) { slotTarget = null; return@let }
+        val (day, slot) = parts[0] to parts[1]
         val entry = plan?.slot(day, slot)
         val existingText = entry?.takeIf { it.stringField("type") == "text" }?.stringField("text")
         val recipeTitle = entry?.takeIf { it.stringField("type") == "recipe" }?.stringField("title")
@@ -201,7 +203,9 @@ fun PlannerSection(
     }
 
     pickerTarget?.let { target ->
-        val (day, slot) = target.split("|").let { it[0] to it[1] }
+        val parts = target.split("|", limit = 2)
+        if (parts.size < 2) { pickerTarget = null; return@let }
+        val (day, slot) = parts[0] to parts[1]
         RecipePickerSheet(
             cookbookViewModel = cookbookViewModel,
             recipeRepo = recipeRepo,

@@ -52,9 +52,13 @@ import coil3.compose.SubcomposeAsyncImage
 import cooking.zap.app.R
 import cooking.zap.app.mealplan.RecipePickerLogic
 import cooking.zap.app.nostr.RecipeFormats
+import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.repo.CookbookCovers
 import cooking.zap.app.repo.RecipeRepository
 import cooking.zap.app.viewmodel.CookbookViewModel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -91,7 +95,7 @@ fun RecipePickerSheet(
         var tabIndex by rememberSaveable { mutableIntStateOf(0) }
         var search by rememberSaveable { mutableStateOf("") }
         var savedRows by remember { mutableStateOf<List<RecipePickerLogic.PickerRow>>(emptyList()) }
-        var savedLoading by remember { mutableStateOf(false) }
+        var savedLoading by remember { mutableStateOf(true) }
         var lastSavedKey by remember { mutableStateOf<String?>(null) }
         var publishedRequested by rememberSaveable { mutableStateOf(false) }
 
@@ -100,9 +104,8 @@ fun RecipePickerSheet(
         val authoredLoading by cookbookViewModel.isAuthoredLoading.collectAsState()
 
         // Saved: flatten unique coords + resolve (keep unresolvable with d-tag).
-        // Re-runs when list events change (cold start fill); skips tab re-entry.
-        LaunchedEffect(tabIndex, lists) {
-            if (tabIndex != 0) return@LaunchedEffect
+        // Keyed only on lists so tab switches never cancel an in-flight resolution.
+        LaunchedEffect(lists) {
             val key = lists.joinToString("|") { "${it.dTag}:${it.event.id}" }
             if (key == lastSavedKey) return@LaunchedEffect
             savedLoading = true
@@ -122,7 +125,7 @@ fun RecipePickerSheet(
 
         val publishedRows = remember(authored) {
             authored.map { recipe ->
-                val a = "30023:${recipe.author}:${recipe.dTag}"
+                val a = "${RecipeParser.RECIPE_KIND}:${recipe.author}:${recipe.dTag}"
                 RecipePickerLogic.PickerRow(
                     a = a,
                     title = recipe.title?.takeIf { it.isNotBlank() } ?: recipe.dTag,
@@ -326,29 +329,32 @@ private fun PickerRowItem(
 }
 
 /**
- * Cache-first then network per coordinate. Unresolvable rows stay with the
- * d-tag as title (spec: do not drop — user may still want to plan them).
+ * Cache-first then network per coordinate, resolved concurrently. Unresolvable
+ * rows stay with the d-tag as title (spec: do not drop — user may still want to
+ * plan them).
  */
 private suspend fun resolveSavedRows(
     coordinates: List<String>,
     recipeRepo: RecipeRepository,
-): List<RecipePickerLogic.PickerRow> {
-    return coordinates.map { raw ->
-        val parsed = CookbookCovers.parseCoordinate(raw)
-        if (parsed == null) {
-            return@map RecipePickerLogic.PickerRow(
+): List<RecipePickerLogic.PickerRow> = coroutineScope {
+    coordinates.map { raw ->
+        async {
+            val parsed = CookbookCovers.parseCoordinate(raw)
+            if (parsed == null) {
+                return@async RecipePickerLogic.PickerRow(
+                    a = raw,
+                    title = RecipePickerLogic.titleFallback(raw),
+                    image = null,
+                )
+            }
+            val event = recipeRepo.findRecipeEventByCoordinate(parsed.kind, parsed.author, parsed.dTag)
+                ?: recipeRepo.requestRecipeEventByCoordinate(parsed.kind, parsed.author, parsed.dTag)
+            val recipe = event?.let { RecipeFormats.forEvent(it)?.parse(it) }
+            RecipePickerLogic.PickerRow(
                 a = raw,
-                title = RecipePickerLogic.titleFallback(raw),
-                image = null,
+                title = recipe?.title?.takeIf { it.isNotBlank() } ?: parsed.dTag,
+                image = recipe?.image,
             )
         }
-        val event = recipeRepo.findRecipeEventByCoordinate(parsed.kind, parsed.author, parsed.dTag)
-            ?: recipeRepo.requestRecipeEventByCoordinate(parsed.kind, parsed.author, parsed.dTag)
-        val recipe = event?.let { RecipeFormats.forEvent(it)?.parse(it) }
-        RecipePickerLogic.PickerRow(
-            a = raw,
-            title = recipe?.title?.takeIf { it.isNotBlank() } ?: parsed.dTag,
-            image = recipe?.image,
-        )
-    }
+    }.awaitAll()
 }
