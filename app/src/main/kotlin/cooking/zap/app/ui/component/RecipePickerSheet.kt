@@ -97,7 +97,6 @@ fun RecipePickerSheet(
         var savedRows by remember { mutableStateOf<List<RecipePickerLogic.PickerRow>>(emptyList()) }
         var savedLoading by remember { mutableStateOf(true) }
         var lastSavedKey by remember { mutableStateOf<String?>(null) }
-        var publishedRequested by rememberSaveable { mutableStateOf(false) }
 
         val lists by cookbookViewModel.lists.collectAsState()
         val authored by cookbookViewModel.authoredRecipes.collectAsState()
@@ -105,21 +104,29 @@ fun RecipePickerSheet(
 
         // Saved: flatten unique coords + resolve (keep unresolvable with d-tag).
         // Keyed only on lists so tab switches never cancel an in-flight resolution.
+        // Cache-only first paint, then concurrent network fill for misses — avoids
+        // blocking the sheet open on a large Saved set's relay round-trips.
         LaunchedEffect(lists) {
             val key = lists.joinToString("|") { "${it.dTag}:${it.event.id}" }
             if (key == lastSavedKey) return@LaunchedEffect
+            val coords = RecipePickerLogic.uniqueCoordinates(lists)
             savedLoading = true
             savedRows = withContext(Dispatchers.IO) {
-                resolveSavedRows(RecipePickerLogic.uniqueCoordinates(lists), recipeRepo)
+                resolveSavedRows(coords, recipeRepo, allowNetwork = false)
             }
-            lastSavedKey = key
             savedLoading = false
+            savedRows = withContext(Dispatchers.IO) {
+                resolveSavedRows(coords, recipeRepo, allowNetwork = true)
+            }
+            // Mark complete only after network fill so a cancel mid-fill retries.
+            lastSavedKey = key
         }
 
         // Published: same author-feed filter as My Recipes — lazy on first open.
-        LaunchedEffect(tabIndex) {
-            if (tabIndex != 1 || publishedRequested) return@LaunchedEffect
-            publishedRequested = true
+        // Keyed on userPubkey so an account switch while the sheet is open
+        // re-triggers (requestMyRecipes is already idempotent per-pubkey).
+        LaunchedEffect(tabIndex, userPubkey) {
+            if (tabIndex != 1 || userPubkey.isNullOrBlank()) return@LaunchedEffect
             cookbookViewModel.requestMyRecipes()
         }
 
@@ -329,13 +336,15 @@ private fun PickerRowItem(
 }
 
 /**
- * Cache-first then network per coordinate, resolved concurrently. Unresolvable
- * rows stay with the d-tag as title (spec: do not drop — user may still want to
- * plan them).
+ * Resolve Saved coordinates concurrently. When [allowNetwork] is false, only
+ * the local cache/ObjectBox is consulted (instant sheet paint with d-tag
+ * fallbacks). When true, cache misses hit relays in parallel. Unresolvable
+ * rows stay with the d-tag as title (spec: do not drop).
  */
 private suspend fun resolveSavedRows(
     coordinates: List<String>,
     recipeRepo: RecipeRepository,
+    allowNetwork: Boolean,
 ): List<RecipePickerLogic.PickerRow> = coroutineScope {
     coordinates.map { raw ->
         async {
@@ -347,8 +356,12 @@ private suspend fun resolveSavedRows(
                     image = null,
                 )
             }
-            val event = recipeRepo.findRecipeEventByCoordinate(parsed.kind, parsed.author, parsed.dTag)
-                ?: recipeRepo.requestRecipeEventByCoordinate(parsed.kind, parsed.author, parsed.dTag)
+            val cached = recipeRepo.findRecipeEventByCoordinate(parsed.kind, parsed.author, parsed.dTag)
+            val event = cached ?: if (allowNetwork) {
+                recipeRepo.requestRecipeEventByCoordinate(parsed.kind, parsed.author, parsed.dTag)
+            } else {
+                null
+            }
             val recipe = event?.let { RecipeFormats.forEvent(it)?.parse(it) }
             RecipePickerLogic.PickerRow(
                 a = raw,
