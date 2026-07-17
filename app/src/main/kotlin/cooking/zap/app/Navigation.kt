@@ -3180,6 +3180,21 @@ fun WispNavHost(
             var showRecipeListChooser by remember { mutableStateOf(false) }
             var recipeChooserEventId by remember { mutableStateOf<String?>(null) }
 
+            // Arc PR 10: add-to-grocery from the recipe toolbar. Own VM instance
+            // (route-scoped, like GROCERY_LIST's) over the single shared repo.
+            val addToGroceryViewModel: cooking.zap.app.viewmodel.GroceryListViewModel = viewModel()
+            remember(addToGroceryViewModel) {
+                addToGroceryViewModel.bind(feedViewModel.groceryRepo) { feedViewModel.signer != null }
+            }
+            var showAddToGrocery by remember { mutableStateOf(false) }
+            LaunchedEffect(showAddToGrocery) {
+                // Web parity (AddToListModal): hydrate the lists when the sheet
+                // opens and the store hasn't loaded yet.
+                if (showAddToGrocery && feedViewModel.groceryRepo.lists.value.isEmpty()) {
+                    addToGroceryViewModel.load()
+                }
+            }
+
             LaunchedEffect(Unit) {
                 feedViewModel.zapSuccess.collect { eventId ->
                     recipeZapAnimatingIds = recipeZapAnimatingIds + eventId
@@ -3285,8 +3300,65 @@ fun WispNavHost(
                 resolvedEmojis = recipeResolvedEmojis,
                 unicodeEmojis = recipeUnicodeEmojis,
                 // Cook mode (onStartCooking) lands in 1.4 — null here, so no button renders.
-                onStartCooking = null
+                onStartCooking = null,
+                // PR 10: hidden for signed-out / READ_ONLY (no signer — the
+                // requiresAccount posture, same gate as grocery canWrite) and
+                // until the recipe event resolves.
+                onAddToGrocery = if (feedViewModel.signer != null && recipeDetailEvent != null) {
+                    { showAddToGrocery = true }
+                } else null,
             )
+
+            if (showAddToGrocery) {
+                val groceryLists by addToGroceryViewModel.lists.collectAsState()
+                val groceryListsLoading by addToGroceryViewModel.isLoading.collectAsState()
+                val groceryRecipe by recipeDetailViewModel.recipe.collectAsState()
+                val groceryRecipeEvent = recipeDetailEvent
+                // Web parity: parse the raw markdown body (the fixture-governed
+                // pipeline), not the screen's structured Recipe.
+                val parsedIngredients = remember(groceryRecipeEvent?.id) {
+                    groceryRecipeEvent
+                        ?.let { cooking.zap.app.mealplan.IngredientParser.parseIngredientsFromRecipe(it.content) }
+                        ?: emptyList()
+                }
+                val recipeCoordinate = remember(groceryRecipeEvent?.id) {
+                    groceryRecipeEvent?.let { feedViewModel.recipeBookmarkRepo.coordinateForEvent(it) }
+                }
+                cooking.zap.app.ui.component.AddToGroceryListSheet(
+                    recipeTitle = groceryRecipe?.title ?: dTag,
+                    ingredients = parsedIngredients,
+                    lists = groceryLists,
+                    listsLoading = groceryListsLoading,
+                    onCreateList = { name -> addToGroceryViewModel.createListReturningId(name) },
+                    onConfirm = { listId, selected ->
+                        showAddToGrocery = false
+                        // Web AddToListModal order: link the recipe, then add each
+                        // selected item stamped with the recipe coordinate. The
+                        // debounced saver coalesces this burst into one publish.
+                        if (recipeCoordinate != null) {
+                            addToGroceryViewModel.addRecipeLink(listId, recipeCoordinate)
+                        }
+                        val addedAt = System.currentTimeMillis() / 1000
+                        selected.forEach { ingredient ->
+                            addToGroceryViewModel.addItem(
+                                listId,
+                                cooking.zap.app.nostr.GroceryEvents.GroceryItem(
+                                    id = java.util.UUID.randomUUID().toString(),
+                                    name = ingredient.name,
+                                    quantity = ingredient.quantity,
+                                    category = ingredient.category,
+                                    recipeId = recipeCoordinate,
+                                    addedAt = addedAt,
+                                ),
+                            )
+                        }
+                        // "Open list": land on the target list so the add is
+                        // immediately visible (the planner/grocery nav idiom).
+                        navController.navigate(Routes.groceryList(listId))
+                    },
+                    onDismiss = { showAddToGrocery = false },
+                )
+            }
 
             if (showRecipeListChooser) {
                 val chooserEvent = recipeChooserEventId?.let { feedViewModel.eventRepo.getEvent(it) }

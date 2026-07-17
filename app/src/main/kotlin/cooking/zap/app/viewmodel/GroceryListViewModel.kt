@@ -114,6 +114,7 @@ class GroceryListViewModel : ViewModel() {
     fun editItem(id: String, item: GroceryItem) = launchSync { it.editItem(id, item) }
     fun setChecked(id: String, itemId: String, checked: Boolean) = launchSync { it.setChecked(id, itemId, checked) }
     fun removeItem(id: String, itemId: String) = launchSync { it.removeItem(id, itemId) }
+    fun addRecipeLink(id: String, recipeATag: String) = launchSync { it.addRecipeLink(id, recipeATag) }
     fun deleteList(id: String) = launchWrite { it.deleteList(id) }
 
     /** For suspend repo calls (create/delete/save) off the main thread. */

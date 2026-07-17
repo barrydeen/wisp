@@ -46,6 +46,10 @@ object GroceryMutations {
     fun removeItem(list: GroceryList, itemId: String): GroceryList =
         list.copy(items = list.items.filterNot { it.id == itemId })
 
+    /** Web parity (groceryStore.addRecipeLink): append once, never duplicate. */
+    fun addRecipeLink(list: GroceryList, recipeATag: String): GroceryList =
+        if (recipeATag in list.recipeLinks) list else list.copy(recipeLinks = list.recipeLinks + recipeATag)
+
     /**
      * Publish-time `updatedAt` stamp: now, but STRICTLY greater than the list's
      * previous stamp. Two publishes of the same list within one second (create →
