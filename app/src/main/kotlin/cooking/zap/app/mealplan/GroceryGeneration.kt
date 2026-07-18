@@ -1,5 +1,6 @@
 package cooking.zap.app.mealplan
 
+import java.util.Locale
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -68,7 +69,9 @@ object GroceryGeneration {
         val seen = HashSet<String>()
         val out = ArrayList<GenerationRow>(rows.size)
         for (row in rows) {
-            val key = "${row.ingredient.name.trim().lowercase()}|${row.ingredient.quantity.trim()}"
+            // Locale.ROOT: JVM default locale can change case-folding (e.g. Turkish
+            // İ/i) and break cross-device / web-parity dedupe keys.
+            val key = "${row.ingredient.name.trim().lowercase(Locale.ROOT)}|${row.ingredient.quantity.trim()}"
             if (!seen.add(key)) continue
             out.add(row)
         }
