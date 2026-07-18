@@ -617,7 +617,7 @@ private fun SpamToggle(count: Int, expanded: Boolean, onToggle: () -> Unit) {
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp),
         shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         onClick = onToggle
     ) {
         Row(
@@ -628,20 +628,20 @@ private fun SpamToggle(count: Int, expanded: Boolean, onToggle: () -> Unit) {
                 if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onErrorContainer
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.width(8.dp))
             Text(
                 text = stringResource(R.string.thread_hidden_spam, count),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onErrorContainer,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
             Text(
                 text = if (expanded) stringResource(R.string.thread_tap_to_hide)
                 else stringResource(R.string.thread_tap_to_show),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
         }
     }

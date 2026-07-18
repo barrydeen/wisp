@@ -2108,7 +2108,7 @@ private fun BlockedContentOverlay(onReveal: () -> Unit) {
             .height(200.dp)
             .padding(16.dp)
             .background(
-                MaterialTheme.colorScheme.errorContainer,
+                MaterialTheme.colorScheme.surfaceVariant,
                 RoundedCornerShape(12.dp)
             )
             .clickable(onClick = onReveal)
@@ -2117,20 +2117,20 @@ private fun BlockedContentOverlay(onReveal: () -> Unit) {
             Icon(
                 Icons.Default.Block,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onErrorContainer,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(32.dp)
             )
             Spacer(Modifier.height(8.dp))
             Text(
                 text = "This user is blocked",
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onErrorContainer
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "Tap to reveal content",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
         }
     }
