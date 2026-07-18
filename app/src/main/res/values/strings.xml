@@ -662,6 +662,7 @@
     <string name="thread_tap_to_show">Show</string>
     <string name="thread_tap_to_hide">Hide</string>
     <string name="thread_not_spam">Not spam</string>
+    <string name="thread_continue">Show %1$d more replies</string>
 
     <string name="settings_copy_profile_json">Copy Profile JSON</string>
     <string name="settings_profile_json_copied">Profile JSON copied</string>
