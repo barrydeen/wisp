@@ -758,6 +758,27 @@
         <item quantity="one">%1$d item</item>
         <item quantity="other">%1$d items</item>
     </plurals>
+    <string name="planner_generate_button">Grocery list</string>
+    <string name="planner_generate_title">Generate grocery list</string>
+    <string name="planner_generate_disabled_hint">Add recipes to this week to generate a grocery list</string>
+    <string name="planner_generate_resolving">Loading this week\'s recipes…</string>
+    <string name="planner_generate_summary">Creates a new list “%1$s” — %2$s.</string>
+    <string name="planner_generate_summary_counts">%1$s from %2$s</string>
+    <plurals name="planner_generate_recipe_count">
+        <item quantity="one">%1$d recipe</item>
+        <item quantity="other">%1$d recipes</item>
+    </plurals>
+    <plurals name="planner_generate_text_skipped">
+        <item quantity="one">%1$d text entry skipped</item>
+        <item quantity="other">%1$d text entries skipped</item>
+    </plurals>
+    <string name="planner_generate_dedupe_note">Matching items are combined only when name and quantity are identical. Repeat runs create a new list — existing lists are never changed.</string>
+    <plurals name="planner_generate_unresolved">
+        <item quantity="one">%1$d recipe couldn\'t be loaded and will be left out:</item>
+        <item quantity="other">%1$d recipes couldn\'t be loaded and will be left out:</item>
+    </plurals>
+    <string name="planner_generate_failed_all">None of this week\'s recipes could be loaded. Nothing will be created — check your connection and try again.</string>
+    <string name="planner_generate_action">Generate</string>
     <string name="grocery_category_produce">Produce</string>
     <string name="grocery_category_protein">Protein</string>
     <string name="grocery_category_dairy">Dairy</string>

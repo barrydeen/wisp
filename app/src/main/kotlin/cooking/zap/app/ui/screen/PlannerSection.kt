@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.AddShoppingCart
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Card
@@ -40,33 +41,41 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.SubcomposeAsyncImage
 import cooking.zap.app.R
+import cooking.zap.app.mealplan.GroceryGeneration
 import cooking.zap.app.mealplan.PlannerLogic
 import cooking.zap.app.mealplan.PlannerMutations
 import cooking.zap.app.mealplan.PlannerWeekState
 import cooking.zap.app.mealplan.RecipePickerLogic
 import cooking.zap.app.mealplan.Schema
 import cooking.zap.app.mealplan.Week
+import cooking.zap.app.nostr.GroceryEvents
 import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.repo.RecipeRepository
+import cooking.zap.app.ui.component.GenerateGrocerySheet
 import cooking.zap.app.ui.component.PlannerNotesDialog
 import cooking.zap.app.ui.component.RecipePickerSheet
 import cooking.zap.app.ui.component.SlotEditorDialog
 import cooking.zap.app.viewmodel.CookbookViewModel
+import cooking.zap.app.viewmodel.GroceryListViewModel
 import cooking.zap.app.viewmodel.PlannerViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.UUID
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -98,9 +107,11 @@ fun PlannerSection(
     viewModel: PlannerViewModel,
     recipeRepo: RecipeRepository,
     cookbookViewModel: CookbookViewModel,
+    groceryViewModel: GroceryListViewModel,
     userPubkey: String?,
     onBrowseRecipes: () -> Unit,
     onCreateRecipe: (() -> Unit)?,
+    onOpenGroceryList: (listId: String) -> Unit,
     modifier: Modifier = Modifier,
     onDebugLongPress: (() -> Unit)? = null,
 ) {
@@ -120,6 +131,12 @@ fun PlannerSection(
     var slotTarget by rememberSaveable { mutableStateOf<String?>(null) } // "day|slot"
     var pickerTarget by rememberSaveable { mutableStateOf<String?>(null) } // "day|slot"
     var notesTarget by rememberSaveable { mutableStateOf<String?>(null) } // "week" or "day|mon"
+    // PR 11: generate-grocery confirm. Plain remember — the sheet's dry-run
+    // state is transient; reopening after process death just re-resolves.
+    var showGenerate by remember { mutableStateOf(false) }
+    val generateScope = rememberCoroutineScope()
+
+    val weekSlots = remember(plan) { plan?.let { GroceryGeneration.collectWeekRecipeSlots(it) } }
 
     // Mid-session logout / store-clear: dismiss open editors gracefully.
     LaunchedEffect(userPubkey) {
@@ -138,6 +155,10 @@ fun PlannerSection(
             onPrev = { viewModel.prevWeek() },
             onNext = { viewModel.nextWeek() },
             onToday = { viewModel.goToCurrentWeek() },
+            // PR 11: null hides (no plan yet / can't write groceries), false
+            // renders disabled (tap explains why), true opens the confirm.
+            generateEnabled = if (weekSlots == null || !canWrite) null else weekSlots.aTags.isNotEmpty(),
+            onGenerate = { showGenerate = true },
             onDebugLongPress = onDebugLongPress,
         )
 
@@ -225,6 +246,64 @@ fun PlannerSection(
         )
     }
 
+    if (showGenerate && weekSlots != null) {
+        val generatePlan = plan
+        // Denormalized slot titles name unresolved rows in the confirm sheet.
+        val denormTitles = remember(generatePlan) {
+            buildMap {
+                if (generatePlan == null) return@buildMap
+                for (day in Schema.DAY_KEYS) {
+                    for (slotKey in Schema.SLOT_KEYS) {
+                        val entry = generatePlan.slot(day, slotKey) ?: continue
+                        if (entry.stringField("type") != "recipe") continue
+                        val a = entry.stringField("a") ?: continue
+                        val title = entry.stringField("title") ?: continue
+                        putIfAbsent(a, title)
+                    }
+                }
+            }
+        }
+        GenerateGrocerySheet(
+            weekId = currentWeekId,
+            slots = weekSlots,
+            denormTitles = denormTitles,
+            recipeRepo = recipeRepo,
+            onConfirm = { title, resolvedATags, rows ->
+                // Always a NEW list — never overwrite (web parity). Repeat runs
+                // create additional lists the user can delete; silent
+                // merge/overwrite risks destroying manual edits.
+                generateScope.launch {
+                    val listId = groceryViewModel.createListReturningId(title)
+                    if (listId == null) {
+                        // Signed-out/READ_ONLY can't reach here (gated), but a
+                        // mid-session signer loss lands on the repo's
+                        // SignerMissing toast — close without navigating.
+                        showGenerate = false
+                        return@launch
+                    }
+                    resolvedATags.forEach { groceryViewModel.addRecipeLink(listId, it) }
+                    val addedAt = System.currentTimeMillis() / 1000
+                    rows.forEach { row ->
+                        groceryViewModel.addItem(
+                            listId,
+                            GroceryEvents.GroceryItem(
+                                id = UUID.randomUUID().toString(),
+                                name = row.ingredient.name,
+                                quantity = row.ingredient.quantity,
+                                category = row.ingredient.category,
+                                recipeId = row.recipeId,
+                                addedAt = addedAt,
+                            ),
+                        )
+                    }
+                    showGenerate = false
+                    onOpenGroceryList(listId)
+                }
+            },
+            onDismiss = { showGenerate = false },
+        )
+    }
+
     notesTarget?.let { target ->
         if (target == "week") {
             PlannerNotesDialog(
@@ -256,6 +335,9 @@ private fun PlannerHeader(
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onToday: () -> Unit,
+    /** null = hidden; false = disabled (tap explains why); true = active. */
+    generateEnabled: Boolean?,
+    onGenerate: () -> Unit,
     onDebugLongPress: (() -> Unit)? = null,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -299,8 +381,8 @@ private fun PlannerHeader(
             } else {
                 Spacer(Modifier.width(1.dp))
             }
-            if (saving) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (saving) {
                     CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
                     Spacer(Modifier.width(4.dp))
                     Text(
@@ -308,6 +390,36 @@ private fun PlannerHeader(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Spacer(Modifier.width(8.dp))
+                }
+                if (generateEnabled != null) {
+                    val context = LocalContext.current
+                    val disabledHint = stringResource(R.string.planner_generate_disabled_hint)
+                    // Rendered disabled-style but still tappable when the week
+                    // has no recipe slots: a truly disabled M3 button consumes
+                    // the tap without firing anything, so the explain-why toast
+                    // (web parity: the disabled button's tooltip copy) needs the
+                    // click to reach us.
+                    TextButton(
+                        onClick = {
+                            if (generateEnabled) onGenerate()
+                            else android.widget.Toast
+                                .makeText(context, disabledHint, android.widget.Toast.LENGTH_SHORT)
+                                .show()
+                        },
+                        colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                            contentColor = if (generateEnabled) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                        ),
+                    ) {
+                        Icon(
+                            Icons.Outlined.AddShoppingCart,
+                            contentDescription = null,
+                            Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(stringResource(R.string.planner_generate_button))
+                    }
                 }
             }
         }
