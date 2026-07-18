@@ -574,40 +574,10 @@ fun UserProfileScreen(
             }
         }
 
-        // The tab row used to be a LazyColumn stickyHeader, but stickyHeader pins
-        // flush to the LazyColumn's own top edge — which is now behind the
-        // translucent top bar (contentPadding, not a layout offset, reserves that
-        // space so scrolled content can show through it). That made the tab row
-        // scroll up and disappear behind the bar instead of locking below it.
-        //
-        // Fixed with a continuously-tracked overlay instead of a discrete
-        // show/hide swap (which double-rendered and popped): the overlay always
-        // renders at max(barHeight, tabRow'sNaturalScrollPosition), so it slides
-        // up smoothly with the list and then holds the instant it reaches the
-        // bar — matching a native sticky header's feel. The in-flow copy is
-        // permanently invisible, kept only to reserve scroll layout space.
-        val density = LocalDensity.current
-        val topBarHeightPx = with(density) { padding.calculateTopPadding().toPx() }.toInt()
-        val pinnedTabRowOffsetPx by remember {
-            derivedStateOf {
-                val naturalOffset = listState.layoutInfo.visibleItemsInfo
-                    .find { it.key == "tab_row" }?.offset
-                    ?: Int.MIN_VALUE / 2 // not currently visible == scrolled well past, so clamp to pinned
-                naturalOffset.coerceAtLeast(topBarHeightPx)
-            }
-        }
-
         Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize(),
-            // Top inset lives in contentPadding rather than a layout offset, so
-            // scrolled content passes behind the (semi-transparent) top bar
-            // instead of stopping short of it.
-            contentPadding = PaddingValues(
-                top = padding.calculateTopPadding(),
-                bottom = padding.calculateBottomPadding()
-            )
+            modifier = Modifier.fillMaxSize().padding(padding)
         ) {
             val showSort = selectedTabId == 0 || selectedTabId == 1
             val currentSortMode = if (selectedTabId == 0) notesSortMode else repliesSortMode
@@ -685,15 +655,11 @@ fun UserProfileScreen(
                 )
             }
 
-            item(key = "tab_row") {
-                // Permanently invisible — the overlay below is the only visible
-                // copy. This one exists purely so the list reserves the right
-                // amount of scroll space for it.
+            stickyHeader {
                 ProfileTabRow(
                     profileTabs = profileTabs,
                     selectedTab = selectedTab,
-                    onSelect = { selectedTab = it },
-                    modifier = Modifier.alpha(0f)
+                    onSelect = { selectedTab = it }
                 )
             }
 
@@ -1238,19 +1204,6 @@ fun UserProfileScreen(
                 }
             }
         }
-
-            // The one visible copy of the tab row — always rendered, positioned
-            // every frame at max(barHeight, naturalScrollPosition) so it slides
-            // with the list and then holds flush under the bar once it gets there.
-            Box(
-                modifier = Modifier.offset { IntOffset(0, pinnedTabRowOffsetPx) }
-            ) {
-                ProfileTabRow(
-                    profileTabs = profileTabs,
-                    selectedTab = selectedTab,
-                    onSelect = { selectedTab = it }
-                )
-            }
         }
     }
 }
@@ -1269,7 +1222,7 @@ private fun ProfileTabRow(
     // Box used to each paint their own copy of this same color on top of each
     // other, compounding three 0.85-alpha layers into ~99.7% opaque and making
     // this section look far more solid than the (single-layer) top bar above it.
-    val surfaceColor = MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
+    val surfaceColor = MaterialTheme.colorScheme.background
     Column(modifier = modifier.fillMaxWidth().background(surfaceColor)) {
         Box(
             modifier = Modifier.fillMaxWidth().drawWithContent {
