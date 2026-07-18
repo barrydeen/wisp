@@ -1,6 +1,7 @@
 package cooking.zap.app.repo
 
 import cooking.zap.app.nostr.ClientMessage
+import cooking.zap.app.nostr.HiddenRecipes
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.RecipeFormats
 import cooking.zap.app.nostr.RecipeParser
@@ -992,6 +993,11 @@ class RecipeRepository(
     /** Merge [event] into [byCoordinate]; return true iff it became the winner. */
     private fun acceptEvent(event: NostrEvent): Boolean {
         val key = recipeCoordinate(event)
+        if (HiddenRecipes.isHidden(key)) {
+            // Drop permanently hidden coords (and any prior winner) so a
+            // replaceable revision can't reappear after a hide-list update.
+            return byCoordinate.remove(key) != null
+        }
         val current = byCoordinate[key]
         val winner = if (current == null) event else preferNewer(current, event)
         if (winner === current) return false
