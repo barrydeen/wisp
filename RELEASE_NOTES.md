@@ -1,6 +1,18 @@
 
 # Changelog
 
+##[1.3.4]
+
+🍳 My Kitchen — Your personal hub in the Recipes tab: Saved, Published, Grocery, Planner, and Nourish in one place.
+
+🛒 Grocery lists — Create encrypted lists, add ingredients from any recipe, and shop by category. Syncs with zap.cooking.
+
+📅 Meal planner — Plan your week from saved or published recipes (or plain text), then generate a grocery list from the whole week. Syncs with the web.
+
+🔒 Private by default — Meal plans and grocery lists are NIP-44 encrypted to your own keys. Relays only ever see ciphertext.
+
+Plus: back-navigation returns to the My Kitchen section you left; recipe name chips show on grocery lists; first-save protection so a cold session can't overwrite your recipe collections.
+
 ##[1.3.3]
 
 🍳 Sous Chef publish flow — Publish, Edit in composer, and Discard now do exactly what they say. Save to My Recipes publishes and bookmarks in one honest step, with a clear heads-up that it posts publicly.
