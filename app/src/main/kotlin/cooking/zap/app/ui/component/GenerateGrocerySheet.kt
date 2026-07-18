@@ -39,6 +39,9 @@ import cooking.zap.app.mealplan.GroceryGeneration
 import cooking.zap.app.mealplan.IngredientParser
 import cooking.zap.app.repo.RecipeRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
 /**
@@ -83,19 +86,26 @@ fun GenerateGrocerySheet(
         resolving = true
         // Off the main dispatcher: cache lookups are ObjectBox scans (blocking
         // I/O) and the fallback hits relays — use Dispatchers.IO per convention.
+        // Resolve coordinates concurrently so cold weeks aren't N×timeout;
+        // awaitAll preserves slots.aTags order for the LinkedHashMap insert.
         val linesByATag = withContext(Dispatchers.IO) {
-            val out = LinkedHashMap<String, List<String>>()
-            for (aTag in slots.aTags) {
-                val parts = aTag.split(":", limit = 3)
-                if (parts.size < 3) continue
-                val kind = parts[0].toIntOrNull() ?: continue
-                val event = recipeRepo.findRecipeEventByCoordinate(kind, parts[1], parts[2])
-                    ?: recipeRepo.requestRecipeEventByCoordinate(kind, parts[1], parts[2])
-                if (event != null) {
-                    out[aTag] = IngredientParser.extractIngredientsFromRecipe(event.content)
+            coroutineScope {
+                val pairs = slots.aTags.map { aTag ->
+                    async {
+                        val parts = aTag.split(":", limit = 3)
+                        if (parts.size < 3) return@async aTag to null
+                        val kind = parts[0].toIntOrNull() ?: return@async aTag to null
+                        val event = recipeRepo.findRecipeEventByCoordinate(kind, parts[1], parts[2])
+                            ?: recipeRepo.requestRecipeEventByCoordinate(kind, parts[1], parts[2])
+                        aTag to event?.let { IngredientParser.extractIngredientsFromRecipe(it.content) }
+                    }
+                }.awaitAll()
+                LinkedHashMap<String, List<String>>(pairs.size).apply {
+                    for ((aTag, lines) in pairs) {
+                        if (lines != null) put(aTag, lines)
+                    }
                 }
             }
-            out
         }
         val resolved = slots.aTags.filter { it in linesByATag }
         resolvedATags = resolved
