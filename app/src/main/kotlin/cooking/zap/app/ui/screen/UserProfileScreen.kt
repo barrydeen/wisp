@@ -136,7 +136,7 @@ import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.serialization.json.buildJsonObject
+
 import kotlinx.serialization.json.put
 
 private sealed class ProfileZapStatus {
@@ -482,23 +482,12 @@ fun UserProfileScreen(
                         onDismissRequest = { menuExpanded = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.profile_copy_json)) },
+                            text = { Text(stringResource(R.string.btn_copy_npub)) },
                             onClick = {
                                 menuExpanded = false
-                                profile?.let { p ->
-                                    val json = buildJsonObject {
-                                        p.name?.let { put("name", it) }
-                                        p.displayName?.let { put("display_name", it) }
-                                        p.about?.let { put("about", it) }
-                                        p.picture?.let { put("picture", it) }
-                                        p.banner?.let { put("banner", it) }
-                                        p.nip05?.let { put("nip05", it) }
-                                        p.lud16?.let { put("lud16", it) }
-                                    }.toString()
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("Profile JSON", json))
-                                    Toast.makeText(context, context.getString(R.string.profile_json_copied), Toast.LENGTH_SHORT).show()
-                                }
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("npub", profilePubkey.toNpub()))
+                                Toast.makeText(context, context.getString(R.string.profile_npub_copied), Toast.LENGTH_SHORT).show()
                             }
                         )
                         if (!isOwnProfile) {
