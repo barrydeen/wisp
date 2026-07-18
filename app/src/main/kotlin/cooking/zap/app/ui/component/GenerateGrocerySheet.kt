@@ -81,9 +81,9 @@ fun GenerateGrocerySheet(
 
     LaunchedEffect(weekId, slots) {
         resolving = true
-        // Off the main dispatcher: cache lookups are ObjectBox scans and the
-        // fallback hits relays — a week can hold many distinct recipes.
-        val linesByATag = withContext(Dispatchers.Default) {
+        // Off the main dispatcher: cache lookups are ObjectBox scans (blocking
+        // I/O) and the fallback hits relays — use Dispatchers.IO per convention.
+        val linesByATag = withContext(Dispatchers.IO) {
             val out = LinkedHashMap<String, List<String>>()
             for (aTag in slots.aTags) {
                 val parts = aTag.split(":", limit = 3)
