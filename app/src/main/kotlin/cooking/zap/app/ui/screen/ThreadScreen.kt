@@ -63,6 +63,7 @@ import cooking.zap.app.repo.Nip05Repository
 import cooking.zap.app.repo.RelayInfoRepository
 import cooking.zap.app.repo.TranslationRepository
 import cooking.zap.app.ui.component.NoteActions
+import cooking.zap.app.ui.component.CollapsedRepliesRow
 import cooking.zap.app.ui.component.GalleryCard
 import cooking.zap.app.ui.component.isGalleryEvent
 import cooking.zap.app.ui.component.PostCard
@@ -656,41 +657,6 @@ private fun SpamToggle(count: Int, expanded: Boolean, onToggle: () -> Unit) {
                 color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
             )
         }
-    }
-}
-
-/** Folded-subtree affordance: "Show N more replies". Tapping expands the subtree inline
- *  (Threads-style) — the screen holds its position via the captured viewport anchor, and the
- *  newly-revealed replies animate in below. The guide rail is dashed at the top to signal it
- *  continues upward to the anchor note. */
-@Composable
-private fun CollapsedRepliesRow(
-    item: ThreadItem.CollapsedReplies,
-    onExpand: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val indent = threadIndentDp(item.depth)
-    val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .threadConnector(show = true, indent = indent, lineColor = lineColor, dashedTop = true)
-            .clickable(onClick = onExpand)
-            .padding(start = indent, top = 8.dp, bottom = 8.dp, end = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = Icons.Filled.KeyboardArrowDown,
-            contentDescription = null,
-            modifier = Modifier.size(16.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = stringResource(R.string.thread_continue, item.hiddenCount),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
     }
 }
 

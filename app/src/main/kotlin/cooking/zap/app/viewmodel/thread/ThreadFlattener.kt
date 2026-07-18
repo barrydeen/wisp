@@ -37,7 +37,8 @@ object ThreadFlattener {
         expandedIds: Set<String> = emptySet(),
         expandedFanOut: Set<String> = emptySet(),
         scrollTargetId: String? = null,
-        maxSiblingsInline: Int = MAX_SIBLINGS_INLINE
+        maxSiblingsInline: Int = MAX_SIBLINGS_INLINE,
+        depthCap: Int = DEPTH_CAP
     ): List<ThreadItem> {
         val subtreeSizes = computeSubtreeSizes(parentToChildren)
         val pathToTarget = scrollTargetId?.let { ancestorsOf(it, parentToChildren) } ?: emptySet()
@@ -54,7 +55,7 @@ object ThreadFlattener {
                     collapsed = false
                 )
             )
-            walk(rootEvent, 0, parentToChildren, subtreeSizes, collapsedIds, expandedIds, expandedFanOut, pathToTarget, visited, raw, maxSiblingsInline)
+            walk(rootEvent, 0, parentToChildren, subtreeSizes, collapsedIds, expandedIds, expandedFanOut, pathToTarget, visited, raw, maxSiblingsInline, depthCap, false)
         } else {
             // Root not yet loaded — render the top-level replies we have, each as a depth-0 root.
             for (child in parentToChildren[rootId].orEmpty()) {
@@ -69,7 +70,7 @@ object ThreadFlattener {
                         collapsed = collapsed
                     )
                 )
-                walk(child, 0, parentToChildren, subtreeSizes, collapsedIds, expandedIds, expandedFanOut, pathToTarget, visited, raw, maxSiblingsInline)
+                walk(child, 0, parentToChildren, subtreeSizes, collapsedIds, expandedIds, expandedFanOut, pathToTarget, visited, raw, maxSiblingsInline, depthCap, false)
             }
         }
         return applyConnectorFlags(raw)
@@ -86,7 +87,9 @@ object ThreadFlattener {
         pathToTarget: Set<String>,
         visited: HashSet<String>,
         result: MutableList<ThreadItem>,
-        maxSiblingsInline: Int
+        maxSiblingsInline: Int,
+        depthCap: Int,
+        insideExpanded: Boolean
     ) {
         val children = parentToChildren[parentEvent.id] ?: return
         val childDepth = parentDepth + 1
@@ -109,9 +112,10 @@ object ThreadFlattener {
             // Fold the subtree when capped (unless the user expanded this branch, or it's on the
             // scroll-to-reply path). Expanded branches descend normally and the cap reapplies
             // one level deeper, so expansion is progressive.
-            val capHere = childDepth >= DEPTH_CAP &&
+            val capHere = childDepth >= depthCap &&
                 child.id !in pathToTarget &&
                 child.id !in expandedIds &&
+                !insideExpanded &&
                 hasChildren
             when {
                 collapsed || (capHere && !hasChildren) -> {
@@ -126,7 +130,7 @@ object ThreadFlattener {
                         )
                     )
                 }
-                else -> walk(child, childDepth, parentToChildren, subtreeSizes, collapsedIds, expandedIds, expandedFanOut, pathToTarget, visited, result, maxSiblingsInline)
+                else -> walk(child, childDepth, parentToChildren, subtreeSizes, collapsedIds, expandedIds, expandedFanOut, pathToTarget, visited, result, maxSiblingsInline, depthCap, insideExpanded || child.id in expandedIds)
             }
         }
 

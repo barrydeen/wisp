@@ -45,14 +45,14 @@ class ThreadFlattenerTest {
     }
 
     @Test
-    fun expand_revealsSubtree_andReappliesCapOneLevelDeeper() {
+    fun expand_revealsEntireSubtree_atOnce() {
+        // Tapping "N more replies" must reveal the whole hidden subtree at once, not one level
+        // at a time. C's subtree is D -> E (hiddenCount 2); expanding C shows both D and E.
         val out = ThreadFlattener.flatten("R", ev("R"), deepChain, expandedIds = setOf("C"))
         val p = posts(out)
-        assertTrue(p.any { it.event.id == "D" }) // D now visible after expanding C
-        val c = collapsed(out)
-        assertEquals(1, c.size)
-        assertEquals("D", c[0].anchor.id) // cap reapplies under D (progressive expand)
-        assertEquals(1, c[0].hiddenCount) // E
+        assertTrue(p.any { it.event.id == "D" })
+        assertTrue(p.any { it.event.id == "E" })
+        assertTrue(collapsed(out).isEmpty()) // no re-cap inside the expanded subtree
     }
 
     @Test

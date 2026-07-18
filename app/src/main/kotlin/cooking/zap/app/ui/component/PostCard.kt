@@ -362,10 +362,11 @@ fun PostCard(
                 if (replyToName != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "replying to ",
+                            text = stringResource(R.string.post_replying_to_prefix),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(Modifier.width(3.dp))
                         Text(
                             text = replyToName,
                             style = MaterialTheme.typography.bodySmall,
@@ -393,13 +394,15 @@ fun PostCard(
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                     )
                 }
-                profile?.nip05?.let { nip05 ->
-                    Nip05Badge(
-                        nip05 = nip05,
-                        pubkey = event.pubkey,
-                        nip05Repo = nip05Repo,
-                        onClick = onProfileClick
-                    )
+                if (!Nip10.isReply(event)) {
+                    profile?.nip05?.let { nip05 ->
+                        Nip05Badge(
+                            nip05 = nip05,
+                            pubkey = event.pubkey,
+                            nip05Repo = nip05Repo,
+                            onClick = onProfileClick
+                        )
+                    }
                 }
             }
             if (isPrivate) {
