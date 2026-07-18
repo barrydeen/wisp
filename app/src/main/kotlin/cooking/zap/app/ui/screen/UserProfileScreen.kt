@@ -102,6 +102,7 @@ import coil3.compose.AsyncImage
 import cooking.zap.app.R
 import cooking.zap.app.nostr.FollowSet
 import cooking.zap.app.nostr.Nip02
+import cooking.zap.app.nostr.Nip10
 import cooking.zap.app.nostr.Nip69
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.ProfileData
@@ -415,11 +416,14 @@ fun UserProfileScreen(
         LaunchedEffect(Unit) { viewModel.loadFollowers() }
     }
 
-    // Conversation tab: profile replies that tag the current user
+    // Conversation tab: the profile's replies that involve the current user — either a p-tag of
+    // them, or a direct reply to one of the current user's notes (resolved via the parent e-tag,
+    // since the NIP-10 p-tag is recommended, not mandatory).
     val conversationNotes = remember(replies, userPubkey, showConversationTab) {
         if (!showConversationTab) emptyList()
         else replies.filter { event ->
-            event.tags.any { tag -> tag.size >= 2 && tag[0] == "p" && tag[1] == userPubkey }
+            event.tags.any { tag -> tag.size >= 2 && tag[0] == "p" && tag[1] == userPubkey } ||
+                (Nip10.getReplyTarget(event)?.let { eventRepo?.getEvent(it)?.pubkey } == userPubkey)
         }
     }
 
