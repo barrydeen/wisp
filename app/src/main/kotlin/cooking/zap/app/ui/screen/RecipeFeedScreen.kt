@@ -174,7 +174,11 @@ fun RecipeFeedScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val gridState = rememberLazyGridState()
     var showMoreTagsSheet by remember { mutableStateOf(false) }
-    var mainTab by remember { mutableStateOf(RecipesMainTab.RECIPES) }
+    // Saveable so navigate-away to a My Kitchen detail route (grocery list,
+    // collection, planner slot) and back restores Recipes/Packs/My Kitchen —
+    // plain remember was reset when Navigation-Compose disposed this screen
+    // (PR #175 discovery). cookbookSubTab already used this idiom.
+    var mainTab by rememberSaveable { mutableStateOf(RecipesMainTab.RECIPES) }
     // Hoisted from CookbookSection so the drawer deep-link can address it, and
     // saveable so the selected hub section survives config changes and process
     // recreation (the DmListScreen selectedTab idiom).

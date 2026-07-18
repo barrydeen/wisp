@@ -65,7 +65,9 @@ import cooking.zap.app.ui.component.DeleteGroceryListDialog
 import cooking.zap.app.ui.component.EditGroceryItemDialog
 import cooking.zap.app.ui.component.RenameGroceryListDialog
 import cooking.zap.app.viewmodel.GroceryListViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 /**
@@ -439,14 +441,20 @@ private fun RecipeLinkChips(
 ) {
     var resolved by remember { mutableStateOf<List<Triple<String, String, String>>>(emptyList()) }
     LaunchedEffect(recipeLinks) {
-        resolved = recipeLinks.mapNotNull { coord ->
-            val parts = coord.split(":", limit = 3)
-            if (parts.size < 3 || parts[0] != "30023") return@mapNotNull null
-            val (_, author, dTag) = parts
-            val event = recipeRepo.findRecipeEventByCoordinate(30023, author, dTag)
-                ?: recipeRepo.requestRecipeEventByCoordinate(30023, author, dTag)
-            val title = event?.let { RecipeFormats.forEvent(it)?.parse(it)?.title }
-            title?.let { Triple(it, author, dTag) }
+        // Off the main dispatcher — same pattern as PlannerSection /
+        // GenerateGrocerySheet. Cache lookup is an ObjectBox scan and the
+        // network fill awaits EOSE; running both on Main silently produced
+        // empty chips for titled, cache-resident links (PR #180 discovery).
+        resolved = withContext(Dispatchers.IO) {
+            recipeLinks.mapNotNull { coord ->
+                val parts = coord.split(":", limit = 3)
+                if (parts.size < 3 || parts[0] != "30023") return@mapNotNull null
+                val (_, author, dTag) = parts
+                val event = recipeRepo.findRecipeEventByCoordinate(30023, author, dTag)
+                    ?: recipeRepo.requestRecipeEventByCoordinate(30023, author, dTag)
+                val title = event?.let { RecipeFormats.forEvent(it)?.parse(it)?.title }
+                title?.let { Triple(it, author, dTag) }
+            }
         }
     }
     if (resolved.isEmpty()) return
