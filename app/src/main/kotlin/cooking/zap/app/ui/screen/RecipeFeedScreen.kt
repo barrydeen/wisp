@@ -869,9 +869,11 @@ private fun CookbookSection(
                         viewModel = plannerViewModel,
                         recipeRepo = recipeRepo,
                         cookbookViewModel = viewModel,
+                        groceryViewModel = groceryViewModel,
                         userPubkey = userPubkey,
                         onBrowseRecipes = onBrowseRecipes,
                         onCreateRecipe = onCreateRecipe,
+                        onOpenGroceryList = onGroceryListClick,
                         // DEBUG stop-gate harness moves from the (now-gone) teaser
                         // long-press to the week-range header long-press.
                         onDebugLongPress = if (cooking.zap.app.BuildConfig.DEBUG) {
