@@ -577,12 +577,22 @@ fun UserProfileScreen(
         // permanently invisible, kept only to reserve scroll layout space.
         val density = LocalDensity.current
         val topBarHeightPx = with(density) { padding.calculateTopPadding().toPx() }.toInt()
+        // Offset for the visible tab-row overlay, or null when the tab row is below the fold
+        // (tall header, not yet scrolled to). Returning null hides the overlay entirely so it
+        // can never sit on top of the header — the old fallback treated "below the fold" as
+        // "scrolled past" and pinned the tab row over the header, hiding the Lightning address
+        // and bio on tall profiles. The in-flow copy (item "tab_row") still reserves scroll space.
         val pinnedTabRowOffsetPx by remember {
             derivedStateOf {
-                val naturalOffset = listState.layoutInfo.visibleItemsInfo
-                    .find { it.key == "tab_row" }?.offset
-                    ?: Int.MIN_VALUE / 2 // not currently visible == scrolled well past, so clamp to pinned
-                naturalOffset.coerceAtLeast(topBarHeightPx)
+                val info = listState.layoutInfo.visibleItemsInfo.find { it.key == "tab_row" }
+                when {
+                    // Tab row visible: slide with the list, clamping just under the top bar.
+                    info != null -> info.offset.coerceAtLeast(topBarHeightPx)
+                    // Scrolled past it (content is at the top): pin under the bar.
+                    listState.firstVisibleItemIndex > 1 -> topBarHeightPx
+                    // Below the fold: don't render the overlay.
+                    else -> null
+                }
             }
         }
 
@@ -1228,17 +1238,19 @@ fun UserProfileScreen(
             }
         }
 
-            // The one visible copy of the tab row — always rendered, positioned
-            // every frame at max(barHeight, naturalScrollPosition) so it slides
-            // with the list and then holds flush under the bar once it gets there.
-            Box(
-                modifier = Modifier.offset { IntOffset(0, pinnedTabRowOffsetPx) }
-            ) {
-                ProfileTabRow(
-                    profileTabs = profileTabs,
-                    selectedTab = selectedTab,
-                    onSelect = { selectedTab = it }
-                )
+            // The one visible copy of the tab row. Hidden while it's below the fold so it
+            // can't overlap the header; otherwise it slides with the list and pins flush
+            // under the top bar once scrolled to it.
+            pinnedTabRowOffsetPx?.let { offset ->
+                Box(
+                    modifier = Modifier.offset { IntOffset(0, offset) }
+                ) {
+                    ProfileTabRow(
+                        profileTabs = profileTabs,
+                        selectedTab = selectedTab,
+                        onSelect = { selectedTab = it }
+                    )
+                }
             }
         }
     }
