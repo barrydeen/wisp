@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
@@ -315,6 +316,27 @@ fun PostCard(
                 }
             }
         }
+        if (replyToName != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.Reply,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = stringResource(R.string.post_replying_to, replyToName),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             ProfilePicture(
                 url = profile?.picture,
@@ -332,25 +354,6 @@ fun PostCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.clickable(onClick = onProfileClick)
                 )
-                if (replyToName != null) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "replying to ",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = replyToName,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.clickable {
-                                replyToPubkey?.let { onNavigateToProfile?.invoke(it) }
-                            }
-                        )
-                    }
-                }
                 // NIP-38: user status (hide on replies to reduce clutter)
                 val statusVersion by eventRepo?.statusVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
                 val userStatus = remember(statusVersion, event.pubkey) {
@@ -366,13 +369,15 @@ fun PostCard(
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                     )
                 }
-                profile?.nip05?.let { nip05 ->
-                    Nip05Badge(
-                        nip05 = nip05,
-                        pubkey = event.pubkey,
-                        nip05Repo = nip05Repo,
-                        onClick = onProfileClick
-                    )
+                if (!Nip10.isReply(event)) {
+                    profile?.nip05?.let { nip05 ->
+                        Nip05Badge(
+                            nip05 = nip05,
+                            pubkey = event.pubkey,
+                            nip05Repo = nip05Repo,
+                            onClick = onProfileClick
+                        )
+                    }
                 }
             }
             if (isPrivate) {

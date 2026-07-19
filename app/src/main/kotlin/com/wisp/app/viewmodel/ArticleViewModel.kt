@@ -14,6 +14,8 @@ import com.wisp.app.repo.EventRepository
 import com.wisp.app.repo.MetadataFetcher
 import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayListRepository
+import com.wisp.app.viewmodel.thread.ThreadFlattener
+import com.wisp.app.viewmodel.thread.ThreadItem
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,13 +42,16 @@ class ArticleViewModel : ViewModel() {
     val hashtags: StateFlow<List<String>> = _hashtags
 
     // Comments
-    private val _comments = MutableStateFlow<List<Pair<NostrEvent, Int>>>(emptyList())
-    val comments: StateFlow<List<Pair<NostrEvent, Int>>> = _comments
+    private val _comments = MutableStateFlow<List<ThreadItem>>(emptyList())
+    val comments: StateFlow<List<ThreadItem>> = _comments
 
     private val _isCommentsLoading = MutableStateFlow(false)
     val isCommentsLoading: StateFlow<Boolean> = _isCommentsLoading
 
     private val commentEvents = mutableMapOf<String, NostrEvent>()
+    private var currentArticleEventId: String? = null
+    /** Anchors whose folded comment subtree the user expanded inline. */
+    private val expandedIds = mutableSetOf<String>()
     private var collectorJob: Job? = null
     private var engagementCollectorJob: Job? = null
     private var rebuildJob: Job? = null
@@ -105,6 +110,7 @@ class ArticleViewModel : ViewModel() {
         this.topRelayUrls = topRelayUrls
         this.relayListRepoRef = relayListRepo
         this.relayHintStoreRef = relayHintStore
+        this.currentArticleEventId = articleEventId
         _isCommentsLoading.value = true
 
         val coordinate = "30023:$author:$dTag"
@@ -329,34 +335,25 @@ class ArticleViewModel : ViewModel() {
             children.sortBy { it.created_at }
         }
 
-        val result = mutableListOf<Pair<NostrEvent, Int>>()
-        val visited = mutableSetOf<String>()
-
-        val rootChildren = parentToChildren["root"] ?: emptyList()
-        for (child in rootChildren) {
-            if (child.id in visited) continue
-            visited.add(child.id)
-            result.add(child to 0)
-            dfs(child.id, 1, parentToChildren, result, visited)
-        }
-
-        _comments.value = result
+        // Article comments share note threads' progressive disclosure: deeper-than-cap
+        // subtrees fold behind an inline "Show N more replies" affordance (expandBranch).
+        _comments.value = ThreadFlattener.flatten(
+            rootId = "root",
+            rootEvent = null,
+            parentToChildren = parentToChildren,
+            expandedIds = expandedIds,
+            // Fan-out ("show more replies") cap stays disabled for article comments.
+            maxSiblingsInline = Int.MAX_VALUE
+        )
     }
 
-    private fun dfs(
-        parentId: String,
-        depth: Int,
-        parentToChildren: Map<String, List<NostrEvent>>,
-        result: MutableList<Pair<NostrEvent, Int>>,
-        visited: MutableSet<String>
-    ) {
-        val children = parentToChildren[parentId] ?: return
-        for (child in children) {
-            if (child.id in visited) continue
-            visited.add(child.id)
-            result.add(child to depth)
-            dfs(child.id, depth + 1, parentToChildren, result, visited)
-        }
+    /** Expand a folded comment subtree inline. */
+    fun expandBranch(anchorId: String) {
+        if (expandedIds.add(anchorId)) rebuildTree(currentArticleEventId)
+    }
+
+    fun collapseBranch(anchorId: String) {
+        if (expandedIds.remove(anchorId)) rebuildTree(currentArticleEventId)
     }
 
     private fun parseAndEmit(event: NostrEvent) {
