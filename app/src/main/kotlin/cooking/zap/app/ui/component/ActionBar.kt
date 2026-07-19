@@ -27,8 +27,6 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.ModeComment
-import androidx.compose.material.icons.outlined.Repeat
-import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -210,7 +208,7 @@ fun ActionBar(
             Box {
                 IconButton(onClick = { showRepostMenu = true }) {
                     Icon(
-                        Icons.Rounded.Repeat,
+                        painterResource(R.drawable.ic_repost),
                         contentDescription = stringResource(R.string.cd_repost),
                         tint = if (hasUserReposted) WispThemeColors.repostColor else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(22.dp)
