@@ -563,37 +563,25 @@ fun UserProfileScreen(
             }
         }
 
-        // The tab row used to be a LazyColumn stickyHeader, but stickyHeader pins
-        // flush to the LazyColumn's own top edge — which is now behind the
-        // translucent top bar (contentPadding, not a layout offset, reserves that
-        // space so scrolled content can show through it). That made the tab row
-        // scroll up and disappear behind the bar instead of locking below it.
-        //
-        // Fixed with a continuously-tracked overlay instead of a discrete
-        // show/hide swap (which double-rendered and popped): the overlay always
-        // renders at max(barHeight, tabRow'sNaturalScrollPosition), so it slides
-        // up smoothly with the list and then holds the instant it reaches the
-        // bar — matching a native sticky header's feel. The in-flow copy is
-        // permanently invisible, kept only to reserve scroll layout space.
         val density = LocalDensity.current
         val topBarHeightPx = with(density) { padding.calculateTopPadding().toPx() }.toInt()
-        // Offset for the visible tab-row overlay, or null when the tab row is below the fold
-        // (tall header, not yet scrolled to). Returning null hides the overlay entirely so it
-        // can never sit on top of the header — the old fallback treated "below the fold" as
-        // "scrolled past" and pinned the tab row over the header, hiding the Lightning address
-        // and bio on tall profiles. The in-flow copy (item "tab_row") still reserves scroll space.
-        val pinnedTabRowOffsetPx by remember {
-            derivedStateOf {
-                val info = listState.layoutInfo.visibleItemsInfo.find { it.key == "tab_row" }
-                when {
-                    // Tab row visible: slide with the list, clamping just under the top bar.
-                    info != null -> info.offset.coerceAtLeast(topBarHeightPx)
-                    // Scrolled past it (content is at the top): pin under the bar.
-                    listState.firstVisibleItemIndex > 1 -> topBarHeightPx
-                    // Below the fold: don't render the overlay.
-                    else -> null
-                }
-            }
+        // Profile tab row: translucent top bar + a tab that (a) never overlaps the header at
+        // rest and (b) sticks *below* the translucent bar when scrolled. The tab lives in-flow
+        // at its natural spot (correct position via layout, so no overlap); once the header
+        // scrolls past we fade the in-flow copy out and show a pinned copy flush below the bar.
+        //
+        // Prior failed attempts (kept here so they aren't retried):
+        //  - Offset overlay driven by LazyListItemInfo.offset (max(offset, topBarHeight)): the
+        //    reported offset didn't match the tab's real screen position, so the overlay parked
+        //    over the header and hid the Lightning address at rest; "below the fold" was also
+        //    conflated with "scrolled past".
+        //  - stickyHeader alone: fixes the at-rest overlap, but it pins at the LazyColumn top
+        //    (y=0), which is *behind* the translucent top bar — the tab vanishes when scrolled.
+        //    stickyHeader can't pin below the bar by itself.
+        //  - Combining a translucent bar with a sticky tab is NOT impossible (an earlier version
+        //    did exactly this); the fix just can't rely on item-offset math.
+        val tabRowPinned by remember {
+            derivedStateOf { listState.firstVisibleItemIndex >= 1 }
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
@@ -685,14 +673,11 @@ fun UserProfileScreen(
             }
 
             item(key = "tab_row") {
-                // Permanently invisible — the overlay below is the only visible
-                // copy. This one exists purely so the list reserves the right
-                // amount of scroll space for it.
                 ProfileTabRow(
                     profileTabs = profileTabs,
                     selectedTab = selectedTab,
                     onSelect = { selectedTab = it },
-                    modifier = Modifier.alpha(0f)
+                    modifier = Modifier.alpha(if (tabRowPinned) 0f else 1f)
                 )
             }
 
@@ -1238,12 +1223,11 @@ fun UserProfileScreen(
             }
         }
 
-            // The one visible copy of the tab row. Hidden while it's below the fold so it
-            // can't overlap the header; otherwise it slides with the list and pins flush
-            // under the top bar once scrolled to it.
-            pinnedTabRowOffsetPx?.let { offset ->
+            // Pinned copy of the tab row, flush below the translucent top bar, shown once the
+            // header has scrolled past (the in-flow copy above is alpha'd out by then).
+            if (tabRowPinned) {
                 Box(
-                    modifier = Modifier.offset { IntOffset(0, offset) }
+                    modifier = Modifier.offset { IntOffset(0, topBarHeightPx) }
                 ) {
                     ProfileTabRow(
                         profileTabs = profileTabs,
