@@ -76,7 +76,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -1385,7 +1385,7 @@ internal fun Nip05Badge(
             // a transient relay error shouldn't flag every row across the timeline.
             when {
                 status == Nip05Status.VERIFIED -> Icon(
-                    Icons.Default.CheckCircle,
+                    Icons.Default.Verified,
                     contentDescription = "Verified",
                     tint = verifiedTint,
                     modifier = Modifier.size(14.dp)
@@ -1402,7 +1402,7 @@ internal fun Nip05Badge(
         if (iconLeading) {
             if (status == Nip05Status.VERIFIED) {
                 Icon(
-                    Icons.Default.CheckCircle,
+                    Icons.Default.Verified,
                     contentDescription = "Verified",
                     tint = verifiedTint,
                     modifier = Modifier.size(14.dp)
@@ -1438,7 +1438,7 @@ internal fun Nip05Badge(
             if (status == Nip05Status.VERIFIED) {
                 Spacer(Modifier.width(4.dp))
                 Icon(
-                    Icons.Default.CheckCircle,
+                    Icons.Default.Verified,
                     contentDescription = "Verified",
                     tint = verifiedTint,
                     modifier = Modifier.size(14.dp)
