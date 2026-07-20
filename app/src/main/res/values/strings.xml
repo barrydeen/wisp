@@ -801,6 +801,16 @@
     <string name="wallet_receive_note_label">NOTE (OPTIONAL)</string>
     <string name="wallet_receive_note_placeholder">For coffee, etc.</string>
     <string name="wallet_receive_create_invoice">Create invoice</string>
+    <!-- Invoice expiry selector -->
+    <string name="wallet_receive_expires_label">EXPIRES</string>
+    <string name="wallet_receive_expires_1h">1 hour</string>
+    <string name="wallet_receive_expires_24h">24 hours</string>
+    <string name="wallet_receive_expires_custom">Custom</string>
+    <string name="wallet_receive_expires_hours">Hours until expiry</string>
+    <!-- Lightning address receive row -->
+    <string name="wallet_receive_via_address">or receive to your Lightning address</string>
+    <string name="wallet_copy_address">Copy address</string>
+    <string name="wallet_send_input_hint_onchain">Lightning address, invoice, or CLINK offer</string>
     <string name="wallet_backup_missing_title">Wallet backup not found</string>
     <string name="wallet_backup_missing_body">Your wallet recovery phrase is not backed up to any relay. If you lose this device, you could lose your funds.</string>
     <string name="wallet_backup_now">Backup Now</string>
@@ -886,6 +896,8 @@
     <string name="section_invite_codes">Invite codes</string>
     <string name="action_generate_invite">Generate invite code</string>
     <string name="label_latest_invite_code">Latest invite code</string>
+    <string name="action_copy">Copy</string>
+    <string name="wallet_tx_pending">Pending</string>
     <string name="action_copy_code">Copy code</string>
     <string name="action_copy_invite_link">Copy invite link</string>
     <string name="title_assign_role">Assign role</string>

@@ -49,7 +49,7 @@ object Nip47 {
         object GetBalance : NwcRequest()
         object GetInfo : NwcRequest()
         data class PayInvoice(val invoice: String) : NwcRequest()
-        data class MakeInvoice(val amountMsats: Long, val description: String) : NwcRequest()
+        data class MakeInvoice(val amountMsats: Long, val description: String, val expiry: Int? = null) : NwcRequest()
         data class ListTransactions(val limit: Int = 50, val offset: Int = 0) : NwcRequest()
     }
 
@@ -172,6 +172,7 @@ object Nip47 {
                 put("params", buildJsonObject {
                     put("amount", request.amountMsats)
                     put("description", request.description)
+                    request.expiry?.let { put("expiry", it) }
                 })
             }
             is NwcRequest.ListTransactions -> buildJsonObject {
