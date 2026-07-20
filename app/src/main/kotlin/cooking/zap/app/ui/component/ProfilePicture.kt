@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
@@ -196,18 +197,22 @@ private fun BaseProfilePicture(
 @Composable
 private fun FollowBadge(size: Int, modifier: Modifier = Modifier) {
     val badgeSize = (size * 0.3f).coerceIn(10f, 16f)
+    // iOS parity: the check flips with the color scheme — black on the
+    // orange circle in dark mode, white in light mode. Derive from the
+    // active surface so theme presets stay correct too.
+    val checkColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color.Black else Color.White
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .offset(x = 1.dp, y = 1.dp)
             .size(badgeSize.dp)
-            .background(MaterialTheme.colorScheme.onPrimary, CircleShape)
+            .background(MaterialTheme.colorScheme.primary, CircleShape)
             .border(1.dp, MaterialTheme.colorScheme.surface, CircleShape)
     ) {
         Icon(
             Icons.Default.Check,
             contentDescription = "Following",
-            tint = MaterialTheme.colorScheme.primary,
+            tint = checkColor,
             modifier = Modifier.size((badgeSize * 0.65f).dp)
         )
     }
