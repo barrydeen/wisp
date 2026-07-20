@@ -17,7 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -122,7 +122,7 @@ fun DmListScreen(
                     onClick = onNewDm,
                     contentDescription = stringResource(R.string.cd_new_conversation)
                 ) {
-                    Icon(Icons.AutoMirrored.Outlined.Chat, contentDescription = null, tint = Color.White)
+                    Icon(Icons.Filled.ChatBubble, contentDescription = null, tint = Color.White)
                 }
             }
         }

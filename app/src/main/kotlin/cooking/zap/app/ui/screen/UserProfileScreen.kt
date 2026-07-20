@@ -102,6 +102,7 @@ import coil3.compose.AsyncImage
 import cooking.zap.app.R
 import cooking.zap.app.nostr.FollowSet
 import cooking.zap.app.nostr.Nip02
+import cooking.zap.app.nostr.Nip10
 import cooking.zap.app.nostr.Nip69
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.ProfileData
@@ -135,7 +136,7 @@ import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.serialization.json.buildJsonObject
+
 import kotlinx.serialization.json.put
 
 private sealed class ProfileZapStatus {
@@ -415,11 +416,14 @@ fun UserProfileScreen(
         LaunchedEffect(Unit) { viewModel.loadFollowers() }
     }
 
-    // Conversation tab: profile replies that tag the current user
+    // Conversation tab: the profile's replies that involve the current user — either a p-tag of
+    // them, or a direct reply to one of the current user's notes (resolved via the parent e-tag,
+    // since the NIP-10 p-tag is recommended, not mandatory).
     val conversationNotes = remember(replies, userPubkey, showConversationTab) {
         if (!showConversationTab) emptyList()
         else replies.filter { event ->
-            event.tags.any { tag -> tag.size >= 2 && tag[0] == "p" && tag[1] == userPubkey }
+            event.tags.any { tag -> tag.size >= 2 && tag[0] == "p" && tag[1] == userPubkey } ||
+                (Nip10.getReplyTarget(event)?.let { eventRepo?.getEvent(it)?.pubkey } == userPubkey)
         }
     }
 
@@ -478,23 +482,12 @@ fun UserProfileScreen(
                         onDismissRequest = { menuExpanded = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.profile_copy_json)) },
+                            text = { Text(stringResource(R.string.btn_copy_npub)) },
                             onClick = {
                                 menuExpanded = false
-                                profile?.let { p ->
-                                    val json = buildJsonObject {
-                                        p.name?.let { put("name", it) }
-                                        p.displayName?.let { put("display_name", it) }
-                                        p.about?.let { put("about", it) }
-                                        p.picture?.let { put("picture", it) }
-                                        p.banner?.let { put("banner", it) }
-                                        p.nip05?.let { put("nip05", it) }
-                                        p.lud16?.let { put("lud16", it) }
-                                    }.toString()
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("Profile JSON", json))
-                                    Toast.makeText(context, context.getString(R.string.profile_json_copied), Toast.LENGTH_SHORT).show()
-                                }
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("npub", profilePubkey.toNpub()))
+                                Toast.makeText(context, context.getString(R.string.profile_npub_copied), Toast.LENGTH_SHORT).show()
                             }
                         )
                         if (!isOwnProfile) {
@@ -570,27 +563,25 @@ fun UserProfileScreen(
             }
         }
 
-        // The tab row used to be a LazyColumn stickyHeader, but stickyHeader pins
-        // flush to the LazyColumn's own top edge — which is now behind the
-        // translucent top bar (contentPadding, not a layout offset, reserves that
-        // space so scrolled content can show through it). That made the tab row
-        // scroll up and disappear behind the bar instead of locking below it.
-        //
-        // Fixed with a continuously-tracked overlay instead of a discrete
-        // show/hide swap (which double-rendered and popped): the overlay always
-        // renders at max(barHeight, tabRow'sNaturalScrollPosition), so it slides
-        // up smoothly with the list and then holds the instant it reaches the
-        // bar — matching a native sticky header's feel. The in-flow copy is
-        // permanently invisible, kept only to reserve scroll layout space.
         val density = LocalDensity.current
         val topBarHeightPx = with(density) { padding.calculateTopPadding().toPx() }.toInt()
-        val pinnedTabRowOffsetPx by remember {
-            derivedStateOf {
-                val naturalOffset = listState.layoutInfo.visibleItemsInfo
-                    .find { it.key == "tab_row" }?.offset
-                    ?: Int.MIN_VALUE / 2 // not currently visible == scrolled well past, so clamp to pinned
-                naturalOffset.coerceAtLeast(topBarHeightPx)
-            }
+        // Profile tab row: translucent top bar + a tab that (a) never overlaps the header at
+        // rest and (b) sticks *below* the translucent bar when scrolled. The tab lives in-flow
+        // at its natural spot (correct position via layout, so no overlap); once the header
+        // scrolls past we fade the in-flow copy out and show a pinned copy flush below the bar.
+        //
+        // Prior failed attempts (kept here so they aren't retried):
+        //  - Offset overlay driven by LazyListItemInfo.offset (max(offset, topBarHeight)): the
+        //    reported offset didn't match the tab's real screen position, so the overlay parked
+        //    over the header and hid the Lightning address at rest; "below the fold" was also
+        //    conflated with "scrolled past".
+        //  - stickyHeader alone: fixes the at-rest overlap, but it pins at the LazyColumn top
+        //    (y=0), which is *behind* the translucent top bar — the tab vanishes when scrolled.
+        //    stickyHeader can't pin below the bar by itself.
+        //  - Combining a translucent bar with a sticky tab is NOT impossible (an earlier version
+        //    did exactly this); the fix just can't rely on item-offset math.
+        val tabRowPinned by remember {
+            derivedStateOf { listState.firstVisibleItemIndex >= 1 }
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
@@ -682,14 +673,11 @@ fun UserProfileScreen(
             }
 
             item(key = "tab_row") {
-                // Permanently invisible — the overlay below is the only visible
-                // copy. This one exists purely so the list reserves the right
-                // amount of scroll space for it.
                 ProfileTabRow(
                     profileTabs = profileTabs,
                     selectedTab = selectedTab,
                     onSelect = { selectedTab = it },
-                    modifier = Modifier.alpha(0f)
+                    modifier = Modifier.alpha(if (tabRowPinned) 0f else 1f)
                 )
             }
 
@@ -1235,17 +1223,18 @@ fun UserProfileScreen(
             }
         }
 
-            // The one visible copy of the tab row — always rendered, positioned
-            // every frame at max(barHeight, naturalScrollPosition) so it slides
-            // with the list and then holds flush under the bar once it gets there.
-            Box(
-                modifier = Modifier.offset { IntOffset(0, pinnedTabRowOffsetPx) }
-            ) {
-                ProfileTabRow(
-                    profileTabs = profileTabs,
-                    selectedTab = selectedTab,
-                    onSelect = { selectedTab = it }
-                )
+            // Pinned copy of the tab row, flush below the translucent top bar, shown once the
+            // header has scrolled past (the in-flow copy above is alpha'd out by then).
+            if (tabRowPinned) {
+                Box(
+                    modifier = Modifier.offset { IntOffset(0, topBarHeightPx) }
+                ) {
+                    ProfileTabRow(
+                        profileTabs = profileTabs,
+                        selectedTab = selectedTab,
+                        onSelect = { selectedTab = it }
+                    )
+                }
             }
         }
     }
@@ -2108,7 +2097,7 @@ private fun BlockedContentOverlay(onReveal: () -> Unit) {
             .height(200.dp)
             .padding(16.dp)
             .background(
-                MaterialTheme.colorScheme.errorContainer,
+                MaterialTheme.colorScheme.surfaceVariant,
                 RoundedCornerShape(12.dp)
             )
             .clickable(onClick = onReveal)
@@ -2117,20 +2106,20 @@ private fun BlockedContentOverlay(onReveal: () -> Unit) {
             Icon(
                 Icons.Default.Block,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onErrorContainer,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(32.dp)
             )
             Spacer(Modifier.height(8.dp))
             Text(
                 text = "This user is blocked",
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onErrorContainer
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "Tap to reveal content",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
         }
     }

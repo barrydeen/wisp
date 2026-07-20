@@ -944,7 +944,7 @@
     <string name="profile_sort_replies">Replies</string>
     <string name="profile_edit">Edit Profile</string>
     <string name="profile_follows_you">Follows you</string>
-    <string name="profile_copy_json">Copy Profile JSON</string>
+    <string name="profile_npub_copied">npub copied</string>
     <string name="profile_add_to_list">Add to List</string>
     <string name="profile_block">Block</string>
     <string name="profile_unblock">Unblock</string>
@@ -961,7 +961,6 @@
     <string name="profile_discovered_relays">Discovered Relays</string>
     <string name="profile_other_discovered_relays">Other Discovered Relays</string>
     <string name="profile_pinned">Pinned</string>
-    <string name="profile_json_copied">Profile JSON copied</string>
     <string name="profile_send_message">Send message</string>
     <string name="profile_search_notes">Search notes</string>
     <string name="profile_crawling_still">Still crawling or account too new</string>

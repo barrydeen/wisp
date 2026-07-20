@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.ModeComment
-import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -127,8 +126,26 @@ fun ActionBar(
     // for the full width derivation (issue #150 follow-up).
     val slotGap = if (inlineCheffy != null) 2.dp else 8.dp
     Row(modifier = rowModifier, verticalAlignment = Alignment.CenterVertically) {
-        // React first — mirrors the web action-row order
-        // (react · comment · renote · zap).
+        // Comment · react · repost · zap.
+        IconButton(onClick = onReply) {
+            Icon(
+                Icons.Outlined.ModeComment,
+                contentDescription = stringResource(R.string.cd_reply),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        // Hide the count when zero — minimalistic action bar where empty metrics
+        // drop entirely instead of showing "0".
+        if (replyCount > 0) {
+            Text(
+                text = replyCount.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
+        Spacer(Modifier.width(slotGap))
         Box {
             Box(
                 contentAlignment = Alignment.Center,
@@ -183,25 +200,6 @@ fun ActionBar(
                 maxLines = 1
             )
         }
-        Spacer(Modifier.width(slotGap))
-        IconButton(onClick = onReply) {
-            Icon(
-                Icons.Outlined.ModeComment,
-                contentDescription = stringResource(R.string.cd_reply),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp)
-            )
-        }
-        // Hide the count when zero — matches iOS minimalistic action bar
-        // where empty metrics drop entirely instead of showing "0".
-        if (replyCount > 0) {
-            Text(
-                text = replyCount.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
-        }
         // React + Zap are available on private replies as gift-wrapped/DIP-03 actions.
         // Repost / Quote stay hidden on private replies because those events would
         // publicly attach an e-tag pointing at the encrypted rumor id.
@@ -210,7 +208,7 @@ fun ActionBar(
             Box {
                 IconButton(onClick = { showRepostMenu = true }) {
                     Icon(
-                        Icons.Outlined.Repeat,
+                        painterResource(R.drawable.ic_repost),
                         contentDescription = stringResource(R.string.cd_repost),
                         tint = if (hasUserReposted) WispThemeColors.repostColor else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(22.dp)
