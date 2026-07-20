@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -63,8 +64,11 @@ import com.wisp.app.ui.component.ActionBar
 import com.wisp.app.ui.component.NoteActions
 import com.wisp.app.ui.component.PostCard
 import com.wisp.app.ui.component.RichContent
+import com.wisp.app.ui.component.CollapsedRepliesRow
+import com.wisp.app.ui.component.threadConnector
+import com.wisp.app.ui.component.threadIndentDp
 import com.wisp.app.viewmodel.ArticleViewModel
-import kotlin.math.min
+import com.wisp.app.viewmodel.thread.ThreadItem
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -336,50 +340,72 @@ fun ArticleScreen(
                     }
 
                     // Comment items
-                    items(comments.size, key = { "comment-${comments[it].first.id}" }) { index ->
-                        val (event, depth) = comments[index]
-                        val commentProfile = remember(profileVersion, event.pubkey) { eventRepo.getProfileData(event.pubkey) }
-                        val commentLikeCount = remember(reactionVersion, event.id) { eventRepo.getReactionCount(event.id) }
-                        val commentReplyCount = remember(replyCountVersion, event.id) { eventRepo.getReplyCount(event.id) }
-                        val commentZapSats = remember(zapVersion, event.id) { eventRepo.getZapSats(event.id) }
-                        val commentUserEmojis = remember(reactionVersion, event.id, userPubkey) {
-                            userPubkey?.let { eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet()
+                    items(items = comments, key = { "comment_${it.key}" }, contentType = { "comment" }) { item ->
+                        if (item !is ThreadItem.Post) {
+                            // Folded comment subtree — expand inline.
+                            if (item is ThreadItem.CollapsedReplies) {
+                                CollapsedRepliesRow(
+                                    item = item,
+                                    onExpand = { viewModel.expandBranch(item.anchor.id) },
+                                    modifier = Modifier.animateItem()
+                                )
+                            }
+                        } else {
+                            val event = item.event
+                            val commentProfile = remember(profileVersion, event.pubkey) { eventRepo.getProfileData(event.pubkey) }
+                            val commentLikeCount = remember(reactionVersion, event.id) { eventRepo.getReactionCount(event.id) }
+                            val commentReplyCount = remember(replyCountVersion, event.id) { eventRepo.getReplyCount(event.id) }
+                            val commentZapSats = remember(zapVersion, event.id) { eventRepo.getZapSats(event.id) }
+                            val commentUserEmojis = remember(reactionVersion, event.id, userPubkey) {
+                                userPubkey?.let { eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet()
+                            }
+                            val commentRepostCount = remember(repostVersion, event.id) { eventRepo.getRepostCount(event.id) }
+                            val commentHasUserReposted = remember(repostVersion, event.id) { eventRepo.hasUserReposted(event.id) }
+                            val commentHasUserZapped = remember(zapVersion, event.id) { eventRepo.hasUserZapped(event.id) }
+                            val commentReactionEmojiUrls = remember(reactionVersion, event.id) { eventRepo.getReactionEmojiUrls(event.id) }
+                            val indent = threadIndentDp(item.depth)
+                            val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            PostCard(
+                                event = event,
+                                profile = commentProfile,
+                                onReply = { onReply(event) },
+                                onProfileClick = { onProfileClick(event.pubkey) },
+                                onNavigateToProfile = onProfileClick,
+                                onNoteClick = {},
+                                onReact = { emoji -> onReact(event, emoji) },
+                                userReactionEmojis = commentUserEmojis,
+                                onRepost = { onRepost(event) },
+                                onQuote = { onQuote(event) },
+                                hasUserReposted = commentHasUserReposted,
+                                repostCount = commentRepostCount,
+                                onZap = { onZap(event) },
+                                hasUserZapped = commentHasUserZapped,
+                                likeCount = commentLikeCount,
+                                replyCount = commentReplyCount,
+                                zapSats = commentZapSats,
+                                isZapAnimating = event.id in zapAnimatingIds,
+                                isZapInProgress = event.id in zapInProgressIds,
+                                eventRepo = eventRepo,
+                                reactionEmojiUrls = commentReactionEmojiUrls,
+                                resolvedEmojis = resolvedEmojis,
+                                unicodeEmojis = unicodeEmojis,
+                                onOpenEmojiLibrary = onOpenEmojiLibrary,
+                                isOwnEvent = event.pubkey == userPubkey,
+                                onAddToList = { onAddToList(event.id) },
+                                isInList = event.id in listedIds,
+                                noteActions = noteActions,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .animateItem()
+                                    .threadConnector(
+                                        show = item.depth > 0,
+                                        indent = indent,
+                                        lineColor = lineColor,
+                                        dashedTop = item.connectorStartsMidAir
+                                    )
+                                    .padding(start = indent)
+                            )
                         }
-                        val commentRepostCount = remember(repostVersion, event.id) { eventRepo.getRepostCount(event.id) }
-                        val commentHasUserReposted = remember(repostVersion, event.id) { eventRepo.hasUserReposted(event.id) }
-                        val commentHasUserZapped = remember(zapVersion, event.id) { eventRepo.hasUserZapped(event.id) }
-                        val commentReactionEmojiUrls = remember(reactionVersion, event.id) { eventRepo.getReactionEmojiUrls(event.id) }
-                        PostCard(
-                            event = event,
-                            profile = commentProfile,
-                            onReply = { onReply(event) },
-                            onProfileClick = { onProfileClick(event.pubkey) },
-                            onNavigateToProfile = onProfileClick,
-                            onNoteClick = {},
-                            onReact = { emoji -> onReact(event, emoji) },
-                            userReactionEmojis = commentUserEmojis,
-                            onRepost = { onRepost(event) },
-                            onQuote = { onQuote(event) },
-                            hasUserReposted = commentHasUserReposted,
-                            repostCount = commentRepostCount,
-                            onZap = { onZap(event) },
-                            hasUserZapped = commentHasUserZapped,
-                            likeCount = commentLikeCount,
-                            replyCount = commentReplyCount,
-                            zapSats = commentZapSats,
-                            isZapAnimating = event.id in zapAnimatingIds,
-                            isZapInProgress = event.id in zapInProgressIds,
-                            eventRepo = eventRepo,
-                            reactionEmojiUrls = commentReactionEmojiUrls,
-                            resolvedEmojis = resolvedEmojis,
-                            unicodeEmojis = unicodeEmojis,
-                            onOpenEmojiLibrary = onOpenEmojiLibrary,
-                            isOwnEvent = event.pubkey == userPubkey,
-                            onAddToList = { onAddToList(event.id) },
-                            isInList = event.id in listedIds,
-                            noteActions = noteActions,
-                            modifier = Modifier.padding(start = (min(depth, 4) * 24).dp)
-                        )
                     }
 
                     item(key = "footer") { Spacer(Modifier.height(32.dp)) }

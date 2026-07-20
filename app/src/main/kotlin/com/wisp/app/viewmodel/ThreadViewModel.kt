@@ -20,6 +20,8 @@ import com.wisp.app.repo.RelayHintStore
 import com.wisp.app.repo.RelayListRepository
 import com.wisp.app.repo.SafetyPreferences
 import com.wisp.app.repo.SpamAuthorCache
+import com.wisp.app.viewmodel.thread.ThreadFlattener
+import com.wisp.app.viewmodel.thread.ThreadItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -32,8 +34,8 @@ class ThreadViewModel : ViewModel() {
     private val _rootEvent = MutableStateFlow<NostrEvent?>(null)
     val rootEvent: StateFlow<NostrEvent?> = _rootEvent
 
-    private val _flatThread = MutableStateFlow<List<Pair<NostrEvent, Int>>>(emptyList())
-    val flatThread: StateFlow<List<Pair<NostrEvent, Int>>> = _flatThread
+    private val _flatThread = MutableStateFlow<List<ThreadItem>>(emptyList())
+    val flatThread: StateFlow<List<ThreadItem>> = _flatThread
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading
@@ -50,6 +52,8 @@ class ThreadViewModel : ViewModel() {
     private val threadEvents = mutableMapOf<String, NostrEvent>()
     private var rootId: String = ""
     private var scrollTargetId: String? = null
+    /** Anchors whose depth-capped subtree the user expanded inline. */
+    private val expandedIds = mutableSetOf<String>()
     private var muteRepo: MuteRepository? = null
     private val activeMetadataSubs = mutableListOf<String>()
     private var relayPoolRef: RelayPool? = null
@@ -91,6 +95,15 @@ class ThreadViewModel : ViewModel() {
     fun markNotSpam(pubkey: String) {
         safetyPrefs?.addToSpamSafelist(pubkey)
         scheduleRebuild()
+    }
+
+    /** Expand a folded subtree inline. Scroll-position anchoring is handled in the screen. */
+    fun expandBranch(anchorId: String) {
+        if (expandedIds.add(anchorId)) rebuildTree()
+    }
+
+    fun collapseBranch(anchorId: String) {
+        if (expandedIds.remove(anchorId)) rebuildTree()
     }
 
     fun loadThread(
@@ -467,61 +480,28 @@ class ThreadViewModel : ViewModel() {
             scoreAuthorsAsync(pubkeysToScore)
         }
 
-        val myPubkey = currentUserPubkey
         for (children in parentToChildren.values) {
-            children.sortWith(Comparator { a, b ->
-                val aIsOwn = myPubkey != null && a.pubkey == myPubkey
-                val bIsOwn = myPubkey != null && b.pubkey == myPubkey
-                if (aIsOwn != bIsOwn) {
-                    if (aIsOwn) -1 else 1
-                } else {
-                    a.created_at.compareTo(b.created_at)
-                }
-            })
+            children.sortBy { it.created_at }
         }
 
-        val result = mutableListOf<Pair<NostrEvent, Int>>()
-        val visited = mutableSetOf<String>()
         val root = threadEvents[rootId]
-        if (root != null) {
-            result.add(root to 0)
-            visited.add(root.id)
-            dfs(rootId, 1, parentToChildren, result, visited)
-        } else {
-            // Root not yet loaded — render replies we have
-            val rootChildren = parentToChildren[rootId] ?: emptyList()
-            for (child in rootChildren) {
-                if (child.id in visited) continue
-                visited.add(child.id)
-                result.add(child to 0)
-                dfs(child.id, 1, parentToChildren, result, visited)
-            }
-        }
-
-        _flatThread.value = result
+        val flattened = ThreadFlattener.flatten(
+            rootId = rootId,
+            rootEvent = root,
+            parentToChildren = parentToChildren,
+            expandedIds = expandedIds,
+            scrollTargetId = scrollTargetId,
+            // Fan-out ("show more replies") cap lands with its UI toggle in a follow-up.
+            maxSiblingsInline = Int.MAX_VALUE
+        )
+        _flatThread.value = flattened
 
         val targetId = scrollTargetId
         if (targetId != null) {
-            val index = result.indexOfFirst { it.first.id == targetId }
+            val index = flattened.indexOfFirst { it is ThreadItem.Post && it.event.id == targetId }
             if (index >= 0) {
                 _scrollToIndex.value = index
             }
-        }
-    }
-
-    private fun dfs(
-        parentId: String,
-        depth: Int,
-        parentToChildren: Map<String, List<NostrEvent>>,
-        result: MutableList<Pair<NostrEvent, Int>>,
-        visited: MutableSet<String>
-    ) {
-        val children = parentToChildren[parentId] ?: return
-        for (child in children) {
-            if (child.id in visited) continue
-            visited.add(child.id)
-            result.add(child to depth)
-            dfs(child.id, depth + 1, parentToChildren, result, visited)
         }
     }
 }

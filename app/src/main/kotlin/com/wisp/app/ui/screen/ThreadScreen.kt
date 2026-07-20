@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,8 +22,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,8 +51,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
@@ -63,11 +65,14 @@ import com.wisp.app.repo.Nip05Repository
 import com.wisp.app.repo.RelayInfoRepository
 import com.wisp.app.repo.TranslationRepository
 import com.wisp.app.ui.component.NoteActions
+import com.wisp.app.ui.component.CollapsedRepliesRow
 import com.wisp.app.ui.component.GalleryCard
 import com.wisp.app.ui.component.isGalleryEvent
 import com.wisp.app.ui.component.PostCard
+import com.wisp.app.ui.component.threadConnector
+import com.wisp.app.ui.component.threadIndentDp
 import com.wisp.app.viewmodel.ThreadViewModel
-import kotlin.math.min
+import com.wisp.app.viewmodel.thread.ThreadItem
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -126,6 +131,14 @@ fun ThreadScreen(
     var showRootButton by remember { mutableStateOf(false) }
     var previousIndex by remember { mutableIntStateOf(0) }
     var previousOffset by remember { mutableIntStateOf(0) }
+    // When expanding a folded branch, hold the viewport steady on the note above the button:
+    // capture the top visible item + its scroll offset, then snap back to it once the subtree is
+    // inserted so the screen keeps its exact position.
+    var restoreAnchor by remember { mutableStateOf<Pair<Any, Int>?>(null) }
+
+    // The sticky reply bar targets whichever note is centered in the viewport, not always the root.
+    var focusedReplyEvent by remember { mutableStateOf<NostrEvent?>(null) }
+    val threadState = rememberUpdatedState(flatThread)
 
     LaunchedEffect(listState.isScrollInProgress) {
         if (listState.isScrollInProgress) {
@@ -156,6 +169,21 @@ fun ThreadScreen(
                 kotlinx.coroutines.delay(150)
             }
             viewModel.clearScrollTarget()
+        }
+    }
+
+    // After an inline expand inserts a subtree, restore the captured viewport position so the
+    // note above the button stays exactly where it was.
+    LaunchedEffect(restoreAnchor, flatThread) {
+        val (anchorKey, anchorOffset) = restoreAnchor ?: return@LaunchedEffect
+        val index = flatThread.indexOfFirst { it.key == anchorKey }
+        if (index >= 0) listState.scrollToItem(index, anchorOffset)
+        restoreAnchor = null
+    }
+
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex }.collect { idx ->
+            focusedReplyEvent = (threadState.value.getOrNull(idx) as? ThreadItem.Post)?.event
         }
     }
 
@@ -211,6 +239,14 @@ fun ThreadScreen(
         Toast.makeText(zapDisabledContext, zapDisabledMessage, Toast.LENGTH_SHORT).show()
     }
 
+    val expandBranch: (String) -> Unit = { anchorId ->
+        listState.layoutInfo.visibleItemsInfo.firstOrNull()?.let { first ->
+            restoreAnchor = first.key to listState.firstVisibleItemScrollOffset
+        }
+        viewModel.expandBranch(anchorId)
+    }
+
+    val focalEvent = (flatThread.firstOrNull() as? ThreadItem.Post)?.event
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -224,6 +260,13 @@ fun ThreadScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 )
+            )
+        },
+        bottomBar = {
+            val replyTarget = focusedReplyEvent ?: focalEvent
+            ThreadReplyBar(
+                enabled = replyTarget != null,
+                onClick = { replyTarget?.let { onReply(it) } }
             )
         }
     ) { padding ->
@@ -242,174 +285,184 @@ fun ThreadScreen(
                     state = listState,
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(items = flatThread, key = { it.first.id }, contentType = { "post" }) { (event, depth) ->
-                        val profileData = eventRepo.getProfileData(event.pubkey)
-                        val likeCount = reactionVersion.let { eventRepo.getReactionCount(event.id) }
-                        val replyCount = replyCountVersion.let { eventRepo.getReplyCount(event.id) }
-                        val zapSats = zapVersion.let { eventRepo.getZapSats(event.id) }
-                        val userEmojis = reactionVersion.let { userPubkey?.let { eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet() }
-                        val reactionDetails = reactionVersion.let { eventRepo.getReactionDetails(event.id) }
-                        val zapDetailsList = zapVersion.let { eventRepo.getZapDetails(event.id) }
-                        val repostCount = repostVersion.let { eventRepo.getRepostCount(event.id) }
-                        val repostPubkeys = repostVersion.let { eventRepo.getReposterPubkeys(event.id) }
-                        val hasUserReposted = repostVersion.let { eventRepo.hasUserReposted(event.id) }
-                        val hasUserZapped = zapVersion.let { eventRepo.hasUserZapped(event.id) }
-                        val eventReactionEmojiUrls = reactionVersion.let { eventRepo.getReactionEmojiUrls(event.id) }
-                        val relayIcons = remember(relaySourceVersion, event.id) {
-                            eventRepo.getEventRelays(event.id).map { url ->
-                                url to relayInfoRepo?.getIconUrl(url)
+                    items(items = flatThread, key = { it.key }, contentType = { it.contentType }) { item ->
+                        if (item !is ThreadItem.Post) {
+                            // Folded subtree — expand inline, anchoring the note above the button.
+                            if (item is ThreadItem.CollapsedReplies) {
+                                CollapsedRepliesRow(
+                                    item = item,
+                                    onExpand = { expandBranch(item.anchor.id) },
+                                    modifier = Modifier.animateItem()
+                                )
                             }
-                        }
-                        val translationState = remember(translationVersion, event.id) {
-                            translationRepo?.getState(event.id) ?: com.wisp.app.repo.TranslationState()
-                        }
-                        val pollVoteCounts = remember(pollVoteVersion, event.id) {
-                            if (event.kind == 1068) eventRepo.getPollVoteCounts(event.id) else emptyMap()
-                        }
-                        val pollTotalVotes = remember(pollVoteVersion, event.id) {
-                            if (event.kind == 1068) eventRepo.getPollTotalVotes(event.id) else 0
-                        }
-                        val userPollVotes = remember(pollVoteVersion, event.id) {
-                            if (event.kind == 1068) eventRepo.getUserPollVotes(event.id) else emptyList()
-                        }
-                        val zapPollSatsCounts = remember(pollVoteVersion, event.id) {
-                            if (event.kind == 6969) eventRepo.getZapPollSatsCounts(event.id) else emptyMap()
-                        }
-                        val zapPollTotalSats = remember(pollVoteVersion, event.id) {
-                            if (event.kind == 6969) eventRepo.getZapPollTotalSats(event.id) else 0L
-                        }
-                        val userZapPollVote = remember(pollVoteVersion, event.id) {
-                            if (event.kind == 6969) eventRepo.getUserZapPollVote(event.id) else null
-                        }
-                        val indentDp = 12
-                        val clampedDepth = min(depth, 8)
-                        val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .drawBehind {
-                                    val indentPx = indentDp.dp.toPx()
-                                    for (level in 0 until clampedDepth) {
-                                        val x = level * indentPx + indentPx / 2f
-                                        drawLine(
-                                            color = lineColor,
-                                            start = Offset(x, 0f),
-                                            end = Offset(x, size.height),
-                                            strokeWidth = 1.5.dp.toPx()
-                                        )
-                                    }
+                        } else {
+                            val event = item.event
+                            val depth = item.depth
+                            val profileData = eventRepo.getProfileData(event.pubkey)
+                            val likeCount = reactionVersion.let { eventRepo.getReactionCount(event.id) }
+                            val replyCount = replyCountVersion.let { eventRepo.getReplyCount(event.id) }
+                            val zapSats = zapVersion.let { eventRepo.getZapSats(event.id) }
+                            val userEmojis = reactionVersion.let { userPubkey?.let { eventRepo.getUserReactionEmojis(event.id, it) } ?: emptySet() }
+                            val reactionDetails = reactionVersion.let { eventRepo.getReactionDetails(event.id) }
+                            val zapDetailsList = zapVersion.let { eventRepo.getZapDetails(event.id) }
+                            val repostCount = repostVersion.let { eventRepo.getRepostCount(event.id) }
+                            val repostPubkeys = repostVersion.let { eventRepo.getReposterPubkeys(event.id) }
+                            val hasUserReposted = repostVersion.let { eventRepo.hasUserReposted(event.id) }
+                            val hasUserZapped = zapVersion.let { eventRepo.hasUserZapped(event.id) }
+                            val eventReactionEmojiUrls = reactionVersion.let { eventRepo.getReactionEmojiUrls(event.id) }
+                            val relayIcons = remember(relaySourceVersion, event.id) {
+                                eventRepo.getEventRelays(event.id).map { url ->
+                                    url to relayInfoRepo?.getIconUrl(url)
                                 }
-                        ) {
-                            if (isGalleryEvent(event)) {
-                                GalleryCard(
-                                    event = event,
-                                    profile = profileData,
-                                    onReply = { onReply(event) },
-                                    onProfileClick = { onProfileClick(event.pubkey) },
-                                    onNavigateToProfile = onProfileClick,
-                                    onNoteClick = { onNoteClick(event) },
-                                    onReact = { emoji -> onReact(event, emoji) },
-                                    userReactionEmojis = userEmojis,
-                                    onRepost = { onRepost(event) },
-                                    onQuote = { onQuote(event) },
-                                    hasUserReposted = hasUserReposted,
-                                    repostCount = repostCount,
-                                    onZap = { onZap(event) },
-                                    hasUserZapped = hasUserZapped,
-                                    likeCount = likeCount,
-                                    replyCount = replyCount,
-                                    zapSats = zapSats,
-                                    isZapAnimating = event.id in zapAnimatingIds,
-                                    isZapInProgress = event.id in zapInProgressIds,
-                                    eventRepo = eventRepo,
-                                    reactionDetails = reactionDetails,
-                                    zapDetails = zapDetailsList,
-                                    repostDetails = repostPubkeys,
-                                    reactionEmojiUrls = eventReactionEmojiUrls,
-                                    resolvedEmojis = resolvedEmojis,
-                                    unicodeEmojis = unicodeEmojis,
-                                    onOpenEmojiLibrary = onOpenEmojiLibrary,
-                                    relayIcons = relayIcons,
-                                    onNavigateToProfileFromDetails = onProfileClick,
-                                    onFollowAuthor = { onToggleFollow(event.pubkey) },
-                                    onBlockAuthor = { onBlockUser(event.pubkey) },
-                                    isFollowingAuthor = followList.let { contactRepo.isFollowing(event.pubkey) },
-                                    isOwnEvent = event.pubkey == userPubkey,
-                                    onAddToList = { onAddToList(event.id) },
-                                    isInList = event.id in listedIds,
-                                    onPin = { onTogglePin(event.id) },
-                                    isPinned = event.id in pinnedIds,
-                                    onDelete = { onDeleteEvent(event.id, event.kind) },
-                                    nip05Repo = nip05Repo,
-                                    onQuotedNoteClick = onQuotedNoteClick,
-                                    noteActions = noteActions,
-                                    modifier = Modifier.padding(start = (clampedDepth * indentDp).dp)
-                                )
-                            } else {
-                                PostCard(
-                                    event = event,
-                                    profile = profileData,
-                                    onReply = { onReply(event) },
-                                    onProfileClick = { onProfileClick(event.pubkey) },
-                                    onNavigateToProfile = onProfileClick,
-                                    onNoteClick = { onNoteClick(event) },
-                                    onReact = { emoji -> onReact(event, emoji) },
-                                    userReactionEmojis = userEmojis,
-                                    onRepost = { onRepost(event) },
-                                    onQuote = { onQuote(event) },
-                                    hasUserReposted = hasUserReposted,
-                                    repostCount = repostCount,
-                                    onZap = { onZap(event) },
-                                    hasUserZapped = hasUserZapped,
-                                    likeCount = likeCount,
-                                    replyCount = replyCount,
-                                    zapSats = zapSats,
-                                    isZapAnimating = event.id in zapAnimatingIds,
-                                    isZapInProgress = event.id in zapInProgressIds,
-                                    eventRepo = eventRepo,
-                                    reactionDetails = reactionDetails,
-                                    zapDetails = zapDetailsList,
-                                    repostDetails = repostPubkeys,
-                                    reactionEmojiUrls = eventReactionEmojiUrls,
-                                    resolvedEmojis = resolvedEmojis,
-                                    unicodeEmojis = unicodeEmojis,
-                                    onOpenEmojiLibrary = onOpenEmojiLibrary,
-                                    relayIcons = relayIcons,
-                                    onNavigateToProfileFromDetails = onProfileClick,
-                                    onFollowAuthor = { onToggleFollow(event.pubkey) },
-                                    onBlockAuthor = { onBlockUser(event.pubkey) },
-                                    isFollowingAuthor = followList.let { contactRepo.isFollowing(event.pubkey) },
-                                    isOwnEvent = event.pubkey == userPubkey,
-                                    isPrivate = eventRepo.isPrivate(event.id),
-                                    zapEnabled = !eventRepo.isPrivate(event.id) || canPrivateZapFor(event),
-                                    onZapDisabledTap = onZapDisabledTap,
-                                    onAddToList = { onAddToList(event.id) },
-                                    isInList = event.id in listedIds,
-                                    onPin = { onTogglePin(event.id) },
-                                    isPinned = event.id in pinnedIds,
-                                    onDelete = { onDeleteEvent(event.id, event.kind) },
-                                    nip05Repo = nip05Repo,
-                                    onQuotedNoteClick = onQuotedNoteClick,
-                                    noteActions = noteActions,
-                                    translationState = translationState,
-                                    onTranslate = { translationRepo?.translate(event.id, event.content) },
-                                    autoTranslate = autoTranslate,
-                                    pollVoteCounts = pollVoteCounts,
-                                    pollTotalVotes = pollTotalVotes,
-                                    userPollVotes = userPollVotes,
-                                    onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
-                                    zapPollSatsCounts = zapPollSatsCounts,
-                                    zapPollTotalSats = zapPollTotalSats,
-                                    userZapPollVote = userZapPollVote,
-                                    onZapPollVote = { idx -> onZapPollVote(event.id, idx) },
-                                    modifier = Modifier.padding(start = (clampedDepth * indentDp).dp)
-                                )
+                            }
+                            val translationState = remember(translationVersion, event.id) {
+                                translationRepo?.getState(event.id) ?: com.wisp.app.repo.TranslationState()
+                            }
+                            val pollVoteCounts = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 1068) eventRepo.getPollVoteCounts(event.id) else emptyMap()
+                            }
+                            val pollTotalVotes = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 1068) eventRepo.getPollTotalVotes(event.id) else 0
+                            }
+                            val userPollVotes = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 1068) eventRepo.getUserPollVotes(event.id) else emptyList()
+                            }
+                            val zapPollSatsCounts = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo.getZapPollSatsCounts(event.id) else emptyMap()
+                            }
+                            val zapPollTotalSats = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo.getZapPollTotalSats(event.id) else 0L
+                            }
+                            val userZapPollVote = remember(pollVoteVersion, event.id) {
+                                if (event.kind == 6969) eventRepo.getUserZapPollVote(event.id) else null
+                            }
+                            val indentPadding = threadIndentDp(depth)
+                            val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            val showConnector = depth > 0
+                            Box(
+                                modifier = Modifier
+                                    .animateItem()
+                                    .fillMaxWidth()
+                                    .threadConnector(
+                                        show = showConnector,
+                                        indent = indentPadding,
+                                        lineColor = lineColor,
+                                        dashedTop = item.connectorStartsMidAir
+                                    )
+                            ) {
+                                if (isGalleryEvent(event)) {
+                                    GalleryCard(
+                                        event = event,
+                                        profile = profileData,
+                                        onReply = { onReply(event) },
+                                        onProfileClick = { onProfileClick(event.pubkey) },
+                                        onNavigateToProfile = onProfileClick,
+                                        onNoteClick = { onNoteClick(event) },
+                                        onReact = { emoji -> onReact(event, emoji) },
+                                        userReactionEmojis = userEmojis,
+                                        onRepost = { onRepost(event) },
+                                        onQuote = { onQuote(event) },
+                                        hasUserReposted = hasUserReposted,
+                                        repostCount = repostCount,
+                                        onZap = { onZap(event) },
+                                        hasUserZapped = hasUserZapped,
+                                        likeCount = likeCount,
+                                        replyCount = replyCount,
+                                        zapSats = zapSats,
+                                        isZapAnimating = event.id in zapAnimatingIds,
+                                        isZapInProgress = event.id in zapInProgressIds,
+                                        eventRepo = eventRepo,
+                                        reactionDetails = reactionDetails,
+                                        zapDetails = zapDetailsList,
+                                        repostDetails = repostPubkeys,
+                                        reactionEmojiUrls = eventReactionEmojiUrls,
+                                        resolvedEmojis = resolvedEmojis,
+                                        unicodeEmojis = unicodeEmojis,
+                                        onOpenEmojiLibrary = onOpenEmojiLibrary,
+                                        relayIcons = relayIcons,
+                                        onNavigateToProfileFromDetails = onProfileClick,
+                                        onFollowAuthor = { onToggleFollow(event.pubkey) },
+                                        onBlockAuthor = { onBlockUser(event.pubkey) },
+                                        isFollowingAuthor = followList.let { contactRepo.isFollowing(event.pubkey) },
+                                        isOwnEvent = event.pubkey == userPubkey,
+                                        onAddToList = { onAddToList(event.id) },
+                                        isInList = event.id in listedIds,
+                                        onPin = { onTogglePin(event.id) },
+                                        isPinned = event.id in pinnedIds,
+                                        onDelete = { onDeleteEvent(event.id, event.kind) },
+                                        nip05Repo = nip05Repo,
+                                        onQuotedNoteClick = onQuotedNoteClick,
+                                        noteActions = noteActions,
+                                        showDivider = !showConnector,
+                                        modifier = Modifier.padding(start = indentPadding)
+                                    )
+                                } else {
+                                    PostCard(
+                                        event = event,
+                                        profile = profileData,
+                                        onReply = { onReply(event) },
+                                        onProfileClick = { onProfileClick(event.pubkey) },
+                                        onNavigateToProfile = onProfileClick,
+                                        onNoteClick = { onNoteClick(event) },
+                                        onReact = { emoji -> onReact(event, emoji) },
+                                        userReactionEmojis = userEmojis,
+                                        onRepost = { onRepost(event) },
+                                        onQuote = { onQuote(event) },
+                                        hasUserReposted = hasUserReposted,
+                                        repostCount = repostCount,
+                                        onZap = { onZap(event) },
+                                        hasUserZapped = hasUserZapped,
+                                        likeCount = likeCount,
+                                        replyCount = replyCount,
+                                        zapSats = zapSats,
+                                        isZapAnimating = event.id in zapAnimatingIds,
+                                        isZapInProgress = event.id in zapInProgressIds,
+                                        eventRepo = eventRepo,
+                                        reactionDetails = reactionDetails,
+                                        zapDetails = zapDetailsList,
+                                        repostDetails = repostPubkeys,
+                                        reactionEmojiUrls = eventReactionEmojiUrls,
+                                        resolvedEmojis = resolvedEmojis,
+                                        unicodeEmojis = unicodeEmojis,
+                                        onOpenEmojiLibrary = onOpenEmojiLibrary,
+                                        relayIcons = relayIcons,
+                                        onNavigateToProfileFromDetails = onProfileClick,
+                                        onFollowAuthor = { onToggleFollow(event.pubkey) },
+                                        onBlockAuthor = { onBlockUser(event.pubkey) },
+                                        isFollowingAuthor = followList.let { contactRepo.isFollowing(event.pubkey) },
+                                        isOwnEvent = event.pubkey == userPubkey,
+                                        isPrivate = eventRepo.isPrivate(event.id),
+                                        zapEnabled = !eventRepo.isPrivate(event.id) || canPrivateZapFor(event),
+                                        onZapDisabledTap = onZapDisabledTap,
+                                        onAddToList = { onAddToList(event.id) },
+                                        isInList = event.id in listedIds,
+                                        onPin = { onTogglePin(event.id) },
+                                        isPinned = event.id in pinnedIds,
+                                        onDelete = { onDeleteEvent(event.id, event.kind) },
+                                        nip05Repo = nip05Repo,
+                                        onQuotedNoteClick = onQuotedNoteClick,
+                                        noteActions = noteActions,
+                                        translationState = translationState,
+                                        onTranslate = { translationRepo?.translate(event.id, event.content) },
+                                        autoTranslate = autoTranslate,
+                                        pollVoteCounts = pollVoteCounts,
+                                        pollTotalVotes = pollTotalVotes,
+                                        userPollVotes = userPollVotes,
+                                        onPollVote = { optionIds -> onPollVote(event.id, optionIds) },
+                                        zapPollSatsCounts = zapPollSatsCounts,
+                                        zapPollTotalSats = zapPollTotalSats,
+                                        userZapPollVote = userZapPollVote,
+                                        onZapPollVote = { idx -> onZapPollVote(event.id, idx) },
+                                        showDivider = !showConnector,
+                                        modifier = Modifier.padding(start = indentPadding)
+                                    )
+                                }
                             }
                         }
                     }
 
                     // Show "no replies" state when loading is done and only the root exists
-                    val hasReplies = flatThread.any { (_, depth) -> depth > 0 }
+                    val hasReplies = flatThread.any { it is ThreadItem.Post && it.depth > 0 }
                     if (!isLoading && flatThread.isNotEmpty() && !hasReplies && spamThread.isEmpty()) {
                         item(key = "no_replies") {
                             Column(
@@ -605,6 +658,55 @@ private fun SpamToggle(count: Int, expanded: Boolean, onToggle: () -> Unit) {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
             )
+        }
+    }
+}
+
+/** Sticky bottom "Reply…" bar — taps through to the reply flow for the currently focused note. */
+@Composable
+private fun ThreadReplyBar(
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+            thickness = 0.5.dp
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = enabled, onClick = onClick)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.reply_bar_placeholder),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    Icon(
+                        imageVector = Icons.Outlined.Edit,
+                        contentDescription = stringResource(R.string.cd_reply),
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
         }
     }
 }
