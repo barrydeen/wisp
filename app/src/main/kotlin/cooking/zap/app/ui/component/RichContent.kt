@@ -54,6 +54,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -62,6 +63,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -79,6 +82,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -910,7 +914,9 @@ fun RichContent(
     noteActions: NoteActions? = null,
     authorPubkey: String? = null,
     quoteDepth: Int = 0,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    collapsible: Boolean = false,
+    collapsedTextMaxHeight: Dp = 500.dp
 ) {
     val segments = remember(content, emojiMap, imetaMap, plainLinks) { parseContent(content.trimEnd('\n', '\r'), emojiMap, imetaMap, trimBlankLines = !plainLinks) }
     val profileVer = eventRepo?.profileVersion?.collectAsState()?.value ?: 0
@@ -1025,329 +1031,423 @@ fun RichContent(
     androidx.compose.runtime.CompositionLocalProvider(
         LocalAudioPostContext provides AudioPostContext(authorPubkey = authorPubkey, eventRepo = eventRepo)
     ) {
+    // Post-level collapse. Text runs measure fast and synchronously, so their real height can
+    // drive the cutoff decision safely. Media/quote/carousel groups can't — a quote's nested note
+    // or an image with no NIP-92 `dim` hint only resolves its true height after a network round
+    // trip, and reacting to that later would make the whole post visibly snap smaller well after
+    // the user already saw it uncapped. So block-type groups are treated as opaque: assumed to be
+    // able to fill the whole remaining budget, never revised from their real (possibly late)
+    // measured size. A block is only ever fully shown or fully hidden — never sliced — so at most
+    // one opaque block gets shown per collapsed view, and the decision never changes once made.
+    val density = LocalDensity.current
+    val nominalCapPx = remember(collapsedTextMaxHeight, density) {
+        with(density) { collapsedTextMaxHeight.toPx() }.toInt()
+    }
+    val groupHeightsPx = if (collapsible) {
+        remember(groups) { mutableStateListOf<Int>().apply { repeat(groups.size) { add(0) } } }
+    } else null
+    var contentExpanded by remember(groups) { mutableStateOf(false) }
+
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        for (group in groups) {
-            if (group is List<*> && group.firstOrNull() is CarouselItem) {
-                @Suppress("UNCHECKED_CAST")
-                val carouselItems = group as List<CarouselItem>
-                MediaCarousel(
-                    items = carouselItems,
-                    onOpenPager = { localIdx ->
-                        // Translate the carousel-local index into the
-                        // post-wide media index so the pager opens on the
-                        // right page even if the post has other media
-                        // segments outside this carousel run.
-                        val tappedUrl = carouselItems[localIdx].meta.url
-                        openPagerFor(tappedUrl)
-                    }
-                )
+        var usedPx = 0
+        var cutoffIndex: Int? = null
+        var cutoffClipped = false
+
+        for ((groupIndex, group) in groups.withIndex()) {
+            val collapsedNow = collapsible && !contentExpanded
+            if (collapsedNow && cutoffIndex != null) continue
+
+            val isTextRun = group is List<*> && group.firstOrNull() !is CarouselItem
+            val remainingPx = if (collapsedNow) nominalCapPx - usedPx else Int.MAX_VALUE
+            if (collapsedNow && remainingPx <= 0) {
+                cutoffIndex = groupIndex - 1
                 continue
             }
-            if (group is List<*>) {
-                @Suppress("UNCHECKED_CAST")
-                val inlineSegments = group as List<ContentSegment>
 
-                // Build profile display names for this run
-                val profilePubkeys = inlineSegments
-                    .filterIsInstance<ContentSegment.NostrProfileSegment>()
-                    .map { it.pubkey }
-                val profileNames = remember(profilePubkeys, profileVer) {
-                    val names = mutableMapOf<String, String>()
-                    for (pubkey in profilePubkeys) {
-                        val profile = eventRepo?.getProfileData(pubkey)
-                        names[pubkey] = profile?.displayString
-                            ?: pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
-                    }
-                    names
-                }
-                // Queue fetches for any missing profiles
-                LaunchedEffect(profilePubkeys) {
-                    for (seg in inlineSegments) {
-                        if (seg is ContentSegment.NostrProfileSegment) {
-                            eventRepo?.requestProfileIfMissing(seg.pubkey, seg.relayHints)
+            val body: @Composable () -> Unit = {
+                if (group is List<*> && group.firstOrNull() is CarouselItem) {
+                        @Suppress("UNCHECKED_CAST")
+                        val carouselItems = group as List<CarouselItem>
+                        MediaCarousel(
+                            items = carouselItems,
+                            onOpenPager = { localIdx ->
+                                // Translate the carousel-local index into the
+                                // post-wide media index so the pager opens on the
+                                // right page even if the post has other media
+                                // segments outside this carousel run.
+                                val tappedUrl = carouselItems[localIdx].meta.url
+                                openPagerFor(tappedUrl)
+                            }
+                        )
+                    } else if (group is List<*>) {
+                        @Suppress("UNCHECKED_CAST")
+                        val inlineSegments = group as List<ContentSegment>
+
+                        // Build profile display names for this run
+                        val profilePubkeys = inlineSegments
+                            .filterIsInstance<ContentSegment.NostrProfileSegment>()
+                            .map { it.pubkey }
+                        val profileNames = remember(profilePubkeys, profileVer) {
+                            val names = mutableMapOf<String, String>()
+                            for (pubkey in profilePubkeys) {
+                                val profile = eventRepo?.getProfileData(pubkey)
+                                names[pubkey] = profile?.displayString
+                                    ?: pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" }
+                            }
+                            names
                         }
-                    }
-                }
-
-                // Check if run is only whitespace/empty text
-                val hasContent = inlineSegments.any { seg ->
-                    when (seg) {
-                        is ContentSegment.TextSegment -> seg.text.trim().isNotEmpty()
-                        else -> true
-                    }
-                }
-                if (!hasContent) continue
-
-                // Build inline content map for any custom emojis in this run
-                val emojiInlineContent: Map<String, InlineTextContent> =
-                    if (inlineSegments.any { it is ContentSegment.CustomEmojiSegment }) {
-                        val emojiSize = style.fontSize
-                        inlineSegments
-                            .filterIsInstance<ContentSegment.CustomEmojiSegment>()
-                            .distinctBy { it.shortcode }
-                            .associate { seg ->
-                                seg.shortcode to InlineTextContent(
-                                    placeholder = Placeholder(
-                                        width = emojiSize * 1.5f,
-                                        height = emojiSize * 1.3f,
-                                        placeholderVerticalAlign = PlaceholderVerticalAlign.Center
-                                    )
-                                ) {
-                                    AsyncImage(
-                                        model = seg.url,
-                                        contentDescription = seg.shortcode,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
+                        // Queue fetches for any missing profiles
+                        LaunchedEffect(profilePubkeys) {
+                            for (seg in inlineSegments) {
+                                if (seg is ContentSegment.NostrProfileSegment) {
+                                    eventRepo?.requestProfileIfMissing(seg.pubkey, seg.relayHints)
                                 }
                             }
-                    } else emptyMap()
+                        }
 
-                val annotated = buildAnnotatedString {
-                    for (seg in inlineSegments) {
-                        when (seg) {
-                            is ContentSegment.TextSegment -> {
-                                withStyle(SpanStyle(color = color)) {
-                                    append(seg.text)
+                        // Check if run is only whitespace/empty text
+                        val hasContent = inlineSegments.any { seg ->
+                            when (seg) {
+                                is ContentSegment.TextSegment -> seg.text.trim().isNotEmpty()
+                                else -> true
+                            }
+                        }
+                        if (hasContent) {
+                            // Build inline content map for any custom emojis in this run
+                            val emojiInlineContent: Map<String, InlineTextContent> =
+                                if (inlineSegments.any { it is ContentSegment.CustomEmojiSegment }) {
+                                    val emojiSize = style.fontSize
+                                    inlineSegments
+                                        .filterIsInstance<ContentSegment.CustomEmojiSegment>()
+                                        .distinctBy { it.shortcode }
+                                        .associate { seg ->
+                                            seg.shortcode to InlineTextContent(
+                                                placeholder = Placeholder(
+                                                    width = emojiSize * 1.5f,
+                                                    height = emojiSize * 1.3f,
+                                                    placeholderVerticalAlign = PlaceholderVerticalAlign.Center
+                                                )
+                                            ) {
+                                                AsyncImage(
+                                                    model = seg.url,
+                                                    contentDescription = seg.shortcode,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            }
+                                        }
+                                } else emptyMap()
+
+                            val annotated = buildAnnotatedString {
+                                for (seg in inlineSegments) {
+                                    when (seg) {
+                                        is ContentSegment.TextSegment -> {
+                                            withStyle(SpanStyle(color = color)) {
+                                                append(seg.text)
+                                            }
+                                        }
+                                        is ContentSegment.CustomEmojiSegment -> {
+                                            pushStringAnnotation(
+                                                tag = INLINE_CONTENT_TAG,
+                                                annotation = seg.shortcode
+                                            )
+                                            append(":${seg.shortcode}:")
+                                            pop()
+                                        }
+                                        is ContentSegment.HashtagSegment -> {
+                                            val tag = seg.tag
+                                            withLink(
+                                                LinkAnnotation.Clickable("hashtag") {
+                                                    effectiveHashtagClick?.invoke(tag)
+                                                }
+                                            ) {
+                                                withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
+                                                    append("#${seg.tag}")
+                                                }
+                                            }
+                                        }
+                                        is ContentSegment.NostrProfileSegment -> {
+                                            val pubkey = seg.pubkey
+                                            val displayName = profileNames[seg.pubkey] ?: seg.pubkey.toNpub().take(12)
+                                            withLink(
+                                                LinkAnnotation.Clickable("profile") {
+                                                    onProfileClick?.invoke(pubkey)
+                                                }
+                                            ) {
+                                                withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
+                                                    append("@${displayName.trimEnd()}")
+                                                }
+                                            }
+                                        }
+                                        is ContentSegment.LinkSegment -> {
+                                            val linkUrl = seg.url
+                                            val displayUrl = linkUrl.removePrefix("https://").removePrefix("http://")
+                                            withLink(
+                                                LinkAnnotation.Clickable("url") {
+                                                    uriHandler.openUri(linkUrl)
+                                                }
+                                            ) {
+                                                withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
+                                                    append(displayUrl)
+                                                }
+                                            }
+                                        }
+                                        is ContentSegment.InlineLinkSegment -> {
+                                            val linkUrl = seg.url
+                                            val isRelay = linkUrl.startsWith("wss://") || linkUrl.startsWith("ws://")
+                                            val displayUrl = linkUrl
+                                                .removePrefix("https://")
+                                                .removePrefix("http://")
+                                            withLink(
+                                                LinkAnnotation.Clickable("url") {
+                                                    if (isRelay) {
+                                                        effectiveRelayClick?.invoke(linkUrl)
+                                                    } else {
+                                                        uriHandler.openUri(linkUrl)
+                                                    }
+                                                }
+                                            ) {
+                                                withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
+                                                    append(displayUrl)
+                                                }
+                                            }
+                                        }
+                                        else -> {}
+                                    }
                                 }
                             }
-                            is ContentSegment.CustomEmojiSegment -> {
-                                pushStringAnnotation(
-                                    tag = INLINE_CONTENT_TAG,
-                                    annotation = seg.shortcode
+
+                            Text(text = annotated, style = style, inlineContent = emojiInlineContent)
+                        }
+                    } else {
+                        val segment = group as ContentSegment
+                        when (segment) {
+                            is ContentSegment.ImageSegment -> {
+                                ImageWithContextMenu(
+                                    meta = segment.meta,
+                                    onFullScreen = { openPagerFor(segment.meta.url) }
                                 )
-                                append(":${seg.shortcode}:")
-                                pop()
                             }
-                            is ContentSegment.HashtagSegment -> {
-                                val tag = seg.tag
-                                withLink(
-                                    LinkAnnotation.Clickable("hashtag") {
-                                        effectiveHashtagClick?.invoke(tag)
+                            is ContentSegment.VideoSegment -> {
+                                InlineVideoPlayerWithFullscreen(
+                                    meta = segment.meta,
+                                    onFullScreen = { positionMs ->
+                                        FullScreenVideoState.enter(segment.meta.url, positionMs)
                                     }
-                                ) {
-                                    withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
-                                        append("#${seg.tag}")
-                                    }
-                                }
+                                )
                             }
-                            is ContentSegment.NostrProfileSegment -> {
-                                val pubkey = seg.pubkey
-                                val displayName = profileNames[seg.pubkey] ?: seg.pubkey.toNpub().take(12)
-                                withLink(
-                                    LinkAnnotation.Clickable("profile") {
-                                        onProfileClick?.invoke(pubkey)
+                            is ContentSegment.AudioSegment -> {
+                                InlineAudioPlayer(
+                                    meta = segment.meta,
+                                    authorPubkey = authorPubkey,
+                                    eventRepo = eventRepo
+                                )
+                            }
+                            is ContentSegment.UnknownMediaSegment -> {
+                                UnknownMediaContent(
+                                    meta = segment.meta,
+                                    onFullScreenImage = { openPagerFor(segment.meta.url) },
+                                    onFullScreenVideo = { positionMs ->
+                                        FullScreenVideoState.enter(segment.meta.url, positionMs)
                                     }
-                                ) {
-                                    withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
-                                        append("@${displayName.trimEnd()}")
-                                    }
-                                }
+                                )
                             }
                             is ContentSegment.LinkSegment -> {
-                                val linkUrl = seg.url
-                                val displayUrl = linkUrl.removePrefix("https://").removePrefix("http://")
-                                withLink(
-                                    LinkAnnotation.Clickable("url") {
-                                        uriHandler.openUri(linkUrl)
-                                    }
-                                ) {
-                                    withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
-                                        append(displayUrl)
-                                    }
+                                LinkPreview(url = segment.url)
+                            }
+                            is ContentSegment.YouTubeSegment -> {
+                                YouTubeEmbed(
+                                    videoId = segment.videoId,
+                                    startSeconds = segment.startSeconds,
+                                    url = segment.url
+                                )
+                            }
+                            is ContentSegment.NostrNoteSegment -> {
+                                if (eventRepo != null) {
+                                    QuotedNote(
+                                        eventId = segment.eventId,
+                                        eventRepo = eventRepo,
+                                        relayHints = segment.relayHints,
+                                        authorPubkey = segment.author,
+                                        onNoteClick = onNoteClick,
+                                        noteActions = noteActions,
+                                        quoteDepth = quoteDepth
+                                    )
+                                } else {
+                                    Text(
+                                        text = "nostr:${segment.eventId.take(8)}...",
+                                        style = style,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
                             }
-                            is ContentSegment.InlineLinkSegment -> {
-                                val linkUrl = seg.url
-                                val isRelay = linkUrl.startsWith("wss://") || linkUrl.startsWith("ws://")
-                                val displayUrl = linkUrl
-                                    .removePrefix("https://")
-                                    .removePrefix("http://")
-                                withLink(
-                                    LinkAnnotation.Clickable("url") {
-                                        if (isRelay) {
-                                            effectiveRelayClick?.invoke(linkUrl)
+                            is ContentSegment.NostrAddressableSegment -> {
+                                val kind = segment.kind
+                                when {
+                                    kind == 1 || kind == 0 -> {
+                                        if (eventRepo != null && segment.author != null) {
+                                            QuotedAddressableNote(
+                                                kind = kind,
+                                                dTag = segment.dTag,
+                                                author = segment.author,
+                                                relayHints = segment.relays,
+                                                eventRepo = eventRepo,
+                                                onNoteClick = onNoteClick,
+                                                onProfileClick = onProfileClick,
+                                                noteActions = noteActions,
+                                                quoteDepth = quoteDepth,
+                                                style = style
+                                            )
                                         } else {
-                                            uriHandler.openUri(linkUrl)
+                                            Text(
+                                                text = "nostr:${segment.dTag.take(12)}...",
+                                                style = style,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
                                         }
                                     }
-                                ) {
-                                    withStyle(SpanStyle(color = effectiveLinkColor, textDecoration = linkDecoration)) {
-                                        append(displayUrl)
+                                    kind == 30023 -> {
+                                        if (eventRepo != null && segment.author != null) {
+                                            ArticleCard(
+                                                dTag = segment.dTag,
+                                                author = segment.author,
+                                                relayHints = segment.relays,
+                                                eventRepo = eventRepo,
+                                                onArticleClick = noteActions?.onArticleClick,
+                                                onProfileClick = onProfileClick
+                                            )
+                                        } else {
+                                            UnsupportedKindBadge(kind = kind, style = style)
+                                        }
                                     }
+                                    kind == 30311 -> {
+                                        if (eventRepo != null && segment.author != null) {
+                                            LiveStreamCard(
+                                                dTag = segment.dTag,
+                                                author = segment.author,
+                                                relayHints = segment.relays,
+                                                eventRepo = eventRepo,
+                                                onProfileClick = onProfileClick,
+                                                onLiveStreamClick = onLiveStreamClick ?: noteActions?.onLiveStreamClick,
+                                                segmentRelayHints = segment.relays
+                                            )
+                                        } else {
+                                            UnsupportedKindBadge(kind = kind, style = style)
+                                        }
+                                    }
+                                    kind == 30030 -> {
+                                        if (eventRepo != null && segment.author != null) {
+                                            EmojiPackCard(
+                                                dTag = segment.dTag,
+                                                author = segment.author,
+                                                relayHints = segment.relays,
+                                                eventRepo = eventRepo,
+                                                onProfileClick = onProfileClick,
+                                                onAddEmojiSet = noteActions?.onAddEmojiSet,
+                                                onRemoveEmojiSet = noteActions?.onRemoveEmojiSet,
+                                                isEmojiSetAdded = noteActions?.isEmojiSetAdded
+                                            )
+                                        } else {
+                                            UnsupportedKindBadge(kind = kind, style = style)
+                                        }
+                                    }
+                                    else -> UnsupportedKindBadge(kind = kind, style = style)
                                 }
+                            }
+                            is ContentSegment.LightningInvoiceSegment -> {
+                                LightningInvoiceCard(
+                                    invoice = segment.invoice,
+                                    decoded = segment.decoded,
+                                    onPayInvoice = noteActions?.onPayInvoice
+                                )
+                            }
+                            is ContentSegment.LnurlPayableSegment -> {
+                                LnurlPayableCard(
+                                    value = segment.encoded,
+                                    onPayInvoice = noteActions?.onPayInvoice
+                                )
+                            }
+                            is ContentSegment.LightningAddressSegment -> {
+                                LnurlPayableCard(
+                                    value = segment.address,
+                                    onPayInvoice = noteActions?.onPayInvoice
+                                )
+                            }
+                            is ContentSegment.GroupInviteSegment -> {
+                                GroupInviteCard(
+                                    relayUrl = segment.relayUrl,
+                                    groupId = segment.groupId,
+                                    initialMetadata = noteActions?.groupMetadataProvider?.invoke(segment.relayUrl, segment.groupId),
+                                    onGroupRoom = noteActions?.onGroupRoom,
+                                    onFetchPreview = noteActions?.fetchGroupPreview,
+                                    eventRepo = eventRepo
+                                )
                             }
                             else -> {}
                         }
                     }
                 }
 
-                Text(text = annotated, style = style, inlineContent = emojiInlineContent)
-            } else {
-                val segment = group as ContentSegment
-                when (segment) {
-                    is ContentSegment.ImageSegment -> {
-                        ImageWithContextMenu(
-                            meta = segment.meta,
-                            onFullScreen = { openPagerFor(segment.meta.url) }
-                        )
-                    }
-                    is ContentSegment.VideoSegment -> {
-                        InlineVideoPlayerWithFullscreen(
-                            meta = segment.meta,
-                            onFullScreen = { positionMs ->
-                                FullScreenVideoState.enter(segment.meta.url, positionMs)
-                            }
-                        )
-                    }
-                    is ContentSegment.AudioSegment -> {
-                        InlineAudioPlayer(
-                            meta = segment.meta,
-                            authorPubkey = authorPubkey,
-                            eventRepo = eventRepo
-                        )
-                    }
-                    is ContentSegment.UnknownMediaSegment -> {
-                        UnknownMediaContent(
-                            meta = segment.meta,
-                            onFullScreenImage = { openPagerFor(segment.meta.url) },
-                            onFullScreenVideo = { positionMs ->
-                                FullScreenVideoState.enter(segment.meta.url, positionMs)
-                            }
-                        )
-                    }
-                    is ContentSegment.LinkSegment -> {
-                        LinkPreview(url = segment.url)
-                    }
-                    is ContentSegment.YouTubeSegment -> {
-                        YouTubeEmbed(
-                            videoId = segment.videoId,
-                            startSeconds = segment.startSeconds,
-                            url = segment.url
-                        )
-                    }
-                    is ContentSegment.NostrNoteSegment -> {
-                        if (eventRepo != null) {
-                            QuotedNote(
-                                eventId = segment.eventId,
-                                eventRepo = eventRepo,
-                                relayHints = segment.relayHints,
-                                authorPubkey = segment.author,
-                                onNoteClick = onNoteClick,
-                                noteActions = noteActions,
-                                quoteDepth = quoteDepth
-                            )
-                        } else {
-                            Text(
-                                text = "nostr:${segment.eventId.take(8)}...",
-                                style = style,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                    is ContentSegment.NostrAddressableSegment -> {
-                        val kind = segment.kind
-                        when {
-                            kind == 1 || kind == 0 -> {
-                                if (eventRepo != null && segment.author != null) {
-                                    QuotedAddressableNote(
-                                        kind = kind,
-                                        dTag = segment.dTag,
-                                        author = segment.author,
-                                        relayHints = segment.relays,
-                                        eventRepo = eventRepo,
-                                        onNoteClick = onNoteClick,
-                                        onProfileClick = onProfileClick,
-                                        noteActions = noteActions,
-                                        quoteDepth = quoteDepth,
-                                        style = style
-                                    )
-                                } else {
-                                    Text(
-                                        text = "nostr:${segment.dTag.take(12)}...",
-                                        style = style,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
+            if (collapsedNow && isTextRun) {
+                val remainingDp = with(density) { remainingPx.toDp() }
+                var clipped by remember(groupIndex, groups) { mutableStateOf(false) }
+                Box {
+                    Box(
+                        modifier = Modifier
+                            .heightIn(max = remainingDp)
+                            .clipToBounds()
+                            .onGloballyPositioned { coordinates ->
+                                val measured = coordinates.size.height
+                                if (groupHeightsPx != null && groupHeightsPx[groupIndex] != measured) {
+                                    groupHeightsPx[groupIndex] = measured
                                 }
-                            }
-                            kind == 30023 -> {
-                                if (eventRepo != null && segment.author != null) {
-                                    ArticleCard(
-                                        dTag = segment.dTag,
-                                        author = segment.author,
-                                        relayHints = segment.relays,
-                                        eventRepo = eventRepo,
-                                        onArticleClick = noteActions?.onArticleClick,
-                                        onProfileClick = onProfileClick
+                                clipped = measured >= remainingPx
+                            },
+                        contentAlignment = Alignment.TopStart
+                    ) { body() }
+                    if (clipped) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .height(80.dp)
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(Color.Transparent, MaterialTheme.colorScheme.surface)
                                     )
-                                } else {
-                                    UnsupportedKindBadge(kind = kind, style = style)
-                                }
-                            }
-                            kind == 30311 -> {
-                                if (eventRepo != null && segment.author != null) {
-                                    LiveStreamCard(
-                                        dTag = segment.dTag,
-                                        author = segment.author,
-                                        relayHints = segment.relays,
-                                        eventRepo = eventRepo,
-                                        onProfileClick = onProfileClick,
-                                        onLiveStreamClick = onLiveStreamClick ?: noteActions?.onLiveStreamClick,
-                                        segmentRelayHints = segment.relays
-                                    )
-                                } else {
-                                    UnsupportedKindBadge(kind = kind, style = style)
-                                }
-                            }
-                            kind == 30030 -> {
-                                if (eventRepo != null && segment.author != null) {
-                                    EmojiPackCard(
-                                        dTag = segment.dTag,
-                                        author = segment.author,
-                                        relayHints = segment.relays,
-                                        eventRepo = eventRepo,
-                                        onProfileClick = onProfileClick,
-                                        onAddEmojiSet = noteActions?.onAddEmojiSet,
-                                        onRemoveEmojiSet = noteActions?.onRemoveEmojiSet,
-                                        isEmojiSetAdded = noteActions?.isEmojiSetAdded
-                                    )
-                                } else {
-                                    UnsupportedKindBadge(kind = kind, style = style)
-                                }
-                            }
-                            else -> UnsupportedKindBadge(kind = kind, style = style)
-                        }
-                    }
-                    is ContentSegment.LightningInvoiceSegment -> {
-                        LightningInvoiceCard(
-                            invoice = segment.invoice,
-                            decoded = segment.decoded,
-                            onPayInvoice = noteActions?.onPayInvoice
+                                )
                         )
                     }
-                    is ContentSegment.LnurlPayableSegment -> {
-                        LnurlPayableCard(
-                            value = segment.encoded,
-                            onPayInvoice = noteActions?.onPayInvoice
-                        )
-                    }
-                    is ContentSegment.LightningAddressSegment -> {
-                        LnurlPayableCard(
-                            value = segment.address,
-                            onPayInvoice = noteActions?.onPayInvoice
-                        )
-                    }
-                    is ContentSegment.GroupInviteSegment -> {
-                        GroupInviteCard(
-                            relayUrl = segment.relayUrl,
-                            groupId = segment.groupId,
-                            initialMetadata = noteActions?.groupMetadataProvider?.invoke(segment.relayUrl, segment.groupId),
-                            onGroupRoom = noteActions?.onGroupRoom,
-                            onFetchPreview = noteActions?.fetchGroupPreview,
-                            eventRepo = eventRepo
-                        )
-                    }
-                    else -> {}
                 }
+                usedPx += minOf(groupHeightsPx?.get(groupIndex) ?: 0, remainingPx)
+                if (clipped) {
+                    cutoffIndex = groupIndex
+                    cutoffClipped = true
+                }
+            } else if (collapsedNow) {
+                // Media/quote/carousel: always renders in full, never sliced. Its opaque budget
+                // (the whole nominal cap) means including one always exhausts the remaining
+                // budget, so at most one such group is ever shown per collapsed view.
+                body()
+                usedPx += nominalCapPx
+                if (usedPx >= nominalCapPx) {
+                    cutoffIndex = groupIndex
+                    cutoffClipped = false
+                }
+            } else {
+                body()
+            }
+        }
+
+        if (collapsible && cutoffIndex != null && (cutoffClipped || cutoffIndex!! < groups.lastIndex)) {
+            TextButton(
+                onClick = { contentExpanded = !contentExpanded },
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) {
+                Text(
+                    text = if (contentExpanded) stringResource(R.string.translate_show_less) else stringResource(R.string.translate_show_more),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
     }
