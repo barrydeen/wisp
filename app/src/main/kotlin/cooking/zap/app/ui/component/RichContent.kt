@@ -2399,7 +2399,7 @@ private fun formatQuotedTimestamp(epoch: Long): String {
         seconds < 60 -> "${seconds}s"
         minutes < 60 -> "${minutes}m"
         hours < 24 -> "${hours}h"
-        days == 1L -> "yesterday"
+        days < 7 -> "${days}d"
         else -> java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(java.util.Date(epoch * 1000))
     }
 }
