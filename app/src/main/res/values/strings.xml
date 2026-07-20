@@ -662,6 +662,10 @@
     <string name="thread_tap_to_show">Show</string>
     <string name="thread_tap_to_hide">Hide</string>
     <string name="thread_not_spam">Not spam</string>
+    <plurals name="thread_continue">
+        <item quantity="one">Show %1$d more reply</item>
+        <item quantity="other">Show %1$d more replies</item>
+    </plurals>
 
     <string name="settings_copy_profile_json">Copy Profile JSON</string>
     <string name="settings_profile_json_copied">Profile JSON copied</string>
@@ -909,6 +913,7 @@
     <string name="post_and_others_retweeted">and %d others reposted</string>
     <string name="post_pow_x">PoW %d</string>
     <string name="post_replying_to">Replying to %s</string>
+    <string name="post_replying_to_prefix">replying to</string>
     <string name="post_now_x">Post now (%ds)</string>
 
     <!-- QR Code Dialog -->
