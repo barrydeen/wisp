@@ -201,13 +201,13 @@ private fun FollowBadge(size: Int, modifier: Modifier = Modifier) {
         modifier = modifier
             .offset(x = 1.dp, y = 1.dp)
             .size(badgeSize.dp)
-            .background(MaterialTheme.colorScheme.primary, CircleShape)
+            .background(MaterialTheme.colorScheme.onPrimary, CircleShape)
             .border(1.dp, MaterialTheme.colorScheme.surface, CircleShape)
     ) {
         Icon(
             Icons.Default.Check,
             contentDescription = "Following",
-            tint = MaterialTheme.colorScheme.onPrimary,
+            tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size((badgeSize * 0.65f).dp)
         )
     }
