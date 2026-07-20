@@ -1,5 +1,22 @@
 
 # Changelog
+##[1.3.5]
+
+🍳 My Kitchen — Saved recipes, published recipes, grocery lists, meal planning, and Nourish now live together in one personal kitchen hub.
+
+🛒 Grocery lists and meal planning — Create private grocery lists, add ingredients directly from recipes, plan meals for the week, and turn your meal plan into a shopping list. Your kitchen stays synced with zap.cooking.
+
+⚡ Easier Lightning payments — Lightning addresses and LNURL links in posts and messages now open as payment cards with an amount picker and QR option.
+
+💬 Better conversations — Deep reply threads now collapse into a cleaner view and expand inline when you want to read more.
+
+🖼️ Cleaner posts and media — Long posts no longer cut through images, carousels, quoted posts, or other embedded media. Development and test recipes are also hidden from public recipe feeds.
+
+✨ UI and navigation polish — Improved profile tabs, Conversations, post actions, repost controls, hidden-content labels, Copy npub wording, recipe headers, direct messages, and My Kitchen navigation.
+
+🔒 Safer recipe saves — Added protection against a cold session accidentally overwriting an existing saved-recipe collection.
+
+
 
 ##[1.3.4]
 

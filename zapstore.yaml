@@ -1,53 +1,69 @@
 repository: https://github.com/zapcooking/zap_cooking_android
 pubkey: npub15u3cqhx6vuj3rywg0ph5mfv009lxja6cyvqn2jagaydukq6zmjwqex05rq
-description: Zap Cooking is a food-first Nostr client for Android. Discover, publish, and collect recipes, browse the OnlyFood feed of food content from across the network, and cook together in group chat rooms. Zap your favorite cooks with the built-in self-custodial Spark Lightning wallet or any NWC-compatible wallet, and message privately with encrypted DMs.
-summary: Cook, share, and zap recipes on Nostr
+
+description: >-
+  Zap Cooking is a food-first social experience built around food and
+  community. Discover and publish recipes, share food, plan meals, build
+  grocery lists, and keep everything organized in My Kitchen. Browse the
+  OnlyFood feed, use Nourish for nutrition insights, cook together in groups,
+  and message privately with encrypted DMs. Support your favorite cooks with
+  Lightning zaps using the built-in Spark wallet or any NWC-compatible wallet.
+  Built on open protocols, so your identity, recipes, and relationships can
+  move with you.
+
+summary: Cook, share, plan meals, and zap recipes on Nostr
+
 tags:
-    - nostr
-    - recipes
-    - food
-    - cooking
-    - lightning
-    - zaps
-    - wallet
-    - nip29
-    - groups
-    - nip17
-    - dms
+  - nostr
+  - recipes
+  - food
+  - cooking
+  - meal-planning
+  - grocery-lists
+  - nutrition
+  - lightning
+  - zaps
+  - wallet
+  - groups
+  - dms
+  - open-source
+
 license: MIT
 website: https://zap.cooking
+
 supported_nips:
-    - "01"
-    - "02"
-    - "04"
-    - "05"
-    - "09"
-    - "10"
-    - "11"
-    - "13"
-    - "17"
-    - "18"
-    - "19"
-    - "23"
-    - "25"
-    - "29"
-    - "30"
-    - "37"
-    - "42"
-    - "44"
-    - "47"
-    - "51"
-    - "53"
-    - "55"
-    - "56"
-    - "57"
-    - "65"
-    - "68"
-    - "71"
-    - "78"
-    - "88"
-    - "98"
+  - "01"
+  - "02"
+  - "04"
+  - "05"
+  - "09"
+  - "10"
+  - "11"
+  - "13"
+  - "17"
+  - "18"
+  - "19"
+  - "23"
+  - "25"
+  - "29"
+  - "30"
+  - "37"
+  - "42"
+  - "44"
+  - "47"
+  - "51"
+  - "53"
+  - "56"
+  - "57"
+  - "65"
+  - "68"
+  - "69"
+  - "71"
+  - "78"
+  - "88"
+  - "98"
+
 metadata_sources:
-    - github
+  - github
 
 release_notes: ./RELEASE_NOTES.md
