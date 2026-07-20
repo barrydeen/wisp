@@ -64,7 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -346,14 +346,28 @@ fun PostCard(
             )
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = displayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.clickable(onClick = onProfileClick)
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .clickable(onClick = onProfileClick)
+                    )
+                    profile?.nip05?.let { nip05 ->
+                        Spacer(Modifier.width(4.dp))
+                        Nip05Badge(
+                            nip05 = nip05,
+                            pubkey = event.pubkey,
+                            nip05Repo = nip05Repo,
+                            onClick = onProfileClick,
+                            showHandle = false
+                        )
+                    }
+                }
                 // NIP-38: user status (hide on replies to reduce clutter)
                 val statusVersion by eventRepo?.statusVersion?.collectAsState() ?: remember { mutableIntStateOf(0) }
                 val userStatus = remember(statusVersion, event.pubkey) {
@@ -368,16 +382,6 @@ fun PostCard(
                         overflow = TextOverflow.Ellipsis,
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                     )
-                }
-                if (!Nip10.isReply(event)) {
-                    profile?.nip05?.let { nip05 ->
-                        Nip05Badge(
-                            nip05 = nip05,
-                            pubkey = event.pubkey,
-                            nip05Repo = nip05Repo,
-                            onClick = onProfileClick
-                        )
-                    }
                 }
             }
             if (isPrivate) {
@@ -1295,7 +1299,7 @@ private val dateTimeYearFormat = SimpleDateFormat("MMM d, yyyy", Locale.US)
 
 /**
  * Format an epoch timestamp into a relative or absolute time string.
- * Avoids Calendar allocations — uses simple arithmetic for "yesterday" check.
+ * Avoids Calendar allocations for the s/m/h/d tiers — simple arithmetic.
  */
 private fun formatTimestamp(epoch: Long): String {
     val now = System.currentTimeMillis()
@@ -1313,7 +1317,7 @@ private fun formatTimestamp(epoch: Long): String {
     if (hours < 24) return "${hours}h"
 
     val days = diff / (24 * 60 * 60 * 1000L)
-    if (days == 1L) return "yesterday"
+    if (days < 7) return "${days}d"
 
     val date = Date(millis)
     val cal = java.util.Calendar.getInstance()
@@ -1342,6 +1346,10 @@ internal fun Nip05Badge(
     maxLines: Int = 1,
     verifiedTint: Color = MaterialTheme.colorScheme.primary,
     iconLeading: Boolean = false,
+    /** When false, render only the verification icon — no handle text. The handle itself
+     *  is reserved for the profile screen; everywhere else (feed, threads, comments) just
+     *  the badge icon appears next to the username. */
+    showHandle: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     if (nip05.isBlank()) return
@@ -1370,10 +1378,29 @@ internal fun Nip05Badge(
             }
         )
     ) {
+        if (!showHandle) {
+            // Icon-only badge: appears once verification resolves. No retry icon here —
+            // a transient relay error shouldn't flag every row across the timeline.
+            when {
+                status == Nip05Status.VERIFIED -> Icon(
+                    Icons.Default.Verified,
+                    contentDescription = "Verified",
+                    tint = verifiedTint,
+                    modifier = Modifier.size(14.dp)
+                )
+                isImpersonator -> Icon(
+                    Icons.Default.Cancel,
+                    contentDescription = "Impersonator",
+                    tint = Color.Red,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+            return@Row
+        }
         if (iconLeading) {
             if (status == Nip05Status.VERIFIED) {
                 Icon(
-                    Icons.Default.CheckCircle,
+                    Icons.Default.Verified,
                     contentDescription = "Verified",
                     tint = verifiedTint,
                     modifier = Modifier.size(14.dp)
@@ -1409,7 +1436,7 @@ internal fun Nip05Badge(
             if (status == Nip05Status.VERIFIED) {
                 Spacer(Modifier.width(4.dp))
                 Icon(
-                    Icons.Default.CheckCircle,
+                    Icons.Default.Verified,
                     contentDescription = "Verified",
                     tint = verifiedTint,
                     modifier = Modifier.size(14.dp)

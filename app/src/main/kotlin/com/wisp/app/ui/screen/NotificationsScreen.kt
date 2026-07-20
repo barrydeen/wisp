@@ -2256,7 +2256,7 @@ private fun formatNotifTimestamp(epoch: Long): String {
     if (hours < 24) return "${hours}h"
 
     val days = diff / (24 * 60 * 60 * 1000L)
-    if (days == 1L) return "yesterday"
+    if (days < 7) return "${days}d"
 
     val date = Date(millis)
     val cal = java.util.Calendar.getInstance()
