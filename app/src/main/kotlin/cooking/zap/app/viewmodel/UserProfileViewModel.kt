@@ -15,6 +15,7 @@ import cooking.zap.app.nostr.LocalSigner
 import cooking.zap.app.nostr.NostrEvent
 import cooking.zap.app.nostr.NostrSigner
 import cooking.zap.app.nostr.ProfileData
+import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.relay.OutboxRouter
 import cooking.zap.app.relay.RelayConfig
 import cooking.zap.app.relay.RelayPool
@@ -23,6 +24,7 @@ import cooking.zap.app.repo.EventRepository
 import cooking.zap.app.repo.DiscoveryState
 import cooking.zap.app.repo.ExtendedNetworkRepository
 import cooking.zap.app.repo.KeyRepository
+import cooking.zap.app.repo.RecipeRepository
 import cooking.zap.app.repo.RelayHintStore
 import cooking.zap.app.repo.RelayListRepository
 import cooking.zap.app.relay.SubscriptionManager
@@ -151,6 +153,21 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
     private var latestFollowListTimestamp: Long = 0
     private var latestRelayListTimestamp: Long = 0
 
+    // ---- Recipes tab -------------------------------------------------------
+    //
+    // Mirrors of the repo's PROFILE authored session — never the self session,
+    // so browsing strangers leaves My Recipes alone. The query is lazy (kicked
+    // off by [requestRecipes] when the tab is first shown) and idempotent per
+    // pubkey, matching the Followers tab's pattern.
+    private val _recipes = MutableStateFlow<List<RecipeParser.Recipe>>(emptyList())
+    val recipes: StateFlow<List<RecipeParser.Recipe>> = _recipes
+    private val _recipesLoading = MutableStateFlow(false)
+    val recipesLoading: StateFlow<Boolean> = _recipesLoading
+    private var recipeRepoRef: RecipeRepository? = null
+    /** Pubkey the recipe query last ran for; reload only when it changes. */
+    private var requestedRecipePubkey: String? = null
+    private var recipeMirrorsBound = false
+
     companion object {
         private val SUB_IDS = setOf("userprofile", "userposts", "usergallery", "userfollows", "userrelays", "userpins", "usergroups", "followprofiles")
     }
@@ -165,9 +182,11 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         subManager: SubscriptionManager? = null,
         topRelayUrls: List<String> = emptyList(),
         relayHintStore: RelayHintStore? = null,
-        extendedNetworkRepo: ExtendedNetworkRepository? = null
+        extendedNetworkRepo: ExtendedNetworkRepository? = null,
+        recipeRepo: RecipeRepository? = null
     ) {
         targetPubkey = pubkey
+        bindRecipeRepo(recipeRepo)
         eventRepoRef = eventRepo
         relayPoolRef = relayPool
         outboxRouterRef = outboxRouter
@@ -190,6 +209,11 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
         _galleryPosts.value = emptyList()
         _groups.value = emptyList()
         _groupsLoading.value = false
+        // Recipes are lazy — drop the previous profile's grid and re-arm the
+        // one-shot so the tab re-queries for this pubkey when it's next shown.
+        _recipes.value = emptyList()
+        _recipesLoading.value = false
+        requestedRecipePubkey = null
         _profile.value = eventRepo.getProfileData(pubkey)
         _relayHints.value = relayHintStore?.getHints(pubkey) ?: emptySet()
         _isFollowing.value = contactRepo.isFollowing(pubkey)
@@ -598,6 +622,40 @@ class UserProfileViewModel(app: Application) : AndroidViewModel(app) {
             val url = "wss://feeds.nostrarchives.com/profiles/replies/${mode.relaySlug()}"
             subscribeProfileRelayFeed(url, isReplies = true)
         }
+    }
+
+    /**
+     * Keep the repo reference current and wire the profile-session mirrors
+     * exactly once. Emissions are filtered to [targetPubkey] so a late arrival
+     * from the previously-viewed profile can never paint into this one.
+     */
+    private fun bindRecipeRepo(recipeRepo: RecipeRepository?) {
+        if (recipeRepo == null) return
+        recipeRepoRef = recipeRepo
+        if (recipeMirrorsBound) return
+        recipeMirrorsBound = true
+        viewModelScope.launch {
+            recipeRepo.profileAuthoredRecipes.collect { list ->
+                _recipes.value = list.filter { it.author == targetPubkey }
+            }
+        }
+        viewModelScope.launch {
+            recipeRepo.isProfileAuthoredLoading.collect { _recipesLoading.value = it }
+        }
+    }
+
+    /**
+     * Kick off the authored-recipe query for the open profile when the Recipes
+     * tab is first shown (lazy — Notes is the landing tab, so this avoids a
+     * query for the many profiles whose recipes are never viewed). No-op once
+     * requested for this pubkey; [loadProfile] re-arms it per profile.
+     */
+    fun requestRecipes() {
+        val pubkey = targetPubkey.trim().takeIf { it.isNotEmpty() } ?: return
+        val repo = recipeRepoRef ?: return
+        if (pubkey == requestedRecipePubkey) return
+        requestedRecipePubkey = pubkey
+        repo.loadProfileAuthoredRecipes(pubkey)
     }
 
     fun loadFollowers() {

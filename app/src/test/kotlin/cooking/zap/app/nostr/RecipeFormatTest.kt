@@ -2,6 +2,8 @@ package cooking.zap.app.nostr
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -84,6 +86,49 @@ class RecipeFormatTest {
     fun authorFeedFilter_passesUntilForPaging() {
         val filter = Nip23RecipeFormat.authorFeedFilter("b".repeat(64), limit = 50, until = 1234L)
         assertEquals(1234L, filter.until)
+    }
+
+    // ---- authorFeedFilter for ANY author (other-user profile Recipes tab) ---
+
+    @Test
+    fun authorFeedFilter_isPubkeyParameterized_notSelfScoped() {
+        // The profile Recipes tab reuses this filter for a stranger's pubkey.
+        // It must scope to whoever is passed and be otherwise identical to the
+        // My Recipes query — same kinds, same recipe hashtags.
+        val stranger = "c".repeat(64)
+        val mine = Nip23RecipeFormat.authorFeedFilter("d".repeat(64), limit = 200)
+        val theirs = Nip23RecipeFormat.authorFeedFilter(stranger, limit = 200)
+
+        assertEquals(listOf(stranger), theirs.authors)
+        assertEquals(mine.kinds, theirs.kinds)
+        assertEquals(mine.tTags, theirs.tTags)
+        assertEquals(mine.limit, theirs.limit)
+    }
+
+    // ---- the strict gate holds on a profile of pure articles ----------------
+
+    @Test
+    fun forEvent_rejectsAnnouncementArticlesCarryingRecipeTag() {
+        // Branta-announcement precedent: an author whose kind-30023 output is
+        // announcements/essays that carry `#t zapcooking` has ZERO recipes. The
+        // registry predicate is the one the profile query's collector gates on,
+        // so nothing reaches the Recipes grid.
+        val announcement = NostrEvent(
+            id = "e".repeat(64),
+            pubkey = "f".repeat(64),
+            created_at = 1_700_000_000L,
+            kind = RecipeParser.RECIPE_KIND,
+            tags = listOf(listOf("d", "announcing-branta"), listOf("t", "zapcooking")),
+            content = "# Announcing Branta\n\nWe are pleased to share a partnership. " +
+                "No ingredients, no directions — prose only.",
+            sig = "0".repeat(128),
+        )
+        assertNull(RecipeFormats.forEvent(announcement))
+        assertFalse(RecipeParser.isRecipe(announcement))
+
+        // ...while a real recipe from the same author still resolves, so the
+        // gate is content-shape, not author-wide.
+        assertNotNull(RecipeFormats.forEvent(stub(id = "1".repeat(64), createdAt = 1L, author = "f".repeat(64))))
     }
 
     // ---- RecipeKey -------------------------------------------------------

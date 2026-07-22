@@ -928,6 +928,7 @@
     <string name="time_24h">24h</string>
 
     <!-- Profile -->
+    <string name="profile_tab_recipes">Recipes</string>
     <string name="profile_tab_notes">Notes</string>
     <string name="profile_tab_replies">Replies</string>
     <string name="profile_tab_conversation">Conversation</string>
@@ -948,6 +949,7 @@
     <string name="profile_add_to_list">Add to List</string>
     <string name="profile_block">Block</string>
     <string name="profile_unblock">Unblock</string>
+    <string name="profile_no_recipes">No recipes yet</string>
     <string name="profile_no_notes">No notes yet</string>
     <string name="profile_no_replies">No replies yet</string>
     <string name="profile_no_conversation">No shared threads yet</string>

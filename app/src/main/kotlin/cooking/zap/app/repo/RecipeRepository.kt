@@ -100,18 +100,25 @@ class RecipeRepository(
     private var refreshJob: Job? = null
 
     /**
-     * Independent state for the **authored** ("My Recipes") feed — the user's
-     * OWN published recipes, scoped to one `authors` pubkey. Separate map/flow
-     * from the global feed so the two never cross-contaminate.
+     * The **self** authored session — the signed-in user's OWN published recipes
+     * ("My Recipes" sub-tab + the recipe picker sheet). Backed by an
+     * [AuthoredSession] so it can never be clobbered by a query for a different
+     * author; see [profileAuthored].
      */
-    private val authoredByCoordinate = LinkedHashMap<String, NostrEvent>()
-    private val authoredCoordMutex = Mutex()
-    private val _authoredRecipes = MutableStateFlow<List<RecipeParser.Recipe>>(emptyList())
-    val authoredRecipes: StateFlow<List<RecipeParser.Recipe>> = _authoredRecipes.asStateFlow()
-    private val _isAuthoredLoading = MutableStateFlow(false)
-    val isAuthoredLoading: StateFlow<Boolean> = _isAuthoredLoading.asStateFlow()
-    private var authoredAuthor: String? = null
-    private var authoredLoadJob: Job? = null
+    private val selfAuthored = AuthoredSession("recipe-authored")
+    val authoredRecipes: StateFlow<List<RecipeParser.Recipe>> = selfAuthored.recipes
+    val isAuthoredLoading: StateFlow<Boolean> = selfAuthored.isLoading
+
+    /**
+     * The **profile** authored session — the recipes of whichever OTHER user's
+     * profile is currently open. A second, fully independent [AuthoredSession]
+     * instance: browsing strangers' profiles must not disturb [selfAuthored],
+     * whose consumers cache "already loaded for this pubkey" and would otherwise
+     * be left painting someone else's recipes.
+     */
+    private val profileAuthored = AuthoredSession("recipe-profile-authored")
+    val profileAuthoredRecipes: StateFlow<List<RecipeParser.Recipe>> = profileAuthored.recipes
+    val isProfileAuthoredLoading: StateFlow<Boolean> = profileAuthored.isLoading
 
     /** Independent state for the shared recipe-by-tag feed surface. */
     private val tagByCoordinate = LinkedHashMap<String, NostrEvent>()
@@ -588,84 +595,147 @@ class RecipeRepository(
     private data class PageResult(val newCoordinates: Int, val fullEose: Boolean)
 
     /**
-     * Load the recipes **authored by** [pubkey] — the user's OWN published
-     * recipes (the "My Recipes" sub-tab), distinct from saved recipes. This is
-     * the LIVE author query: fan the format-agnostic [RecipeFormat.authorFeedFilter]
-     * over the SAME widened read union ([readRelays]) as the main feed, paint
-     * cache-first from ObjectBox, then fill with an EOSE-grace window, deduping by
-     * coordinate (newest-wins → cross-format canonical pick).
+     * One **author-scoped recipe query and its results**, owned end-to-end: its
+     * own coordinate map, mutex, flows, in-flight job, and "which author am I
+     * showing" marker. Two instances exist ([selfAuthored], [profileAuthored])
+     * so the signed-in user's My Recipes grid and an open stranger's profile can
+     * be loaded concurrently without either clearing the other.
      *
-     * **Not** the kind-30004 `zapcooking-my-recipes` pack — that list is an
-     * export/share artifact, never the source of truth for display.
-     *
-     * Switching authors (account switch) clears the prior author's grid; a reload
-     * for the same author keeps it painted while the fresh window merges in.
+     * [subIdPrefix] only distinguishes the two in relay logs — the numeric
+     * suffix comes from the shared atomic [subCounter], so ids are unique across
+     * sessions either way.
      */
-    fun loadAuthoredRecipes(pubkey: String, limit: Int = 200) {
-        val author = pubkey.trim()
-        authoredLoadJob?.cancel()
-        if (author.isBlank()) {
-            authoredAuthor = null
-            authoredByCoordinate.clear()
-            _authoredRecipes.value = emptyList()
-            _isAuthoredLoading.value = false
-            return
-        }
-        if (authoredAuthor != author) {
-            authoredByCoordinate.clear()
-            _authoredRecipes.value = emptyList()
-        }
-        authoredAuthor = author
-        _isAuthoredLoading.value = true
+    private inner class AuthoredSession(private val subIdPrefix: String) {
+        private val byCoordinate = LinkedHashMap<String, NostrEvent>()
+        private val coordMutex = Mutex()
+        private val _recipes = MutableStateFlow<List<RecipeParser.Recipe>>(emptyList())
+        val recipes: StateFlow<List<RecipeParser.Recipe>> = _recipes.asStateFlow()
+        private val _isLoading = MutableStateFlow(false)
+        val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+        private var author: String? = null
+        private var loadJob: Job? = null
 
-        authoredLoadJob = scope.launch(processingContext) {
-            // Cache-first paint: the user's own recipes persist in ObjectBox, so a
-            // cold open shows them instantly before the relay round-trip.
-            val cached = cachedAuthoredEvents(author)
-            if (cached.isNotEmpty() && authoredAuthor == author) {
-                authoredCoordMutex.withLock {
-                    cached.forEach { acceptAuthored(author, it) }
-                    emitAuthored()
-                }
+        /**
+         * Fan the format-agnostic [RecipeFormat.authorFeedFilter] for [pubkey]
+         * over the SAME widened read union ([readRelays]) as the main feed, paint
+         * cache-first from ObjectBox, then fill with an EOSE-grace window,
+         * deduping by coordinate (newest-wins → cross-format canonical pick).
+         *
+         * **Not** the kind-30004 `zapcooking-my-recipes` pack — that list is an
+         * export/share artifact, never the source of truth for display.
+         *
+         * Switching authors clears the prior author's grid; a reload for the same
+         * author keeps it painted while the fresh window merges in.
+         */
+        fun load(pubkey: String, limit: Int) {
+            val target = pubkey.trim()
+            loadJob?.cancel()
+            if (target.isBlank()) {
+                reset()
+                return
             }
+            if (author != target) {
+                byCoordinate.clear()
+                _recipes.value = emptyList()
+            }
+            author = target
+            _isLoading.value = true
 
-            val subId = "recipe-authored-${subCounter.getAndIncrement()}"
-            val seenIds = mutableSetOf<String>()
-            val collector = launch {
-                relayPool.relayEvents.collect { relayEvent ->
-                    if (relayEvent.subscriptionId != subId) return@collect
-                    val event = relayEvent.event
-                    if (event.id in seenIds) return@collect
-                    if (event.pubkey != author) return@collect
-                    if (RecipeFormats.forEvent(event) == null) return@collect
-                    seenIds.add(event.id)
-                    eventRepo.cacheEvent(event)
-                    eventRepo.requestProfileIfMissing(event.pubkey)
-                    authoredCoordMutex.withLock {
-                        if (acceptAuthored(author, event)) emitAuthored()
+            loadJob = scope.launch(processingContext) {
+                // Cache-first paint: persisted recipes show instantly, before the
+                // relay round-trip.
+                val cached = cachedAuthoredEvents(target)
+                if (cached.isNotEmpty() && author == target) {
+                    coordMutex.withLock {
+                        cached.forEach { accept(target, it) }
+                        emit()
                     }
                 }
-            }
-            // One author-scoped filter per active format (NIP-23 only today),
-            // fanned to the SAME widened union as the main feed.
-            val filters = RecipeFormats.active.map { it.authorFeedFilter(author, limit) }
-            val req = ClientMessage.req(subId, filters)
-            var sent = 0
-            for (url in readRelays()) {
-                if (relayPool.sendToRelayOrEphemeral(url, req)) sent++
-            }
-            try {
-                if (sent > 0) {
-                    subManager.awaitEoseCount(subId, expectedCount = sent, timeoutMs = 8_000)
-                    delay(EOSE_GRACE_MS)
+
+                val subId = "$subIdPrefix-${subCounter.getAndIncrement()}"
+                val seenIds = mutableSetOf<String>()
+                val collector = launch {
+                    relayPool.relayEvents.collect { relayEvent ->
+                        if (relayEvent.subscriptionId != subId) return@collect
+                        val event = relayEvent.event
+                        if (event.id in seenIds) return@collect
+                        if (event.pubkey != target) return@collect
+                        if (RecipeFormats.forEvent(event) == null) return@collect
+                        seenIds.add(event.id)
+                        eventRepo.cacheEvent(event)
+                        eventRepo.requestProfileIfMissing(event.pubkey)
+                        coordMutex.withLock {
+                            if (accept(target, event)) emit()
+                        }
+                    }
                 }
-            } finally {
-                collector.cancel()
-                subManager.closeSubscription(subId)
-                _isAuthoredLoading.value = false
+                // One author-scoped filter per active format (NIP-23 only today),
+                // fanned to the SAME widened union as the main feed.
+                val filters = RecipeFormats.active.map { it.authorFeedFilter(target, limit) }
+                val req = ClientMessage.req(subId, filters)
+                var sent = 0
+                for (url in readRelays()) {
+                    if (relayPool.sendToRelayOrEphemeral(url, req)) sent++
+                }
+                try {
+                    if (sent > 0) {
+                        subManager.awaitEoseCount(subId, expectedCount = sent, timeoutMs = 8_000)
+                        delay(EOSE_GRACE_MS)
+                    }
+                } finally {
+                    collector.cancel()
+                    subManager.closeSubscription(subId)
+                    _isLoading.value = false
+                }
             }
         }
+
+        /** Cancel any in-flight query and drop this session's results. */
+        fun reset() {
+            loadJob?.cancel()
+            author = null
+            byCoordinate.clear()
+            _recipes.value = emptyList()
+            _isLoading.value = false
+        }
+
+        /** Merge [event] into [byCoordinate] (author-guarded); true iff it became the winner. */
+        private fun accept(author: String, event: NostrEvent): Boolean {
+            if (event.pubkey != author) return false
+            val key = recipeCoordinate(event)
+            val current = byCoordinate[key]
+            val winner = if (current == null) event else preferNewer(current, event)
+            if (winner === current) return false
+            byCoordinate[key] = winner
+            return true
+        }
+
+        private fun emit() {
+            _recipes.value = dedupeAcrossFormats(byCoordinate.values) { RecipeFormats.rankOf(it) }
+                .mapNotNull { RecipeFormats.forEvent(it)?.parse(it) }
+                .sortedByDescending { it.publishedAt }
+        }
     }
+
+    /**
+     * Load the recipes **authored by** [pubkey] — the signed-in user's OWN
+     * published recipes (the "My Recipes" sub-tab), distinct from saved recipes.
+     * Delegates to the [selfAuthored] session; see [AuthoredSession.load].
+     *
+     * For another user's profile use [loadProfileAuthoredRecipes] — routing a
+     * stranger through here would clear the user's own grid.
+     */
+    fun loadAuthoredRecipes(pubkey: String, limit: Int = 200) =
+        selfAuthored.load(pubkey, limit)
+
+    /**
+     * Load the recipes authored by [pubkey] for the **other-user profile**
+     * screen's Recipes tab. Identical query to [loadAuthoredRecipes] but backed
+     * by the independent [profileAuthored] session, so opening a stranger's
+     * profile leaves My Recipes untouched.
+     */
+    fun loadProfileAuthoredRecipes(pubkey: String, limit: Int = 200) =
+        profileAuthored.load(pubkey, limit)
 
     private suspend fun cachedAuthoredEvents(author: String, limit: Int = 2_000): List<NostrEvent> {
         val persistence = eventRepo.eventPersistence ?: return emptyList()
@@ -674,23 +744,6 @@ class RecipeRepository(
         }
         return dedupeAcrossFormats(events) { RecipeFormats.rankOf(it) }
             .filter { it.pubkey == author }
-    }
-
-    /** Merge [event] into [authoredByCoordinate] (author-guarded); true iff it became the winner. */
-    private fun acceptAuthored(author: String, event: NostrEvent): Boolean {
-        if (event.pubkey != author) return false
-        val key = recipeCoordinate(event)
-        val current = authoredByCoordinate[key]
-        val winner = if (current == null) event else preferNewer(current, event)
-        if (winner === current) return false
-        authoredByCoordinate[key] = winner
-        return true
-    }
-
-    private fun emitAuthored() {
-        _authoredRecipes.value = dedupeAcrossFormats(authoredByCoordinate.values) { RecipeFormats.rankOf(it) }
-            .mapNotNull { RecipeFormats.forEvent(it)?.parse(it) }
-            .sortedByDescending { it.publishedAt }
     }
 
     /**
@@ -916,25 +969,24 @@ class RecipeRepository(
         loadMoreJob?.cancel()
         refreshJob?.cancel()
         preloadJob?.cancel()
-        authoredLoadJob?.cancel()
         tagLoadJob?.cancel()
         tagLoadMoreJob?.cancel()
         tagRefreshJob?.cancel()
         epoch++
         tagEpoch++
         byCoordinate.clear()
-        authoredByCoordinate.clear()
         tagByCoordinate.clear()
-        authoredAuthor = null
+        // Both authored sessions — an account switch invalidates the user's own
+        // grid AND any profile grid left painted from the previous session.
+        selfAuthored.reset()
+        profileAuthored.reset()
         activeTag = null
         _recipes.value = emptyList()
-        _authoredRecipes.value = emptyList()
         _tagRecipes.value = emptyList()
         _isLoading.value = false
         _isLoadingMore.value = false
         _isRefreshing.value = false
         _exhausted.value = false
-        _isAuthoredLoading.value = false
         _isTagLoading.value = false
         _isTagLoadingMore.value = false
         _isTagRefreshing.value = false

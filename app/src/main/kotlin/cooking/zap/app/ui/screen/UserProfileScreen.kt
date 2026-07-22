@@ -123,6 +123,8 @@ import cooking.zap.app.ui.component.PostCard
 import cooking.zap.app.ui.component.parseContent
 import cooking.zap.app.ui.component.parseImetaTags
 import cooking.zap.app.ui.component.ProfileQrSheet
+import cooking.zap.app.ui.component.RecipeCard
+import cooking.zap.app.ui.component.RecipePosterSkeleton
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.RichContent
 import cooking.zap.app.ui.component.ZapDialog
@@ -208,7 +210,8 @@ fun UserProfileScreen(
     onRemoveEmojiSet: ((String, String) -> Unit)? = null,
     isEmojiSetAdded: ((String, String) -> Boolean)? = null,
     onMuteUser: (() -> Unit)? = null,
-    onRestoreFollows: (() -> Unit)? = null
+    onRestoreFollows: (() -> Unit)? = null,
+    onRecipeClick: ((String, String) -> Unit)? = null
 ) {
     val resolvedEmojisState = rememberUpdatedState(resolvedEmojis)
     val unicodeEmojisState = rememberUpdatedState(unicodeEmojis)
@@ -393,10 +396,15 @@ fun UserProfileScreen(
     val followersLoading by viewModel.followersLoading.collectAsState()
     val groups by viewModel.groups.collectAsState()
     val groupsLoading by viewModel.groupsLoading.collectAsState()
+    val profileRecipes by viewModel.recipes.collectAsState()
+    val profileRecipesLoading by viewModel.recipesLoading.collectAsState()
 
-    // Dynamic tab list: Pair(contentId, title). contentId 8 = Conversation.
+    // Dynamic tab list: Pair(contentId, title). contentId 8 = Conversation,
+    // 9 = Recipes. Recipes leads (web parity: recipes-first placement) but Notes
+    // stays the landing tab — see selectedTabId below.
     val showConversationTab = !isOwnProfile && userPubkey != null
     val profileTabs: List<Pair<Int, String>> = buildList {
+        add(9 to stringResource(R.string.profile_tab_recipes))
         add(0 to stringResource(R.string.profile_tab_notes))
         add(1 to stringResource(R.string.profile_tab_replies))
         if (showConversationTab) add(8 to stringResource(R.string.profile_tab_conversation))
@@ -408,12 +416,20 @@ fun UserProfileScreen(
         add(7 to stringResource(R.string.profile_tab_relays))
     }
 
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    val selectedTabId = profileTabs.getOrNull(selectedTab)?.first ?: 0
+    // Saved by tab IDENTITY, not ordinal: the tab list is built conditionally
+    // (Conversation, and any future tab), so a saved ordinal can point at a
+    // different tab than the one the user left. The id is stable regardless of
+    // position. Default 0 = Notes — Recipes leads the strip but does not land.
+    var selectedTabId by rememberSaveable { mutableIntStateOf(0) }
+    val selectedTab = profileTabs.indexOfFirst { it.first == selectedTabId }.coerceAtLeast(0)
     var showSortDropdown by remember { mutableStateOf(false) }
 
     if (selectedTabId == 5) {
         LaunchedEffect(Unit) { viewModel.loadFollowers() }
+    }
+    // Lazy recipe query — same pattern as Followers above; idempotent per pubkey.
+    if (selectedTabId == 9) {
+        LaunchedEffect(profilePubkey) { viewModel.requestRecipes() }
     }
 
     // Conversation tab: the profile's replies that involve the current user — either a p-tag of
@@ -676,7 +692,7 @@ fun UserProfileScreen(
                 ProfileTabRow(
                     profileTabs = profileTabs,
                     selectedTab = selectedTab,
-                    onSelect = { selectedTab = it },
+                    onSelect = { index -> profileTabs.getOrNull(index)?.let { selectedTabId = it.first } },
                     modifier = Modifier.alpha(if (tabRowPinned) 0f else 1f)
                 )
             }
@@ -881,6 +897,56 @@ fun UserProfileScreen(
                         if (rootNotes.isNotEmpty() && notesSortMode == ProfileSortMode.RECENCY) {
                             item {
                                 LoadMoreButton(onClick = { viewModel.loadMoreNotes() })
+                            }
+                        }
+                    }
+                }
+                9 -> {
+                    // Recipes tab — this profile's published recipes, in the same
+                    // 2-up poster grid as My Recipes. The recipe gate lives in the
+                    // repo (RecipeParser.isRecipe → strict template validation), so
+                    // plain kind-30023 articles never reach here.
+                    when {
+                        profileRecipes.isEmpty() && profileRecipesLoading -> {
+                            items(count = 3, key = { "recipe-skeleton-$it" }) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    repeat(2) {
+                                        RecipePosterSkeleton(
+                                            Modifier.weight(1f).aspectRatio(2f / 3f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        profileRecipes.isEmpty() -> {
+                            item { EmptyTabContent(stringResource(R.string.profile_no_recipes)) }
+                        }
+                        else -> {
+                            items(
+                                items = profileRecipes.chunked(2),
+                                key = { row -> "recipe-row-${row.first().id}" }
+                            ) { row ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    for (recipe in row) {
+                                        RecipeCard(
+                                            recipe = recipe,
+                                            onClick = { onRecipeClick?.invoke(recipe.author, recipe.dTag) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    // Keep a lone trailing card at column width.
+                                    if (row.size == 1) Spacer(Modifier.weight(1f))
+                                }
                             }
                         }
                     }
@@ -1232,7 +1298,7 @@ fun UserProfileScreen(
                     ProfileTabRow(
                         profileTabs = profileTabs,
                         selectedTab = selectedTab,
-                        onSelect = { selectedTab = it }
+                        onSelect = { index -> profileTabs.getOrNull(index)?.let { selectedTabId = it.first } }
                     )
                 }
             }
