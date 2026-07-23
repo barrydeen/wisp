@@ -3169,8 +3169,8 @@ internal fun rememberMediaPlaceholderPainter(
             return@produceState
         }
         val dims = dimension?.split('x')
-        val width = dims?.getOrNull(0)?.toIntOrNull()?.coerceAtMost(100) ?: 32
-        val height = dims?.getOrNull(1)?.toIntOrNull()?.coerceAtMost(100) ?: 32
+        val width = dims?.getOrNull(0)?.toIntOrNull()?.takeIf { it > 0 }?.coerceAtMost(100) ?: 32
+        val height = dims?.getOrNull(1)?.toIntOrNull()?.takeIf { it > 0 }?.coerceAtMost(100) ?: 32
         value = withContext(Dispatchers.Default) {
             MediaHashDecoder.decode(thumbhash, blurhash, width, height)
                 ?.asImageBitmap()
