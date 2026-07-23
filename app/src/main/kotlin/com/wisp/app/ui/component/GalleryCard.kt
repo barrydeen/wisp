@@ -324,21 +324,27 @@ fun GalleryCard(
             )
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = displayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.clickable(onClick = onProfileClick)
-                )
-                profile?.nip05?.let { nip05 ->
-                    Nip05Badge(
-                        nip05 = nip05,
-                        pubkey = event.pubkey,
-                        nip05Repo = nip05Repo,
-                        onClick = onProfileClick
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .clickable(onClick = onProfileClick)
                     )
+                    profile?.nip05?.let { nip05 ->
+                        Spacer(Modifier.width(4.dp))
+                        Nip05Badge(
+                            nip05 = nip05,
+                            pubkey = event.pubkey,
+                            nip05Repo = nip05Repo,
+                            onClick = onProfileClick,
+                            showHandle = false
+                        )
+                    }
                 }
             }
             Text(
@@ -935,7 +941,7 @@ private fun formatGalleryTimestamp(epoch: Long): String {
     if (hours < 24) return "${hours}h"
 
     val days = diff / (24 * 60 * 60 * 1000L)
-    if (days == 1L) return "yesterday"
+    if (days < 7) return "${days}d"
 
     val date = Date(millis)
     val cal = java.util.Calendar.getInstance()

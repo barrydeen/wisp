@@ -1316,15 +1316,28 @@ fun QuotedNote(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ProfilePicture(url = profile?.picture, size = 34)
                     Spacer(Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Text(
                             text = profile?.displayString
                                 ?: event.pubkey.toNpub().let { "${it.take(12)}...${it.takeLast(4)}" },
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
+                        profile?.nip05?.let { nip05 ->
+                            Spacer(Modifier.width(4.dp))
+                            Nip05Badge(
+                                nip05 = nip05,
+                                pubkey = event.pubkey,
+                                nip05Repo = noteActions?.nip05Repo,
+                                showHandle = false
+                            )
+                        }
                     }
                     Text(
                         text = formatQuotedTimestamp(event.created_at),
@@ -2172,7 +2185,7 @@ private fun formatQuotedTimestamp(epoch: Long): String {
         seconds < 60 -> "${seconds}s"
         minutes < 60 -> "${minutes}m"
         hours < 24 -> "${hours}h"
-        days == 1L -> "yesterday"
+        days < 7 -> "${days}d"
         else -> java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(java.util.Date(epoch * 1000))
     }
 }
