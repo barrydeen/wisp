@@ -10,6 +10,7 @@ object BlurHashDecoder {
 
     fun decode(blurHash: String?, width: Int, height: Int, punch: Float = 1f): Bitmap? {
         if (blurHash == null || blurHash.length < 6) return null
+        if (width <= 0 || height <= 0) return null
 
         val numComponents = decode83(blurHash, 0, 1)
         val nx = (numComponents % 9) + 1

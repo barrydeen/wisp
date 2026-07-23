@@ -7,6 +7,7 @@ import com.madebyevan.thumbhash.ThumbHash
 
 object MediaHashDecoder {
     fun decode(thumbHash: String?, blurHash: String?, width: Int, height: Int): Bitmap? {
+        if (width <= 0 || height <= 0) return null
         decodeThumbHash(thumbHash, width, height)?.let { return it }
         return BlurHashDecoder.decode(blurHash, width, height)
     }
