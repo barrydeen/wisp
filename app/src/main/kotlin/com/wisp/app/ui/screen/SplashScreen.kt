@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -149,17 +150,21 @@ fun SplashScreen(
         )
 
         if (onCancel != null) {
+            // Pinned to the top-start corner so it's always reachable.
+            // Previously this sat at BottomCenter with bottom padding, where
+            // the logo/wordmark/action buttons column painted over it.
             Text(
                 text = "Cancel",
                 style = MaterialTheme.typography.labelLarge,
                 color = androidx.compose.ui.graphics.Color.White,
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 120.dp)
-                    .clip(androidx.compose.foundation.shape.CircleShape)
-                    .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.15f))
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(start = 16.dp, top = 16.dp)
+                    .clip(CircleShape)
+                    .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.25f))
                     .clickable(onClick = onCancel)
-                    .padding(horizontal = 28.dp, vertical = 12.dp)
+                    .padding(horizontal = 20.dp, vertical = 8.dp)
             )
         }
 
