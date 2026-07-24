@@ -1,7 +1,7 @@
 package cooking.zap.app.viewmodel
 
 import cooking.zap.app.api.RecipeWeek
-import cooking.zap.app.ui.component.RecipeTrend
+import cooking.zap.app.util.RecipeTrend
 
 /**
  * UI state for the Recipes header trend pill.

@@ -1,4 +1,4 @@
-package cooking.zap.app.ui.component
+package cooking.zap.app.util
 
 import cooking.zap.app.api.RecipeWeek
 
