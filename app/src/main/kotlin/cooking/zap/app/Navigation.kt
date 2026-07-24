@@ -1551,7 +1551,8 @@ fun WispNavHost(
                     subManager = feedViewModel.subManager,
                     topRelayUrls = feedViewModel.getScoredRelays().take(5).map { it.url },
                     relayHintStore = feedViewModel.relayHintStore,
-                    extendedNetworkRepo = feedViewModel.extendedNetworkRepo
+                    extendedNetworkRepo = feedViewModel.extendedNetworkRepo,
+                    recipeRepo = feedViewModel.recipeRepo
                 )
             }
             val isBlockedState by feedViewModel.muteRepo.blockedPubkeys.collectAsState()
@@ -1665,7 +1666,10 @@ fun WispNavHost(
                     feedViewModel.customEmojiRepo.userEmojiList.value?.setReferences?.contains(ref) ?: false
                 },
                 onMuteUser = if (!isOwnProfile) { { feedViewModel.blockUser(pubkey) } } else null,
-                onRestoreFollows = if (isOwnProfile) { { showFollowRecoverySheet = true } } else null
+                onRestoreFollows = if (isOwnProfile) { { showFollowRecoverySheet = true } } else null,
+                onRecipeClick = { recipeAuthor, recipeDTag ->
+                    navController.navigate(Routes.recipe(recipeAuthor, recipeDTag))
+                }
             )
             if (showProfileEmojiLibrary) {
                 cooking.zap.app.ui.component.EmojiLibrarySheet(
