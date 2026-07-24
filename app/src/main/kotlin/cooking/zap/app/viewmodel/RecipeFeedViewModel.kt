@@ -2,8 +2,10 @@ package cooking.zap.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cooking.zap.app.api.ZapCookingApi
 import cooking.zap.app.nostr.RecipeParser
 import cooking.zap.app.repo.RecipeRepository
+import cooking.zap.app.repo.RecipeTrendCache
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -36,8 +38,19 @@ class RecipeFeedViewModel : ViewModel() {
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing
 
+    /**
+     * The header trend pill's state — its own flow, never merged into the four
+     * feed flows above. See [loadTrend] for the isolation contract.
+     */
+    private val _trend = MutableStateFlow<RecipeTrendState>(RecipeTrendState.Loading)
+    val trend: StateFlow<RecipeTrendState> = _trend
+
     private var repo: RecipeRepository? = null
     private var started = false
+
+    private var trendApi: ZapCookingApi? = null
+    private var trendCache: RecipeTrendCache = RecipeTrendCache.shared
+    private var trendStarted = false
 
     fun load(recipeRepo: RecipeRepository) {
         if (started) return
@@ -60,8 +73,49 @@ class RecipeFeedViewModel : ViewModel() {
         repo?.loadMore()
     }
 
+    /**
+     * Start observing the weekly new-recipe stats. Separate from [load] on
+     * purpose: that method's `started` guard is the feed's one-shot lifecycle,
+     * and folding the trend into it would tie a decorative signal to the feed's
+     * fate in both directions.
+     *
+     * The isolation contract, which the rest of this class must not break: the
+     * trend never touches [isLoading], [isLoadingMore], [exhausted] or
+     * [isRefreshing], and no trend request can block, delay or fail recipe
+     * loading. Every failure resolves to [RecipeTrendState.Hidden] (or holds
+     * the last good value) — nothing is surfaced as an error.
+     *
+     * [cache] is injectable for tests only; production always gets the
+     * process-wide instance, which is what makes this safe to call again after
+     * a back-nav recreates this ViewModel.
+     */
+    fun loadTrend(api: ZapCookingApi, cache: RecipeTrendCache = RecipeTrendCache.shared) {
+        if (trendStarted) return
+        trendStarted = true
+        trendApi = api
+        trendCache = cache
+        fetchTrend(force = false)
+    }
+
+    /**
+     * Project the cache into [trend]. Its own coroutine, awaited by nobody —
+     * the feed never waits on this and this never waits on the feed. A no-op
+     * until [loadTrend] has supplied an api.
+     */
+    private fun fetchTrend(force: Boolean) {
+        val api = trendApi ?: return
+        viewModelScope.launch {
+            val weeks = trendCache.weeks(api, force = force)
+            _trend.value = RecipeTrendState.reduce(weeks, _trend.value)
+        }
+    }
+
     /** Pull-to-refresh: re-pull the newest window; new recipes surface at top. */
     fun refresh() {
         repo?.refresh()
+        // Refreshed alongside the feed, not as part of it: an explicit user
+        // refresh bypasses the trend's TTL, but the two run independently and
+        // neither awaits the other.
+        fetchTrend(force = true)
     }
 }
