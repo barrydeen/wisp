@@ -33,17 +33,29 @@ sealed interface RecipeTrendState {
          * previously retained, or null when nothing has ever been fetched
          * successfully.
          *
-         * **[Hidden] is reachable only from [Loading].** Once [Visible], this
-         * returns the existing state rather than collapsing, so a failed
-         * pull-to-refresh (or a lull that drops the window to zero) can never
-         * yank the header out from under the user's thumb. The practical
-         * guarantee for the UI: a collapse happens at most once per process,
-         * before anything has been shown.
+         * **[Hidden] is reachable from [Loading] always, and from [Visible]
+         * only on a well-formed all-zero success.** The distinction is between
+         * an answer and the absence of one:
+         *
+         * - Null (failure) or an empty `weeks` array never collapses a visible
+         *   pill. The endpoint is zero-filled by design, so a well-formed
+         *   answer always carries its full bucket set — an empty array means
+         *   something went wrong upstream that didn't rise to a 502. That's
+         *   degradation, not signal, and a failed pull-to-refresh must not
+         *   yank the header out from under the user's thumb.
+         * - A populated series whose window sums to zero **is** a real answer,
+         *   and the honest render of "nothing published in three weeks" is
+         *   nothing. Showing a stale count there would be exactly the false
+         *   claim the header copy is worded to avoid. Reaching it requires the
+         *   platform's entire three-week output to age out between two fetches
+         *   ~6h apart, so the reflow it costs is rare and well spent.
          */
         fun reduce(weeks: List<RecipeWeek>?, current: RecipeTrendState): RecipeTrendState {
-            val count = weeks?.let { RecipeTrend.recentCount(it) } ?: 0
-            if (count > 0 && !weeks.isNullOrEmpty()) return Visible(count, weeks)
-            return if (current is Visible) current else Hidden
+            // No answer at all — hold whatever is already on screen.
+            if (weeks.isNullOrEmpty()) return if (current is Visible) current else Hidden
+            val count = RecipeTrend.recentCount(weeks)
+            // A real answer, including a real zero.
+            return if (count > 0) Visible(count, weeks) else Hidden
         }
     }
 }

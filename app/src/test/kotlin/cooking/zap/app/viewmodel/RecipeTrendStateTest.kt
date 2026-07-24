@@ -8,9 +8,9 @@ import org.junit.Test
 /**
  * The trend reducer's state table. Pure — no ViewModel, no dispatcher.
  *
- * The rule worth defending here is that [RecipeTrendState.Hidden] is reachable
- * only from [RecipeTrendState.Loading]: once the pill has been shown, no later
- * result may take it away.
+ * The rule worth defending here is the asymmetry between an answer and the
+ * absence of one: once the pill is shown, a failure or a malformed-empty
+ * response may not take it away, but a well-formed all-zero series may.
  */
 class RecipeTrendStateTest {
 
@@ -81,12 +81,25 @@ class RecipeTrendStateTest {
     }
 
     @Test
-    fun visible_thenAllZeroSeries_staysVisible() {
-        // A genuine three-week lull is rare and still not worth reflowing a
-        // scrolled feed for.
+    fun visible_thenWellFormedAllZeroSeries_collapsesToHidden() {
+        // The one permitted collapse: buckets present, every count zero, is a
+        // real answer. Holding "21 new recipes" there would be a false claim.
         val visible = RecipeTrendState.Visible(21, good)
 
-        assertSame(visible, RecipeTrendState.reduce(weeks(0, 0, 0), visible))
+        val allZero = weeks(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        assertEquals(RecipeTrendState.Hidden, RecipeTrendState.reduce(allZero, visible))
+    }
+
+    @Test
+    fun visible_thenZeroWindowWithNonZeroHistory_collapsesToHidden() {
+        // Same rule via the other route into a zero window: older buckets have
+        // counts, the last three do not.
+        val visible = RecipeTrendState.Visible(21, good)
+
+        assertEquals(
+            RecipeTrendState.Hidden,
+            RecipeTrendState.reduce(weeks(9, 9, 9, 0, 0, 0), visible),
+        )
     }
 
     @Test

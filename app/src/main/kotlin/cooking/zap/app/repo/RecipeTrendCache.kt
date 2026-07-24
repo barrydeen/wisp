@@ -34,24 +34,44 @@ import java.util.concurrent.TimeUnit
  */
 class RecipeTrendCache(
     private val ttlMillis: Long = TTL_MILLIS,
+    private val forceFloorMillis: Long = FORCE_FLOOR_MILLIS,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
 
     private val mutex = Mutex()
 
-    /** Last non-empty response. Never cleared once set — only replaced. */
+    /**
+     * Last non-empty response. Never cleared once set — only replaced.
+     * Volatile for [peek], which reads it without taking [mutex].
+     */
+    @Volatile
     private var retained: List<RecipeWeek>? = null
 
     /** Stamped on success only (see class doc). 0 until the first success. */
     private var lastSuccessAtMillis = 0L
 
     /**
+     * The retained series without suspending or fetching — null if nothing has
+     * ever been fetched successfully.
+     *
+     * Lets a freshly constructed ViewModel seed its initial state
+     * synchronously, so a back-nav re-entry renders the pill immediately
+     * instead of flashing a placeholder while a cache hit resolves through a
+     * coroutine.
+     */
+    fun peek(): List<RecipeWeek>? = retained
+
+    /**
      * The freshest series available, or null if none has ever been fetched
      * successfully. Suspends for at most one in-flight request.
      *
      * Returns the cached value without a request when it is still inside the
-     * TTL, unless [force] is set — pull-to-refresh is an explicit user ask and
-     * bypasses the window.
+     * TTL. [force] (pull-to-refresh — an explicit user ask) bypasses the TTL
+     * but **not** [forceFloorMillis]: without that floor, a refresh landing
+     * while a background fetch is in flight would block on the mutex and then
+     * immediately issue a second request behind the winner, two requests
+     * seconds apart for the same data. A value stamped within the last few
+     * seconds is fresh enough to satisfy a force too.
      *
      * Any failure (HTTP error, network fault, malformed body) resolves to the
      * retained value, or null if there is none: callers treat "no value" as
@@ -61,7 +81,8 @@ class RecipeTrendCache(
     suspend fun weeks(api: ZapCookingApi, force: Boolean = false): List<RecipeWeek>? =
         mutex.withLock {
             val cached = retained
-            if (!force && cached != null && nowMillis() - lastSuccessAtMillis < ttlMillis) {
+            val window = if (force) forceFloorMillis else ttlMillis
+            if (cached != null && nowMillis() - lastSuccessAtMillis < window) {
                 return@withLock cached
             }
             try {
@@ -87,6 +108,13 @@ class RecipeTrendCache(
          * without polling a stats endpoint on every screen entry.
          */
         val TTL_MILLIS: Long = TimeUnit.HOURS.toMillis(6)
+
+        /**
+         * Freshness floor for [weeks] with `force = true`. Long enough to
+         * absorb a pull-to-refresh arriving on the heels of a background
+         * fetch, short enough that a deliberate second pull still refetches.
+         */
+        val FORCE_FLOOR_MILLIS: Long = TimeUnit.SECONDS.toMillis(5)
 
         /** The process-wide instance. Tests construct their own. */
         val shared: RecipeTrendCache by lazy { RecipeTrendCache() }

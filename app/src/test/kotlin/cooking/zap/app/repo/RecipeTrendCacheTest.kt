@@ -95,11 +95,44 @@ class RecipeTrendCacheTest {
         val cache = cache()
 
         cache.weeks(api)
-        // No clock movement at all — pull-to-refresh still goes to the network.
+        // Hours short of the 6h TTL, but past the few-second force floor:
+        // pull-to-refresh goes to the network.
+        now += TimeUnit.MINUTES.toMillis(30)
         val refreshed = cache.weeks(api, force = true)
 
         assertEquals(listOf(7, 7, 7), refreshed?.map { it.count })
         assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun force_respectsTheFewSecondFreshnessFloor() = runBlocking {
+        enqueueOk(1, 2, 3)
+        enqueueOk(7, 7, 7) // must go unused
+        val cache = cache()
+
+        cache.weeks(api)
+        now += TimeUnit.SECONDS.toMillis(2)
+        val refreshed = cache.weeks(api, force = true)
+
+        assertEquals(listOf(1, 2, 3), refreshed?.map { it.count })
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun forcedAndBackgroundCallersConcurrently_issueOneRequest() = runBlocking {
+        // A pull-to-refresh landing while a background fetch is in flight must
+        // not queue a second request behind the winner.
+        enqueueOk(1, 2, 3)
+        enqueueOk(7, 7, 7) // must go unused
+        val cache = cache()
+
+        val results = listOf(
+            async(Dispatchers.IO) { cache.weeks(api) },
+            async(Dispatchers.IO) { cache.weeks(api, force = true) },
+        ).awaitAll()
+
+        assertEquals(1, server.requestCount)
+        assertTrue("both callers should see the same series", results.all { it == results[0] })
     }
 
     @Test
@@ -162,9 +195,42 @@ class RecipeTrendCacheTest {
         val cache = cache()
 
         val good = cache.weeks(api)
+        now += TimeUnit.MINUTES.toMillis(30) // past the force floor, inside the TTL
         val afterEmpty = cache.weeks(api, force = true)
 
         assertEquals(good, afterEmpty)
+        assertEquals(2, server.requestCount)
+    }
+
+    // --- peek ---
+
+    @Test
+    fun peek_isNullBeforeAnySuccess() {
+        assertNull(cache().peek())
+    }
+
+    @Test
+    fun peek_returnsTheRetainedSeries_withoutARequest() = runBlocking {
+        enqueueOk(4, 8, 8, 5)
+        val cache = cache()
+
+        val fetched = cache.weeks(api)
+
+        assertEquals(fetched, cache.peek())
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun peek_survivesAFailure() = runBlocking {
+        enqueueOk(4, 8, 8, 5)
+        enqueueFailure()
+        val cache = cache()
+
+        val good = cache.weeks(api)
+        now += TimeUnit.HOURS.toMillis(7)
+        cache.weeks(api)
+
+        assertEquals(good, cache.peek())
     }
 
     @Test

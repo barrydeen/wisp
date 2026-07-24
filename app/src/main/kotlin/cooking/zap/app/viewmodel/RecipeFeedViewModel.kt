@@ -41,8 +41,15 @@ class RecipeFeedViewModel : ViewModel() {
     /**
      * The header trend pill's state — its own flow, never merged into the four
      * feed flows above. See [loadTrend] for the isolation contract.
+     *
+     * Seeded synchronously from the process-scoped cache, so this starts at
+     * [RecipeTrendState.Loading] only on a genuinely cold cache. This
+     * ViewModel is scoped to the Recipes back-stack entry and is recreated on
+     * navigate-away-and-back; without the seed, every return from a recipe
+     * detail would re-enter Loading and flash the header's reserved slot
+     * before a cache hit resolved through a coroutine.
      */
-    private val _trend = MutableStateFlow<RecipeTrendState>(RecipeTrendState.Loading)
+    private val _trend = MutableStateFlow(seedFrom(RecipeTrendCache.shared))
     val trend: StateFlow<RecipeTrendState> = _trend
 
     private var repo: RecipeRepository? = null
@@ -94,6 +101,9 @@ class RecipeFeedViewModel : ViewModel() {
         trendStarted = true
         trendApi = api
         trendCache = cache
+        // Seed again from the cache actually in use: the construction-time
+        // seed can only see the process-wide instance.
+        if (_trend.value is RecipeTrendState.Loading) _trend.value = seedFrom(cache)
         fetchTrend(force = false)
     }
 
@@ -108,6 +118,24 @@ class RecipeFeedViewModel : ViewModel() {
             val weeks = trendCache.weeks(api, force = force)
             _trend.value = RecipeTrendState.reduce(weeks, _trend.value)
         }
+    }
+
+    private companion object {
+        /**
+         * Initial trend state for a given cache: [RecipeTrendState.Visible]
+         * when a good value is already retained, otherwise
+         * [RecipeTrendState.Loading].
+         *
+         * A cold cache must stay [RecipeTrendState.Loading] rather than
+         * reducing straight to [RecipeTrendState.Hidden] — that is the state
+         * the header reserves space on, and collapsing before the first fetch
+         * has even run would reintroduce the reflow the reservation exists to
+         * prevent.
+         */
+        fun seedFrom(cache: RecipeTrendCache): RecipeTrendState =
+            cache.peek()
+                ?.let { RecipeTrendState.reduce(it, RecipeTrendState.Loading) }
+                ?: RecipeTrendState.Loading
     }
 
     /** Pull-to-refresh: re-pull the newest window; new recipes surface at top. */

@@ -17,6 +17,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.TimeUnit
 
 /**
  * The trend's wiring into [RecipeFeedViewModel] — above all its **isolation**
@@ -50,7 +51,9 @@ class RecipeFeedTrendTest {
         Dispatchers.resetMain()
     }
 
-    private fun cache() = RecipeTrendCache(nowMillis = { NOW })
+    private var now = NOW
+
+    private fun cache() = RecipeTrendCache(nowMillis = { now })
 
     private fun enqueueOk() {
         server.enqueue(
@@ -158,11 +161,33 @@ class RecipeFeedTrendTest {
 
         vm.loadTrend(api, cache())
         awaitSettled(vm)
-        // No clock movement: only force can produce a second request.
+        // Half an hour on: far inside the 6h TTL, so only the force path can
+        // produce a second request. Past the few-second force floor.
+        now += TimeUnit.MINUTES.toMillis(30)
         vm.refresh()
 
         awaitRequests(2)
         assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun reEntryWithAWarmCache_startsVisible_neverLoading() {
+        // B2: a back-nav recreates this ViewModel. With a retained value the
+        // pill must be on screen from the first frame — no reserve-then-fill.
+        enqueueOk()
+        val cache = cache()
+        val first = RecipeFeedViewModel()
+        first.loadTrend(api, cache)
+        awaitSettled(first)
+
+        val reEntered = RecipeFeedViewModel()
+        reEntered.loadTrend(api, cache)
+
+        // Asserted synchronously — no awaitSettled, because waiting would hide
+        // exactly the flicker this guards against.
+        val state = reEntered.trend.value
+        assertTrue("expected Visible immediately, was $state", state is RecipeTrendState.Visible)
+        assertEquals(21, (state as RecipeTrendState.Visible).count)
     }
 
     @Test
