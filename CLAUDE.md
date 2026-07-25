@@ -29,13 +29,7 @@ under `app/src/test/` plus integration tests under `app/src/androidTest/`
 
 ## Architecture
 
-Zap Cooking is a food-first Android Nostr client, forked from Wisp, using Kotlin + Jetpack Compose (Material 3). MVVM with five layers:
-
-**UI** (`ui/screen/`, `ui/component/`) → **ViewModel** (`viewmodel/`) → **Repository** (`repo/`) → **Protocol** (`nostr/`) → **Relay** (`relay/`)
-
-Plus a **persistence layer** (`db/`) backed by ObjectBox — see Key Design Decisions.
-
-All source lives under `app/src/main/kotlin/cooking/zap/app/`.
+Zap Cooking is a food-first Android Nostr client, forked from Wisp, using Kotlin + Jetpack Compose (Material 3), MVVM.
 
 ### Key Design Decisions
 
@@ -54,21 +48,6 @@ Each NIP is a standalone Kotlin `object`:
 - Hex encoding: `ByteArray.toHex()` / `String.hexToByteArray()` (extensions in Event.kt)
 - Condensed NIP reference docs at `.claude/nips/*.md` with index at `.claude/nips/README.md`
 
-### Relay Layer (`relay/`)
-
-- `Relay` — single WebSocket connection via OkHttp
-- `RelayPool` — connection pooling with persistent/ephemeral split
-- `OutboxRouter` — outbox/inbox routing per NIP-65
-- `RelayScoreBoard` — tracks relay reliability and author coverage
-- `SubscriptionManager` — REQ subscription lifecycle
-
-### Repository Layer (`repo/`)
-
-- `EventRepository` — LRU cache (5,000 events), profile parsing, reaction/repost/zap tracking
-- `ContactRepository` — follow list with SharedPreferences persistence
-- `KeyRepository` — EncryptedSharedPreferences for private keys
-- `DmRepository` — conversation caching with ECDH key cache
-
 ### Persistence Layer (`db/`)
 
 ObjectBox-backed on-device store for fast cold-start. Entities: `EventEntity`, `DmMessageEntity`, `GroupMessageEntity`, `GroupMetaEntity`. The box is initialized via `WispObjectBox`; the generated model is versioned at `app/objectbox-models/default.json` (entity UIDs are stable — do not regenerate or rename entities casually). Only a curated set of kinds is persisted; the rest stays in the LRU caches above.
@@ -80,13 +59,3 @@ ObjectBox-backed on-device store for fast cold-start. Entities: `EventEntity`, `
 - `StateFlow` for UI state, `SharedFlow` for relay events
 - Default relays (fresh installs, `RelayConfig.DEFAULTS`): `wss://nos.lol`, `wss://relay.damus.io`, `wss://relay.primal.net`. Members relay: `wss://pantry.zap.cooking` (`RelayConfig.MEMBERS_RELAY`). Discovery/article aggregators stay in `DEFAULT_INDEXER_RELAYS` / `RelayProber.BOOTSTRAP`.
 - Navigation routes defined in `Navigation.kt`
-
-## Crypto Stack
-
-- **Signing**: secp256k1-kmp (Schnorr) with JNI Android bindings
-- **NIP-44 encryption**: ECDH + HKDF + XChaCha20 + HMAC-SHA256 (Bouncy Castle)
-- **Key storage**: Android Security Crypto (AES256-GCM)
-
-## ProGuard / R8
-
-Release builds use R8 minification. Keep rules in `app/proguard-rules.pro` cover kotlinx.serialization, secp256k1 JNI, Bouncy Castle, OkHttp, Coil, Security Crypto, Media3, and ZXing.

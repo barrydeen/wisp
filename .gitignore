@@ -15,3 +15,4 @@ node_modules/
 app/temp/
 .kotlin/
 .vscode/
+.scratch/
