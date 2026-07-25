@@ -1,5 +1,6 @@
 package cooking.zap.app.ui.screen
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -88,10 +89,13 @@ import cooking.zap.app.ui.component.RenameCollectionDialog
 import cooking.zap.app.ui.util.LocalCanSign
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.RecipeCard
+import cooking.zap.app.ui.component.RecipeTrendPill
+import cooking.zap.app.ui.component.RecipeTrendPillPlaceholder
 import cooking.zap.app.ui.component.RecipePosterSkeleton
 import cooking.zap.app.viewmodel.CookbookViewModel
 import cooking.zap.app.viewmodel.GroceryListViewModel
 import cooking.zap.app.viewmodel.RecipeFeedViewModel
+import cooking.zap.app.viewmodel.RecipeTrendState
 import cooking.zap.app.viewmodel.RecipePacksTab
 import cooking.zap.app.viewmodel.RecipePacksViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -172,6 +176,7 @@ fun RecipeFeedScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val trend by viewModel.trend.collectAsState()
     val gridState = rememberLazyGridState()
     var showMoreTagsSheet by remember { mutableStateOf(false) }
     // Saveable so navigate-away to a My Kitchen detail route (grocery list,
@@ -443,6 +448,28 @@ fun RecipeFeedScreen(
                         onClick = { mainTab = RecipesMainTab.COOKBOOK },
                         modifier = Modifier.weight(1f),
                     )
+                }
+
+                // Trend pill. Reserve-then-collapse: the slot is held open at
+                // the pill's exact height while the stats resolve, so the very
+                // first header measurement already includes it and the pill
+                // fades into pre-paid space with no reflow of the grid below.
+                // Only a Hidden outcome collapses the slot, animated so the one
+                // unavoidable reflow is a smooth settle rather than a snap.
+                if (mainTab == RecipesMainTab.RECIPES) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp)
+                            .animateContentSize(),
+                    ) {
+                        when (val state = trend) {
+                            is RecipeTrendState.Loading -> RecipeTrendPillPlaceholder()
+                            is RecipeTrendState.Visible ->
+                                RecipeTrendPill(count = state.count, weeks = state.weeks)
+                            is RecipeTrendState.Hidden -> Unit
+                        }
+                    }
                 }
 
                 if (mainTab == RecipesMainTab.RECIPES) {

@@ -13,6 +13,7 @@ import cooking.zap.app.relay.HttpClientFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -76,6 +77,31 @@ class ZapCookingApi(
             .build()
         val byPubkey = getJson(url, BATCH_MEMBERSHIP_SERIALIZER)
         return mapBatchMembership(byPubkey, lookupKey)
+    }
+
+    /**
+     * `GET /api/pantry/recipes-by-week` — public, unauthenticated weekly
+     * new-recipe counts (~12 buckets, UTC ISO weeks, Monday start,
+     * zero-filled).
+     *
+     * The upstream relay endpoint (`pantry.zap.cooking/api/stats/…`) is
+     * Bearer-gated, but the frontend route holds `RELAY_API_SECRET`
+     * server-side and passes the JSON straight through (frontend
+     * `src/routes/api/pantry/recipes-by-week/+server.ts`). The app therefore
+     * calls the backend and **never** the relay stats API directly, and sends
+     * no auth header — see ZAPCOOKING_ANDROID_BUILD.md §"Backend-as-API rule".
+     *
+     * Every documented failure (503 secret unconfigured, 502 relay down, plus
+     * ordinary network faults) surfaces as [ZapCookingApiException] or an
+     * IOException; callers are expected to collapse all of them to "no trend"
+     * rather than surface an error — this is a nice-to-have signal that must
+     * never block the recipe feed.
+     */
+    suspend fun getRecipesByWeek(): List<RecipeWeek> {
+        val url = baseUrl.toHttpUrl().newBuilder()
+            .addPathSegments("api/pantry/recipes-by-week")
+            .build()
+        return getJson(url, RecipesByWeekResponse.serializer()).weeks
     }
 
     /**
@@ -806,6 +832,38 @@ data class MembershipStatus(
 /** Non-2xx response from the zap.cooking backend. */
 class ZapCookingApiException(val code: Int, val body: String) :
     Exception("zap.cooking API error $code: $body")
+
+// --- Weekly new-recipe stats (`GET /api/pantry/recipes-by-week`) ---
+
+/**
+ * `{ "weeks": [...], "timezone": "UTC", "week_start_day": "monday" }`.
+ *
+ * `weeks` defaults to empty so the error bodies (`{ "error": "recipe stats
+ * unavailable" }`) and an unexpected `{}` decode to "no data" instead of
+ * throwing — and the shared [Json] `ignoreUnknownKeys` is load-bearing here,
+ * not merely defensive: the live response carries `timezone` and
+ * `week_start_day` alongside `weeks` (verified against the live endpoint).
+ */
+@Serializable
+data class RecipesByWeekResponse(val weeks: List<RecipeWeek> = emptyList())
+
+/**
+ * One weekly bucket. [weekStart] is the ISO date of the week's Monday in UTC;
+ * [count] is the number of recipes published in that week.
+ *
+ * **The counted set is not the recipe feed's set.** The server counts kinds
+ * 30023 + 35000 on the Pantry members relay only, whereas the feed reads
+ * `kinds:[30023]` tagged `#t zapcooking`/`nostrcooking` across
+ * [cooking.zap.app.relay.RelayConfig.ARTICLES_RELAYS] ∪ the indexer/default
+ * read relays — a union that does NOT include Pantry. The two sets overlap;
+ * neither contains the other. Any UI built on this must therefore avoid copy
+ * implying "new recipes in this feed."
+ */
+@Serializable
+data class RecipeWeek(
+    @SerialName("week_start") val weekStart: String = "",
+    val count: Int = 0,
+)
 
 // --- Cheffy Note Review types (CHEFFY_NOTE_REVIEW_PLAN.md, Phase 1) ---
 

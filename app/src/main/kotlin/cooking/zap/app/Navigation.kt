@@ -3419,6 +3419,11 @@ fun WispNavHost(
                 }
             }
             LaunchedEffect(Unit) { recipeFeedViewModel.load(feedViewModel.recipeRepo) }
+            // Header trend stats — a separate entry point from load() so a
+            // stats fetch can never be tangled with the feed's lifecycle. The
+            // cache behind it is process-scoped, so this is cheap to re-enter
+            // when back-nav recreates the ViewModel.
+            LaunchedEffect(Unit) { recipeFeedViewModel.loadTrend(feedViewModel.zapCookingApi) }
             LaunchedEffect(Unit) {
                 recipePacksViewModel.load(feedViewModel.recipePackRepo) { feedViewModel.getUserPubkey() }
             }

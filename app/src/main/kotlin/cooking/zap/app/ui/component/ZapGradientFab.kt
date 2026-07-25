@@ -14,20 +14,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import cooking.zap.app.R
+import cooking.zap.app.ui.theme.ZapFabGradient
 
-// Zap Cooking web palette gradient: amber-500 (#F59E0B) → orange-500 (#F97316).
-// Amber at the top-left fading into deeper orange at the bottom-right matches
-// the brand's FAB style.
-private val ZapAmber = Color(0xFFF59E0B)
-private val ZapOrange = Color(0xFFF97316)
-val ZapFabGradient = Brush.linearGradient(colors = listOf(ZapAmber, ZapOrange))
+// Brand palette (amber-500 → orange-500) lives in ui/theme/BrandColors.kt.
 
 private val FAB_SIZE = 56.dp
 
