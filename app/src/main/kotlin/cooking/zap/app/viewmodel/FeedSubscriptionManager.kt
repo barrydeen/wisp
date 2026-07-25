@@ -88,7 +88,6 @@ class FeedSubscriptionManager(
         val ONLY_FOOD_RELAYS = listOf(
             SearchViewModel.DEFAULT_SEARCH_RELAY,
             "wss://nos.lol",
-            "wss://relay.damus.io",
             "wss://relay.primal.net",
         ).distinct()
         private const val KEY_LAST_FEED_TYPE = "last_feed_type"

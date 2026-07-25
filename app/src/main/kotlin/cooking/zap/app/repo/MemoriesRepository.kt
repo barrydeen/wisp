@@ -402,7 +402,6 @@ class MemoriesRepository(
     companion object {
         /** Archive-friendly relays that keep old notes (mirrors the web's ARCHIVE_RELAYS). */
         private val ARCHIVE_RELAYS = listOf(
-            "wss://relay.damus.io",
             "wss://nostr.wine",
             "wss://relay.primal.net",
         )

@@ -478,7 +478,7 @@ class GoogleAuthViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private val profileJson = Json { ignoreUnknownKeys = true }
         private val PROFILE_RELAYS = listOf(
-            "wss://relay.damus.io",
+            "wss://purplepag.es",
             "wss://relay.primal.net"
         )
         private const val DECOY_RELAY = "wss://relay.primal.net"

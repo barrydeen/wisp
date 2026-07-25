@@ -41,7 +41,6 @@ private val IMAGE_URL_REGEX = Regex(
 )
 
 private val RELAY_URLS = listOf(
-    "wss://relay.damus.io",
     "wss://nos.lol",
     "wss://relay.primal.net",
 )

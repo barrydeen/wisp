@@ -67,8 +67,7 @@ object CrashHandler {
 
     private val DEVELOPER_DM_RELAYS = listOf(
         "wss://relay.0xchat.com",
-        "wss://relay.utxo.one/chat",
-        "wss://relay.damus.io"
+        "wss://relay.utxo.one/chat"
     )
 
     suspend fun sendCrashDm(keyRepo: KeyRepository, relayPool: RelayPool, crashLog: String) {

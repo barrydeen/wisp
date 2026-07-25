@@ -88,12 +88,12 @@ Membership:
   a signing key."
 
 ### Relays (role-based — mirror the web; do NOT collapse to one)
-- `default` (general): `nos.lol`, `relay.damus.io`, `relay.primal.net`
+- `default` (general): `nos.lol`, `relay.primal.net`
 - `members`: `wss://pantry.zap.cooking` (The Pantry — members only)
 - `discovery`: `nostr.wine`, `relay.primal.net`, `purplepag.es`
 - `profiles`: `purplepag.es`
 - `articles` (kind 30023 = **recipes**): `relay.primal.net`, `nos.lol`,
-  `relay.damus.io`, `nostr.wine`, `eden.nostr.land`, `relay.noswhere.com`
+  `nostr.wine`, `eden.nostr.land`, `relay.noswhere.com`
 - **Recipes live on the public article relays, not on Pantry.** Adding
   Pantry as the members relay is correct; replacing the aggregators is
   not — it breaks recipe loading. Leave `RelayProber.BOOTSTRAP` and the
