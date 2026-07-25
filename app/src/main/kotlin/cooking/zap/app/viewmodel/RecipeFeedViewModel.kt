@@ -92,9 +92,18 @@ class RecipeFeedViewModel : ViewModel() {
      * loading. Every failure resolves to [RecipeTrendState.Hidden] (or holds
      * the last good value) — nothing is surfaced as an error.
      *
+     * **One-shot by design, with no retry.** A first composition while offline
+     * leaves the pill hidden for the rest of this ViewModel's life; recovery is
+     * pull-to-refresh (which forces a fetch) or re-entry (which recreates this
+     * ViewModel). Connectivity-aware retry would need a lifecycle observer,
+     * backoff and cancellation semantics for a decorative element — and the
+     * only clean trigger available is watching the feed succeed, which is
+     * exactly the coupling the isolation contract above forbids.
+     *
      * [cache] is injectable for tests only; production always gets the
      * process-wide instance, which is what makes this safe to call again after
-     * a back-nav recreates this ViewModel.
+     * a back-nav recreates this ViewModel — any successful fetch anywhere in
+     * the process seeds every later entry.
      */
     fun loadTrend(api: ZapCookingApi, cache: RecipeTrendCache = RecipeTrendCache.shared) {
         if (trendStarted) return
