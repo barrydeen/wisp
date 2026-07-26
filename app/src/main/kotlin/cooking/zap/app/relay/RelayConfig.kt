@@ -22,9 +22,15 @@ data class RelayConfig(
         // with no saved NIP-65 list. Discovery/indexer and recipe-article
         // aggregators live in DEFAULT_INDEXER_RELAYS / RelayProber.BOOTSTRAP
         // and are intentionally left in place.
+        // Three URLs, three distinct operators by NIP-11 pubkey: nos.lol
+        // (c5fadeb5d90d68ba...), relay.primal.net (dd9b989dfe5e0840...) and
+        // relay.nostr.net (efe5d120df0cc290...). Redundancy is counted in
+        // operators, not URLs — nostr.mom passes every capability check and
+        // publishes nos.lol's pubkey, so it would add a URL and no operator.
         val DEFAULTS = listOf(
             RelayConfig("wss://nos.lol", read = true, write = true),
-            RelayConfig("wss://relay.primal.net", read = true, write = true)
+            RelayConfig("wss://relay.primal.net", read = true, write = true),
+            RelayConfig("wss://relay.nostr.net", read = true, write = true)
         )
 
         /**
