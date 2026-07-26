@@ -24,7 +24,6 @@ data class RelayConfig(
         // and are intentionally left in place.
         val DEFAULTS = listOf(
             RelayConfig("wss://nos.lol", read = true, write = true),
-            RelayConfig("wss://relay.damus.io", read = true, write = true),
             RelayConfig("wss://relay.primal.net", read = true, write = true)
         )
 
@@ -52,7 +51,6 @@ data class RelayConfig(
         val ARTICLES_RELAYS = listOf(
             "wss://relay.primal.net",
             "wss://nos.lol",
-            "wss://relay.damus.io",
             "wss://nostr.wine",
             "wss://eden.nostr.land",
             "wss://relay.noswhere.com"
@@ -64,7 +62,6 @@ data class RelayConfig(
             "wss://relay.nos.social",
             "wss://nos.lol",
             "wss://indexer.nostrarchives.com",
-            "wss://relay.damus.io",
             "wss://relay.primal.net"
         )
 
@@ -73,7 +70,6 @@ data class RelayConfig(
          * Discover and Saved resolution fan queries here instead of relying on outbox routing.
          */
         val PACK_STANDARD_RELAYS = listOf(
-            "wss://relay.damus.io",
             "wss://nos.lol",
             "wss://purplepag.es",
             "wss://relay.primal.net",

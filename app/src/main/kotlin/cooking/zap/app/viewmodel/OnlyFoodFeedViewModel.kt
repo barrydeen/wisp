@@ -676,7 +676,7 @@ class OnlyFoodFeedViewModel : ViewModel() {
          * discovery pools without reusing the throttled `search.nostrarchives.com`.
          */
         private val CONTENT_DISCOVERY_RELAYS = listOf(
-            "wss://nos.lol", "wss://relay.damus.io", "wss://relay.primal.net",
+            "wss://nos.lol", "wss://relay.primal.net",
         )
         /** Recent-window floor for the firehose — keeps discovered notes recent so
          *  they can't drag [loadMore]'s oldest-event paging cursor into the past. */

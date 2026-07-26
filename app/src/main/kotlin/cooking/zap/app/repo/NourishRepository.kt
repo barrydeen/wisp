@@ -398,7 +398,6 @@ class NourishRepository(private val relayPool: RelayPool) {
         /** Public relays that historically mirrored Nourish 30078s (web fallback). */
         private val PUBLIC_FALLBACK_RELAYS = listOf(
             "wss://nos.lol",
-            "wss://relay.damus.io",
             "wss://relay.primal.net",
         )
     }
