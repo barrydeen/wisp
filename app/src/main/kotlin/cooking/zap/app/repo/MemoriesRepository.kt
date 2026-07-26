@@ -400,10 +400,17 @@ class MemoriesRepository(
     }
 
     companion object {
-        /** Archive-friendly relays that keep old notes (mirrors the web's ARCHIVE_RELAYS). */
+        /**
+         * Archive-friendly relays that keep old notes (mirrors the web's ARCHIVE_RELAYS).
+         *
+         * Retention measured 2026-07-26, kind 1 with `until` four years back: nostr.wine
+         * and relay.nostr.net both answered with 2022 notes, relay.primal.net returned
+         * nothing at all past three years. Membership here is about depth, not speed.
+         */
         private val ARCHIVE_RELAYS = listOf(
             "wss://nostr.wine",
             "wss://relay.primal.net",
+            "wss://relay.nostr.net",
         )
         private const val WINDOW_LIMIT = 50
         /** Budget to bring an ephemeral archive relay's socket up before the REQ. */

@@ -43,6 +43,7 @@ private val IMAGE_URL_REGEX = Regex(
 private val RELAY_URLS = listOf(
     "wss://nos.lol",
     "wss://relay.primal.net",
+    "wss://relay.nostr.net",
 )
 
 class SplashViewModel(app: Application) : AndroidViewModel(app) {

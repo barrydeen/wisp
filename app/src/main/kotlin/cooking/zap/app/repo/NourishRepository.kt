@@ -399,6 +399,7 @@ class NourishRepository(private val relayPool: RelayPool) {
         private val PUBLIC_FALLBACK_RELAYS = listOf(
             "wss://nos.lol",
             "wss://relay.primal.net",
+            "wss://relay.nostr.net",
         )
     }
 }

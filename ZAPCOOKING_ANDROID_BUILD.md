@@ -88,7 +88,7 @@ Membership:
   a signing key."
 
 ### Relays (role-based — mirror the web; do NOT collapse to one)
-- `default` (general): `nos.lol`, `relay.primal.net`
+- `default` (general): `nos.lol`, `relay.primal.net`, `relay.nostr.net`
 - `members`: `wss://pantry.zap.cooking` (The Pantry — members only)
 - `discovery`: `nostr.wine`, `relay.primal.net`, `purplepag.es`
 - `profiles`: `purplepag.es`
