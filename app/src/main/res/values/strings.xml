@@ -28,6 +28,7 @@
     <string name="drawer_media_servers">Media Servers</string>
     <string name="drawer_keys">Keys</string>
     <string name="drawer_safety">Safety</string>
+    <string name="drawer_about">About</string>
     <string name="drawer_restore_follows">Restore Follows</string>
     <string name="drawer_proof_of_work">Proof of Work</string>
     <string name="drawer_social_graph">Social Graph</string>
@@ -1255,5 +1256,29 @@
 
     <string name="profile_copy_json">Copy Profile JSON</string>
     <string name="profile_json_copied">Profile JSON copied</string>
+
+    <!--
+        About screen — membership readout + links to the published policies.
+
+        The membership row deliberately carries NO tier noun. The owner
+        endpoint's `tier` field normalizes to 'open' (the FREE tier) for every
+        real member — verified end to end in
+        RESEARCH/ANDROID_LAUNCH_ITEMS_VERIFICATION_2026_07_27.md — so any tier
+        word here would name the wrong product to someone who paid. The row is
+        a state and a date, nothing else.
+
+        The four policy labels are each the destination page's own <h1>.
+    -->
+    <string name="about_membership_header">Membership</string>
+    <string name="about_membership_checking">Checking…</string>
+    <string name="about_membership_none">No active membership</string>
+    <string name="about_membership_unavailable">Couldn\'t check your membership right now</string>
+    <string name="about_membership_active">Active</string>
+    <string name="about_membership_expires">Expires %1$s</string>
+    <string name="about_policies_header">Policies</string>
+    <string name="about_privacy_policy">Privacy Policy</string>
+    <string name="about_terms">Terms of Service</string>
+    <string name="about_child_safety">Child Safety Standards</string>
+    <string name="about_delete_account">Account and Data Deletion</string>
 
 </resources>

@@ -47,6 +47,7 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.FrontHand
@@ -121,6 +122,7 @@ fun WispDrawerContent(
     keyBackupNeeded: Boolean = false,
     onSocialGraph: () -> Unit = {},
     onSafety: () -> Unit = {},
+    onAbout: () -> Unit = {},
     onFollowRecovery: () -> Unit = {},
     onPowSettings: () -> Unit = {},
     onCustomEmojis: () -> Unit = {},
@@ -534,6 +536,16 @@ fun WispDrawerContent(
                     label = { Text(stringResource(R.string.drawer_safety)) },
                     selected = false,
                     onClick = onSafety,
+                    modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
+                )
+                // Membership readout + the four published policies. Everyday
+                // settings, not Advanced: a store reviewer must be able to
+                // reach the policy links without expanding a power-user tray.
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Outlined.Info, contentDescription = null) },
+                    label = { Text(stringResource(R.string.drawer_about)) },
+                    selected = false,
+                    onClick = onAbout,
                     modifier = Modifier.height(48.dp).padding(start = 36.dp, end = 12.dp)
                 )
                 // Advanced — power-user / developer settings, nested one level

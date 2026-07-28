@@ -78,6 +78,7 @@ import cooking.zap.app.ui.screen.ProfileEditScreen
 import cooking.zap.app.ui.screen.RelayScreen
 import cooking.zap.app.ui.screen.ThreadScreen
 import cooking.zap.app.ui.screen.NotificationsScreen
+import cooking.zap.app.ui.screen.AboutScreen
 import cooking.zap.app.ui.screen.SafetyScreen
 import cooking.zap.app.ui.screen.UserProfileScreen
 import cooking.zap.app.ui.screen.ConsoleScreen
@@ -138,6 +139,7 @@ import cooking.zap.app.viewmodel.RecipePacksViewModel
 import cooking.zap.app.viewmodel.RecipeTagFeedViewModel
 import cooking.zap.app.viewmodel.OnlyFoodFeedViewModel
 import cooking.zap.app.viewmodel.CheffyViewModel
+import cooking.zap.app.viewmodel.AboutViewModel
 import cooking.zap.app.viewmodel.SousChefViewModel
 import cooking.zap.app.viewmodel.AuthViewModel
 import cooking.zap.app.viewmodel.ComposeViewModel
@@ -194,6 +196,7 @@ object Routes {
     const val BLOSSOM_SERVERS = "blossom_servers"
     const val WALLET = "wallet"
     const val SAFETY = "safety"
+    const val ABOUT = "about"
     const val SEARCH = "search"
     const val CONSOLE = "console"
     const val KEYS = "keys"
@@ -903,6 +906,7 @@ fun WispNavHost(
                 onMediaServers = { closeDrawerAndNavigate(Routes.BLOSSOM_SERVERS) },
                 onSocialGraph = { closeDrawerAndNavigate(Routes.SOCIAL_GRAPH) },
                 onSafety = { closeDrawerAndNavigate(Routes.SAFETY) },
+                onAbout = { closeDrawerAndNavigate(Routes.ABOUT) },
                 onFollowRecovery = {
                     drawerScope.launch {
                         drawerState.close()
@@ -4130,6 +4134,21 @@ fun WispNavHost(
                 isNetworkReady = { feedViewModel.extendedNetworkRepo.isNetworkReady() },
                 onNavigateToSocialGraph = { navController.navigate(Routes.SOCIAL_GRAPH) },
                 onWotToggled = { feedViewModel.eventRepo.rebuildFeedFromCache() }
+            )
+        }
+
+        composable(Routes.ABOUT) {
+            val aboutViewModel: AboutViewModel = viewModel()
+            AboutScreen(
+                viewModel = aboutViewModel,
+                onRefreshMembership = {
+                    // The NIP-98 owner read is the only source that carries
+                    // `subscription_end`. A null signer (READ_ONLY) makes the
+                    // call impossible, and the ViewModel renders nothing rather
+                    // than falling back to the public read — see AboutViewModel.
+                    aboutViewModel.fetch(feedViewModel.zapCookingApi, feedViewModel.signer)
+                },
+                onBack = { navController.popBackStack() }
             )
         }
 
