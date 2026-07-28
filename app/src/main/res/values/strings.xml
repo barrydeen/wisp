@@ -1178,6 +1178,13 @@
     <string name="report_cat_harassment">Harassment</string>
     <string name="report_cat_illegal">Illegal content</string>
     <string name="report_cat_other">Other</string>
+    <!-- Publicity notice + result. The notice renders above the reason field, never in a
+         confirmation: "anything you write below" is only true from there, and someone who learns
+         their report is public after pressing Report cannot unsend it. -->
+    <string name="msg_report_public_notice">Reports are public. Yours is signed by your account and names the person you\'re reporting, along with anything you write below.</string>
+    <string name="msg_report_sent">Report sent.</string>
+    <string name="msg_report_failed">Couldn\'t send that report. You can try again.</string>
+    <string name="msg_report_needs_key">Reporting is signed with your key. Sign in with a key to report this.</string>
     <string name="title_remove_ban">Remove &amp; ban</string>
     <string name="msg_remove_ban_confirm">Remove and ban %s from this group? They won\'t be able to rejoin, even with an invite.</string>
 

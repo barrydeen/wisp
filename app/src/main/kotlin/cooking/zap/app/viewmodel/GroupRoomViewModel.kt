@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -54,6 +55,11 @@ class GroupRoomViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _relayError = MutableStateFlow<String?>(null)
     val relayError: StateFlow<String?> = _relayError
+
+    // What happened to the last report. Null between reports so that two identical outcomes in a
+    // row are two distinct emissions — the screen collects this and clears it after showing it.
+    private val _reportOutcome = MutableStateFlow<ReportOutcome?>(null)
+    val reportOutcome: StateFlow<ReportOutcome?> = _reportOutcome
 
     // Set true when a freshly-arrived 39002 no longer lists me while I have the room open — i.e.
     // an admin removed/banned me. The screen reacts by ejecting me to the room list.
@@ -95,13 +101,22 @@ class GroupRoomViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Locally hide a single message for the current user (e.g. right after reporting it). */
     fun hideMessage(messageId: String) {
-        _hiddenMessageIds.value = _hiddenMessageIds.value + messageId
+        _hiddenMessageIds.update { it + messageId }
+    }
+
+    /** Clear the last report outcome once the screen has shown it to the reporter. */
+    fun clearReportOutcome() {
+        _reportOutcome.value = null
     }
 
     /**
-     * Publish a NIP-56 (kind 1984) report to the group relay and locally hide the reported message.
-     * Available to every member. The report is addressed to the group's admins (39001) plus the
-     * known Pantry moderation pubkeys so ops can find it, and h-tagged for relay-side querying.
+     * Publish a NIP-56 (kind 1984) report to the group relay. Available to every member. The report
+     * is addressed to the group's admins (39001) plus the known Pantry moderation pubkeys so ops can
+     * find it, and h-tagged for relay-side querying.
+     *
+     * The result arrives on [reportOutcome] rather than as a return value: the send is asynchronous
+     * and the dialog that started it is already dismissed by the time the relay answers. The
+     * reported message is hidden only on [ReportOutcome.SENT] — see [ReportOutcome].
      */
     fun report(
         signer: NostrSigner?,
@@ -110,12 +125,19 @@ class GroupRoomViewModel(app: Application) : AndroidViewModel(app) {
         messageId: String?,
         reason: String,
     ) {
-        val pool = relayPool ?: return
-        val s = signer ?: return
+        val pool = relayPool
+        if (signer == null || pool == null) {
+            _reportOutcome.value = ReportOutcome.of(
+                hasSigner = signer != null,
+                hasRelay = pool != null,
+                relayAccepted = false,
+            )
+            return
+        }
         val admins = _room.value?.admins ?: emptyList()
         val recipients = (admins + Nip56.PANTRY_MOD_ADMINS).distinct()
         viewModelScope.launch(Dispatchers.Default) {
-            try {
+            val accepted = try {
                 val tags = Nip56.buildReportTags(
                     reportedPubkey = reportedPubkey,
                     category = category,
@@ -123,16 +145,20 @@ class GroupRoomViewModel(app: Application) : AndroidViewModel(app) {
                     groupId = groupId,
                     recipients = recipients,
                 )
-                val event = s.signEvent(
+                val event = signer.signEvent(
                     kind = Nip56.KIND_REPORT,
                     content = Nip56.reportContent(category, reason),
                     tags = tags,
                 )
                 pool.sendToRelayOrEphemeral(relayUrl, ClientMessage.event(event), skipBadCheck = true)
-            } catch (_: Exception) { }
+            } catch (_: Exception) {
+                false
+            }
+            val outcome = ReportOutcome.of(hasSigner = true, hasRelay = true, relayAccepted = accepted)
+            // Don't make the reporter keep seeing what they just reported — but only once it's gone.
+            if (outcome.hidesReportedMessage && messageId != null) hideMessage(messageId)
+            _reportOutcome.value = outcome
         }
-        // Don't make the reporter keep seeing what they just reported.
-        if (messageId != null) hideMessage(messageId)
     }
 
     fun init(
