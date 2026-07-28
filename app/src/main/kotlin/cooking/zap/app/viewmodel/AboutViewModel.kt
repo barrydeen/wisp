@@ -97,6 +97,14 @@ class AboutViewModel : ViewModel() {
      * because the network blipped is the confusion this screen exists to
      * remove. A declined external-signer prompt takes the same path: it is a
      * user choice, not a membership fact.
+     *
+     * The [fetched] latch means this is **not** a retry entry point: a second
+     * call on a live instance returns without touching [row], so a retry
+     * control wired straight to it would do nothing and look like it had
+     * worked. Adding retry is a change to this guard first and a button
+     * second, in that order. The recovery that exists today is leaving and
+     * re-entering the screen — this ViewModel is scoped to the `ABOUT`
+     * backstack entry, so that is a fresh instance.
      */
     fun fetch(api: ZapCookingApi, signer: NostrSigner?) {
         if (fetched) return
