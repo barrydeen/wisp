@@ -159,7 +159,9 @@ import cooking.zap.app.ui.component.NoteActions
 import cooking.zap.app.ui.component.ProfilePicture
 import cooking.zap.app.ui.component.RichContent
 import cooking.zap.app.ui.theme.WispThemeColors
+import cooking.zap.app.ui.util.LocalCanSign
 import cooking.zap.app.viewmodel.GroupRoomViewModel
+import cooking.zap.app.viewmodel.ReportOutcome
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -227,16 +229,36 @@ fun GroupRoomScreen(
     // An admin removed/banned me while I had the room open (fresh 39002 no longer lists me):
     // tell me clearly and eject back to the room list so I can't keep composing in a room I left.
     val removedFromRoom by viewModel.removedFromRoom.collectAsState()
-    val removedContext = androidx.compose.ui.platform.LocalContext.current
+    val toastContext = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(removedFromRoom) {
         if (removedFromRoom) {
             android.widget.Toast.makeText(
-                removedContext,
-                removedContext.getString(R.string.group_removed_from_room),
+                toastContext,
+                toastContext.getString(R.string.group_removed_from_room),
                 android.widget.Toast.LENGTH_LONG
             ).show()
             onBack()
         }
+    }
+
+    // Tell the reporter what happened to their report. The category dialog is already dismissed by
+    // the time the relay answers, so the result lands here rather than in the dialog. Clearing it
+    // after showing is what makes two identical outcomes in a row two distinct toasts.
+    val reportOutcome by viewModel.reportOutcome.collectAsState()
+    LaunchedEffect(reportOutcome) {
+        val outcome = reportOutcome ?: return@LaunchedEffect
+        android.widget.Toast.makeText(
+            toastContext,
+            toastContext.getString(
+                when (outcome) {
+                    ReportOutcome.SENT -> R.string.msg_report_sent
+                    ReportOutcome.FAILED -> R.string.msg_report_failed
+                    ReportOutcome.NEEDS_KEY -> R.string.msg_report_needs_key
+                }
+            ),
+            android.widget.Toast.LENGTH_LONG
+        ).show()
+        viewModel.clearReportOutcome()
     }
 
     // In-chat search state
@@ -1782,13 +1804,25 @@ private fun GroupMessageBubble(
                         )
                     }
                     // Moderation, in order: Report (everyone) → Mute (everyone) → Remove & ban (admin).
+                    // Deliberately NOT gated on LocalCanSign: a reader who can see the message must
+                    // be able to reach Report (Play §4.7), so a non-signing account gets the item and
+                    // an explanation on tap rather than a dialog it can't submit.
                     if (onReport != null && !isOwnMessage) {
+                        val canReport = LocalCanSign.current
                         GroupChatCamPanelButton(
                             modifier = Modifier.width(82.dp),
                             enabled = true,
                             onClick = {
                                 showActionsSheet = false
-                                showReportDialog = true
+                                if (canReport) {
+                                    showReportDialog = true
+                                } else {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        context.getString(R.string.msg_report_needs_key),
+                                        android.widget.Toast.LENGTH_LONG
+                                    ).show()
+                                }
                             },
                             icon = {
                                 Icon(Icons.Outlined.Flag, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
@@ -1932,13 +1966,20 @@ private fun GroupMessageBubble(
     }
 }
 
-/** Category picker for a NIP-56 report. Child Safety is listed first and explicit. */
+/**
+ * Category picker for a NIP-56 report. Child Safety is listed first and explicit.
+ *
+ * There is no default category. The category is the entire claim a report makes — everything else
+ * on this dialog is optional — so a pre-selected one sends a signed, public assertion the reporter
+ * never made, and they can't unsend it. Absence of an answer reads correctly against the question
+ * above the list; a wrong answer does not. Report stays disabled until they choose.
+ */
 @Composable
 private fun ReportCategoryDialog(
     onDismiss: () -> Unit,
     onConfirm: (category: cooking.zap.app.nostr.Nip56.ReportCategory, reason: String) -> Unit
 ) {
-    var category by remember { mutableStateOf(cooking.zap.app.nostr.Nip56.ReportCategory.SPAM) }
+    var category by remember { mutableStateOf<cooking.zap.app.nostr.Nip56.ReportCategory?>(null) }
     var reason by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1964,6 +2005,15 @@ private fun ReportCategoryDialog(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
+                // Above the reason field, not in a confirmation: the string says "anything you write
+                // below", which is only true from here, and a disclosure that arrives after the input
+                // it governs has not disclosed anything.
+                Text(
+                    stringResource(R.string.msg_report_public_notice),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = reason,
                     onValueChange = { reason = it },
@@ -1975,7 +2025,11 @@ private fun ReportCategoryDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(category, reason.trim()) }) {
+            val chosen = category
+            TextButton(
+                enabled = chosen != null,
+                onClick = { if (chosen != null) onConfirm(chosen, reason.trim()) }
+            ) {
                 Text(stringResource(R.string.action_report))
             }
         },
