@@ -758,8 +758,13 @@ class RecipeRepository(
      * [coordinate] is `recipeCoordinate(event)` of the deleted recipe. Keyed on
      * the coordinate rather than the event id because that is what these maps
      * are keyed on, and because a replaceable event's identity *is* its address.
+     *
+     * Runs on [processingContext], like every other emit in this class: each of
+     * the four re-emits re-parses and re-sorts a whole grid, which is not work
+     * for the caller's thread — and the caller here is a `viewModelScope`
+     * coroutine, i.e. the main thread.
      */
-    suspend fun removeRecipe(coordinate: String) {
+    suspend fun removeRecipe(coordinate: String) = withContext(processingContext) {
         coordMutex.withLock {
             if (byCoordinate.remove(coordinate) != null) emitRecipes()
         }

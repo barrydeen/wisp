@@ -198,6 +198,36 @@ class RecipeDeletionTest {
         assertEquals(stamp + 1, RecipeDeletion.deletionTimestamp(recipe(createdAt = stamp), now = stamp - 500))
     }
 
+    // ---- future-date ceiling ---------------------------------------------------
+
+    /**
+     * The clamp and the ceiling meet: past `now + FUTURE_DATE_GRACE_SECONDS`
+     * the tombstone [RecipeDeletion.deletionTimestamp] produces is itself
+     * future-dated, so `EventRepository.addEvent` drops it locally and relays
+     * drop it remotely. [RecipeDeletion.isDeletableNow] is what turns that into
+     * a refusal instead of a delete that reports success and evicts the recipe
+     * from this device while it stays live everywhere else.
+     */
+    @Test
+    fun isDeletableNow_refusesARecipeDatedPastTheFutureCeiling() {
+        val now = 1_800_000_000L
+        val grace = RecipeDeletion.FUTURE_DATE_GRACE_SECONDS
+
+        // The exact boundary: created_at + 1 == now + grace still lands.
+        assertTrue(RecipeDeletion.isDeletableNow(recipe(createdAt = now + grace - 1), now = now))
+        // One second further and the tombstone is itself dropped as future-dated.
+        assertFalse(RecipeDeletion.isDeletableNow(recipe(createdAt = now + grace), now = now))
+        assertFalse(RecipeDeletion.isDeletableNow(recipe(createdAt = now + 86_400), now = now))
+    }
+
+    @Test
+    fun isDeletableNow_allowsAnOrdinaryRecipe() {
+        val now = 1_800_000_000L
+        assertTrue(RecipeDeletion.isDeletableNow(recipe(createdAt = 1_700_000_000), now = now))
+        // A recipe stamped exactly now clamps to now + 1, well inside the grace.
+        assertTrue(RecipeDeletion.isDeletableNow(recipe(createdAt = now), now = now))
+    }
+
     // ---- d-tag extraction -----------------------------------------------------
 
     @Test

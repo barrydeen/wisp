@@ -115,9 +115,10 @@ class RecipeDetailViewModel : ViewModel() {
      * is a no-op.
      *
      * Two local evictions, and they are different jobs. The publisher applies
-     * the kind-5 through [EventRepository.addEvent] — the same inbound path a
-     * relay round-trip would take — which clears the note feed and the event
-     * cache. That does **not** reach [RecipeRepository]'s grids, which key on
+     * both deletion events through [EventRepository.addEvent] — the same
+     * inbound path a relay round-trip would take — which caches the tombstone
+     * and clears the note feed and the event cache. That does **not** reach
+     * [RecipeRepository]'s grids, which key on
      * the coordinate and have no deletion observer, so [RecipeRepository.removeRecipe]
      * is what stops the member landing back on a grid that still shows the
      * recipe they just deleted. Only on success: a failed delete must leave the

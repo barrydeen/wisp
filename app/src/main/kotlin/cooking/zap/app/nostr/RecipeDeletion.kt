@@ -87,13 +87,34 @@ object RecipeDeletion {
      * older one — so a device clock behind the recipe's own stamp would
      * otherwise publish a tombstone that does nothing.
      *
-     * Note the ceiling this cannot reach around: an event dated more than 30s
-     * ahead of this device is dropped by `EventRepository.addEvent`'s
-     * future-date guard (and by most relays), so a recipe stamped far in the
-     * future stays undeletable from here.
+     * Note the ceiling this cannot reach around — see [isDeletableNow], which
+     * is what refuses the delete rather than letting it report a success the
+     * protocol path never got.
      */
     fun deletionTimestamp(event: NostrEvent, now: Long = System.currentTimeMillis() / 1000): Long =
         maxOf(now, event.created_at + 1)
+
+    /**
+     * The future-date grace `EventRepository.addEvent` applies (and most relays
+     * apply something like it): an event stamped more than this many seconds
+     * ahead of the reader's clock is dropped outright.
+     */
+    const val FUTURE_DATE_GRACE_SECONDS = 30L
+
+    /**
+     * False when the tombstone [deletionTimestamp] would produce is itself
+     * beyond the future-date ceiling — i.e. the recipe is dated
+     * [FUTURE_DATE_GRACE_SECONDS] or more ahead of this device.
+     *
+     * That case is not a delete that merely propagates slowly, it is a delete
+     * that *cannot land*: the strictly-newer clamp pushes the tombstone past
+     * the grace, so `EventRepository.addEvent` drops it locally and relays drop
+     * it remotely. It has to be refused up front — publishing it and reporting
+     * success would evict the recipe from this device's grids while leaving it
+     * live everywhere else.
+     */
+    fun isDeletableNow(event: NostrEvent, now: Long = System.currentTimeMillis() / 1000): Boolean =
+        deletionTimestamp(event, now) <= now + FUTURE_DATE_GRACE_SECONDS
 
     /**
      * True when [event] is a blanked replacement — an addressable event the

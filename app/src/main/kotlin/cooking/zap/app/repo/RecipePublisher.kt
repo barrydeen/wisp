@@ -157,13 +157,17 @@ class RecipePublisher(
      * anyway — see the [broadcast] comment). Neither carries a NIP-89 client
      * tag: a tombstone stays minimal, matching `GroceryEvents`/`MealPlanEvents`.
      *
-     * Applies the deletion locally through [EventRepository.addEvent] — the
-     * same inbound kind-5 path a relay round-trip would take — so the local
-     * tombstone, the removal, and the address timestamp are whatever the
-     * protocol path produces, not a second implementation of it.
+     * Applies **both** locally through [EventRepository.addEvent] — the same
+     * inbound path a relay round-trip would take — so the local tombstone, the
+     * removal, and the address timestamp are whatever the protocol path
+     * produces, not a second implementation of it.
      *
      * Only the author may delete: an event signed by anyone else would be
      * ignored by every relay, so it is refused here rather than published.
+     * A recipe dated past the future-date ceiling is refused too
+     * ([RecipeDeletion.isDeletableNow]) — its tombstone would be dropped by
+     * every reader, so reporting success would be a lie the local eviction then
+     * acted on.
      */
     suspend fun delete(event: NostrEvent, signer: NostrSigner?): DeleteResult =
         withContext(Dispatchers.IO) {
@@ -171,8 +175,16 @@ class RecipePublisher(
             if (event.pubkey != signer.pubkeyHex) {
                 return@withContext DeleteResult.Error("You can only delete your own recipes.")
             }
+            // One `now` for the check and the stamp, so a delete can't pass the
+            // ceiling test and then be signed past it a tick later.
+            val now = System.currentTimeMillis() / 1000
+            if (!RecipeDeletion.isDeletableNow(event, now)) {
+                return@withContext DeleteResult.Error(
+                    "This recipe is dated too far in the future to delete from this device."
+                )
+            }
             try {
-                val createdAt = RecipeDeletion.deletionTimestamp(event)
+                val createdAt = RecipeDeletion.deletionTimestamp(event, now)
 
                 val replacement = signer.signEvent(
                     kind = event.kind,
@@ -190,8 +202,15 @@ class RecipePublisher(
                 )
                 broadcast(deletionRequest)
 
-                // Local state last: addEvent's kind-5 branch marks the id and the
-                // address deleted and drops the recipe from the caches/feeds.
+                // Local state last, and both halves through addEvent — the same
+                // inbound path a relay echo would take. The replacement becomes
+                // the cached event for the address (so an addressable lookup
+                // resolves to the tombstone rather than to the stale recipe, or
+                // to nothing, while the echo is in flight); addEvent's
+                // blanked-replacement guard is what keeps it out of the article
+                // feed. The kind-5 then marks the id and the address deleted
+                // and drops the recipe itself from the caches/feeds.
+                eventRepo.addEvent(replacement)
                 eventRepo.addEvent(deletionRequest)
 
                 DeleteResult.Deleted
